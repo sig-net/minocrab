@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/minocrab-zkir"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# ZKIR v2 — Midnight's own IR definition; we re-export rather than redefine.
+# Pinned to the same midnight-ledger tag the official compact flake uses for
+# the zkir binaries bundled with our pinned compactc (zkir 2.2.0), so what we
+# parse/emit matches the toolchain byte-for-byte. crates.io only has the older
+# 2.1 (ledger-8) line — see notes/midnight-code-reuse.org.
+midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+# Same repo+rev as midnight-zkir's own path dep, so types unify (Fr etc.).
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+
+[patch.crates-io]
+# midnight-zkir depends on "transient-crypto-old" ^2.2.0 (back-compat v1
+# proving), which was never published to crates.io. Mirror midnight-ledger's
+# own workspace patches: transient-crypto-old from its release tag, and
+# serialize/base-crypto unified onto the rc.3 copies so the old and new
+# transient-crypto share one set of core types.
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }

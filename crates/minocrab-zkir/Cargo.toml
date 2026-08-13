@@ -1,0 +1,15 @@
+[package]
+name = "minocrab-zkir"
+version = "0.1.0"
+description = "L0: ZKIR bindings — read/write/round-trip Midnight ZKIR, reusing midnight-zkir types"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+midnight-zkir.workspace = true
+midnight-transient-crypto.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true

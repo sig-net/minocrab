@@ -26,12 +26,19 @@ Exit criteria: corpus compiles reproducibly under nix; architecture doc exists;
 we know exactly which Midnight code we're reusing and how.
 
 * M1 — ZKIR bindings layer
-- [ ] Rust types + (de)serialization for ZKIR, reusing/forking Midnight's code
+- [X] Rust types + (de)serialization for ZKIR, reusing/forking Midnight's code
       per M0 findings. Never below ZKIR.
-- [ ] Round-trip test: parse compactc's ZKIR output from the corpus, re-emit it,
-      verify equivalence.
-- [ ] Emit a trivial circuit by hand through our bindings and check Midnight's
-      tooling accepts it.
+      (crates/minocrab-zkir: re-exports midnight-zkir 2.2.0 pinned to the same
+      midnight-ledger tag as the toolchain binaries; adds the .zkir JSON
+      version-envelope writer the crate lacks. See Cargo.toml [patch] notes —
+      the ledger-9 line needed their transient-crypto-old workspace patch
+      mirrored.)
+- [X] Round-trip test: parse compactc's ZKIR output, re-emit it, verify
+      equivalence. (Green on the counter fixture.)
+- [ ] Extend the round-trip test to sweep every .zkir in corpus/ once the
+      corpus build lands.
+- [X] Emit a trivial circuit by hand through our bindings and check Midnight's
+      tooling accepts it. (zkir mock-compile accepts; parses back equal.)
 Exit criteria: we can read and write ZKIR that their toolchain accepts, proven
 against the corpus.
 
