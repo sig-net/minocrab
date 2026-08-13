@@ -12,3 +12,10 @@ minocrab = { path = "../minocrab" }
 minocrab-sim = { path = "../minocrab-sim" }
 minocrab-ir = { path = "../minocrab-ir" }
 minocrab-zkir = { path = "../minocrab-zkir" }
+# v3 secp tests generate ECDSA signatures through zkir-v3's own off-circuit
+# helpers and check the Ethereum address against a native keccak.
+midnight-zkir-v3.workspace = true
+midnight-transient-crypto.workspace = true
+midnight-curves.workspace = true
+group.workspace = true
+sha3.workspace = true

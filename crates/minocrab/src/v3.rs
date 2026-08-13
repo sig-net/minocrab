@@ -102,6 +102,18 @@ impl Bytes32ConvTy for Secp256r1ScalarT {}
 impl Bytes32ConvTy for Curve25519BaseT {}
 impl Bytes32ConvTy for Curve25519ScalarT {}
 
+/// Scalars whose curve generator `EcMulGenerator` can multiply (the VM
+/// dispatches on the scalar type; Jubjub and secp256k1 are supported).
+pub trait GeneratorScalarTy: IrTy {
+    type Point: PointTy;
+}
+impl GeneratorScalarTy for JubjubScalarT {
+    type Point = JubjubPointT;
+}
+impl GeneratorScalarTy for Secp256k1ScalarT {
+    type Point = Secp256k1PointT;
+}
+
 /// Curve points: their coordinate (base-field) and scalar types.
 pub trait PointTy: EqAddTy {
     type Coord: IrTy;
@@ -420,11 +432,12 @@ impl Circuit3 {
         Wire3::new(self.b.ec_mul(point.val, scalar.val))
     }
 
-    /// Multiply the Jubjub generator by a scalar.
-    pub fn ec_mul_generator<V: Visibility>(
+    /// Multiply the curve generator matching the scalar's type (Jubjub or
+    /// secp256k1).
+    pub fn ec_mul_generator<S: GeneratorScalarTy, V: Visibility>(
         &mut self,
-        scalar: Wire3<JubjubScalarT, V>,
-    ) -> Wire3<JubjubPointT, V> {
+        scalar: Wire3<S, V>,
+    ) -> Wire3<S::Point, V> {
         Wire3::new(self.b.ec_mul_generator(scalar.val))
     }
 

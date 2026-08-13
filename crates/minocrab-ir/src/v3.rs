@@ -456,16 +456,18 @@ impl Builder3 {
         output
     }
 
-    /// Multiply the Jubjub group generator by a `JubjubScalar`.
+    /// Multiply the curve generator matching the scalar's type. The ir.rs
+    /// doc comment says JubjubScalar only, but the VM dispatches on the
+    /// scalar type and also supports Secp256k1Scalar (ir_vm.rs:559-568) —
+    /// which compactc relies on for `secp256k1EcdsaVerify`.
     pub fn ec_mul_generator(&mut self, scalar: impl Into<Arg>) -> Val {
         let scalar = scalar.into();
-        self.expect(
-            scalar,
-            |t| matches!(t, IrType::JubjubScalar),
-            "JubjubScalar",
-            "ec_mul_generator",
-        );
-        let output = self.fresh("ecgen", IrType::JubjubPoint);
+        let point_ty = match self.ty(scalar) {
+            IrType::JubjubScalar => IrType::JubjubPoint,
+            IrType::Secp256k1Scalar => IrType::Secp256k1Point,
+            t => panic!("ec_mul_generator: operand must be a Jubjub or Secp256k1 scalar, got {t:?}"),
+        };
+        let output = self.fresh("ecgen", point_ty);
         self.instructions.push(Instruction::EcMulGenerator {
             scalar: self.operand(scalar),
             output: self.name(output),

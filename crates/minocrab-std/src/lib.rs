@@ -25,6 +25,7 @@ pub mod hash;
 pub mod merkle;
 pub mod schnorr;
 pub mod types;
+pub mod v3;
 
 pub use bundle::{and, boolean, cond_select, default_bundle, eq, or, Bundle, Vis};
 pub use coin::{
