@@ -11,6 +11,26 @@
 //! compiles, and every call site names what it discloses, so `grep disclose`
 //! is the audit. Stricter application policies wrap wires in newtypes that
 //! hide `disclose` behind their own rules (e.g. range-blind first).
+//!
+//! The enforcement is a type error, not a runtime check:
+//!
+//! ```compile_fail
+//! use minocrab::Circuit;
+//! let (mut c, _) = Circuit::new(0);
+//! let secret = c.witness();
+//! // ERROR: expected `Wire<Public>`, found `Wire<Private>`
+//! c.declare_public(secret, "leak");
+//! ```
+//!
+//! With `disclose` it compiles — and the leak is named and greppable:
+//!
+//! ```
+//! use minocrab::Circuit;
+//! let (mut c, _) = Circuit::new(0);
+//! let secret = c.witness();
+//! let public = c.disclose(secret, "intentionally published");
+//! c.declare_public(public, "value");
+//! ```
 
 use std::marker::PhantomData;
 
