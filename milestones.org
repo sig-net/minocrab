@@ -70,3 +70,16 @@ correctness harness still green.
 - [ ] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
       (update pin → run corpus + harness → fix drift).
 Exit criteria: a version bump is a routine chore, not a project.
+
+* M7 — Deliverable: cross-chain deposit/withdrawal benchmark
+Benchmark the sig-net cross chain deposit and withdrawal contracts using
+MinoCrab and using Compact, as a presentable deliverable (ideally showing
+we're better than Compact).
+- [ ] Both contracts running under both toolchains at the same pinned versions,
+      with the M3 correctness harness green on the MinoCrab versions.
+- [ ] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
+      breakdowns, reproducible via a single nix-run command.
+- [ ] Presentable write-up of the results (methodology, numbers, where the wins
+      come from; honest about any losses).
+Exit criteria: a benchmark report you can present, reproducible from a clean
+checkout.
