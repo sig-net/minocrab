@@ -17,6 +17,10 @@
       "negative_paths": [
         "examples/errors",
         "examples/bugs"
+      ],
+      "extra": [
+        { "path": "compiler", "glob": "*.ss" },
+        { "path": "runtime/src", "glob": "compact-types.ts" }
       ]
     },
     {

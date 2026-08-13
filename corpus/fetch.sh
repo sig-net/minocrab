@@ -42,7 +42,21 @@ jq -c '.sources[]' sources.json | while read -r src; do
       cp "$f" "$dest"
     done < <(find "$clone/$p" -name '*.compact' -type f 2>/dev/null)
   done
+  # Non-.compact reference files (e.g. the compiler's Scheme lowering
+  # passes — ground truth for our eDSL lowering). Kept out of the .compact
+  # collection above so compile.sh's corpus sweep is unaffected.
+  while IFS=$'\t' read -r xpath xglob; do
+    [[ -z "$xpath" ]] && continue
+    while IFS= read -r f; do
+      rel="${f#"$clone"/}"
+      dest="src/$name/$rel"
+      mkdir -p "$(dirname "$dest")"
+      cp "$f" "$dest"
+    done < <(find "$clone/$xpath" -name "$xglob" -type f 2>/dev/null)
+  done < <(jq -r '.extra[]? | [.path, .glob] | @tsv' <<<"$src")
+
   count=$( (find "src/$name" -name '*.compact' 2>/dev/null || true) | wc -l | tr -d ' ')
   negcount=$( (find "negative/$name" -name '*.compact' 2>/dev/null || true) | wc -l | tr -d ' ')
-  echo "   $count files (+$negcount negative)"
+  extracount=$( (find "src/$name" -type f ! -name '*.compact' 2>/dev/null || true) | wc -l | tr -d ' ')
+  echo "   $count files (+$negcount negative, +$extracount extra)"
 done

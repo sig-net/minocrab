@@ -1,0 +1,1339 @@
+#!chezscheme
+
+;;; This file is part of Compact.
+;;; Copyright (C) 2025 Midnight Foundation
+;;; SPDX-License-Identifier: Apache-2.0
+;;; Licensed under the Apache License, Version 2.0 (the "License");
+;;; you may not use this file except in compliance with the License.
+;;; You may obtain a copy of the License at
+;;;
+;;; 	http://www.apache.org/licenses/LICENSE-2.0
+;;;
+;;; Unless required by applicable law or agreed to in writing, software
+;;; distributed under the License is distributed on an "AS IS" BASIS,
+;;; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+;;; See the License for the specific language governing permissions and
+;;; limitations under the License.
+
+(library (langs)
+  (export field-bytes max-unsigned unsigned-bits datum? path-index?
+          max-bytes/vector-length len? kindex? max-merkle-tree-depth min-merkle-tree-depth
+          zkir-field-rep?
+          maximum-ledger-segment-length 
+          make-vm-expr vm-expr? vm-expr-expr make-vm-code vm-code? vm-code-code
+          Lsrc unparse-Lsrc Lsrc-pretty-formats Lsrc-Include?
+          Lnoinclude unparse-Lnoinclude Lnoinclude-pretty-formats
+          Lsingleconst unparse-Lsingleconst Lsingleconst-pretty-formats
+          Lnopattern unparse-Lnopattern Lnopattern-pretty-formats
+          Lhoisted unparse-Lhoisted Lhoisted-pretty-formats
+          Lexpr unparse-Lexpr Lexpr-pretty-formats
+          Lnoandornot unparse-Lnoandornot Lnoandornot-pretty-formats
+          native-entry? make-native-entry native-entry-function native-entry-class native-entry-disclosure* native-entry-maybe-type-param*
+          Lpreexpand unparse-Lpreexpand Lpreexpand-pretty-formats
+          id-counter make-source-id make-temp-id id? id-src id-sym id-uniq id-refcount id-refcount-set! id-temp? id-exported? id-exported?-set! id-pure? id-pure?-set! id-sealed? id-sealed?-set! id-prefix
+          Lexpanded unparse-Lexpanded Lexpanded-pretty-formats
+          Ltypes unparse-Ltypes Ltypes-pretty-formats
+          Lnotundeclared unparse-Lnotundeclared Lnotundeclared-pretty-formats Lnotundeclared-Ledger-Declaration? Lnotundeclared-Ledger-Constructor?
+          Loneledger unparse-Loneledger Loneledger-pretty-formats
+          Lnodca unparse-Lnodca Lnodca-pretty-formats Lnodca-Expression?
+          Lwithpaths0 unparse-Lwithpaths0 Lwithpaths0-pretty-formats
+          Lwithpaths unparse-Lwithpaths Lwithpaths-pretty-formats
+          Lnodisclose unparse-Lnodisclose Lnodisclose-pretty-formats
+          Lnoserialize unparse-Lnoserialize Lnoserialize-pretty-formats
+          Lloweredemit unparse-Lloweredemit Lloweredemit-pretty-formats Lloweredemit-Export-Type-Definition?
+          Ltypescript unparse-Ltypescript Ltypescript-pretty-formats Ltypescript-ADT-Op? Ltypescript-ADT-Runtime-Op?
+          Lposttypescript unparse-Lposttypescript Lposttypescript-pretty-formats
+          Lnoenums unparse-Lnoenums Lnoenums-pretty-formats
+          Lunrolled unparse-Lunrolled Lunrolled-pretty-formats
+          Linlined unparse-Linlined Linlined-pretty-formats
+          Lnosafecast unparse-Lnosafecast Lnosafecast-pretty-formats
+          Lnovectorref unparse-Lnovectorref Lnovectorref-pretty-formats
+          Lcircuit unparse-Lcircuit Lcircuit-pretty-formats Lcircuit-Native-Declaration? Lcircuit-Witness-Declaration? Lcircuit-Circuit-Definition? Lcircuit-Kernel-Declaration? Lcircuit-Ledger-Declaration? Lcircuit-Triv?
+          Lflattened unparse-Lflattened Lflattened-pretty-formats Lflattened-Triv? Lflattened-Circuit-Definition?
+          Lzkir unparse-Lzkir Lzkir-pretty-formats
+          )
+  (import (chezscheme) (nanopass) (nanopass-extension) (field))
+
+  ; field-bits is the number of full bits that can be represented by a field value and is
+  ; necessarily smaller than the number of bits required to represent the maximum field value
+  (define (field-bits) (- (integer-length (max-field)) 1))
+  ; field-bytes is the number of full bytes that can be represented by a field value and is
+  ; one smaller than the number of bytes required to represent the maximum field value
+  (define (field-bytes) (quotient (field-bits) 8))
+
+  ; unsigned values are natural numbers that fit into the number of full bytes representable
+  ; by a field.  larger unsigned values would fit in a field when (field-bits) is not an
+  ; even multiple of (field-bytes), but the lower limit allows the ledger to measure unsigned
+  ; alignments in bytes rather than bits
+  (define (unsigned-bits) (* (field-bytes) 8))
+  (define (max-unsigned) (- (expt 2 (unsigned-bits)) 1))
+
+  (define (bits? x)
+    (and (integer? x)
+         (exact? x)
+         (<= 1 x (integer-length (max-field)))))
+
+  (define (maybe-bits? x)
+    (or (not x)
+        (bits? x)))
+
+  (define (field-bytes? x)
+    (and (integer? x)
+         (exact? x)
+         (<= 0 x (field-bytes))))
+
+  (define (datum? x)
+    (or (boolean? x)
+        (field? x)
+        (and (bytevector? x)
+             (<= (bytevector-length x) (max-bytes/vector-length)))))
+
+  (define max-bytes/vector-length (make-parameter (expt 2 24)))
+
+  (define (len? x)
+    (and (integer? x)
+         (exact? x)
+         (<= 0 x (max-bytes/vector-length))))
+
+  (define (kindex? x)
+    (and (integer? x)
+         (exact? x)
+         (<= 0 x (- (max-bytes/vector-length) 1))))
+
+  (define (max-merkle-tree-depth) 32)
+  (define (min-merkle-tree-depth) 2)
+
+  (define (zkir-field-rep? x)
+    (and (integer? x)
+         (exact? x)
+         (<= (- (max-field)) x (max-field))))
+
+  (define-record-type vm-expr
+    (nongenerative)
+    (fields expr))
+
+  (define-record-type vm-code
+    (nongenerative)
+    (fields code))
+
+  (define-language/pretty Lsrc
+    (terminals
+      (field (nat))
+      (boolean (exported sealed pure-dcl nominal))
+      (symbol (var-name name module-name function-name contract-name struct-name enum-name tvar-name tsize-name elt-name ledger-field-name type-name))
+      (string (prefix mesg opaque-type file))
+      (datum (datum))
+      (source-object (src))
+      )
+    (Program (p)
+      (program src pelt* ...) => (program #f pelt* ...)
+      )
+    (Program-Element (pelt)
+      incld
+      mdefn
+      idecl
+      xdecl
+      ldecl
+      lconstructor
+      cdefn
+      wdecl
+      ecdecl
+      cidecl
+      structdef
+      enumdef
+      tdefn)
+    (Include (incld)
+      (include src file) =>
+        (include file)
+      )
+    (Module-Definition (mdefn)
+      (module src exported? module-name (type-param* ...) pelt* ...) =>
+        (module exported? module-name (type-param* ...) #f pelt* ...)
+      )
+    (Import-Declaration (idecl)
+      (import src import-name (targ* ...) prefix) =>
+        (import import-name (targ* 0 ...) #f prefix)
+      (import src import-name (targ* ...) prefix (ielt* ...)) =>
+        (import import-name (targ* 0 ...) #f prefix #f (ielt* ...))
+      )
+    (Import-Element (ielt)
+      (src name name^) => (name name^)
+      )
+    (Import-Name (import-name)
+      module-name
+      file)
+    (Export-Declaration (xdecl)
+      (export src (src* name*) ...) =>
+        (export #f name* ...)
+      )
+    (Ledger-Declaration (ldecl)
+      (public-ledger-declaration src exported? sealed? ledger-field-name type) =>
+        (public-ledger-declaration exported? sealed? #f ledger-field-name #f type)
+      )
+    (Ledger-Constructor (lconstructor)
+      (constructor src (parg* ...) blck) => (constructor (parg* 0 ...) #f blck))
+    (Circuit-Definition (cdefn)
+      (circuit src exported? pure-dcl? function-name (type-param* ...) (parg* ...) type blck) =>
+        (circuit exported? pure-dcl? function-name (type-param* ...) (parg* 0 ...) 4 type #f blck)
+      )
+    (Witness-Declaration (wdecl)
+      (witness src exported? function-name (type-param* ...) (arg* ...) type) =>
+        (witness exported? function-name (type-param* ...) (arg* 0 ...) 4 type)
+      )
+    (External-Contract-Declaration (ecdecl)
+      (external-contract src exported? contract-name ecdecl-circuit* ...) =>
+        (external-contract exported? contract-name #f ecdecl-circuit* ...)
+      )
+    (External-Contract-Circuit (ecdecl-circuit)
+      (src pure-dcl function-name (arg* ...) type) =>
+        (pure-dcl function-name (arg* 0 ...) 4 type)
+      )
+    (Contract-Implements-Declaration (cidecl)
+      (contract-implements src type) => (contract-implements type)
+      )
+    (Structure-Definition (structdef)
+      (struct src exported? struct-name (type-param* ...) arg* ...) =>
+        (struct exported? struct-name (type-param* ...) #f arg* ...)
+      )
+    (Enum-Definition (enumdef)
+      (enum src exported? enum-name elt-name elt-name* ...) =>
+        (enum exported? enum-name #f elt-name #f elt-name* ...)
+      )
+    (Type-Definition (tdefn)
+      (typedef src exported? nominal? type-name (type-param* ...) type) =>
+        (typedef exported? nominal? type-name (type-param* ...) #f type)
+      )
+    (Type-Param (type-param)
+      (nat-valued src tvar-name) => (nat-valued tvar-name)
+      (type-valued src tvar-name) => tvar-name)
+    (Pattern-Argument (parg)
+      (src pattern type) => (bracket pattern type))
+    (Argument (arg)
+      (src var-name type) => (bracket var-name type)
+      )
+    (Const-Binding (cbinding)
+      (src pattern type expr) => (bracket pattern 0 type 0 expr))
+    (Block (blck)
+      (block src stmt* ...)              => (block #f stmt* ...)
+      )
+    (Statement (stmt)
+      (statement-expression src expr)    => expr
+      (return src expr)                  => (return expr)
+      (return src)                       => (return (tuple))
+      (const src cbinding cbinding* ...) => (const (cbinding 0 cbinding* ...))
+      (if src expr stmt1 stmt2)          => (if expr 3 stmt1 3 stmt2)
+      (for src var-name tsize0 tsize1 stmt) => (for var-name tsize0 tsize1 #f stmt)
+      (for src var-name expr stmt)       => (for var-name expr #f stmt)
+      blck
+      )
+    (Pattern (pattern)
+      var-name
+      (tuple src (maybe pattern?*) ...)      => (pattern?* ...)
+      (struct src (pattern* elt-name*) ...)  => ((pattern* elt-name*) ...)
+      )
+    (Expression (expr index)
+      (quote src datum)                                   => datum
+      (var-ref src var-name)                              => var-name
+      (default src type)                                  => (default type)
+      (if src expr0 expr1 expr2)                          => (if expr0 3 expr1 3 expr2)
+      (elt-ref src expr elt-name)                         => (elt-ref expr elt-name)
+      (elt-call src expr elt-name expr* ...)              => (elt-call expr elt-name expr* ...)
+      (emit src expr)                                     => (emit expr)
+      (= src expr1 expr2)                                 => (= expr1 expr2)
+      (+= src expr1 expr2)                                => (+= expr1 3 expr2)
+      (-= src expr1 expr2)                                => (-= expr1 3 expr2)
+      (tuple src tuple-arg* ...)                          => (tuple tuple-arg* ...)
+      (bytes src bytes-arg* ...)                          => (bytes bytes-arg* ...)
+      (tuple-ref src expr index)                          => (tuple-ref #f expr #f index)
+      (tuple-slice src expr index tsize)                  => (tuple-slice #f expr #f index #f tsize)
+      (+ src expr1 expr2)                                 => (+ expr1 expr2)
+      (- src expr1 expr2)                                 => (- expr1 expr2)
+      (* src expr1 expr2)                                 => (* expr1 expr2)
+      (or src expr1 expr2)                                => (or expr1 3 expr2)
+      (and src expr1 expr2)                               => (and expr1 4 expr2)
+      (not src expr)                                      => (not expr)
+      (< src expr1 expr2)                                 => (< expr1 expr2)
+      (<= src expr1 expr2)                                => (<= expr1 3 expr2)
+      (> src expr1 expr2)                                 => (> expr1 expr2)
+      (>= src expr1 expr2)                                => (>= expr1 3 expr2)
+      (== src expr1 expr2)                                => (== expr1 3 expr2)
+      (!= src expr1 expr2)                                => (!= expr1 3 expr2)
+      (map src fun expr expr* ...)                        => (map fun #f expr #f expr* ...)
+      (fold src fun expr0 expr expr* ...)                 => (fold fun #f expr0 #f expr #f expr* ...)
+      (call src fun expr* ...)                            => (call fun #f expr* ...)
+      (new src tref new-field* ...)                       => (new tref #f new-field* ...)
+      (seq src expr* ... expr)                            => (seq #f expr* ... #f expr)
+      (cast src type expr)                                => (cast type #f expr)
+      (disclose src expr)                                 => (disclose expr)
+      (assert src expr mesg)                              => (assert #f expr #f mesg)
+      )
+    (Function (fun)
+      ; could replace both fref forms with (fref src function-name targ* ...)
+      ; but this allows us to suppress the fref wrapper in the human-readable
+      ; form when targ* is empty
+      (fref src function-name)               => function-name
+      (fref src function-name (targ* ...))   => (fref function-name #f targ* ...)
+      (circuit src (parg* ...) type blck)    => (circuit (parg* 0 ...) 4 type #f blck)
+      )
+    (Tuple-Argument (tuple-arg bytes-arg)
+      (single src expr)                      => expr
+      (spread src expr)                      => (spread expr)
+      )
+    (New-Field (new-field)
+      (spread src expr)                      => (spread expr)
+      (positional src expr)                  => expr
+      (named src elt-name expr)              => (elt-name expr)
+      )
+    (Type (type)
+      tref
+      (tboolean src)                         => (tboolean)
+      (tfield src ftype)                     => (tfield ftype)
+      (tunsigned src tsize)                  => (tunsigned tsize)        ; range from 0 to 2^{tsize}-1
+      (tunsigned src tsize tsize^)           => (tunsigned tsize tsize^) ; range from tsize (inclusive) to tsize^ (exclusive)
+      (tbytes src tsize)                     => (tbytes tsize)
+      (topaque src opaque-type)              => (topaque opaque-type)
+      (tvector src tsize type)               => (tvector tsize type)
+      (ttuple src type* ...)                 => (ttuple type* ...)
+      (tundeclared)                          => (tundeclared)
+      )
+    (Type-Ref (tref)
+      (type-ref src tvar-name targ* ...)     => (type-ref tvar-name #f targ* ...)
+      )
+    (Type-Size (tsize)
+      (type-size src nat)                    => nat
+      (type-size-ref src tsize-name)         => (type-size-ref tsize-name)
+      )
+    (Type-Argument (targ)
+      (targ-size src nat)                    => nat
+      (targ-type src type)                   => type
+      )
+    (Field-Type (ftype)
+      (field-native))
+  )
+
+  (define-language/pretty Lnoinclude (extends Lsrc)
+    (Program-Element (pelt)
+      (- incld))
+    (Include (incld)
+      (- (include src file))))
+
+  (define-language/pretty Lsingleconst (extends Lnoinclude)
+    (Const-Binding (cbinding)
+      (- (src pattern type expr)))
+    (Statement (stmt)
+      (- (const src cbinding cbinding* ...))
+      (+ (const src pattern type expr) => (const pattern type expr)
+         (seq src stmt* ...)  => (seq stmt* ...))
+      )
+    )
+
+  (define-language/pretty Lnopattern (extends Lsingleconst)
+    (Ledger-Constructor (lconstructor)
+      (- (constructor src (parg* ...) blck))
+      (+ (constructor src (arg* ...) blck) => (constructor (arg* ...) blck)))
+    (Circuit-Definition (cdefn)
+      (- (circuit src exported? pure-dcl? function-name (type-param* ...) (parg* ...) type blck))
+      (+ (circuit src exported? pure-dcl? function-name (type-param* ...) (arg* ...) type blck) =>
+           (circuit exported? pure-dcl? function-name (type-param* ...) (arg* 0 ...) 4 type #f blck)))
+    (Pattern-Argument (parg)
+      (- (src pattern type)))
+    (Statement (stmt)
+      (- (const src pattern type expr))
+      (+ (const src var-name type expr) => (const var-name type expr)))
+    (Function (fun)
+      (- (circuit src (parg* ...) type blck))
+      (+ (circuit src (arg* ...) type blck) => (circuit (arg* 0 ...) 4 type #f blck)))
+    (Pattern (pattern)
+      (- var-name)
+      (- (tuple src (maybe pattern?*) ...))
+      (- (struct src (pattern* elt-name*) ...))
+      )
+    )
+
+  (define-language/pretty Lhoisted (extends Lnopattern)
+    (Block (blck)
+      (- (block src stmt* ...))
+      (+ (block src (var-name* ...) stmt* ...)       => (block (var-name* ...) #f stmt* ...))
+      )
+    (Statement (stmt)
+      (- (const src var-name type expr))
+      (+ (= src var-name type expr)                  => (= var-name type expr))
+      )
+    )
+
+  (define-language/pretty Lexpr (extends Lhoisted)
+    (Ledger-Constructor (lconstructor)
+      (- (constructor src (arg* ...) blck))
+      (+ (constructor src (arg* ...) expr) => (constructor (arg* 0 ...) #f expr)))
+    (Circuit-Definition (cdefn)
+      (- (circuit src exported? pure-dcl? function-name (type-param* ...) (arg* ...) type blck))
+      (+ (circuit src exported? pure-dcl? function-name (type-param* ...) (arg* ...) type expr) =>
+           (circuit exported? pure-dcl? function-name (type-param* ...) (arg* 0 ...) 4 type #f expr)
+      ))
+    (Argument (arg local))
+    (Block (blck)
+      (- (block src (var-name* ...) stmt* ...)))
+    (Statement (stmt)
+      (- (statement-expression src expr)
+         (return src expr)
+         (return src)
+         (= src var-name type expr)
+         (if src expr stmt1 stmt2)
+         (for src var-name tsize0 tsize1 stmt)
+         (for src var-name expr stmt)
+         (seq src stmt* ...)
+         blck))
+    (Expression (expr index)
+      (+ (let* src ([local* expr*] ...) expr)    => (let* ([bracket local* 0 expr*] 0 ...) #f expr)
+         (for src var-name tsize0 tsize1 expr2)  => (for var-name tsize0 tsize1 #f expr2)
+         (for src var-name expr1 expr2)          => (for var-name expr1 #f expr2)
+         (block src (var-name* ...) expr)        => (block (var-name* 0 ...) #f expr)
+         (return src expr)                       => expr
+         (return src)                            => (tuple)
+         ))
+    (Function (fun)
+      (- (circuit src (arg* ...) type blck))
+      (+ (circuit src (arg* ...) type expr) =>
+           (circuit (arg* 0 ...) 4 type #f expr))))
+
+  (define-language/pretty Lnoandornot (extends Lexpr)
+    (Expression (expr index)
+      (- (and src expr1 expr2)
+         (or src expr1 expr2)
+         (not src expr))))
+
+  (define-record-type native-entry
+    (nongenerative)
+    (fields function class disclosure* maybe-type-param*))
+
+  (define-language/pretty Lpreexpand (extends Lnoandornot)
+    (terminals
+      (- (symbol (var-name name module-name function-name contract-name struct-name enum-name tvar-name tsize-name elt-name ledger-field-name type-name))
+         (string (prefix mesg opaque-type file)))
+      (+ (symbol (var-name name module-name function-name contract-name struct-name enum-name tvar-name tsize-name elt-name ledger-field-name ledger-op ledger-op-class adt-name adt-formal type-name))
+         (string (prefix mesg opaque-type file discloses))
+         (procedure (result-type runtime-code))
+         (vm-expr (vm-expr))
+         (vm-code (vm-code))
+         (native-entry (native-entry))))
+    (Program-Element (pelt)
+      (+ ntdecl
+         ndecl
+         adt-defn
+         fixup-alias-defn))
+    (Native-Type-Declaration (ntdecl)
+      (+ (native-type src exported? type-name type) =>
+           (native-type type-name type)))
+    (Native-Declaration (ndecl)
+      (+ (native src exported? function-name native-entry (type-param* ...) (arg* ...) type) =>
+           (native function-name (type-param* ...) (arg* 0 ...) 4 type)))
+    (ADT-Definition (adt-defn)
+      (+ (define-adt src exported? adt-name (type-param* ...) vm-expr (adt-op* ...) (adt-rt-op* ...)) =>
+           (define-adt exported? adt-name #f (type-param* 0 ...) #f (adt-op* 0 ...) #f (adt-rt-op* 0 ...))))
+    (Type-Param (type-param)
+      (+ (non-adt-type-valued src tvar-name)))
+    (ADT-Runtime-Op (adt-rt-op)
+      (+ (ledger-op ((var-name* type*) ...) result-type runtime-code) =>
+           ledger-op))
+    (ADT-Op (adt-op)
+      (+ (ledger-op op-class ((var-name* type* (maybe discloses?)) ...) type vm-code adt-op-cond* ...) =>
+           ledger-op))
+    (ADT-Op-Class (op-class)
+      (+ ledger-op-class
+         (ledger-op-class nat nat^)))
+    (ADT-Op-Condition (adt-op-cond)
+      (+ (= tvar-name type)))
+    (Fixup-Alias-Definition (fixup-alias-defn)
+      ; (fixup-alias alias-name actual-name)
+      (+ (fixup-alias function-name^ function-name)))
+    (Expression (expr index)
+      (+ (serialize src tsize type expr)      => (serialize tsize type expr)
+         (deserialize src tsize type expr)    => (deserialize tsize type expr)))
+    (Type (type)
+      (+ (tpoint src ctype)                   => (tpoint ctype)))
+    (Field-Type (ftype)
+      (+ (field-base ctype))
+      (+ (field-scalar ctype)))
+    (Curve-Type (ctype)
+      (+ (curve-jubjub))
+      (+ (curve-secp256k1)))
+    )
+
+  (module (id-counter make-source-id make-temp-id id? id-src id-sym id-uniq id-refcount id-refcount-set! id-temp? id-exported? id-exported?-set! id-pure? id-pure?-set! id-sealed? id-sealed?-set! id-prefix)
+    (define id-prefix (make-parameter "%"))
+    (define id-counter (make-parameter 0))
+    (define-record-type id
+      (nongenerative)
+      (fields src sym (mutable refcount) (mutable flags) (mutable uniq $id-uniq $id-uniq-set!))
+      (protocol
+        (lambda (new)
+          (lambda (src sym)
+            (unless (source-object? src) (errorf 'make-id "~s is not a source object" src))
+            (unless (symbol? sym) (errorf 'make-id "~s is not a symbol" sym))
+            (new src sym 0 0 #f)))))
+    (module (id-exported? id-exported?-set!
+             id-pure? id-pure?-set!
+             id-sealed? id-sealed?-set!
+             id-temp? id-temp?-set!)
+      (define-syntax define-flag
+        (syntax-rules ()
+          [(_ k getter setter)
+           (begin
+             (define (getter id) (fxbit-set? (id-flags id) k))
+             (define (setter id set?) (id-flags-set! id ((if set? fxlogbit1 fxlogbit0) k (id-flags id)))))]))
+      (define-flag 0 id-exported? id-exported?-set!)
+      (define-flag 1 id-sealed? id-sealed?-set!)
+      (define-flag 2 id-pure? id-pure?-set!)
+      (define-flag 3 id-temp? id-temp?-set!))
+    (define (make-source-id src sym) (make-id src sym))
+    (define (make-temp-id src sym)
+      (let ([id (make-id src sym)])
+        (id-temp?-set! id #t)
+        id))
+    (define (id-uniq id)
+      (or ($id-uniq id)
+          (let ([uniq (id-counter)])
+            ($id-uniq-set! id uniq)
+            (id-counter (+ uniq 1))
+            uniq)))
+    (record-writer (record-type-descriptor id)
+      (lambda (x p wr)
+        (fprintf p "~a~s.~s" (id-prefix) (id-sym x) (id-uniq x)))))
+
+  (define-language/pretty Lexpanded (extends Lpreexpand)
+    (terminals
+      (+ (len (len)))
+      (- (symbol (var-name name module-name function-name contract-name struct-name enum-name tvar-name tsize-name elt-name ledger-field-name ledger-op ledger-op-class adt-name adt-formal type-name))
+         (boolean (exported sealed pure-dcl nominal))
+         (string (prefix mesg opaque-type file discloses)))
+      (+ (symbol (export-name contract-name struct-name enum-name type-name tvar-name elt-name opaque-type-name ledger-op ledger-op-class adt-name adt-formal symbolic-function-name generic-kind))
+         (boolean (pure-dcl nominal))
+         (id (name var-name function-name ledger-field-name))
+         (string (mesg opaque-type file discloses))))
+    (Program (p)
+      (- (program src pelt* ...))
+      (+ (program src ((export-name* name*) ...) ((struct-name* type*) ...) (unused-pelt* ...) (ecdecl* ...) (cidecl* ...) pelt* ...)
+           => (program ((export-name* name*) 0 ...) #f pelt* ...)))
+    (Program-Element (pelt unused-pelt)
+      (- mdefn
+         idecl
+         xdecl
+         ecdecl
+         cidecl
+         structdef
+         enumdef
+         tdefn
+         ntdecl
+         adt-defn
+         fixup-alias-defn)
+      (+ export-tdefn))
+    (Native-Type-Declaration (ntdecl)
+      (- (native-type src exported? type-name type)))
+    (ADT-Definition (adt-defn)
+      (- (define-adt src exported? adt-name (type-param* ...) vm-expr (adt-op* ...) (adt-rt-op* ...))))
+    (Fixup-Alias-Definition (fixup-alias-defn)
+      (- (fixup-alias function-name^ function-name)))
+    (Ledger-Declaration (ldecl)
+      (- (public-ledger-declaration src exported? sealed? ledger-field-name type))
+      (+ (public-ledger-declaration src ledger-field-name type) =>
+           (public-ledger-declaration #f ledger-field-name #f type)))
+    (Circuit-Definition (cdefn)
+      (- (circuit src exported? pure-dcl? function-name (type-param* ...) (arg* ...) type expr))
+      (+ (circuit src function-name (arg* ...) type expr) =>
+           (circuit function-name (arg* 0 ...) 4 type #f expr)))
+    (External-Contract-Declaration (ecdecl)
+      (- (external-contract src exported? contract-name ecdecl-circuit* ...))
+      (+ (external-contract src contract-name ecdecl-circuit* ...) =>
+           (external-contract contract-name ecdecl-circuit* ...)))
+    (External-Contract-Circuit (ecdecl-circuit)
+      (- (src pure-dcl function-name (arg* ...) type))
+      (+ (src pure-dcl elt-name (arg* ...) type) =>
+           (pure-dcl elt-name (arg* ...) type)))
+    (Module-Definition (mdefn)
+      (- (module src exported? module-name (type-param* ...) pelt* ...)))
+    (Import-Declaration (idecl)
+      (- (import src import-name (targ* ...) prefix)
+         (import src import-name (targ* ...) prefix (ielt* ...))))
+    (Import-Name (import-name)
+      (- module-name)
+      (- file))
+    (Export-Declaration (xdecl)
+      (- (export src (src* name*) ...)))
+    (Native-Declaration (ndecl)
+      (- (native src exported? function-name native-entry (type-param* ...) (arg* ...) type))
+      (+ (native src function-name native-entry (arg* ...) type) =>
+           (native function-name (arg* 0 ...) 4 type)))
+    (Witness-Declaration (wdecl)
+      (- (witness src exported? function-name (type-param* ...) (arg* ...) type))
+      (+ (witness src function-name (arg* ...) type) =>
+           (witness function-name (arg* 0 ...) 4 type)))
+    (Structure-Definition (structdef)
+      (- (struct src exported? struct-name (type-param* ...) arg* ...)))
+    (Enum-Definition (enumdef)
+      (- (enum src exported? enum-name elt-name elt-name* ...)))
+    (Type-Definition (tdefn)
+      (- (typedef src exported? nominal? type-name (type-param* ...) type)))
+    (Export-Type-Definition (export-tdefn)
+      (+ (export-typedef src type-name (tvar-name* ...) type) =>
+           (export-typedef type-name (tvar-name* ...) #f type)))
+    (ADT-Runtime-Op (adt-rt-op)
+      (+ (ledger-op (arg* ...) result-type runtime-code) =>
+           ledger-op))
+    (ADT-Op (adt-op)
+      (- (ledger-op op-class ((var-name* type* (maybe discloses?)) ...) type vm-code adt-op-cond* ...))
+      (+ (ledger-op op-class ((var-name* type* (maybe discloses?)) ...) type vm-code) =>
+           ledger-op))
+    (ADT-Op-Condition (adt-op-cond)
+      (- (= tvar-name type)))
+    (Type-Param (type-param)
+      (- (nat-valued src tvar-name))
+      (- (type-valued src tvar-name))
+      (- (non-adt-type-valued src tvar-name)))
+    (Argument (arg local)
+      (- (src var-name type))
+      (+ (var-name type) => (bracket var-name type)))
+    (Expression (expr index)
+      (- (block src (var-name* ...) expr)
+         (new src tref new-field* ...)
+         (tuple-slice src expr index tsize)
+         (for src var-name tsize0 tsize1 expr2)
+         (serialize src tsize type expr)
+         (deserialize src tsize type expr))
+      (+ (ledger-ref src ledger-field-name) => ledger-field-name
+         (new src type new-field* ...)      => (new type #f new-field* ...)
+         (enum-ref src type elt-name)       => (enum-ref type elt-name)
+         (tuple-slice src expr index len)   => (tuple-slice #f expr #f index #f len)
+         (serialize src len type expr)      => (serialize len type expr)
+         (deserialize src len type expr)    => (deserialize len type expr)))
+    (Function (fun)
+      (- (fref src function-name)
+         (fref src function-name (targ* ...)))
+      (+ (fref src symbolic-function-name ((function-name** ...) ...)
+               (generic-value* ...)
+               ((src* generic-kind** ...) ...)) =>
+           (fref ((function-name** ...) ...))))
+    (Generic-Value (generic-value)
+      (+ nat
+         type))
+    (Type (type)
+      (- tref
+         (tunsigned src tsize)
+         (tunsigned src tsize tsize^)
+         (tvector src tsize type)
+         (tbytes src tsize))
+      (+ tvar-name ; should appear only in external type declarations
+         (tunsigned src nat)    => (tunsigned nat) ; nat = max value
+         (tvector src len type) => (tvector len type)
+         (tbytes src len)       => (tbytes len)
+         (tcontract src contract-name (elt-name* pure-dcl* (type** ...) type*) ...) =>
+           (tcontract contract-name #f (elt-name* pure-dcl* (type** ...) #f type*) ...)
+         (tstruct src struct-name (elt-name* type*) ...) =>
+           (tstruct struct-name #f (elt-name* type*) ...)
+         (tenum src enum-name elt-name elt-name* ...) =>
+           (tenum enum-name #f elt-name #f elt-name* ...)
+         (talias src nominal? type-name type) => (talias nominal? type-name #f type)
+         (tadt src adt-name ([adt-formal* generic-value*] ...) vm-expr (adt-op* ...) (adt-rt-op* ...)) =>
+           (adt-name #f generic-value* ...)))
+    (Type-Ref (tref)
+      (- (type-ref src tvar-name targ* ...)))
+    (Type-Size (tsize)
+      (- (type-size src nat)
+         (type-size-ref src tsize-name)))
+    (Type-Argument (targ)
+      (- (targ-size src nat)
+         (targ-type src type))))
+
+  (define-language/pretty Ltypes (entry Program)
+    (terminals
+      (field (nat kindex))
+      (len (len))
+      (bits (bits))
+      (maybe-bits (mbits))
+      (symbol (export-name contract-name struct-name enum-name type-name tvar-name elt-name ledger-op ledger-op-class adt-name adt-formal))
+      (boolean (pure-dcl nominal))
+      (id (name var-name function-name ledger-field-name))
+      (string (mesg opaque-type file discloses sugar))
+      (datum (datum))
+      (source-object (src))
+      (procedure (result-type runtime-code))
+      (vm-expr (vm-expr))
+      (vm-code (vm-code))
+      (native-entry (native-entry))
+      )
+    (Program (p)
+      (program src (contract-type* ...) ((struct-name* type*) ...) ((export-name* name*) ...) pelt* ...) => (program #f pelt* ...))
+    (Program-Element (pelt)
+      cdefn
+      ndecl
+      wdecl
+      ldecl
+      lconstructor
+      export-tdefn)
+    (Circuit-Definition (cdefn)
+      (circuit src function-name (arg* ...) type expr) =>
+        (circuit function-name (arg* 0 ...) 4 type #f expr))
+    (Native-Declaration (ndecl)
+      (native src function-name native-entry (arg* ...) type) =>
+        (native function-name (arg* 0 ...) 4 type))
+    (Witness-Declaration (wdecl)
+      (witness src function-name (arg* ...) type) =>
+        (witness function-name (arg* 0 ...) 4 type))
+    (Export-Type-Definition (export-tdefn)
+      (export-typedef src type-name (tvar-name* ...) type) =>
+        (export-typedef type-name (tvar-name* ...) #f type))
+    (Ledger-Declaration (ldecl)
+      (public-ledger-declaration src ledger-field-name type) =>
+        (public-ledger-declaration #f ledger-field-name #f type))
+    (Ledger-Constructor (lconstructor)
+      (constructor src (arg* ...) expr)      => (constructor (arg* 0 ...) #f expr))
+    (ADT-Runtime-Op (adt-rt-op)
+      (ledger-op (arg* ...) result-type runtime-code) =>
+        ledger-op)
+    (ADT-Op (adt-op)
+      (ledger-op op-class ((var-name* type* (maybe discloses?)) ...) type vm-code) =>
+        ledger-op)
+    (ADT-Op-Class (op-class)
+      ledger-op-class
+      (ledger-op-class nat nat^))
+    (Public-Ledger-ADT-Arg (adt-arg)
+      nat
+      type)
+    (Argument (arg local)
+      (var-name type) => (bracket var-name type))
+    (Expression (expr index)
+      (quote src datum)                       => datum
+      (var-ref src var-name)                  => var-name
+      (ledger-ref src ledger-field-name)      => ledger-field-name
+      (default src type)                      => (default type)
+      (if src expr0 expr1 expr2)              => (if expr0 3 expr1 3 expr2)
+      (elt-ref src expr elt-name nat)         => (elt-ref expr elt-name nat)
+      (emit src type expr)                    => (emit expr)
+      (serialize src len type expr)           => (serialize len type expr)
+      (deserialize src len type expr)         => (deserialize len type expr)
+      (enum-ref src type elt-name)            => (enum-ref type elt-name)
+      ; for tuple, the elements can have different, even unrelated types
+      (tuple src tuple-arg* ...)              => (tuple tuple-arg* ...)
+      ; for vector, the elements must all have the same type
+      (vector src tuple-arg* ...)             => (vector #f tuple-arg* ...)
+      ; for tuple-ref and tuple-slice, the index (nat) is constant, and expr's elements can have different, even unrelated types
+      (tuple-ref src expr kindex)             => (tuple-ref #f expr #f kindex)
+      (tuple-slice src type expr kindex len)  => (tuple-slice #f expr #f kindex #f len)
+      ; for vector-ref and vector-slice, index is an arbitrary expression and expr's elements must all have the same type
+      ; NB: index must eventually reduce to a constant, but that manifests in a later language.  for now, it is constrained
+      ; only to have some Uint type
+      (vector-ref src type expr index)        => (vector-ref #f expr #f index)
+      (vector-slice src type expr index len)  => (vector-slice #f expr #f index #f len)
+      ; for bytes-ref and bytes-slice, index is an arbitrary expression and expr must have a tbytes type
+      ; NB: index must eventually reduce to a constant, but that manifests in a later language.  for now, it is constrained
+      ; only to have some Uint type
+      (bytes-ref src type expr index)         => (bytes-ref #f expr #f index)
+      (bytes-slice src type expr index len)   => (bytes-slice #f expr #f index #f len)
+      (+ src type expr1 expr2 )               => (+ type expr1 expr2)
+      (- src type expr1 expr2)                => (- type expr1 expr2)
+      (* src type expr1 expr2)                => (* type expr1 expr2)
+      (< src bits expr1 expr2)                => (< expr1 expr2)
+      (<= src bits expr1 expr2)               => (<= expr1 3 expr2)
+      (> src bits expr1 expr2)                => (> expr1 expr2)
+      (>= src bits expr1 expr2)               => (>= expr1 3 expr2)
+      (== src type expr1 expr2)               => (== expr1 3 expr2)
+      (!= src type expr1 expr2)               => (!= expr1 3 expr2)
+      (map src len fun map-arg map-arg* ...)  =>
+        (map #f fun #f map-arg #f map-arg* ...)
+      (fold src len fun (expr0 type0) map-arg map-arg* ...) =>
+        (fold #f fun #f expr0 #f map-arg #f map-arg* ...)
+      (call src fun expr* ...)                => (call fun #f expr* ...)
+      (new src type expr* ...)                => (new type #f expr* ...)
+      (seq src expr* ... expr)                => (seq #f expr* ... #f expr)
+      (let* src ([local* expr*] ...) expr)    => (let* ([bracket local* 0 expr*] 0 ...) #f expr)
+      (assert src expr mesg)                  => (assert expr mesg)
+      (field->bytes src len ftype expr)       => (field->bytes len ftype #f expr)
+      (cast-from-bytes src type len expr)     => (cast-from-bytes type len #f expr)
+      (vector->bytes src len expr)            => (vector->bytes len #f expr)
+      (bytes->vector src len expr)            => (bytes->vector len #f expr)
+
+      ;; type is numeric (tfield or tunsigned), type^ is tenum
+      (cast-from-enum src type type^ expr)    => (cast-from-enum type type^ #f expr)
+
+      ;; type is tenum, type^ is numeric
+      (cast-to-enum src type type^ expr)      => (cast-to-enum type type^ #f expr)
+
+      ;; Cast from `type` to a distinct type `(tfield ftype)`, `type` is numeric (tfield or tunsigned).
+      (cast-to-field src ftype type expr)     => (cast-to-field ftype type #f expr)
+
+      ;; Cast from `(tfield ftype)` to `(tunsigned nat)`.
+      (cast-from-field src nat ftype expr)    => (cast-from-field nat ftype #f expr)
+      (safe-cast src type type^ expr)         => (safe-cast type 10 type^ #f expr)
+
+      ;; Cast from `(tunsigned nat2)` to `(tunsigned nat1)` where nat2 > nat1.
+      ;; TODO(kmillikin): the order of these is reversed from other casting operations.  Flip them.
+      (downcast-unsigned src nat2 nat1 expr)  => (downcast-unsigned nat2 nat1 #f expr)
+      (disclose src expr)                     => (disclose expr)
+      (ledger-call src ledger-op (maybe sugar) expr expr* ...) =>
+        (ledger-call ledger-op #f expr #f expr* ...)
+      (contract-call src elt-name (expr type) expr* ...) =>
+        (contract-call elt-name 4 (expr 0 type) #f expr* ...)
+      (return src expr)                       => expr
+      )
+    (Map-Argument (map-arg)
+      ; type = expr's type; type^ = type to which each element of expr's value must be cast
+      (expr type type^)                  => expr
+      )
+    (Tuple-Argument (tuple-arg)
+      (single src expr)                      => expr
+      (spread src nat expr)                  => (spread nat #f expr)
+      )
+    (Function (fun)
+      (fref src function-name)               => function-name
+      (circuit src (arg* ...) type expr)     => (circuit (arg* 0 ...) 4 type #f expr))
+    (Type (type)
+      tvar-name ; should appear only in external type declarations
+      (tboolean src)                         => (tboolean)
+      (tfield src ftype)                     => (tfield ftype)
+      (tunsigned src nat)                    => (tunsigned nat)
+      (tpoint src ctype)                     => (tpoint ctype)
+      (tbytes src len)                       => (tbytes len)
+      (topaque src opaque-type)              => (topaque opaque-type)
+      (tvector src len type)                 => (tvector len type)
+      (ttuple src type* ...)                 => (ttuple type* ...)
+      contract-type
+      (tstruct src struct-name (elt-name* type*) ...) =>
+        (tstruct struct-name #f (elt-name* type*) ...)
+      (tenum src enum-name elt-name elt-name* ...) =>
+        (tenum enum-name #f elt-name #f elt-name* ...)
+      (tadt src adt-name ([adt-formal* adt-arg*] ...) vm-expr (adt-op* ...) (adt-rt-op* ...)) =>
+        (adt-name #f adt-arg* ...)
+      (talias src nominal? type-name type) =>
+        (talias nominal? type-name #f type)
+      (tundeclared)
+      (tunknown))
+    (Field-Type (ftype)
+      (field-native)
+      (field-base ctype)
+      (field-scalar ctype))
+    (Curve-Type (ctype)
+      (curve-jubjub)
+      (curve-secp256k1))
+    (Contract-Type (contract-type)
+      (tcontract src contract-name (elt-name* pure-dcl* (type** ...) type*) ...) =>
+        (tcontract contract-name #f (elt-name* pure-dcl* (type** ...) #f type*) ...))
+    )
+
+  (define-language/pretty Lnotundeclared (extends Ltypes)
+    (Type (type)
+      (- (tundeclared))))
+
+  (define-language/pretty Loneledger (extends Lnotundeclared)
+    (Program-Element (pelt)
+      (- lconstructor)
+      (+ kdecl))
+    (Kernel-Declaration (kdecl)
+      (+ (kernel-declaration public-binding)))
+    (Ledger-Declaration (ldecl)
+      (- (public-ledger-declaration src ledger-field-name type))
+      (+ (public-ledger-declaration public-binding* ... lconstructor) =>
+           (public-ledger-declaration #f public-binding* ... #f lconstructor)))
+    (Public-Ledger-Binding (public-binding)
+      (+ (src ledger-field-name type) => (ledger-field-name type)))
+    (Expression (expr index)
+      (- (ledger-ref src ledger-field-name)
+         (ledger-call src ledger-op (maybe sugar) expr expr* ...))
+      (+ (public-ledger src ledger-field-name (maybe sugar) accessor* ...) =>
+           (public-ledger ledger-field-name #f accessor* ...)))
+    (Ledger-Accessor (accessor)
+      (+ (src ledger-op expr* ...)              => (ledger-op #f expr* ...))))
+
+  (define-language/pretty Lnodca (extends Loneledger)
+    (Expression (expr index)
+      (- (call src fun expr* ...))
+      (+ (call src function-name expr* ...) => (call function-name #f expr* ...))))
+
+  ; FIXME: maximum-ledger-segment-length should be defined by the ledger
+  (define maximum-ledger-segment-length 15)
+  (define (path-index? x)
+    (and (fixnum? x)
+         (fx>= x 0)
+         (fx< x maximum-ledger-segment-length)))
+
+  (define-language/pretty Lwithpaths0 (extends Lnodca)
+    (terminals
+      (+ (path-index (path-index))))
+    (Ledger-Declaration (ldecl)
+      (- (public-ledger-declaration public-binding* ... lconstructor))
+      (+ (public-ledger-declaration pl-array lconstructor) =>
+           (public-ledger-declaration #f pl-array #f lconstructor)))
+    (Public-Ledger-Array (pl-array)
+      (+ (public-ledger-array pl-array-elt ...) => (pl-array-elt 0 ...)))
+    (Public-Ledger-Array-Element (pl-array-elt)
+      (+ pl-array
+         public-binding))
+    (Public-Ledger-Binding (public-binding)
+      (- (src ledger-field-name type))
+      (+ (src ledger-field-name (path-index* ...) type) =>
+           (ledger-field-name #f (path-index* ...) #f type))))
+
+  (define-language/pretty Lwithpaths (extends Lwithpaths0)
+    (Expression (expr index)
+      (- (public-ledger src ledger-field-name (maybe sugar) accessor* ...))
+      ; for public ledger operation fldname.op1(...).op2(...).op3(), src is the src of fldname
+      ; and src^ is the src of the "." before op3.  the src for the "." before op1
+      ; and the src for the "." before op2 are recorded in the path-elts
+      (+ (public-ledger src ledger-field-name (maybe sugar) (path-elt ...) src^ adt-op expr* ...) =>
+           (public-ledger ledger-field-name (path-elt ...) adt-op #f expr* ...)))
+    (ADT-Op (adt-op)
+      (- (ledger-op op-class ((var-name* type* (maybe discloses?)) ...) type vm-code))
+      (+ (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) ((var-name* type* (maybe discloses?)) ...) type vm-code) =>
+           ledger-op))
+    (Ledger-Accessor (accessor)
+      (- (src ledger-op expr* ...)))
+    (Path-Element (path-elt)
+      (+ path-index
+         (src type expr) => (type expr))))
+
+  (define-language/pretty Lnodisclose (extends Lwithpaths)
+    (ADT-Op (adt-op)
+      (- (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) ((var-name* type* (maybe discloses?)) ...) type vm-code))
+      (+ (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) ((var-name* type*) ...) type vm-code) =>
+         ledger-op))
+    (Expression (expr index)
+      (- (disclose src expr))))
+
+  (define-language/pretty Lnoserialize (extends Lnodisclose)
+    (Expression (expr index)
+      (- (serialize src len type expr)
+         (deserialize src len type expr)
+         (emit src type expr))
+      ; expr here is serialized; type is retained for downstream type-checkers
+      (+ (emit src type len expr) => (emit expr))))
+
+  (define-language/pretty Lloweredemit (extends Lnoserialize)
+    (terminals
+      (- (field (nat kindex)))
+      (+ (field (nat kindex event-version event-tag))))
+    (Program (p)
+      (- (program src (contract-type* ...) ((struct-name* type*) ...) ((export-name* name*) ...) pelt* ...))
+      (+ (program src (contract-type* ...) ((export-name* name*) ...) pelt* ...) => (program #f pelt* ...)))
+    (Expression (expr index)
+      (- (emit src type len expr))
+      (+ (emit src event-version event-tag len expr vm-code) =>
+           (emit event-version event-tag expr))))
+
+  (define-language/pretty Ltypescript (extends Lloweredemit)
+    (terminals
+      (- (id (name var-name function-name ledger-field-name)))
+      (+ (id (name var-name function-name ledger-field-name descriptor-id))
+         (hashtable (descriptor-table))))
+    (Program (p)
+      (- (program src (contract-type* ...) ((export-name* name*) ...) pelt* ...))
+      (+ (program src (contract-type* ...) ((export-name* name*) ...) tdescs pelt* ...) => (program #f tdescs #f pelt* ...)))
+    (Type-Descriptors (tdescs)
+      (+ (type-descriptors descriptor-table (descriptor-id* type*) ...) =>
+           (type-descriptors #f (descriptor-id* type*) ...)))
+    (Circuit-Definition (cdefn)
+      (- (circuit src function-name (arg* ...) type expr))
+      (+ (circuit src function-name (arg* ...) type stmt) =>
+         (circuit function-name (arg* 0 ...) 4 type #f stmt)))
+    (Ledger-Constructor (lconstructor)
+      (- (constructor src (arg* ...) expr))
+      (+ (constructor src (arg* ...) stmt)       => (constructor (arg* 0 ...) #f stmt)))
+    (Function (fun)
+      (- (circuit src (arg* ...) type expr))
+      (+ (circuit src (arg* ...) type stmt)      => (circuit (arg* 0 ...) 4 type #f stmt)))
+    (Expression (expr index)
+      (- (let* src ([local* expr*] ...) expr)
+         (return src expr))
+      (+ (not src expr)                          => (not expr)
+         (and src expr1 expr2)                   => (and expr1 4 expr2)
+         (or src expr1 expr2)                    => (or expr1 3 expr2)
+         (= src var-name expr)                   => (= var-name expr)))
+    (Statement (stmt)
+      (+ (if src expr0 stmt1)                    => (if expr0 3 stmt1)
+         (if src expr0 stmt1 stmt2)              => (if expr0 3 stmt1 3 stmt2)
+         (seq src stmt* ... stmt)                => (seq #f stmt* ... #f stmt)
+         (const src local expr)                  => (const local #f expr)
+         (const src (local* ...))                => (const (local* 0 ...))
+         (statement-expression expr)             => expr)))
+
+  (define-language/pretty Lposttypescript (extends Lloweredemit)
+    (terminals
+      (- (symbol (export-name contract-name struct-name enum-name type-name tvar-name elt-name ledger-op ledger-op-class adt-name adt-formal)))
+      (+ (symbol (export-name contract-name struct-name enum-name elt-name ledger-op ledger-op-class adt-name adt-formal)))
+      (- (boolean (pure-dcl nominal)))
+      (+ (boolean (pure-dcl)))
+      (- (procedure (result-type runtime-code))))
+    (Program (p)
+      (- (program src (contract-type* ...) ((export-name* name*) ...) pelt* ...))
+      (+ (program src ((export-name* name*) ...) pelt* ...) => (program #f pelt* ...)))
+    (Program-Element (pelt)
+      (- export-tdefn))
+    (Export-Type-Definition (export-tdefn)
+      (- (export-typedef src type-name (tvar-name* ...) type)))
+    (ADT-Runtime-Op (adt-rt-op)
+      (- (ledger-op (arg* ...) result-type runtime-code)))
+    (Expression (expr index)
+      (- (elt-ref src expr elt-name nat)
+         (return src expr)
+         (<= src bits expr1 expr2)
+         (> src bits expr1 expr2)
+         (>= src bits expr1 expr2)
+         (!= src type expr1 expr2)
+         (cast-from-bytes src type len expr))
+      (+ (elt-ref src expr elt-name)       => (elt-ref expr elt-name)
+         (bytes->field src ftype len expr) => (bytes->field ftype len expr)))
+    (Type (type)
+      (- tvar-name
+         (talias src nominal? type-name type)
+         (tadt src adt-name ([adt-formal* adt-arg*] ...) vm-expr (adt-op* ...) (adt-rt-op* ...)))
+      (+ (tadt src adt-name ([adt-formal* adt-arg*] ...) vm-expr (adt-op* ...)) =>
+           (adt-name #f adt-arg* ...))))
+
+  (define-language/pretty Lnoenums (extends Lposttypescript)
+    (terminals
+      (- (symbol (export-name contract-name struct-name enum-name elt-name ledger-op ledger-op-class adt-name adt-formal)))
+      (+ (symbol (export-name contract-name struct-name elt-name ledger-op ledger-op-class adt-name adt-formal))))
+    (Expression (expr index)
+      (- (enum-ref src type elt-name)
+         (cast-from-enum src type type^ expr)
+         (cast-to-enum src type type^ expr)))
+    (Type (type)
+      (- (tenum src enum-name elt-name elt-name* ...))))
+
+  (define-language/pretty Lunrolled (extends Lnoenums)
+    (Expression (expr index)
+      (- (map src len fun map-arg map-arg* ...)
+         (fold src len fun (expr0 type0) map-arg map-arg* ...))
+      (+ (flet src function-name (src^ (arg* ...) type expr^) expr) =>
+           (flet [bracket function-name 0 (circuit (arg* 0 ...) 4 type #f expr^)] #f expr)))
+    (Map-Argument (map-arg)
+      (- (expr type type^))
+      )
+    (Function (fun)
+      (- (fref src function-name)
+         (circuit src (arg* ...) type expr))))
+
+  (define-language/pretty Linlined (extends Lunrolled)
+    (Expression (expr index)
+      (- (flet src function-name (src^ (arg* ...) type expr^) expr))))
+
+  (define-language/pretty Lnosafecast (extends Linlined)
+    (Expression (expr index)
+      (- (safe-cast src type type^ expr))))
+
+  (define-language/pretty Lnovectorref (extends Lnosafecast)
+    (Ledger-Declaration (ldecl)
+      (- (public-ledger-declaration pl-array lconstructor))
+      (+ (public-ledger-declaration pl-array) =>
+           (public-ledger-declaration #f pl-array)))
+    (Ledger-Constructor (lconstructor)
+      (- (constructor src (arg* ...) expr)))
+    (Expression (expr index)
+      (- (bytes-ref src type expr index)
+         (vector-ref src type expr index)
+         (tuple-slice src type expr kindex len)
+         (bytes-slice src type expr index len)
+         (vector-slice src type expr index len))
+      (+ (bytes-ref src expr kindex) => (bytes-ref expr kindex))))
+
+  (define-language/pretty Lcircuit (entry Program)
+    (terminals
+      (field (nat event-version event-tag))
+      (len (len))
+      (kindex (kindex))
+      (bits (bits))
+      (maybe-bits (mbits))
+      (boolean (pure-dcl))
+      (symbol (export-name struct-name contract-name elt-name ledger-op ledger-op-class adt-name adt-formal))
+      (id (name var-name function-name ledger-field-name))
+      (string (mesg opaque-type file sugar))
+      (datum (datum))
+      (source-object (src))
+      (path-index (path-index))
+      (vm-expr (vm-expr))
+      (vm-code (vm-code))
+      (native-entry (native-entry))
+      )
+    (Program (p)
+      (program src ((export-name* name*) ...) pelt* ...) => (program #f pelt* ...))
+    (Program-Element (pelt) cdefn ndecl wdecl kdecl ldecl)
+    (Native-Declaration (ndecl)
+      (native src function-name native-entry (arg* ...) type) => (native function-name (arg* 0 ...) 4 type))
+    (Witness-Declaration (wdecl)
+      (witness src function-name (arg* ...) type) => (witness function-name (arg* 0 ...) 4 type))
+    (Circuit-Definition (cdefn)
+      (circuit src function-name (arg* ...) type stmt* ... triv) => (circuit function-name (arg* 0 ...) 4 type #f stmt* ... #f triv))
+    (Kernel-Declaration (kdecl)
+      (kernel-declaration public-binding))
+    (Ledger-Declaration (ldecl)
+      (public-ledger-declaration pl-array) => (public-ledger-declaration #f pl-array))
+    (Public-Ledger-Array (pl-array)
+      (public-ledger-array pl-array-elt ...) => (pl-array-elt 0 ...))
+    (Public-Ledger-Array-Element (pl-array-elt)
+      pl-array
+      public-binding)
+    (Public-Ledger-Binding (public-binding)
+      (src ledger-field-name (path-index* ...) type) => (ledger-field-name #f (path-index* ...) #f type)
+      )
+    (ADT-Op (adt-op)
+      (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) ((var-name* type*) ...) type vm-code) =>
+        ledger-op)
+    (ADT-Op-Class (op-class)
+      ledger-op-class
+      (ledger-op-class nat nat^))
+    (Public-Ledger-ADT-Arg (adt-arg)
+      nat
+      type)
+    (Argument (arg)
+      (var-name type) => (bracket var-name type))
+    (Statement (stmt)
+      (= test var-name rhs)             => (= test var-name 2 rhs)
+      (assert src test mesg)            => (assert test #f mesg))
+    (Rhs (rhs)
+      triv
+      (default type)
+      (+ type triv1 triv2)
+      (- type triv1 triv2)
+      (* type triv1 triv2)
+      (< bits triv1 triv2)
+      (== triv1 triv2)                       => (== triv1 3 triv2)
+      (select triv0 triv1 triv2)             => (select triv0 triv1 triv2)
+      (tuple tuple-arg* ...)
+      (vector tuple-arg* ...)
+      (tuple-ref triv nat)
+      (bytes-ref triv nat)
+      (new type triv* ...)                   => (new type #f triv* ...)
+      (elt-ref triv elt-name)
+      (vector->bytes len triv)               => (vector->bytes len triv)
+      (bytes->vector len triv)               => (bytes->vector len triv)
+      (call src function-name triv* ...)     => (call function-name #f triv* ...)
+      (public-ledger src ledger-field-name (maybe sugar) (path-elt* ...) src^ adt-op triv* ...) =>
+        (public-ledger ledger-field-name (path-elt* ...) adt-op #f triv* ...)
+      (emit src event-version event-tag len triv vm-code) =>
+        (emit event-version event-tag len triv)
+      (contract-call src elt-name (triv type) triv* ...) =>
+        (contract-call elt-name 4 (triv 0 type) #f triv* ...)
+      (field->bytes src len ftype triv)      => (field->bytes len ftype triv)
+      (bytes->field src ftype len triv)      => (bytes->field ftype len triv)
+      (cast-to-field src ftype type triv)    => (cast-to-field ftype type #f triv)
+      (cast-from-field src nat ftype triv)   => (cast-from-field nat ftype #f triv)
+      (downcast-unsigned src nat2 nat1 triv) => (downcast-unsigned nat2 nat1 triv)
+      )
+    (Triv (triv test)
+      var-name
+      (quote datum)                          => datum
+      )
+    (Tuple-Argument (tuple-arg)
+      (single src triv)                      => triv
+      (spread src nat triv)                  => (spread nat triv)
+      )
+    (Path-Element (path-elt)
+      path-index
+      (src type triv) => (type triv))
+    (Type (type)
+      (tboolean src)                         => (tboolean)
+      (tfield src ftype)                     => (tfield ftype)
+      (tunsigned src nat)                    => (tunsigned nat)
+      (tpoint src ctype)                     => (tpoint ctype)
+      (tbytes src len)                       => (tbytes len)
+      (topaque src opaque-type)              => (topaque opaque-type)
+      (tvector src len type)                 => (tvector len type)
+      (ttuple src type* ...)                 => (ttuple type* ...)
+      (tcontract src contract-name (elt-name* pure-dcl* (type** ...) type*) ...) =>
+        (tcontract contract-name #f (elt-name* pure-dcl* (type** ...) #f type*) ...)
+      (tstruct src struct-name (elt-name* type*) ...) =>
+        (tstruct struct-name #f (elt-name* type*) ...)
+      (tadt src adt-name ([adt-formal* adt-arg*] ...) vm-expr (adt-op* ...)) =>
+        (adt-name #f adt-arg* ...)
+      (tunknown))
+    (Field-Type (ftype)
+      (field-native)
+      (field-base ctype)
+      (field-scalar ctype))
+    (Curve-Type (ctype)
+      (curve-jubjub)
+      (curve-secp256k1))
+    )
+
+  (define-language/pretty Lflattened (extends Lcircuit)
+    (terminals
+      (- (symbol (export-name struct-name contract-name elt-name ledger-op ledger-op-class adt-name adt-formal))
+         (boolean (pure-dcl))
+         (datum (datum))
+         (string (mesg opaque-type file sugar)))
+      (+ (symbol (export-name contract-name elt-name ledger-op ledger-op-class adt-name adt-formal ledger-op-formal))
+         (boolean (pure-dcl safe))
+         (field-bytes (nb))
+         (string (mesg opaque-type file sugar zkir-type))))
+    (Circuit-Definition (cdefn)
+      (- (circuit src function-name (arg* ...) type stmt* ... triv))
+      (+ (circuit src function-name (arg* ...) type stmt* ... (triv* ...)) =>
+            (circuit function-name (arg* 0 ...) 4 type #f stmt* ... #f (triv* ...))))
+    (Public-Ledger-Binding (public-binding)
+      (- (src ledger-field-name (path-index* ...) type))
+      (+ (src ledger-field-name (path-index* ...) primitive-type) =>
+           (ledger-field-name #f (path-index* ...) #f primitive-type)))
+    (ADT-Op (adt-op)
+      (- (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) ((var-name* type*) ...) type vm-code))
+      (+ (ledger-op op-class (adt-name (adt-formal* adt-arg*) ...) (ledger-op-formal* ...) (type* ...) type vm-code) =>
+           ledger-op))
+    (Public-Ledger-ADT-Arg (adt-arg)
+      (- type)
+      (+ type))
+    (Argument (arg)
+      (- (var-name type))
+      (+ (argument (var-name* ...) type)))
+    (Statement (stmt)
+      (- (= test var-name rhs))
+      ; nanopass limitation: swap the two clauses below and the (= (var-name ...) multiple) pattern
+      ; is rejected. (reported to Andy Keep 01/02/2024)
+      (+ (= test (var-name* ...) multiple) =>  (= test (var-name* 0 ...) 2 multiple)
+         (= test var-name single)          =>  (= test var-name 2 single)))
+    (Rhs (rhs)
+      (- triv
+         (default type)
+         (+ type triv1 triv2)
+         (- type triv1 triv2)
+         (* type triv1 triv2)
+         (< bits triv1 triv2)
+         (== triv1 triv2)
+         (select triv0 triv1 triv2)
+         (tuple tuple-arg* ...)
+         (vector tuple-arg* ...)
+         (tuple-ref triv nat)
+         (bytes-ref triv nat)
+         (new type triv* ...)
+         (elt-ref triv elt-name)
+         (vector->bytes len triv)
+         (bytes->vector len triv)
+         (call src function-name triv* ...)
+         (public-ledger src ledger-field-name (maybe sugar) (path-elt* ...) src^ adt-op triv* ...)
+         (emit src event-version event-tag len triv vm-code)
+         (contract-call src elt-name (triv type) triv* ...)
+         (field->bytes src len ftype triv)
+         (bytes->field src ftype len triv)
+         (downcast-unsigned src nat2 nat1 triv)))
+    (Single (single)
+      (+ triv
+         (+ primitive-type triv1 triv2)
+         (- primitive-type triv1 triv2)
+         (* primitive-type triv1 triv2)
+         (< bits triv1 triv2)
+         (== triv1 triv2)                            => (== triv1 3 triv2)
+         (select triv0 triv1 triv2)                  => (select triv0 triv1 triv2)
+         (bytes-ref triv nat)
+         (bytes->field src ftype len triv1 triv2)    => (bytes->field ftype len #f triv1 #f triv2)
+         (vector->bytes triv triv* ...)              => (vector->bytes triv triv* ...) ; result holds one field's worth of bytes
+         (cast-to-field ftype primitive-type triv)
+         (cast-from-field src safe nat ftype triv)   => (cast-from-field safe nat ftype triv)
+         (downcast-unsigned src safe nat2 nat1 triv) => (downcast-unsigned safe nat2 nat1 triv)
+         ))
+    (Multiple (multiple)
+      (+ (call src function-name triv* ...)        => (call function-name #f triv* ...)
+         (default zkir-type)
+         (field->bytes src len ftype triv)         => (field->bytes len ftype #f triv)
+         (bytes->vector triv)                      => (bytes->vector #f triv) ; triv holds one field's worth of bytes
+         (div-mod-power-of-two triv bits)
+         (public-ledger src ledger-field-name (maybe sugar) (path-elt* ...) src^ adt-op triv* ...) =>
+           (public-ledger ledger-field-name (path-elt* 0 ...) adt-op #f triv* ...)
+         ; Receiver of a cross-contract call has Bytes<32> shape: its alignment is
+         ; (abytes 32) and it occupies multiple primitive-types (e.g. two `tfield`s).
+         ; So the receiver-triv slot is a list, not a single triv.
+         (emit src event-version event-tag len triv* ... vm-code) =>
+           (emit event-version event-tag len triv* ...)
+         (contract-call src elt-name ((recv* ...) primitive-type) triv* ...) =>
+           (contract-call elt-name 4 ((recv* 0 ...) primitive-type) #f triv* ...)))
+    (Triv (triv test recv)
+      (- (quote datum))
+      (+ nat))
+    (Tuple-Argument (tuple-arg)
+      (- (single src triv)
+         (spread src nat triv)))
+    (Path-Element (path-elt)
+      (- (src type triv))
+      (+ (src type triv* ...) => (type triv* ...)))
+    (Alignment (alignment)
+      (+ (acompress)
+         (abytes nat)
+         (afield)
+         (aadt)
+         (anative zkir-type)))
+    (Type (type)
+      (- (tboolean src)
+         (tfield src ftype)
+         (tunsigned src nat)
+         (tpoint src ctype)
+         (tbytes src len)
+         (topaque src opaque-type)
+         (tvector src len type)
+         (ttuple src type* ...)
+         (tstruct src struct-name (elt-name* type*) ...)
+         (tcontract src contract-name (elt-name* pure-dcl* (type** ...) type*) ...)
+         (tunknown))
+      (+ (ty (alignment* ...) (primitive-type* ...))))
+    (Primitive-Type (primitive-type)
+      (+ (tfield ftype)
+         (tunsigned nat)
+         (tpoint ctype)
+         (topaque opaque-type)
+         (tcontract contract-name (elt-name* pure-dcl* (type** ...) type*) ...) =>
+           (tcontract contract-name #f (elt-name* pure-dcl* (type** ...) #f type*) ...)
+         (tadt src adt-name ([adt-formal* adt-arg*] ...) vm-expr (adt-op* ...)) =>
+           (adt-name #f adt-arg* ...))))
+
+  (define-language/pretty Lzkir (entry Program)
+    (terminals
+      (field (arg-count imm nat))
+      (zkir-field-rep (fr))
+      (source-object (src))
+      (id (var-name))
+      (symbol (name))
+      (string (zkir-type))
+      ;; TODO(661) Implement alignment in this language instead of using it from an earlier one.
+      ;; https://github.com/LFDT-Minokawa/compact/issues/661
+      (Lflattened-Alignment (alignment)))
+    (Program (p)
+      (program src cdefn* ...) => (program #f cdefn* ...))
+    (Circuit-Definition (cdefn)
+      (circuit src (name* ...) ((var-name* zkir-type*) ...) (zkir-type0* ...) instr* ...) =>
+        (circuit (name* ...) ((var-name* zkir-type*) 0 ...) #f (zkir-type0* 0 ...) #f instr* ...))
+    (Instruction (instr)
+      (add outp inp0 inp1)
+      (assert inp)
+      (bytes32_from_low_high outp inp0 inp1)
+      (bytes32_into_low_high outp0 outp1 inp)
+      (cond_select outp inp0 inp1 inp2)
+      (constrain_bits inp imm)
+      (constrain_eq inp0 inp1)
+      (constrain_to_boolean inp)
+      (copy outp inp)
+      (div_mod_power_of_two outp0 outp1 inp imm)  ;; outps=(quotient remainder)
+      (ec_mul outp inp0 inp1)
+      (ec_mul_generator outp0 inp)
+      (encode (outp* ...) inp)
+      (from_bytes32 zkir-type outp inp)
+      (from_coordinates outp inp0 inp1)
+      (hash_to_curve outp inp* ...)
+      (impact inp inp* ...)
+      (into_bytes32 outp inp)
+      (into_coordinates outp0 outp1 inp)
+      (inv outp inp)
+      (jubjub_scalar_from_native outp inp)
+      (keccak256 outp (alignment* ...) inp* ...)
+      (less_than outp inp0 inp1 imm)
+      (mul outp inp0 inp1)
+      (neg outp inp)
+      (not outp inp)
+      (output inp* ...)
+      (persistent_hash outp (alignment* ...) inp* ...)
+      (private_input zkir-type outp)
+      (private_input zkir-type outp inp)
+      (public_input zkir-type outp)
+      (public_input zkir-type outp inp)
+      (reconstitute_field outp inp0 inp1 imm)
+      (reverse_bytes outp inp)
+      (test_eq outp inp0 inp1)
+      (transient_hash outp inp* ...))
+    (Input (inp)
+      fr
+      var-name)
+    (Output (outp)
+      var-name))
+)

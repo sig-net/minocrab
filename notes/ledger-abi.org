@@ -449,4 +449,5 @@ Practical notes:
   midnight-ledger quirk to keep in mind if we ever emit unused inputs.
 - Corpus gap: add =compiler/**/*.ss= (and =runtime/src/compact-types.ts=)
   to the compact source paths in =corpus/sources.json= so the lowering
-  ground truth is pinned locally.
+  ground truth is pinned locally. (DONE 2026-08-13: =extra= field in
+  sources.json + fetch.sh support; 102 files pinned.)
