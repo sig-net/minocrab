@@ -29,6 +29,6 @@ ones exercise cross-contract calling.
 * TODO
 - [ ] Add these three repos (pinned revs) to corpus/sources.json + fetch.sh
       once the public-corpus build lands, then recompile.
-- [ ] For M7: confirm with dmd that "cross chain deposit and withdrawal
-      contracts" = erc20-vault (+ Signet dependency), or whether
-      signet-contract.compact is also in scope.
+- [X] For M7: confirmed by dmd (2026-08-13) — the target is erc20-vault
+      (+ its Signet singleton dependency for cross-contract calls);
+      signet-contract.compact is NOT in scope for M7.

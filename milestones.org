@@ -79,6 +79,10 @@ Exit criteria: a version bump is a routine chore, not a project.
 Benchmark the sig-net cross chain deposit and withdrawal contracts using
 MinoCrab and using Compact, as a presentable deliverable (ideally showing
 we're better than Compact).
+Confirmed target (dmd, 2026-08-13): the erc20-vault contract
+(sig-net/midnight-examples, examples/erc20-vault) — plus its Signet singleton
+dependency (sig-net/midnight-integration) as needed for the cross-contract
+calls. See notes/signet-corpus.org.
 - [ ] Both contracts running under both toolchains at the same pinned versions,
       with the M3 correctness harness green on the MinoCrab versions.
 - [ ] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
