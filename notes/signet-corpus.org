@@ -32,3 +32,14 @@ ones exercise cross-contract calling.
 - [X] For M7: confirmed by dmd (2026-08-13) — the target is erc20-vault
       (+ its Signet singleton dependency for cross-contract calls);
       signet-contract.compact is NOT in scope for M7.
+
+* erc20-vault ledger-op inventory (2026-08-13, for the M4 ledger layer)
+Grep of the vault: kernel.self ×11, Map .member ×9 / .lookup ×8 /
+.insert ×6, Counter .increment ×5. Ledger fields: Maps (RequestId →
+Bytes<32>), Counters, Cells (Bytes<20>/Bytes<32>/Uint<64>/Secp256k1Point),
+sealed cells, and the struct-heavy SignBidirectionalEventMap from Signet.
+So the ledger layer's priority order is: Kernel preamble + Cell + Counter
+(in flight), then Map insert/lookup/member, then the event-map composite.
+stdlib-wise the vault leans on secp256k1EcdsaVerify (DONE in
+minocrab-std::v3), Maybe/Either, coin circuits (mint/send — need kernel
+ops).
