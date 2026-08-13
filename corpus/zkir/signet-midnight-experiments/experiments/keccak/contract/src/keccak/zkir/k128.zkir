@@ -1,0 +1,28 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%data.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.1", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.2", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.3", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.4", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "constrain_bits", "val": "%data.0", "bits": 32 },
+    { "op": "constrain_bits", "val": "%data.1", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.2", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.3", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.4", "bits": 248 },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0e", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
+    { "op": "keccak256", "output": "%bytes.5", "alignment": [{ "tag": "atom", "value": { "length": 128, "tag": "bytes" } }], "inputs": ["%data.0", "%data.1", "%data.2", "%data.3", "%data.4"] },
+    { "op": "bytes32_into_low_high", "outputs": ["%tmp.6", "%tmp.7"], "bytes": "%bytes.5" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x01", "0x20", "%tmp.7", "%tmp.6"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "pack",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vec",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 8
+      }
+    },
+    {
+      "name": "unpack",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 8,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "vectorToUint64",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vec",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "bytesToUint64",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "wit_unpackBytes",
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Vector",
+        "length": 8,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "toImpure",
+      "index": 0,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    }
+  ]
+}

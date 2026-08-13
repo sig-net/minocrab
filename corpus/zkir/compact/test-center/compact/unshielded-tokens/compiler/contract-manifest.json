@@ -1,0 +1,135 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 34699,
+      "hash": "558dce8325480a0e009c4d2f915e129c48cf9f573f38a05d1729b9b3c4784617"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 45242,
+      "hash": "effe587632b9e7bd4fbe0d28699b401ad4d3bb2c777dad2ae2bce58324d71991"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 160357,
+      "hash": "fa0eaf92ee7f837d392484dae06023c81e6768cc3bfc453b0471728384d37682"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 7948,
+      "hash": "8e9a80f00e17e29c61b534db385ae0611da3e931b29b494a8f3ec5dbbc4bece9"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "getUnshieldedBalanceGtTest.zkir": {
+      "type": "file",
+      "size": 3728,
+      "hash": "29800a85f21b8ff27538a5eb54bab6efdca2481cb5b78fc8d3dee60cf1962f5b"
+    },
+    "getUnshieldedBalanceLtTest.zkir": {
+      "type": "file",
+      "size": 3728,
+      "hash": "12877bd090687880eb728e863c7238c13f2daf42778c55ae0b33b676f7fe20bd"
+    },
+    "getUnshieldedBalanceTest.zkir": {
+      "type": "file",
+      "size": 3302,
+      "hash": "33fa5c66b52e3494caa7f4d5034b4e2852ef2dc90f11c41546092897dbe5ca84"
+    },
+    "mintShieldedToContractTest.zkir": {
+      "type": "file",
+      "size": 8496,
+      "hash": "471dcaaf1e245d966abe3429667311833846df44e18927414163f2287f093497"
+    },
+    "mintShieldedToSelfTest.zkir": {
+      "type": "file",
+      "size": 9063,
+      "hash": "81afa167efce23a2c8a0eef6d634156ead59dd8c94c012da79199c877f31aac8"
+    },
+    "mintShieldedToUserTest.zkir": {
+      "type": "file",
+      "size": 6091,
+      "hash": "f878898b9cefbaf7a65db891aa36b09ff7e7879d55a6366d5002fdc7475c5160"
+    },
+    "mintUnshieldedToContractTest.zkir": {
+      "type": "file",
+      "size": 12044,
+      "hash": "e6051029b5e73489587054f87af25dd0759de9cd957c544b29a51bd93714eeb5"
+    },
+    "mintUnshieldedToSelfTest.zkir": {
+      "type": "file",
+      "size": 12585,
+      "hash": "4bf21ae8e41ac78ea851e0b8190e83f7cc9d85a05fa9f5824e9783f8d247d6e4"
+    },
+    "mintUnshieldedToUserTest.zkir": {
+      "type": "file",
+      "size": 7143,
+      "hash": "e749fe5f5ae0acff090bf1bf0a4983ad595c1dfd93a3b5176998eb64aa89bafd"
+    },
+    "receiveShieldedTest.zkir": {
+      "type": "file",
+      "size": 2995,
+      "hash": "79be047ab91aab2226b70eb69237c06a1139af77906fc0ad68dc8bd81bf36299"
+    },
+    "receiveUnshieldedTest.zkir": {
+      "type": "file",
+      "size": 3367,
+      "hash": "374fa3199f4135bf1d70eafdb41baf6a9b9b61eae2f74e11193359e8c6cc3927"
+    },
+    "sendImmediateShieldedToContractTest.zkir": {
+      "type": "file",
+      "size": 12122,
+      "hash": "edd1df6f084e19a25c30d5f290da2219e5583d4edfd11eea0514654cebee8379"
+    },
+    "sendImmediateShieldedToSelfTest.zkir": {
+      "type": "file",
+      "size": 12654,
+      "hash": "68f455bd86d7fabba8da1baec0837ef387d511cdcfbfd88c89c3a22b1f37a050"
+    },
+    "sendImmediateShieldedToUserTest.zkir": {
+      "type": "file",
+      "size": 9868,
+      "hash": "5f6c0fa66b2856c65af07394c40583280bcf8b2479584f4a10af6d226e0df7e4"
+    },
+    "sendShieldedToContractTest.zkir": {
+      "type": "file",
+      "size": 12177,
+      "hash": "1519d40ecf8179cae00f4384bb7b8dbddbd4c98ec7065e52af1668834d162d5b"
+    },
+    "sendShieldedToSelfTest.zkir": {
+      "type": "file",
+      "size": 12765,
+      "hash": "864ea16e7d6570ac2f3165af4c58a3615273ea3477e25347990ec7b29060f1d1"
+    },
+    "sendShieldedToUserTest.zkir": {
+      "type": "file",
+      "size": 9923,
+      "hash": "718d6604aab9145c1d5fcb0ef5eb0e28cbfd5388046e0ec590d43cfaa0fa8b54"
+    },
+    "sendUnshieldedToContractTest.zkir": {
+      "type": "file",
+      "size": 11130,
+      "hash": "d69e1e7427808adbb20612e1c0e6c29a189b921d00b8b4e7d05535b8f54e00b8"
+    },
+    "sendUnshieldedToSelfTest.zkir": {
+      "type": "file",
+      "size": 11703,
+      "hash": "9c4d5da7986a73c1e1399190642dd96df1f820857e51caffdc4132a5c5455d4e"
+    },
+    "sendUnshieldedToUserTest.zkir": {
+      "type": "file",
+      "size": 6259,
+      "hash": "3cb847833f375b62ca35b65dd4e2871cd773524858e650137de14c564e902d8f"
+    }
+  }
+}

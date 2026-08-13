@@ -1,0 +1,975 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "T$t",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "t",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "t1a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var1",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "T1$t1b",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var1",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "t2a",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var2",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "t2b",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var2",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test2",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "_t3b",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var3",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 16
+      }
+    },
+    {
+      "name": "_t3c",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "var3",
+          "type": {
+            "type-name": "Bytes",
+            "length": 4
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 16
+      }
+    },
+    {
+      "name": "test3",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 16
+      }
+    },
+    {
+      "name": "_",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "__",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test4",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test5",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test6",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "cp",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Point",
+        "elements": [
+          {
+            "name": "x",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "y",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "gd",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Enum",
+        "name": "Direction",
+        "elements": [
+          "North",
+          "South",
+          "East",
+          "West"
+        ]
+      }
+    },
+    {
+      "name": "test7",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "ic",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "amount",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "an",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "num",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test8",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "pc",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "config",
+          "type": {
+            "type-name": "Struct",
+            "name": "Config",
+            "elements": [
+              {
+                "name": "threshold",
+                "type": {
+                  "type-name": "Field"
+                }
+              },
+              {
+                "name": "enabled",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "cs",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "status",
+          "type": {
+            "type-name": "Enum",
+            "name": "Status",
+            "elements": [
+              "Active",
+              "Inactive"
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test9",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "us",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test10",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "mf",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "tf",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test11",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "process_a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "process_b",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test12",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "o",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "w",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test13",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "Another$fn",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "Prefix$calc",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "square",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test14",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "cd",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "val",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "dd",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Struct",
+            "name": "Data",
+            "elements": [
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "td",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Struct",
+            "name": "Data",
+            "elements": [
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test15",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "bob",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "Same$alice",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test16",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "get_secret",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "var_test2a",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "var_test2b",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "var_test3a",
+      "index": 2,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 4
+      }
+    },
+    {
+      "name": "var_test3b",
+      "index": 3,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 8
+      }
+    },
+    {
+      "name": "var_test5",
+      "index": 4,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "counter",
+      "index": 5,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "numbers",
+      "index": 6,
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "last_config",
+      "index": 7,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Config",
+        "elements": [
+          {
+            "name": "threshold",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "enabled",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "last_status",
+      "index": 8,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Enum",
+        "name": "Status",
+        "elements": [
+          "Active",
+          "Inactive"
+        ]
+      }
+    },
+    {
+      "name": "base_result",
+      "index": 9,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "middle_result",
+      "index": 10,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "top_result",
+      "index": 11,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "stored_data",
+      "index": 12,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "doubled_data",
+      "index": 13,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tripled_data",
+      "index": 14,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Data",
+        "elements": [
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

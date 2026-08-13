@@ -1,0 +1,50 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 978,
+      "hash": "4f9a3f3c068b752f6a3788e3af6c51c58feb4b2cb18bcac541c55a3f239fcf22"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2059,
+      "hash": "49737651c743b6f362eb440d9a6f0ba41f1731ecb692871dac4f03829967f775"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 16627,
+      "hash": "cfa04eb1d5369ce77279c113b72abe1ad98c0c3dc3e9b572d9be9afed5ab0ccc"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 852,
+      "hash": "8ed5d106e92d4ba6aaaddf22b303b74a6aa8b9a665f316b6e62ed8cff34eb710"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "assertInitialized.zkir": {
+      "type": "file",
+      "size": 954,
+      "hash": "e3885ed28e1e17e56970f99f6223f43dd677d3bb79c999a9d0d1f5c7af0dd7a0"
+    },
+    "assertNotInitialized.zkir": {
+      "type": "file",
+      "size": 1009,
+      "hash": "5cd6ffe2b24679073711b49b66ff925d40d5027d49f8771b6e7ce339a3912144"
+    },
+    "initialize.zkir": {
+      "type": "file",
+      "size": 1768,
+      "hash": "d0085eb7c2a26d249fea481aa74191619bb426c08268302d8bf2724b2b9ea259"
+    }
+  }
+}

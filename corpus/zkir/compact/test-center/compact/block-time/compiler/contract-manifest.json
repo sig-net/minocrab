@@ -1,0 +1,55 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 1524,
+      "hash": "c20e97de48ae19a3bb99a10399fac2e2d4c91c8c72af441283032b4455679ed3"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2606,
+      "hash": "806e07f38f81b0f97d7b1dc07ad3f5df81bcaa652c506ec26d9f2f87c09919e0"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 18540,
+      "hash": "97e683848cc68699a3ac6addde339f6f97620e35f88e24fcfb620250561d44ee"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1044,
+      "hash": "b6bbfca09039a110910c307c4b96eacfb3084798a2840a2482a3200db14a30a9"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "testBlockTimeGt.zkir": {
+      "type": "file",
+      "size": 1453,
+      "hash": "5db37727be6e9822d6fb889728104c660c291dfce0466a5b7d0ce28c1ac2dd55"
+    },
+    "testBlockTimeGte.zkir": {
+      "type": "file",
+      "size": 1548,
+      "hash": "25c1e13a8ca9b03757982ca9e600d7d7ac6cb1b81e74a15527c17da0623f3e8a"
+    },
+    "testBlockTimeLt.zkir": {
+      "type": "file",
+      "size": 1453,
+      "hash": "e6818f04e1cf851d4ec1234603665ecfd5223ebe0e8255745a0b3a2c59df82e2"
+    },
+    "testBlockTimeLte.zkir": {
+      "type": "file",
+      "size": 1548,
+      "hash": "9ea4100483721ff0867494387c66cda67b5a0fde6df4b57495e18a114f883834"
+    }
+  }
+}

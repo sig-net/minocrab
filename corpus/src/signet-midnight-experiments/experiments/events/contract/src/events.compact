@@ -1,0 +1,87 @@
+pragma language_version >= 0.25;
+
+// EVENTS experiment — the same shared workload as baseline's `base`, plus a
+// growing number of MIP-0002 `Misc` events. compactc 0.33 fixes the Misc
+// payload at Bytes<256> (probed: serialize<T, 32> into `payload` is a type
+// error), so "event size" scales in 256-byte steps by emitting more events:
+//   base  →    0 bytes (control, identical to baseline.base)
+//   emit1 →  256 bytes (1 event — the production emitPart pattern)
+//   emit2 →  512 bytes (2 events)
+//   emit4 → 1024 bytes (4 events)
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger lastAmount: Uint<128>;
+export ledger balances: Map<Bytes<32>, Uint<128>>;
+
+// The custom event payload, packed into Misc.payload via serialize<T, 256>.
+struct DepositEvent {
+  amount: Uint<128>;    // 16 bytes, LE
+  sequence: Uint<64>;   //  8 bytes, LE
+  recipient: Bytes<32>; // 32 bytes
+}
+
+// Control: the shared workload with no emit.
+export circuit base(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+}
+
+export circuit emit1(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  const sequence = callCount as Uint<64>;
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+  emit (Misc {
+    name: pad(32, "deposit-0"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+}
+
+export circuit emit2(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  const sequence = callCount as Uint<64>;
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+  emit (Misc {
+    name: pad(32, "deposit-0"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+  emit (Misc {
+    name: pad(32, "deposit-1"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+}
+
+export circuit emit4(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  const sequence = callCount as Uint<64>;
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+  emit (Misc {
+    name: pad(32, "deposit-0"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+  emit (Misc {
+    name: pad(32, "deposit-1"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+  emit (Misc {
+    name: pad(32, "deposit-2"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+  emit (Misc {
+    name: pad(32, "deposit-3"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+}

@@ -1,0 +1,35 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%data.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.1", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.2", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.3", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.4", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.5", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.6", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.7", "type": "Scalar<BLS12-381>" },
+    { "name": "%data.8", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "constrain_bits", "val": "%data.0", "bits": 64 },
+    { "op": "constrain_bits", "val": "%data.1", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.2", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.3", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.4", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.5", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.6", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.7", "bits": 248 },
+    { "op": "constrain_bits", "val": "%data.8", "bits": 248 },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0e", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
+    { "op": "transient_hash", "output": "%tmp.9", "inputs": ["%data.0", "%data.1", "%data.2", "%data.3", "%data.4", "%data.5", "%data.6", "%data.7", "%data.8"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x02"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x01", "-0x02", "%tmp.9"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }
+  ]
+}

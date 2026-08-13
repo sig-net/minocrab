@@ -1,0 +1,200 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "c64",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 64
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "c128",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "c256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "p64",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 64
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "p128",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "p256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "k64",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 64
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "k128",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "k256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "callCount",
+      "index": 0,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "digest",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ]
+}

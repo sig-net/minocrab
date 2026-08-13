@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 10303,
+      "hash": "23de770c14a223726b8afbfd728a34259114f3dc27cc93264ea795b4864d959b"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2059,
+      "hash": "4c2c0b791615841439284aa9ca46f34746d5d927d003498e55d266239733f04a"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 40849,
+      "hash": "ed3acb3752edd9e61db982fc3797d5ed3f49c57fdbc152eea4ba09a40bed6586"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1823,
+      "hash": "e433deed6dc86edde82f34aae27124fdaf4372a57a10c1748d65860613ebe4b2"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "ftName.zkir": {
+      "type": "file",
+      "size": 1664,
+      "hash": "44d9dcad6e73b800251467421d64c2740f6d96a27843f975d35d0d2605245d68"
+    },
+    "nftName.zkir": {
+      "type": "file",
+      "size": 1664,
+      "hash": "a1e65ba005ffb5a8e6e7086e3d34d96e6798e998dd3b81f2e1aaaf9740b40700"
+    }
+  }
+}

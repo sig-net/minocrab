@@ -1,0 +1,65 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 10242,
+      "hash": "22910947d6e98df9667e46a24153c80fdfff999d4e5538f4805cdf19a48e57e1"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 8421,
+      "hash": "31ee43a901acda4c56c346ba26b7885906395da4a7f8263ff064590312404001"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 85125,
+      "hash": "aa91a5b3733fc945f4ff7a9a4e80eca09f31a2751dfb7c29c46e6d557b186462"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 4837,
+      "hash": "a7df738e92b36ee1ed2d8a2a1527c91e028126e669760e4280b4302d1e897df4"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "deposit.zkir": {
+      "type": "file",
+      "size": 2995,
+      "hash": "79be047ab91aab2226b70eb69237c06a1139af77906fc0ad68dc8bd81bf36299"
+    },
+    "execute.zkir": {
+      "type": "file",
+      "size": 21763,
+      "hash": "17f80c2c3e7a49149eefab7b6589642490db82036f469d79ce85ab61a8be0795"
+    },
+    "getNonce.zkir": {
+      "type": "file",
+      "size": 992,
+      "hash": "31d93a4fb730ed108316e475d8df163a1863478717d8ba384c45bd4db029233c"
+    },
+    "getSignerCount.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "ea3d2d1a65f5388d28645fd4c0fa4a1f9d516e01a164c4e2e7138aa82fb95fb9"
+    },
+    "getThreshold.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "99f70081d6750bd30cea1363f06eda351d2897fd844494718a66024599c40029"
+    },
+    "isSigner.zkir": {
+      "type": "file",
+      "size": 1592,
+      "hash": "98ff16ad6b7a208326954ed6b2b1198bbda309ca38327ef234aa938f6b36bfdd"
+    }
+  }
+}

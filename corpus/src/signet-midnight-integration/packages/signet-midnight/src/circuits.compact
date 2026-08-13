@@ -1,0 +1,60 @@
+pragma language_version >= 0.25;
+
+// Compiled export surface of the Signet module: a contract-less program
+// re-exporting its pure circuits as pureCircuits for unit tests and
+// off-chain code. Only non-generic circuits can be exported. Compile with
+// --skip-zk and --feature-zkir-v3.
+
+import CompactStandardLibrary;
+import "./Signet";
+
+export {
+  constructSignBidirectionalEventNotificationV1,
+  evmAddressAbiWord,
+  numericAbiWord,
+  boolAbiWord,
+  abiWordToUint128,
+  abiWordToBool
+};
+
+// ---- Fixed-width attestation oracles (tests only) --------------------------
+// The size-generic digest and verify circuits cannot appear in the export
+// list above. These fixed-width instantiations exist solely to pin the TS
+// twin in ecdsa-attestation.ts against the compiled circuits (widths 1, 32
+// and 100). Client contracts instantiate the generic circuits at their own
+// width.
+
+export pure circuit calculateSignetAttestationDigest1(
+  requestId: RequestId,
+  serializedOutput: Bytes<1>
+): Bytes<32> {
+  return calculateSignetAttestationDigest<1>(requestId, serializedOutput);
+}
+
+export pure circuit calculateSignetAttestationDigest32(
+  requestId: RequestId,
+  serializedOutput: Bytes<32>
+): Bytes<32> {
+  return calculateSignetAttestationDigest<32>(requestId, serializedOutput);
+}
+
+export pure circuit calculateSignetAttestationDigest100(
+  requestId: RequestId,
+  serializedOutput: Bytes<100>
+): Bytes<32> {
+  return calculateSignetAttestationDigest<100>(requestId, serializedOutput);
+}
+
+export pure circuit verifyRespondBidirectionalEvent32(
+  requestId: RequestId,
+  serializedOutput: Bytes<32>,
+  respondBidirectionalEvent: RespondBidirectionalEvent,
+  mpcResponseKey: Secp256k1Point
+): Boolean {
+  return verifyRespondBidirectionalEvent<32>(
+    requestId,
+    serializedOutput,
+    respondBidirectionalEvent,
+    mpcResponseKey
+  );
+}

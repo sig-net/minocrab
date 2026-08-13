@@ -1,0 +1,993 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "test1",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 6,
+        "type": {
+          "type-name": "Boolean"
+        }
+      }
+    },
+    {
+      "name": "test2",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Bytes",
+          "length": 4
+        }
+      }
+    },
+    {
+      "name": "test3",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 340282366920938463463374607431768211455
+        }
+      }
+    },
+    {
+      "name": "test4",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "test5",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test6",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test7",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test8",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      }
+    },
+    {
+      "name": "test9",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      }
+    },
+    {
+      "name": "test10",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          }
+        }
+      }
+    },
+    {
+      "name": "test11",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 65535
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        ]
+      }
+    },
+    {
+      "name": "test12",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        ]
+      }
+    },
+    {
+      "name": "test13",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "test14",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Opaque",
+        "tsType": "Uint8Array"
+      }
+    },
+    {
+      "name": "test15",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Opaque",
+        "tsType": "string"
+      }
+    },
+    {
+      "name": "test16",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "m1_struct",
+          "type": {
+            "type-name": "Struct",
+            "name": "TestStruct",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Field"
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "c",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 4,
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 255
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "m2_struct",
+          "type": {
+            "type-name": "Struct",
+            "name": "TestStruct",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Field"
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "c",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 4,
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 255
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "m1_struct2",
+          "type": {
+            "type-name": "Struct",
+            "name": "TestStruct2",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Field"
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Field"
+                }
+              },
+              {
+                "name": "c",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "TestStruct",
+                  "elements": [
+                    {
+                      "name": "a",
+                      "type": {
+                        "type-name": "Field"
+                      }
+                    },
+                    {
+                      "name": "b",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "c",
+                      "type": {
+                        "type-name": "Vector",
+                        "length": 4,
+                        "type": {
+                          "type-name": "Uint",
+                          "maxval": 255
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "d",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 1,
+                  "type": {
+                    "type-name": "Field"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "TestStruct",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "c",
+            "type": {
+              "type-name": "Vector",
+              "length": 4,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 255
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test17",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "m1_enum",
+          "type": {
+            "type-name": "Enum",
+            "name": "TestEnum",
+            "elements": [
+              "A",
+              "B",
+              "C"
+            ]
+          }
+        },
+        {
+          "name": "m2_enum",
+          "type": {
+            "type-name": "Enum",
+            "name": "TestEnum",
+            "elements": [
+              "A",
+              "B",
+              "C"
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Enum",
+        "name": "TestEnum",
+        "elements": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    },
+    {
+      "name": "test19",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "boolean_cast_results",
+      "index": [
+        0,
+        0
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 6,
+        "type": {
+          "type-name": "Boolean"
+        }
+      }
+    },
+    {
+      "name": "uint_to_bytes_results",
+      "index": [
+        0,
+        1
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Bytes",
+          "length": 4
+        }
+      }
+    },
+    {
+      "name": "bytes_to_uint_results",
+      "index": [
+        0,
+        2
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 340282366920938463463374607431768211455
+        }
+      }
+    },
+    {
+      "name": "enum_to_uint_results",
+      "index": [
+        0,
+        3
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "enum_to_field_results",
+      "index": [
+        0,
+        4
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "uint_to_enum_casts",
+      "index": [
+        0,
+        5
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "field_to_enum_casts",
+      "index": [
+        0,
+        6
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "bytes_to_vector_results",
+      "index": [
+        0,
+        7
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      }
+    },
+    {
+      "name": "bytes_to_tuple_results",
+      "index": [
+        0,
+        8
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      }
+    },
+    {
+      "name": "vector_to_vector_results",
+      "index": [
+        0,
+        9
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Vector",
+          "length": 4,
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          }
+        }
+      }
+    },
+    {
+      "name": "tuple_to_tuple_results",
+      "index": [
+        0,
+        10
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 65535
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        ]
+      }
+    },
+    {
+      "name": "vector_to_tuple_results",
+      "index": [
+        1,
+        0
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        ]
+      }
+    },
+    {
+      "name": "tuple_to_vector_results",
+      "index": [
+        1,
+        1
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "opaque_uint_cast_results",
+      "index": [
+        1,
+        2
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Opaque",
+        "tsType": "Uint8Array"
+      }
+    },
+    {
+      "name": "opaque_string_cast_results",
+      "index": [
+        1,
+        3
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Opaque",
+        "tsType": "string"
+      }
+    },
+    {
+      "name": "test4_result",
+      "index": [
+        1,
+        4
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test11_result",
+      "index": [
+        1,
+        5
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 3
+      }
+    },
+    {
+      "name": "test17_result",
+      "index": [
+        1,
+        6
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test17_result2",
+      "index": [
+        1,
+        7
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test4_var",
+      "index": [
+        1,
+        8
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Field"
+      },
+      "value": {
+        "type-name": "Enum",
+        "name": "Test4Enum",
+        "elements": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    },
+    {
+      "name": "fancy_struct",
+      "index": [
+        1,
+        9
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "TestStruct",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "c",
+            "type": {
+              "type-name": "Vector",
+              "length": 4,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 255
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "fancy_struct2",
+      "index": [
+        1,
+        10
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "TestStruct",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "c",
+            "type": {
+              "type-name": "Vector",
+              "length": 4,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 255
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "fancy_struct3",
+      "index": [
+        1,
+        11
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "TestStruct2",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "c",
+            "type": {
+              "type-name": "Struct",
+              "name": "TestStruct",
+              "elements": [
+                {
+                  "name": "a",
+                  "type": {
+                    "type-name": "Field"
+                  }
+                },
+                {
+                  "name": "b",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "c",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 4,
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 255
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "d",
+            "type": {
+              "type-name": "Vector",
+              "length": 1,
+              "type": {
+                "type-name": "Field"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "fancy_enum",
+      "index": [
+        1,
+        12
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Enum",
+        "name": "TestEnum",
+        "elements": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    },
+    {
+      "name": "fancy_enum2",
+      "index": [
+        1,
+        13
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Enum",
+        "name": "TestEnum",
+        "elements": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    },
+    {
+      "name": "fancy_enum3",
+      "index": [
+        1,
+        14
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Enum",
+        "name": "TestEnum2",
+        "elements": [
+          "E",
+          "F",
+          "G"
+        ]
+      }
+    }
+  ]
+}

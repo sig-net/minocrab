@@ -1,0 +1,32 @@
+#+title: Compact corpus
+
+Compact sources gathered from the public ecosystem and sig-net, plus their
+compactc-compiled ZKIR. This is the project's test bed: round-trip tests
+(M1), differential tests (M3+), and the rewrite targets (M4) all live off it.
+
+* Layout
+- =sources.json= — every source repo with its pinned rev, license, subpaths.
+- =src/<name>/...= — the .compact files, relative paths preserved.
+- =negative/<name>/...= — deliberate compiler-error cases (from the compiler's
+  own test suite); never compiled.
+- =zkir/<path>/= — compactc output per source file: =zkir/*.zkir= (+ .bzkir)
+  and =compiler/= metadata. Proving keys are skipped (=--skip-zk=), JS runtime
+  output discarded.
+- =compile-report.tsv= — file → ok/fail → first error line.
+
+* Commands
+- =./fetch.sh [name]= — (re)populate src/ + negative/ at the pinned revs.
+- =./compile.sh [name]= — compile src/ with the pinned compactc
+  (=nix build .#compactc= at the repo root first).
+- =./update.sh [name]= — bump pin(s) to upstream HEAD, refetch, recompile.
+  To take a sig-net change: =./update.sh signet-midnight-examples=, review the
+  diff of sources.json + src/, commit.
+
+* Notes
+- The toolchain is pinned in flake.nix; bumping it means recompiling the
+  corpus (=./compile.sh=) and re-running the workspace round-trip tests.
+- sig-net repos carry no license files (internal); the OpenZeppelin and
+  Midnight sources are MIT/Apache-2.0 (per-source in sources.json).
+- Compile failures are data, not bugs to fix here: older pragmas and
+  multi-file imports fail under the pinned 0.33 compiler and stay recorded
+  in compile-report.tsv.

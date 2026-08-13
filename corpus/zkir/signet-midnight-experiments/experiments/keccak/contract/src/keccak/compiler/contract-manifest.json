@@ -1,0 +1,80 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 3482,
+      "hash": "26b8152079178076acb939bd355a4f1fcaef1508ed34f4221862be930ffa055b"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 4368,
+      "hash": "bf57606d446775ff2f29ae0801db22307fc67c50329808ca3cd50eb7af30fade"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 45052,
+      "hash": "0859d750474614f033367c394c9e29891d50d751fc5916e317983ae31a2930c1"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2491,
+      "hash": "b96c440578874b44e5891c16bc7e1c4ff8323b7abf884bc6739a12af97579f13"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "c128.zkir": {
+      "type": "file",
+      "size": 955,
+      "hash": "3ec61da932804c5c09443fd85db0ce373a27a2a49e7b3a8c116452f17a5b27b0"
+    },
+    "c256.zkir": {
+      "type": "file",
+      "size": 1431,
+      "hash": "70b3681ed5987c7f5dca17d32daa554c141a9f8b39e47e9579c62d4f102da5e6"
+    },
+    "c64.zkir": {
+      "type": "file",
+      "size": 717,
+      "hash": "c2ae201eae989c8cf42096419f2ef5e338a7071f416f8ac4a3b94a9813739a8f"
+    },
+    "k128.zkir": {
+      "type": "file",
+      "size": 1501,
+      "hash": "c18ae83baa025c7ea094ab289b4e0da9cc93f068b4dce26a2d73439e618b7217"
+    },
+    "k256.zkir": {
+      "type": "file",
+      "size": 2025,
+      "hash": "163ce70edb41fdf7f54dbfd5e7439a2965a9b5949933b87f5717f1285905be4f"
+    },
+    "k64.zkir": {
+      "type": "file",
+      "size": 1240,
+      "hash": "4f3655cf4bd5e04564ec0fc047490e615629b4841a31e4fbff9943ed76a5a9ec"
+    },
+    "p128.zkir": {
+      "type": "file",
+      "size": 1507,
+      "hash": "16fcce52a8c8846a2f9bcdb1f74bdd1627942af6bf5f892706a6989febc4ee2d"
+    },
+    "p256.zkir": {
+      "type": "file",
+      "size": 2031,
+      "hash": "81daa775b799962ab5e7d6c21a4c8eeb36e171fee24f345ee894a153bc74b759"
+    },
+    "p64.zkir": {
+      "type": "file",
+      "size": 1246,
+      "hash": "92a1081d1edb66d9ec79cb9f4f6e9be43518d7c4935f8d51f7d996c26fe70e01"
+    }
+  }
+}

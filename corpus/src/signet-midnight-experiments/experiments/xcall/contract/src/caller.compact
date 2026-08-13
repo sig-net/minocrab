@@ -1,0 +1,60 @@
+pragma language_version >= 0.25;
+
+// XCALL experiment, contract A — the CALLER. Declares the callee's surface,
+// seals a reference to a deployed target, and measures cross-contract calls:
+//   localBase — control: the shared workload done LOCALLY, no call
+//   callOnce  — one cross-contract call carrying (Bytes<32>, Uint<128>)
+//   callTwice — two cross-contract calls in one circuit
+//   callBig   — one cross-contract call carrying a Bytes<256> argument
+//   callEmit  — one cross-contract call whose callee also fires an event
+//
+// A live callOnce/callTwice/... transaction carries one proof PER contract
+// in the call tree — the instrumented proof provider records the caller's
+// and the callee's prove() separately (distinct keyLocations).
+
+import CompactStandardLibrary;
+
+contract Target {
+  circuit deposit(recipient: Bytes<32>, amount: Uint<128>): [];
+  circuit depositEmit(recipient: Bytes<32>, amount: Uint<128>): [];
+  circuit depositBig(data: Bytes<256>): [];
+}
+
+export sealed ledger target: Target;
+export ledger callCount: Counter;
+export ledger lastAmount: Uint<128>;
+export ledger balances: Map<Bytes<32>, Uint<128>>;
+
+constructor(t: Target) {
+  target = disclose(t);
+}
+
+// Control: same workload as baseline.base, performed locally.
+export circuit localBase(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+}
+
+export circuit callOnce(recipient: Bytes<32>, amount: Uint<128>): [] {
+  callCount.increment(1);
+  target.deposit(disclose(recipient), disclose(amount));
+}
+
+export circuit callTwice(recipient: Bytes<32>, amount: Uint<128>): [] {
+  callCount.increment(1);
+  target.deposit(disclose(recipient), disclose(amount));
+  target.deposit(disclose(recipient), disclose(amount));
+}
+
+export circuit callBig(data: Bytes<256>): [] {
+  callCount.increment(1);
+  target.depositBig(disclose(data));
+}
+
+export circuit callEmit(recipient: Bytes<32>, amount: Uint<128>): [] {
+  callCount.increment(1);
+  target.depositEmit(disclose(recipient), disclose(amount));
+}

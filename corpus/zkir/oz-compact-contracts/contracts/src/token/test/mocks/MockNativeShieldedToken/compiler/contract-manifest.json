@@ -1,0 +1,75 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 10131,
+      "hash": "adfd799ce7c10b92a2d5faba56d7e21e6a145ebbad78a8e76f9c43a00f6ca5ed"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5674,
+      "hash": "0f65ded7ae1359aa766afeca8835aa47c4b5efc6ea5c9db227c8f55cb198b204"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 93949,
+      "hash": "ba96cb81ab7cd70923bd78f5fbd4dea87517db8de0dc3294baff20b5202938db"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 5474,
+      "hash": "2fe93eddbe993e5ccb4e7dcf4893ba48a77e26801dd2e2cd5a8b9480b1d706f2"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_burn.zkir": {
+      "type": "file",
+      "size": 23624,
+      "hash": "fc39de8db506e90c1d8aaec10a7c085cddbea201ae9e3dec67c151a1a20e8e0f"
+    },
+    "_burnFromSelf.zkir": {
+      "type": "file",
+      "size": 12346,
+      "hash": "902ed34b03444b0f47afabc608558944992724374d3c89d9adc465be4311ee7b"
+    },
+    "_mint.zkir": {
+      "type": "file",
+      "size": 11067,
+      "hash": "f0184c64f24136c72641be286ff5e8af8227f4aa43b7408c16b2e787367a578e"
+    },
+    "decimals.zkir": {
+      "type": "file",
+      "size": 1585,
+      "hash": "033ffc65469016ee387323d832eb34b9bb03044c3dcd31a8cfc7f1c08f4a6d53"
+    },
+    "isInitialized.zkir": {
+      "type": "file",
+      "size": 914,
+      "hash": "d015a811c00e027097a6792c1c48fbf0da392faedb9215d2fc772e9f8c03d072"
+    },
+    "name.zkir": {
+      "type": "file",
+      "size": 1625,
+      "hash": "cc953aba0699ef615ac4f5f531a5cdb614c18dcce2447959227b6a712c6fa84b"
+    },
+    "symbol.zkir": {
+      "type": "file",
+      "size": 1625,
+      "hash": "f55599bc3a2c2a6b58ac533a34abad23c3ccc36d217ebee96b7161b0f0a315e7"
+    },
+    "tokenColor.zkir": {
+      "type": "file",
+      "size": 2904,
+      "hash": "1a3ee85bb9ff15b68766b627f05a06bd8f404363c6e3832d601249984caadc14"
+    }
+  }
+}

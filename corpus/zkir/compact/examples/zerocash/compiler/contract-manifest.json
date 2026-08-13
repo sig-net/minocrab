@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 11218,
+      "hash": "a464d48d9d43d294282d523c9fa4d9f14caa99af6908bee7fb4d6d94b72efafd"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 4498,
+      "hash": "12694347068baccdf7f823d77f355db5b0b169acc411c304d9a11a55fd922928"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 50553,
+      "hash": "71e5497de2b57300109300da42d471df89a4ea99aae33434c94679fc811dd629"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2566,
+      "hash": "7185a5b3b7ae1228c54db0ac5d9d1644211af045b9a599459c9c53959258edff"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "spend.zkir": {
+      "type": "file",
+      "size": 20738,
+      "hash": "9b75e8f7478263c41537426662f11260c76f539f9c3d602cdd2a07ddd7c1872a"
+    },
+    "zerocash_mint.zkir": {
+      "type": "file",
+      "size": 4632,
+      "hash": "cbd4a40068b79d5875e36cf6b080af2047438b622d697e92ec888b1f3425c71f"
+    }
+  }
+}

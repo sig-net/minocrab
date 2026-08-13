@@ -1,0 +1,85 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 4159,
+      "hash": "4a36366f55722604cd128fe0a69ff3ee858b54cbb9980fa852ece100fe4f6bff"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5122,
+      "hash": "ccf6eec9889538a727e528605b8dbae1d5011377b9646f02e3ebd2ad1be7a724"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 53694,
+      "hash": "63842ca15f95e1d6c012a002dea27e05618511698792f51a6332d004c7adfe6d"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2831,
+      "hash": "44ed40c694e6a3a35c6a71470f35869874093115188e659c4becc05fb2f1e416"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "control1024.zkir": {
+      "type": "file",
+      "size": 4453,
+      "hash": "b7bf102550ce6401af723efe94be1f55a8a5eb948251b68a435c202dc7874c3d"
+    },
+    "control256.zkir": {
+      "type": "file",
+      "size": 1431,
+      "hash": "70b3681ed5987c7f5dca17d32daa554c141a9f8b39e47e9579c62d4f102da5e6"
+    },
+    "control32.zkir": {
+      "type": "file",
+      "size": 597,
+      "hash": "ceebb14528f76933ef4d68cefb1df4826aa1b86e2bd9a6d8dd60f9bc9feeaa7e"
+    },
+    "persistent1024.zkir": {
+      "type": "file",
+      "size": 5355,
+      "hash": "f674a31a6b54a1fa3bfe833e2b912160b7ea594d81cf6ee12b0bae9881cd9c21"
+    },
+    "persistent256.zkir": {
+      "type": "file",
+      "size": 2031,
+      "hash": "81daa775b799962ab5e7d6c21a4c8eeb36e171fee24f345ee894a153bc74b759"
+    },
+    "persistent32.zkir": {
+      "type": "file",
+      "size": 1115,
+      "hash": "71cdd747102d176f19a731c7b79146d238cdca8b6e78d57c2a045691acf46953"
+    },
+    "persistentVec8.zkir": {
+      "type": "file",
+      "size": 3379,
+      "hash": "93c8d8274e5cb406026efbdfe17ca2a24ae8f048d2153c4aa34864a067b810aa"
+    },
+    "transient1024.zkir": {
+      "type": "file",
+      "size": 5167,
+      "hash": "ea5a789f883f2ba2257671aea881a2da929ae6bdbf64cc71e46ed7693c9383dc"
+    },
+    "transient256.zkir": {
+      "type": "file",
+      "size": 1844,
+      "hash": "41cdfc1ea9fe955ebd6e24bb29bb7d5943d61d0f561a81cb27970c407ac4324d"
+    },
+    "transient32.zkir": {
+      "type": "file",
+      "size": 933,
+      "hash": "86ef5c20a05901b83059bad5ca9d7910971738b9ed18e0e4bd0b6b676d05cfba"
+    }
+  }
+}

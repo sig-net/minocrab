@@ -1,0 +1,121 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "pickViaWitness",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "inspectViaWitness",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Contract",
+            "name": "Inner",
+            "circuits": [
+              {
+                "name": "add",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "chooseInner",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "inspectInner",
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Contract",
+            "name": "Inner",
+            "circuits": [
+              {
+                "name": "add",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

@@ -133,11 +133,21 @@ pub enum DisclosureKind {
 
 // --- circuit ------------------------------------------------------------------
 
+/// A named span of instructions, for cost attribution in the profiler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Region {
+    pub label: String,
+    /// Instruction index range [start, end).
+    pub start: usize,
+    pub end: usize,
+}
+
 /// A circuit under construction.
 pub struct Circuit {
     b: Builder,
     disclosures: Vec<Disclosure>,
     witnesses: u32,
+    regions: Vec<Region>,
 }
 
 /// A finished circuit: the lowered ZKIR plus its disclosure record.
@@ -145,6 +155,7 @@ pub struct Compiled {
     pub ir: IrSource,
     pub disclosures: Vec<Disclosure>,
     pub witnesses: u32,
+    pub regions: Vec<Region>,
 }
 
 impl Circuit {
@@ -156,6 +167,7 @@ impl Circuit {
             b,
             disclosures: Vec::new(),
             witnesses: 0,
+            regions: Vec::new(),
         };
         (circuit, args.into_iter().map(Wire::new).collect())
     }
@@ -303,6 +315,21 @@ impl Circuit {
         self.b.output(w.val);
     }
 
+    // --- profiling regions -------------------------------------------------------
+
+    /// Attribute the instructions built inside `f` to a named region in the
+    /// cost profiler. Regions may nest; costs attribute to the innermost.
+    pub fn region<T>(&mut self, label: &str, f: impl FnOnce(&mut Self) -> T) -> T {
+        let start = self.b.len();
+        let result = f(self);
+        self.regions.push(Region {
+            label: label.to_string(),
+            start,
+            end: self.b.len(),
+        });
+        result
+    }
+
     // --- finish ---------------------------------------------------------------------
 
     pub fn finish(self) -> Compiled {
@@ -310,6 +337,7 @@ impl Circuit {
             ir: self.b.finish(false),
             disclosures: self.disclosures,
             witnesses: self.witnesses,
+            regions: self.regions,
         }
     }
 }

@@ -1,0 +1,81 @@
+{
+  "compact_path_links": {
+    "@sig-net/midnight": "signet-midnight-integration/packages/signet-midnight"
+  },
+  "sources": [
+    {
+      "name": "compact",
+      "url": "https://github.com/LFDT-Minokawa/compact",
+      "rev": "56c3b7796f78de582bee907318737077fb6e210f",
+      "license": "Apache-2.0",
+      "paths": [
+        "examples",
+        "test-center",
+        "test-contracts",
+        "compiler"
+      ],
+      "negative_paths": [
+        "examples/errors",
+        "examples/bugs"
+      ]
+    },
+    {
+      "name": "oz-compact-contracts",
+      "url": "https://github.com/OpenZeppelin/compact-contracts",
+      "rev": "5f3ecd455f49dfa186605bf1f5058d9b05e9d857",
+      "license": "MIT",
+      "paths": []
+    },
+    {
+      "name": "oz-midnight-apps",
+      "url": "https://github.com/OpenZeppelin/midnight-apps",
+      "rev": "7de45ab1afb34b2b101767f7c987ef79c555be10",
+      "license": "MIT",
+      "paths": []
+    },
+    {
+      "name": "example-counter",
+      "url": "https://github.com/midnightntwrk/example-counter",
+      "rev": "361c71399673db82f7d65ffabb2f6bc7cac4c481",
+      "license": "Apache-2.0",
+      "paths": []
+    },
+    {
+      "name": "example-bboard",
+      "url": "https://github.com/midnightntwrk/example-bboard",
+      "rev": "7083f0b040b62f1aaafca650e7ac168cec6e243b",
+      "license": "Apache-2.0",
+      "paths": []
+    },
+    {
+      "name": "signet-midnight-integration",
+      "url": "https://github.com/sig-net/midnight-integration",
+      "rev": "1ee4a7f32bd2cf1f940341c701f88be8c3dadbdf",
+      "license": "UNLICENSED (sig-net internal)",
+      "paths": [],
+      "flags": [
+        "--feature-zkir-v3"
+      ]
+    },
+    {
+      "name": "signet-midnight-examples",
+      "url": "https://github.com/sig-net/midnight-examples",
+      "rev": "2c929a1be5ad7c19e52726ff296ebd61c4a1d964",
+      "license": "UNLICENSED (sig-net internal)",
+      "paths": [],
+      "flags": [
+        "--feature-zkir-v3"
+      ]
+    },
+    {
+      "name": "signet-midnight-experiments",
+      "url": "https://github.com/sig-net/midnight-experiments",
+      "rev": "74e7ce0def695abdfd609166314e725d02b419c6",
+      "license": "UNLICENSED (sig-net internal)",
+      "paths": [],
+      "flags": [
+        "--feature-zkir-v3"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 2985,
+      "hash": "b8835d4713790cba4644897a752e485becbfeaf58fa162615e6173034d76a2e8"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5033,
+      "hash": "145d06b2f68e1f32ce9f84d07e9cc9a918c4cd820a9b0d8b6062a57a60e77794"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 33013,
+      "hash": "f6b34a736cbfea0fd985231821d958a72c36911a6b99cfeb97dccfa76bbb7204"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1522,
+      "hash": "5971e78fb6c9fd310620118edff33744c4485df402798e65a7e359c4c06224cf"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "kernel_checkpoint.zkir": {
+      "type": "file",
+      "size": 299,
+      "hash": "f9e26b63812eb887fdf42158767d20bd24c6fce51dae558569d1b7586730afeb"
+    },
+    "kernel_claim_contract_call.zkir": {
+      "type": "file",
+      "size": 2383,
+      "hash": "ce6f3f3a1c9edbec2ba7228485552654c8ca234434980b56f41037e4968c6eb6"
+    },
+    "kernel_claim_zswap_coin_receive.zkir": {
+      "type": "file",
+      "size": 1477,
+      "hash": "63b1ecc74a2350380c52ce53407d6b3ece9e80c519f8f9e9198007cb2aeff544"
+    },
+    "kernel_claim_zswap_coin_spend.zkir": {
+      "type": "file",
+      "size": 1516,
+      "hash": "6b93769a92cc88355f44e5b7843bfe4be58ca49395c451b66ece9ba69cd7a8c3"
+    },
+    "kernel_claim_zswap_nullifier.zkir": {
+      "type": "file",
+      "size": 1477,
+      "hash": "382646af6277219a3b8f3611c7e2673bcaac76f32f6683cb6e8ed3d5d129a814"
+    },
+    "kernel_mint.zkir": {
+      "type": "file",
+      "size": 3019,
+      "hash": "611264dc8004bf0cf3db329b65f124ef79fa29c95cb6649486725ad332cede66"
+    },
+    "kernel_self.zkir": {
+      "type": "file",
+      "size": 1116,
+      "hash": "c4849d19deecbb1e6c3deb7233ea83d2ad8d5fb11d96603f6596bb19922db959"
+    }
+  }
+}

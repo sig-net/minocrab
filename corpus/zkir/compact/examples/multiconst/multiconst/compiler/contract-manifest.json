@@ -1,0 +1,60 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 5908,
+      "hash": "7e01c3f1b80c5122fec55d4666d2b387acfecd90486a0a9bc182cf298c358b20"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5467,
+      "hash": "9da049d35367f1b2736ab7aa4c3c6d70200f4cf770a2de6caf86aa32770bf93d"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 104401,
+      "hash": "54a9ee84bc44a42e66572a5baf63759bd525009cc92612eb185edbc26488a51d"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 8012,
+      "hash": "d69b12c3e6102f1b8e983b94f88a696f371a4cb9f8880d3fea5baa830326d272"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "increment.zkir": {
+      "type": "file",
+      "size": 784,
+      "hash": "53ea5208e5594c4bd7c3be6ce9447fa019968ce5f7654afec9c7c9e0c4ee8289"
+    },
+    "test14.zkir": {
+      "type": "file",
+      "size": 784,
+      "hash": "53ea5208e5594c4bd7c3be6ce9447fa019968ce5f7654afec9c7c9e0c4ee8289"
+    },
+    "test4.zkir": {
+      "type": "file",
+      "size": 1939,
+      "hash": "e08c3b86b8aa7120f8889611c3753f2dc1309bf65a9f15d419e658cbccca93a8"
+    },
+    "test5.zkir": {
+      "type": "file",
+      "size": 2482,
+      "hash": "986b0fa3d4ac85a13c73f9057e0b4f779daa6d33e924eef90e4fd4494786a60f"
+    },
+    "test7.zkir": {
+      "type": "file",
+      "size": 784,
+      "hash": "53ea5208e5594c4bd7c3be6ce9447fa019968ce5f7654afec9c7c9e0c4ee8289"
+    }
+  }
+}

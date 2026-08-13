@@ -1,0 +1,90 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 11236,
+      "hash": "026cc659aa4902b08dde821e262b64976b3d5ce9db8a1b66a41f012e421a7e85"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 9206,
+      "hash": "b7a2a477bb59ba81e8bb2fca9caa49319be5ee49beb96a500295910cb666b422"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 76308,
+      "hash": "c5714d27f209f9aee83167d36e52bbc2d83c227208f188de42d15a4d2568be4e"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 4600,
+      "hash": "14753cbfcb4e562b3a2232674d510758a618c92c85ff79f0309330f9ec11f214"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_deposit.zkir": {
+      "type": "file",
+      "size": 7745,
+      "hash": "7985a3ce72b524e4cb7e176b82effed7e9f59cb34ebc8857b86960f35382af50"
+    },
+    "_send.zkir": {
+      "type": "file",
+      "size": 15870,
+      "hash": "e34e01378d0740e75334f1a49ad635d7917348a58002ffb740fcdad64b7f684c"
+    },
+    "depositThenSend.zkir": {
+      "type": "file",
+      "size": 22359,
+      "hash": "a03a4d30e43b2289529d187a2a57fb3e86a480dc3bd540e142cb7cbd88ed91de"
+    },
+    "getTokenBalance.zkir": {
+      "type": "file",
+      "size": 3118,
+      "hash": "36d7b6d7c1a23a2f7649b00dca2e538b4d6f520fb6b09cde9b6a33ea291995ee"
+    },
+    "probeBalanceAfterReceive.zkir": {
+      "type": "file",
+      "size": 6512,
+      "hash": "676256c0a06d6a348b2ecbfbced1e086f3644d3443d6371f28d1b56c2ab369af"
+    },
+    "probeBalanceGte.zkir": {
+      "type": "file",
+      "size": 3784,
+      "hash": "3ee3d0a638552db14029db75905668128501eda88bb74346aa71796801d6b45c"
+    },
+    "probeBalanceLte.zkir": {
+      "type": "file",
+      "size": 3784,
+      "hash": "97d70c6fd170fffd49b7bf242a4d1ee068300f0b8b0aee2d9aa60039c79a156d"
+    },
+    "receiveRaw.zkir": {
+      "type": "file",
+      "size": 3367,
+      "hash": "374fa3199f4135bf1d70eafdb41baf6a9b9b61eae2f74e11193359e8c6cc3927"
+    },
+    "sendRaw.zkir": {
+      "type": "file",
+      "size": 11741,
+      "hash": "09738ab07b736f603ac1372e34e7b382905e8ef8d3202062234212f742390a29"
+    },
+    "sendToSelf.zkir": {
+      "type": "file",
+      "size": 15772,
+      "hash": "ed6d547b673980d0ddcff91991c266badc0e07125874cd89e3fdccfd131dfff4"
+    },
+    "sendTwice.zkir": {
+      "type": "file",
+      "size": 30298,
+      "hash": "477c4aa9d7f6efff6dbd063e44a026bd387b973b0a7dcfa8b256d8d8d9a9c318"
+    }
+  }
+}

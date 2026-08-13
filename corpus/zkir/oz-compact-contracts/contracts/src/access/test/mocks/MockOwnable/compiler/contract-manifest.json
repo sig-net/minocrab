@@ -1,0 +1,70 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 7564,
+      "hash": "c550680e6b555daceab2f7791add3de61387f4b5be1e5e3f071aa4e524d24183"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5307,
+      "hash": "07a798332c85e4c3ab1e24b6186ef7a5f617301f6e980cea2bc6554aaf7edb42"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 40906,
+      "hash": "fd692ade6de15278b24885faa00c8860ac337455afb194d6232b212e750672a7"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2460,
+      "hash": "fdb948592a4fc4fa271a88bf5fb50703c72c3036dfe36eec5b84dca4a1f1aa1c"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_transferOwnership.zkir": {
+      "type": "file",
+      "size": 3227,
+      "hash": "05316a83244b0b7b4ce5389d52128a870a2b24e5422c4f0e0246e164dd051f32"
+    },
+    "_unsafeTransferOwnership.zkir": {
+      "type": "file",
+      "size": 7592,
+      "hash": "378cc9372e2780665f8cfc97bdf1c378b725e0c551066de827408aa00a55888e"
+    },
+    "_unsafeUncheckedTransferOwnership.zkir": {
+      "type": "file",
+      "size": 2557,
+      "hash": "4b76f8954fc750faf43d3a33e8512b7aeab603adbd21e57883a2f1eae9d1cef6"
+    },
+    "assertOnlyOwner.zkir": {
+      "type": "file",
+      "size": 4337,
+      "hash": "0be7a1cb67068439a0c6675f7188c3710e54ebc91d3773da45a1cd4ad457477a"
+    },
+    "owner.zkir": {
+      "type": "file",
+      "size": 2255,
+      "hash": "b16ebc08602a5018f834c370084dc51eb893bbb41b10c7710a7b6d28e99d0a22"
+    },
+    "renounceOwnership.zkir": {
+      "type": "file",
+      "size": 6640,
+      "hash": "b10f94fb8c221d2ebe4640a33c3856d492d69160a8536f8dc7dddfa4ea565615"
+    },
+    "transferOwnership.zkir": {
+      "type": "file",
+      "size": 8262,
+      "hash": "576c2e0d4751d1d34f38c3c6651306691b2dbbe93bea21389c8b0c6ef718a168"
+    }
+  }
+}

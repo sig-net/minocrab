@@ -1,0 +1,77 @@
+pragma language_version >= 0.25;
+
+// KECCAK experiment: does the keccak256 builtin cost more to prove than
+// persistentHash (SHA-256 over the same value-only binary representation)
+// for the same flat byte inputs?
+//
+// Motivation: the signet hashed-attestation digest can either stay
+// keccak256(request_id || output), byte-identical to the MPC's construction
+// on every other chain, or swap to SHA-256 via persistentHash. midnight-zk's
+// golden cost model (circuits/goldenfiles/cost-model.json at 256-byte
+// inputs) says the two sit in the same cost class: keccak uses ~10% FEWER
+// advice rows but a ~55% BIGGER lookup table, which can force the next
+// power-of-two proving domain. This experiment turns that into measured
+// local-stack numbers: zkir size, key sizes, /prove wall-clock, proof bytes.
+//
+// Circuit naming: cN = control (N-byte input, no hash), pN = persistentHash,
+// kN = keccak256. The stdlib already exports a circuit named `keccak256`,
+// hence the short names. Sizes bracket the attestation preimage
+// (32-byte request id + a small serialized output): 64, 128 and 256 bytes.
+// Block arithmetic makes the sizes interesting: SHA-256 absorbs 64 bytes per
+// compression (55 effective for the last block due to padding), keccak-f
+// absorbs 136 bytes per permutation. So 64 B = 2 SHA blocks vs 1 keccak
+// permutation, 128 B = 3 vs 1, and 256 B = 5 vs 2.
+//
+// Every measured circuit shares the same minimal workload (one counter bump,
+// plus one Bytes<32> ledger write for the hashing circuits), mirroring the
+// hashing experiment so deltas against the controls isolate the hash alone.
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger digest: Bytes<32>;
+
+// ── controls: input size only, no hash ────────────────────────────────────
+export circuit c64(data: Bytes<64>): [] {
+  callCount.increment(1);
+}
+
+export circuit c128(data: Bytes<128>): [] {
+  callCount.increment(1);
+}
+
+export circuit c256(data: Bytes<256>): [] {
+  callCount.increment(1);
+}
+
+// ── persistentHash (SHA-256) ──────────────────────────────────────────────
+export circuit p64(data: Bytes<64>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<64>>(data));
+}
+
+export circuit p128(data: Bytes<128>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<128>>(data));
+}
+
+export circuit p256(data: Bytes<256>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<256>>(data));
+}
+
+// ── keccak256 ─────────────────────────────────────────────────────────────
+export circuit k64(data: Bytes<64>): [] {
+  callCount.increment(1);
+  digest = disclose(keccak256<Bytes<64>>(data));
+}
+
+export circuit k128(data: Bytes<128>): [] {
+  callCount.increment(1);
+  digest = disclose(keccak256<Bytes<128>>(data));
+}
+
+export circuit k256(data: Bytes<256>): [] {
+  callCount.increment(1);
+  digest = disclose(keccak256<Bytes<256>>(data));
+}

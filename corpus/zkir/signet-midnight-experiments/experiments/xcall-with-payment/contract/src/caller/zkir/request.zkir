@@ -1,0 +1,34 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%requestId.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%requestId.1", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "constrain_bits", "val": "%requestId.0", "bits": 8 },
+    { "op": "constrain_bits", "val": "%requestId.1", "bits": 248 },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.2", "guard": null },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.3", "guard": null },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x01", "0x20", "%t.2", "%t.3"] },
+    { "op": "private_input", "type": "Scalar<BLS12-381>", "output": "%cc-rand.4", "guard": null },
+    { "op": "private_input", "type": "Scalar<BLS12-381>", "output": "%ep-mod.5", "guard": null },
+    { "op": "constrain_bits", "val": "%ep-mod.5", "bits": 8 },
+    { "op": "private_input", "type": "Scalar<BLS12-381>", "output": "%ep-div.6", "guard": null },
+    { "op": "constrain_bits", "val": "%ep-div.6", "bits": 248 },
+    { "op": "transient_hash", "output": "%comm.7", "inputs": ["%cc-rand.4", "%requestId.0", "%requestId.1"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x03"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x04"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x03", "0x20", "0x20", "-0x02", "%t.2", "%t.3", "%ep-mod.5", "%ep-div.6", "%comm.7"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x17", "0xa0"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0xa2"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x40"] }
+  ]
+}

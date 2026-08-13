@@ -1,0 +1,70 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 7443,
+      "hash": "dd205c816b5178c1fdd19d00b772ac7c2a6609cd2cc9ca3d578403a98ff08aaf"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5987,
+      "hash": "0ed07566c70f155ba5132060359b334ee12fc96db399c2736369c8f70d710b11"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 45741,
+      "hash": "c5c8d83a74018702c568344dc88c43ecea0481ca15646c84f696734da42252aa"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1596,
+      "hash": "837977df9ac7a5ed559c7e223e38da010cc386f6f8edf98e845f969babc136af"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "insert.zkir": {
+      "type": "file",
+      "size": 2040,
+      "hash": "580417fbd5cb3788f470a58b39237aa0bb0ad2febb31afeb10bf334835b941c2"
+    },
+    "insert_coin.zkir": {
+      "type": "file",
+      "size": 3959,
+      "hash": "a8623286ad7cee66a8fdcf6f68ce892c17910feb9beba43faeb67b2a8c74df40"
+    },
+    "is_empty.zkir": {
+      "type": "file",
+      "size": 1571,
+      "hash": "fd2af7c6d45f3a9bd1903f37eebbce49e048190add7adcc7ffde0c718f9df257"
+    },
+    "member.zkir": {
+      "type": "file",
+      "size": 2212,
+      "hash": "a6a0bb680cad9639b39d1a62e3a9e3c69683e460b0b1de746c3f85b4a933047a"
+    },
+    "remove.zkir": {
+      "type": "file",
+      "size": 1861,
+      "hash": "84047148a0fd7dd64b715a8cee6ecaca463c5f10668f506bb1f971c7b3541ca4"
+    },
+    "reset_to_default.zkir": {
+      "type": "file",
+      "size": 868,
+      "hash": "aa3aa853bc5277324c984c4888b0f8ccb60384df5fe8eea3355927dfd874b8c0"
+    },
+    "size.zkir": {
+      "type": "file",
+      "size": 1125,
+      "hash": "23929c18fd0683552a2afd0de4632d89163ec1b59be9db1ce391cf94902eedd6"
+    }
+  }
+}

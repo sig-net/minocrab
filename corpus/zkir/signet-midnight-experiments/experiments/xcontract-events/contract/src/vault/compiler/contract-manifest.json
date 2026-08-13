@@ -1,0 +1,40 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 2567,
+      "hash": "f9ee894543a56cde5873a0579ebc00833ee597e72fbfa1da4144aa6e1fcd64ba"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1665,
+      "hash": "a1f10d31362a6ca20b30b6f26b1fae476a3920778fcd2a86db9de0bfc6d55c52"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 27703,
+      "hash": "3af2e2b02fa08aa0dea36fbd35404edda45500ccf61387c95a75572f0470825b"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 997,
+      "hash": "d5cd787330ef2988d8359e6dfbd0182a507fdfdba29f1c7bc259b89fa685a158"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "depositViaVault.zkir": {
+      "type": "file",
+      "size": 3428,
+      "hash": "3facd31ac7baa3c7cff784c01ce3a29634c5bff3c755a06c0805f70370b5e13e"
+    }
+  }
+}

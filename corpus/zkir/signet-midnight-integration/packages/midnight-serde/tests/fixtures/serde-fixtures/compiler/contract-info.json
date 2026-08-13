@@ -1,0 +1,1957 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "serPrimitives",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "Primitives",
+            "elements": [
+              {
+                "name": "flag",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "u8",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              },
+              {
+                "name": "u64",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 18446744073709551615
+                }
+              },
+              {
+                "name": "u128",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              },
+              {
+                "name": "u248",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 452312848583266388373324160190187140051835877600158453279131187530910662655
+                }
+              },
+              {
+                "name": "f",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 89
+      }
+    },
+    {
+      "name": "dePrimitives",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 89
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Primitives",
+        "elements": [
+          {
+            "name": "flag",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "u8",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "u64",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "u128",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          },
+          {
+            "name": "u248",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 452312848583266388373324160190187140051835877600158453279131187530910662655
+            }
+          },
+          {
+            "name": "f",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serBuffers",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "Buffers",
+            "elements": [
+              {
+                "name": "one",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 1
+                }
+              },
+              {
+                "name": "addr20",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 20
+                }
+              },
+              {
+                "name": "word",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 64
+      }
+    },
+    {
+      "name": "deBuffers",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 64
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Buffers",
+        "elements": [
+          {
+            "name": "one",
+            "type": {
+              "type-name": "Bytes",
+              "length": 1
+            }
+          },
+          {
+            "name": "addr20",
+            "type": {
+              "type-name": "Bytes",
+              "length": 20
+            }
+          },
+          {
+            "name": "word",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serVectorsPlain",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "VectorsPlain",
+            "elements": [
+              {
+                "name": "nums",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 3,
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              },
+              {
+                "name": "more",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 2,
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 56
+      }
+    },
+    {
+      "name": "deVectorsPlain",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 56
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "VectorsPlain",
+        "elements": [
+          {
+            "name": "nums",
+            "type": {
+              "type-name": "Vector",
+              "length": 3,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 18446744073709551615
+              }
+            }
+          },
+          {
+            "name": "more",
+            "type": {
+              "type-name": "Vector",
+              "length": 2,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 340282366920938463463374607431768211455
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "deVectorsDeep",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 52
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "VectorsDeep",
+        "elements": [
+          {
+            "name": "pairs",
+            "type": {
+              "type-name": "Vector",
+              "length": 2,
+              "type": {
+                "type-name": "Struct",
+                "name": "Pair",
+                "elements": [
+                  {
+                    "name": "a",
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 340282366920938463463374607431768211455
+                    }
+                  },
+                  {
+                    "name": "b",
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 18446744073709551615
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "matrix",
+            "type": {
+              "type-name": "Vector",
+              "length": 2,
+              "type": {
+                "type-name": "Vector",
+                "length": 2,
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serInner",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "Inner",
+            "elements": [
+              {
+                "name": "pair",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Pair",
+                  "elements": [
+                    {
+                      "name": "a",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 340282366920938463463374607431768211455
+                      }
+                    },
+                    {
+                      "name": "b",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "ok",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 25
+      }
+    },
+    {
+      "name": "deInner",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 25
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Inner",
+        "elements": [
+          {
+            "name": "pair",
+            "type": {
+              "type-name": "Struct",
+              "name": "Pair",
+              "elements": [
+                {
+                  "name": "a",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                },
+                {
+                  "name": "b",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "ok",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "deNested",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Nested",
+        "elements": [
+          {
+            "name": "pair",
+            "type": {
+              "type-name": "Struct",
+              "name": "Pair",
+              "elements": [
+                {
+                  "name": "a",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                },
+                {
+                  "name": "b",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "inner",
+            "type": {
+              "type-name": "Struct",
+              "name": "Inner",
+              "elements": [
+                {
+                  "name": "pair",
+                  "type": {
+                    "type-name": "Struct",
+                    "name": "Pair",
+                    "elements": [
+                      {
+                        "name": "a",
+                        "type": {
+                          "type-name": "Uint",
+                          "maxval": 340282366920938463463374607431768211455
+                        }
+                      },
+                      {
+                        "name": "b",
+                        "type": {
+                          "type-name": "Uint",
+                          "maxval": 18446744073709551615
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "ok",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "ok",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serStdlib",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "WithStdlib",
+            "elements": [
+              {
+                "name": "owner",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "ContractAddress",
+                  "elements": [
+                    {
+                      "name": "bytes",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "maybe",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Maybe",
+                  "elements": [
+                    {
+                      "name": "is_some",
+                      "type": {
+                        "type-name": "Boolean"
+                      }
+                    },
+                    {
+                      "name": "value",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 41
+      }
+    },
+    {
+      "name": "deStdlib",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 41
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "WithStdlib",
+        "elements": [
+          {
+            "name": "owner",
+            "type": {
+              "type-name": "Struct",
+              "name": "ContractAddress",
+              "elements": [
+                {
+                  "name": "bytes",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "maybe",
+            "type": {
+              "type-name": "Struct",
+              "name": "Maybe",
+              "elements": [
+                {
+                  "name": "is_some",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serBounded",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "Bounded",
+            "elements": [
+              {
+                "name": "small",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 999
+                }
+              },
+              {
+                "name": "unit",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 0
+                }
+              },
+              {
+                "name": "status",
+                "type": {
+                  "type-name": "Enum",
+                  "name": "Status",
+                  "elements": [
+                    "pending",
+                    "live",
+                    "closed"
+                  ]
+                }
+              },
+              {
+                "name": "marker",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 8
+      }
+    },
+    {
+      "name": "deBounded",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Bounded",
+        "elements": [
+          {
+            "name": "small",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 999
+            }
+          },
+          {
+            "name": "unit",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 0
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "type-name": "Enum",
+              "name": "Status",
+              "elements": [
+                "pending",
+                "live",
+                "closed"
+              ]
+            }
+          },
+          {
+            "name": "marker",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serZeroSizes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "ZeroSizes",
+            "elements": [
+              {
+                "name": "empty",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 0
+                }
+              },
+              {
+                "name": "none",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 0,
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              },
+              {
+                "name": "nothing",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Nothing",
+                  "elements": [
+                  ]
+                }
+              },
+              {
+                "name": "marker",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 1
+      }
+    },
+    {
+      "name": "deZeroSizes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "ZeroSizes",
+        "elements": [
+          {
+            "name": "empty",
+            "type": {
+              "type-name": "Bytes",
+              "length": 0
+            }
+          },
+          {
+            "name": "none",
+            "type": {
+              "type-name": "Vector",
+              "length": 0,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 18446744073709551615
+              }
+            }
+          },
+          {
+            "name": "nothing",
+            "type": {
+              "type-name": "Struct",
+              "name": "Nothing",
+              "elements": [
+              ]
+            }
+          },
+          {
+            "name": "marker",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serTuple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Tuple",
+            "types": [
+              {
+                "type-name": "Boolean"
+              },
+              {
+                "type-name": "Uint",
+                "maxval": 65535
+              },
+              {
+                "type-name": "Bytes",
+                "length": 4
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 7
+      }
+    },
+    {
+      "name": "deTuple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 7
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Boolean"
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 65535
+          },
+          {
+            "type-name": "Bytes",
+            "length": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "serTuplePair",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Tuple",
+            "types": [
+              {
+                "type-name": "Struct",
+                "name": "Pair",
+                "elements": [
+                  {
+                    "name": "a",
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 340282366920938463463374607431768211455
+                    }
+                  },
+                  {
+                    "name": "b",
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 18446744073709551615
+                    }
+                  }
+                ]
+              },
+              {
+                "type-name": "Boolean"
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 25
+      }
+    },
+    {
+      "name": "deTuplePair",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 25
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Struct",
+            "name": "Pair",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 18446744073709551615
+                }
+              }
+            ]
+          },
+          {
+            "type-name": "Boolean"
+          }
+        ]
+      }
+    },
+    {
+      "name": "serU12",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4095
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 2
+      }
+    },
+    {
+      "name": "deU12",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 2
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 4095
+      }
+    },
+    {
+      "name": "serWide",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 69999
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 3
+      }
+    },
+    {
+      "name": "deWide",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 3
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 69999
+      }
+    },
+    {
+      "name": "serSolo",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Enum",
+            "name": "Solo",
+            "elements": [
+              "only"
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 1
+      }
+    },
+    {
+      "name": "deSolo",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Enum",
+        "name": "Solo",
+        "elements": [
+          "only"
+        ]
+      }
+    },
+    {
+      "name": "serEmptyTuple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Tuple",
+            "types": [
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 1
+      }
+    },
+    {
+      "name": "deEmptyTuple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "serBig",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Enum",
+            "name": "Big",
+            "elements": [
+              "v0",
+              "v1",
+              "v2",
+              "v3",
+              "v4",
+              "v5",
+              "v6",
+              "v7",
+              "v8",
+              "v9",
+              "v10",
+              "v11",
+              "v12",
+              "v13",
+              "v14",
+              "v15",
+              "v16",
+              "v17",
+              "v18",
+              "v19",
+              "v20",
+              "v21",
+              "v22",
+              "v23",
+              "v24",
+              "v25",
+              "v26",
+              "v27",
+              "v28",
+              "v29",
+              "v30",
+              "v31",
+              "v32",
+              "v33",
+              "v34",
+              "v35",
+              "v36",
+              "v37",
+              "v38",
+              "v39",
+              "v40",
+              "v41",
+              "v42",
+              "v43",
+              "v44",
+              "v45",
+              "v46",
+              "v47",
+              "v48",
+              "v49",
+              "v50",
+              "v51",
+              "v52",
+              "v53",
+              "v54",
+              "v55",
+              "v56",
+              "v57",
+              "v58",
+              "v59",
+              "v60",
+              "v61",
+              "v62",
+              "v63",
+              "v64",
+              "v65",
+              "v66",
+              "v67",
+              "v68",
+              "v69",
+              "v70",
+              "v71",
+              "v72",
+              "v73",
+              "v74",
+              "v75",
+              "v76",
+              "v77",
+              "v78",
+              "v79",
+              "v80",
+              "v81",
+              "v82",
+              "v83",
+              "v84",
+              "v85",
+              "v86",
+              "v87",
+              "v88",
+              "v89",
+              "v90",
+              "v91",
+              "v92",
+              "v93",
+              "v94",
+              "v95",
+              "v96",
+              "v97",
+              "v98",
+              "v99",
+              "v100",
+              "v101",
+              "v102",
+              "v103",
+              "v104",
+              "v105",
+              "v106",
+              "v107",
+              "v108",
+              "v109",
+              "v110",
+              "v111",
+              "v112",
+              "v113",
+              "v114",
+              "v115",
+              "v116",
+              "v117",
+              "v118",
+              "v119",
+              "v120",
+              "v121",
+              "v122",
+              "v123",
+              "v124",
+              "v125",
+              "v126",
+              "v127",
+              "v128",
+              "v129",
+              "v130",
+              "v131",
+              "v132",
+              "v133",
+              "v134",
+              "v135",
+              "v136",
+              "v137",
+              "v138",
+              "v139",
+              "v140",
+              "v141",
+              "v142",
+              "v143",
+              "v144",
+              "v145",
+              "v146",
+              "v147",
+              "v148",
+              "v149",
+              "v150",
+              "v151",
+              "v152",
+              "v153",
+              "v154",
+              "v155",
+              "v156",
+              "v157",
+              "v158",
+              "v159",
+              "v160",
+              "v161",
+              "v162",
+              "v163",
+              "v164",
+              "v165",
+              "v166",
+              "v167",
+              "v168",
+              "v169",
+              "v170",
+              "v171",
+              "v172",
+              "v173",
+              "v174",
+              "v175",
+              "v176",
+              "v177",
+              "v178",
+              "v179",
+              "v180",
+              "v181",
+              "v182",
+              "v183",
+              "v184",
+              "v185",
+              "v186",
+              "v187",
+              "v188",
+              "v189",
+              "v190",
+              "v191",
+              "v192",
+              "v193",
+              "v194",
+              "v195",
+              "v196",
+              "v197",
+              "v198",
+              "v199",
+              "v200",
+              "v201",
+              "v202",
+              "v203",
+              "v204",
+              "v205",
+              "v206",
+              "v207",
+              "v208",
+              "v209",
+              "v210",
+              "v211",
+              "v212",
+              "v213",
+              "v214",
+              "v215",
+              "v216",
+              "v217",
+              "v218",
+              "v219",
+              "v220",
+              "v221",
+              "v222",
+              "v223",
+              "v224",
+              "v225",
+              "v226",
+              "v227",
+              "v228",
+              "v229",
+              "v230",
+              "v231",
+              "v232",
+              "v233",
+              "v234",
+              "v235",
+              "v236",
+              "v237",
+              "v238",
+              "v239",
+              "v240",
+              "v241",
+              "v242",
+              "v243",
+              "v244",
+              "v245",
+              "v246",
+              "v247",
+              "v248",
+              "v249",
+              "v250",
+              "v251",
+              "v252",
+              "v253",
+              "v254",
+              "v255",
+              "v256",
+              "v257",
+              "v258",
+              "v259",
+              "v260",
+              "v261",
+              "v262",
+              "v263",
+              "v264",
+              "v265",
+              "v266",
+              "v267",
+              "v268",
+              "v269",
+              "v270",
+              "v271",
+              "v272",
+              "v273",
+              "v274",
+              "v275",
+              "v276",
+              "v277",
+              "v278",
+              "v279",
+              "v280",
+              "v281",
+              "v282",
+              "v283",
+              "v284",
+              "v285",
+              "v286",
+              "v287",
+              "v288",
+              "v289",
+              "v290",
+              "v291",
+              "v292",
+              "v293",
+              "v294",
+              "v295",
+              "v296",
+              "v297",
+              "v298",
+              "v299"
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 2
+      }
+    },
+    {
+      "name": "deBig",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 2
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Enum",
+        "name": "Big",
+        "elements": [
+          "v0",
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6",
+          "v7",
+          "v8",
+          "v9",
+          "v10",
+          "v11",
+          "v12",
+          "v13",
+          "v14",
+          "v15",
+          "v16",
+          "v17",
+          "v18",
+          "v19",
+          "v20",
+          "v21",
+          "v22",
+          "v23",
+          "v24",
+          "v25",
+          "v26",
+          "v27",
+          "v28",
+          "v29",
+          "v30",
+          "v31",
+          "v32",
+          "v33",
+          "v34",
+          "v35",
+          "v36",
+          "v37",
+          "v38",
+          "v39",
+          "v40",
+          "v41",
+          "v42",
+          "v43",
+          "v44",
+          "v45",
+          "v46",
+          "v47",
+          "v48",
+          "v49",
+          "v50",
+          "v51",
+          "v52",
+          "v53",
+          "v54",
+          "v55",
+          "v56",
+          "v57",
+          "v58",
+          "v59",
+          "v60",
+          "v61",
+          "v62",
+          "v63",
+          "v64",
+          "v65",
+          "v66",
+          "v67",
+          "v68",
+          "v69",
+          "v70",
+          "v71",
+          "v72",
+          "v73",
+          "v74",
+          "v75",
+          "v76",
+          "v77",
+          "v78",
+          "v79",
+          "v80",
+          "v81",
+          "v82",
+          "v83",
+          "v84",
+          "v85",
+          "v86",
+          "v87",
+          "v88",
+          "v89",
+          "v90",
+          "v91",
+          "v92",
+          "v93",
+          "v94",
+          "v95",
+          "v96",
+          "v97",
+          "v98",
+          "v99",
+          "v100",
+          "v101",
+          "v102",
+          "v103",
+          "v104",
+          "v105",
+          "v106",
+          "v107",
+          "v108",
+          "v109",
+          "v110",
+          "v111",
+          "v112",
+          "v113",
+          "v114",
+          "v115",
+          "v116",
+          "v117",
+          "v118",
+          "v119",
+          "v120",
+          "v121",
+          "v122",
+          "v123",
+          "v124",
+          "v125",
+          "v126",
+          "v127",
+          "v128",
+          "v129",
+          "v130",
+          "v131",
+          "v132",
+          "v133",
+          "v134",
+          "v135",
+          "v136",
+          "v137",
+          "v138",
+          "v139",
+          "v140",
+          "v141",
+          "v142",
+          "v143",
+          "v144",
+          "v145",
+          "v146",
+          "v147",
+          "v148",
+          "v149",
+          "v150",
+          "v151",
+          "v152",
+          "v153",
+          "v154",
+          "v155",
+          "v156",
+          "v157",
+          "v158",
+          "v159",
+          "v160",
+          "v161",
+          "v162",
+          "v163",
+          "v164",
+          "v165",
+          "v166",
+          "v167",
+          "v168",
+          "v169",
+          "v170",
+          "v171",
+          "v172",
+          "v173",
+          "v174",
+          "v175",
+          "v176",
+          "v177",
+          "v178",
+          "v179",
+          "v180",
+          "v181",
+          "v182",
+          "v183",
+          "v184",
+          "v185",
+          "v186",
+          "v187",
+          "v188",
+          "v189",
+          "v190",
+          "v191",
+          "v192",
+          "v193",
+          "v194",
+          "v195",
+          "v196",
+          "v197",
+          "v198",
+          "v199",
+          "v200",
+          "v201",
+          "v202",
+          "v203",
+          "v204",
+          "v205",
+          "v206",
+          "v207",
+          "v208",
+          "v209",
+          "v210",
+          "v211",
+          "v212",
+          "v213",
+          "v214",
+          "v215",
+          "v216",
+          "v217",
+          "v218",
+          "v219",
+          "v220",
+          "v221",
+          "v222",
+          "v223",
+          "v224",
+          "v225",
+          "v226",
+          "v227",
+          "v228",
+          "v229",
+          "v230",
+          "v231",
+          "v232",
+          "v233",
+          "v234",
+          "v235",
+          "v236",
+          "v237",
+          "v238",
+          "v239",
+          "v240",
+          "v241",
+          "v242",
+          "v243",
+          "v244",
+          "v245",
+          "v246",
+          "v247",
+          "v248",
+          "v249",
+          "v250",
+          "v251",
+          "v252",
+          "v253",
+          "v254",
+          "v255",
+          "v256",
+          "v257",
+          "v258",
+          "v259",
+          "v260",
+          "v261",
+          "v262",
+          "v263",
+          "v264",
+          "v265",
+          "v266",
+          "v267",
+          "v268",
+          "v269",
+          "v270",
+          "v271",
+          "v272",
+          "v273",
+          "v274",
+          "v275",
+          "v276",
+          "v277",
+          "v278",
+          "v279",
+          "v280",
+          "v281",
+          "v282",
+          "v283",
+          "v284",
+          "v285",
+          "v286",
+          "v287",
+          "v288",
+          "v289",
+          "v290",
+          "v291",
+          "v292",
+          "v293",
+          "v294",
+          "v295",
+          "v296",
+          "v297",
+          "v298",
+          "v299"
+        ]
+      }
+    },
+    {
+      "name": "serEither",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Struct",
+            "name": "Either",
+            "elements": [
+              {
+                "name": "is_left",
+                "type": {
+                  "type-name": "Boolean"
+                }
+              },
+              {
+                "name": "left",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 18446744073709551615
+                }
+              },
+              {
+                "name": "right",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 41
+      }
+    },
+    {
+      "name": "deEither",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 41
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Either",
+        "elements": [
+          {
+            "name": "is_left",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "left",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "right",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serLeft",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 41
+      }
+    },
+    {
+      "name": "serRight",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 41
+      }
+    },
+    {
+      "name": "serSomeU64",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 9
+      }
+    },
+    {
+      "name": "serNoneU64",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 9
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

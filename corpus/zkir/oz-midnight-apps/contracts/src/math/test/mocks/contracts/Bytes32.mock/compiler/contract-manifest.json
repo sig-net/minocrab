@@ -1,0 +1,85 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 7370,
+      "hash": "a310d60b00bcca83855151ed03470d968e57a72570189f388bcfa0c15b8975f5"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5481,
+      "hash": "db2d08bbf224c7ce2c150380912873ae903f4524d875dc1a924bc6aa294f3bca"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 45518,
+      "hash": "7da96122a67d2e9892fac83bafb2c4afc4e441dec942bc035c2cfc1fb1e43b11"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 4349,
+      "hash": "1657b1cfb7d324edc74742f9e73c95a47b09b59cb348acb59410cae4325cef6e"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "bytesToU256.zkir": {
+      "type": "file",
+      "size": 9472,
+      "hash": "3055c75218d0b59c49398f2b3021bf7d69ac78f8da462b76e01a9a53f9cefbc4"
+    },
+    "eq.zkir": {
+      "type": "file",
+      "size": 1353,
+      "hash": "500248320f7a81efd44bd41ac6275cb7c6d48f332f9034a77d13799e2fe07d86"
+    },
+    "gt.zkir": {
+      "type": "file",
+      "size": 18350,
+      "hash": "65a29c64adc8d3c0f22909c25b1063526229f70d14dae8773d401092625da339"
+    },
+    "gte.zkir": {
+      "type": "file",
+      "size": 18407,
+      "hash": "3862462e073824cd20b31cc1c474bbe33a216684e5be979589c289aeeca23bee"
+    },
+    "isZero.zkir": {
+      "type": "file",
+      "size": 1243,
+      "hash": "c04eb1566d376e54ffacdaa011f814bc7f9273e9e553f8e3adadd1e04458b811"
+    },
+    "lt.zkir": {
+      "type": "file",
+      "size": 18350,
+      "hash": "39b033c23b1f0ef0f8fb37735b10f4e99d7b3dcd8036098f0886bd6c29d1775b"
+    },
+    "lte.zkir": {
+      "type": "file",
+      "size": 18407,
+      "hash": "9610eff0dc0d7de87fb6bc8c06dcda4f92746b05f5b3fd391974d8d58b87864c"
+    },
+    "pack.zkir": {
+      "type": "file",
+      "size": 5100,
+      "hash": "afddece0b281e5f48f1937ea1cc2cf0705eeefcd1b8a9be8f08c5f9179bfd41a"
+    },
+    "unpack.zkir": {
+      "type": "file",
+      "size": 7903,
+      "hash": "6c0d640bc721f610607674643e87865372421e80896b1b9b6fa709ed407e24ef"
+    },
+    "vectorToU256.zkir": {
+      "type": "file",
+      "size": 5340,
+      "hash": "bb72499ff3088ca3ca859b95ca31083cefd3b23050e38b8cf1b9d7a1b5872dad"
+    }
+  }
+}

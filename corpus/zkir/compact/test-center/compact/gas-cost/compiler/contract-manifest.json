@@ -1,0 +1,40 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 699,
+      "hash": "1f1da55198dd6055c64b6b566612d16d7b8fe52635c991402f637ea4edd97d59"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1301,
+      "hash": "3015bd65c863324076b438ee1dae64f2f1862fe9ba3c81740cf018b378da3ec0"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 12365,
+      "hash": "d668a60d4ef90aea7210e1befa6db7b1f594f00b741a9dd35497127643c83413"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 564,
+      "hash": "827b861b75a61acc08ce4a3bc9fc0b44750005fdf982d3de2fdcf2e11ab52168"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "testGasCost.zkir": {
+      "type": "file",
+      "size": 2039,
+      "hash": "d6a28dfa76c8285f77cffc9b506005b3cfa9ff66806fa11ba2a75157efaf4e80"
+    }
+  }
+}

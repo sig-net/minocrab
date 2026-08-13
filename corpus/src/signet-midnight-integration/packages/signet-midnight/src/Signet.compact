@@ -1,0 +1,466 @@
+// =======================================================================================================
+// Sig Network (Signet) shared Compact library enabling contracts on the Midnight blockchain to leverage
+// the Signet Distributed MPC network to execute arbitrary transactions on foreign blockchains.
+// =======================================================================================================
+//
+//  Terms:
+//    - client contract(s): contracts on the Midnight blockchain that integrate with the Signet
+//                          Distributed MPC network to execute arbitrary transactions on foreign
+//                          blockchains.
+//    - Signet singleton: a single contract on the Midnight blockchain through which clients notify
+//                        the MPC of signature requests, and through which the MPC posts back
+//                        signatures and signed attestations of foreign executions. Each post is
+//                        emitted as a contract event (the execution outputs themselves travel off
+//                        chain).
+//
+//  Usage:
+//   // Import this module at the start of a contract (resolved through node_modules via COMPACT_PATH):
+//   import "@sig-net/midnight/src/Signet";
+//
+//  Key types at a glance (each declaration below carries the full contract):
+//  - SignBidirectionalEvent: a client contract's structured request for a signature on a transaction.
+//  - RequestId: 32-byte id of a request, the keccak256 of the whole SignBidirectionalEvent record.
+//  - SignBidirectionalEventMap: the RequestId -> SignBidirectionalEvent map a client contract
+//    declares in its own ledger for the MPC to read requests from.
+//  - SignetSigner: the contract interface client contracts call to notify the Signet singleton.
+//  - SignBidirectionalEventNotification: the versioned notification delivered through that call.
+//  - SignatureRespondedEvent: the MPC's posted signature answering a request.
+//  - RespondBidirectionalEvent: the MPC's posted attestation that the foreign chain executed the
+//    signed transaction.
+//
+// These key types are best understood within the sign bidirectional flow that they enable:
+// 1. Client contract stores a SignBidirectionalEvent in a SignBidirectionalEventMap in its own ledger
+//    (against the calculated RequestId) and requests a signature from the MPC via a cross contract call
+//    against the SignetSigner interface. The Signet singleton emits the SignBidirectionalEventNotification
+//    as a contract event.
+// 2. MPC polls the Signet singleton contract's events for SignBidirectionalEventNotifications and
+//    uses each one to look the declared SignBidirectionalEvent signature request up in the named
+//    client's own ledger. It generates the signature and posts a SignatureRespondedEvent (the requested
+//    signature) through the Signet singleton, which emits it as a contract event.
+// 3. Client polls the Signet singleton contract's SignatureRespondedEvent events, identifying the response
+//    associated with their request by RequestId. Clients validate the signature is correct by checking with
+//    the requested signing key. Then it broadcasts the signed txn to the destination chain.
+// 4. MPC observes txn execution on destination chain and posts a RespondBidirectionalEvent attestation
+//    through the Signet singleton, which emits it as a contract event beside the request id.
+//    The client polls its request's posts and takes the first one that verifies over the request id
+//    and output. The client recovers the execution output itself off chain (for EVM: the mined
+//    call's return data via debug_traceTransaction, also served by the fakenet
+//    responder's /responses/{requestId} helper API) and hands output plus attestation
+//    to its verify circuit. See "Output recovery" in this package's README.
+//
+// Read more:
+//   - The sign bidirectional flow and key derivation: this package's README
+//     ("Sign bidirectional flow", "Derived keys").
+//   - For full integration examples (such as an ERC20 cross chain vault example) see
+//     the Midnight Examples repository at: https://github.com/sig-net/midnight-examples.
+//   - Compact language reference (modules, types):
+//     https://docs.midnight.network/compact/reference/compact-reference
+
+module Signet {
+  import CompactStandardLibrary;
+
+  // ---- SignBidirectionalEvent ------------------------------------------------------------------------
+
+  // Structured request for a signature on a transaction. Generically configured by client contracts
+  // based on the type of transaction for which a signature is requested (EVM Type 2, Solana etc.).
+  //
+  // KEY: texual order of the fields in this structure must remain fixed as is as their order
+  //      is relied upon for consistent hashing and decoding from ledger state.
+  export struct SignBidirectionalEvent<TxParams, #LenOutputDeserialization, #LenRespondSerialization> {
+    // Address of the client contract that stores and notifies of this SignBidirectionalEvent.
+    // Set with kernel.self().
+    sender: ContractAddress;
+
+    // Optional nonce, set by client contracts to make otherwise-identical requests unique.
+    requestNonce: Uint<64>;
+
+    // MPC Key Derivation Parameters.
+    // Every key the MPC signs with is scoped by the requesting contract:
+    //   derivedSigningKey = f(mpcRootKey[keyVersion], caip2ChainId, sender, hex::encode(path))
+    // where caip2ChainId is the CAIP-2 id of the ORIGINATING chain (the Midnight
+    // variant for requests made from Midnight contracts), not this record's target
+    // caip2Id. The path is 32 opaque bytes of the client contract's choosing (e.g. a
+    // fixed literal for a contract-owned account or a hash of a caller's secret for
+    // per-user accounts): no format is enforced, any 32 bytes are valid.
+    // CRITICAL: the MPC renders the path as hex::encode(path) for key derivation (lowercase hex
+    // of the full 32 bytes, no trimming, no 0x prefix). The sender is always part
+    // of the derivation, so no contract can reach another contract's derived keys.
+    keyVersion: Uint<8>;      // MPC root-key version to derive from. Currently 1.
+    path: Bytes<32>;          // Key derivation path: 32 opaque bytes, client contract's choice.
+
+    // MPC Parameters.
+    algo: MPCSignatureAlgorithm;  // Signature algorithm scheme, e.g. ecdsa
+    dest: MPCDestination;         // Destination field reserved for future use. Set to unused.
+    params: Bytes<64>;            // Extra MPC parameters reserved for future use. Zero-fill.
+
+    // Specific destination chain Transaction parameters.
+    txParamType: TxParamType; // Off-chain tag indicating what type txParams is set to.
+    txParams: TxParams; // The generic transaction-param payload
+    caip2Id: Bytes<32>;       // Target chain in CAIP-2 form, e.g. "eip155:11155111"
+                              // (https://chainagnostic.org/CAIPs/caip-2)
+
+    // Serialisation Schemas.
+    // outputDeserializationSchema tells the MPC how to deserialise the destination chain's
+    // execution output (destination chain -> MPC). respondSerializationSchema tells the MPC
+    // how to serialise that output into the RespondBidirectionalEvent it posts back
+    // (MPC -> Midnight).
+    // Both are ABI-style JSON schema strings, sized per client contract
+    // (see: https://docs.soliditylang.org/en/v0.8.30/abi-spec.html#json)
+    outputDeserializationSchema: Bytes<LenOutputDeserialization>;
+    respondSerializationSchema: Bytes<LenRespondSerialization>;
+  }
+
+  // MPCSignatureAlgorithm indicates which signature algorithm
+  // will be used by the MPC to generate requested signature.
+  export enum MPCSignatureAlgorithm {
+    ecdsa, // ECDSA signature algorithm
+    reserved, // Reserved for future use. Exists to keep enum >= 2 (proof server bug).
+  }
+
+  // MPCDestination specifies the destination field of a SignBidirectionalEvent.
+  // Currently unused.
+  export enum MPCDestination {
+    unused,
+    reserved, // Reserved for future use. Exists to keep enum >= 2 (proof server bug).
+  }
+
+  // TxParamType indicates which transaction-param decomposition a request
+  // contains so an off-chain consumer (e.g. the MPC) knows how to re-assemble it.
+  export enum TxParamType {
+    evmType2, // EvmType2TxParams: an EIP-1559 EVM transaction (envelope + calldata)
+    reserved, // Reserved for future use. Exists to keep enum >= 2 (proof server bug).
+  }
+
+  // Construction helper for the canonical Signet SignBidirectionalEvent.
+  export pure circuit constructSignBidirectionalEvent<TxParams, #LenOutputDeserialization, #LenRespondSerialization>(
+    sender: ContractAddress,
+    requestNonce: Uint<64>,
+    keyVersion: Uint<8>,
+    path: Bytes<32>,
+    algo: MPCSignatureAlgorithm,
+    dest: MPCDestination,
+    params: Bytes<64>,
+    txParamType: TxParamType,
+    txParams: TxParams,
+    caip2Id: Bytes<32>,
+    outputDeserializationSchema: Bytes<LenOutputDeserialization>,
+    respondSerializationSchema: Bytes<LenRespondSerialization>,
+  ): SignBidirectionalEvent<TxParams, LenOutputDeserialization, LenRespondSerialization> {
+    assert(keyVersion >= 1, "keyVersion must be >= 1");
+
+    return SignBidirectionalEvent<TxParams, LenOutputDeserialization, LenRespondSerialization> {
+      sender,
+      requestNonce,
+      keyVersion,
+      path,
+      algo,
+      dest,
+      params,
+      txParamType,
+      txParams,
+      caip2Id,
+      outputDeserializationSchema,
+      respondSerializationSchema,
+    };
+  }
+
+  // ---- SignBidirectionalEvent RequestId --------------------------------------------------------------
+
+  // 32 byte chain agnostic nominal id, calculated as keccak256 of the whole
+  // SignBidirectionalEvent record (see calculateRequestId).
+  export new type RequestId = Bytes<32>;
+
+  // keccak256 of the whole record: the id commits to every field, including the
+  // sender, and carries no domain-separation tag. Off-chain twins must reproduce
+  // the field-aligned binary layout exactly.
+  export pure circuit calculateRequestId<TxParams, #LenOutputDeserialization, #LenRespondSerialization>(
+    request: SignBidirectionalEvent<TxParams, LenOutputDeserialization, LenRespondSerialization>
+  ): RequestId {
+    return keccak256<SignBidirectionalEvent<TxParams, LenOutputDeserialization, LenRespondSerialization>>(request) as RequestId;
+  }
+
+  // ---- Client Contract: SignBidirectionalEvent Map ---------------------------------------------------
+
+  // Named mapping of RequestId to SignBidirectionalEvent. Declared by client contracts
+  // in their ledger. Client contract tells MPC field location of this map when making a cross
+  // contract call, via SignetSigner, to the Signet singleton. The MPC looks here to find
+  // SignBidirectionalEvents.
+  export new type SignBidirectionalEventMap<TxParams, #LenOutputDeserialization, #LenRespondSerialization> = Map<RequestId, SignBidirectionalEvent<TxParams, LenOutputDeserialization, LenRespondSerialization>>;
+
+  // ---- Cross Contract SignBidirectionalEventNotification ---------------------------------------------
+
+  // Contract interface used by client contract to make cross contract calls to
+  // Signet singleton to notify the MPC of a SignBidirectionalEvent.
+  export contract SignetSigner {
+    // Called by client contracts to notify the MPC of a SignBidirectionalEvent.
+    circuit signBidirectional(
+      // Canonical id of the SignBidirectionalEvent (calculate with calculateRequestId).
+      // Disclosed in the emitted notification event: the MPC looks this id up in the
+      // caller's own request map.
+      requestId: RequestId,
+      // Versioned notification of the SignBidirectionalEvent
+      // (construct with constructSignBidirectionalEventNotificationV1).
+      notification: SignBidirectionalEventNotification
+    ): [];
+  }
+
+  // Notification delivered by client contracts via cross contract call to Signet singleton
+  // (via SignetSigner interface) to notify the MPC of a SignBidirectionalEvent.
+  export struct SignBidirectionalEventNotification {
+    // Notification payload layout version.
+    // Current layout version: 1 (see constructSignBidirectionalEventNotificationV1)
+    version: Uint<8>;
+    // Payload containing serialised notification payload.
+    payload: Bytes<128>;
+  }
+
+  // Construction helper for the V1 SignBidirectionalEventNotification.
+  //
+  // The payload is a pointer for the MPC: the contract that holds the
+  // SignBidirectionalEventMap (callerAddress) and the position of that map in
+  // the contract's raw ledger state tree (requestsPathDepth + requestsPath).
+  //
+  // Read the path from your contract's compiled artifacts, never derive it by
+  // hand: each field's resolved path is its "index" in
+  // managed/<contract>/compiler/contract-info.json (a bare number N means path
+  // [N]). Set requestsPathDepth to the number of entries and requestsPath to
+  // the path zero padded to 4 entries: [1, 14] becomes depth 2 and path
+  // [1, 14, 0, 0].
+  export pure circuit constructSignBidirectionalEventNotificationV1(
+    // Address of the client contract that stores and notifies of this SignBidirectionalEvent.
+    // Set with kernel.self(). MUST match sender in associated SignBidirectionalEvent.
+    callerAddress: ContractAddress,
+    // Number of meaningful entries in requestsPath: 1 for a flat (15 or fewer
+    // field) contract, one more per chunk level after that (max 4).
+    requestsPathDepth: Uint<8>,
+    // Resolved ledger-tree path of the caller's SignBidirectionalEventMap, from
+    // its contract-info.json "index". Entries at and beyond requestsPathDepth
+    // are zero.
+    requestsPath: Vector<4, Uint<8>>
+  ): SignBidirectionalEventNotification {
+    return SignBidirectionalEventNotification {
+      version: 1,
+      // 128 = 32 + 1 + 4 + 91
+      payload: Bytes[
+        ...callerAddress.bytes,
+        requestsPathDepth,
+        requestsPath[0], requestsPath[1], requestsPath[2], requestsPath[3],
+        ...default<Bytes<91>>
+      ]
+    };
+  }
+
+  // A curve point in affine coordinates, SEC1 big-endian. Field-for-field the
+  // AffinePoint of the sig-net EVM and Solana signer contracts.
+  export struct AffinePoint {
+    x: Bytes<32>;
+    y: Bytes<32>;
+  }
+
+  // The MPC's canonical ECDSA signature: bigR the full nonce point, s the
+  // signature scalar, recoveryId the parity of R.y (0 or 1). The same Signature
+  // vocabulary as the EVM and Solana signer contracts and the MPC's own record.
+  // Stored bytes are BIG-endian (SEC1) throughout.
+  export struct Signature {
+    bigR: AffinePoint;
+    s: Bytes<32>;
+    recoveryId: Uint<8>;
+  }
+
+  // Counterpart to SignBidirectionalEvent: the MPC generated signature a request asked for.
+  // Posted by the MPC through the Signet singleton for clients to extract and build a
+  // signed transaction from.
+  export struct SignatureRespondedEvent {
+    // The requested signature over the transaction the request describes.
+    signature: Signature;
+  }
+
+  // RespondBidirectionalEvent: the MPC's attestation of a foreign execution, the
+  // final step of the sign bidirectional flow.
+  //
+  //    attestationDigest = keccak256(requestId + serializedOutput)
+  //    signature = signSECP256k1(mpcResponseKey, attestationDigest)
+  //
+  // mpcResponseKey is derived like request signing keys, with the path set to the
+  // fixed "midnight response key" (a protocol string that enters the derivation
+  // verbatim, unlike a request's hex-encoded 32 path bytes):
+  //  mpcResponseKey = f(mpcRootKey[keyVersion], caip2ChainId, sender, "midnight response key")
+  //
+  // The output travels off chain and the digest is recomputed at verification
+  // time (verifyRespondBidirectionalEvent). The signature is the ONLY thing that
+  // distinguishes a genuine post from garbage: the singleton emits every post
+  // unverified.
+  export struct RespondBidirectionalEvent {
+    // The MPC's ECDSA signature over the attestation digest.
+    signature: Signature;
+  }
+
+  // The 32-byte attestation digest of a remote execution output:
+  //    attestationDigest = keccak256(requestId + serializedOutput)
+  // Inputs are concatenated raw, no padding or length prefixes. Off-chain code
+  // uses the TypeScript twin in `ecdsa-attestation.ts`.
+  export pure circuit calculateSignetAttestationDigest<#serializedOutputLength>(
+    requestId: RequestId,
+    serializedOutput: Bytes<serializedOutputLength>,
+  ): Bytes<32> {
+    return keccak256<[RequestId, Bytes<serializedOutputLength>]>([requestId, serializedOutput]);
+  }
+
+  // Byte-order adapter: stored records are big-endian, the scalar casts read
+  // little-endian.
+  pure circuit reverseBytes32(b: Bytes<32>): Bytes<32> {
+    const v = b as Vector<32, Uint<8>>;
+    return Bytes[v[31], v[30], v[29], v[28], v[27], v[26], v[25], v[24],
+                 v[23], v[22], v[21], v[20], v[19], v[18], v[17], v[16],
+                 v[15], v[14], v[13], v[12], v[11], v[10], v[9],  v[8],
+                 v[7],  v[6],  v[5],  v[4],  v[3],  v[2],  v[1],  v[0]];
+  }
+
+  // Verifies a RespondBidirectionalEvent against its execution output and MPC
+  // response key: recomputes the attestation digest and checks the ECDSA
+  // signature over it. Client contracts run this before consuming outputs, as
+  // the singleton emits responses unverified. The caller supplies
+  // serializedOutput at its exact unpadded width and the event record as
+  // stored. Only bigR.x and s enter verification. An s that reduces to 0 mod
+  // the curve order aborts the circuit rather than returning false, so sift
+  // candidate posts off chain first (verifyRespondBidirectionalSignature).
+  export pure circuit verifyRespondBidirectionalEvent<#serializedOutputLength>(
+    requestId: RequestId,
+    serializedOutput: Bytes<serializedOutputLength>,
+    respondBidirectionalEvent: RespondBidirectionalEvent,
+    mpcResponseKey: Secp256k1Point
+  ): Boolean {
+    const digest = calculateSignetAttestationDigest<serializedOutputLength>(
+      requestId,
+      serializedOutput,
+    );
+
+    return secp256k1EcdsaVerify(
+      digest,
+      Secp256k1EcdsaSignature {
+        r: reverseBytes32(respondBidirectionalEvent.signature.bigR.x) as Secp256k1Scalar,
+        s: reverseBytes32(respondBidirectionalEvent.signature.s) as Secp256k1Scalar,
+      },
+      mpcResponseKey
+    );
+  }
+
+  // ---- EVM Type2 Transaction Parameters --------------------------------------------------------------
+
+  // The EVM transaction to be signed, decomposed into typed fields
+  // (EIP-1559 / type-2: https://eips.ethereum.org/EIPS/eip-1559) so the
+  // requesting contract can enforce invariants field by field. The MPC
+  // re-assembles and RLP-encodes off chain.
+  //
+  // Every variable-length part is a compile-time CAPACITY (a generic size
+  // parameter the requesting contract fixes) plus a runtime count of how many
+  // leading slots are real. Unused capacity is hashed as part of the record
+  // (zero-fill) but never reaches the assembled transaction. Field order is
+  // the canonical EIP-1559 RLP order and the request-id hash order: part of
+  // the wire contract, each count directly before the slot it bounds.
+  //
+  // KEY: texual order of the fields in this structure must remain fixed as is as their order
+  //      is relied upon for consistent hashing and decoding from ledger state.
+  export struct EvmType2TxParams<#maxCalldataWords, #maxAccessListEntries, #maxStorageKeysPerEntry> {
+    chainId: Uint<64>;               // EVM chain id (also expressed in caip2Id)
+    nonce: Uint<64>;                 // account nonce of the derived sender
+    maxPriorityFeePerGas: Uint<128>; // wei
+    maxFeePerGas: Uint<128>;         // wei
+    gasLimit: Uint<64>;              // gas ceiling for the call
+    to: Bytes<20>;                   // call target (e.g. the ERC20 contract)
+    value: Uint<128>;                // ETH sent with the call, in wei
+    calldata: Maybe<EvmCalldata<maxCalldataWords>>; // none = plain ETH transfer ("0x" data)
+    accessListEntryCount: Uint<8>;   // how many leading accessList entries are real
+    accessList: Vector<maxAccessListEntries, EvmAccessListEntry<maxStorageKeysPerEntry>>;
+  }
+
+  // One EIP-2930 access-list entry (https://eips.ethereum.org/EIPS/eip-2930):
+  // an address plus the storage keys the transaction pre-declares. Keys are
+  // raw 32-byte values, copied verbatim into the RLP encoding.
+  //
+  // KEY: texual order of the fields in this structure must remain fixed as is as their order
+  //      is relied upon for consistent hashing and decoding from ledger state.  
+  export struct EvmAccessListEntry<#maxStorageKeys> {
+    address: Bytes<20>;
+    storageKeyCount: Uint<8>; // how many leading storageKeys are real
+    storageKeys: Vector<maxStorageKeys, Bytes<32>>;
+  }
+
+  // ABI calldata for the EVM call: 4-byte selector + 32-byte slots
+  // (https://docs.soliditylang.org/en/latest/abi-spec.html).
+  // CRITICAL: every ABI word here must be stored in canonical ABI form, as
+  // the MPC signs a transaction composed of exactly these words. See the
+  // ABI Calldata Word Construction Utilities below for help constructing
+  // canonical ABI words for common types.
+  //
+  // KEY: texual order of the fields in this structure must remain fixed as is as their order
+  //      is relied upon for consistent hashing and decoding from ledger state.  
+  export struct EvmCalldata<#maxWords> {
+    selector: Bytes<4>;  // the literal first 4 calldata bytes
+    noWords: Uint<16>;   // No. of used words in the words list
+    words: Vector<maxWords, Bytes<32>>; // canonical ABI words (big-endian)
+  }
+
+  // ---- ABI Calldata Word Construction Utilities ------------------------------------------------------
+  // Canonical ABI word builders and readers. Words MUST be stored in canonical
+  // ABI form (big-endian, per the ABI spec). These utilities help construct
+  // canonical ABI words for common types.
+
+  // Construct the canonical ABI word for a 20-byte EVM address.
+  // Output format: 12 zero bytes, then the 20 display-order address bytes.
+  export pure circuit evmAddressAbiWord(addr: Bytes<20>): Bytes<32> {
+    return Bytes[...default<Bytes<12>>, ...addr];
+  }
+
+  // Construct the canonical ABI word for a Uint<128> value (e.g. an ERC20 amount).
+  // Output format: the value as a 32-byte big-endian integer.
+  export pure circuit numericAbiWord(value: Uint<128>): Bytes<32> {
+    // Compact's Uint->Bytes cast is little-endian,
+    // so cast to 16 LE bytes and emit them reversed into the low half.
+    const le = (value as Bytes<16>) as Vector<16, Uint<8>>;
+    return Bytes[
+      ...default<Bytes<16>>,
+      le[15], le[14], le[13], le[12], le[11], le[10], le[9], le[8],
+      le[7],  le[6],  le[5],  le[4],  le[3],  le[2],  le[1], le[0]
+    ];
+  }
+
+  // Construct the canonical ABI word for a Boolean.
+  // Output format: 31 zero bytes, then 0x01 (true) or 0x00 (false).
+  export pure circuit boolAbiWord(value: Boolean): Bytes<32> {
+    return Bytes[...default<Bytes<31>>, value as Uint<8>];
+  }
+
+  // Read a numeric ABI word back into a Uint<128>: the inverse of
+  // numericAbiWord. Asserts the leading 16 bytes are zero (a canonical
+  // Uint<128> word).
+  export pure circuit abiWordToUint128(word: Bytes<32>): Uint<128> {
+    assert(slice<16>(word, 0) as Field == 0 as Field, "ABI word exceeds Uint<128>");
+    const b0  = slice<1>(word, 16) as Field;
+    const b1  = b0  * 256 + (slice<1>(word, 17) as Field);
+    const b2  = b1  * 256 + (slice<1>(word, 18) as Field);
+    const b3  = b2  * 256 + (slice<1>(word, 19) as Field);
+    const b4  = b3  * 256 + (slice<1>(word, 20) as Field);
+    const b5  = b4  * 256 + (slice<1>(word, 21) as Field);
+    const b6  = b5  * 256 + (slice<1>(word, 22) as Field);
+    const b7  = b6  * 256 + (slice<1>(word, 23) as Field);
+    const b8  = b7  * 256 + (slice<1>(word, 24) as Field);
+    const b9  = b8  * 256 + (slice<1>(word, 25) as Field);
+    const b10 = b9  * 256 + (slice<1>(word, 26) as Field);
+    const b11 = b10 * 256 + (slice<1>(word, 27) as Field);
+    const b12 = b11 * 256 + (slice<1>(word, 28) as Field);
+    const b13 = b12 * 256 + (slice<1>(word, 29) as Field);
+    const b14 = b13 * 256 + (slice<1>(word, 30) as Field);
+    const b15 = b14 * 256 + (slice<1>(word, 31) as Field);
+    return b15 as Uint<128>;
+  }
+
+  // Read a Boolean ABI word back into a Boolean. The first 31 bytes must be
+  // zero and the last byte 0 or 1: any non-canonical word is rejected.
+  export pure circuit abiWordToBool(word: Bytes<32>): Boolean {
+    assert(slice<31>(word, 0) as Field == 0 as Field, "ABI word is not a canonical Boolean");
+    const last = slice<1>(word, 31) as Field;
+    assert(last == 0 as Field || last == 1 as Field, "ABI word is not a canonical Boolean");
+    return last == 1 as Field;
+  }
+}

@@ -1,0 +1,126 @@
+pragma language_version >= 0.25;
+
+// ATTEST experiment: the keccak experiment's tiebreaker. The hash-only
+// numbers said keccak256 proves ~2.3x slower than persistentHash (SHA-256)
+// at attestation-sized inputs, driven by keccak's lookup table forcing the
+// 2^14 proving domain. This experiment asks whether that gap survives inside
+// a REALISTIC client circuit, where secp256k1EcdsaVerify may push both
+// variants into the larger domain anyway.
+//
+// Each measured circuit simulates what a signet client contract does with a
+// hashed respond-bidirectional attestation (see signet-midnight's
+// verifyRespondBidirectionalEvent): hash the 32-byte request id plus the
+// 128-byte serialized output into a digest, ECDSA-verify the MPC's signature
+// over that digest against the pinned response key, then flip the request to
+// "verified" in a ledger map.
+//
+//   mapOnly       counter + map write only: the workload floor
+//   verifyOnly    + secp256k1EcdsaVerify over a SUPPLIED digest (no hash)
+//   shaVerify     + in-circuit persistentHash (SHA-256) digest
+//                 + deserialize<RespondOutput, 128> of the output + assert
+//   keccakVerify  + in-circuit keccak256 digest
+//                 + deserialize<RespondOutput, 128> of the output + assert
+//
+// Deltas: mapOnly -> verifyOnly isolates ECDSA, verifyOnly -> {sha,keccak}
+// isolates hash + deserialize IN CONTEXT (both variants add the identical
+// deserialize, keeping the head-to-head clean), and shaVerify ->
+// keccakVerify is the number the signet digest decision turns on.
+//
+// The output bytes are packed OFF-CHAIN by @sig-net/midnight-serde
+// (compactSerialize of a RespondOutput value, zero-padded to 128), so a
+// green run also pins, end to end: library bytes == builtin deserialize
+// input == the signed digest preimage.
+//
+// The digest construction is the flat MPC form: hash(request_id || output),
+// one concatenation, one hash. persistentHash/keccak256 over the tuple
+// [Bytes<32>, Bytes<128>] hash exactly those 160 concatenated bytes (the
+// value-only binary representation of a tuple is its members' bytes back to
+// back). Signature and key conventions mirror Signet.compact: r and s arrive
+// as Bytes<32> and cast to Secp256k1Scalar, the digest is interpreted as a
+// big-endian integer, the key is a Secp256k1Point.
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger verified: Map<Bytes<32>, Boolean>;
+
+// The respond output the off-chain side packs with @sig-net/midnight-serde
+// (compactSerialize) and the hashing circuits read back with the builtin
+// deserialize<T, 128>. 1 + 16 + 20 = 37 packed bytes, zero-padded to 128:
+// the padding zeros are deliberate, they pin the keccak trailing-zero fix
+// (runtimes before 0.18.100 trimmed them from JS-side preimages, which
+// would make the off-chain digest disagree with the in-circuit one and
+// fail the signature assert).
+export struct RespondOutput {
+  success: Boolean;
+  amount: Uint<128>;
+  recipient: Bytes<20>;
+}
+
+// The workload floor: counter + map write, no crypto.
+export circuit mapOnly(requestId: Bytes<32>): [] {
+  callCount.increment(1);
+  verified.insert(disclose(requestId), true);
+}
+
+// ECDSA verification over a digest supplied from outside (no in-circuit hash).
+export circuit verifyOnly(
+  requestId: Bytes<32>,
+  digest: Bytes<32>,
+  r: Bytes<32>,
+  s: Bytes<32>,
+  pk: Secp256k1Point
+): [] {
+  callCount.increment(1);
+  const ok = secp256k1EcdsaVerify(
+    digest,
+    Secp256k1EcdsaSignature { r: r as Secp256k1Scalar, s: s as Secp256k1Scalar },
+    pk
+  );
+  assert(ok, "attestation signature invalid");
+  verified.insert(disclose(requestId), true);
+}
+
+// The full simulated flow, SHA-256 digest: sha256(requestId || output),
+// plus the builtin deserialize reading the midnight-serde-packed output.
+export circuit shaVerify(
+  requestId: Bytes<32>,
+  output: Bytes<128>,
+  r: Bytes<32>,
+  s: Bytes<32>,
+  pk: Secp256k1Point
+): [] {
+  callCount.increment(1);
+  const digest = persistentHash<[Bytes<32>, Bytes<128>]>([requestId, output]);
+  const ok = secp256k1EcdsaVerify(
+    digest,
+    Secp256k1EcdsaSignature { r: r as Secp256k1Scalar, s: s as Secp256k1Scalar },
+    pk
+  );
+  assert(ok, "attestation signature invalid");
+  const out = deserialize<RespondOutput, 128>(output);
+  assert(out.success, "respond reported failure");
+  verified.insert(disclose(requestId), true);
+}
+
+// The full simulated flow, keccak digest: keccak256(requestId || output),
+// plus the builtin deserialize reading the midnight-serde-packed output.
+export circuit keccakVerify(
+  requestId: Bytes<32>,
+  output: Bytes<128>,
+  r: Bytes<32>,
+  s: Bytes<32>,
+  pk: Secp256k1Point
+): [] {
+  callCount.increment(1);
+  const digest = keccak256<[Bytes<32>, Bytes<128>]>([requestId, output]);
+  const ok = secp256k1EcdsaVerify(
+    digest,
+    Secp256k1EcdsaSignature { r: r as Secp256k1Scalar, s: s as Secp256k1Scalar },
+    pk
+  );
+  assert(ok, "attestation signature invalid");
+  const out = deserialize<RespondOutput, 128>(output);
+  assert(out.success, "respond reported failure");
+  verified.insert(disclose(requestId), true);
+}

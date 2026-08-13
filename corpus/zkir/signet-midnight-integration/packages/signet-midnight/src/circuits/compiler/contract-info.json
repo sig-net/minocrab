@@ -1,0 +1,343 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "constructSignBidirectionalEventNotificationV1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "callerAddress",
+          "type": {
+            "type-name": "Struct",
+            "name": "ContractAddress",
+            "elements": [
+              {
+                "name": "bytes",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "requestsPathDepth",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        },
+        {
+          "name": "requestsPath",
+          "type": {
+            "type-name": "Vector",
+            "length": 4,
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "SignBidirectionalEventNotification",
+        "elements": [
+          {
+            "name": "version",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "payload",
+            "type": {
+              "type-name": "Bytes",
+              "length": 128
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "evmAddressAbiWord",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "addr",
+          "type": {
+            "type-name": "Bytes",
+            "length": 20
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "numericAbiWord",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "boolAbiWord",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "abiWordToUint128",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "word",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 340282366920938463463374607431768211455
+      }
+    },
+    {
+      "name": "abiWordToBool",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "word",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "calculateSignetAttestationDigest1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "serializedOutput",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "calculateSignetAttestationDigest32",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "serializedOutput",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "calculateSignetAttestationDigest100",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "serializedOutput",
+          "type": {
+            "type-name": "Bytes",
+            "length": 100
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "verifyRespondBidirectionalEvent32",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "serializedOutput",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "respondBidirectionalEvent",
+          "type": {
+            "type-name": "Struct",
+            "name": "RespondBidirectionalEvent",
+            "elements": [
+              {
+                "name": "signature",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Signature",
+                  "elements": [
+                    {
+                      "name": "bigR",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "AffinePoint",
+                        "elements": [
+                          {
+                            "name": "x",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          },
+                          {
+                            "name": "y",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "s",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    },
+                    {
+                      "name": "recoveryId",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 255
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "mpcResponseKey",
+          "type": {
+            "type-name": "Alias",
+            "name": "Secp256k1Point",
+            "type": {
+              "type-name": "Opaque",
+              "tsType": "Secp256k1Point"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

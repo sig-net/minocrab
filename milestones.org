@@ -11,11 +11,13 @@ written-down knowledge that every later milestone reads instead of rediscovering
 - [X] Nix flake + direnv; pin the Compact tooling (compactc etc.) in it.
       (compactc 0.33.0-rc.2 pinned by hash; verified: compiles corpus
       counter.compact → .zkir/.bzkir + keys. Mainnet stable 0.31.1 noted.)
-- [ ] Gather the corpus: clone sig-net Compact contracts (via gh) and public
+- [X] Gather the corpus: clone sig-net Compact contracts (via gh) and public
       Midnight examples into =corpus/= (or as flake inputs). Compile each with
       the pinned compactc and keep the ZKIR output alongside the source.
-      (Public sources surveyed → notes/corpus-sources.org; sig-net blocked on
-      gh auth login.)
+      (corpus/: 8 pinned sources, 478 files (+195 negative), 312 compile OK
+      incl. ALL 20 sig-net contracts — they need --feature-zkir-v3, wired as
+      per-source flags. ./update.sh bumps pins. Failures recorded in
+      compile-report.tsv are data, mostly older-pragma/multi-file cases.)
 - [X] Survey Midnight's repos: what ZKIR crates/types/serializers exist that we
       can import or fork, which ZKIR version supports cross-contract calling,
       and how compactc drives the pipeline. Write to =notes/zkir.org= and
@@ -35,8 +37,13 @@ we know exactly which Midnight code we're reusing and how.
       mirrored.)
 - [X] Round-trip test: parse compactc's ZKIR output, re-emit it, verify
       equivalence. (Green on the counter fixture.)
-- [ ] Extend the round-trip test to sweep every .zkir in corpus/ once the
-      corpus build lands.
+- [X] Extend the round-trip test to sweep every .zkir in corpus/ once the
+      corpus build lands. (722 v2 files round-trip clean.)
+- [ ] ZKIR v3 bindings: the sig-net contracts (incl. the M7 erc20-vault)
+      compile with --feature-zkir-v3 and emit v3 (typed IR, inputs/outputs
+      schema). Bind =midnight-zkir-v3= (git; rev the compact flake pins) the
+      same way as v2, round-trip the 66 skipped v3 corpus files. Needed
+      before M6/M7; the eDSL lowering can stay v2-first until then.
 - [X] Emit a trivial circuit by hand through our bindings and check Midnight's
       tooling accepts it. (zkir mock-compile accepts; parses back equal.)
 Exit criteria: we can read and write ZKIR that their toolchain accepts, proven

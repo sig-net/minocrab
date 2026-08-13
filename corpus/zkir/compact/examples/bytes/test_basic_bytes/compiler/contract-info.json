@@ -1,0 +1,771 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "test1",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 10
+      }
+    },
+    {
+      "name": "test2",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 8,
+        "type": {
+          "type-name": "Bytes",
+          "length": 1
+        }
+      }
+    },
+    {
+      "name": "test3",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "test4",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 15
+      }
+    },
+    {
+      "name": "test5",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 255
+      }
+    },
+    {
+      "name": "test6",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 12
+      }
+    },
+    {
+      "name": "test7",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test8",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Bytes",
+            "length": 0
+          },
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Boolean"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test9",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "test9_var",
+        "elements": [
+          {
+            "name": "data",
+            "type": {
+              "type-name": "Bytes",
+              "length": 4
+            }
+          },
+          {
+            "name": "size",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "empty",
+            "type": {
+              "type-name": "Bytes",
+              "length": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test10",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Vector",
+          "length": 2,
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "test11",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 6
+      }
+    },
+    {
+      "name": "test12",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        ]
+      }
+    },
+    {
+      "name": "test13",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test14",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 10
+      }
+    },
+    {
+      "name": "test15",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "slice_bytes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "input",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 3
+      }
+    },
+    {
+      "name": "combine_bytes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Bytes",
+            "length": 3
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 8
+      }
+    },
+    {
+      "name": "spread_triple",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "first",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        },
+        {
+          "name": "second",
+          "type": {
+            "type-name": "Bytes",
+            "length": 3
+          }
+        },
+        {
+          "name": "third",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 13
+      }
+    },
+    {
+      "name": "sum_bytes_as_field",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "input",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "double_bytes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "input",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 5,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "first_as_type",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "input",
+          "type": {
+            "type-name": "Bytes",
+            "length": 5
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test16",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "test1_var",
+      "index": [
+        0,
+        0
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 10
+      }
+    },
+    {
+      "name": "test2_var",
+      "index": [
+        0,
+        1
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 8,
+        "type": {
+          "type-name": "Bytes",
+          "length": 1
+        }
+      }
+    },
+    {
+      "name": "test2a_var",
+      "index": [
+        0,
+        2
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Bytes",
+          "length": 2
+        }
+      }
+    },
+    {
+      "name": "test3_var",
+      "index": [
+        0,
+        3
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 1
+      }
+    },
+    {
+      "name": "test4_var",
+      "index": [
+        0,
+        4
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 15
+      }
+    },
+    {
+      "name": "test5_var",
+      "index": [
+        0,
+        5
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Uint",
+        "maxval": 255
+      }
+    },
+    {
+      "name": "test5a_var",
+      "index": [
+        0,
+        6
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test5b_var",
+      "index": [
+        0,
+        7
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test6_var",
+      "index": [
+        0,
+        8
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 12
+      }
+    },
+    {
+      "name": "test7_var",
+      "index": [
+        0,
+        9
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test7b_var",
+      "index": [
+        1,
+        0
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test8_var",
+      "index": [
+        1,
+        1
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Bytes",
+            "length": 0
+          },
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Boolean"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test8a_var",
+      "index": [
+        1,
+        2
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test9a_var",
+      "index": [
+        1,
+        3
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "test9_var",
+        "elements": [
+          {
+            "name": "data",
+            "type": {
+              "type-name": "Bytes",
+              "length": 4
+            }
+          },
+          {
+            "name": "size",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "empty",
+            "type": {
+              "type-name": "Bytes",
+              "length": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test10_var",
+      "index": [
+        1,
+        4
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Vector",
+          "length": 2,
+          "type": {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "test11_var",
+      "index": [
+        1,
+        5
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 6
+      }
+    },
+    {
+      "name": "test12_var",
+      "index": [
+        1,
+        6
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        ]
+      }
+    },
+    {
+      "name": "test13_var",
+      "index": [
+        1,
+        7
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test14_a",
+      "index": [
+        1,
+        8
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 10
+      }
+    },
+    {
+      "name": "test15_var",
+      "index": [
+        1,
+        9
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test16_result",
+      "index": [
+        1,
+        10
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test16_combined",
+      "index": [
+        1,
+        11
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 8
+      }
+    },
+    {
+      "name": "test16_spread",
+      "index": [
+        1,
+        12
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 13
+      }
+    },
+    {
+      "name": "test16_doubled",
+      "index": [
+        1,
+        13
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 5,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "test16_first_as_field",
+      "index": [
+        1,
+        14
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    }
+  ]
+}

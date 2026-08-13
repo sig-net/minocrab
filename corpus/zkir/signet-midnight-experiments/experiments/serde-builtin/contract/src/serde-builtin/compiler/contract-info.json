@@ -1,0 +1,523 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "serBool",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "success",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deBool",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "serUintPair",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deUintPair",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "UintPair",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serMixed",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        },
+        {
+          "name": "small",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        },
+        {
+          "name": "tag",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deMixed",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Mixed",
+        "elements": [
+          {
+            "name": "flag",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "amount",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          },
+          {
+            "name": "small",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "tag",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serVector",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "count",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "values",
+          "type": {
+            "type-name": "Vector",
+            "length": 3,
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deVector",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "WithVector",
+        "elements": [
+          {
+            "name": "count",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "values",
+            "type": {
+              "type-name": "Vector",
+              "length": 3,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 18446744073709551615
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serNested",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 340282366920938463463374607431768211455
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "ok",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deNested",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Nested",
+        "elements": [
+          {
+            "name": "inner",
+            "type": {
+              "type-name": "Struct",
+              "name": "UintPair",
+              "elements": [
+                {
+                  "name": "a",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                },
+                {
+                  "name": "b",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "ok",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serField",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "f",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deField",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "serDynBytes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "len",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deDynBytes",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "DynBytes",
+        "elements": [
+          {
+            "name": "len",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "data",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serDynList",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "len",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "items",
+          "type": {
+            "type-name": "Vector",
+            "length": 3,
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "deDynList",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "DynList",
+        "elements": [
+          {
+            "name": "len",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "items",
+            "type": {
+              "type-name": "Vector",
+              "length": 3,
+              "type": {
+                "type-name": "Uint",
+                "maxval": 340282366920938463463374607431768211455
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "checkRoundtrip",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 128
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "checks",
+      "index": 0,
+      "exported": true,
+      "storage": "Counter"
+    }
+  ]
+}

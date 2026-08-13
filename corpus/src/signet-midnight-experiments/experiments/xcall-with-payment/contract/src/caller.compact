@@ -1,0 +1,34 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+contract Target {
+  circuit notify(coin: ShieldedCoinInfo): [];
+  circuit confirmRequest(requestId: Bytes<32>): [];
+}
+
+export sealed ledger target: Target;
+
+constructor(t: Target) {
+  target = disclose(t);
+}
+
+// PINNED LIMITATION (see xcall-with-payment.test.ts): the callee's
+// receiveShielded throws — Zswap ops are unsupported in cross-contract
+// callees, so a callee cannot take custody of a coin.
+export circuit callOnce(
+  coin: ShieldedCoinInfo,
+): [] {
+  target.notify(disclose(coin));
+}
+
+// Proof-of-communication: the cross-contract call itself. The callee only
+// does a state write (supported in callees), recording that this request
+// was communicated. Payment happens in a SEPARATE root call on the target
+// (pay), composed atomically via Transaction.merge — see
+// xcall-with-payment-atomic.test.ts.
+export circuit request(
+  requestId: Bytes<32>,
+): [] {
+  target.confirmRequest(disclose(requestId));
+}

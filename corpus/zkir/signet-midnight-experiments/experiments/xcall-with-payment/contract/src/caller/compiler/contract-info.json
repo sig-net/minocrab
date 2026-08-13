@@ -1,0 +1,197 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "callOnce",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "coin",
+          "type": {
+            "type-name": "Struct",
+            "name": "ShieldedCoinInfo",
+            "elements": [
+              {
+                "name": "nonce",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "color",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "request",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+    {
+      "name": "Target",
+      "circuits": [
+        {
+          "name": "notify",
+          "pure": false,
+          "argument-types": [
+            {
+              "type-name": "Struct",
+              "name": "ShieldedCoinInfo",
+              "elements": [
+                {
+                  "name": "nonce",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "color",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                }
+              ]
+            }
+          ],
+          "result-type": {
+            "type-name": "Tuple",
+            "types": [
+            ]
+          }
+        },
+        {
+          "name": "confirmRequest",
+          "pure": false,
+          "argument-types": [
+            {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          ],
+          "result-type": {
+            "type-name": "Tuple",
+            "types": [
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "ledger": [
+    {
+      "name": "target",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Contract",
+        "name": "Target",
+        "circuits": [
+          {
+            "name": "notify",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Struct",
+                "name": "ShieldedCoinInfo",
+                "elements": [
+                  {
+                    "name": "nonce",
+                    "type": {
+                      "type-name": "Bytes",
+                      "length": 32
+                    }
+                  },
+                  {
+                    "name": "color",
+                    "type": {
+                      "type-name": "Bytes",
+                      "length": 32
+                    }
+                  },
+                  {
+                    "name": "value",
+                    "type": {
+                      "type-name": "Uint",
+                      "maxval": 340282366920938463463374607431768211455
+                    }
+                  }
+                ]
+              }
+            ],
+            "result-type": {
+              "type-name": "Tuple",
+              "types": [
+              ]
+            }
+          },
+          {
+            "name": "confirmRequest",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Bytes",
+                "length": 32
+              }
+            ],
+            "result-type": {
+              "type-name": "Tuple",
+              "types": [
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

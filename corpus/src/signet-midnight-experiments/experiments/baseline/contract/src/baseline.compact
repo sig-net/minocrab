@@ -1,0 +1,34 @@
+pragma language_version >= 0.25;
+
+// BASELINE experiment — the control every other experiment is measured
+// against. `base` does the shared workload (some logic, "mints" into a
+// balances map, writes storage) with NO events, NO cross-contract calls and
+// NO explicit hashing; `noop` is the absolute floor (an empty provable
+// circuit), isolating the fixed per-circuit overhead of the proof system.
+//
+// The `base` body is byte-for-byte the same workload as events-contract's
+// `base`/`emitN` circuits and xcall-caller's `localBase`, so any metric
+// delta between them is attributable to the added construct alone.
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger lastAmount: Uint<128>;
+export ledger balances: Map<Bytes<32>, Uint<128>>;
+
+// The floor: the smallest PROVABLE circuit. (A truly empty body is classified
+// `pure` by compactc — no proof, no zkir — so it can't be call-benchmarked;
+// one counter bump is the minimum that keeps it a provable circuit.)
+export circuit noop(): [] {
+  callCount.increment(1);
+}
+
+// The shared workload: assert-free logic, a counter bump, a scalar ledger
+// write and a map insert (the "mint").
+export circuit base(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+}

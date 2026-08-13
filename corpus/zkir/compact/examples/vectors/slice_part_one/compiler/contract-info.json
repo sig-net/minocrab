@@ -1,0 +1,660 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "test1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 65535,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Field"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test2",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test3",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test4",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 2,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test5",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Boolean"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test6",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Tuple",
+            "types": [
+              {
+                "type-name": "Boolean"
+              },
+              {
+                "type-name": "Boolean"
+              },
+              {
+                "type-name": "Field"
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test7b",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 4
+      }
+    },
+    {
+      "name": "test8",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 4,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test9b",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 4
+      }
+    },
+    {
+      "name": "test10",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test11c",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 4,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        },
+        {
+          "name": "vector2",
+          "type": {
+            "type-name": "Vector",
+            "length": 4,
+            "type": {
+              "type-name": "Vector",
+              "length": 4,
+              "type": {
+                "type-name": "Field"
+              }
+            }
+          }
+        },
+        {
+          "name": "field",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "method3",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 16,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 16,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "method5",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 16
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 16,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "method7",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "bytes",
+          "type": {
+            "type-name": "Bytes",
+            "length": 4
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Bytes",
+          "length": 4
+        }
+      }
+    },
+    {
+      "name": "test12",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 16,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test13",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Struct",
+              "name": "var13",
+              "elements": [
+                {
+                  "name": "a",
+                  "type": {
+                    "type-name": "Field"
+                  }
+                },
+                {
+                  "name": "b",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 2
+                  }
+                },
+                {
+                  "name": "c",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                },
+                {
+                  "name": "d",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 10,
+                    "type": {
+                      "type-name": "Bytes",
+                      "length": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Bytes",
+            "length": 2
+          },
+          {
+            "type-name": "Boolean"
+          },
+          {
+            "type-name": "Bytes",
+            "length": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "test14",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "field",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        },
+        {
+          "name": "index1",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        },
+        {
+          "name": "index2",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 65535
+      }
+    },
+    {
+      "name": "test15",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test16b",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 2,
+            "type": {
+              "type-name": "Vector",
+              "length": 4,
+              "type": {
+                "type-name": "Field"
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test17",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 10,
+            "type": {
+              "type-name": "Bytes",
+              "length": 10
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 1
+      }
+    },
+    {
+      "name": "test18",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Vector",
+            "length": 4095,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test19",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vector",
+          "type": {
+            "type-name": "Vector",
+            "length": 5,
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "w16",
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "w16a",
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Vector",
+        "length": 4,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "var8",
+      "index": 0,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Field"
+      },
+      "value": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "var11",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "var14",
+      "index": 2,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "var15",
+      "index": 3,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "var17",
+      "index": 4,
+      "exported": true,
+      "storage": "List",
+      "type": {
+        "type-name": "Vector",
+        "length": 10,
+        "type": {
+          "type-name": "Bytes",
+          "length": 10
+        }
+      }
+    },
+    {
+      "name": "var18",
+      "index": 5,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "var19",
+      "index": 6,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "var19a",
+      "index": 7,
+      "exported": true,
+      "storage": "List",
+      "type": {
+        "type-name": "Vector",
+        "length": 3,
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "var19c",
+      "index": 8,
+      "exported": true,
+      "storage": "Counter"
+    }
+  ]
+}

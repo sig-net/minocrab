@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 1645,
+      "hash": "3384fc681104b14fe0fbb7bcb1f1a4bb34ef44aba5118a2ebef431fdc51f8570"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2472,
+      "hash": "f5d480c14fb1fd93a547d3a28f0e8cb2898ad18e1fa7df41e0c3c5ae0ae1b2f2"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 47947,
+      "hash": "d4033382e35259a2ce2d1e08f2d813e0e777064599511577a0cd44962ca8d3b6"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1647,
+      "hash": "7bbe0e21e6d7e4cd081541c69e6d364c172616c94161ce1ba45d18aab51af515"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "anton.zkir": {
+      "type": "file",
+      "size": 2523,
+      "hash": "21fc2e6fef02a4ff101175fd0852c75d6c16312a2605a0e9d72ced30468fffec"
+    },
+    "myswitch.zkir": {
+      "type": "file",
+      "size": 2257,
+      "hash": "b60a27e77a1eda974a7e995d53892fd3350908f5ebc9f9cd2cbe1d106e043521"
+    }
+  }
+}

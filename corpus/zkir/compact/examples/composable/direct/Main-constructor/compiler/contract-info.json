@@ -1,0 +1,49 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "calc",
+      "index": 0,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Contract",
+        "name": "Calculator",
+        "circuits": [
+          {
+            "name": "get_square",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "name": "get_cube",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

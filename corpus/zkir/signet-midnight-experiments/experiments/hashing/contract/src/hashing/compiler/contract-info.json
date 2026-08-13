@@ -1,0 +1,232 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "control32",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "control256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "control1024",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1024
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "persistent32",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "persistent256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "persistent1024",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1024
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "persistentVec8",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Vector",
+            "length": 8,
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "transient32",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "transient256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 256
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "transient1024",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "data",
+          "type": {
+            "type-name": "Bytes",
+            "length": 1024
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "callCount",
+      "index": 0,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "digest",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "fdigest",
+      "index": 2,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    }
+  ]
+}

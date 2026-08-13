@@ -1,0 +1,85 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 4286,
+      "hash": "286c710cb077b8cc81ccc1030fef4d3d2186363214b4b7df05db375c66a7fef4"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5896,
+      "hash": "0848ef2f43a5f0850b1b481b973846fd1ffb81ce05d0bd01cb0c1fb2551b0427"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 65949,
+      "hash": "7c5f7575f7418d5f6da4dd40aed597d2147a89e8b4b8fb0fac381d63c21c2325"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 3186,
+      "hash": "c051771f386cfc0d0b12d107fb515f8aa869e9199b018d446e2f90e3d403c34f"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_addSigner.zkir": {
+      "type": "file",
+      "size": 4059,
+      "hash": "8b92582e9177d8a3279687a09d8de02a7241ad8116a6d8c1274174656d945be1"
+    },
+    "_changeThreshold.zkir": {
+      "type": "file",
+      "size": 2050,
+      "hash": "30b2425968b766229ca63e9654adf30b68abfb7492720c774bc5d2c629622473"
+    },
+    "_removeSigner.zkir": {
+      "type": "file",
+      "size": 4812,
+      "hash": "7d54cec8739f3458fa21f96315b15f7f50c258502ef42fd2f902e6b06a7215be"
+    },
+    "_setThreshold.zkir": {
+      "type": "file",
+      "size": 1187,
+      "hash": "05520f891aee7f01ac8eab315cfcbb1461c6d68a535d8aa6ebc6ef38aa3f7665"
+    },
+    "assertSigner.zkir": {
+      "type": "file",
+      "size": 1593,
+      "hash": "737f616b17ff3f746957e6ae0b422339ac8fc683862f8ff0460d22e165219caf"
+    },
+    "assertThresholdMet.zkir": {
+      "type": "file",
+      "size": 1887,
+      "hash": "29e498b0335c3987357622a1fad5a3da860025ed644aef8109c00c60b4410962"
+    },
+    "getSignerCount.zkir": {
+      "type": "file",
+      "size": 914,
+      "hash": "d015a811c00e027097a6792c1c48fbf0da392faedb9215d2fc772e9f8c03d072"
+    },
+    "getThreshold.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "1e2141639872add16ee071454495a6a761f62ddfcdce302303d108e40d7b9893"
+    },
+    "initialize.zkir": {
+      "type": "file",
+      "size": 13943,
+      "hash": "f0b94eafd61e1c91a72113e06744ba4a93c474aae78e352de6d92497df4fe35d"
+    },
+    "isSigner.zkir": {
+      "type": "file",
+      "size": 1592,
+      "hash": "d0137f19d67aca0fe677ecde39c058689182caf297999879da2ec255d55b745c"
+    }
+  }
+}

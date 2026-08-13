@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 1519,
+      "hash": "8820fe7b29b7b94bbe4c4023341bd4833ebc7408944c70eb677e01e053e9e419"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2072,
+      "hash": "fcebebaec88ed97b2be93b76e6ab5fab3763d010e464ecdf6379ede88ade5b06"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 78813,
+      "hash": "ec3d01b6f7f509ede7852ee7c342d4702b2ca0e1b3e0d045499273c5204fbde1"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1918,
+      "hash": "3a15aec0d96de69f6c6792c01cc797ade3bd505f7db7509de7bdb63e0a250d47"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "test_QualifiedShieldedCoinInfo.zkir": {
+      "type": "file",
+      "size": 15165,
+      "hash": "fd4a5ef6b547414e15c8e88a8224bd542f30b71ec74f97dca3877987fd3a2e49"
+    },
+    "test_ShieldedCoinInfo.zkir": {
+      "type": "file",
+      "size": 19889,
+      "hash": "a92684cd0894c905cebd6c944743f0e9d05815b6ed908a2e7e8f3b40a05b0541"
+    }
+  }
+}

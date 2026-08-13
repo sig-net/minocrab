@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 1836,
+      "hash": "4f58d90d987aae0b48b52fee30c1a4fb214815476547b7d048441f3aa2dd43c3"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1776,
+      "hash": "28a64b3876d12dfb2c89c2c42393953d6f9131da4a5b98a519d5bb62f4936d24"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 18033,
+      "hash": "993838f2b5d17557e70381b3157168d39c81c0e02e15138418eb115605778620"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 711,
+      "hash": "8004142ec239f73aed970e5bfe5f7ac337066f7d5fdd253bf4009b23979a00ac"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "callBump.zkir": {
+      "type": "file",
+      "size": 3319,
+      "hash": "975dd9c9a88869dd901c8eac8be5ba473b3bc05e7ac0c73aa35ea11e2b571300"
+    },
+    "callLeak.zkir": {
+      "type": "file",
+      "size": 3315,
+      "hash": "0aca3d8ee69d24dff1b9cb059fa02b4a75511d7c2be3e178be7c9ecb96ee2451"
+    }
+  }
+}

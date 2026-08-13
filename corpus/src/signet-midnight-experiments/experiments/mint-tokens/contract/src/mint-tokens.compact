@@ -1,0 +1,36 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+
+export circuit mintWithRecipientArgument(
+  recipient: ZswapCoinPublicKey,
+  mintNonce: Bytes<32>,
+): [] {
+  const mintRecipient = disclose(recipient);
+
+  mintShieldedToken(
+    pad(32, "testy-test"),
+    1 as Uint<64>,
+    disclose(mintNonce),
+    left<ZswapCoinPublicKey, ContractAddress>(mintRecipient)
+  );
+}
+
+export ledger veryPublicValue: ZswapCoinPublicKey;
+
+export circuit mintWithRecipientOwnPublicKey(
+  recipient: ZswapCoinPublicKey,
+  mintNonce: Bytes<32>,
+): [] {
+  const mintRecipient = ownPublicKey();
+  
+  veryPublicValue = ownPublicKey();
+
+  mintShieldedToken(
+    pad(32, "testy-test"),
+    1 as Uint<64>,
+    disclose(mintNonce),
+    left<ZswapCoinPublicKey, ContractAddress>(mintRecipient)
+  );
+}

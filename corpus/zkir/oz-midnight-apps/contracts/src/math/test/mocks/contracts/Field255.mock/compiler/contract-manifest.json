@@ -1,0 +1,80 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 4981,
+      "hash": "e0ea20d941d4a149947dab4bfb64d47ba0c94840e8e25d225be4f45159ee09f3"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 4716,
+      "hash": "ea1f1a3112ff8e889ce66ecaf56536dc1e22f8ff3593671a056240d1c0cb7c0f"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 41837,
+      "hash": "941a3d25492b4d264ae5823ec34ca4ddd044192faa041bdd242d3cdfd6bf7e63"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 4387,
+      "hash": "f2a60ec9487d3aba43a08ac7c4229216fbfa9fc985c2d12eeb0316b367bcb254"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "MAX_FIELD.zkir": {
+      "type": "file",
+      "size": 1099,
+      "hash": "ff7d9ac38d5689801c34ac1d218af269fbb454216619ac632ee5bc6f3776fa8e"
+    },
+    "eq.zkir": {
+      "type": "file",
+      "size": 1039,
+      "hash": "2d76a6c2e9b6bd9d719cbdfd5466fe46790b79f58fb2b856e2ee436f1cfbecd5"
+    },
+    "gt.zkir": {
+      "type": "file",
+      "size": 18262,
+      "hash": "40cc797c994835681024256d0531542e5150323e9ba307091a361dda3f3efb79"
+    },
+    "gte.zkir": {
+      "type": "file",
+      "size": 18319,
+      "hash": "b38e9440ba42de51794c3e4f45b51fecdf4e45b674b7742b2204c21f9c0e3d14"
+    },
+    "isZero.zkir": {
+      "type": "file",
+      "size": 1039,
+      "hash": "e5c54c6e12df3876258953e6d84a870e5d8f7eecbe0ad5d0c37aee1d2f99646f"
+    },
+    "lt.zkir": {
+      "type": "file",
+      "size": 18262,
+      "hash": "6a8dc127f61571553b7b20e4008010f53314d8b12f33e2f38c616aac5c60c7ed"
+    },
+    "lte.zkir": {
+      "type": "file",
+      "size": 18319,
+      "hash": "f9bc09ca643143daa66bf488223bc3fe603cd4f10a06e58fba4b974ec80877c2"
+    },
+    "toBytes.zkir": {
+      "type": "file",
+      "size": 1093,
+      "hash": "bb024897bee12c9e6680d57e31c9d5d8972dcd1cb06de143ca9560266994c860"
+    },
+    "toU256.zkir": {
+      "type": "file",
+      "size": 9429,
+      "hash": "faabc8646fe214f09ef43efd52ffb67baea25f6186b283838ef573b51a35f8af"
+    }
+  }
+}

@@ -1,0 +1,141 @@
+pragma language_version >= 0.25;
+
+// Feature experiment: pin the byte layout of the builtin serialize<T, N> /
+// deserialize<T, N> pair from CompactStandardLibrary, so off-chain encoders
+// (the fakenet-signer's Midnight response serializer, and eventually the real
+// MPC) can produce bytes a contract reads with ONE deserialize call instead of
+// hand-maintained slice offsets.
+//
+// Every payload here is Bytes<128> on purpose: that is the exact width of
+// RespondBidirectionalEvent.serializedOutput in the signet-midnight seed
+// (midnight-integration/packages/signet-midnight/src/Signet.compact), so all
+// pinned layouts transfer 1:1 to the respond path.
+//
+// Layout rules verified by the sibling tests (tests/serde-builtin.test.ts):
+//   - fields in declaration order, each at its NATURAL width, little-endian
+//   - Boolean 1 byte, Uint<w> ceil(w/8) bytes, Field 32 bytes, Bytes<n> raw
+//   - Vector<n, T> is n elements back to back, no length prefix
+//   - nested structs flatten in order
+//   - the packed struct sits at the START of Bytes<N>, zero-padded right
+//   - Uint widths stop at 248 bits, so an EVM uint256 has no lossless Uint or
+//     Field carrier and must travel as Bytes<32>
+
+import CompactStandardLibrary;
+
+// Incremented by every on-chain roundtrip check (the live e2e asserts growth).
+export ledger checks: Counter;
+
+// The exact respond payload shape the erc20-vault example reads today.
+struct BoolOutput {
+  success: Boolean;
+}
+
+// Two natural-width integers, the layout smoke test.
+struct UintPair {
+  a: Uint<128>;
+  b: Uint<64>;
+}
+
+// One field of each fixed-width kind.
+struct Mixed {
+  flag: Boolean;
+  amount: Uint<128>;
+  small: Uint<8>;
+  tag: Bytes<32>;
+}
+
+// A fixed-length vector inside a struct.
+struct WithVector {
+  count: Uint<64>;
+  values: Vector<3, Uint<64>>;
+}
+
+// Struct nesting.
+struct Nested {
+  inner: UintPair;
+  ok: Boolean;
+}
+
+// A Field carrier (values must stay below the BLS12-381 scalar modulus).
+struct WithField {
+  f: Field;
+}
+
+// The convention for DYNAMIC payloads (Compact has no dynamic circuit types):
+// an explicit length field plus a max-width buffer, both at natural widths.
+// Off-chain encoders write the used prefix and zero-pad the rest.
+struct DynBytes {
+  len: Uint<64>;
+  data: Bytes<32>;
+}
+
+// Same convention for lists: a used-count plus a fixed-capacity vector.
+struct DynList {
+  len: Uint<64>;
+  items: Vector<3, Uint<128>>;
+}
+
+export pure circuit serBool(success: Boolean): Bytes<128> {
+  return serialize<BoolOutput, 128>(BoolOutput { success: success });
+}
+export pure circuit deBool(bytes: Bytes<128>): Boolean {
+  return deserialize<BoolOutput, 128>(bytes).success;
+}
+
+export pure circuit serUintPair(a: Uint<128>, b: Uint<64>): Bytes<128> {
+  return serialize<UintPair, 128>(UintPair { a: a, b: b });
+}
+export pure circuit deUintPair(bytes: Bytes<128>): UintPair {
+  return deserialize<UintPair, 128>(bytes);
+}
+
+export pure circuit serMixed(flag: Boolean, amount: Uint<128>, small: Uint<8>, tag: Bytes<32>): Bytes<128> {
+  return serialize<Mixed, 128>(Mixed { flag: flag, amount: amount, small: small, tag: tag });
+}
+export pure circuit deMixed(bytes: Bytes<128>): Mixed {
+  return deserialize<Mixed, 128>(bytes);
+}
+
+export pure circuit serVector(count: Uint<64>, values: Vector<3, Uint<64>>): Bytes<128> {
+  return serialize<WithVector, 128>(WithVector { count: count, values: values });
+}
+export pure circuit deVector(bytes: Bytes<128>): WithVector {
+  return deserialize<WithVector, 128>(bytes);
+}
+
+export pure circuit serNested(a: Uint<128>, b: Uint<64>, ok: Boolean): Bytes<128> {
+  return serialize<Nested, 128>(Nested { inner: UintPair { a: a, b: b }, ok: ok });
+}
+export pure circuit deNested(bytes: Bytes<128>): Nested {
+  return deserialize<Nested, 128>(bytes);
+}
+
+export pure circuit serField(f: Field): Bytes<128> {
+  return serialize<WithField, 128>(WithField { f: f });
+}
+export pure circuit deField(bytes: Bytes<128>): Field {
+  return deserialize<WithField, 128>(bytes).f;
+}
+
+export pure circuit serDynBytes(len: Uint<64>, data: Bytes<32>): Bytes<128> {
+  return serialize<DynBytes, 128>(DynBytes { len: len, data: data });
+}
+export pure circuit deDynBytes(bytes: Bytes<128>): DynBytes {
+  return deserialize<DynBytes, 128>(bytes);
+}
+
+export pure circuit serDynList(len: Uint<64>, items: Vector<3, Uint<128>>): Bytes<128> {
+  return serialize<DynList, 128>(DynList { len: len, items: items });
+}
+export pure circuit deDynList(bytes: Bytes<128>): DynList {
+  return deserialize<DynList, 128>(bytes);
+}
+
+// Non-pure on purpose: the live e2e submits this with OFF-CHAIN-encoded bytes,
+// so a accepted proof shows the real zk circuit (not just the JS simulator)
+// deserializes TS-produced bytes and re-serializes them to the same bytes.
+export circuit checkRoundtrip(bytes: Bytes<128>): [] {
+  const v = deserialize<Mixed, 128>(bytes);
+  assert(serialize<Mixed, 128>(v) == bytes, "serialize/deserialize roundtrip mismatch");
+  checks.increment(1);
+}

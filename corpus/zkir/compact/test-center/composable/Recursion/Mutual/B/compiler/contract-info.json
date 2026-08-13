@@ -1,0 +1,109 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "set",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a_param",
+          "type": {
+            "type-name": "Contract",
+            "name": "A",
+            "circuits": [
+              {
+                "name": "isOdd",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Boolean"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "isEven",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "x",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+    {
+      "name": "A",
+      "circuits": [
+        {
+          "name": "isOdd",
+          "pure": false,
+          "argument-types": [
+            {
+              "type-name": "Field"
+            }
+          ],
+          "result-type": {
+            "type-name": "Boolean"
+          }
+        }
+      ]
+    }
+  ],
+  "ledger": [
+    {
+      "name": "called",
+      "index": 0,
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "a",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Contract",
+        "name": "A",
+        "circuits": [
+          {
+            "name": "isOdd",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

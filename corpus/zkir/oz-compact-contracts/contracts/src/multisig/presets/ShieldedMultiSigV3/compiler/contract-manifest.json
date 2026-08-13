@@ -1,0 +1,75 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 7301,
+      "hash": "7712e4c0e0c2bb858d995f91f383f516b25a52c28bcfabf02a310e117e70c7a2"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5965,
+      "hash": "9ff82a1a628bbf7d8b8f02fe81c47a5d4f9f58cb2c7382d65a48369ac3a09fa3"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 125622,
+      "hash": "c70e08cd56cd1fa41e6802ab7ceaa57b6e62d50912be2ae67bed11d18e8eb2d2"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 5955,
+      "hash": "07b44ccf8e50bcd469aef469960306ebc54b89598ad42735be32f3936e5e0b70"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "burn.zkir": {
+      "type": "file",
+      "size": 20815,
+      "hash": "47761bdece82b0b7ae6a65e98a509626f6637b87bf12cdac1f42ec9027a32086"
+    },
+    "getNonce.zkir": {
+      "type": "file",
+      "size": 992,
+      "hash": "0e6e6475c675193b4c115f4b0ed34d1bb900afd1752f20eee45bb9f3583f88d3"
+    },
+    "getSignerCount.zkir": {
+      "type": "file",
+      "size": 914,
+      "hash": "d015a811c00e027097a6792c1c48fbf0da392faedb9215d2fc772e9f8c03d072"
+    },
+    "getThreshold.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "1e2141639872add16ee071454495a6a761f62ddfcdce302303d108e40d7b9893"
+    },
+    "getTokenDomain.zkir": {
+      "type": "file",
+      "size": 1116,
+      "hash": "ec3b7cc7bf239054ac92d4f8005b7d393bd4034c896713b70d74c6c422601f35"
+    },
+    "getTokenType.zkir": {
+      "type": "file",
+      "size": 2312,
+      "hash": "0e3f4546e00f5ec5c4feae82be56850337fc067f733791637e945c077b3a445b"
+    },
+    "isSigner.zkir": {
+      "type": "file",
+      "size": 1592,
+      "hash": "d0137f19d67aca0fe677ecde39c058689182caf297999879da2ec255d55b745c"
+    },
+    "mint.zkir": {
+      "type": "file",
+      "size": 22793,
+      "hash": "f5f6ec0d77b3e1157a70241ccab69d80094e938e6899412a6fc288f1afda0419"
+    }
+  }
+}

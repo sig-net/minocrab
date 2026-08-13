@@ -1,0 +1,478 @@
+src/compact/compiler/standard-library.compact	fail	Exception: src/compact/compiler/standard-library.compact line 24 char 1:
+src/compact/compiler/zkir-v3-library.compact	fail	Exception: src/compact/compiler/zkir-v3-library.compact line 147 char 45:
+src/compact/examples/adt/exports/counter.compact	ok	
+src/compact/examples/adt/exports/kernel.compact	ok	
+src/compact/examples/adt/exports/list_field.compact	ok	
+src/compact/examples/adt/exports/list_qualified_coin_info.compact	ok	
+src/compact/examples/adt/exports/map_field_field.compact	ok	
+src/compact/examples/adt/exports/set_field.compact	ok	
+src/compact/examples/adt/exports/set_qualified_coin_info.compact	ok	
+src/compact/examples/adt/negative/counter_failing.compact	ok	
+src/compact/examples/adt/negative/map_failing.compact	ok	
+src/compact/examples/adt/negative/map_field_field.compact	fail	Exception: map_field_field.compact line 24 char 10:
+src/compact/examples/adt/negative/sealed.compact	fail	Exception: sealed.compact line 18 char 8:
+src/compact/examples/adt/tests/constructor.compact	ok	
+src/compact/examples/adt/tests/counter.compact	ok	
+src/compact/examples/adt/tests/historicmerkletree_field.compact	ok	
+src/compact/examples/adt/tests/kernel.compact	ok	
+src/compact/examples/adt/tests/list_bytes.compact	ok	
+src/compact/examples/adt/tests/list_coin_info.compact	ok	
+src/compact/examples/adt/tests/list_enum.compact	ok	
+src/compact/examples/adt/tests/list_field.compact	ok	
+src/compact/examples/adt/tests/list_opaque.compact	ok	
+src/compact/examples/adt/tests/list_qualified_coin_info.compact	ok	
+src/compact/examples/adt/tests/list_struct_struct.compact	ok	
+src/compact/examples/adt/tests/list_struct.compact	ok	
+src/compact/examples/adt/tests/list_vector_field_0.compact	ok	
+src/compact/examples/adt/tests/list_vector_field_4.compact	ok	
+src/compact/examples/adt/tests/list_vector_vector_vector.compact	ok	
+src/compact/examples/adt/tests/list_vector.compact	ok	
+src/compact/examples/adt/tests/map_boolean_map_field_counter.compact	ok	
+src/compact/examples/adt/tests/map_bytes_field.compact	ok	
+src/compact/examples/adt/tests/map_field_field.compact	ok	
+src/compact/examples/adt/tests/map_field_list_field.compact	ok	
+src/compact/examples/adt/tests/merkletree_field.compact	ok	
+src/compact/examples/adt/tests/merkletree_vector_field.compact	ok	
+src/compact/examples/adt/tests/set_enum.compact	ok	
+src/compact/examples/adt/tests/set_field.compact	ok	
+src/compact/examples/adt/tests/set_qualified_coin_info.compact	ok	
+src/compact/examples/adt/tests/set_struct.compact	ok	
+src/compact/examples/adt/tests/set_vector.compact	ok	
+src/compact/examples/assert/example_one.compact	ok	
+src/compact/examples/assert/negative/old_assert.compact	fail	Exception: old_assert.compact line 21 char 10:
+src/compact/examples/bytes/test_basic_bytes.compact	ok	
+src/compact/examples/camelCase/all/ledger.compact	ok	
+src/compact/examples/camelCase/all/standard.compact	ok	
+src/compact/examples/camelCase/new/coracle.compact	fail	Exception: coracle.compact line 190 char 55:
+src/compact/examples/camelCase/new/counter.compact	ok	
+src/compact/examples/camelCase/new/ledger.compact	ok	
+src/compact/examples/camelCase/new/standard.compact	ok	
+src/compact/examples/camelCase/old/coracle.compact	fail	Exception: coracle.compact line 324 char 47:
+src/compact/examples/camelCase/old/counter.compact	ok	
+src/compact/examples/camelCase/old/ledger.compact	fail	Exception: ledger.compact line 27 char 11:
+src/compact/examples/camelCase/old/standard.compact	fail	Exception: standard.compact line 25 char 19:
+src/compact/examples/casts/advanced_casts.compact	ok	
+src/compact/examples/casts/negative/cannot_cast_higher_2.compact	fail	Exception: cannot_cast_higher_2.compact line 17 char 10:
+src/compact/examples/casts/negative/cannot_cast_lower.compact	fail	Exception: cannot_cast_lower.compact line 17 char 10:
+src/compact/examples/casts/negative/cannot_cast_six_to_four.compact	fail	Exception: cannot_cast_six_to_four.compact line 17 char 17:
+src/compact/examples/casts/proof_data.compact	ok	
+src/compact/examples/casts/vector_to_bytes.compact	ok	
+src/compact/examples/casts/zkir_generation.compact	ok	
+src/compact/examples/commas/commas.compact	ok	
+src/compact/examples/commas/more_commas.compact	ok	
+src/compact/examples/commas/test.compact	ok	
+src/compact/examples/composable/cases/call-from-vector/A.compact	ok	
+src/compact/examples/composable/cases/call-from-vector/main.compact	fail	Exception: main.compact line 25 char 1:
+src/compact/examples/composable/cases/circular-reference/A.compact	ok	
+src/compact/examples/composable/cases/circular-reference/B.compact	ok	
+src/compact/examples/composable/cases/contract-as-variable/A.compact	ok	
+src/compact/examples/composable/cases/contract-as-variable/main.compact	fail	Exception: main.compact line 26 char 13:
+src/compact/examples/composable/cases/contract-in-circuit/AB.compact	ok	
+src/compact/examples/composable/cases/contract-in-circuit/main.compact	fail	Exception: main.compact line 20 char 28:
+src/compact/examples/composable/cases/contract-in-constructor/AB.compact	ok	
+src/compact/examples/composable/cases/contract-in-constructor/main.compact	fail	Exception: main.compact line 22 char 3:
+src/compact/examples/composable/cases/duplicated-contract/AB.compact	ok	
+src/compact/examples/composable/cases/duplicated-contract/main.compact	fail	Exception: main.compact line 25 char 1:
+src/compact/examples/composable/cases/empty-contract/A.compact	ok	
+src/compact/examples/composable/cases/empty-contract/main.compact	ok	
+src/compact/examples/composable/cases/export-in-definition/A.compact	ok	
+src/compact/examples/composable/cases/export-in-definition/main.compact	fail	Exception: main.compact line 21 char 3:
+src/compact/examples/composable/cases/invalid-definition-return/A.compact	ok	
+src/compact/examples/composable/cases/invalid-definition-return/main.compact	ok	
+src/compact/examples/composable/cases/invalid-definition/A.compact	ok	
+src/compact/examples/composable/cases/invalid-definition/main.compact	ok	
+src/compact/examples/composable/cases/invalid-order/A.compact	ok	
+src/compact/examples/composable/cases/invalid-order/B.compact	ok	
+src/compact/examples/composable/cases/invalid-order/C.compact	ok	
+src/compact/examples/composable/cases/invalid-order/main.compact	ok	
+src/compact/examples/composable/cases/ledger-adt-type/A.compact	ok	
+src/compact/examples/composable/cases/ledger-adt-type/main.compact	ok	
+src/compact/examples/composable/cases/missing-definition-circuit/A.compact	ok	
+src/compact/examples/composable/cases/missing-definition-circuit/B.compact	ok	
+src/compact/examples/composable/cases/missing-definition-circuit/main.compact	ok	
+src/compact/examples/composable/cases/module-contract/A.compact	ok	
+src/compact/examples/composable/cases/module-contract/main.compact	fail	Exception: main.compact line 29 char 26:
+src/compact/examples/composable/cases/no-defined-contract/A.compact	ok	
+src/compact/examples/composable/cases/no-defined-contract/main.compact	fail	Exception: main.compact line 20 char 26:
+src/compact/examples/composable/cases/non-existing-circuit/A.compact	ok	
+src/compact/examples/composable/cases/non-existing-circuit/main.compact	ok	
+src/compact/examples/composable/cases/non-existing-contract-impl/A.compact	ok	
+src/compact/examples/composable/cases/non-existing-contract-impl/B.compact	ok	
+src/compact/examples/composable/cases/non-existing-contract-impl/main.compact	ok	
+src/compact/examples/composable/cases/non-existing-definition/A.compact	ok	
+src/compact/examples/composable/cases/non-existing-definition/main.compact	ok	
+src/compact/examples/composable/cases/not-exported-circuit/A.compact	ok	
+src/compact/examples/composable/cases/not-exported-circuit/main.compact	ok	
+src/compact/examples/composable/cases/witness-param/A.compact	ok	
+src/compact/examples/composable/cases/witness-param/main.compact	ok	
+src/compact/examples/composable/cases/witness-return/A.compact	ok	
+src/compact/examples/composable/cases/witness-return/main.compact	ok	
+src/compact/examples/composable/direct/Calculator.compact	ok	
+src/compact/examples/composable/direct/Main-circuit-parameter.compact	ok	
+src/compact/examples/composable/direct/Main-circuit-return-contract.compact	ok	
+src/compact/examples/composable/direct/Main-constructor-contract-create.compact	fail	Exception: Main-constructor-contract-create.compact line 26 char 12:
+src/compact/examples/composable/direct/Main-constructor.compact	ok	
+src/compact/examples/composable/direct/Main-export-circuit-parameter.compact	fail	Exception: Main-export-circuit-parameter.compact line 22 char 16:
+src/compact/examples/composable/direct/Main-export-circuit-return-contract.compact	ok	
+src/compact/examples/composable/direct/Main-interface.compact	ok	
+src/compact/examples/composable/direct/Main-ledger-reference.compact	ok	
+src/compact/examples/composable/direct/Main-missing-circuit.compact	fail	Exception: Main-missing-circuit.compact line 16 char 1:
+src/compact/examples/composable/direct/Main.compact	fail	Exception: Main.compact line 24 char 10:
+src/compact/examples/composable/graph-linear/A.compact	ok	
+src/compact/examples/composable/graph-linear/B.compact	ok	
+src/compact/examples/composable/graph-linear/C.compact	ok	
+src/compact/examples/composable/graph-linear/D.compact	ok	
+src/compact/examples/composable/graph-linear/E.compact	ok	
+src/compact/examples/composable/graph-tree-1/A.compact	ok	
+src/compact/examples/composable/graph-tree-1/B.compact	ok	
+src/compact/examples/composable/graph-tree-1/C.compact	ok	
+src/compact/examples/composable/graph-tree-1/D.compact	ok	
+src/compact/examples/composable/graph-tree-1/E.compact	ok	
+src/compact/examples/composable/graph-tree-2/A.compact	ok	
+src/compact/examples/composable/graph-tree-2/B.compact	ok	
+src/compact/examples/composable/graph-tree-2/C.compact	ok	
+src/compact/examples/composable/graph-tree-2/D.compact	ok	
+src/compact/examples/composable/graph-tree-2/E.compact	ok	
+src/compact/examples/composable/graph/A.compact	ok	
+src/compact/examples/composable/graph/B.compact	ok	
+src/compact/examples/composable/graph/C.compact	ok	
+src/compact/examples/composable/graph/Main-A-and-B.compact	ok	
+src/compact/examples/composable/graph/Main-B-and-C-on-A.compact	ok	
+src/compact/examples/counter.compact	ok	
+src/compact/examples/ecdsa/example_one.compact	fail	Exception: example_one.compact line 18 char 10:
+src/compact/examples/election.compact	ok	
+src/compact/examples/external/examples.compact	ok	
+src/compact/examples/external/negative/example_four.compact	fail	Exception: example_four.compact line 19 char 1:
+src/compact/examples/external/negative/example_one.compact	fail	Exception: example_one.compact line 17 char 19:
+src/compact/examples/external/negative/example_three.compact	fail	Exception: example_three.compact line 17 char 24:
+src/compact/examples/external/negative/example_two.compact	fail	Exception: example_two.compact line 17 char 26:
+src/compact/examples/fixup/bugs/structured/bob.compact	ok	
+src/compact/examples/fixup/bugs/structured/fixed_main.compact	ok	
+src/compact/examples/fixup/bugs/structured/main.compact	ok	
+src/compact/examples/fixup/bugs/structured/utils/greg.compact	ok	
+src/compact/examples/fixup/bugs/structured/utils/other/alan.compact	ok	
+src/compact/examples/fixup/bugs/structured/utils/other/mark.compact	ok	
+src/compact/examples/formatter/input/already_formatted.compact	ok	
+src/compact/examples/formatter/input/example_1.compact	fail	Exception: example_1.compact line 21 char 11:
+src/compact/examples/formatter/input/example_10.compact	fail	Exception: example_10.compact line 56 char 1:
+src/compact/examples/formatter/input/example_11.compact	fail	Exception: example_11.compact line 31 char 23:
+src/compact/examples/formatter/input/example_12.compact	fail	Exception: example_12.compact line 29 char 28:
+src/compact/examples/formatter/input/example_13.compact	fail	Exception: example_13.compact line 30 char 5:
+src/compact/examples/formatter/input/example_2.compact	ok	
+src/compact/examples/formatter/input/example_3.compact	ok	
+src/compact/examples/formatter/input/example_4.compact	ok	
+src/compact/examples/formatter/input/example_5.compact	fail	Exception: example_5.compact line 27 char 45:
+src/compact/examples/formatter/input/example_6.compact	fail	Exception: example_6.compact line 26 char 18:
+src/compact/examples/formatter/input/example_7.compact	ok	
+src/compact/examples/formatter/input/example_8.compact	fail	Exception: example_8.compact line 27 char 17:
+src/compact/examples/formatter/input/example_9.compact	fail	Exception: example_9.compact line 16 char 264:
+src/compact/examples/formatter/output/already_formatted.compact	ok	
+src/compact/examples/formatter/output/example_1.compact	fail	Exception: example_1.compact line 25 char 9:
+src/compact/examples/formatter/output/example_10.compact	fail	Exception: example_10.compact line 45 char 1:
+src/compact/examples/formatter/output/example_11.compact	fail	Exception: example_11.compact line 29 char 13:
+src/compact/examples/formatter/output/example_12.compact	fail	Exception: example_12.compact line 32 char 35:
+src/compact/examples/formatter/output/example_13.compact	fail	Exception: example_13.compact line 50 char 3:
+src/compact/examples/formatter/output/example_2.compact	ok	
+src/compact/examples/formatter/output/example_3.compact	ok	
+src/compact/examples/formatter/output/example_4.compact	ok	
+src/compact/examples/formatter/output/example_5.compact	fail	Exception: example_5.compact line 22 char 1:
+src/compact/examples/formatter/output/example_6.compact	fail	Exception: example_6.compact line 29 char 19:
+src/compact/examples/formatter/output/example_7.compact	ok	
+src/compact/examples/formatter/output/example_8.compact	fail	Exception: example_8.compact line 26 char 17:
+src/compact/examples/formatter/output/example_9.compact	fail	Exception: example_9.compact line 29 char 11:
+src/compact/examples/jubjubpoint/examples.compact	ok	
+src/compact/examples/jubjubpoint/negative/example_four.compact	fail	Exception: example_four.compact line 19 char 21:
+src/compact/examples/jubjubpoint/negative/example_one.compact	fail	Exception: example_one.compact line 19 char 21:
+src/compact/examples/jubjubpoint/negative/example_three.compact	fail	Exception: example_three.compact line 23 char 14:
+src/compact/examples/jubjubpoint/negative/example_two.compact	fail	Exception: example_two.compact line 19 char 27:
+src/compact/examples/modules/negative/example_eight.compact	fail	Exception: example_eight.compact line 28 char 12:
+src/compact/examples/modules/negative/example_five.compact	fail	Exception: example_five.compact line 34 char 1:
+src/compact/examples/modules/negative/example_four.compact	fail	Exception: example_four.compact line 35 char 1:
+src/compact/examples/modules/negative/example_nine.compact	fail	Exception: example_nine.compact line 45 char 40:
+src/compact/examples/modules/negative/example_one.compact	fail	Exception: example_one.compact line 31 char 10:
+src/compact/examples/modules/negative/example_seven.compact	fail	Exception: example_seven.compact line 48 char 17:
+src/compact/examples/modules/negative/example_six.compact	fail	Exception: example_six.compact line 19 char 3:
+src/compact/examples/modules/negative/example_ten.compact	fail	Exception: example_ten.compact line 25 char 1:
+src/compact/examples/modules/negative/example_three.compact	fail	Exception: example_three.compact line 38 char 10:
+src/compact/examples/modules/negative/example_two.compact	fail	Exception: example_two.compact line 38 char 13:
+src/compact/examples/modules/selective_examples.compact	ok	
+src/compact/examples/modules/shadowing_example.compact	ok	
+src/compact/examples/multiconst/multiconst.compact	ok	
+src/compact/examples/multiconst/negative/multiple_bindings_in_same_block_2.compact	fail	Exception: multiple_bindings_in_same_block_2.compact line 19 char 11:
+src/compact/examples/multiconst/negative/multiple_bindings_in_same_block_3.compact	fail	Exception: multiple_bindings_in_same_block_3.compact line 18 char 9:
+src/compact/examples/multiconst/negative/multiple_bindings_in_same_block.compact	fail	Exception: multiple_bindings_in_same_block.compact line 18 char 25:
+src/compact/examples/multiconst/negative/no_commas.compact	fail	Exception: no_commas.compact line 18 char 17:
+src/compact/examples/multiconst/negative/reference_before_assignment_2.compact	fail	Exception: reference_before_assignment_2.compact line 18 char 15:
+src/compact/examples/multiconst/negative/reference_before_assignment.compact	fail	Exception: reference_before_assignment.compact line 18 char 5:
+src/compact/examples/multiconst/negative/trailing_comma.compact	fail	Exception: trailing_comma.compact line 17 char 24:
+src/compact/examples/proposal.compact	fail	Exception: proposal.compact line 20 char 15:
+src/compact/examples/reserved/example_1.compact	fail	Exception: example_1.compact line 16 char 15:
+src/compact/examples/reserved/example_10.compact	fail	Exception: example_10.compact line 16 char 25:
+src/compact/examples/reserved/example_11.compact	fail	Exception: example_11.compact line 16 char 37:
+src/compact/examples/reserved/example_12.compact	fail	Exception: example_12.compact line 16 char 8:
+src/compact/examples/reserved/example_13.compact	fail	Exception: example_13.compact line 16 char 6:
+src/compact/examples/reserved/example_14.compact	fail	Exception: example_14.compact line 16 char 15:
+src/compact/examples/reserved/example_15.compact	fail	Exception: example_15.compact line 16 char 8:
+src/compact/examples/reserved/example_16.compact	fail	Exception: example_16.compact line 16 char 10:
+src/compact/examples/reserved/example_17.compact	fail	Exception: example_17.compact line 17 char 17:
+src/compact/examples/reserved/example_18.compact	fail	Exception: example_18.compact line 16 char 1:
+src/compact/examples/reserved/example_19.compact	fail	Exception: example_19.compact line 18 char 11:
+src/compact/examples/reserved/example_2.compact	fail	Exception: example_2.compact line 16 char 9:
+src/compact/examples/reserved/example_20.compact	fail	Exception: example_20.compact line 17 char 16:
+src/compact/examples/reserved/example_21.compact	fail	Exception: example_21.compact line 16 char 8:
+src/compact/examples/reserved/example_22.compact	fail	Exception: example_22.compact line 17 char 9:
+src/compact/examples/reserved/example_23.compact	fail	Exception: example_23.compact line 16 char 9:
+src/compact/examples/reserved/example_24.compact	fail	Exception: example_24.compact line 16 char 22:
+src/compact/examples/reserved/example_25.compact	fail	Exception: example_25.compact line 17 char 21:
+src/compact/examples/reserved/example_26.compact	fail	Exception: example_26.compact line 16 char 16:
+src/compact/examples/reserved/example_27.compact	fail	Exception: example_27.compact line 16 char 13:
+src/compact/examples/reserved/example_28.compact	fail	Exception: example_28.compact line 16 char 13:
+src/compact/examples/reserved/example_29.compact	fail	Exception: example_29.compact line 17 char 14:
+src/compact/examples/reserved/example_3.compact	fail	Exception: example_3.compact line 16 char 8:
+src/compact/examples/reserved/example_30.compact	fail	Exception: example_30.compact line 16 char 17:
+src/compact/examples/reserved/example_31.compact	fail	Exception: example_31.compact line 16 char 9:
+src/compact/examples/reserved/example_32.compact	fail	Exception: example_32.compact line 16 char 9:
+src/compact/examples/reserved/example_33.compact	fail	Exception: example_33.compact line 22 char 18:
+src/compact/examples/reserved/example_34.compact	fail	Exception: example_34.compact line 16 char 6:
+src/compact/examples/reserved/example_35.compact	fail	Exception: example_35.compact line 16 char 10:
+src/compact/examples/reserved/example_36.compact	fail	Exception: example_36.compact line 16 char 5:
+src/compact/examples/reserved/example_37.compact	fail	Exception: example_37.compact line 17 char 13:
+src/compact/examples/reserved/example_38.compact	fail	Exception: example_38.compact line 17 char 10:
+src/compact/examples/reserved/example_4.compact	fail	Exception: example_4.compact line 16 char 14:
+src/compact/examples/reserved/example_40.compact	fail	Exception: example_40.compact line 16 char 13:
+src/compact/examples/reserved/example_41.compact	fail	Exception: example_41.compact line 16 char 13:
+src/compact/examples/reserved/example_42.compact	fail	Exception: example_42.compact line 16 char 1:
+src/compact/examples/reserved/example_43.compact	fail	Exception: example_43.compact line 16 char 1:
+src/compact/examples/reserved/example_44.compact	fail	Exception: example_44.compact line 16 char 1:
+src/compact/examples/reserved/example_45.compact	fail	Exception: example_45.compact line 17 char 3:
+src/compact/examples/reserved/example_46.compact	fail	Exception: example_46.compact line 16 char 1:
+src/compact/examples/reserved/example_47.compact	fail	Exception: example_47.compact line 22 char 18:
+src/compact/examples/reserved/example_48.compact	fail	Exception: example_48.compact line 16 char 37:
+src/compact/examples/reserved/example_5.compact	fail	Exception: example_5.compact line 16 char 6:
+src/compact/examples/reserved/example_6.compact	fail	Exception: example_6.compact line 16 char 28:
+src/compact/examples/reserved/example_7.compact	fail	Exception: example_7.compact line 16 char 28:
+src/compact/examples/reserved/example_8.compact	fail	Exception: example_8.compact line 16 char 10:
+src/compact/examples/reserved/example_9.compact	fail	Exception: example_9.compact line 16 char 26:
+src/compact/examples/return/examples.compact	ok	
+src/compact/examples/return/negative/example_one.compact	fail	Exception: example_one.compact line 17 char 10:
+src/compact/examples/return/negative/example_three.compact	fail	Exception: example_three.compact line 18 char 3:
+src/compact/examples/return/negative/example_two.compact	fail	Exception: example_two.compact line 16 char 1:
+src/compact/examples/secp256k1/arithmetic.compact	fail	Exception: arithmetic.compact line 18 char 1:
+src/compact/examples/std_lib/block_time.compact	ok	
+src/compact/examples/std_lib/import/test_import_csl_quotes.compact	fail	Exception: test_import_csl_quotes.compact line 16 char 1:
+src/compact/examples/std_lib/import/test_import_csl.compact	ok	
+src/compact/examples/std_lib/import/test_import_std.compact	fail	Exception: test_import_std.compact line 16 char 1:
+src/compact/examples/std_lib/import/test_include_std.compact	fail	Exception: test_include_std.compact line 16 char 1:
+src/compact/examples/std_lib/mint.compact	fail	Exception: mint.compact line 18 char 74:
+src/compact/examples/tiny.compact	ok	
+src/compact/examples/types/examples.compact	fail	Exception: examples.compact line 534 char 35:
+src/compact/examples/types/negative/example_eight.compact	fail	Exception: example_eight.compact line 17 char 1:
+src/compact/examples/types/negative/example_eighteen.compact	fail	Exception: example_eighteen.compact line 17 char 22:
+src/compact/examples/types/negative/example_eleven.compact	fail	Exception: example_eleven.compact line 16 char 22:
+src/compact/examples/types/negative/example_fifteen.compact	fail	Exception: example_fifteen.compact line 16 char 22:
+src/compact/examples/types/negative/example_five.compact	fail	Exception: example_five.compact line 16 char 32:
+src/compact/examples/types/negative/example_four.compact	fail	Exception: example_four.compact line 17 char 21:
+src/compact/examples/types/negative/example_fourteen.compact	fail	Exception: example_fourteen.compact line 16 char 22:
+src/compact/examples/types/negative/example_nine.compact	fail	Exception: example_nine.compact line 16 char 22:
+src/compact/examples/types/negative/example_one.compact	fail	Exception: example_one.compact line 16 char 6:
+src/compact/examples/types/negative/example_seven.compact	fail	Exception: example_seven.compact line 18 char 1:
+src/compact/examples/types/negative/example_seventeen.compact	fail	Exception: example_seventeen.compact line 16 char 35:
+src/compact/examples/types/negative/example_six.compact	fail	Exception: example_six.compact line 16 char 29:
+src/compact/examples/types/negative/example_sixteen.compact	fail	Exception: example_sixteen.compact line 16 char 35:
+src/compact/examples/types/negative/example_thirteen.compact	fail	Exception: example_thirteen.compact line 16 char 35:
+src/compact/examples/types/negative/example_three.compact	fail	Exception: example_three.compact line 17 char 1:
+src/compact/examples/types/negative/example_two.compact	fail	Exception: example_two.compact line 17 char 1:
+src/compact/examples/vectors/negative/invalid_index_length.compact	fail	Exception: invalid_index_length.compact line 19 char 31:
+src/compact/examples/vectors/negative/non_constant_index.compact	fail	Exception: non_constant_index.compact line 19 char 10:
+src/compact/examples/vectors/negative/non_negative_index.compact	fail	Exception: non_negative_index.compact line 22 char 13:
+src/compact/examples/vectors/negative/non_vector_type.compact	fail	Exception: non_vector_type.compact line 18 char 14:
+src/compact/examples/vectors/slice_part_one.compact	ok	
+src/compact/examples/vectors/spread_part_one.compact	ok	
+src/compact/examples/wpp/constructor_export_circuit.compact	ok	
+src/compact/examples/wpp/constructor_test.compact	ok	
+src/compact/examples/wpp/contract/contract_wpp.compact	ok	
+src/compact/examples/wpp/export_circuit.compact	ok	
+src/compact/examples/wpp/module_wpp.compact	ok	
+src/compact/examples/wpp/negative/pm_16723_neg.compact	fail	Exception: pm_16723_neg.compact line 23 char 10:
+src/compact/examples/wpp/pm_16723.compact	ok	
+src/compact/examples/wpp/pm_16774.compact	ok	
+src/compact/examples/wpp/test/test.compact	ok	
+src/compact/examples/zerocash.compact	ok	
+src/compact/test-center/compact/bar.compact	ok	
+src/compact/test-center/compact/block-time.compact	ok	
+src/compact/test-center/compact/ecdsa.compact	fail	Exception: ecdsa.compact line 35 char 7:
+src/compact/test-center/compact/empty.compact	ok	
+src/compact/test-center/compact/foo.compact	fail	Exception: foo.compact line 17 char 3:
+src/compact/test-center/compact/gas-cost.compact	ok	
+src/compact/test-center/compact/invalid-extension.compact	fail	Exception: invalid-extension.compact line 16 char 1:
+src/compact/test-center/compact/loop.compact	fail	Exception: src/compact/test-center/compact/loop.compact line 16 char 1:
+src/compact/test-center/compact/multiple.compact	fail	Exception: src/compact/test-center/compact/foo.compact line 17 char 3:
+src/compact/test-center/compact/schnorr.compact	ok	
+src/compact/test-center/compact/simple.compact	fail	Exception: foo.compact line 17 char 3:
+src/compact/test-center/compact/test.compact	ok	
+src/compact/test-center/compact/test01.compact	fail	Exception: test01.compact line 56 char 9:
+src/compact/test-center/compact/threading.compact	ok	
+src/compact/test-center/compact/unshielded-tokens.compact	ok	
+src/compact/test-center/compact2/foo.compact	fail	Exception: foo.compact line 17 char 10:
+src/compact/test-center/composable/Basic/Inner.compact	ok	
+src/compact/test-center/composable/Basic/Outer.compact	ok	
+src/compact/test-center/composable/CalleeWitness/Callee.compact	ok	
+src/compact/test-center/composable/CalleeWitness/Caller.compact	ok	
+src/compact/test-center/composable/Events/Inner.compact	ok	
+src/compact/test-center/composable/Events/Outer.compact	ok	
+src/compact/test-center/composable/Purity/Honest.compact	ok	
+src/compact/test-center/composable/Purity/Liar.compact	ok	
+src/compact/test-center/composable/Recursion/Mutual/A.compact	ok	
+src/compact/test-center/composable/Recursion/Mutual/B.compact	ok	
+src/compact/test-center/composable/Recursion/Single/Self.compact	ok	
+src/compact/test-center/composable/Storage/Inner.compact	ok	
+src/compact/test-center/composable/Storage/Outer.compact	ok	
+src/compact/test-center/composable/Witness/Inner.compact	ok	
+src/compact/test-center/composable/Witness/Outer.compact	ok	
+src/compact/test-center/test-contracts/bboard.compact	ok	
+src/compact/test-center/test-contracts/coracle.compact	ok	
+src/compact/test-center/test-contracts/counter.compact	ok	
+src/compact/test-center/test-contracts/micro-dao.compact	ok	
+src/compact/test-center/test-contracts/welcome.compact	ok	
+src/compact/test-contracts/primitives/bytes/default/semantics/bytes_default_semantics.compact	ok	
+src/compact/test-contracts/primitives/bytes/equality/empty/bytes_equality_empty.compact	ok	
+src/compact/test-contracts/primitives/bytes/fold/boolean_reduction/bytes_fold_boolean_reduction.compact	ok	
+src/compact/test-contracts/primitives/bytes/fold/conditional_accumulation/bytes_fold_conditional_accumulation.compact	ok	
+src/compact/test-contracts/primitives/bytes/fold/summation/bytes_fold_summation.compact	ok	
+src/compact/test-contracts/primitives/bytes/indexing/basic/bytes_indexing_basic.compact	ok	
+src/compact/test-contracts/primitives/bytes/loops/empty_iteration/bytes_loop_empty_iteration.compact	ok	
+src/compact/test-contracts/primitives/bytes/loops/indexed_access/bytes_loop_indexed_access.compact	ok	
+src/compact/test-contracts/primitives/bytes/loops/iteration/bytes_loop_iteration.compact	ok	
+src/compact/test-contracts/primitives/bytes/loops/spread_iteration/bytes_loop_spread_iteration.compact	ok	
+src/compact/test-contracts/primitives/bytes/manual_update/semantics/bytes_manual_update_semantics.compact	ok	
+src/compact/test-contracts/primitives/bytes/manual_update/slow/large_reconstruction/bytes_manual_update_large_reconstruction.compact	ok	
+src/compact/test-contracts/primitives/bytes/map/reordering/bytes_map_reordering.compact	ok	
+src/compact/test-contracts/primitives/bytes/map/slice_composition/bytes_map_slice_composition.compact	ok	
+src/compact/test-contracts/primitives/bytes/map/to_bytes/bytes_map_to_bytes.compact	ok	
+src/compact/test-contracts/primitives/bytes/map/transformation/bytes_map_transformation.compact	ok	
+src/compact/test-contracts/primitives/bytes/slice/basic/bytes_slice_basic.compact	ok	
+src/compact/test-contracts/primitives/bytes/slice/empty/bytes_slice_empty.compact	ok	
+src/compact/test-contracts/primitives/bytes/spread/basic/bytes_spread_basic.compact	ok	
+src/compact/test-contracts/primitives/bytes/spread/empty/bytes_spread_empty.compact	ok	
+src/compact/test-contracts/primitives/bytes/spread/multiple/bytes_spread_multiple.compact	ok	
+src/compact/test-contracts/primitives/bytes/spread/nested/bytes_spread_nested.compact	ok	
+src/compact/test-contracts/primitives/bytes/spread/rejects_non_bytes/bytes_spread_rejects_non_bytes.compact	fail	Exception: bytes_spread_rejects_non_bytes.compact line 17 char 22:
+src/example-bboard/contract/src/bboard.compact	fail	Exception: bboard.compact line 16 char 1:
+src/example-counter/contract/src/counter.compact	ok	
+src/oz-compact-contracts/contracts/src/access/AccessControl.compact	ok	
+src/oz-compact-contracts/contracts/src/access/Ownable.compact	ok	
+src/oz-compact-contracts/contracts/src/access/ShieldedAccessControl.compact	ok	
+src/oz-compact-contracts/contracts/src/access/test/mocks/MockAccessControl.compact	ok	
+src/oz-compact-contracts/contracts/src/access/test/mocks/MockOwnable.compact	ok	
+src/oz-compact-contracts/contracts/src/access/test/mocks/MockShieldedAccessControl.compact	ok	
+src/oz-compact-contracts/contracts/src/access/test/mocks/MockZOwnablePK.compact	ok	
+src/oz-compact-contracts/contracts/src/access/ZOwnablePK.compact	ok	
+src/oz-compact-contracts/contracts/src/archive/ShieldedToken.compact	fail	Exception: ShieldedToken.compact line 114 char 98:
+src/oz-compact-contracts/contracts/src/archive/test/mocks/MockShieldedToken.compact	fail	Exception: MockShieldedToken.compact line 18 char 3:
+src/oz-compact-contracts/contracts/src/crypto/EcdhMask.compact	fail	Exception: EcdhMask.compact line 148 char 22:
+src/oz-compact-contracts/contracts/src/crypto/ElGamal.compact	fail	Exception: ElGamal.compact line 120 char 12:
+src/oz-compact-contracts/contracts/src/crypto/test/mocks/MockCurveOps.compact	fail	Exception: MockCurveOps.compact line 16 char 10:
+src/oz-compact-contracts/contracts/src/crypto/test/mocks/MockEcdhMask.compact	fail	Exception: EcdhMask.compact line 148 char 22:
+src/oz-compact-contracts/contracts/src/crypto/test/mocks/MockElGamal.compact	fail	Exception: ElGamal.compact line 120 char 12:
+src/oz-compact-contracts/contracts/src/multisig/ForwarderPrivate.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/ForwarderShielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/ForwarderUnshielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/forwarder/ForwarderPrivate.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/forwarder/ForwarderShielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/forwarder/ForwarderUnshielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/ShieldedMultiSig.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/ShieldedMultiSigV2.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/presets/ShieldedMultiSigV3.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/ProposalManager.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/ShieldedTreasury.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/ShieldedTreasuryStateless.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/Signer.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockForwarderPrivate.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockForwarderShielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockForwarderUnshielded.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockProposalManager.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockShieldedTreasury.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockShieldedTreasuryStateless.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockSigner.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/test/mocks/MockUnshieldedTreasury.compact	ok	
+src/oz-compact-contracts/contracts/src/multisig/UnshieldedTreasury.compact	ok	
+src/oz-compact-contracts/contracts/src/security/Allowlist.compact	ok	
+src/oz-compact-contracts/contracts/src/security/Blocklist.compact	ok	
+src/oz-compact-contracts/contracts/src/security/Initializable.compact	ok	
+src/oz-compact-contracts/contracts/src/security/Pausable.compact	ok	
+src/oz-compact-contracts/contracts/src/security/test/mocks/MockAllowlist.compact	ok	
+src/oz-compact-contracts/contracts/src/security/test/mocks/MockBlocklist.compact	ok	
+src/oz-compact-contracts/contracts/src/security/test/mocks/MockInitializable.compact	ok	
+src/oz-compact-contracts/contracts/src/security/test/mocks/MockPausable.compact	ok	
+src/oz-compact-contracts/contracts/src/token/ConfidentialFungibleToken.compact	fail	Exception: ElGamal.compact line 120 char 12:
+src/oz-compact-contracts/contracts/src/token/extensions/ConfidentialFungibleTokenPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/extensions/NativeShieldedTokenDerivedNonce.compact	ok	
+src/oz-compact-contracts/contracts/src/token/extensions/NativeShieldedTokenFamilyPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/extensions/NativeShieldedTokenPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/extensions/NativeShieldedTokenPublicSupplyCore.compact	ok	
+src/oz-compact-contracts/contracts/src/token/FungibleToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/MultiToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/NativeShieldedToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/NativeShieldedTokenCore.compact	ok	
+src/oz-compact-contracts/contracts/src/token/NativeShieldedTokenFamily.compact	ok	
+src/oz-compact-contracts/contracts/src/token/NonFungibleToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockConfidentialFungibleToken.compact	fail	Exception: ElGamal.compact line 314 char 29:
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockConfidentialFungibleTokenPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockFungibleToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockMultiToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedToken.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedTokenCore.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedTokenDerivedNonce.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedTokenFamily.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedTokenFamilyPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNativeShieldedTokenPublicSupply.compact	ok	
+src/oz-compact-contracts/contracts/src/token/test/mocks/MockNonFungibleToken.compact	ok	
+src/oz-compact-contracts/contracts/src/utils/test/mocks/MockUtils.compact	ok	
+src/oz-compact-contracts/contracts/src/utils/Utils.compact	ok	
+src/oz-compact-contracts/contracts/test/integration/_mocks/ComposedConfidentialFungibleTokenPublicSupply.compact	fail	Exception:
+src/oz-compact-contracts/contracts/test/integration/_mocks/ComposedTokens.compact	ok	
+src/oz-compact-contracts/contracts/test/integration/_mocks/sharedInit/ModuleA.compact	ok	
+src/oz-compact-contracts/contracts/test/integration/_mocks/sharedInit/ModuleB.compact	ok	
+src/oz-compact-contracts/contracts/test/integration/_mocks/SharedInitCollision.compact	ok	
+src/oz-midnight-apps/contracts/src/access/AccessControl.compact	ok	
+src/oz-midnight-apps/contracts/src/access/test/mocks/contracts/AccessControl.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Bytes32.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Bytes8.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Field255.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Pack.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Bytes32.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Bytes8.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Field255.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Pack.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Uint128.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Uint256.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/test/mocks/contracts/Uint64.mock.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Types.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Uint128.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Uint256.compact	ok	
+src/oz-midnight-apps/contracts/src/math/Uint64.compact	ok	
+src/oz-midnight-apps/contracts/src/shielded-token/openzeppelin/ShieldedERC20.compact	ok	
+src/oz-midnight-apps/contracts/src/shielded-token/openzeppelin/Utils.compact	ok	
+src/oz-midnight-apps/contracts/src/shielded-token/ShieldedFungibleToken.compact	ok	
+src/oz-midnight-apps/contracts/src/structs/Queue.compact	ok	
+src/oz-midnight-apps/contracts/src/structs/test/mocks/contracts/Queue.mock.compact	ok	
+src/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
+src/signet-midnight-experiments/experiments/attest/contract/src/attest.compact	ok	
+src/signet-midnight-experiments/experiments/baseline/contract/src/baseline.compact	ok	
+src/signet-midnight-experiments/experiments/events/contract/src/events.compact	ok	
+src/signet-midnight-experiments/experiments/hashing/contract/src/hashing.compact	ok	
+src/signet-midnight-experiments/experiments/keccak/contract/src/keccak.compact	ok	
+src/signet-midnight-experiments/experiments/mint-tokens/contract/src/mint-tokens.compact	ok	
+src/signet-midnight-experiments/experiments/serde-builtin/contract/src/serde-builtin.compact	ok	
+src/signet-midnight-experiments/experiments/xcall-with-payment/contract/src/caller.compact	ok	
+src/signet-midnight-experiments/experiments/xcall-with-payment/contract/src/target.compact	ok	
+src/signet-midnight-experiments/experiments/xcall/contract/src/caller.compact	ok	
+src/signet-midnight-experiments/experiments/xcall/contract/src/target.compact	ok	
+src/signet-midnight-experiments/experiments/xcontract-events/contract/src/token.compact	ok	
+src/signet-midnight-experiments/experiments/xcontract-events/contract/src/vault.compact	ok	
+src/signet-midnight-integration/packages/midnight-serde/tests/fixtures/serde-fixtures.compact	ok	
+src/signet-midnight-integration/packages/signet-contract/src/signet-contract.compact	ok	
+src/signet-midnight-integration/packages/signet-midnight/src/circuits.compact	ok	
+src/signet-midnight-integration/packages/signet-midnight/src/Signet.compact	ok	
+src/signet-midnight-integration/packages/test-caller-contract-20-field/src/test-caller-contract-20-field.compact	ok	
+src/signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract.compact	ok	

@@ -1,0 +1,85 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 11440,
+      "hash": "26dbb0b684937171b321f1919402169879cb8320194e92fb8bc3cd9f478cbe1f"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 8356,
+      "hash": "ed5aa76bf4c0c5a8251136da270b3e808a6b4115866179dca4e2a066f7dc2f65"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 106844,
+      "hash": "543b57b7a3a67f5aba41cd1efc7116c14a7a9a6e501dd90f664917c114c95c60"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 5859,
+      "hash": "7fd69677c78114a3056b9ef25f64b213e682911c682b1f497f448debba8a15eb"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_grantRole.zkir": {
+      "type": "file",
+      "size": 6256,
+      "hash": "55d711f8fefecc51c57cdf92079d2165acf1d5ff3d95361ac22a407e05d0ff46"
+    },
+    "_revokeRole.zkir": {
+      "type": "file",
+      "size": 5017,
+      "hash": "990e97c3bd8dd8dfbeb453aba02b7f1b49c06f8c6e3e4233ccbab63867cfc6ff"
+    },
+    "_setRoleAdmin.zkir": {
+      "type": "file",
+      "size": 2506,
+      "hash": "c1039c776a934f055954a5141e33a44e953c9eb8c49235bfe2e7469d8a0fa49b"
+    },
+    "assertOnlyRole.zkir": {
+      "type": "file",
+      "size": 13520,
+      "hash": "27a8c1bf6cbd6fafb321369acbfc9b5d60da3bbae2be62045cced8989550bb63"
+    },
+    "canProveRole.zkir": {
+      "type": "file",
+      "size": 13519,
+      "hash": "8beaf66c1d866cfd6cbbfee67a277f16d1823194948666af829ed43931096f94"
+    },
+    "computeRoleCommitment.zkir": {
+      "type": "file",
+      "size": 1808,
+      "hash": "8ba978d20185f910019b0aad59e674d40c51a5213fd033618e12dfe79c2b6499"
+    },
+    "getRoleAdmin.zkir": {
+      "type": "file",
+      "size": 3405,
+      "hash": "c5e1ac9b3b580a7fd606246880b556d34f3b4fed34dda356bc67aa961fe66244"
+    },
+    "grantRole.zkir": {
+      "type": "file",
+      "size": 21189,
+      "hash": "c7761ed1872ca2ab4962a28cdec78f8c0f8bb01ec62ea92a6a5dbf7c0bf430d4"
+    },
+    "renounceRole.zkir": {
+      "type": "file",
+      "size": 6455,
+      "hash": "7bd43a2f0e4f58b8320592780e5f5e749b7bf6ff5e0670469bfd67e67e9097d1"
+    },
+    "revokeRole.zkir": {
+      "type": "file",
+      "size": 19992,
+      "hash": "d79c6f563c274beff7ea8a1a4e66326813d75364f5aaa1690c1ef4031879c6cc"
+    }
+  }
+}

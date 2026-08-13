@@ -1,0 +1,80 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 41851,
+      "hash": "043918be1fa54911ff95c8d82be8cb6b974d343a0024f19fb1a591d9ff60ff5c"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 23875,
+      "hash": "c8078f617ba30dfb1d8b12cfdd9d1690ab3c984dedd6aca17e96b8316d1845e7"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 373820,
+      "hash": "5adf5942cdb29097543ba36007bc1e00e8263a5525edec674282563770cae39e"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 17480,
+      "hash": "141ae705203fb035878fc7063195ac9e398764f2786d35e8a76b6910727a5e95"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "approveRouter.zkir": {
+      "type": "file",
+      "size": 21819,
+      "hash": "0b2cb786a60d1cd0c7aeede0ac3d6b3776d9aac84e1c476d1639203da0276573"
+    },
+    "claim.zkir": {
+      "type": "file",
+      "size": 51847,
+      "hash": "3faa7ce7d60367021c6925c3989739ed8e8dd96e1141df3ab1e076ef5dc80bc1"
+    },
+    "completeSwap.zkir": {
+      "type": "file",
+      "size": 83921,
+      "hash": "93add3335bc7065357b9752fd3badaac35a7bb9261c83717e92c9c3cb9b4e85a"
+    },
+    "completeWithdraw.zkir": {
+      "type": "file",
+      "size": 53542,
+      "hash": "3ed0ca01e5cafafbc21f1bacde63c90762e8657b6ce2457ed55a7880d9d310cc"
+    },
+    "deposit.zkir": {
+      "type": "file",
+      "size": 28741,
+      "hash": "913d9411c62d67f357475971241cd7401cbd26f20128d0cc609904601d94a3bf"
+    },
+    "initialize.zkir": {
+      "type": "file",
+      "size": 4696,
+      "hash": "a4d6d9534de9591f3a437936044d20738c30cc73d61368a68dfa73a71e1854c9"
+    },
+    "refund.zkir": {
+      "type": "file",
+      "size": 92148,
+      "hash": "940c8aa115f178dfe60e61ed31a2d231d805252bde2a4256e72c8595707ab5d6"
+    },
+    "swap.zkir": {
+      "type": "file",
+      "size": 59089,
+      "hash": "76cade0ca27b887344b55634da5467c53b67c3ec9421ba25cbad9ac3bf05d314"
+    },
+    "withdraw.zkir": {
+      "type": "file",
+      "size": 35705,
+      "hash": "259c1ec479bae29527adc4fe0754f5c596ef42938b5eeefec54d7659b123307b"
+    }
+  }
+}

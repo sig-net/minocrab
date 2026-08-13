@@ -1,0 +1,120 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 19624,
+      "hash": "d333790f23e2ceea087a8d9ae1814f8d50bb7f5be0216192178000d4a8adc91a"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 11478,
+      "hash": "8af10152c9148c90e9c5bd35154afe4ea18c03be0094fd81875bcdb91c242843"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 227978,
+      "hash": "21440c013d161d505206c9c920778be31ac83bd2659b5b771e1b77b3b7653710"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 8272,
+      "hash": "a03a17239bb37fd2e9b350d293497387b168be6b5b24b8dd834be1c31e9f0673"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "test1.zkir": {
+      "type": "file",
+      "size": 3597,
+      "hash": "63b2a548bf33051209ee1d503d978a5d69a801cd5c3f6d8c268703d490090879"
+    },
+    "test10.zkir": {
+      "type": "file",
+      "size": 6327,
+      "hash": "0fdd460e8609f60e031aa35e4ec52fa7aa1500472b0a79ae5bffc22866ab8124"
+    },
+    "test11.zkir": {
+      "type": "file",
+      "size": 4044,
+      "hash": "9dfca1fa988d10f7babc99395a126a799f37e8e75bd9c8a8af2486acadd6d9ba"
+    },
+    "test12.zkir": {
+      "type": "file",
+      "size": 2671,
+      "hash": "28be1f57a004fe5c067c8e140eb30b4d0be2f8f756bcaac3ec9e641bcd55cb1a"
+    },
+    "test13.zkir": {
+      "type": "file",
+      "size": 2892,
+      "hash": "808588fd07edc9fa81a3542a68ae881e5183059a3be7c247c9378e4ab971df95"
+    },
+    "test14.zkir": {
+      "type": "file",
+      "size": 2331,
+      "hash": "bab7b2b8dc585775229af72b697db836d442e2aab1763ef739ce3a9edad10840"
+    },
+    "test15.zkir": {
+      "type": "file",
+      "size": 2331,
+      "hash": "77c4dfbb9a731fa4f7f0a34db95f02944ef1704f5c1d1a183578fe36a8c0f7d9"
+    },
+    "test16.zkir": {
+      "type": "file",
+      "size": 11400,
+      "hash": "c824fbe16b6471b4a48ad34199af710fa2de34578991c26b97397bf30dd1e7d2"
+    },
+    "test17.zkir": {
+      "type": "file",
+      "size": 6311,
+      "hash": "d31fc7f6a393f2bb75d576233b9a7614ca2d26df1baa5f800877891f34196f93"
+    },
+    "test2.zkir": {
+      "type": "file",
+      "size": 3203,
+      "hash": "4f962db26b53ad4ad281d202732fff0f17df70736d5e2941d972cae1a0f8ad43"
+    },
+    "test3.zkir": {
+      "type": "file",
+      "size": 3283,
+      "hash": "dd8ea2b6340f4069457c320df559d5e3173af8bac5dcaa677e0e272a57777737"
+    },
+    "test4.zkir": {
+      "type": "file",
+      "size": 7321,
+      "hash": "3949487a50e4d070b189ff4e1f70155d8188ec528cc8011c46ab0667135b483c"
+    },
+    "test5.zkir": {
+      "type": "file",
+      "size": 2933,
+      "hash": "3adfc2567650e6242178ae287bbffbc465829391b7a6f87572220658fc79df62"
+    },
+    "test6.zkir": {
+      "type": "file",
+      "size": 2550,
+      "hash": "bcdded3acb1cf3c51e813f3b15ccdc6511a1edd615f7130616d480e4315b4b8d"
+    },
+    "test7.zkir": {
+      "type": "file",
+      "size": 2290,
+      "hash": "3462143151c04d8af4f88623753310e34f478b88750aa1cc7b7cc36658c9e1e0"
+    },
+    "test8.zkir": {
+      "type": "file",
+      "size": 6520,
+      "hash": "2abbc0fb7d347c96a95cbaebf2ddbb7d98acbdf522d6cdaa97b4b0896e297dc9"
+    },
+    "test9.zkir": {
+      "type": "file",
+      "size": 6520,
+      "hash": "18d71cdbcf4ae319264d65c815eb2299e88407b2937f52edc04fde061de1a98d"
+    }
+  }
+}

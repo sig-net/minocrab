@@ -1,0 +1,276 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "register",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "key",
+          "type": {
+            "type-name": "Field"
+          }
+        },
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Contract",
+            "name": "Inner",
+            "circuits": [
+              {
+                "name": "add",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "getRegistered",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "key",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "isRegistered",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "key",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "enqueue",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Contract",
+            "name": "Inner",
+            "circuits": [
+              {
+                "name": "add",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "peek",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "store",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Contract",
+            "name": "Inner",
+            "circuits": [
+              {
+                "name": "add",
+                "pure": false,
+                "argument-types": [
+                  {
+                    "type-name": "Field"
+                  }
+                ],
+                "result-type": {
+                  "type-name": "Field"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "treeFull",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "registry",
+      "index": 0,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Field"
+      },
+      "value": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "queue",
+      "index": 1,
+      "exported": true,
+      "storage": "List",
+      "type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tree",
+      "index": 2,
+      "exported": true,
+      "storage": "MerkleTree",
+      "depth": 2,
+      "type": {
+        "type-name": "Contract",
+        "name": "Inner",
+        "circuits": [
+          {
+            "name": "add",
+            "pure": false,
+            "argument-types": [
+              {
+                "type-name": "Field"
+              }
+            ],
+            "result-type": {
+              "type-name": "Field"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

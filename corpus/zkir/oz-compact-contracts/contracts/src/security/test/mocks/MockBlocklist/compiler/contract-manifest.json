@@ -1,0 +1,55 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 1706,
+      "hash": "defa6ace04dfc12eb9dfe2442f6ea36ff1b39e761baecba4f0ed680f003eb3cf"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 2787,
+      "hash": "a3eb98166106437b2349b5bcf8b51fdd574a6398f5ec931121639b147c92f1b9"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 26270,
+      "hash": "3d682f39b2fd9f3c9a339ca56932da8035a756f727d8232472791737aa936d75"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1423,
+      "hash": "358b5ae0dc32bd9dc02894c54f92e6dc230f800ffc8cf8ccf80e2b092593b898"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "assertNotBlocked.zkir": {
+      "type": "file",
+      "size": 1649,
+      "hash": "a85ce68ac83f2a135bfd9a280b19679751971bc959e5cca9a3fea22054897005"
+    },
+    "block.zkir": {
+      "type": "file",
+      "size": 1422,
+      "hash": "9a9e06292c6f113526348d94d422d0a011c385bd92caa757e969e1778f709fb4"
+    },
+    "isBlocked.zkir": {
+      "type": "file",
+      "size": 1592,
+      "hash": "d0137f19d67aca0fe677ecde39c058689182caf297999879da2ec255d55b745c"
+    },
+    "unblock.zkir": {
+      "type": "file",
+      "size": 1244,
+      "hash": "b8aa44efc815302e06022c0b4dd59813286a9db824408f65be816aa220c3102a"
+    }
+  }
+}

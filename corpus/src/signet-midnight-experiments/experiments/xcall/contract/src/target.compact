@@ -1,0 +1,47 @@
+pragma language_version >= 0.25;
+
+// XCALL experiment, contract B — the CALLEE. Deployed first; the caller
+// contract seals a reference to it. Its circuits are the cross-contract
+// destinations:
+//   deposit     — the shared workload (same as baseline.base)
+//   depositEmit — the shared workload + 1 Misc event (the "cross-contract
+//                 call that in turn fires an event" case)
+//   depositBig  — minimal body taking a 256-byte argument (isolates the cost
+//                 of moving a large argument ACROSS the contract boundary)
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger lastAmount: Uint<128>;
+export ledger balances: Map<Bytes<32>, Uint<128>>;
+
+struct DepositEvent {
+  amount: Uint<128>;
+  sequence: Uint<64>;
+  recipient: Bytes<32>;
+}
+
+export circuit deposit(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+}
+
+export circuit depositEmit(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);
+  const r = disclose(recipient);
+  const sequence = callCount as Uint<64>;
+  callCount.increment(1);
+  lastAmount = a;
+  balances.insert(r, a);
+  emit (Misc {
+    name: pad(32, "deposit-0"),
+    payload: serialize<DepositEvent, 256>(DepositEvent { amount: a, sequence: sequence, recipient: r })
+  });
+}
+
+export circuit depositBig(data: Bytes<256>): [] {
+  callCount.increment(1);
+}

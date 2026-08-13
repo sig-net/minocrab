@@ -1,0 +1,76 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "up",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "down",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "middle",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "i",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 65535
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "c",
+      "index": 0,
+      "exported": true,
+      "storage": "Counter"
+    }
+  ]
+}

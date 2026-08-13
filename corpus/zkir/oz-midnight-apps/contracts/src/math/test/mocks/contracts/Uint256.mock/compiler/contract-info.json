@@ -1,0 +1,896 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "ZERO_U256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "U256",
+        "elements": [
+          {
+            "name": "low",
+            "type": {
+              "type-name": "Struct",
+              "name": "U128",
+              "elements": [
+                {
+                  "name": "low",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                },
+                {
+                  "name": "high",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "high",
+            "type": {
+              "type-name": "Struct",
+              "name": "U128",
+              "elements": [
+                {
+                  "name": "low",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                },
+                {
+                  "name": "high",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MAX_U256",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "U256",
+        "elements": [
+          {
+            "name": "low",
+            "type": {
+              "type-name": "Struct",
+              "name": "U128",
+              "elements": [
+                {
+                  "name": "low",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                },
+                {
+                  "name": "high",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "high",
+            "type": {
+              "type-name": "Struct",
+              "name": "U128",
+              "elements": [
+                {
+                  "name": "low",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                },
+                {
+                  "name": "high",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "toBytes",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "toUnpackedBytes",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 32,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "eq",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "lt",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "lte",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "gt",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "gte",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Struct",
+            "name": "U256",
+            "elements": [
+              {
+                "name": "low",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "high",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "U128",
+                  "elements": [
+                    {
+                      "name": "low",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    },
+                    {
+                      "name": "high",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 18446744073709551615
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "wit_uint64ToUnpackedBytes",
+      "arguments": [
+        {
+          "name": "value",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Vector",
+        "length": 8,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "toImpure",
+      "index": 0,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    }
+  ]
+}

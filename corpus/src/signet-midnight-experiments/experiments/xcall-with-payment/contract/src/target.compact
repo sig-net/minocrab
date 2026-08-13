@@ -1,0 +1,33 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+export ledger treasury: QualifiedShieldedCoinInfo;
+// Requests whose communication was confirmed via the cross-contract call.
+export ledger requests: Set<Bytes<32>>;
+// Requests that have been paid for (via the root-call pay circuit).
+export ledger paidRequests: Set<Bytes<32>>;
+
+// PINNED LIMITATION (see xcall-with-payment.test.ts): receiveShielded here
+// only works when notify is the ROOT call of a transaction — as a
+// cross-contract callee it throws.
+export circuit notify(coin: ShieldedCoinInfo): [] {
+  receiveShielded(disclose(coin));
+  treasury.writeCoin(disclose(coin), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+}
+
+// Callee of the caller's `request` circuit: a state-only write, which IS
+// supported in cross-contract callees.
+export circuit confirmRequest(requestId: Bytes<32>): [] {
+  requests.insert(disclose(requestId));
+}
+
+// Root call taking payment custody. Deliberately a BLIND write: it never
+// reads `requests`, so it can share one atomic transaction with the caller's
+// `request` (whose callee writes `requests`) without its transcript's baked-in
+// reads going stale. The join of requests × paidRequests happens off-circuit.
+export circuit pay(requestId: Bytes<32>, coin: ShieldedCoinInfo): [] {
+  receiveShielded(disclose(coin));
+  treasury.writeCoin(disclose(coin), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  paidRequests.insert(disclose(requestId));
+}

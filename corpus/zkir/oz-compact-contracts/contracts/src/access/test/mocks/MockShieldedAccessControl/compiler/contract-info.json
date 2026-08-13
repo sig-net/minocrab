@@ -1,0 +1,540 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "DEFAULT_ADMIN_ROLE",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "RoleIdentifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "assertOnlyRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "canProveRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "grantRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountId",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "_grantRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountId",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "renounceRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountIdConfirmation",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "revokeRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountId",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "_revokeRole",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountId",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "getRoleAdmin",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "RoleIdentifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "_setRoleAdmin",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "adminRole",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "computeRoleCommitment",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "role",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "accountId",
+          "type": {
+            "type-name": "Alias",
+            "name": "AccountIdentifier",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "RoleCommitment",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "computeNullifier",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "roleCommitment",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleCommitment",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "RoleNullifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "computeAccountId",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "secretKey",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "instanceSalt",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "AccountIdentifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "wit_getRoleCommitmentPath",
+      "arguments": [
+        {
+          "name": "roleCommitment",
+          "type": {
+            "type-name": "Alias",
+            "name": "RoleCommitment",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "MerkleTreePath",
+        "elements": [
+          {
+            "name": "leaf",
+            "type": {
+              "type-name": "Alias",
+              "name": "RoleCommitment",
+              "type": {
+                "type-name": "Bytes",
+                "length": 32
+              }
+            }
+          },
+          {
+            "name": "path",
+            "type": {
+              "type-name": "Vector",
+              "length": 20,
+              "type": {
+                "type-name": "Struct",
+                "name": "MerkleTreePathEntry",
+                "elements": [
+                  {
+                    "name": "sibling",
+                    "type": {
+                      "type-name": "Struct",
+                      "name": "MerkleTreeDigest",
+                      "elements": [
+                        {
+                          "name": "field",
+                          "type": {
+                            "type-name": "Field"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "goes_left",
+                    "type": {
+                      "type-name": "Boolean"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "wit_secretKey",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "_isInitialized",
+      "index": 0,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "_operatorRoles",
+      "index": 1,
+      "exported": true,
+      "storage": "MerkleTree",
+      "depth": 20,
+      "type": {
+        "type-name": "Alias",
+        "name": "RoleCommitment",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "_adminRoles",
+      "index": 2,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Alias",
+        "name": "RoleIdentifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "RoleIdentifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "_roleCommitmentNullifiers",
+      "index": 3,
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Alias",
+        "name": "RoleNullifier",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "_instanceSalt",
+      "index": 4,
+      "exported": false,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
+  ]
+}

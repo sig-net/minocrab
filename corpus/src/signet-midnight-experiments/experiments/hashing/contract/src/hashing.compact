@@ -1,0 +1,74 @@
+pragma language_version >= 0.25;
+
+// HASHING experiment — cost of hashing byte arrays / data structures of
+// different sizes, in-circuit.
+//
+// Two hash families (both Poseidon-based under the hood, but with very
+// different circuit costs):
+//   - persistentHash<T> → Bytes<32>: the commitment hash used for ledger
+//     data; byte inputs are unpacked into field elements.
+//   - transientHash<T>  → Field: the cheaper in-circuit hash for transient
+//     commitments.
+//
+// The `controlN` circuits take the same Bytes<N> input but do NOT hash —
+// isolating the cost of merely having an N-byte circuit INPUT (every input
+// byte must be constrained) from the cost of hashing it. persistentVec8
+// hashes the same 256 bytes as persistent256 but shaped as a data structure
+// (Vector<8, Bytes<32>>) instead of one flat byte array.
+
+import CompactStandardLibrary;
+
+export ledger callCount: Counter;
+export ledger digest: Bytes<32>;
+export ledger fdigest: Field;
+
+// ── controls: input size only, no hash ────────────────────────────────────
+export circuit control32(data: Bytes<32>): [] {
+  callCount.increment(1);
+}
+
+export circuit control256(data: Bytes<256>): [] {
+  callCount.increment(1);
+}
+
+export circuit control1024(data: Bytes<1024>): [] {
+  callCount.increment(1);
+}
+
+// ── persistentHash over flat byte arrays ──────────────────────────────────
+export circuit persistent32(data: Bytes<32>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<32>>(data));
+}
+
+export circuit persistent256(data: Bytes<256>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<256>>(data));
+}
+
+export circuit persistent1024(data: Bytes<1024>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Bytes<1024>>(data));
+}
+
+// ── the same 256 bytes as a data structure ────────────────────────────────
+export circuit persistentVec8(data: Vector<8, Bytes<32>>): [] {
+  callCount.increment(1);
+  digest = disclose(persistentHash<Vector<8, Bytes<32>>>(data));
+}
+
+// ── transientHash over flat byte arrays ───────────────────────────────────
+export circuit transient32(data: Bytes<32>): [] {
+  callCount.increment(1);
+  fdigest = disclose(transientHash<Bytes<32>>(data));
+}
+
+export circuit transient256(data: Bytes<256>): [] {
+  callCount.increment(1);
+  fdigest = disclose(transientHash<Bytes<256>>(data));
+}
+
+export circuit transient1024(data: Bytes<1024>): [] {
+  callCount.increment(1);
+  fdigest = disclose(transientHash<Bytes<1024>>(data));
+}

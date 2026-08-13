@@ -1,0 +1,70 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 16089,
+      "hash": "4689c5a2fa84a117124498e21382ac9f7ab21cb82e27dda7f0e304a4248355fb"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 7819,
+      "hash": "c9bfefed8bd44e1d2d81df21e952ee74ae28df8d8165cf8bdbca3a0bb9bfe6ff"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 241972,
+      "hash": "4d43014a82ef0b8c9984e82df1b09a07ed37caa05024c678b53db94a5376f623"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 8605,
+      "hash": "40b26b152c2cfc369b2c0ba578c858f19af692549ec31edc4bf7fc1be83b3f86"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "advance.zkir": {
+      "type": "file",
+      "size": 17439,
+      "hash": "ef4207d41e44e803d92a08c139c826dacbd11f4381983807a8a718de5bc219c8"
+    },
+    "buy_in.zkir": {
+      "type": "file",
+      "size": 33884,
+      "hash": "9b100b664014472d507f33de0febbad3d7a07dc05cec9b635942805a97d3e24a"
+    },
+    "cash_out.zkir": {
+      "type": "file",
+      "size": 25727,
+      "hash": "d97005f35a0099488290ab0cab502a3dea6d4c4c9ea40832aefcbe1a026e59cb"
+    },
+    "dao_voting_token.zkir": {
+      "type": "file",
+      "size": 1530,
+      "hash": "e912685546aa92bd184abfaadb8a55e4cfca4330e3f4a51b1c4f6b879149730e"
+    },
+    "set_topic.zkir": {
+      "type": "file",
+      "size": 32587,
+      "hash": "44fb20877a537f5e129f7b7c8a54966508c851faa33f3774f73ed16a7712bafa"
+    },
+    "vote_commit.zkir": {
+      "type": "file",
+      "size": 20397,
+      "hash": "435bca571d0db6adf4da07d8679a83fd52ff3bf495e8583df7b0753856211163"
+    },
+    "vote_reveal.zkir": {
+      "type": "file",
+      "size": 13909,
+      "hash": "d7364cdc1533745ddebbfee1c922d737fad9195af5561098e9d28c08185a31cb"
+    }
+  }
+}

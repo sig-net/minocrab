@@ -1,0 +1,85 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 15648,
+      "hash": "574c23524d465a8359f88178b75136a9a5d352d4a67161d68dddf5814e929c96"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 13162,
+      "hash": "c1aa52d695b81ca34bff2d99d5e1c756eaf3eb4cdc3bcb19b3db0c4dc37da65e"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 68777,
+      "hash": "a327b955f2f81b5d70a3a5741a86a47dd6412445280b03daceec5136dc85f019"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 4401,
+      "hash": "4098241abebb00550a8fdc5e4836d48539a57cfcb3839265314e01ffd6491d16"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_cancelProposal.zkir": {
+      "type": "file",
+      "size": 6389,
+      "hash": "d5a2ba5a23dada3644a9040791a2fd77a7357b4de2c12cc7af0a7bc73ff8f12e"
+    },
+    "_createProposal.zkir": {
+      "type": "file",
+      "size": 3693,
+      "hash": "2a9aecfcf6603dbcc0818f63486f714488fa273267fd5221828481f83aa2bfdd"
+    },
+    "_markExecuted.zkir": {
+      "type": "file",
+      "size": 6389,
+      "hash": "ae22e54a4801cdede195b90ec520efcfc5ac97d63c7419af6cfcb773093f835e"
+    },
+    "assertProposalActive.zkir": {
+      "type": "file",
+      "size": 3206,
+      "hash": "dd5aad998b4acafd2f664c9bb726d21c67e36323679e3675eb25ba79df923299"
+    },
+    "assertProposalExists.zkir": {
+      "type": "file",
+      "size": 1454,
+      "hash": "79d8e8654fae40840528d0efabb7237974e265caf7204d6aeeda001c9b1bc276"
+    },
+    "getProposal.zkir": {
+      "type": "file",
+      "size": 3372,
+      "hash": "65e94b5231d52cf98437df817739a927f9e20004b2ad5e5853c8fb55977ecff0"
+    },
+    "getProposalAmount.zkir": {
+      "type": "file",
+      "size": 3163,
+      "hash": "39d0b784e6c57ac0b742c5e9d106e0b7e7b64724def2cde2041a799a0881ab57"
+    },
+    "getProposalColor.zkir": {
+      "type": "file",
+      "size": 3198,
+      "hash": "998442c5a68236cd51c3f4346ea2427b5c62e849237dba0e3f5b13dc8865b9ad"
+    },
+    "getProposalRecipient.zkir": {
+      "type": "file",
+      "size": 3232,
+      "hash": "5180ce88cf0e3d6cf96a1007d7514e07b2ce81227c95eccce6754c91e9e086c2"
+    },
+    "getProposalStatus.zkir": {
+      "type": "file",
+      "size": 3163,
+      "hash": "029682baae0c0e213d796492080e03d36ac43e95c85f17f7745e881339627d77"
+    }
+  }
+}

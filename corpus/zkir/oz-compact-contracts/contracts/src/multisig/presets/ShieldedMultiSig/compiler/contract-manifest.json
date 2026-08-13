@@ -1,0 +1,110 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 19871,
+      "hash": "d3028aef8e8a7aa907bc665762f685021410a074f29e2b227acb172eb7b62548"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 15911,
+      "hash": "d3601c87cf881cfd6fd69eed22e14469149b80e781b3ae7f2ed4d3beb4bf7506"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 218859,
+      "hash": "a3b944fc7369a79e490a99bf1324953e50386a048c6da32d16d28536de627e6f"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 9696,
+      "hash": "ec3e55f64b928434a61abc81f0b21a14342f7934bf56361f0d8873c744617fe2"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "approveProposal.zkir": {
+      "type": "file",
+      "size": 18050,
+      "hash": "2de7d7825676cdc7ff187565f575a9ccaac0122416eec4040e0a3e89fa49a45c"
+    },
+    "createShieldedProposal.zkir": {
+      "type": "file",
+      "size": 5436,
+      "hash": "629237d41dd8bf1421ae0bf69d988d51c87bf97966052003c456e8bd272cfaeb"
+    },
+    "deposit.zkir": {
+      "type": "file",
+      "size": 32739,
+      "hash": "e0962df925e127aee49e74cd5038ace815814212e51a246da58e1eb4cd6cb425"
+    },
+    "executeShieldedProposal.zkir": {
+      "type": "file",
+      "size": 41452,
+      "hash": "a40e635c7b899a275b9feed1f473e2f66249727da85a9e29c36b342def541382"
+    },
+    "getApprovalCount.zkir": {
+      "type": "file",
+      "size": 2909,
+      "hash": "b1a2a1099325e002082d261131564786140b983de901627c5d7ef480acf3d3e4"
+    },
+    "getProposal.zkir": {
+      "type": "file",
+      "size": 3372,
+      "hash": "65e94b5231d52cf98437df817739a927f9e20004b2ad5e5853c8fb55977ecff0"
+    },
+    "getProposalStatus.zkir": {
+      "type": "file",
+      "size": 3163,
+      "hash": "029682baae0c0e213d796492080e03d36ac43e95c85f17f7745e881339627d77"
+    },
+    "getReceivedTotal.zkir": {
+      "type": "file",
+      "size": 3168,
+      "hash": "57fd92e1e8477ad90cb44bb21704e2f18741c5a804288d17b219d0a12d93feb2"
+    },
+    "getSentTotal.zkir": {
+      "type": "file",
+      "size": 3168,
+      "hash": "ce422f95ed14d5831219f544ebc3d7362e7d61b3a0839407e4c2b58d3c4f0931"
+    },
+    "getSignerCount.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "ad40a04ad9370aadf4b614d11d9d62630c6cf2c35b14d08dfe7cba941e425f67"
+    },
+    "getThreshold.zkir": {
+      "type": "file",
+      "size": 953,
+      "hash": "76ebda7ed45f73a090b011d29aae8636401f0346b43d807bd24746f568fd96b7"
+    },
+    "getTokenBalance.zkir": {
+      "type": "file",
+      "size": 4337,
+      "hash": "3e092389c39d9a5be0f7e147eb5f94904d20fd8e5b8c98661de1515d9290bfdd"
+    },
+    "isProposalApprovedBySigner.zkir": {
+      "type": "file",
+      "size": 6737,
+      "hash": "db623d00090c4b8df502ff609ec9166230daa813d76527b33bcc77e0794a108a"
+    },
+    "isSigner.zkir": {
+      "type": "file",
+      "size": 2019,
+      "hash": "a9f66daad3072e8ee72fbc57a0a54b95d15730516992718c1438edb0f6123154"
+    },
+    "revokeApproval.zkir": {
+      "type": "file",
+      "size": 15451,
+      "hash": "e43bf1bbdd1887cfd0af901c0f100b9bd0cafb0f1ce647ad0e05f1510d39fb2e"
+    }
+  }
+}

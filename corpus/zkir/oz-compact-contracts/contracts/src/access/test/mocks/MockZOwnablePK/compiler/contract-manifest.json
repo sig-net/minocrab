@@ -1,0 +1,65 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 4440,
+      "hash": "9b676074d72ed01e550dffce0ae2e4ca99e5e5650b78102a01484242fc5d989a"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 4593,
+      "hash": "fbbbc5ea3dcc54299ebe2ffb2a189e0f4c22607892e1442b6e1581aed3c129cc"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 51143,
+      "hash": "337f19d28795c8958d6cc64323f0e08a2347df06e26f370b863e2258c3a4c3f8"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2647,
+      "hash": "7bbd854d81e0d041349a418052e5ec087f451a9b22c46efd19a447b2989886fb"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "_computeOwnerCommitment.zkir": {
+      "type": "file",
+      "size": 2425,
+      "hash": "ece9ddd9462586c964e89fb3261c56128d05a7df7cfef5dda7a099ca65fd1ac3"
+    },
+    "_transferOwnership.zkir": {
+      "type": "file",
+      "size": 5045,
+      "hash": "10dbfe3cb7ac9429b4d27af6293cf16076049e747b741dc9ed799c6fc1ec8155"
+    },
+    "assertOnlyOwner.zkir": {
+      "type": "file",
+      "size": 5014,
+      "hash": "214fe4236fc61a0c3d39620018f195800304a8cd30451a5a0b5484c799bf8d88"
+    },
+    "owner.zkir": {
+      "type": "file",
+      "size": 1748,
+      "hash": "13b36b402684c3ec229a310242f3cafa58650920eba5c3d5343f7ec8ab4d49ee"
+    },
+    "renounceOwnership.zkir": {
+      "type": "file",
+      "size": 6456,
+      "hash": "aadcf0eae25a34c23cf241cd7990f3977781f7781da730b6a0339b90f7eb85c2"
+    },
+    "transferOwnership.zkir": {
+      "type": "file",
+      "size": 10416,
+      "hash": "087041469f2650ccbee3a46c169aa4f11774dfda01caf359620d53d03bc07290"
+    }
+  }
+}
