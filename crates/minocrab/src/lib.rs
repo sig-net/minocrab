@@ -34,7 +34,7 @@
 
 use std::marker::PhantomData;
 
-pub use minocrab_ir::{Alignment, Fr, IrSource, Val};
+pub use minocrab_ir::{Alignment, AlignmentAtom, AlignmentSegment, Fr, IrSource, Val};
 use minocrab_ir::Builder;
 
 // --- visibility -------------------------------------------------------------
@@ -50,8 +50,12 @@ pub trait Visibility: sealed::Sealed + 'static {
 }
 
 /// Value derived only from constants and disclosed/public values.
+/// (Clone/Copy so `#[derive(Clone, Copy)]` works on types generic over a
+/// visibility — derives bound every type parameter.)
+#[derive(Clone, Copy)]
 pub enum Public {}
 /// Value tainted by witness data.
+#[derive(Clone, Copy)]
 pub enum Private {}
 
 impl sealed::Sealed for Public {}

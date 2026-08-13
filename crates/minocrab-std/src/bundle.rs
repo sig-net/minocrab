@@ -7,12 +7,14 @@
 //! be written once and stay per-wire — exactly how compactc lowers the
 //! corresponding Compact operations.
 
-use minocrab::{Circuit, Meet, Private, Public, Visibility, Wire};
+use minocrab::{
+    Alignment, AlignmentAtom, AlignmentSegment, Circuit, Meet, Private, Public, Visibility, Wire,
+};
 
 /// Visibility usable by bundles: closed under [`Meet`] with itself and
 /// reachable from [`Public`] (constants can enter any bundle; retagging
 /// public as private is the safe direction of the disclosure lattice).
-pub trait Vis: Visibility + Meet<Self, Out = Self> + Sized {
+pub trait Vis: Visibility + Meet<Self, Out = Self> + Sized + Copy {
     fn from_public(w: Wire<Public>) -> Wire<Self>;
 }
 
@@ -46,14 +48,27 @@ pub trait Bundle<V: Vis>: Sized {
     /// this is a gadget bug, not a data error).
     fn from_wires(wires: &mut dyn Iterator<Item = Wire<V>>) -> Self;
 
+    /// Append this type's FAB alignment atoms, one per *source atom* (a
+    /// multi-slot `Bytes<N>` contributes a single `bytes N` atom covering
+    /// all its slots — see notes/builtin-lowering.org §1).
+    fn push_atoms(out: &mut Vec<AlignmentAtom>);
+
     /// The flattened wires in declaration order.
     fn wires(&self) -> Vec<Wire<V>> {
         let mut out = Vec::with_capacity(Self::WIDTH);
         self.push_wires(&mut out);
         out
     }
+
+    /// The FAB [`Alignment`] of this type, as `persistent_hash` expects it.
+    fn alignment() -> Alignment {
+        let mut atoms = Vec::new();
+        Self::push_atoms(&mut atoms);
+        Alignment(atoms.into_iter().map(AlignmentSegment::Atom).collect())
+    }
 }
 
+/// A bare wire is a Compact `Field`.
 impl<V: Vis> Bundle<V> for Wire<V> {
     const WIDTH: usize = 1;
 
@@ -64,8 +79,13 @@ impl<V: Vis> Bundle<V> for Wire<V> {
     fn from_wires(wires: &mut dyn Iterator<Item = Wire<V>>) -> Self {
         wires.next().expect("bundle width mismatch")
     }
+
+    fn push_atoms(out: &mut Vec<AlignmentAtom>) {
+        out.push(AlignmentAtom::Field);
+    }
 }
 
+/// `Vector<N, B>`: element-major concatenation.
 impl<V: Vis, B: Bundle<V>, const N: usize> Bundle<V> for [B; N] {
     const WIDTH: usize = B::WIDTH * N;
 
@@ -77,6 +97,32 @@ impl<V: Vis, B: Bundle<V>, const N: usize> Bundle<V> for [B; N] {
 
     fn from_wires(wires: &mut dyn Iterator<Item = Wire<V>>) -> Self {
         std::array::from_fn(|_| B::from_wires(wires))
+    }
+
+    fn push_atoms(out: &mut Vec<AlignmentAtom>) {
+        for _ in 0..N {
+            B::push_atoms(out);
+        }
+    }
+}
+
+/// Tuples flatten in order (Compact tuple types; also used to prepend a
+/// commitment's rand to its value type).
+impl<V: Vis, A: Bundle<V>, B: Bundle<V>> Bundle<V> for (A, B) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH;
+
+    fn push_wires(&self, out: &mut Vec<Wire<V>>) {
+        self.0.push_wires(out);
+        self.1.push_wires(out);
+    }
+
+    fn from_wires(wires: &mut dyn Iterator<Item = Wire<V>>) -> Self {
+        (A::from_wires(wires), B::from_wires(wires))
+    }
+
+    fn push_atoms(out: &mut Vec<AlignmentAtom>) {
+        A::push_atoms(out);
+        B::push_atoms(out);
     }
 }
 

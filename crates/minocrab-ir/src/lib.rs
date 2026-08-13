@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-pub use midnight_base_crypto::fab::Alignment;
+pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
 pub use minocrab_zkir::{Fr, Instruction, IrSource};
 
 pub mod v3;

@@ -11,3 +11,4 @@ minocrab = { path = "../minocrab" }
 [dev-dependencies]
 minocrab-sim = { path = "../minocrab-sim" }
 minocrab-ir = { path = "../minocrab-ir" }
+minocrab-zkir = { path = "../minocrab-zkir" }

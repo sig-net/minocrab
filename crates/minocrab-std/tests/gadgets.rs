@@ -35,7 +35,7 @@ fn maybe_round_trips_through_wires() {
     let wires = m.wires();
     assert_eq!(wires.len(), <Maybe<Private, Wire<Private>> as Bundle<Private>>::WIDTH);
     let rebuilt: Maybe<Private, Wire<Private>> = Maybe::from_wires(&mut wires.into_iter());
-    assert_eq!(rebuilt.is_some.val(), m.is_some.val());
+    assert_eq!(rebuilt.is_some.0.val(), m.is_some.0.val());
     assert_eq!(rebuilt.value.val(), m.value.val());
 }
 
@@ -49,7 +49,7 @@ fn cond_select_picks_by_bit() {
                 let a: Maybe<Private, Wire<Private>> = some(c, ws[1]);
                 let b: Maybe<Private, Wire<Private>> = none(c);
                 let picked = cond_select(c, bit_wire, &a, &b);
-                picked.is_some
+                picked.is_some.0
             },
             &[bit, 42],
         );
@@ -97,11 +97,11 @@ fn merkle_fold_matches_hand_built_hashes() {
             let path = [
                 MerkleTreePathEntry {
                     sibling: MerkleTreeDigest { field: ws[1] },
-                    goes_left: minocrab_std::boolean(c, true),
+                    goes_left: minocrab_std::Bool(minocrab_std::boolean(c, true)),
                 },
                 MerkleTreePathEntry {
                     sibling: MerkleTreeDigest { field: ws[2] },
-                    goes_left: minocrab_std::boolean(c, false),
+                    goes_left: minocrab_std::Bool(minocrab_std::boolean(c, false)),
                 },
             ];
             merkle_tree_path_root_from_leaf_digest(c, ws[0], &path).field
