@@ -11,5 +11,7 @@ Priorities in order: correctness (and obvious correctness) > performance > idiom
 ## Hard rules
 - Never compile below ZKIR.
 - Reuse Midnight's code (fork/import/mechanical translation) before writing our own.
-- Everything reproducible via the nix flake + direnv.
+- Nix provides binaries only (toolchain, compactc, dev tools) via the flake +
+  direnv. The build itself is plain `cargo` — never wrap the crate build in
+  nix (no `nix build` for our code, no crane/naersk).
 - `plan.org` is the vision; don't edit it without asking.

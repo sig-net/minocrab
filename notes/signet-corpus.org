@@ -1,0 +1,34 @@
+#+title: sig-net Compact contracts (inventory, 2026-08-13)
+
+GitHub org is =sig-net= (not sig-network). All repos below are public; gh auth
+(DavidM-D) works for the private ones if we need them later. 20 .compact files
+total across three repos.
+
+* midnight-examples — examples/erc20-vault/contract/src/erc20-vault.compact
+*The M7 benchmark target.* Shielded ERC-20 vault: =initialize=, =deposit=,
+=claim=, withdraw/swap request+settle circuits, schema/commitment pure
+circuits. Cross-contract calls the Signet singleton; =pragma
+language_version >= 0.25= → needs toolchain 0.33 (matches our pin).
+The =full-stack-demo= repo is the Next.js front-end for this vault (no
+.compact of its own).
+
+* midnight-integration — packages/
+- =signet-midnight/src/Signet.compact= (+ =circuits.compact=) — the Signet
+  MPC singleton the vault calls into.
+- =signet-contract/src/signet-contract.compact=
+- =test-caller-contract{,-20-field}/src/*.compact= — cross-contract test
+  callers.
+- =midnight-serde/tests/fixtures/serde-fixtures.compact=
+
+* midnight-experiments — experiments/*/contract/src/
+baseline, hashing, keccak, attest, events, serde-builtin, mint-tokens,
+xcall{,-with-payment} caller/target, xcontract-events token/vault.
+Small focused circuits — good early differential-test cases, and the xcall*
+ones exercise cross-contract calling.
+
+* TODO
+- [ ] Add these three repos (pinned revs) to corpus/sources.json + fetch.sh
+      once the public-corpus build lands, then recompile.
+- [ ] For M7: confirm with dmd that "cross chain deposit and withdrawal
+      contracts" = erc20-vault (+ Signet dependency), or whether
+      signet-contract.compact is also in scope.
