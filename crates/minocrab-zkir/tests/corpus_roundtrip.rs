@@ -29,33 +29,37 @@ fn round_trips_entire_corpus() {
     }
 
     let mut failures = Vec::new();
-    let mut v3_skipped = 0usize;
+    let mut v3_count = 0usize;
     for path in &files {
         let name = path.display().to_string();
-
-        // ZKIR v3 (typed IR) isn't bound yet — see milestones.org M1 addendum.
-        // Skip explicitly rather than fail; the count keeps us honest.
-        if let Ok(text) = std::fs::read_to_string(path) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                if v["version"]["major"].as_u64() == Some(3) {
-                    v3_skipped += 1;
-                    continue;
+        let result = (|| -> Result<bool, String> {
+            match minocrab_zkir::read_any(path).map_err(|e| format!("parse: {e}"))? {
+                minocrab_zkir::AnyIr::V2(ir) => {
+                    let emitted =
+                        minocrab_zkir::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
+                    let reparsed = minocrab_zkir::parse_zkir(emitted.as_bytes(), &name)
+                        .map_err(|e| format!("reparse: {e}"))?;
+                    if reparsed != ir {
+                        return Err("re-emitted v2 IR differs from original".into());
+                    }
+                    Ok(false)
+                }
+                minocrab_zkir::AnyIr::V3(ir) => {
+                    let emitted = minocrab_zkir::v3::to_zkir_string(&ir)
+                        .map_err(|e| format!("emit: {e}"))?;
+                    let reparsed = minocrab_zkir::v3::parse_zkir(emitted.as_bytes(), &name)
+                        .map_err(|e| format!("reparse: {e}"))?;
+                    if reparsed != ir {
+                        return Err("re-emitted v3 IR differs from original".into());
+                    }
+                    Ok(true)
                 }
             }
-        }
-
-        let result = (|| -> Result<(), String> {
-            let ir = minocrab_zkir::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
-            let emitted = minocrab_zkir::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
-            let reparsed = minocrab_zkir::parse_zkir(emitted.as_bytes(), &name)
-                .map_err(|e| format!("reparse: {e}"))?;
-            if reparsed != ir {
-                return Err("re-emitted IR differs from original".into());
-            }
-            Ok(())
         })();
-        if let Err(e) = result {
-            failures.push(format!("{name}: {e}"));
+        match result {
+            Ok(true) => v3_count += 1,
+            Ok(false) => {}
+            Err(e) => failures.push(format!("{name}: {e}")),
         }
     }
 
@@ -67,8 +71,9 @@ fn round_trips_entire_corpus() {
         failures.join("\n"),
     );
     println!(
-        "round-tripped {} corpus .zkir files ({} v3 files skipped — v3 bindings pending)",
-        files.len() - v3_skipped,
-        v3_skipped
+        "round-tripped {} corpus .zkir files ({} v2, {} v3)",
+        files.len(),
+        files.len() - v3_count,
+        v3_count
     );
 }

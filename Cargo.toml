@@ -17,10 +17,14 @@ license = "Apache-2.0"
 # the zkir binaries bundled with our pinned compactc (zkir 2.2.0), so what we
 # parse/emit matches the toolchain byte-for-byte. crates.io only has the older
 # 2.1 (ledger-8) line — see notes/midnight-code-reuse.org.
-midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# zkir-v3: the ledger-9.1.0.0-rc.3 tag's copy predates the bundled zkir-v3
+# binary despite identical version strings. This rev is what the official
+# compact flake pins for the zkir-v3 binaries our compactc ships with.
+midnight-zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 # Same repo+rev as midnight-zkir's own path dep, so types unify (Fr etc.).
-midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -34,5 +38,5 @@ proptest = "1"
 # serialize/base-crypto unified onto the rc.3 copies so the old and new
 # transient-crypto share one set of core types.
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }

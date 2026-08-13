@@ -17,6 +17,35 @@ use std::path::Path;
 pub use midnight_transient_crypto::curve::Fr;
 pub use midnight_zkir::{Instruction, IrSource, Preprocessed};
 
+pub mod v3;
+
+/// A parsed `.zkir` file of either major version.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnyIr {
+    V2(IrSource),
+    V3(midnight_zkir_v3::IrSource),
+}
+
+/// Parse a `.zkir` file of either major version, dispatching on its
+/// `version.major` envelope field.
+pub fn read_any(path: impl AsRef<std::path::Path>) -> Result<AnyIr, Error> {
+    let path = path.as_ref();
+    let name = path.display().to_string();
+    let text = std::fs::read_to_string(path).map_err(|source| Error::Io {
+        path: name.clone(),
+        source,
+    })?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|source| Error::Json {
+            path: name.clone(),
+            source,
+        })?;
+    match value["version"]["major"].as_u64() {
+        Some(3) => Ok(AnyIr::V3(v3::parse_zkir(text.as_bytes(), &name)?)),
+        _ => Ok(AnyIr::V2(parse_zkir(text.as_bytes(), &name)?)),
+    }
+}
+
 /// The ZKIR major version this crate speaks. Bump alongside the pinned
 /// toolchain (see flake.nix / notes/zkir.org).
 pub const ZKIR_MAJOR_VERSION: u8 = 2;
