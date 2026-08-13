@@ -1,0 +1,13 @@
+[package]
+name = "minocrab-std"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "L3 — MinoCrab standard library: ports of Compact's standard-library.compact"
+
+[dependencies]
+minocrab = { path = "../minocrab" }
+
+[dev-dependencies]
+minocrab-sim = { path = "../minocrab-sim" }
+minocrab-ir = { path = "../minocrab-ir" }

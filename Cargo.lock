@@ -1984,6 +1984,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-std"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-ir",
+ "minocrab-sim",
+]
+
+[[package]]
 name = "minocrab-zkir"
 version = "0.1.0"
 dependencies = [

@@ -108,6 +108,13 @@ impl<V: Visibility> Wire<V> {
     pub fn val(self) -> Val {
         self.val
     }
+
+    /// Forget that this wire is public. Safe in the disclosure lattice —
+    /// private is the restrictive end — and needed to mix constants into
+    /// same-visibility operand slices like [`Circuit::transient_hash`]'s.
+    pub fn private(self) -> Wire<Private> {
+        Wire::new(self.val)
+    }
 }
 
 /// What a circuit reveals, recorded at build time for the simulator's report.
@@ -185,6 +192,24 @@ impl Circuit {
         Wire::new(self.b.public_input(None))
     }
 
+    /// Read the next witness value if `guard` is true at runtime, else 0
+    /// without consuming the transcript. (Compact conditionals lower to
+    /// guarded reads.)
+    pub fn witness_guarded<V: Visibility>(&mut self, guard: Wire<V>) -> Wire<Private> {
+        self.witnesses += 1;
+        Wire::new(self.b.private_input(Some(guard.val())))
+    }
+
+    /// Read the next public-transcript value if `guard` is true at runtime,
+    /// else 0 without consuming the transcript. The value read is on-chain
+    /// public data, so the wire is public even under a private guard.
+    pub fn public_transcript_input_guarded<V: Visibility>(
+        &mut self,
+        guard: Wire<V>,
+    ) -> Wire<Public> {
+        Wire::new(self.b.public_input(Some(guard.val())))
+    }
+
     /// A constant; constants are part of the circuit, hence public.
     pub fn constant(&mut self, imm: impl Into<Fr>) -> Wire<Public> {
         Wire::new(self.b.load_imm(imm))
@@ -256,6 +281,86 @@ impl Circuit {
     pub fn transient_hash<V: Visibility>(&mut self, inputs: &[Wire<V>]) -> Wire<V> {
         let vals: Vec<Val> = inputs.iter().map(|w| w.val).collect();
         Wire::new(self.b.transient_hash(&vals))
+    }
+
+    /// SHA-256 persistent hash of `inputs` laid out per `alignment`; the
+    /// 32-byte digest spans the two returned wires. Hashing private data
+    /// yields private wires, as with [`Circuit::transient_hash`].
+    pub fn persistent_hash<V: Visibility>(
+        &mut self,
+        alignment: Alignment,
+        inputs: &[Wire<V>],
+    ) -> (Wire<V>, Wire<V>) {
+        let vals: Vec<Val> = inputs.iter().map(|w| w.val).collect();
+        let (a, b) = self.b.persistent_hash(alignment, &vals);
+        (Wire::new(a), Wire::new(b))
+    }
+
+    /// Split into `(w >> bits, w mod 2^bits)`.
+    pub fn div_mod_power_of_two<V: Visibility>(
+        &mut self,
+        w: Wire<V>,
+        bits: u32,
+    ) -> (Wire<V>, Wire<V>) {
+        let (d, m) = self.b.div_mod_power_of_two(w.val, bits);
+        (Wire::new(d), Wire::new(m))
+    }
+
+    /// `divisor * 2^bits + modulus`, checked against field overflow.
+    pub fn reconstitute_field<A, B>(
+        &mut self,
+        divisor: Wire<A>,
+        modulus: Wire<B>,
+        bits: u32,
+    ) -> Wire<A::Out>
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        Wire::new(self.b.reconstitute_field(divisor.val, modulus.val, bits))
+    }
+
+    // --- embedded-curve (Jubjub) operations ---------------------------------
+
+    /// Point addition on the embedded curve; points are `(x, y)` wire pairs.
+    pub fn ec_add<A, B>(
+        &mut self,
+        a: (Wire<A>, Wire<A>),
+        b: (Wire<B>, Wire<B>),
+    ) -> (Wire<A::Out>, Wire<A::Out>)
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        let (x, y) = self.b.ec_add((a.0.val, a.1.val), (b.0.val, b.1.val));
+        (Wire::new(x), Wire::new(y))
+    }
+
+    /// Scalar multiplication on the embedded curve.
+    pub fn ec_mul<A, B>(
+        &mut self,
+        point: (Wire<A>, Wire<A>),
+        scalar: Wire<B>,
+    ) -> (Wire<A::Out>, Wire<A::Out>)
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        let (x, y) = self.b.ec_mul((point.0.val, point.1.val), scalar.val);
+        (Wire::new(x), Wire::new(y))
+    }
+
+    /// Generator multiplication on the embedded curve.
+    pub fn ec_mul_generator<V: Visibility>(&mut self, scalar: Wire<V>) -> (Wire<V>, Wire<V>) {
+        let (x, y) = self.b.ec_mul_generator(scalar.val);
+        (Wire::new(x), Wire::new(y))
+    }
+
+    /// Hash field elements to a curve point.
+    pub fn hash_to_curve<V: Visibility>(&mut self, inputs: &[Wire<V>]) -> (Wire<V>, Wire<V>) {
+        let vals: Vec<Val> = inputs.iter().map(|w| w.val).collect();
+        let (x, y) = self.b.hash_to_curve(&vals);
+        (Wire::new(x), Wire::new(y))
     }
 
     // --- constraints -------------------------------------------------------------

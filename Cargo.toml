@@ -4,6 +4,7 @@ members = [
     "crates/minocrab-zkir",
     "crates/minocrab-ir",
     "crates/minocrab",
+    "crates/minocrab-std",
     "crates/minocrab-sim",
 ]
 
