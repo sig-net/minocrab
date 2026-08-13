@@ -1,0 +1,274 @@
+#+TITLE: Compact code corpus — source list
+#+DATE: 2026-08-13
+#+NOTES: All ".compact file" counts below were verified by shallow-cloning the repo
+#+NOTES: (excluding node_modules) unless the entry is marked UNVERIFIED.
+#+NOTES: Current toolchain at time of survey: compiler 0.33.x, language 0.25.107, runtime 0.18.107.
+
+* Official: compiler, stdlib, tests
+
+** LFDT-Minokawa/compact — THE motherlode (compiler + stdlib + test corpus)
+- URL: https://github.com/LFDT-Minokawa/compact
+- Contains: full Compact compiler source (Scheme), CLI (Rust), runtime (TS),
+  formal spec (Agda), docs, and *568 .compact files*:
+  - examples/ 496 files — this is effectively the compiler test corpus
+    (adt, casts, bytes, errors, modules, vectors, types, ecdsa, secp256k1,
+    std_lib, bugs/regressions, plus counter.compact, election.compact,
+    zerocash.compact, proposal.compact, tiny.compact ...)
+  - test-center/ 36 files, test-contracts/ 23 files, tools/ 8, misc 5
+  - *Standard library source*: compiler/standard-library.compact
+    (also compiler/zkir-v3-library.compact)
+  - doc/lang-ref.mdx + doc/writing.mdx = authoritative language reference
+- Version: HEAD of language development; CHANGELOG shows toolchain 0.33.122,
+  language 0.25.107. Example pragmas span 0.12–0.16+ (many older regression
+  tests) — good for version-spread coverage, but note some files
+  intentionally test *errors* (examples/errors/, examples/bugs/).
+- License: Apache-2.0
+- Last updated: daily (Aug 2026), 1000+ commits
+- Note: development home. Public releases are published to
+  midnightntwrk/compact.
+
+** midnightntwrk/compact — release mirror only
+- URL: https://github.com/midnightntwrk/compact
+- Contains: 0 .compact source files on main; just README/CHANGELOG and
+  prerelease binary zips (compactc 0.27 rc). Releases page hosts installers.
+- License: Apache-2.0
+- Verdict: skip for corpus; use LFDT-Minokawa/compact instead.
+
+* Official: example dApps (midnightntwrk org)
+
+All Apache-2.0 unless noted. Each is a full dApp (contract + TS witnesses +
+CLI/UI), so the .compact count is low but the contracts are canonical,
+idiomatic, and current.
+
+** midnightntwrk/example-counter
+- URL: https://github.com/midnightntwrk/example-counter
+- 1 .compact file; pragma language_version >= 0.20. Last commit 2026-07-28.
+
+** midnightntwrk/example-bboard
+- URL: https://github.com/midnightntwrk/example-bboard
+- 1 .compact file (bulletin board, private-state patterns);
+  pragma language_version 0.23. Last commit 2026-08-06.
+
+** midnightntwrk/example-zkloan
+- URL: https://github.com/midnightntwrk/example-zkloan
+- 2 .compact files (ZK loan, private state; no pragma in file).
+  Last commit 2026-08-12.
+
+** midnightntwrk/example-kitties
+- URL: https://github.com/midnightntwrk/example-kitties
+- 1 .compact file (NFT dApp); pragma >= 0.23. License: GPL (unlike siblings).
+  Last commit 2026-08-07.
+
+** midnightntwrk/midnight-leaderboard
+- URL: https://github.com/midnightntwrk/midnight-leaderboard
+- 1 .compact file; pragma 0.23. Last commit 2026-07-28.
+
+** midnightntwrk/midnight-tip-jar
+- URL: https://github.com/midnightntwrk/midnight-tip-jar
+- 0 .compact files in repo (tutorial-driven; TUTORIAL.md has no compact
+  fences either — contract is built by following the tutorial with
+  create-mn-app). Skip for corpus.
+
+** midnightntwrk/create-mn-app
+- URL: https://github.com/midnightntwrk/create-mn-app
+- 0 .compact files in repo (scaffolding CLI; templates fetched at runtime).
+  Skip for corpus.
+
+** midnightntwrk/midnight-local-dev
+- URL: https://github.com/midnightntwrk/midnight-local-dev
+- 0 .compact files. Dev environment only. Skip.
+
+** Nonexistent official repos (checked 2026-08-13, git ls-remote fails)
+- midnightntwrk/midnight-examples — MISSING (old monorepo, since split into
+  the example-* repos per docs.midnight.network/blog/open-sourcing-examples)
+- midnightntwrk/midnight-starter-template — MISSING (the starter template
+  lives at eddalabs/midnight-starter-template, see below)
+- midnightntwrk/example-dex — MISSING
+
+* Official: docs with embedded samples
+
+** midnightntwrk/midnight-docs (source of docs.midnight.network)
+- URL: https://github.com/midnightntwrk/midnight-docs
+- Contains: 0 .compact files, but *64 .md/.mdx files with ```compact code
+  fences* (tutorials, language guide, examples pages). Easier to harvest
+  from this repo than scraping docs.midnight.network.
+- License: Apache-2.0. Last updated: Aug 2026 (active).
+
+** docs.midnight.network (rendered site)
+- URL: https://docs.midnight.network/develop/reference/compact/
+- Same content as midnight-docs repo; use the repo instead.
+
+** midnightntwrk/midnight-awesome-dapps (index, no code)
+- URL: https://github.com/midnightntwrk/midnight-awesome-dapps
+- Curated list of ~40 community dApps — used below as the discovery source.
+
+* Ecosystem libraries (high-quality, many files)
+
+** OpenZeppelin/compact-contracts
+- URL: https://github.com/OpenZeppelin/compact-contracts
+- Contains: *75 .compact files* — FungibleToken, NonFungibleToken,
+  MultiToken, Ownable, Pausable, Initializable, Utils + extensive .compact
+  test/mock contracts. Second-densest verified source after the compiler.
+- Version: pragma language_version >= 0.23.0 throughout; README states
+  Compact compiler 0.31.0.
+- License: MIT. Last commit 2026-08-12 (very active). ~55 stars.
+- Caveat: self-described "highly experimental".
+
+** OpenZeppelin/midnight-apps (LunarSwap UTXO DEX)
+- URL: https://github.com/OpenZeppelin/midnight-apps
+- Contains: *22 .compact files* (DEX contracts + tests).
+- Version: pragma language_version >= 0.20.0.
+- License: LICENSE present (check exact terms). Last commit 2026-06-30.
+
+** eddalabs/midnight-starter-template
+- URL: https://github.com/eddalabs/midnight-starter-template
+- 1 .compact file; full starter with tests. Licensed. Last commit 2026-08-12.
+
+* Community repos — verified by clone (counts exclude node_modules)
+
+** Luxion-Labs/REAP — 11 .compact
+- URL: https://github.com/Luxion-Labs/REAP
+- Last commit 2026-04-14. NO LICENSE FILE.
+
+** statera-protocol/hydra-stake-protocol — 7 .compact
+- URL: https://github.com/statera-protocol/hydra-stake-protocol
+- Liquid staking. Last 2026-03-27. NO LICENSE FILE.
+
+** fairway-global/kaamos-otc — 6 .compact
+- URL: https://github.com/fairway-global/kaamos-otc
+- ADA/USDC atomic swaps, HTLC contracts. Licensed. Last 2026-04-27.
+
+** LeandroBenitez1998/edda-contracts — 5 .compact
+- URL: https://github.com/LeandroBenitez1998/edda-contracts
+- Edda Labs contracts. Last 2026-06-14. NO LICENSE FILE.
+
+** bricktowers/midnight-identity — 5 .compact
+- URL: https://github.com/bricktowers/midnight-identity
+- ZK identity/credentials. Licensed. Last 2026-03-05.
+
+** bricktowers/midnight-seabattle — 4 .compact
+- URL: https://github.com/bricktowers/midnight-seabattle
+- Battleship game (nontrivial private-state logic). Licensed. Last 2026-03-05.
+
+** bricktowers/midnight-rwa — 4 .compact
+- URL: https://github.com/bricktowers/midnight-rwa
+- RWA trading, shielded tokens. Last 2026-03-05. NO LICENSE FILE.
+
+** bochaco/dmarket — 4 .compact
+- URL: https://github.com/bochaco/dmarket
+- Three-party escrow e-commerce. Last 2026-03-20. NO LICENSE FILE.
+
+** nel349/zkSalaria — 4 .compact
+- URL: https://github.com/nel349/zkSalaria
+- Private payroll/income proofs. Licensed. Last 2025-11-18.
+
+** kuiralabs/midnight-kicks — 3 .compact
+- URL: https://github.com/kuiralabs/midnight-kicks
+- Last 2026-07-22. NO LICENSE FILE.
+
+** bytewizard42i/SilentLedger — 3 .compact
+- URL: https://github.com/bytewizard42i/SilentLedger
+- Verified orderbook. Licensed. Last 2026-07-13.
+
+** x0lg0n/wrangler — 2 .compact
+- URL: https://github.com/x0lg0n/wrangler
+- Anonymous feedback dApp. Licensed. Last 2026-08-05.
+
+** gianalarcon/M-pay — 2 .compact
+- URL: https://github.com/gianalarcon/M-pay
+- Shielded multisig. Last 2026-05-18. NO LICENSE FILE.
+
+** statera-protocol/statera-protocol-midnight — 2 .compact
+- URL: https://github.com/statera-protocol/statera-protocol-midnight
+- Stablecoin protocol. Last 2026-03-02. NO LICENSE FILE.
+
+** hbrazier01/airlog — 2 .compact
+- URL: https://github.com/hbrazier01/airlog
+- Aviation maintenance records. Last 2026-06-24. NO LICENSE FILE.
+
+** codeBigInt/fundagoal — 2 .compact
+- URL: https://github.com/codeBigInt/fundagoal
+- Crowdfunding. Last 2026-03-18. NO LICENSE FILE.
+
+** Single-contract community repos (1 .compact each)
+- https://github.com/nel349/midnight-bank — ZK banking; licensed; 2025-08-18
+- https://github.com/ahmadrrrtx/shieldhire — resume verification (MLH 2026); licensed; 2026-05-17
+- https://github.com/haiphamhoang/midnight-example-bboard — bboard fork; licensed; 2026-03-17
+- https://github.com/vynride/Provenance — AI-model safety proofs; no license; 2026-07-12
+- https://github.com/midnames/sdk — name service; no license; 2026-03-19
+- https://github.com/midnames/vc-examples — verifiable credentials; no license; 2026-03-09
+- https://github.com/imraghavojha/midnight-bloom — no license; 2026-07-19
+- https://github.com/kaleababayneh/moonray — licensed; 2026-07-19
+- https://github.com/Olanetsoft/hello-world-compact — hello world; no license; 2026-04-14
+- https://github.com/efekrbas/midnight-sealed-bid-marketplace — sealed-bid; licensed; 2026-08-04
+- https://github.com/pplmaverick/midnight-private-auction — sealed-bid auction; licensed; 2026-08-09
+- https://github.com/Kali-Decoder/Midnight-Dice-Roll — dice game; licensed; 2026-04-04
+- https://github.com/mashharuki/midnight-prediction-market-sample-app — licensed; 2026-07-30
+- https://github.com/mashharuki/midnight-rps-sample-app — rock-paper-scissors commit/reveal; licensed; 2026-07-29
+- https://github.com/tusharpamnani/midnight-escrow — escrow; no license; 2026-03-04
+- https://github.com/subc0der/midnight-authenticator — ZK TOTP; licensed; 2026-04-01
+- https://github.com/nel349/midnight-starship — game leaderboard; no license; 2026-03-24
+
+* Tutorial / doc sources with embedded Compact (not .compact files)
+
+** Olanetsoft/compact-by-example (+ compact-by-example.org site)
+- URL: https://github.com/Olanetsoft/compact-by-example
+- Contains: 17 .mdx files with ```compact fences (hello-world, types,
+  mappings, access control, ERC20/721/1155 ports). MIT. Last 2026-07-16.
+
+** dev.to Midnight tutorials — UNVERIFIED content volume
+- https://dev.to/midnight-aliit/hands-on-midnight-deep-dive-start-building-smart-contracts-with-compact-1inb
+- https://dev.to/0xkaleab/compact-midnight-ide-1iho
+- Embedded snippets only; low value vs. midnight-docs repo.
+
+* Listed in midnight-awesome-dapps but not yet cloned — UNVERIFIED counts
+
+All existence attested by the curated list only; counts/licenses unchecked.
+- https://github.com/0xAtelerix/pintent — cross-chain intents
+- https://github.com/0xfdbu/midnight-apps — Credence ZK identity
+- https://github.com/SpyCrypto/AutoDiscovery — legal discovery ZK
+- https://github.com/fredericosanntana/dpo2u-midnight — GDPR compliance
+- https://github.com/kredz-labs/kredz — credit identity
+- https://github.com/subc0der/midnight-cloak — ZK identity SDK
+- https://github.com/Gutopro/nightroom — room rental
+- https://github.com/Edgxtech/pdm-demo-app — private data mgmt
+- https://github.com/tomiin/midnight-proof-of-age — age verification
+- https://github.com/bytewizard42i/SentinelDID-poc — DID PoC
+- https://github.com/oluwatobiss/zip-midnight-mlh-202605-hack — proof of humanity
+- https://github.com/carthagexlabs/zk-tanit-id — identity attestations
+- https://github.com/NextMed-main/Main — healthcare ZK
+- https://github.com/nel349/midnight-wallet-cli — wallet CLI (likely few contracts)
+- https://github.com/nel349/midnight-wallet-cli-hub — wallet CLI
+- https://github.com/hbrazier01/Pilotlog — pilot logbook
+- https://github.com/kaleababayneh/kaamos — midnight.finance
+- https://github.com/HimanshuM685/midnight — misc
+
+Discovery avenues not exhausted: GitHub topic pages
+https://github.com/topics/midnightntwrk-compact and
+https://github.com/topics/midnight-network ; grep.app search for
+"import CompactStandardLibrary" (rate-limited during this survey).
+
+* Recommended shortlist (pull first)
+
+1. *LFDT-Minokawa/compact* — 568 .compact files including the stdlib source
+   (compiler/standard-library.compact) and the compiler's own example/test
+   corpus; Apache-2.0; tracks the current language (0.25.x). This alone is
+   ~80% of any corpus. Filter out examples/errors/ and examples/bugs/ if you
+   want only-valid code, or keep them labeled as negative examples.
+2. *OpenZeppelin/compact-contracts* — 75 files of idiomatic, reviewed,
+   modern (>= 0.23) library code with tests; MIT.
+3. *OpenZeppelin/midnight-apps* — 22 files of realistic DEX application
+   code (>= 0.20).
+4. *midnightntwrk example repos* (example-bboard, example-zkloan,
+   example-kitties, example-counter, midnight-leaderboard) — only ~6 files
+   total but canonical style, current pragmas, Apache-2.0; these are the
+   patterns docs teach.
+5. *midnightntwrk/midnight-docs* — 64 mdx files of embedded tutorial
+   snippets, Apache-2.0; harvest fences for short-form idioms.
+
+Then, for diversity of authorship/domain (games, DeFi, identity):
+Luxion-Labs/REAP (11), hydra-stake-protocol (7), kaamos-otc (6),
+bricktowers trio (identity/seabattle/rwa, 13 total), edda-contracts (5).
+Mind the licenses: several community repos have NO license file — fine for
+analysis, questionable for redistribution; prefer the licensed ones if the
+corpus will be published.
