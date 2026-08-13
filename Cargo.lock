@@ -1898,6 +1898,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab"
+version = "0.1.0"
+dependencies = [
+ "minocrab-ir",
+]
+
+[[package]]
+name = "minocrab-ir"
+version = "0.1.0"
+dependencies = [
+ "midnight-base-crypto",
+ "midnight-zkir",
+ "minocrab-zkir",
+]
+
+[[package]]
+name = "minocrab-sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "midnight-base-crypto",
+ "midnight-transient-crypto 3.0.0",
+ "midnight-zkir",
+ "minocrab",
+ "minocrab-zkir",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "minocrab-zkir"
 version = "0.1.0"
 dependencies = [

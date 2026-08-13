@@ -1,0 +1,9 @@
+[package]
+name = "minocrab"
+version = "0.1.0"
+description = "L2: Rust eDSL for Midnight circuits with type-level disclosure tracking"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minocrab-ir = { path = "../minocrab-ir" }

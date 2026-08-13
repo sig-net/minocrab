@@ -1,0 +1,314 @@
+//! L2 — the MinoCrab eDSL.
+//!
+//! Circuits are ordinary Rust built against [`Circuit`]; wires carry their
+//! visibility in the type. A `Wire<Private>` cannot reach a public output —
+//! there is no method for it — until it passes through [`Circuit::disclose`],
+//! which is the single, greppable gate for information leaving the private
+//! domain. Combining wires taints: any operation touching a private wire
+//! yields a private wire (see [`Meet`]).
+//!
+//! Disclosure policy escape hatch: `disclose` *is* the override — it always
+//! compiles, and every call site names what it discloses, so `grep disclose`
+//! is the audit. Stricter application policies wrap wires in newtypes that
+//! hide `disclose` behind their own rules (e.g. range-blind first).
+
+use std::marker::PhantomData;
+
+pub use minocrab_ir::{Alignment, Fr, IrSource, Val};
+use minocrab_ir::Builder;
+
+// --- visibility -------------------------------------------------------------
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Type-level visibility of a wire.
+pub trait Visibility: sealed::Sealed + 'static {
+    /// Runtime tag, for reports.
+    const IS_PUBLIC: bool;
+}
+
+/// Value derived only from constants and disclosed/public values.
+pub enum Public {}
+/// Value tainted by witness data.
+pub enum Private {}
+
+impl sealed::Sealed for Public {}
+impl sealed::Sealed for Private {}
+impl Visibility for Public {
+    const IS_PUBLIC: bool = true;
+}
+impl Visibility for Private {
+    const IS_PUBLIC: bool = false;
+}
+
+/// Visibility join: public only if both sides are public.
+pub trait Meet<B: Visibility>: Visibility {
+    type Out: Visibility;
+}
+impl Meet<Public> for Public {
+    type Out = Public;
+}
+impl Meet<Private> for Public {
+    type Out = Private;
+}
+impl Meet<Public> for Private {
+    type Out = Private;
+}
+impl Meet<Private> for Private {
+    type Out = Private;
+}
+
+// --- wires -------------------------------------------------------------------
+
+/// One circuit value, tagged with its visibility.
+pub struct Wire<V: Visibility> {
+    val: Val,
+    _vis: PhantomData<V>,
+}
+
+// Manual impls: Wire is Copy regardless of V.
+impl<V: Visibility> Clone for Wire<V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<V: Visibility> Copy for Wire<V> {}
+
+impl<V: Visibility> Wire<V> {
+    fn new(val: Val) -> Self {
+        Wire {
+            val,
+            _vis: PhantomData,
+        }
+    }
+
+    /// The underlying L1 value handle.
+    pub fn val(self) -> Val {
+        self.val
+    }
+}
+
+/// What a circuit reveals, recorded at build time for the simulator's report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disclosure {
+    /// Call-site label, e.g. what quantity is being disclosed and why.
+    pub label: String,
+    /// How it leaves the circuit.
+    pub kind: DisclosureKind,
+    /// ZKIR memory index of the disclosed value.
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisclosureKind {
+    /// `disclose()` — a private value became public inside the circuit.
+    Disclosed,
+    /// Declared as part of the public statement (public input block).
+    Statement,
+    /// Returned as a circuit output.
+    Output,
+}
+
+// --- circuit ------------------------------------------------------------------
+
+/// A circuit under construction.
+pub struct Circuit {
+    b: Builder,
+    disclosures: Vec<Disclosure>,
+    witnesses: u32,
+}
+
+/// A finished circuit: the lowered ZKIR plus its disclosure record.
+pub struct Compiled {
+    pub ir: IrSource,
+    pub disclosures: Vec<Disclosure>,
+    pub witnesses: u32,
+}
+
+impl Circuit {
+    /// A circuit taking `num_args` private field-element arguments.
+    /// (Arguments are witness data in ZKIR; they enter memory directly.)
+    pub fn new(num_args: u32) -> (Self, Vec<Wire<Private>>) {
+        let (b, args) = Builder::new(num_args);
+        let circuit = Circuit {
+            b,
+            disclosures: Vec::new(),
+            witnesses: 0,
+        };
+        (circuit, args.into_iter().map(Wire::new).collect())
+    }
+
+    // --- inputs ---------------------------------------------------------------
+
+    /// Read the next witness value from the private transcript.
+    pub fn witness(&mut self) -> Wire<Private> {
+        self.witnesses += 1;
+        Wire::new(self.b.private_input(None))
+    }
+
+    /// Read the next value from the public transcript (visible on-chain).
+    pub fn public_transcript_input(&mut self) -> Wire<Public> {
+        Wire::new(self.b.public_input(None))
+    }
+
+    /// A constant; constants are part of the circuit, hence public.
+    pub fn constant(&mut self, imm: impl Into<Fr>) -> Wire<Public> {
+        Wire::new(self.b.load_imm(imm))
+    }
+
+    // --- operations (visibility joins via Meet) ---------------------------------
+
+    pub fn add<A, B>(&mut self, a: Wire<A>, b: Wire<B>) -> Wire<A::Out>
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        Wire::new(self.b.add(a.val, b.val))
+    }
+
+    pub fn mul<A, B>(&mut self, a: Wire<A>, b: Wire<B>) -> Wire<A::Out>
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        Wire::new(self.b.mul(a.val, b.val))
+    }
+
+    pub fn neg<A: Visibility>(&mut self, a: Wire<A>) -> Wire<A> {
+        Wire::new(self.b.neg(a.val))
+    }
+
+    /// Boolean not; operand must hold 0 or 1.
+    pub fn not<A: Visibility>(&mut self, a: Wire<A>) -> Wire<A> {
+        Wire::new(self.b.not(a.val))
+    }
+
+    /// 1 if equal, else 0.
+    pub fn test_eq<A, B>(&mut self, a: Wire<A>, b: Wire<B>) -> Wire<A::Out>
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        Wire::new(self.b.test_eq(a.val, b.val))
+    }
+
+    /// `bit ? a : b`.
+    pub fn cond_select<C, A, B>(
+        &mut self,
+        bit: Wire<C>,
+        a: Wire<A>,
+        b: Wire<B>,
+    ) -> Wire<<C::Out as Meet<B>>::Out>
+    where
+        C: Visibility + Meet<A>,
+        A: Visibility,
+        B: Visibility,
+        C::Out: Meet<B>,
+    {
+        Wire::new(self.b.cond_select(bit.val, a.val, b.val))
+    }
+
+    /// `a < b` over `bits`-bit values (range-constrains both).
+    pub fn less_than<A, B>(&mut self, a: Wire<A>, b: Wire<B>, bits: u32) -> Wire<A::Out>
+    where
+        A: Visibility + Meet<B>,
+        B: Visibility,
+    {
+        Wire::new(self.b.less_than(a.val, b.val, bits))
+    }
+
+    /// Poseidon-family hash. The hash of private data is still private —
+    /// disclose it explicitly if it must leave the circuit.
+    pub fn transient_hash<V: Visibility>(&mut self, inputs: &[Wire<V>]) -> Wire<V> {
+        let vals: Vec<Val> = inputs.iter().map(|w| w.val).collect();
+        Wire::new(self.b.transient_hash(&vals))
+    }
+
+    // --- constraints -------------------------------------------------------------
+
+    /// Constrain a boolean wire to be true. Constraining private data is the
+    /// point of ZK — this does not disclose the operand.
+    pub fn assert<V: Visibility>(&mut self, cond: Wire<V>) {
+        self.b.assert(cond.val);
+    }
+
+    pub fn assert_eq<A: Visibility, B: Visibility>(&mut self, a: Wire<A>, b: Wire<B>) {
+        self.b.constrain_eq(a.val, b.val);
+    }
+
+    /// Range-constrain to `bits` bits.
+    pub fn assert_bits<V: Visibility>(&mut self, w: Wire<V>, bits: u32) {
+        self.b.constrain_bits(w.val, bits);
+    }
+
+    pub fn assert_boolean<V: Visibility>(&mut self, w: Wire<V>) {
+        self.b.constrain_to_boolean(w.val);
+    }
+
+    // --- disclosure: the only Private -> Public gate --------------------------------
+
+    /// Explicitly make a private value public. THE greppable audit point:
+    /// every bit of information that leaves the private domain passes through
+    /// here, and `label` says what and why.
+    pub fn disclose(&mut self, w: Wire<Private>, label: &str) -> Wire<Public> {
+        self.disclosures.push(Disclosure {
+            label: label.to_string(),
+            kind: DisclosureKind::Disclosed,
+            index: w.val.index(),
+        });
+        Wire::new(w.val)
+    }
+
+    // --- outputs (public only) -----------------------------------------------------
+
+    /// Declare a wire as part of the public statement.
+    pub fn declare_public(&mut self, w: Wire<Public>, label: &str) {
+        self.disclosures.push(Disclosure {
+            label: label.to_string(),
+            kind: DisclosureKind::Statement,
+            index: w.val.index(),
+        });
+        self.b.declare_pub_input(w.val);
+    }
+
+    /// Return a wire as a circuit output.
+    pub fn output(&mut self, w: Wire<Public>, label: &str) {
+        self.disclosures.push(Disclosure {
+            label: label.to_string(),
+            kind: DisclosureKind::Output,
+            index: w.val.index(),
+        });
+        self.b.output(w.val);
+    }
+
+    // --- finish ---------------------------------------------------------------------
+
+    pub fn finish(self) -> Compiled {
+        Compiled {
+            ir: self.b.finish(false),
+            disclosures: self.disclosures,
+            witnesses: self.witnesses,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_taints_public() {
+        let (mut c, _) = Circuit::new(0);
+        let w = c.witness();
+        let k = c.constant(3u64);
+        let s = c.add(w, k);
+        // s is Wire<Private>: it has no path to declare_public without disclose.
+        let s_pub = c.disclose(s, "witness plus three");
+        c.declare_public(s_pub, "sum");
+        let compiled = c.finish();
+        assert_eq!(compiled.disclosures.len(), 2);
+        assert_eq!(compiled.witnesses, 1);
+    }
+}

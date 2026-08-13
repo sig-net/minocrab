@@ -1,0 +1,11 @@
+[package]
+name = "minocrab-ir"
+version = "0.1.0"
+description = "L1: typed circuit builder over ZKIR instructions"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minocrab-zkir = { path = "../minocrab-zkir" }
+midnight-zkir.workspace = true
+midnight-base-crypto.workspace = true

@@ -43,14 +43,27 @@ Exit criteria: we can read and write ZKIR that their toolchain accepts, proven
 against the corpus.
 
 * M2 — Core eDSL + native simulator
-- [ ] Minimal eDSL: wires, field/int ops, assertions, witness inputs, public
+- [X] Minimal eDSL: wires, field/int ops, assertions, witness inputs, public
       outputs; lowering to ZKIR via M1.
-- [ ] Type-level disclosure tracking: =Wire<Private>= can't reach a public
+      (crates/minocrab-ir: typed builder over all 26 ZKIR v2 instructions with
+      arity tracking. crates/minocrab: Circuit/Wire API.)
+- [X] Type-level disclosure tracking: =Wire<Private>= can't reach a public
       output without =disclose()=; overridable escape hatch; greppable.
-- [ ] Native simulator running circuits in plain Rust inside =cargo test=, with
+      (Meet trait joins visibilities; declare_public/output only accept
+      Wire<Public>; disclose(w, label) is the single gate and carries an
+      audit label into the report. TODO M3: trybuild compile-fail test
+      proving the type error.)
+- [X] Native simulator running circuits in plain Rust inside =cargo test=, with
       structured output: performance metrics + what was disclosed.
+      (crates/minocrab-sim mirrors midnight-ledger's reference VM;
+      every run convertible to a ProofPreimage and cross-checked against
+      IrSource::check in tests, so the simulator is never trusted alone.
+      Report = op counts + witnesses consumed + labelled disclosed values,
+      serde-serializable. cost() exposes their CircuitModel k/rows.)
 Exit criteria: a small contract written in the eDSL lowers to valid ZKIR and
-simulates with a disclosure report.
+simulates with a disclosure report. MET — age-gate demo lowers, zkir
+mock-compile accepts it, reference VM agrees with the simulator
+(crates/minocrab-sim/tests/end_to_end.rs).
 
 * M3 — Verification harness + cost profiler
 - [ ] Spec-vs-circuit quickcheck/proptest harness: spec in ordinary Rust,

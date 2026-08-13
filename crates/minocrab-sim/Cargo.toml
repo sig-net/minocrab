@@ -1,0 +1,19 @@
+[package]
+name = "minocrab-sim"
+version = "0.1.0"
+description = "L5: native ZKIR simulator with disclosure reports and cost metrics, for cargo test"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minocrab = { path = "../minocrab" }
+minocrab-zkir = { path = "../minocrab-zkir" }
+midnight-zkir.workspace = true
+midnight-transient-crypto.workspace = true
+midnight-base-crypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true

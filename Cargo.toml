@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/minocrab-zkir"]
+members = [
+    "crates/minocrab-zkir",
+    "crates/minocrab-ir",
+    "crates/minocrab",
+    "crates/minocrab-sim",
+]
 
 [workspace.package]
 edition = "2021"
@@ -15,6 +20,7 @@ license = "Apache-2.0"
 midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
 # Same repo+rev as midnight-zkir's own path dep, so types unify (Fr etc.).
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
