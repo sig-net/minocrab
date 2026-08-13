@@ -1,0 +1,56 @@
+#+title: MinoCrab Plan
+
+* Aim
+The aim is to make a Rust eDSL that can be uses as a development platform for Midnight, without using the Compact language.
+
+We're building something general purpose but, specifically it's so we can compile the Compact contracts in the sig-net organisation to use less RAM and be proven quicker without loss in safety.
+
+* Priorities
+Our solution performing correctly and being obviously correct is the first priority, after that we're trying to out perform them as much as possible, then finally we'll try and be as idiomatic rust as possible (lowest priority compared to the other two).
+
+* Approach
+** Corpus-driven development
+Start by gathering as large a corpus of Compact code as possible, look at how it compiles and try to rewrite it using a version of DSL and use that as a test suite.
+
+** Reuse Midnight's code
+Wherever possible, use code written by the midnight team. It doesn't matter whether we end up forking their repository, importing against private functions in repos. We should write a minimal amount of code. Where we can't use their code directly, try to use mechanical transformations, for example if possible turn functions from their standard library into ZKIR automatically.
+
+** Layered architecture
+Keep things in layers like a normal compiler designer. Write down those layers before you start work, so one layer is rust bindings to the ZKIR, the other is stdlib to the rust IR language, another is optimisations ect.
+
+* Design requirements
+** ZKIR is the base
+Never compile below ZKIR, that's our base.
+
+Make sure you're using a version of ZKIR that supports cross contract calling.
+
+** Type-level disclosure tracking
+Do a form of Type-level disclosure tracking e.g. Wire<Private> can't reach a public output without an explicit disclose(), enforced by the compiler, greppable in audit. Compact has the public/private split but you can build stricter, application-specific policies on top (e.g., "amounts may be disclosed only after range-blinding"). Use your best judgement on how to do this. People should be able to override the disclosure rules if they're sure that they're sharing something safe.
+
+** Const-generic circuit families
+Try to use Const-generic circuit families one definition, monomorphized per size/depth, with unrolling done by rustc instead of by hand.
+
+* Testing & verification
+** Native simulator
+I want a native simulator of our DSL for testing. This should include performance metrics and a description of what you're disclosing. This output should be structured and the aim is to use it in normal `cargo test` loops.
+
+** Spec-based property testing
+Write spec logic in ordinary Rust, quickcheck it against the simulator: millions of random inputs asserting circuit ≡ intent. This is the strongest practical defense against proving-the-wrong-statement.
+
+** Cost profiler
+It's important that you develop a user friendly cost profiler, if we want to make the code perform well.
+
+* Tooling & environment
+Use nix wherever possible and direnv for the local development environment.
+
+Use a pinned version of the Compact tooling, but bear in mind there's natural churn in the ZKIR, so make it easy to update our repo when it changes.
+
+* Working practices
+Be aware that you're going to lose context sometimes, so write things down.
+
+* Future work
+in future we're going to want to hook this up to a proof system. Don't implement it yet, but bear in mind that we're going to develop it in future.
+
+* Non-goals (v1)
+- No custom surface grammar / block macros.
+- No proving-stack work below ZKIR, ever.
