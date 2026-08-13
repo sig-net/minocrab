@@ -98,8 +98,21 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
 * M4 — stdlib + corpus rewrites
 - [ ] Port the Compact stdlib pieces the corpus needs, mechanically translating
       Midnight's own implementations where possible.
+      (In progress: crates/minocrab-std has the Bundle wire-typing layer +
+      the pure pieces — Maybe/Either, merkle fold. Corpus usage survey says
+      the sig-net set needs: Either/Maybe, coin types, receiveShielded /
+      mintShieldedToken / sendImmediateShielded / tokenType, and
+      secp256k1EcdsaVerify. Hash-dependent ports blocked on
+      notes/builtin-lowering.org, in flight.)
+- [ ] Prerequisite: ZKIR v3 emission + execution (sig-net contracts are v3).
+      minocrab-ir::v3::Builder3 DONE (typed, zkir-v3 mock-compile accepts);
+      v3 simulator port into minocrab-sim in flight (needed because
+      upstream's Preprocessed::pis path is pub(crate) — see
+      notes/ledger-abi.org §6).
 - [ ] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
-      a differential + property test.
+      a differential + property test. (ABI modeled: notes/ledger-abi.org.
+      Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
+      on a shared ProofPreimage; instruction shape free to differ.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Optimisation
