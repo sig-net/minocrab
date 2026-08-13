@@ -12,6 +12,8 @@ use std::sync::Arc;
 pub use midnight_base_crypto::fab::Alignment;
 pub use minocrab_zkir::{Fr, Instruction, IrSource};
 
+pub mod v3;
+
 /// A handle to one slot of circuit value memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Val(u32);

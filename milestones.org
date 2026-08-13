@@ -84,6 +84,10 @@ mock-compile accepts it, reference VM agrees with the simulator
 - [ ] Differential testing against compactc: same contract in Compact and in
       the eDSL, same inputs, same results. (Needs the first eDSL ports —
       starts with M4; compactc's ledger-state ABI must be modeled first.)
+      (ABI modeled: notes/ledger-abi.org — state layout, Impact/PI framing,
+      FAB, v3 schema, worked example, and the equivalence criterion: same
+      typed inputs/outputs + identical Preprocessed::pis/pi_skips on a
+      shared ProofPreimage; instruction streams free to differ.)
 - [X] User-friendly cost profiler (constraint/RAM/proving-cost proxies, broken
       down by code region).
       (Circuit::region() spans; minocrab_sim::profile() → per-region

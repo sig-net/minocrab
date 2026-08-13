@@ -1,0 +1,452 @@
+#+TITLE: compactc's ledger-state ABI (for M3 differential testing / M4 eDSL ports)
+#+DATE: 2026-08-13
+#+STARTUP: overview
+
+What an eDSL-authored circuit must reproduce, bit for bit, to be
+differentially testable against compactc output. Ground truth examined:
+midnight-ledger rev =04c9c5d9= (the flake/Cargo pin; Rust paths below are
+crate-relative within =~/.cargo/git/checkouts/midnight-ledger-*/04c9c5d/=);
+the compact repo at the corpus pin =56c3b779= (Scheme paths are
+=compiler/...=; NB the corpus fetch keeps only =.compact= files, the =.ss=
+passes were re-cloned for this note — consider adding =compiler/**/*.ss= to
+the corpus source paths); and corpus =.compact= / =.zkir= pairs (v3 = the
+sig-net sources). v3 focus; v2 noted where cheap.
+
+Specs read (midnight-ledger =spec/=): =zkir.md= (v3 instruction set + PI
+model — excellent), =impact-opcodes.md= (byte-level Impact encoding),
+=onchain-runtime.md= (StateValue + program model), =field-aligned-binary.md=
+(FAB), =contracts.md=. Caveat: =zkir.md= is slightly stale vs the rev (says
+7 IrTypes / 33 instructions; code has 13 IrTypes — secp256r1 + curve25519
+added — and a =ReverseBytes= instruction the spec omits).
+
+* The ABI in one paragraph
+
+A Compact circuit compiles to two coordinated artifacts: an *Impact program*
+(the public on-chain state transition, =Op= list, =onchain-vm/src/ops.rs=)
+and a *ZKIR circuit*. They meet in the proof's public-input (PI) vector: the
+PI vector IS the field-element encoding of the Impact program (plus a
+binding input and a communications commitment). The circuit's =impact=
+instructions re-emit, as public inputs, the exact =Op::field_repr= stream of
+every ledger operation the call performs; the ledger verifies the proof
+against PIs it derives from the transaction's transcript
+(=Transcript::public_inputs=, =ledger/src/verify.rs:1936-1960=). So
+"modeling the ledger ABI" = (a) the state layout compactc chooses, (b) the
+exact Impact op sequence it emits per ledger operation, (c) the FAB
+field-element encoding of every embedded value, (d) the PI-vector framing
+(binding input, commitment, guards/skips).
+
+* 1. Ledger declarations → on-chain state layout
+
+** Field indexing
+- Top level is =StateValue::Array=, one slot per =ledger= declaration in
+  *declaration order* (sealed and non-exported count; =Kernel= is
+  special-cased out and gets NO slot — it operates on the context/effects
+  stack entries: =compiler/analysis-passes/combine-ledger-declarations.ss:36,44-49=).
+- Index assignment: =compiler/analysis-passes/determine-ledger-paths.ss:37-51=.
+  ≤15 fields ⇒ one flat =Array(n)=, path == =(i)=. >15 fields ⇒ a B-tree of
+  nested arrays chunked 15-wide (=maximum-ledger-segment-length= = 15,
+  =compiler/langs.ss:850-855=; =batch= at =determine-ledger-paths.ss:24-36=),
+  path = =(i j …)=. contract-info.json's =ledger= array echoes it as
+  ="index": n= (scalar if depth 1, else a vector) —
+  =compiler/save-contract-info-passes/extract-contract-info.ss:145-152=.
+- Corpus confirmation: attest contract-info.json (callCount idx 0, verified
+  idx 1) and the matching Impact paths =[0]=/=[1]= in
+  =corpus/zkir/signet-midnight-experiments/.../attest/zkir/mapOnly.zkir=;
+  sig-net documents the convention in source
+  (=erc20-vault.compact:42= "This declaration is ledger FIELD 0 …",
+  =test-caller-contract.compact:21= "field numbers are declaration order and
+  stay fixed").
+
+** Type → StateValue mapping
+=StateValue= (=onchain-state/src/state.rs:71-98=, tag =impact-state-value[v2]=):
+=Null= | =Cell(AlignedValue)= | =Map<AlignedValue,StateValue>= | =Array(n≤16)=
+| =BoundedMerkleTree(0<h≤32)=; =CELL_BOUND= = 32 KiB. compactc's mapping is
+the declarative ADT table in =compiler/midnight-ledger.ss= (each ADT's
+=initial-value= names the shape; =state-value= mini-language in
+=compiler/vm.ss:269-303=):
+
+| Compact ledger type      | StateValue                                                  | midnight-ledger.ss |
+|--------------------------+-------------------------------------------------------------+--------------------|
+| plain =T= (implicit Cell) | =Cell(default<T>)= (zero FAB value)                        | :544-546           |
+| =Counter=                | =Cell(u64 0)= (=b8= alignment; addi/subi u64 arithmetic)    | :587-589           |
+| =Set<T>=                 | =Map=, keys = FAB(T), values = =Null=                       | :622-624, :657-661 |
+| =Map<K,V>=               | =Map=, keys = FAB(K), values = nested StateValue            | :699-701           |
+| =List<T>=                | =Array(3)= = [head, tail, Cell(u64 length)]                 | :798-802           |
+| =MerkleTree<n,T>=        | =Array(2)= = [BMT(n), Cell(u64 first-free)]                 | :971-974           |
+| =HistoricMerkleTree<n,T>= | =Array(3)= = [BMT(n), Cell(u64), Map (historic roots)]     | :1127-1131         |
+| =Kernel=                 | no slot                                                     | :159-161           |
+
+- Users can't write =Cell= directly; the compiler wraps plain types
+  (=expand-modules-and-types.ss:1158-1171=; stdlib Cell renamed
+  =__compact_Cell= at =:684-688=).
+- Nested ADTs only inside =Map= (=propagate-ledger-paths.ss:35-52=, "ADT
+  nesting is permitted only within Map ADTs"); =Map.insert= of an ADT value
+  pushes that ADT's own initial value (=midnight-ledger.ss:748-761=).
+- Per-access paths = static declaration indices ++ dynamic Map keys
+  (=propagate-ledger-paths.ss:127-172=).
+
+** Initial state
+Not in the ZKIR at all. The generated TS =initialState= builds it in two
+phases (=compiler/typescript-passes/print-typescript.ss:1724-1776=):
+1. skeleton: =StateValue.newArray()= + one =arrayPush(newNull())= per field
+   (nested for the B-tree) → =ChargedState= (=print-typescript.ss:1065-1090=);
+2. per-field =resetToDefault= executed *through the Impact VM*
+   (=queryLedgerState(context, partialProofData, [...])=,
+   =print-typescript.ss:1092-1109=, =:486-495=) — the real defaults are each
+   ADT's =resetToDefault= vm-code in midnight-ledger.ss (Cell :560-566,
+   Counter :613-620, …);
+then the user's =constructor= body, then
+=setOperation('<circuit>', new ContractOperation())= per proof circuit
+(=print-typescript.ss:1700-1707=). On chain this becomes
+=ContractDeploy { initial_state: ContractState, nonce }=
+(=ledger/src/structure.rs:2759-2782=, tag =contract-deploy[v6]=; address =
+SHA256 of the tagged serialization); =ContractState { data:
+ChargedState(StateValue), operations: Map<EntryPointBuf,
+ContractOperation>, … }= (=onchain-state/src/state.rs:746-757=) where
+=ContractOperation { v2: Option<VK>, v3: Option<VK>, ir }= (=state.rs:886-899=)
+stores each circuit's verifier key — the circuit⇄contract binding.
+⇒ For differential testing, replicate initial state at the =StateValue=
+level with =midnight-onchain-state= in Rust; no need to run their TS.
+
+* 2. How ledger reads/writes appear in the compiled ZKIR
+
+** The channel: ProofPreimage + PI vector
+=ProofPreimage= (=transient-crypto/src/proofs.rs:700-728=, tag
+=proof-preimage=; same struct serves v2 and v3 — =ProofPreimageVersioned=
+has only V2, =ledger/src/structure.rs:232-234=):
+- =inputs: Vec<Fr>= — circuit arguments, value-only FAB elements.
+- =private_transcript= — witness-call results (consumed by =PrivateInput=).
+- =public_transcript_inputs= — the field-encoded Impact program; consumed
+  and reconciled ONLY by =Impact=.
+- =public_transcript_outputs= — values the =popeq= ops return (ledger
+  reads); consumed by =PublicInput=.
+- =binding_input=, =communications_commitment: Option<(comm, rand)>=,
+  =key_location=.
+
+PI vector order (=zkir-v3/src/ir_vm.rs:213-221=):
+1. =binding_input=;
+2. the communications commitment iff =do_communications_commitment=;
+3. one PI per element of each =impact= instruction, in program order.
+All three transcript streams must be exactly consumed ("Transcripts not
+fully consumed", =ir_vm.rs:648-661=).
+
+** Writes: =impact= instructions
+=Impact { guard, inputs }= (=zkir-v3/src/ir.rs:472-488=; all inputs Native).
+One =impact= = one Impact-VM op. Its =inputs= are exactly =Op::field_repr=
+(=onchain-vm/src/ops.rs:460-525=): opcode element (=0x10= push, =0x11=
+pushs, =0x9n/0xan= ins/insc, =0x5n..0x8n= idx family with path-len−1 in the
+low nibble, =0x0c/0x0d= popeq/popeqc, =0x0e= addi, =0xff= ckpt, …) followed
+by the op's argument as field elements (StateValue / AlignedValue / u32
+immediates). Constants are inline =0x…= immediates (little-endian hex,
+=zkir-v3/src/ir.rs:188-201=); circuit-computed values are =%var= operands —
+that's how private values become public state writes. Off-circuit each
+element is pushed to the PI vector AND reconciled against
+=public_transcript_inputs= ("Public transcript input mismatch",
+=ir_vm.rs:507-543=); in-circuit each element is =select(guard, x, 0)= and
+constrained as a public input (=ir_vm.rs:869-882=, =:1207-1210=).
+
+Compiler side: each ledger-ADT op carries a literal Impact program
+(vm-code) in =compiler/midnight-ledger.ss= (mini-language doc :94-157; =f= =
+resolved field path, =f-cached= — hard-wired #f at expansion,
+=reduce-to-zkir.ss:622=, so the *uncached* opcode variants are emitted for
+the initial idx). The v3 assembler is =assemble1=
+(=compiler/zkir-v3-passes/reduce-to-zkir.ss:484-612=). E.g. =Cell.write=
+(=midnight-ledger.ss:552-558=) = idxp(parent path) / push key / pushs value /
+ins 1 / insc(depth−1) — with *suppression*: on a top-level field the idxp
+and the trailing insc vanish entirely (=suppress-null= / =suppress-zero=,
+=reduce-to-zkir.ss:486-488,595-608=), which is why =lastAmount = a= in the
+worked example is just push/pushs/ins.
+
+Guards/skips: a false guard emits n literal zero PIs and records
+=pi_skips=Some(n)= (=ir_vm.rs:509-516=). The ledger prover splices
+=Op::Noop{n}= into the transcript accordingly (=ledger/src/prove.rs:259-290=,
+adjacent noops merged) — sound because =Noop{n}.field_repr= is n zero
+elements (=ops.rs:464=). Verification rejects adjacent noops
+("NotNormalized", =verify.rs:1889-1894=).
+
+** Reads: =public_input= + =popeq=
+A ledger/kernel read compiles to (mint-tokens
+=mintWithRecipientArgument.zkir:17-21=, a kernel =self()= read; state reads
+are identical modulo the path):
+#+begin_example
+{ "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%v.0", "guard": null }  ; one per FAB limb
+{ "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%v.1", "guard": null }
+{ "op": "impact", "guard": "0x01", "inputs": ["0x32"] }                      ; dup 2 (reach context/state)
+{ "op": "impact", "guard": "0x01", "inputs": ["0x60","0x01","0x01","0x00"] } ; idxc [0]
+{ "op": "impact", "guard": "0x01", "inputs": ["0x0d","0x01","0x20","%v.0","%v.1"] } ; popeqc, result = SAME vars
+#+end_example
+=public_input= witnesses the read value from =public_transcript_outputs=
+into ZKIR memory (in-circuit it's a typed free witness, =ir_vm.rs:978-1004=);
+the =popeq[c]= impact then embeds those same variables as the op's
+expected-result =AlignedValue= (=[0x0c|0x0d, #atoms, atoms…, %vars…]=,
+compiler: =reduce-to-zkir.ss:518-537=, which is also where the
+=public_input= gates are minted). On chain, verifying-mode =popeq= enforces
+the stored value equals the embedded result
+(=onchain-vm/src/result_mode.rs:44-62=, "ReadMismatch"). So *reads are
+constrained by embedding the expected value in the public transcript*, not
+by re-proving storage. Emission order: a ledger op's =public_input= /
+=persistent_hash= / =encode= gates come before all of its =impact=
+instructions (=reduce-to-zkir.ss:620-633=).
+
+** What the circuit does and doesn't constrain
+- Constrains: the exact op sequence (opcodes, paths, pushed values, popeq
+  expected results) as PIs; guard-disabled ops as zero blocks; the binding
+  and commitment slots.
+- Doesn't constrain: actual storage contents (the VM enforces on chain),
+  gas, effects, address/entry point — those bind via =binding_input=:
+  SHA-256 over ="midnight:binding-input[v1]" ‖ address ‖ entry_point ‖ gas ‖
+  effects ‖ guaranteed-program-length ‖ Pedersen binding commitment=,
+  truncated to 31 bytes (=ledger/src/verify.rs:1962-2004=). In local check
+  runs it's a free preimage value (constructed as 0,
+  =ledger/src/construct.rs:557-559=).
+- Guaranteed/fallible split: fallible transcript must begin with =ckpt=
+  (=verify.rs:1876-1881=); =binding_input= commits to the guaranteed program
+  length so the split can't move. NB =ckpt= has NO case in compactc's v3
+  assembler — =Kernel.checkpoint= hits "unimplemented"
+  (=reduce-to-zkir.ss:610-612=; v2 has it, =zkir-passes/print-zkir.ss:546=).
+  No v3 corpus circuit emits one.
+
+** Communications commitment
+=do_communications_commitment=true= on every corpus circuit (v2 and v3) —
+it's simply =(not (no-communications-commitment))= per circuit, i.e. always
+true unless the =--no-communications-commitment= CLI flag is passed
+(=compiler/config-params.ss:27=, =compactc.ss:98=,
+=zkir-v3-passes/print-zkir-v3.ss:74-78=). Definition: =comm =
+transient_commit(raw(inputs) ++ raw(Output vals), randomness)= where
+=transient_commit(v,r) = poseidon([r] ++ v)=
+(=transient-crypto/src/hash.rs:76-88=; v3 off-circuit check
+=zkir-v3/src/ir_vm.rs:662-681=; in-circuit recomputed and asserted equal to
+PI #2, =ir_vm.rs:1173-1205=). Only circuit *arguments and return values*
+are committed; ledger ops are bound by the transcript instead. The ledger
+computes the same value over the call's FAB input/output
+(=ledger/src/construct.rs:603-611=, =onchain-runtime/src/lib.rs:46-51=) and
+stores it as =ContractCall::communication_commitment=; cross-contract calls
+are linked by matching =(addr, entry-point-hash, comm)= —
+=structure.rs:2722-2745=; the caller-side commit + =Kernel.claimContractCall=
+are synthesized in =compiler/circuit-passes/desugar-contract-calls.ss:71-137=.
+NB the ledger ALWAYS pushes the commitment as PI #2 (=verify.rs:1948=), so a
+circuit compiled with the flag off can't be used for contract calls.
+
+* 3. FAB: how Compact types become field elements
+
+Implementation: =base-crypto/src/fab/= (types) + =transient-crypto/src/fab.rs=
+(field repr); spec =spec/field-aligned-binary.md=. An =AlignedValue= = list
+of (ValueAtom bytes, AlignmentAtom) pairs; atoms =bytes<n>= / =field= /
+=compress=; =option= segments encode sum types (u32 discriminant +
+zero-padding to the longest arm, =transient-crypto/src/fab.rs:243-247=).
+
+Value-only field repr (=fab.rs:486-511=):
+- =field= → 1 element (little-endian bigint mod p).
+- =bytes<n>= → =ceil(n/31)= elements, chunks *filled from the end*: the
+  first element carries the leftover front bytes (=field-bytes= = 31,
+  =compiler/langs.ss:57-62= / =FR_BYTES_STORED=,
+  =transient-crypto/src/curve.rs:192-196=). =Bytes<32>= → 2 elements:
+  [byte 0] (8 bits) then [bytes 1..31] (248 bits) — exactly why every
+  =Bytes<32>= circuit argument appears as two scalars constrained to 8 and
+  248 bits (worked example).
+- =compress= → 1 element, =transient_commit(bytes, len)=.
+
+Two reprs to keep straight:
+- =AlignedValue::field_repr= = alignment header ++ value elements
+  (=fab.rs:377-386=): header = atom count, then per atom =bytes<n>= → n,
+  =compress= → −1, =field= → −2 (=fab.rs:596-608=; compiler twin
+  =assemble-alignment-atom=, =reduce-to-zkir.ss:472-482=, which adds
+  compiler-internal =aadt= → −3). Used *inside Impact ops* (popeq results,
+  push cell contents, idx path keys — the =0x01,0x20= prefixes in the
+  examples = 1 atom, bytes<32>; path keys for declaration indices are
+  =(align i 1)= = ={1, bytes<1>, i}=, =reduce-to-zkir.ss:332-335,1012-1017=;
+  a =stack= path marker is −1).
+- =value_only_field_repr= (=fab.rs:389-405=) — no header. Used for circuit
+  =inputs=, =private_transcript=, =public_transcript_outputs=, and the
+  communications commitment (=ledger/src/construct.rs:515-575=).
+
+Compact-type → alignment: single source of truth =type->alignments=
+(=compiler/circuit-passes/flatten-datatypes.ss:80-126=):
+=Boolean= → =bytes<1>=; =Uint<..N>= → =bytes<ceil(bitlen(N)/8)>= (from the
+*max value*, e.g. Uint<64> → b8, Uint<128> → b16); =Bytes<n>= → =bytes<n>=
+(ONE atom regardless of limb count); =Field= → =field=; =Opaque<…>= →
+=compress=; contract refs → =bytes<32>=; =Vector=/tuples/structs →
+concatenation of member atoms in declaration order (structurally flat, no
+nesting markers); curve types → =anative= pseudo-atoms expanded before
+emission (=circuit-alignment-for=, =reduce-to-zkir.ss:34-91=: JubjubScalar →
+field; Secp256k1 Base/Scalar → b24+b8; JubjubPoint → field+field;
+Secp256k1Point → b24,b8,b24,b8,field — mirrors
+=runtime/src/compact-types.ts=). Impact-VM arithmetic (addi/add/lt) is u64
+with alignment b8 (=spec/impact-opcodes.md= §Integer arithmetic).
+
+* 4. ZKIR v3 inputs/outputs schema vs v2
+
+v3 =IrSource= (=zkir-v3/src/ir.rs:34-51=, JSON tag =ir-source[v3-generic]=):
+={ version, inputs: Vec<TypedIdentifier>, outputs: Vec<IrType>,
+do_communications_commitment, instructions }=.
+- =inputs= = the circuit's *arguments only*, flattened to one typed named
+  variable per FAB limb, in source argument order; compactc names them
+  =%<argname>.<k>= (=print-zkir-v3.ss:38-43=; built at
+  =reduce-to-zkir.ss:742-744=). Bound from =ProofPreimage::inputs= by
+  slicing =encoded_len()= elements per input (=ir_vm.rs:192-211=; Native 1,
+  Bytes32 2, JubjubPoint 2, Secp256k1Point 5, … =ir_types.rs:93-114=).
+  For ordinary Compact types compactc emits plain =Scalar<BLS12-381>= limbs
+  plus explicit =constrain_bits= range checks — =Uint= and =Opaque= map to
+  =Scalar<BLS12-381>=, only curve types get the fancier IrTypes
+  (=type->string=, =reduce-to-zkir.ss:679-693=; there is no bytes input
+  type — =Bytes<N>= is pre-flattened, =flatten-datatypes.ss:143-152=).
+- =outputs= = the *return type* signature (type strings per limb); the
+  terminating ={"op":"output","vals":[…]}= is type-checked against it
+  (=ir.rs:910-918=). Example: =deposit(...): Bytes<32>= → =outputs:
+  ["Scalar<BLS12-381>","Scalar<BLS12-381>"]= (xcontract-events
+  token/deposit.zkir).
+- Witness args and ledger ops are NOT in the schema: witnesses are
+  =private_input= instructions (guarded when conditional; erc20-vault
+  claim.zkir:292,436), ledger ops are =impact=/=public_input=.
+- v2 (=zkir/src/ir.rs:40-53=): =num_inputs: u32= (untyped tape prefix), no
+  outputs schema (=Output{var}= accumulates), =LoadImm= instead of inline
+  immediates — the Impact opcode bytes are themselves load_imm'd and
+  declared PI word by word via =DeclarePubInput{var}= + trailing
+  =PiSkip{guard,count}= (=zkir-passes/print-zkir.ss:270-273,473-478=;
+  conditional ops go through per-word =cond_select(test, x, 0)= gates).
+  Semantically identical PI stream; one real upgrade in v3: v2's
+  =DeclarePubInput= is unguarded in-circuit (=PiSkip= is an in-circuit
+  no-op, =zkir/src/ir_vm.rs:646-649=) while v3's =impact= enforces
+  =select(guard,x,0)= per element.
+- v2↔v3 corpus check: counter =increment.zkir= (v2) yields the PI stream
+  =0x70 0x01 0x01 0x00 / 0x0e 0x01 / 0xa1= — byte-identical to the v3
+  baseline =noop='s three =impact= blocks.
+- Encoding trap: the =BoundedMerkleTree= StateValue tag differs — v2 packs
+  the key count as =·4096= (=print-zkir.ss:352-355=), v3 as =<<8=
+  (=reduce-to-zkir.ss:444-450=), while the Rust =StateValue::field_repr=
+  uses =<<12= (=onchain-state/src/state.rs:196-200=). Only visible when
+  pushing a non-empty tree — flag if we ever emit one. UNVERIFIED which the
+  ledger actually accepts for v3 (corpus never pushes non-empty trees).
+
+* 5. Worked example: baseline =base= (v3)
+
+Source =corpus/src/signet-midnight-experiments/experiments/baseline/contract/src/baseline.compact=:
+#+begin_src compact
+export ledger callCount: Counter;                       // field 0
+export ledger lastAmount: Uint<128>;                    // field 1
+export ledger balances: Map<Bytes<32>, Uint<128>>;      // field 2
+export circuit base(recipient: Bytes<32>, amount: Uint<128>): [] {
+  const a = disclose(amount);  const r = disclose(recipient);
+  callCount.increment(1);  lastAmount = a;  balances.insert(r, a);
+}
+#+end_src
+
+Compiled =corpus/zkir/signet-midnight-experiments/.../baseline/zkir/base.zkir=,
+annotated ([n] = PIs contributed; total = 1 binding + 1 comm + 35 = 37):
+#+begin_example
+inputs:  %recipient.0, %recipient.1, %amount.2   ; Bytes<32> = 2 FAB limbs, Uint<128> = 1; all Scalar<BLS12-381>
+outputs: []                                      ; return type []
+do_communications_commitment: true
+
+constrain_bits %recipient.0 8      ; FAB Bytes<32> limb 0 = leading 1 byte
+constrain_bits %recipient.1 248    ;                limb 1 = trailing 31 bytes
+constrain_bits %amount.2   128     ; Uint<128> range check
+;; callCount.increment(1)  — Counter vm-code, midnight-ledger.ss:605-609
+impact [0x70, 0x01,0x01,0x00]      ; [4] idxp path[0]: idxp|len-1=0; key = AlignedValue{1 atom, bytes<1>, 0x00}
+impact [0x0e, 0x01]                ; [2] addi 1 (u64)
+impact [0xa1]                      ; [1] insc 1 — write counter back down the idxp path
+;; lastAmount = a  — Cell.write, midnight-ledger.ss:552-558 (idxp+insc suppressed: top-level field)
+impact [0x10, 0x01,0x01,0x01,0x01] ; [5] push Cell{1 atom, bytes<1>, 0x01} — the key "1" (field index)
+impact [0x11, 0x01,0x01,0x10,%amount.2] ; [5] pushs Cell{1 atom, bytes<16>, amount} — strong (persisted)
+impact [0x91]                      ; [1] ins 1 — insert value at key into the state array
+;; balances.insert(r, a)  — Map.insert
+impact [0x70, 0x01,0x01,0x02]      ; [4] idxp path[2] — fetch the Map, remember the path
+impact [0x10, 0x01,0x01,0x20,%recipient.0,%recipient.1] ; [6] push Cell{1 atom, bytes<32>, r} — map key
+impact [0x11, 0x01,0x01,0x10,%amount.2] ; [5] pushs Cell{bytes<16>, a} — map value
+impact [0x91]                      ; [1] ins 1 — insert into the Map
+impact [0xa1]                      ; [1] insc 1 — write Map back to slot 2 (cached: idxp read it)
+#+end_example
+Every =0x…= immediate and =%var= is one PI element; the ledger recomputes
+the identical stream from the transaction transcript via =Op::field_repr=
+and verifies the proof against it. =disclose()= has no ZKIR footprint — it
+only licenses routing a witness-tainted value into these public elements.
+
+This read+write repertoire covers the v3 corpus; =rem= (0x19/1a), =member=
+(0x18), =root= (0x0a), =log= (0x09, events — payload wrapped
+=Array[Cell(version),Cell(tag),Cell(bytes)]=,
+=compiler/analysis-passes/lower-emit.ss:20-27=), =branch/jmp=, and
+kernel/effects ops (dup/swap to reach the context/effects arrays, e.g.
+mint-tokens' zswap mint) slot into the same framing.
+
+* 6. Differential test harness: what must match
+
+** Equivalence criterion (recommended)
+compactc's =.zkir= and ours for the same circuit are *call-compatible* iff,
+for every input assignment:
+1. *Typed interface equal*: same =inputs= arity/types in the same order
+   (names are irrelevant to the proof; order feeds the commitment and the
+   preimage layout, so it must equal source-argument-order FAB flattening)
+   and same =outputs=.
+2. *PI stream equal*: evaluating both through their IR VM on the SAME
+   =ProofPreimage= yields identical =Preprocessed::pis= and =pi_skips=
+   (=zkir-v3/src/ir_vm.rs:71-77= — =pis=, =pi_skips=, =binding_input=,
+   =comm_comm= are all pub; =Preprocessed= is re-exported by
+   =minocrab_zkir::v3=). This one check subsumes: same Impact op sequence
+   (⇒ same on-chain state transition), same read expectations, same
+   communications commitment (⇒ same declared I/O), same guard/skip
+   behavior.
+3. *Same acceptance*: both accept/reject the same preimages — test
+   malformed transcripts and guard-off paths, not just the happy path.
+
+Explicitly ALLOWED to differ: instruction count/order, variable names,
+=constrain_bits= placement, arithmetic shape, private-input count/order —
+the whole private computation. Requiring instruction-for-instruction
+equality would outlaw every L4 optimization. Corollary: if our witness
+consumption order diverges, the =private_transcript= part of the preimage
+is generated per-artifact from a shared witness oracle while =inputs= /
+=public_transcript_{inputs,outputs}= / commitment stay shared.
+
+** Test procedure per corpus contract
+1. Build the pre-state as a =StateValue= with =midnight-onchain-state=
+   (layout per §1).
+2. Author the same logic in the eDSL; compile to v3 =IrSource=.
+3. Produce the shared preimage from reference semantics: run the intended
+   ledger ops as an =onchain-vm= program in gathering mode
+   (=ResultModeGather=, =onchain-vm/src/result_mode.rs=) against the
+   pre-state → the program (⇒ =public_transcript_inputs= via
+   =Op::field_repr=), the popeq results (⇒ =public_transcript_outputs=),
+   and the post-state. =inputs= = value-only FAB of the arguments;
+   commitment via =transient_commit=; =binding_input= = 0 (as
+   =ledger/src/construct.rs:557-559= does).
+4. =ir.check(&preimage)= on both (=Zkir= trait,
+   =transient-crypto/src/proofs.rs:167=): equal =pi_skips=, then equal full
+   =Preprocessed::pis=.
+5. Property-test over random arguments / witnesses / pre-states (extend the
+   M3 proptest harness); include disabled-guard paths so skips are
+   exercised.
+6. Occasional end-to-end sanity (slow): =mock-compile= both with the pinned
+   =zkir-v3= binary; and once per milestone prove ours end to end. True
+   ledger-level interchangeability means deploying OUR verifier key in
+   =ContractOperation= — the criterion above deliberately permits differing
+   circuits, so their VK won't verify our proofs and vice versa; that is
+   fine and expected.
+
+Practical notes:
+- =Preprocessed= is doc-marked "not part of the public API" — we already
+  pin rev =04c9c5d9=; treat any bump as an L0 event (re-run everything).
+- Every non-pure compactc circuit has =do_communications_commitment=true=;
+  ours must too (ledger hard-codes comm at PI #2, =verify.rs:1948=).
+- =pure= Compact circuits get no ZKIR at all — nothing to differential-test
+  below the eDSL level.
+- compactc always emits the *uncached* idx variants for the initial fetch
+  and cached (=idxc/insc=) only after an idxp (=f-cached= hard-wired #f,
+  =reduce-to-zkir.ss:622=). Cached-ness changes the PI bytes (different
+  opcodes), so our lowering must copy these choices exactly.
+- =Counter.increment(k)= embeds k as an =addi= *immediate* (constants only;
+  =rt-value->int=, =midnight-ledger.ss:604-616=).
+
+* Open questions / follow-ups
+- =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3
+  assembler (=reduce-to-zkir.ss:610-612=) — if a sig-net contract ever uses
+  it under =--feature-zkir-v3=, compilation should fail; none does today.
+- BMT StateValue tag encodings disagree across v2 printer / v3 assembler /
+  Rust (§4) — UNVERIFIED which is authoritative for non-empty trees.
+- v2's =PersistentHash= pushes 2 raw coords and has no =Keccak256=; when we
+  differential-test v2 artifacts (722 corpus files) the criterion is the
+  same, just via the v2 =Preprocessed=.
+- The in-circuit comm-commitment preimage silently skips inputs absent from
+  memory (=zkir-v3/src/ir_vm.rs:1186=) unlike the off-circuit path — a
+  midnight-ledger quirk to keep in mind if we ever emit unused inputs.
+- Corpus gap: add =compiler/**/*.ss= (and =runtime/src/compact-types.ts=)
+  to the compact source paths in =corpus/sources.json= so the lowering
+  ground truth is pinned locally.

@@ -1965,6 +1965,7 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-zkir",
  "minocrab-zkir",
+ "serde_json",
 ]
 
 [[package]]

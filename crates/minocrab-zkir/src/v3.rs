@@ -6,6 +6,8 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
+pub use midnight_zkir_v3::ir::{IrMinorVersion, Operand, TypedIdentifier};
+pub use midnight_zkir_v3::ir_types::{IrType, IrValue};
 pub use midnight_zkir_v3::{Identifier, Instruction, IrSource, Preprocessed};
 
 use crate::Error;

@@ -9,3 +9,6 @@ license.workspace = true
 minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-zkir.workspace = true
 midnight-base-crypto.workspace = true
+# For constructing zkir-v3's TypedIdentifier through its serde form (its
+# fields are pub(crate) upstream) — see v3::typed_identifier.
+serde_json.workspace = true
