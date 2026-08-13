@@ -37,6 +37,8 @@ use std::marker::PhantomData;
 pub use minocrab_ir::{Alignment, AlignmentAtom, AlignmentSegment, Fr, IrSource, Val};
 use minocrab_ir::Builder;
 
+pub mod v3;
+
 // --- visibility -------------------------------------------------------------
 
 mod sealed {

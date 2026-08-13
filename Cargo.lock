@@ -1973,14 +1973,20 @@ name = "minocrab-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "group",
  "midnight-base-crypto",
+ "midnight-curves 0.3.1",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir",
+ "midnight-zkir-v3",
  "minocrab",
+ "minocrab-ir",
  "minocrab-zkir",
  "proptest",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "sha3",
  "thiserror",
 ]
 
@@ -1991,6 +1997,7 @@ dependencies = [
  "minocrab",
  "minocrab-ir",
  "minocrab-sim",
+ "minocrab-zkir",
 ]
 
 [[package]]

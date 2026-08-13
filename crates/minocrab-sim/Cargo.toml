@@ -9,8 +9,15 @@ license.workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-zkir.workspace = true
+# v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
+# crypto crates its interpreter calls (see src/v3.rs).
+midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true
+midnight-curves.workspace = true
+group.workspace = true
+sha2.workspace = true
+sha3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -18,3 +25,5 @@ thiserror.workspace = true
 [dev-dependencies]
 anyhow.workspace = true
 proptest.workspace = true
+# v3 end-to-end tests build their circuits with the typed Builder3.
+minocrab-ir = { path = "../minocrab-ir" }

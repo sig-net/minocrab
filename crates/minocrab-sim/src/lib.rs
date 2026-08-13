@@ -12,6 +12,8 @@
 //! Crypto primitives (hashes, embedded curve) are Midnight's own — never
 //! reimplemented here.
 
+pub mod v3;
+
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
