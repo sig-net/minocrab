@@ -468,3 +468,103 @@ pub fn cost(ir: &IrSource) -> (u8, usize) {
     let model = ir.model();
     (model.k(), model.rows())
 }
+
+// --- profiling -------------------------------------------------------------------
+
+/// Cost attribution for one [`minocrab::Region`] (or the top level).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RegionCost {
+    pub label: String,
+    pub instructions: usize,
+    /// Share of the whole circuit's instructions, in percent.
+    pub percent: f64,
+    pub op_counts: BTreeMap<&'static str, u32>,
+}
+
+/// Per-region circuit profile plus whole-circuit cost-model numbers.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Profile {
+    /// log2 of the proving-table rows this circuit needs — the number that
+    /// drives proving time and RAM.
+    pub k: u8,
+    pub rows: usize,
+    pub total_instructions: usize,
+    /// Most expensive region first.
+    pub regions: Vec<RegionCost>,
+}
+
+impl std::fmt::Display for Profile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "circuit: k={} ({} rows), {} instructions",
+            self.k, self.rows, self.total_instructions
+        )?;
+        for r in &self.regions {
+            let mut ops: Vec<(&&str, &u32)> = r.op_counts.iter().collect();
+            ops.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+            let top: Vec<String> = ops
+                .iter()
+                .take(3)
+                .map(|(op, n)| format!("{op}×{n}"))
+                .collect();
+            writeln!(
+                f,
+                "  {:>5.1}%  {:<24} {} instr  ({})",
+                r.percent,
+                r.label,
+                r.instructions,
+                top.join(", "),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Attribute each instruction to its innermost region and price the circuit.
+/// Instructions outside every region land in "(top level)".
+pub fn profile(compiled: &Compiled) -> Profile {
+    let instructions = compiled.ir.instructions.as_slice();
+    let (k, rows) = cost(&compiled.ir);
+
+    // regions are pushed on scope exit, so for nested regions the inner one
+    // appears first — the first region containing an index is the innermost.
+    let region_of = |idx: usize| -> &str {
+        compiled
+            .regions
+            .iter()
+            .find(|r| r.start <= idx && idx < r.end)
+            .map(|r| r.label.as_str())
+            .unwrap_or("(top level)")
+    };
+
+    let mut by_label: BTreeMap<&str, RegionCost> = BTreeMap::new();
+    for (idx, ins) in instructions.iter().enumerate() {
+        let label = region_of(idx);
+        let entry = by_label.entry(label).or_insert_with(|| RegionCost {
+            label: label.to_string(),
+            instructions: 0,
+            percent: 0.0,
+            op_counts: BTreeMap::new(),
+        });
+        entry.instructions += 1;
+        *entry.op_counts.entry(op_name(ins)).or_default() += 1;
+    }
+
+    let total = instructions.len().max(1);
+    let mut regions: Vec<RegionCost> = by_label
+        .into_values()
+        .map(|mut r| {
+            r.percent = r.instructions as f64 * 100.0 / total as f64;
+            r
+        })
+        .collect();
+    regions.sort_by(|a, b| b.instructions.cmp(&a.instructions).then(a.label.cmp(&b.label)));
+
+    Profile {
+        k,
+        rows,
+        total_instructions: instructions.len(),
+        regions,
+    }
+}

@@ -76,12 +76,19 @@ mock-compile accepts it, reference VM agrees with the simulator
 (crates/minocrab-sim/tests/end_to_end.rs).
 
 * M3 — Verification harness + cost profiler
-- [ ] Spec-vs-circuit quickcheck/proptest harness: spec in ordinary Rust,
+- [X] Spec-vs-circuit quickcheck/proptest harness: spec in ordinary Rust,
       millions of random inputs asserting circuit ≡ intent.
+      (crates/minocrab-sim/tests/property.rs; every accepted case re-validated
+      by the reference VM. PROPTEST_CASES env scales to millions in CI.
+      Disclosure typing proven by compile_fail doctest in minocrab.)
 - [ ] Differential testing against compactc: same contract in Compact and in
-      the eDSL, same inputs, same results.
-- [ ] User-friendly cost profiler (constraint/RAM/proving-cost proxies, broken
+      the eDSL, same inputs, same results. (Needs the first eDSL ports —
+      starts with M4; compactc's ledger-state ABI must be modeled first.)
+- [X] User-friendly cost profiler (constraint/RAM/proving-cost proxies, broken
       down by code region).
+      (Circuit::region() spans; minocrab_sim::profile() → per-region
+      instruction/op breakdown + Midnight's CircuitModel k/rows; Display
+      renders a human table, serde for CI.)
 Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
 
 * M4 — stdlib + corpus rewrites

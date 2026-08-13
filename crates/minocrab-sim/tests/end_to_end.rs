@@ -70,6 +70,30 @@ fn cost_model_reports() {
 }
 
 #[test]
+fn profiler_attributes_regions() {
+    let (mut c, _) = Circuit::new(0);
+    let (a, b) = c.region("load witnesses", |c| (c.witness(), c.witness()));
+    let hash = c.region("hash", |c| c.transient_hash(&[a, b]));
+    c.region("disclose", |c| {
+        let h = c.disclose(hash, "commitment hash");
+        c.declare_public(h, "commitment");
+    });
+    let compiled = c.finish();
+
+    let profile = minocrab_sim::profile(&compiled);
+    assert_eq!(profile.total_instructions as u32, 5); // 2 wit + hash + declare + pi_skip
+    let labels: Vec<&str> = profile.regions.iter().map(|r| r.label.as_str()).collect();
+    assert!(labels.contains(&"load witnesses"));
+    assert!(labels.contains(&"hash"));
+    assert!(labels.contains(&"disclose"));
+    assert!(profile.k > 0);
+
+    // Human-readable rendering exists and mentions every region.
+    let shown = profile.to_string();
+    assert!(shown.contains("load witnesses") && shown.contains("k="));
+}
+
+#[test]
 fn toolchain_accepts_lowered_circuit() {
     let compiled = age_gate();
 
