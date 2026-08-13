@@ -1,0 +1,529 @@
+#+TITLE: Compact builtin → ZKIR lowering: value representation and exact instruction sequences
+#+DATE: 2026-08-13
+#+STARTUP: overview
+
+Research snapshot 2026-08-13, for M4 (stdlib port by mechanical translation).
+Ground truth: the compactc Scheme sources at the corpus-pinned rev
+=LFDT-Minokawa/compact @ 56c3b77= (cited as =compiler/...=; the corpus fetch
+only copies =.compact= files, so the =.ss= files are not under =corpus/src= —
+use a checkout, e.g. =git -C ~/compact worktree add <dir> 56c3b779=), plus
+=midnightntwrk/midnight-ledger @ 04c9c5d= (our pinned Rust crates, cited as
+=zkir/...=, =zkir-v3/...=, =transient-crypto/...=, =base-crypto/...=), plus
+*actual compiled output* from the pinned =compactc 0.33.0-rc.2= (nix store)
+and from =corpus/zkir/=. Everything below was verified against real =.zkir=
+JSON unless marked UNVERIFIED. Kernel/ledger ops (=declare_pub_input=,
+=pi_skip=, =public_input=, v3 =impact=, Impact opcode bytes, popeq result
+encoding) appear in every example but are deliberately out of scope here —
+see =notes/ledger-abi.org=.
+
+Pass pipeline (=compiler/circuit-passes.ss:64-76=): replace-enums →
+unroll-loops → inline-circuits → drop-safe-casts → resolve-indices/simplify →
+discard-useless-code → reduce-to-circuit → *flatten-datatypes* →
+optimize-circuit → missing-guard-workarounds → optimize-circuit(again) → then
+either =zkir-passes/print-zkir.ss= (v2, direct JSON emission) or
+=zkir-v3-passes/reduce-to-zkir.ss= + =print-zkir-v3.ss= (v3). Everything is
+*fully inlined* into each exported impure circuit ("entry point") — there are
+no calls in ZKIR. Pure exported circuits get *no* =.zkir= file in either v2
+or v3 (verified: a contract with one pure and one impure export produces only
+the impure =.zkir=, both with and without =--feature-zkir-v3=).
+
+* 1. Value representation (flatten-datatypes)
+
+=flatten-datatypes= (=compiler/circuit-passes/flatten-datatypes.ss=) maps
+every Compact type to a flat list of circuit slots ("primitive types") plus a
+parallel list of FAB *alignment atoms*. All later passes work slot-wise;
+aggregates never exist at the ZKIR level.
+
+Field parameters (=compiler/field.ss:36=, =compiler/langs.ss:60-68=):
+- native field = BLS12-381 scalar field Fr; =max-field= = r−1 =
+  52435875175126190479447740508185965837690552500527637822603658699938581184512
+- =field-bits= = 254, =field-bytes= = *31*, =unsigned-bits= = *248*.
+
+| Compact type          | slots                             | per-slot bound (=tunsigned= max) | alignment atoms                          |
+|-----------------------+-----------------------------------+----------------------------------+------------------------------------------|
+| =Boolean=             | 1                                 | 1                                | =(abytes 1)=                             |
+| =Field=               | 1                                 | — (full field)                   | =(afield)=                               |
+| =Uint<N>= / =Uint<0..n>= | 1                              | max value (2^N−1 resp. n)        | =(abytes ceil(bitlen(max)/8))=           |
+| =Bytes<N>=            | ceil(N/31)                        | high limb 2^(8·(N mod 31))−1, others 2^248−1 | one =(abytes N)=             |
+| =Vector<n,T>= / tuple | n × slots(T), element-major       | per element                      | element atoms repeated n×                |
+| struct                | fields in decl order, depth-first | per field                        | concat of field atoms                    |
+| enum                  | 1 (becomes =Uint<0..k-1>=)        | #variants−1                      | =(abytes 1)= (for ≤256 variants)         |
+| opaque =Opaque<...>=  | 1                                 | — (hash)                         | =(acompress)=                            |
+| contract type         | like =Bytes<32>= (2 slots)        |                                  | =(abytes 32)=                            |
+| =JubjubPoint= (v2)    | 2 (x, y as native fields)         | —                                | =(afield) (afield)=                      |
+| =JubjubScalar= (v2)   | 1 (native field slot)             | —                                | =(afield)=                               |
+| =JubjubPoint= (v3)    | 1 typed value =Point<Jubjub>=     | —                                | =(anative "JubjubPoint")=                |
+| =JubjubScalar= (v3)   | 1 typed value =Scalar<Jubjub>=    | —                                | =(anative "JubjubScalar")=               |
+| =Secp256k1Point= (v3 only)  | 1 typed =Point<Secp256k1>=  | —                                | =(anative "Secp256k1Point")=             |
+| =Secp256k1Base/Scalar= (v3) | 1 typed =Base/Scalar<Secp256k1>= | —                           | =(anative "Secp256k1Base"/"...Scalar")=  |
+
+Sources: =Type->Wump= flatten-datatypes.ss:213-230, =type->alignments=
+flatten-datatypes.ss:80-124, =bytes->primitive-types= :147-151,
+=Single-Type= :233-242 (Boolean → =tunsigned 1=), enum replacement
+=compiler/circuit-passes/replace-enums.ss:61-63=.
+
+** Bytes<N> limb layout — THE critical convention
+
+=Bytes<N>= splits into ceil(N/31) limbs. Limb order in the flattened slot
+list is *most-significant chunk first*; the partial chunk (N mod 31 bytes) is
+the first slot. Within a limb, bytes are *little-endian* (byte 0 of the
+chunk is the least significant). So:
+
+- =Bytes<32>= = 2 slots: =[hi, lo]= where =hi= = byte 31 (one byte,
+  constrained to 8 bits) and =lo= = bytes 0..30 as a little-endian integer
+  (constrained to 248 bits).
+- =Bytes<64>= = 3 slots: =[bytes 62..63 (16 bits), bytes 31..61 (248 bits),
+  bytes 0..30 (248 bits)]=.
+- =Bytes<N≤31>= = 1 slot.
+
+Verified: a =Bytes<32>= circuit argument compiles to
+=constrain_bits(arg0, 8); constrain_bits(arg1, 248)= (probe =degrade= below,
+and =corpus/zkir/compact/examples/tiny/zkir/set.zkir= where the witnessed
+=Bytes<32>= secret key gets =private_input=+=constrain_bits 8= then
+=private_input=+=constrain_bits 248=); a =Bytes<64>= argument gets
+=constrain_bits 16/248/248=. The Rust mirror is
+=FromFieldRepr for [u8; 32]= (=transient-crypto/src/repr.rs:110-129=):
+=repr[0]= = byte 31, =repr[1]= = bytes 0..31 LE — field_vec order [hi, lo].
+
+Literal bytevectors flatten with the same convention: chunks of 31 bytes
+from the string start, each read =little=-endian, accumulated so the
+low chunk lands in the *last* slot (flatten-datatypes.ss:560-572).
+
+** FAB Alignment atoms
+
+Alignment lists attached to types are per-*source-atom*, not per-slot: one
+=(abytes N)= atom covers all ceil(N/31) slots of a =Bytes<N>=. JSON form
+(v2 =alignment->json=, print-zkir.ss:112-123) matches serde of
+=base_crypto::fab::AlignmentAtom= (=base-crypto/src/fab/encoding.rs:639-650=):
+
+: {"tag": "atom", "value": {"tag": "bytes", "length": N}}
+: {"tag": "atom", "value": {"tag": "field"}}
+: {"tag": "atom", "value": {"tag": "compress"}}
+
+In v3, =anative= atoms are pseudo-atoms the ledger doesn't know; before any
+hash they are expanded by =circuit-alignment-for=
+(=zkir-v3-passes/reduce-to-zkir.ss:37-91=) into real atoms plus an =encode=
+instruction: JubjubScalar → 1×=(afield)=; JubjubPoint → =(afield) (afield)=
+(x,y); Secp256k1Base/Scalar → =(abytes 24) (abytes 8)= (2 limbs,
+midnight-circuits public-input encoding; which bytes go in which limb:
+UNVERIFIED, defined by =midnight-zk-stdlib= =MultiEmulationParams=);
+Secp256k1Point → =(abytes 24) (abytes 8) (abytes 24) (abytes 8) (afield)=
+(x, y, is-identity flag). v3 =Encode= output counts documented in
+=zkir-v3/src/ir.rs:360-387=; note Encode(Bytes32) is =[low, high]= —
+opposite of Compact's =[hi, lo]= slot order (=zkir-v3/src/ir_instructions/encode.rs:53-64=),
+but Compact never encodes Bytes32 (only =anative= atoms reach =encode=).
+
+** v2 vs v3 program shape
+
+v2 (=print-zkir.ss=): implicit slot numbering. Arguments occupy slots
+0..num_inputs−1; each output-producing instruction appends slots. Literals
+via =load_imm= are hash-consed per circuit (one load per distinct constant;
+print-zkir.ss:248-257). Argument slots get type constraints first
+(=constrain-type=, print-zkir.ss:124-147), then body, then one
+={"op":"output","var":i}= per result slot.
+
+v3 (=reduce-to-zkir.ss= + =print-zkir-v3.ss=): named SSA variables
+(="%p.0"=), typed =inputs= (e.g. ="Scalar<BLS12-381>"=, ="Point<Secp256k1>"=
+— =type->string= reduce-to-zkir.ss:686-693), immediates inline as ="0x01"=,
+one =output= instruction with =vals= list. Same constraint policy
+(=emit-constraints-for= reduce-to-zkir.ss:640-667).
+
+** Input type constraints (both versions)
+
+For every =tunsigned max= slot entering the circuit (argument, witness
+return, public input) — print-zkir.ss:124-147 / reduce-to-zkir.ss:640-667:
+- max = 0 → =constrain_eq(x, 0)=
+- max = 1 → =constrain_to_boolean=
+- max = 2^k − 1 → =constrain_bits(x, k)=
+- otherwise → =less_than(x, max+1, bits)= + =assert=, with
+  bits = 2·⌈(integer-length(max+1)+1)/2⌉... precisely
+  =(* 2 (quotient (+ (integer-length (+ 1 max)) 1) 2))= (even, for Plonk).
+=Field=, opaque, and point slots get no constraint.
+
+* 2. transientHash<T>
+
+=transient_hash= (Poseidon over Fr; =transient-crypto/src/hash.rs:76=), one
+instruction, one output slot. Inputs = the flattened slots of T in order; no
+alignment operand. Handler: print-zkir.ss:154-157 (v2),
+reduce-to-zkir.ss:219-221 (v3).
+
+Verified (probe =thash=, =transientHash<Vector<2,Field>>(v)=):
+: { "op": "transient_hash", "inputs": [0, 1] }   → 1 result slot
+
+transientCommit<T>(value, rand): same gate with the *rand moved to the
+front*: =transient_hash([rand, ...value-slots])= (print-zkir.ss:201-208,
+reduce-to-zkir.ss:213-218).
+
+* 3. persistentHash<T>
+
+=persistent_hash= (SHA-256 of the FAB binary repr;
+=base-crypto/src/hash.rs:93=, VM: =zkir/src/ir_vm.rs:410-424= parses inputs
+against the alignment, byte-serializes, hashes). Operands: =alignment= = the
+alignment-atom list of T (one atom per source atom, see §1), =inputs= = T's
+flattened slots. v2 output: *2 new slots* =[hi, lo]= of the =Bytes<32>=
+digest (memory.extend(hash.field_vec())). Handler print-zkir.ss:223-231.
+
+v3: =persistent_hash= produces one *Bytes32-typed* value, which is
+immediately split for Compact with =bytes32_into_low_high= (outputs =(low,
+high)=; =zkir-v3/src/ir.rs:637-646=); the compiler binds result slots [hi,lo]
+from it (reduce-to-zkir.ss:195-204).
+
+** Worked example: persistentHash of a struct (v2, verified output)
+
+#+begin_src compact
+struct Pair { x: Field; y: Uint<16>; }
+export circuit hashStruct(p: Pair): Bytes<32> {
+  dummy.increment(1);
+  return disclose(persistentHash<Pair>(p));
+}
+#+end_src
+
+compactc 0.33.0-rc.2 → (ledger-op instructions elided; slots annotated):
+
+#+begin_example
+inputs: p.x = slot 0, p.y = slot 1
+{ "op": "constrain_bits", "var": 1, "bits": 16 }        ; Uint<16> arg bound
+...ledger preamble (load_imm/declare_pub_input/pi_skip)...
+{ "op": "persistent_hash",                               ; → slots 7,8
+  "alignment": [ {"tag":"atom","value":{"tag":"field"}},
+                 {"tag":"atom","value":{"length":2,"tag":"bytes"}} ],
+  "inputs": [0, 1] }
+{ "op": "output", "var": 7 }                             ; digest hi (byte 31)
+{ "op": "output", "var": 8 }                             ; digest lo (bytes 0..30 LE)
+#+end_example
+
+Struct = concatenated slots in declaration order; alignment = one atom per
+struct field (=field= for x, =bytes 2= for y since Uint<16> max fits 2
+bytes). Same circuit under =--feature-zkir-v3=:
+
+#+begin_example
+{ "op": "persistent_hash", "output": "%bytes.2",
+  "alignment": [ ...same two atoms... ], "inputs": ["%p.0", "%p.1"] }
+{ "op": "bytes32_into_low_high", "outputs": ["%t.3", "%t.4"], "bytes": "%bytes.2" }
+{ "op": "output", "vals": ["%t.4", "%t.3"] }             ; [hi, lo]
+#+end_example
+
+Also verified in the wild: =corpus/zkir/compact/examples/tiny/zkir/set.zkir=
+hashes =Vector<2, Bytes<32>>= with alignment [bytes 32, bytes 32] and inputs
+=[pad_hi(=literal 0), pad_lo, sk_hi, sk_lo]=.
+
+* 4. persistentCommit<T>(value, rand: Bytes<32>)
+
+Lowered to a single =persistent_hash= whose preimage is *rand first, then
+value*: alignment = =(abytes 32)= consed onto T's atoms, inputs =
+=[rand_hi, rand_lo, ...value-slots]= (print-zkir.ss:209-222,
+reduce-to-zkir.ss:180-194). Runtime mirror: =persistent_commit= hashes
+opening ++ value (=base-crypto/src/hash.rs:97=).
+
+Verified (probe =commit=, =persistentCommit<Field>(v, r)=; v=slot0,
+r=slots1,2):
+: { "op": "persistent_hash",
+:   "alignment": [ {..bytes 32..}, {..field..} ],
+:   "inputs": [1, 2, 0] }                        → slots 8,9 = [hi, lo]
+
+* 5. degradeToTransient / upgradeFromTransient
+
+Runtime semantics (=transient-crypto/src/hash.rs:64-73=):
+=degrade_to_transient(h) = h.field_vec()[1]= — i.e. *the low limb* (bytes
+0..30 LE, byte 31 discarded). =upgrade_from_transient(f)= = low 31 bytes of
+f, byte 31 = 0 (top ~7 bits of the field element are *dropped*).
+
+degradeToTransient(b): *zero instructions*. v2 rebinds the result to b's
+second slot (print-zkir.ss:158-159). v3 emits a (free) =copy= of the low
+slot (reduce-to-zkir.ss:129-130).
+
+** Worked example (verified, v2 and v3)
+
+#+begin_src compact
+export circuit degrade(b: Bytes<32>): Field { dummy.increment(1); return disclose(degradeToTransient(b)); }
+export circuit upgrade(f: Field): Bytes<32> { dummy.increment(1); return disclose(upgradeFromTransient(f)); }
+#+end_src
+
+v2 =degrade= (b = slots 0,1):
+#+begin_example
+{ "op": "constrain_bits", "var": 0, "bits": 8 }    ; b hi limb
+{ "op": "constrain_bits", "var": 1, "bits": 248 }  ; b lo limb
+...ledger preamble...
+{ "op": "output", "var": 1 }                       ; result IS the lo limb
+#+end_example
+
+v2 =upgrade= (f = slot 0; note slot 3 is the hash-consed =load_imm "00"=
+already emitted for the ledger preamble):
+#+begin_example
+{ "op": "div_mod_power_of_two", "var": 0, "bits": 248 }  ; → slot 6 = f>>248 (dropped),
+                                                          ;   slot 7 = f mod 2^248
+{ "op": "output", "var": 3 }                              ; hi := literal 0
+{ "op": "output", "var": 7 }                              ; lo := f mod 2^248
+#+end_example
+
+(v2 handler print-zkir.ss:160-165; div_mod output order quotient-then-
+remainder per =zkir/src/ir.rs:405-413=.) v3 (reduce-to-zkir.ss:222-228):
+: { "op": "copy", "output": "%t.1", "val": "0x00" }
+: { "op": "div_mod_power_of_two", "outputs": ["%tmp.2", "%t.3"], "val": "%f.0", "bits": 248 }
+: { "op": "output", "vals": ["%t.1", "%t.3"] }
+
+* 6. pad(n, "s") and string literals
+
+Both are compile-time byte-vector literals — no dedicated instruction.
+="s"= → UTF-8 bytes, type =Bytes<len>= (=compiler/lparser-to-lsrc.ss:160-166=);
+=pad(n, "s")= → the same right-padded with 0x00 *at the end* (high bytes)
+to length n (lparser-to-lsrc.ss:167-183). The literal then flattens per §1
+and each needed limb becomes a =load_imm=.
+
+=load_imm= immediate encoding (print-zkir.ss:248-269): hex string of the
+integer's bytes *least-significant byte first* (=integer->le-bytes= +
+=le-bytes->hex=); negative values get a leading "-". So byte i of a string
+lands at hex chars [2i, 2i+1]: =pad(32,"abc")= → lo limb
+=load_imm "616263"= (= integer 0x636261), hi limb = literal 0. Verified in
+probe =padtest= and in tiny =set.zkir= (="6C617265733A74696E793A706B3A"= =
+"lares:tiny:pk:").
+
+* 7. default<T>
+
+Compile-time, per flatten-datatypes.ss:252-305 (=default= Rhs):
+- Boolean/Field/Uint/enum/opaque → literal 0
+- =Bytes<N>= / contract → ceil(N/31) zero limbs
+- Vector/tuple/struct → recursive
+- =JubjubPoint= v2 → 2 literals =(0, 1)= — the twisted-Edwards identity
+  (print-zkir.ss:705-708); v3 → =from_coordinates(0, 1)=
+  (reduce-to-zkir.ss:807-810)
+- =Secp256k1Point= (v3) → generator·0 = identity, built as
+  =into_bytes32(0)= → =from_bytes32 Scalar<Secp256k1>= → =ec_mul_generator=
+  (reduce-to-zkir.ss:811-818; verified in probe =ethAddr= via the
+  =pk != default<Secp256k1Point>= assert).
+stdlib =some/none/left/right= are therefore zero-cost constructors: probe
+=maybeStuff= (build =some(v)=, =none()=, select on =is_some=) compiled to
+just =output var 0=.
+
+* 8. Casts
+
+Cast dispatch is in =infer-types.ss:1809-1937=; =safe-cast= (provably
+value-preserving) is erased by drop-safe-casts. What survives to ZKIR:
+
+| source cast                          | v2 instructions                              | v3 instructions |
+|--------------------------------------+----------------------------------------------+-----------------|
+| =Uint<N> as Field=                   | nothing (safe-cast)                          | nothing         |
+| =Field as Uint<N>= (=cast-from-field=) | §1 constraint on the same slot (=constrain_bits= / =less_than=+=assert=); no new slot (print-zkir.ss:616-622) | same + a =copy= (reduce-to-zkir.ss:977-993) |
+| =Uint<M> as Uint<N>=, N<M (=downcast-unsigned=) | §1 constraint, no new slot (print-zkir.ss:606-612) | same + =copy= |
+| =Field as JubjubScalar= (=cast-to-field=) | =copy= — no range check! JubjubScalar is a plain Fr slot in v2 (print-zkir.ss:817-818) | =jubjub_scalar_from_native= (mod-r reduction; reduce-to-zkir.ss:968-976) |
+| =JubjubScalar as Field=              | =copy=                                       | =encode=        |
+| =Bytes<32> as Field= (=bytes->field=) | =reconstitute_field(divisor=hi, modulus=lo, bits=248)= — 1 slot; overflow-constrained by the gate (print-zkir.ss:795-802; VM ir_vm.rs:371-398). For =Bytes<N>= N>62: extra hi limbs get ====0=-assert chains first (flatten-datatypes.ss:381-417) | same op, named form (reduce-to-zkir.ss:934-953) |
+| =Field/Uint as Bytes<N>= (=field->bytes=) | N≤31: =constrain_bits(x, 8N)=, result slot = x, hi limbs literal 0. N>31 (i.e. 32..62): =div_mod_power_of_two(x, 248)= → 2 slots [hi=quo, lo=mod] (print-zkir.ss:721-734) | same (reduce-to-zkir.ss:820-842) |
+| =Bytes<32> as Secp256k1Scalar/Base= (v3 only) | n/a | =bytes32_from_low_high(lo, hi)= → =from_bytes32 "Scalar<Secp256k1>"= (mod-n reduce; reduce-to-zkir.ss:936-944) |
+| =Secp256k1Base/Scalar as Bytes<32>= (v3) | n/a | =into_bytes32= → =bytes32_into_low_high= (reduce-to-zkir.ss:826-831) |
+| =Bytes<N> as Vector<N,Uint<8>>= (=bytes->vector=) | per limb, starting from the *lo* limb: chain of =div_mod_power_of_two(limb, 8)= — remainder = byte i, quotient feeds the next; the 31st byte of a limb is the final quotient (bound directly, no gate) (print-zkir.ss:709-720; flatten :434-447) | same, with =copy= for the last byte (reduce-to-zkir.ss:848-856) |
+| =Vector<N,Uint<8>> as Bytes<N>= (=vector->bytes=) | per 31-byte chunk: right-fold of =reconstitute_field(divisor=rest, modulus=v[i], bits=8)= — v[0] least significant (print-zkir.ss:803-816) | same (reduce-to-zkir.ss:954-967) |
+| =Boolean as Uint/Field=, enum casts  | select/copy/constraint per replace-enums.ss:33-58, infer-types.ss:1855-1917 | same |
+
+byte indexing =b[i]= (=bytes-ref=): 2 gates —
+=div_mod_power_of_two(limb, 8·(i mod 31))= then =div_mod_power_of_two(quo, 8)=,
+result = 2nd output of the 2nd gate (print-zkir.ss:784-790).
+
+** Worked example: Uint casts (verified, v2)
+
+#+begin_src compact
+export circuit castUint(f: Field): Uint<128>    { dummy.increment(1); return disclose(f as Uint<128>); }
+export circuit odd(f: Field): Uint<0..1000>     { dummy.increment(1); return disclose(f as Uint<0..1000>); }
+#+end_src
+
+#+begin_example
+castUint:  { "op": "constrain_bits", "var": 0, "bits": 128 }   ; 2^128−1 is 2^k−1
+           { "op": "output", "var": 0 }                        ; same slot, no copy
+odd:       { "op": "load_imm", "imm": "E803" }                 ; 1001, LE bytes → slot 6
+           { "op": "less_than", "a": 0, "b": 6, "bits": 10 }   ; → slot 7
+           { "op": "assert", "cond": 7 }
+           { "op": "output", "var": 0 }
+#+end_example
+
+(bits=10 = 2·⌈(intlen(1001)+1)/2⌉ = 2·5.)
+
+The =Bytes<32> as Vector<32,Uint<8>>= + reversal + =as Secp256k1Scalar=
+combo used by zkir-v3-library's =hashToSecp256k1Scalar= was verified
+end-to-end: 30 =div_mod(...,8)= + 1 =copy= to explode the lo limb (hi limb
+is byte 31 directly), 31 =reconstitute_field(...,8)= to rebuild the
+reversed bytes, then =bytes32_from_low_high= + =from_bytes32=.
+
+* 9. Uint arithmetic and comparisons
+
+Types carry *max values*, not widths (=tunsigned max=). Rules
+(=infer-types.ss:660-745=):
+- =+=, =*=: plain field =add= / =mul=, result type =Uint<maxa+maxb>= resp.
+  =Uint<maxa·maxb>=; error if result max > 2^248−1 ("cast to Field"). No
+  gates beyond add/mul — *no overflow check at the op itself*; the check
+  happens only when the value is later downcast (assignment to a declared
+  =Uint<N>= inserts =downcast-unsigned= → §1 constraint).
+- =-=: inserts an explicit guard *before* the subtraction:
+  =assert(a >= b, "result of subtraction would be negative")= with
+  bits = max(1, intlen(max(maxa,maxb))), then field subtraction lowered as
+  =neg(b)= + =add(a, neg)= (print-zkir.ss:774-777). Result type =Uint<maxa>=.
+- =<=: =less_than(a, b, bits)= with bits = max(1, intlen(larger max))
+  (infer-types.ss:753-771) — note: *not* rounded up to even here (the even
+  rounding is only in §1 constrain-type); verified =Uint<64>= compare emits
+  bits=64, =Uint<0..1000>= constrain emits =less_than= bits=10.
+- =<=, >, >== desugar in =drop-ledger-runtime.ss:40-42=:
+  =a<=b= → =!(b<a)=; =a>b= → =b<a=; =a>=b= → =!(a<b)=; =!= via
+  if-then-else → =cond_select(x, 0, 1)=.
+- ==== on scalars: =test_eq= (1 output). =!== → not(==).
+
+Verified (probe =uintOps=, =a,b: Uint<64>=; s=a+b and d=a−b unused →
+=add=/=neg= discarded by discard-useless-code, but the subtraction guard
+*survives as an effect*):
+#+begin_example
+{ "op": "less_than", "a": 0, "b": 1, "bits": 64 }      ; → slot 7 (reused: return a<b)
+{ "op": "cond_select", "bit": 7, "a": <imm 0>, "b": <imm 1> }  ; !(a<b) → slot 8
+{ "op": "assert", "cond": 8 }                          ; a >= b
+{ "op": "output", "var": 7 }
+#+end_example
+
+=as Uint<128>= checked cast: see §8 worked example — =constrain_bits 128=
+only, no =less_than=.
+
+* 10. Boolean ops, ternary, struct equality
+
+=&&/||/!= are desugared to if-expressions in the frontend
+(=frontend-passes/eliminate-boolean-connectives.ss:20-22=), and =if= in
+value position becomes =select= (reduce-to-circuit.ss:134-144) →
+=cond_select(bit, a, b)= (one per slot for aggregate branches;
+flatten-datatypes.ss:336-352). Verified (probe =boolOps=,
+=(a && b) || !a=): 3 =cond_select=s. Ternary =c ? a : b= → single
+=cond_select= (probe =ternary=).
+
+Statement-position =if=/asserts under conditions: the guard chain uses
+=cond_select= to combine tests (reduce-to-circuit.ss:75-83), and =assert=
+under guard g becomes =assert(select(g, cond, true))=
+(reduce-to-circuit.ss:162-171).
+
+==== on aggregates (structs, Bytes, points, vectors): slot-wise =test_eq=
+folded with =cond_select= into an AND chain (flatten-datatypes.ss:323-335):
+=acc0=1; ti = test_eq(ai,bi); acc = cond_select(acc, ti, 0)=; the initial
+=select(1,...)= is folded away by optimize-circuit. Verified (probe
+=eqStruct=, Pair vs Pair):
+: test_eq(0,2) → 9;  test_eq(1,3) → 10;  cond_select(bit=9, a=10, b=<imm 0>) → 11
+
+v3: =test_eq=/=cond_select= work directly on typed values (point equality is
+a single =test_eq=; =zkir-v3/src/ir.rs:726-747=).
+
+* 11. fold over Vector (merkleTreePathRoot)
+
+=fold=/=map=/=for= are *fully unrolled* by =unroll-loops=
+(=circuit-passes/unroll-loops.ss:161-178=: builds
+=f(...f(f(init, v0), v1)..., v(n-1))= as nested calls, then inline-circuits
+inlines them). No loop construct exists in ZKIR.
+
+Verified (probe =merkle=, =merkleTreePathRoot<2, Field>=;
+path = [leaf(0), sib0(1), goesLeft0(2), sib1(3), goesLeft1(4)]):
+#+begin_example
+constrain_to_boolean 2; constrain_to_boolean 4
+load_imm "6D646E3A6C68"                          ; "mdn:lh" → slot 10
+persistent_hash align=[bytes6, field] inputs=[10, 0]   ; LeafPreimage → 11,12
+cond_select(bit=2, a=12, b=1)  → 13              ; left  = goesLeft ? digest : sib
+cond_select(bit=2, a=1, b=12)  → 14              ; right
+transient_hash [13, 14]        → 15              ; level 0
+cond_select(bit=4, a=15, b=3)  → 16
+cond_select(bit=4, a=3, b=15)  → 17
+transient_hash [16, 17]        → 18              ; root
+output 18
+#+end_example
+
+Note degradeToTransient(persistentHash(...)) shows up as "use slot 12" —
+zero cost. The "mdn:lh" domain separator is also hard-coded in the compiler
+for ledger merkle-tree ops (=VMleaf-hash=, print-zkir.ss:376-403).
+
+* 12. EC builtins (Jubjub)
+
+v2 representation: JubjubPoint = 2 native slots (x, y). Handlers
+print-zkir.ss:166-200; all verified in probes =schnorrish= / =schnorr=:
+
+| builtin               | v2 emission                                       | outputs |
+|-----------------------+---------------------------------------------------+---------|
+| =ecAdd(a, b)=         | =ec_add{a_x,a_y,b_x,b_y}=                         | 2 (x,y) |
+| =ecMul(p, s)=         | =ec_mul{a_x,a_y,scalar}=                          | 2       |
+| =ecMulGenerator(s)=   | =ec_mul_generator{scalar}=                        | 2       |
+| =hashToCurve<T>(v)=   | =hash_to_curve{inputs: slots(v)}=                 | 2       |
+| =ecNeg(p)=            | =neg{a: x}=; y rebound unchanged                  | 1       |
+| =jubjubPointX/Y(p)=   | nothing — rebinds the x resp. y slot              | 0       |
+| =constructJubjubPoint=| nothing — rebinds both slots                      | 0       |
+
+v3 (reduce-to-zkir.ss:127-163): typed single values —
+=add{a,b}=, =ec_mul{a,scalar}=, =ec_mul_generator=, =hash_to_curve=;
+=jubjubPointX/Y= → =into_coordinates= (2 outputs, one ignored);
+=constructJubjubPoint= → =from_coordinates=; =ecNeg= →
+=into_coordinates= + =neg(x)= + =from_coordinates=.
+
+jubjubSchnorrVerify (stdlib) verified end-to-end in v2 (probe =schnorr=,
+N=1; msg=0, ann=(1,2), resp=3, pk=(4,5)):
+: transient_hash [1,2,4,5,0] → 11        ; JubjubSchnorrHashInput struct order
+: copy 11 → 12; copy 3 → 13              ; the two "as JubjubScalar" casts (!)
+: ec_mul_generator{scalar:13} → 14,15
+: ec_mul{a_x:4,a_y:5,scalar:12} → 16,17
+: ec_add{1,2,16,17} → 18,19
+: test_eq(14,18) → 20; test_eq(15,19) → 21; cond_select(20, 21, imm0) → 22
+
+* 13. v3-only: keccak256, secp256k1, slice, Vector indexing
+
+- =keccak256<T>(v)=: v3 only (v2 raises a source error, print-zkir.ss:232-234).
+  =keccak256{alignment, inputs}= → Bytes32 value → =bytes32_into_low_high=
+  (reduce-to-zkir.ss:164-173). Alignment/input flattening identical to
+  persistentHash. Verified: =keccak256<Bytes<64>>= emits alignment
+  =[bytes 64]= with the 3 limbs as inputs; zkir-v3-library's
+  =secp256k1EthereumAddress= emits alignment = 64× =bytes 1= (the two
+  reversed =Vector<32,Uint<8>>=s), inputs = 64 byte-slots in big-endian
+  order.
+- secp256k1 (zkir-v3-natives.ss): =ecAdd= → =add=, =ecMul= → =ec_mul=,
+  =ecMulGenerator= → =ec_mul_generator=, =inv= → =inv=, =neg= → =neg=,
+  =mul= (on Secp scalars/bases via =*=) → =mul=, =secp256k1PointX/Y= →
+  =into_coordinates=. All on single typed operands
+  (="Scalar<Secp256k1>"= / ="Point<Secp256k1>"=). Verified: full
+  =secp256k1EcdsaVerify= dump (probe =secpVerify=) matches the library
+  source line for line, ending
+  =into_coordinates= → =into_bytes32= → =bytes32_into_low_high= →
+  =bytes32_from_low_high= → =from_bytes32 Scalar= → =test_eq(x, r)=
+  (the round-trip pair is emitted as-is — optimize-circuit does not run
+  after reduce-to-zkir).
+- =slice<N>(bytes, k)= (=vector-slice= / byte extraction): compile-time
+  re-wiring plus per-byte =bytes-ref= gates where bytes must be re-chunked:
+  =slice<20>(hash, 12)= = 20× (2 =div_mod_power_of_two=) to extract bytes
+  12..31, then 19× =reconstitute_field(...,8)= to build the =Bytes<20>=
+  limb. (Verified in =ethAddr=.)
+- Vector indexing with a *constant* index is free (wump selection,
+  flatten-datatypes.ss:359-374); =b[31]= of a =Bytes<32>=-derived vector is
+  just the hi limb (verified: probe =bytesToVec= = one =copy=).
+  Non-constant indexing is resolved/rejected by resolve-indices-simplify
+  (vectors must be indexed by compile-time constants in circuits).
+
+* 14. assert(cond, "message")
+
+The message is *dropped from ZKIR*: v2 ={"op":"assert","cond":i}=
+(print-zkir.ss:762-763), v3 ={"op":"assert","cond":var}=
+(reduce-to-zkir.ss:895-897). It is not in contract-info.json either; it
+survives only in the generated TypeScript runtime (=contract/index.js=),
+which evaluates the same predicate off-circuit and throws with the message.
+(Verified by grepping probe outputs.) Under a condition guard g the emitted
+gate asserts =cond_select(g, cond, 1)=.
+
+* Consequences for the MinoCrab eDSL typed-value layer
+
+- The typed-value layer's unit is the *slot vector + alignment-atom vector*
+  pair (exactly flatten-datatypes' =(ty (alignment...) (primitive-type...))=).
+  Every aggregate op (==, select, hashing, witness binding, returns) is
+  defined slot-wise; get the =[hi, lo]= Bytes limb order and the
+  hi-limb-first convention right once, in one place.
+- Uint types must carry *max values* (not bit widths): result-max
+  arithmetic (+ → sum, * → product, − → left max), the 4 constrain shapes,
+  and the even-bits rule for the =less_than= constrain path are all
+  max-value-driven. =Uint<N>= is just max = 2^N−1.
+- Several builtins are zero-instruction re-bindings (degradeToTransient,
+  jubjubPointX/Y v2, constructJubjubPoint v2, constant Vector indexing,
+  struct/tuple construction and field access, some/none/left/right) —
+  the eDSL IR needs a notion of aliasing an existing slot.
+- Literal pool: v2 hash-conses =load_imm= per circuit and *shares them with
+  the ledger-op preamble* (e.g. upgrade's hi-limb 0 reuses the preamble's
+  literal 0) — byte-exact differential tests must reproduce literal reuse
+  and emission order, not just per-op templates.
+- Effects survive dead-value elimination: the subtraction guard assert
+  stays when the difference is discarded; add/neg get dropped. Differential
+  tests should cover unused-result cases.
+- v2 vs v3 differ structurally (slot indices vs named typed SSA; Jubjub
+  2-slot vs typed value; =Field as JubjubScalar= copy vs mod-reduction!),
+  so the eDSL backend needs per-version lowering templates behind one
+  typed IR.
