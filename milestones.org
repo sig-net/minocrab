@@ -8,15 +8,19 @@ in place.
 * M0 — Foundations, corpus, and layer map
 Everything here is research and setup; no eDSL code yet. The output is
 written-down knowledge that every later milestone reads instead of rediscovering.
-- [ ] Nix flake + direnv; pin the Compact tooling (compactc etc.) in it.
+- [X] Nix flake + direnv; pin the Compact tooling (compactc etc.) in it.
+      (compactc 0.33.0-rc.2 pinned by hash; verified: compiles corpus
+      counter.compact → .zkir/.bzkir + keys. Mainnet stable 0.31.1 noted.)
 - [ ] Gather the corpus: clone sig-net Compact contracts (via gh) and public
       Midnight examples into =corpus/= (or as flake inputs). Compile each with
       the pinned compactc and keep the ZKIR output alongside the source.
-- [ ] Survey Midnight's repos: what ZKIR crates/types/serializers exist that we
+      (Public sources surveyed → notes/corpus-sources.org; sig-net blocked on
+      gh auth login.)
+- [X] Survey Midnight's repos: what ZKIR crates/types/serializers exist that we
       can import or fork, which ZKIR version supports cross-contract calling,
       and how compactc drives the pipeline. Write to =notes/zkir.org= and
       =notes/midnight-code-reuse.org=.
-- [ ] Write the layer map (per plan.org: ZKIR bindings / rust IR + stdlib /
+- [X] Write the layer map (per plan.org: ZKIR bindings / rust IR + stdlib /
       optimisations / …) to =notes/architecture.org= before any implementation.
 Exit criteria: corpus compiles reproducibly under nix; architecture doc exists;
 we know exactly which Midnight code we're reusing and how.

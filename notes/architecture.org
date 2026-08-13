@@ -1,0 +1,66 @@
+#+title: MinoCrab Architecture — Layer Map
+# Written before implementation per plan.org. Layers are listed bottom-up.
+# Each layer only depends on the ones below it. Crate names are provisional.
+
+* L0 — ZKIR bindings (=minocrab-zkir=)
+The base. We never compile below this (plan.org non-goal).
+- Reuse Midnight's own types: =midnight-zkir= (v2, crates.io, fully pub) and
+  =midnight-zkir-v3= (git dep) — see notes/midnight-code-reuse.org. Prefer
+  re-export + thin newtype wrappers over forking; fork only if something we
+  need isn't pub.
+- Owns: reading/writing =.zkir= (serde JSON, =version/do_communications_commitment/
+  num_inputs/instructions=) and =.bzkir=; invoking the pinned =zkir=/=zkir-v3=
+  binaries for key generation; version negotiation (v2 now, v3 behind a flag).
+- Test oracle: round-trip every corpus =.zkir= file byte-/semantics-identically.
+
+* L1 — IR + lowering (=minocrab-ir=)
+A small typed circuit IR one step above raw ZKIR instructions: values, field
+ops, assertions, witness/public inputs, calls into stdlib gadgets.
+- Owns: lowering IR → ZKIR instruction stream; later, cross-contract call
+  encoding (contract-info.json manifests, toolchain ≥0.33 / CoIP-2).
+- Optimisation passes live here (L4 operates on this IR).
+
+* L2 — eDSL frontend (=minocrab=)
+What users write. Ordinary Rust, no custom grammar or block macros (non-goal).
+- =Wire<T, Vis>= with type-level disclosure tracking: =Vis ∈ {Private, Public}=;
+  a =Wire<_, Private>= cannot reach a public output without =disclose()=
+  (greppable), with an explicit =disclose_unchecked=-style override.
+  Application-specific policies stack on top (e.g. range-blind before disclose).
+- Const-generic circuit families: one definition, monomorphized per size/depth,
+  unrolling done by rustc.
+- Builds L1 IR at runtime (builder-style, like bellman/halo2 APIs — not proc
+  macros over Rust syntax).
+
+* L3 — stdlib (=minocrab-std=)
+Ports of =standard-library.compact= / =zkir-v3-library.compact= (public,
+Apache-2.0, in LFDT-Minokawa/compact) expressed against L2. Mechanical
+translation from their source wherever possible; each ported item is
+differential-tested against compactc's compilation of the original.
+
+* L4 — Optimisations
+IR→IR passes over L1, off by default until proven semantics-preserving by the
+L5 harness. This is where we beat compactc (which lowers naively per the
+compiler source). Every pass measured by the profiler before/after.
+
+* L5 — Simulator, profiler, verification harness (=minocrab-sim=)
+Cross-cutting test-side layer; runs in plain =cargo test=.
+- Native simulator: interpret L1 IR (and/or execute the L2 builder directly)
+  with structured output — performance metrics + disclosure report.
+- Cost profiler: constraint counts / k / rows via =midnight_zkir::Model=,
+  onchain cost via Midnight's calibrated =CostModel= (onchain-vm); attributed
+  to user code regions, human-readable.
+- Spec harness: quickcheck/proptest — spec in ordinary Rust, millions of random
+  inputs asserting circuit ≡ intent; plus differential tests vs compactc output
+  over the corpus.
+
+* Corpus & toolchain (infrastructure, not a layer)
+- =corpus/= : Compact sources + their compactc-compiled ZKIR, fetched pinned
+  (sources in notes/corpus-sources.org), compiled by the flake-pinned
+  compactc 0.33.0-rc.2 (cross-contract-capable; Mainnet stable is 0.31.1).
+- ZKIR churn: only L0 touches serialization; a toolchain bump = flake pin bump
+  + L0 round-trip suite + corpus recompile. Everything above L0 is insulated.
+
+* Future (not now)
+- Proof system hookup: L0 already shells out to =zkir= for keys; a real prover
+  integration replaces/extends that seam only. Design L0's API so nothing above
+  it knows how proofs are produced.

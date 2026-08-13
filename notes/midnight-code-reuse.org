@@ -1,0 +1,243 @@
+#+TITLE: Reusable Midnight code inventory (for MinoCrab)
+#+DATE: 2026-08-13
+#+STARTUP: overview
+
+Inventory of Midnight-authored code MinoCrab can reuse. Snapshot 2026-08-13;
+shallow clones examined: =midnightntwrk/midnight-ledger= (main) and
+=LFDT-Minokawa/compact= (main @ 2026-08-12). Everything below is
+*Apache-2.0* unless noted (verified via GitHub license API for
+midnight-ledger, midnight-zk, midnight-node, midnight-js, LFDT-Minokawa/compact
+— all Apache-2.0), so forking and importing is license-clean.
+
+MinoCrab context: Rust eDSL -> ZKIR; never compile below ZKIR; need
+cross-contract calling (=> ledger 9 / toolchain 0.33 era; see notes/zkir.org).
+
+* Tier 1: midnight-ledger (https://github.com/midnightntwrk/midnight-ledger)
+
+Rust workspace, Apache-2.0, most crates published on crates.io. crates.io
+versions checked 2026-08-13 (these correspond to the ledger-8 mainnet line;
+the ledger-9 line is tags/git only so far).
+
+** zkir -> crate =midnight-zkir= (crates.io 2.1.0) — THE core reuse target
+- What: complete ZKIR v2 definition + tooling. =IrSource=, =Instruction=,
+  =IrMinorVersion= (=src/ir.rs=); JSON (.zkir) load/store via serde; binary
+  (.bzkir) via tagged serialize; IR->PLONK circuit synthesis and
+  prover/verifier key generation; =impl Zkir for IrSource= (check/prove);
+  =Model= (k, rows — constraint counting); IR interpreter (=src/ir_vm.rs=,
+  =Preprocessed=); CLI binary =zkir= (=src/main.rs=) with compile /
+  compile-many / mock-compile / mock-compile-many.
+- pub-ness: =pub use ir::{Instruction, IrMinorVersion, IrSource}= and
+  =pub use ir_vm::Preprocessed= — the types MinoCrab must *emit* are fully
+  public. Serialization to .zkir JSON is just =serde_json= on =IrSource=.
+  No fork needed for v2.
+- Consume: =midnight-zkir = "2.1.0"= from crates.io for mainnet-compatible
+  v2; git dep on a =zkir-2.2.0= or ledger-9 tag for newer.
+
+** zkir-v3 -> crate =midnight-zkir-v3= (in-repo 3.0.0-rc.1; NOT on crates.io)
+- What: ZKIR v3 (typed IR: =ir_types.rs=; per-op modules in
+  =ir_instructions/=; =Impact= instruction; Keccak256, secp256k1,
+  bytes32 ops; 3.1 adds secp256r1/Curve25519 per compact CHANGELOG
+  0.33.120). Exports =pub use ir::{Identifier, Instruction, IrSource}=,
+  =ir_vm::Preprocessed=; also a =zkir= CLI (installed as =zkir-v3= in
+  toolchain zips).
+- Consume: git dependency on midnight-ledger, e.g. rev
+  =04c9c5d9bcebb8d4427d8589fb54d58a55599c14= (the rev the official compact
+  flake pins for zkir-v3) or tag =ledger-9.1.0.0-rc.4=. Public API; no fork
+  needed, but expect churn until 3.0 finalizes.
+
+** transient-crypto -> =midnight-transient-crypto= (crates.io 2.1.0)
+- What: proof-system-facing primitives: =proofs::Zkir= trait (the interface
+  MinoCrab's emitted IR plugs into), =ProofPreimage=, =Proof=, =ProverKey= /
+  =VerifierKey=, =ParamsProverProvider= (SRS/params fetching),
+  =KeyLocation=, =Resolver=; =curve::Fr= (BLS12-381 scalar); transcript
+  hashing. Public.
+- Consume: crates.io (v2 era) / git (v3 era).
+
+** onchain-runtime -> =midnight-onchain-runtime= (crates.io 3.1.0)
+- What: "full runtime for contracts to interact with": =context.rs=
+  (query/call context), =transcript.rs= (program transcripts that become the
+  ZKIR public-input blocks), contract-state extensions, =test_utilities.rs=.
+  This is the Rust twin of the TS =@midnight-ntwrk/onchain-runtime= wasm pkg
+  (built from =onchain-runtime-wasm=).
+- Why we care: MinoCrab must produce transcripts consistent with what the
+  ledger replays; reusing this crate avoids re-implementing Impact
+  semantics. Public API; ledger 9 line ("onchain-runtime-v4" in the compact
+  flake) is git-only.
+
+** onchain-vm -> =midnight-onchain-vm= (crates.io 3.1.0)
+- What: the Impact VM ("VM that contracts may execute on-chain"):
+  =ops.rs= (=pub enum Op<M, D>= — full instruction set), =vm.rs=
+  (interpreter), =cost_model.rs= (=pub struct CostModel= with per-op /
+  per-container cost functions like =read_map(log_size, sync)=,
+  =read_cell(size, sync)=, =read_bmt=, =tree_copy= returning =RunningCost=),
+  =result_mode.rs=, =vm_value.rs=.
+- This is the single best base for a *simulator + cost profiler* (see Tier
+  4). Public.
+
+** onchain-state -> =midnight-onchain-state= (crates.io 3.0.0)
+- Contract state format (=StateValue=: Null/Cell/Map/Array(n)/
+  BoundedMerkleTree(n)) — spec'd in =spec/onchain-runtime.md=.
+
+** base-crypto -> =midnight-base-crypto= (crates.io 1.0.0)
+- Foundational crypto + *FAB* ("field-aligned binary", =fab::Alignment=,
+  =AlignedValue=) — the value encoding shared by ZKIR, state, and
+  transcripts (spec: =spec/field-aligned-binary.md=). Also
+  =data_provider::MidnightDataProvider= (fetches SRS/params; honors
+  =MIDNIGHT_PARAM_SOURCE= env var, per ledger 4.0.0 changelog). Public.
+- MinoCrab's type lowering must reproduce FAB alignments; reuse this rather
+  than reimplement.
+
+** serialize -> =midnight-serialize= (crates.io 1.1.0) + =midnight-serialize-macros=
+- The tagged serialization framework (=Serializable=, =tagged_serialize=,
+  =Tagged=, tags like =ir-source[v2-generic]=) used for .bzkir, keys, and
+  all wire formats. Public; needed to write .bzkir and key files.
+
+** ledger -> =midnight-ledger= (crates.io 8.1.1)
+- Transaction format/semantics, =prove= module (=Resolver=), fee logic,
+  =Transaction.mockProve= (accurate fee estimation without proving — ledger
+  6.0.0 changelog), contract deploy/call actions, =LedgerParameters=.
+  Public. Ledger 9 (cross-contract era) via git tags =ledger-9.1.0.0-rc.*=.
+
+** proof-server (crate =midnight-proof-server=; not on crates.io AFAICT — UNVERIFIED)
+- HTTP wrapper over proving: endpoints =/prove=, =/check= (+ =/health=,
+  =/ready=), worker pool, payload formats
+  (=createProvingTransactionPayload= / =createCheckPayload= on the wasm
+  side). =src/main.rs= shows the full wiring incl. =DustResolver= and
+  =PUBLIC_PARAMS=. Fork-or-vendor if we want a native proving service;
+  for MinoCrab it's more likely we call =Zkir::prove= directly.
+
+** Other crates
+- =midnight-zswap= (8.1.1), =midnight-coin-structure= (2.0.1) — shielded
+  tokens; needed only if MinoCrab contracts touch coins.
+- =midnight-storage= (2.0.2) / =storage-core= / macros — Merkle-Patricia
+  storage with =Sp= pointers; a dependency of the above.
+- =midnight-ledger-static= (9.0.0) — "version identifier of static files"
+  (params/artifacts).
+- =wasm-proving-demos=, =integration-tests= (TS) — worked examples of
+  driving proving end-to-end; good reference code.
+- =spec/= — prose specs: =contracts.md= (contract calls!),
+  =onchain-runtime.md= (Impact + state), =field-aligned-binary.md=,
+  =cost-model.md=, =storage-io-cost-modeling.md=, =zswap.md=, =dust.md=,
+  =intents-transactions.md=.
+
+* Tier 2: midnight-zk (https://github.com/midnightntwrk/midnight-zk)
+
+Apache-2.0. The proof system itself (below-ZKIR — we depend on it but never
+target it directly, honoring the "never compile below ZKIR" rule).
+- =midnight-proofs= (crates.io 0.8.2) — PLONK w/ KZG; includes
+  =dev::cost_model::CircuitModel= (k, rows) which =midnight-zkir='s =Model=
+  wraps.
+- =midnight-circuits= (crates.io 7.2.4) — gadget/circuit library.
+- =midnight-zk-stdlib= (crates.io 2.3.5) — high-level circuit stdlib;
+  provides the =cost_model(...)= function zkir calls for circuit models.
+- =midnight-curves= (crates.io 0.3.1) — BLS12-381 + Jubjub.
+All pulled in transitively by midnight-zkir; useful directly for constraint
+accounting in a cost profiler.
+
+* Tier 3: compact repo (https://github.com/LFDT-Minokawa/compact)
+
+Apache-2.0. The compiler is Chez Scheme, so *not linkable* from Rust, but
+several parts are valuable:
+- =compiler/zkir-passes/= (incl. =print-zkir.ss=) and
+  =compiler/zkir-v3-passes/= (=reduce-to-zkir.ss=) — reference semantics for
+  Compact->ZKIR lowering; the ground truth for how ledger ops, witnesses,
+  and communications commitments become IR. Read-only reuse (port logic).
+- =compiler/circuit-passes/desugar-contract-calls.ss= — how cross-contract
+  calls lower (pairs with CoIP-2 and runtime =contract.ts=).
+- =examples/outputs/**/zkir/*.zkir= — golden .zkir files (election,
+  zerocash, etc.): ready-made conformance fixtures for MinoCrab's emitter.
+- =runtime/= — TypeScript =@midnight-ntwrk/compact-runtime= (npm latest
+  0.16.0; 0.18.0-rc.1 for ledger 9): witness transcript construction,
+  =crossContractCall= (=src/contract.ts=), =CircuitContext=. Reference for
+  MinoCrab's off-chain execution model; reusable as-is only from JS/TS.
+- =test-center/= — TS test harness that runs generated contracts against
+  zkir-wasm/zkir-v3-wasm (=ccc-util.ts= exercises cross-contract calls);
+  reusable as an integration-test pattern.
+- =tools/compact= — Rust devtools CLI (axoupdater-based); minor reuse
+  (toolchain download/pinning logic).
+- =flake.nix= — official nix packaging incl. darwin; see notes/zkir.org.
+- =coips/coip-0002.md= — cross-contract design doc.
+- =specification/= — Compact language spec sources.
+
+* Tier 4: simulator / cost-model / constraint-counting reuse
+
+What exists that MinoCrab can reuse for a native simulator + cost profiler:
+
+1. *Impact VM interpreter*: =midnight-onchain-vm= (=vm.rs= + =ops.rs=) runs
+   transcripts against =StateValue= state — i.e., an on-chain execution
+   simulator already exists in Rust. Combine with
+   =midnight-onchain-runtime='s =context.rs= / =transcript.rs= for
+   contract-level simulation, and =test_utilities.rs= for fixtures.
+2. *Gas/cost model*: =onchain-vm/src/cost_model.rs= (=CostModel=,
+   =RunningCost=, per-op cost functions, sync/async I/O distinction). Real
+   calibrated parameters landed in ledger 6.1.0 ("Add real cost model",
+   multi-dimensional: CPU + I/O, validate vs apply buckets). Methodology:
+   =spec/cost-model.md= and =spec/storage-io-cost-modeling.md=.
+3. *Cost-model generation*: =midnight-ledger/generate-cost-model/= —
+   criterion-benchmark harness + =vm-cost-model= linear-regression tool that
+   fits per-op cost coefficients (e.g. =rem= cost ~ c0 + c1*key_size +
+   c2*container_log_size), plus docker scripts. Calibrated params are
+   checked in under =ledger/params= and emitted via
+   =ledger/examples/output-params.rs=. Perfect template for a MinoCrab cost
+   profiler.
+4. *Circuit-size / constraint counting*: =midnight_zkir::Model= — =k()= and
+   =rows()= from =midnight_proofs::dev::cost_model::CircuitModel= via
+   =midnight_zk_stdlib::cost_model(...)= (zkir/src/ir.rs ~450-476). Gives
+   constraint counts for any =IrSource= *without* generating keys. Also
+   "add ability to compute k value of a circuit in WASM" (zkir 2.1.0
+   changelog).
+5. *Mock proving*: =zkir mock-compile[-many]= subcommands (fast key-less
+   pipeline check) and =Transaction.mockProve= in the ledger (fee-accurate
+   'proven' transactions without proving — ledger 6.0.0 changelog).
+6. *IR evaluation*: =zkir/src/ir_vm.rs= (=Preprocessed=) evaluates ZKIR
+   against a =ProofPreimage= — usable as the witness-side simulator for
+   MinoCrab-emitted IR (this is what =check= uses to compute skips).
+7. TS-side: =@midnight-ntwrk/compact-runtime= computes =gasCosts= per call
+   in =CircuitContext= (cross-contract aware since 0.18) — reference only.
+
+No standalone "Midnight simulator" product was found beyond these pieces
+(the DApp-level testing story is test-center + midnight-js against a local
+proof server / node). UNVERIFIED: whether midnight-js contains an additional
+local network simulator package.
+
+* Tier 5: adjacent repos (lower value)
+- =midnightntwrk/midnight-node= — Apache-2.0, Polkadot-SDK (AURA/GRANDPA)
+  node embedding midnight-ledger for verification.
+  https://github.com/midnightntwrk/midnight-node — needed only for e2e
+  testing against a real chain.
+- =midnightntwrk/midnight-js= — Apache-2.0 TS SDK (npm
+  =@midnight-ntwrk/midnight-js-*=, current 4.1.1); transaction assembly for
+  cross-contract calls lands partly here ("the transaction-assembly half
+  lives in compact-js and midnight-js", compact CHANGELOG 0.33.119).
+  https://github.com/midnightntwrk/midnight-js
+- =midnightntwrk/example-*= repos (counter, bboard, zkloan…) — fixtures.
+- OpenZeppelin =compact-contracts=
+  (https://github.com/OpenZeppelin/compact-contracts) — Compact-source
+  library (MIT per repo? UNVERIFIED); useful as test corpus of realistic
+  contracts to compare MinoCrab output against.
+- Community: =compactp*= crates on crates.io (0.1.0-beta.1, third-party
+  Compact parser front-end in Rust) and =signet-midnight-serde= (Rust twin
+  of Compact's serialize<T,N> byte layout) — third-party, not
+  Midnight-authored; evaluate before trusting.
+
+* How MinoCrab consumes all this (summary)
+
+| Need | Use | Channel |
+|------+-----+---------|
+| ZKIR v2 types + (de)ser + keygen + prove | =midnight-zkir= (=IrSource=, =Instruction=, =Zkir=) | crates.io 2.1.0 (mainnet) |
+| ZKIR v3 (cross-contract-era, keccak/secp256k1) | =midnight-zkir-v3= | git: midnight-ledger rev =04c9c5d9...= or =ledger-9.1.0.0-rc.4= |
+| Prover interface, keys, params | =midnight-transient-crypto= | crates.io / git |
+| FAB value encoding | =midnight-base-crypto::fab= | crates.io |
+| .bzkir / key file format | =midnight-serialize= | crates.io |
+| Transcripts + contract context | =midnight-onchain-runtime= | crates.io 3.1.0 / git (v4 = ledger 9) |
+| Simulator VM + gas | =midnight-onchain-vm= (+ =generate-cost-model=) | crates.io 3.1.0 / git |
+| Constraint counts | =midnight_zkir::Model= (k, rows) | comes with zkir |
+| Tx assembly / fees / CCC semantics | =midnight-ledger= + =spec/contracts.md= | crates.io 8.1.1 / git ledger-9 tags |
+| Lowering ground truth | compact repo Scheme passes + example .zkir goldens | read/port, Apache-2.0 |
+| Toolchain for differential testing | compactc binaries / nix flake | see notes/zkir.org |
+
+Key version constraint: crates.io = ledger-8 line; cross-contract calling
+requires the ledger-9 line, which today means *git dependencies on
+midnight-ledger tags/revs* (exactly what the official compact flake does).
+All of it is Apache-2.0, so forking midnight-ledger to stabilize a ledger-9
+zkir-v3 snapshot is a clean fallback.

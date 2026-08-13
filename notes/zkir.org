@@ -1,0 +1,409 @@
+#+TITLE: ZKIR: format, pipeline, versions, cross-contract support, toolchain distribution
+#+DATE: 2026-08-13
+#+STARTUP: overview
+
+Research snapshot taken 2026-08-13. Shallow clones examined:
+=midnightntwrk/midnight-ledger= (main, 2026-08) and =LFDT-Minokawa/compact=
+(main @ 2026-08-12). All claims carry a URL; anything not directly confirmed
+is marked UNVERIFIED.
+
+* What ZKIR is
+
+ZKIR ("zero-knowledge intermediate representation") is Midnight's circuit IR:
+a flat, SSA-ish list of instructions over BLS12-381 scalar-field values
+(=Fr=), with private/public input declarations, constraints, hashes, and EC
+ops. The Compact compiler emits one ZKIR program per exported circuit; a
+separate ZKIR compiler (the =zkir= binary) lowers each program to a PLONK
+circuit (midnight-zk / halo2-descended, KZG commitments, BLS12-381) and
+produces prover/verifier keys. The prover (locally or in the proof server)
+re-executes the ZKIR with a witness transcript (=ProofPreimage=) to build the
+proof.
+
+- Docs one-liner: "the bridge between Compact and the ZK backend ...
+  intermediate circuit representations used by the proof server"
+  https://docs.midnight.network/getting-started/hello-world
+- Compiler docs: "produces proving circuits in a zero-knowledge intermediate
+  language (zkir), and it uses a zkir compiler to produce proving keys for
+  each such circuit" https://docs.midnight.network/develop/reference/compact/lang-ref
+
+* Where ZKIR is defined (the spec is the Rust code)
+
+There is *no standalone prose spec document* for ZKIR. (The =spec/= directory
+of midnight-ledger covers the ledger, Impact/onchain-runtime, FAB, cost
+model, zswap — not ZKIR; the Compact =specification/= dir covers the Compact
+language.) The de-facto spec is the Rust source, which is well doc-commented
+per instruction:
+
+- Repo: https://github.com/midnightntwrk/midnight-ledger (Apache-2.0)
+  - =zkir/= — ZKIR *v2*. Crate =midnight-zkir= (workspace version 2.1.0;
+    crates.io max published 2.1.0: https://crates.io/crates/midnight-zkir).
+    - =zkir/src/ir.rs= — =IrSource= (the whole program), =Instruction= enum,
+      =IrMinorVersion=, JSON (serde) + binary (tagged) serialization,
+      prover-key generation, =Model= (k / row counts).
+    - =zkir/src/ir_vm.rs= — an IR interpreter/preprocessor (=Preprocessed=)
+      used to evaluate the IR against a transcript.
+    - =zkir/src/main.rs= — the =zkir= CLI binary (see below).
+  - =zkir-v3/= — ZKIR *v3*. Crate =midnight-zkir-v3=, version 3.0.0-rc.1
+    in-repo; *not on crates.io* (checked 2026-08-13: "crate midnight-zkir-v3
+    does not exist"). Layout: =ir.rs=, =ir_types.rs=, =ir_instructions/=
+    (one module per op), =ir_vm.rs=, =main.rs=.
+  - =zkir-wasm/=, =zkir-v3-wasm/= — WASM proving bindings for v2/v3.
+  - =zkir-precompiles/= — exists in the tree (contents not examined).
+  - =CHANGELOG_zkir.md= — IR version history.
+- The =Zkir= trait (the prover-facing interface an IR must implement) lives
+  in =transient-crypto/src/proofs.rs= (crate =midnight-transient-crypto=,
+  crates.io 2.1.0): =check(&self, &ProofPreimage)= and
+  =async prove(rng, params, ProverKey<Self>, &ProofPreimage) -> (Proof, Vec<Fr>, skips)=.
+  =impl Zkir for IrSource= is in =zkir/src/ir.rs=.
+
+Community reference (reverse engineering, matches what we see in the code):
+"How I Reverse Engineered Compact Compiler and Built the World's First ZKIR
+Circuit Debugger" https://0xrick.hashnode.dev/de-compiler
+
+* On-disk formats
+
+** =.zkir= — JSON (human-readable)
+Emitted by compactc into =managed/<contract>/zkir/<circuit>.zkir=. Top-level
+object (confirmed against
+=LFDT-Minokawa/compact/examples/outputs/election.compact/zkir/add_voter.zkir=):
+
+#+begin_src json
+{
+  "version": { "major": 2, "minor": 0 },
+  "do_communications_commitment": true,
+  "num_inputs": 2,
+  "instructions": [
+    { "op": "constrain_bits", "var": 0, "bits": 8 },
+    { "op": "load_imm", "imm": "01" },
+    { "op": "private_input", "guard": null },
+    ...
+  ]
+}
+#+end_src
+
+Instruction encoding is serde with =#[serde(rename_all = "snake_case", tag = "op")]=
+on =enum Instruction= (zkir/src/ir.rs). Loading is version-checked in
+=IrSource::load= (zkir/src/ir.rs ~line 531): major must match, minor is
+carried as =IrMinorVersion=.
+
+** =.bzkir= — tagged binary
+Same =IrSource=, serialized with midnight-ledger's own =Serializable= /
+=tagged_serialize= framework (crate =midnight-serialize=), tag string
+=ir-source[v2-generic]= (older: =ir-source[v2]=). Introduced in zkir 1.1.1
+"to be used in sending to the proof server" (CHANGELOG_zkir.md). The =zkir=
+CLI transparently converts: reading a =.zkir= writes a sibling =.bzkir=
+(=maybe_bzkir= in zkir/src/main.rs).
+
+** Keys
+=zkir compile / compile-many= writes =<circuit>.prover= and
+=<circuit>.verifier= (tagged-serialized =ProverKey= / =VerifierKey=) into the
+=keys/= dir (zkir/src/main.rs, lines ~221-267). compactc places them in
+=managed/<contract>/keys/=.
+
+** ZKIR v2 instruction set (from zkir/src/ir.rs)
+Assert, CondSelect, ConstrainBits, ConstrainEq, ConstrainToBoolean, Copy,
+DeclarePubInput, PiSkip, EcAdd, EcMul, EcMulGenerator, HashToCurve, LoadImm,
+DivModPowerOfTwo, ReconstituteField, Output, TransientHash, PersistentHash,
+TestEq, Add, Mul, Neg, Not, LessThan, PublicInput, PrivateInput.
+
+** ZKIR v3 instruction set (from zkir-v3/src/ir.rs)
+Encode, Assert, CondSelect, ConstrainBits, ConstrainEq, ConstrainToBoolean,
+Copy, Impact, EcMul, EcMulGenerator, HashToCurve, IntoCoordinates,
+FromCoordinates, IntoBytes32, FromBytes32, Bytes32IntoLowHigh,
+Bytes32FromLowHigh, DivModPowerOfTwo, ReconstituteField, TransientHash,
+PersistentHash, Keccak256, TestEq, Add, Mul, Neg, Inv, Not, LessThan,
+JubjubScalarFromNative, PublicInput, PrivateInput, Output.
+Notable: typed values (=ir_types.rs=), an =Impact= instruction (public-input
+blocks tied to the on-chain VM; v2 modeled these as separate impact
+instructions — see compact CHANGELOG entry for toolchain 0.32.107 "The
+generated zkir reverted back to having separate impact instructions"),
+=Keccak256=, secp256k1 support, and per-instruction modules under
+=ir_instructions/=.
+
+* Pipeline: where ZKIR sits
+
+#+begin_example
+  foo.compact
+      |  compact compile  (devtools CLI `compact`, Rust, tools/compact in LFDT-Minokawa/compact;
+      |                    downloads + runs a pinned toolchain)
+      v
+  compactc (wrapper script) -> compactc.bin   (the actual compiler, Chez Scheme)
+      |   emits managed/<contract>/
+      |     compiler/contract-info.json   (interface description, versions)
+      |     contract/index.cjs + .d.ts    (TS/JS tx-construction code, uses
+      |                                    @midnight-ntwrk/compact-runtime)
+      |     zkir/<circuit>.zkir(+.bzkir)  (one IR per exported circuit)
+      |     keys/<circuit>.prover/.verifier
+      |
+      |   key generation is done by shelling out to the bundled `zkir` (v2)
+      |   and `zkir-v3` binaries (both ship inside the compactc release zip;
+      |   they are the bin targets of midnight-ledger's zkir / zkir-v3 crates)
+      v
+  proving: ProofPreimage (witness transcript produced by running the compiled
+  circuit in the Compact runtime) + IrSource (.bzkir) + ProverKey
+      -> transient_crypto::proofs::Zkir::prove  (locally via midnight-zkir, or
+         via the proof server, which wraps the same code over HTTP:
+         midnight-ledger/proof-server, endpoints /prove, /check, /health, /ready)
+      v
+  Proof embedded in a Midnight transaction (midnight-ledger); on-chain the
+  public transcript is executed by the Impact VM (onchain-vm) and the proof is
+  verified against the circuit's verifier key stored in contract state.
+#+end_example
+
+Sources:
+- Output tree: https://docs.midnight.network/getting-started/hello-world
+  (compiler/, contract/, keys/, zkir/) and
+  https://docs.midnight.network/develop/tutorial/building
+- Bundled binaries: contents of
+  https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v0.31.1/compactc_v0.31.1_aarch64-darwin.zip
+  = {compactc (bash wrapper), compactc.bin, fixup-compact, format-compact,
+  zkir, zkir-v3}. Wrapper adds its own dir to PATH before exec'ing
+  compactc.bin.
+- zkir CLI subcommands (zkir/src/main.rs): =compile= (ir -> prover/verifier
+  key files), =compile-many= (whole dir), =mock-compile=,
+  =mock-compile-many= (added zkir 1.3.0, CHANGELOG_zkir.md).
+- Proof server: midnight-ledger/proof-server; fetches missing key material
+  on demand (ledger 6.1.0 changelog). Docker image
+  https://hub.docker.com/r/midnightnetwork/proof-server (tags there look
+  stale — 7.0.0-rc.1; support matrix says current proof server is 8.1.0.
+  UNVERIFIED where 8.x images are published; possibly ghcr.io).
+
+The compiler passes that emit ZKIR (Scheme) are in
+=LFDT-Minokawa/compact/compiler/zkir-passes/= (incl. =print-zkir.ss=) and
+=compiler/zkir-v3-passes/= (incl. =reduce-to-zkir.ss=).
+
+* Versions
+
+** ZKIR versions
+| IR | status | where | notes |
+|----+--------+-------+-------|
+| v1 | dead (pre-2.0) | history in CHANGELOG_zkir.md | 1.0.0 initial; 1.1.1 added .bzkir; 1.3.0 added compile-many |
+| v2 | *current mainnet format* | =midnight-ledger/zkir=, crates.io =midnight-zkir= 2.1.0; repo tags up to =zkir-2.2.0= | minor versions 2.0 / 2.1 (2.1 = same semantics, more optimizations, JubjubPoint in TestEq/ConstrainEq/CondSelect) |
+| v3 | rc, opt-in | =midnight-ledger/zkir-v3= (3.0.0-rc.1 in-repo, not on crates.io) | selected with =compact compile --feature-zkir-v3=; adds Keccak-256, secp256k1 (+ ECDSA verify in stdlib); "ZKIR 3.1 features" add secp256r1 and Curve25519 (compact CHANGELOG, toolchain 0.33.120) |
+
+Sources: =CHANGELOG_zkir.md= in midnight-ledger; toolchain 0.33.0 release
+notes (=LFDT-Minokawa/compact/doc/release-notes/toolchain-0.33.0.md=);
+https://crates.io/crates/midnight-zkir
+
+** Compact compiler / toolchain versions
+Repos: source + releases at https://github.com/LFDT-Minokawa/compact
+(Linux Foundation Decentralized Trust "Minokawa" project);
+https://github.com/midnightntwrk/compact is *archived* and only mirrors
+release artifacts (its README says so).
+
+| toolchain | language | runtime | ledger | date | status |
+|-----------+----------+---------+--------+------+--------|
+| 0.31.0 | 0.23.0 | 0.16.x | 8 | 2026-04-29 | stable |
+| 0.31.1 | 0.23.0 | 0.16.x | 8 | 2026-06-25 | *latest stable*; what current Mainnet (ledger 8) needs |
+| 0.32.x | 0.24.x | 0.17.x | — | — | internal line, never released as a tag (dev changelog only) |
+| 0.33.0-rc.0/1/2 | 0.25.0 | 0.18.0(-rc) | 9 | 2026-07-01/07/15 | *pre-release*; first ledger-9 toolchain; cross-contract calls, events, serialize/deserialize, --feature-zkir-v3 |
+| 0.33.1xx (main) | 0.25.107 | 0.18.10x | 9.1-rc | ongoing | development head |
+
+Sources: GitHub releases API for LFDT-Minokawa/compact (asset lists incl.
+aarch64-darwin zips for every release);
+=doc/release-notes/toolchain-0.33.0.md= (dated 2026-07-21, "Language version
+0.25.0, Compact runtime 0.18.0 ... first version that supports Midnight
+ledger version 9"); =CHANGELOG.md= head shows toolchain 0.33.122.
+Note: docs.midnight.network/relnotes/compact page lists 0.31.0 as LATEST
+with "Compact language 0.23.0" — the docs lag the repo slightly.
+
+** Devtools (=compact= CLI)
+Rust binary in =LFDT-Minokawa/compact/tools/compact= (uses axoupdater /
+cargo-dist). Latest release: *compact-v0.5.1*, 2026-03-25, on
+https://github.com/midnightntwrk/compact/releases (assets:
+compact-{aarch64,x86_64}-apple-darwin.tar.xz + .sha256,
+compact-installer.sh, dist-manifest.json).
+docs.midnight.network/relnotes/compact-tools shows v0.4.0 (2026-01-21) —
+again lagging; the live support matrix
+(https://docs.midnight.network/relnotes/support-matrix) says devtools 0.5.1.
+There is also a =doc/release-notes/devtools-0.5.0.md= in-repo.
+
+** Ledger / ecosystem (support matrix, fetched 2026-08-13)
+https://docs.midnight.network/relnotes/support-matrix
+- Compact toolchain 0.31.1, devtools 0.5.1
+- midnight-node 1.0.1 (Preview/Preprod/Mainnet), midnight.js 4.1.1
+- proof server 8.1.0, indexer 4.3.3/4.3.5
+- Ledger: Mainnet runs ledger 8 (crates.io =midnight-ledger= 8.1.1; repo
+  tags to =ledger-8.2.0-rc.1= and =ledger-9.1.0.0-rc.4=)
+
+* Cross-contract calls: which version
+
+*Answer: Compact toolchain 0.33.0 (language 0.25.0), which targets Midnight
+ledger 9. Not available in 0.31.x / ledger 8 (current Mainnet).* As of
+2026-08-13 the newest 0.33 artifact is the pre-release =compactc-v0.33.0-rc.2=
+(2026-07-15); release notes for final 0.33.0 are dated 2026-07-21 in-repo but
+no final tag exists yet, and docs still list 0.31.1 as latest tested.
+
+Details:
+- Language design: CoIP-2 "Contract Types, Values, and Calls"
+  https://github.com/LFDT-Minokawa/compact/blob/main/coips/coip-0002.md
+  (Draft, created 2026-05-27). Language features: =contract= type
+  declarations, =contract implements C;=, contract references as first-class
+  values (usable in ledger collections), and =reference.circuit(args...)=
+  calls. First landed in internal toolchain 0.32.105 (CHANGELOG.md).
+- Runtime machinery (compact-runtime 0.18): =crossContractCall= in
+  =runtime/src/contract.ts=; =ContractStateProvider=; restructured
+  =CircuitContext= with =callContext=, per-address =queryContexts= /
+  =gasCosts=, =callProofDataTrace=; dynamic guards (re-entrancy,
+  verifier-key binding via SHA-256 =expectedVk=, purity, no-witness callee);
+  linking transcript entry =Kernel.claimContractCall=. Callee Zswap
+  operations enabled in toolchain 0.33.119 (CHANGELOG.md, issue #658).
+- Compiler pass: =compiler/circuit-passes/desugar-contract-calls.ss=.
+- Cross-contract calls do *not* require ZKIR v3 — the 0.33.0 release notes
+  present CCC and =--feature-zkir-v3= as independent features, and ZKIR v2
+  already carries =do_communications_commitment= (the cross-contract
+  communication commitment) in every =.zkir= file. (Interplay under v3 uses
+  the same mechanism. UNVERIFIED: whether any CCC edge cases are v3-only.)
+- Ledger side: contract calls / call prototypes are specified in
+  =midnight-ledger/spec/contracts.md= ("contract call" well-formedness,
+  claimed calls by address/entry point/communication commitment). The
+  release notes bind working CCC to ledger 9.
+- History: Compact 1.0-era docs said "Compact 1.0 does not fully implement
+  declarations of contracts and the cross-contract calls they support"
+  (https://docs.midnight.network/develop/reference/compact/lang-ref); old
+  compiler changelog entries (0.23.10x) explicitly called CCC "not yet fully
+  supported".
+
+Implication for MinoCrab: to support cross-contract calling we must target
+*ledger 9 semantics* (midnight-ledger tags =ledger-9.x=, onchain-runtime v4
+line) and, for artifacts compatible with the 0.33 toolchain, emit ZKIR v2 or
+v3 with communications commitments plus the =Kernel.claimContractCall=
+transcript ops.
+
+* Toolchain distribution + nix pinning
+
+** Distribution channels
+1. *Installer script + devtools* (the official path):
+   #+begin_src sh
+   curl --proto '=https' --tlsv1.2 -LsSf \
+     https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+   compact update            # or: compact update 0.33  /  compact update 0.31
+   compact compile [--feature-zkir-v3] src.compact out-dir/
+   #+end_src
+   Source: https://docs.midnight.network/getting-started/installation and
+   toolchain-0.33.0.md release notes. The =compact= CLI downloads compactc
+   toolchain zips and manages versions (installs under =~/.compact=,
+   UNVERIFIED exact directory).
+2. *Direct binary zips per release* (what the CLI downloads):
+   =https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v<V>/compactc_v<V>_<target>.zip=
+   with targets =aarch64-darwin=, =x86_64-darwin=,
+   ={aarch64,x86_64}-unknown-linux-musl=. Contents: =compactc= (wrapper),
+   =compactc.bin=, =fixup-compact=, =format-compact=, =zkir=, =zkir-v3=.
+   Older releases (<= 0.31.x) are mirrored on midnightntwrk/compact too.
+3. *npm*: =@midnight-ntwrk/compact-runtime= (latest 0.16.0, rc 0.18.0-rc.1),
+   =@midnight-ntwrk/onchain-runtime= 0.3.0, =@midnight-ntwrk/ledger= 4.0.0,
+   =@midnight-ntwrk/zswap= 4.0.0 (npm registry, checked 2026-08-13). No
+   =@midnight-ntwrk/compactc= npm package.
+4. *crates.io*: ledger stack published as =midnight-*= crates (see
+   midnight-code-reuse.org).
+5. *Docker*: proof server at docker.io/midnightnetwork/proof-server
+   (stale tags; see above). compactc OCI image is built by the flake
+   (=packages.compactc-oci=) but UNVERIFIED whether it is published anywhere
+   public.
+
+** Official nix flake — yes
+=LFDT-Minokawa/compact/flake.nix= ("Compact Compiler", Apache-2.0):
+- Uses IOG binary cache: substituter =https://cache.iog.io=, key
+  =hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ==.
+- Inputs pin midnight-ledger for the zkir binaries:
+  =github:midnightntwrk/midnight-ledger/ledger-9.1.0.0-rc.3= (zkir v2,
+  onchain-runtime-v4, zkir-wasm) and rev
+  =04c9c5d9bcebb8d4427d8589fb54d58a55599c14= (zkir-v3, zkir-v3-wasm) — on
+  main as of 2026-08-12.
+- Darwin is explicitly supported: =eachDefaultSystem=, chez built with
+  =llvmPackages_18.stdenv= on darwin, =darwin.libiconv= in
+  platformSpecificInputs for both darwin arches.
+- Key outputs (per system): =packages.compactc= (full compiler build from
+  Scheme source via chez-exe/nanopass, wraps runtime node_modules),
+  =packages.compactc-no-runtime=, =packages.compactc-binary= (bundles zkir +
+  zkir-v3 binaries next to compactc), =packages.zkir-v3-bin=,
+  =packages.runtime= (compact-runtime npm pkg), =packages.test-center=,
+  =packages.compactc-oci=; devShells {default, compiler, runtime, dapp,
+  with-zkir}.
+- Verified: =nix flake show github:LFDT-Minokawa/compact/compactc-v0.31.1=
+  evaluates on aarch64-darwin (tag rev
+  =0da5b0452eb0c1053d42418bf34b12cc29c7d63e=, narHash
+  =sha256-jcGCbKd0TLjhnIp6rDaS5b6jk0Csf3xpTf+4WBlC6Fc==).
+  UNVERIFIED: an actual =nix build .#compactc= on darwin (long chez build;
+  the IOG cache may or may not carry darwin artifacts).
+- No compactc in nixpkgs; no notable community flake found (NixOS users
+  mostly patch the FHS assumptions of the installer:
+  https://docs.midnight.network/troubleshoot/troubleshoot-compact-nixos,
+  https://github.com/midnightntwrk/compact/issues/17).
+
+** Concrete pinning recipes for macOS (darwin)
+
+*** Option A — pin the official flake (build from source)
+#+begin_src nix
+{
+  inputs.compact.url = "github:LFDT-Minokawa/compact/compactc-v0.31.1";
+  # cross-contract-capable prerelease instead:
+  # inputs.compact.url = "github:LFDT-Minokawa/compact/compactc-v0.33.0-rc.2";
+  outputs = { self, nixpkgs, compact, ... }: {
+    # compact.packages.aarch64-darwin.compactc
+    # compact.packages.aarch64-darwin.compactc-binary   # incl. zkir + zkir-v3
+  };
+}
+# nix.conf / nixConfig: add the IOG cache to avoid building chez toolchain:
+#   extra-substituters = https://cache.iog.io
+#   extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+#+end_src
+Locked rev for compactc-v0.31.1: =0da5b0452eb0c1053d42418bf34b12cc29c7d63e=,
+narHash =sha256-jcGCbKd0TLjhnIp6rDaS5b6jk0Csf3xpTf+4WBlC6Fc==.
+
+*** Option B — pin the release binaries (fast, hashes verified 2026-08-13)
+The zips have no top-level dir; unpack with unzip. File-level SRI hashes
+(sha256 of the zip itself, computed from downloads on 2026-08-13):
+- =compactc_v0.31.1_aarch64-darwin.zip=:
+  =sha256-V6+bBEmqlrKQXqPXoXW2tCqzjXJWEqnLLXPrTvJTzOI==
+  (hex =57af9b0449aa96b2905ea3d7a175b6b42ab38d725612a9cb2d73eb4ef253cce2=)
+- =compactc_v0.33.0-rc.2_aarch64-darwin.zip=:
+  =sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I==
+  (hex =35a28009c9a57d20902e4fcfd12f0ca9ea94338208954cf8bcd335652e24f382=)
+
+#+begin_src nix
+{ pkgs, ... }:
+let
+  version = "0.31.1";
+  src = pkgs.fetchurl {
+    url = "https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v${version}/compactc_v${version}_aarch64-darwin.zip";
+    hash = "sha256-V6+bBEmqlrKQXqPXoXW2tCqzjXJWEqnLLXPrTvJTzOI=";
+  };
+in pkgs.stdenvNoCC.mkDerivation {
+  pname = "compactc";
+  inherit version src;
+  nativeBuildInputs = [ pkgs.unzip ];
+  unpackPhase = "unzip $src -d .";
+  installPhase = ''
+    mkdir -p $out/bin
+    install -m755 compactc compactc.bin zkir zkir-v3 fixup-compact format-compact $out/bin/
+  '';
+  # binaries are native mach-O; no autoPatchelf needed on darwin.
+}
+#+end_src
+(x86_64-darwin zips exist too; fetch hashes the same way. macOS Gatekeeper
+quarantine does not apply to nix-fetched files, but the docs note
+right-click-Open workarounds for manual installs:
+https://docs.midnight.network (hello-world guide).)
+
+*** Option C — devtools-managed (not nix-pure)
+Install =compact= CLI from the tar.xz release assets
+(=compact-aarch64-apple-darwin.tar.xz= at
+https://github.com/midnightntwrk/compact/releases/tag/compact-v0.5.1, with
+published .sha256 files) and let it fetch toolchains at runtime. Not
+reproducible; use only for experimentation.
+
+* Misc facts worth remembering
+- compactc is written in Chez Scheme (built via chez-exe + nanopass;
+  =compiler/*.ss=); the devtools CLI is Rust.
+- =compact compile --skip-zk= exists per docs to skip key generation
+  (UNVERIFIED flag name against current usage page; see
+  =doc/compiler-usage.mdx= in the repo).
+- contract-info.json ("compiler/" output dir) carries version numbers and
+  exported circuit signatures; used by tooling and (since 0.23.103) by
+  cross-contract calls: =compiler/manifest-passes=, save-contract-info.
+- A =contract-manifest.json= with file hashes is also emitted (CHANGELOG
+  toolchain 0.32.108).
+- The Compact language spec sources live in
+  =LFDT-Minokawa/compact/specification/= (rendered HTML in-repo);
+  grammar/reference docs in =doc/=.
