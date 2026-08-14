@@ -93,6 +93,31 @@ pub const SWAP_RESPOND_SCHEMA: &[u8] = b"[{\"name\":\"amountIn\",\"type\":\"uint
 /// `exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))`.
 pub const EXACT_OUTPUT_SINGLE_SELECTOR: [u8; 4] = [0x50, 0x23, 0xb4, 0xdf];
 
+/// The ABI word counts of the two calldata shapes the vault signs:
+/// `transfer`/`approve` take (address, uint256), `exactOutputSingle` takes
+/// the seven-field struct.
+pub const VAULT_WORDS: usize = 2;
+pub const SWAP_WORDS: usize = 7;
+
+/// The schema widths ARE the schema literals' lengths, so an event type
+/// and the schema bytes it carries cannot drift apart.
+pub const VAULT_SCHEMA_LEN: usize = VAULT_RESPONSE_SCHEMA.len();
+pub const SWAP_OUTPUT_LEN: usize = SWAP_OUTPUT_SCHEMA.len();
+pub const SWAP_RESPOND_LEN: usize = SWAP_RESPOND_SCHEMA.len();
+
+/// The vault's two Signet event instantiations: the transfer/approve
+/// request recorded in `signBidirectionalEventMap`, and the swap request
+/// recorded in `swapEventMap`.
+pub type VaultEvent<V> =
+    signet::SignBidirectionalEvent<V, VAULT_WORDS, VAULT_SCHEMA_LEN, VAULT_SCHEMA_LEN>;
+pub type SwapEvent<V> =
+    signet::SignBidirectionalEvent<V, SWAP_WORDS, SWAP_OUTPUT_LEN, SWAP_RESPOND_LEN>;
+
+/// The same two records read back out of their maps by the settle
+/// circuits — distinct types, so `refund`'s two branches cannot cross.
+pub type VaultRecord = signet::EventRecord<VAULT_WORDS, VAULT_SCHEMA_LEN, VAULT_SCHEMA_LEN>;
+pub type SwapRecord = signet::EventRecord<SWAP_WORDS, SWAP_OUTPUT_LEN, SWAP_RESPOND_LEN>;
+
 pub use crate::common::secp256k1_point_atoms;
 
 /// `export circuit initialize(vaultEvm, swapRouter, chainId, chainCaip2Id,
@@ -252,7 +277,7 @@ pub fn deposit() -> Compiled3 {
     let word1 = signet::numeric_abi_word(&mut c, amount);
     let selector = c.constant(minocrab::Fr::from_le_bytes(&TRANSFER_SELECTOR).unwrap());
     let two = c.constant(2u64);
-    let calldata = signet::EvmCalldata::<Private, 2> {
+    let calldata = signet::EvmCalldata::<Private, VAULT_WORDS> {
         selector: selector.private(),
         no_words: two.private(),
         words: [word0, word1],
@@ -265,7 +290,7 @@ pub fn deposit() -> Compiled3 {
         EVM_CHAIN_ID,
         vec![AlignmentAtom::Bytes { length: 8 }],
     )[0];
-    let tx_params = signet::EvmType2TxParams::<Private, 2> {
+    let tx_params = signet::EvmType2TxParams::<Private, VAULT_WORDS> {
         chain_id: chain_id.private(),
         nonce: evm_nonce,
         max_priority_fee_per_gas,
@@ -297,8 +322,8 @@ pub fn deposit() -> Compiled3 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
     };
-    let schema = BytesN::<Private, 34>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
-    let request = signet::construct_sign_bidirectional_event(
+    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
         request_nonce.private(),
@@ -508,7 +533,7 @@ pub fn withdraw() -> Compiled3 {
     let word1 = signet::numeric_abi_word(&mut c, amount);
     let selector = c.constant(minocrab::Fr::from_le_bytes(&TRANSFER_SELECTOR).unwrap());
     let two = c.constant(2u64);
-    let calldata = signet::EvmCalldata::<Private, 2> {
+    let calldata = signet::EvmCalldata::<Private, VAULT_WORDS> {
         selector: selector.private(),
         no_words: two.private(),
         words: [word0, word1],
@@ -524,7 +549,7 @@ pub fn withdraw() -> Compiled3 {
     let priority_fee = c.constant(1_000_000_000u64);
     let max_fee = c.constant(30_000_000_000u64);
     let gas = c.constant(100_000u64);
-    let tx_params = signet::EvmType2TxParams::<Private, 2> {
+    let tx_params = signet::EvmType2TxParams::<Private, VAULT_WORDS> {
         chain_id: chain_id.private(),
         nonce: evm_nonce,
         max_priority_fee_per_gas: priority_fee.private(),
@@ -559,8 +584,8 @@ pub fn withdraw() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private, 34>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
-    let request = signet::construct_sign_bidirectional_event(
+    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
         request_nonce.private(),
@@ -713,7 +738,7 @@ pub fn swap() -> Compiled3 {
     };
     let selector = c.constant(minocrab::Fr::from_le_bytes(&EXACT_OUTPUT_SINGLE_SELECTOR).unwrap());
     let seven = c.constant(7u64);
-    let calldata = signet::EvmCalldata::<Private, 7> {
+    let calldata = signet::EvmCalldata::<Private, SWAP_WORDS> {
         selector: selector.private(),
         no_words: seven.private(),
         words: [word0, word1, word2, word3, word4, word5, word6],
@@ -735,7 +760,7 @@ pub fn swap() -> Compiled3 {
     let priority_fee = c.constant(1_000_000_000u64);
     let max_fee = c.constant(30_000_000_000u64);
     let gas = c.constant(700_000u64);
-    let tx_params = signet::EvmType2TxParams::<Private, 7> {
+    let tx_params = signet::EvmType2TxParams::<Private, SWAP_WORDS> {
         chain_id: chain_id.private(),
         nonce: evm_nonce,
         max_priority_fee_per_gas: priority_fee.private(),
@@ -769,9 +794,9 @@ pub fn swap() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let output_schema = BytesN::<Private, 38>::literal(&mut c, SWAP_OUTPUT_SCHEMA);
-    let respond_schema = BytesN::<Private, 37>::literal(&mut c, SWAP_RESPOND_SCHEMA);
-    let request = signet::construct_sign_bidirectional_event(
+    let output_schema = BytesN::<Private, SWAP_OUTPUT_LEN>::literal(&mut c, SWAP_OUTPUT_SCHEMA);
+    let respond_schema = BytesN::<Private, SWAP_RESPOND_LEN>::literal(&mut c, SWAP_RESPOND_SCHEMA);
+    let request: SwapEvent<Private> = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
         request_nonce.private(),
@@ -869,7 +894,7 @@ pub fn approve_router() -> Compiled3 {
     };
     let selector = c.constant(minocrab::Fr::from_le_bytes(&APPROVE_SELECTOR).unwrap());
     let two = c.constant(2u64);
-    let calldata = signet::EvmCalldata::<Private, 2> {
+    let calldata = signet::EvmCalldata::<Private, VAULT_WORDS> {
         selector: selector.private(),
         no_words: two.private(),
         words: [word0, word1],
@@ -886,7 +911,7 @@ pub fn approve_router() -> Compiled3 {
     let max_fee = c.constant(30_000_000_000u64);
     let gas = c.constant(100_000u64);
     let erc20_address = c.disclose(erc20_address, "the approved ERC20");
-    let tx_params = signet::EvmType2TxParams::<Private, 2> {
+    let tx_params = signet::EvmType2TxParams::<Private, VAULT_WORDS> {
         chain_id: chain_id.private(),
         nonce: evm_nonce,
         max_priority_fee_per_gas: priority_fee.private(),
@@ -921,8 +946,8 @@ pub fn approve_router() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private, 34>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
-    let request = signet::construct_sign_bidirectional_event(
+    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
         request_nonce.private(),
@@ -1064,7 +1089,7 @@ fn refund_surrendered_value(
     guard: Wire3<FieldT, Public>,
     request_id: &B32<Public>,
     request_id_val: &LedgerValue,
-    ev: &[Wire3<FieldT, Public>],
+    ev: &VaultRecord,
     mint_nonce: &B32<Public>,
 ) {
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
@@ -1090,17 +1115,14 @@ fn refund_surrendered_value(
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
-    common::assert_if(c, guard, ev[signet::layout::CALLDATA_IS_SOME]);
+    common::assert_if(c, guard, ev.calldata_is_some());
 
     // const amount = abiWordToUint128(calldata.words[1])
-    let word1 = B32 {
-        hi: ev[signet::layout::word_hi(1)],
-        lo: ev[signet::layout::word_lo(1)],
-    };
+    let word1 = ev.word(1);
     let amount = signet::abi_word_to_uint128_guarded(c, guard, &word1);
 
     // Re-mint to the withdrawer's own wallet key.
-    let domain_sep = vault_token_domain_separator(c, ev[signet::layout::TO]);
+    let domain_sep = vault_token_domain_separator(c, ev.to());
     let own_pk = minocrab_std::v3::own_public_key_guarded(c, guard);
     let own_pk = B32 {
         hi: c.disclose(own_pk.hi, "own public key as refund recipient (hi)"),
@@ -1141,13 +1163,13 @@ pub fn complete_withdraw() -> Compiled3 {
     let ev = c.region("event map consume", |c| {
         let pending = map_member(c, one, REFUND_COMMITMENT, &request_id_val);
         c.assert(pending);
-        let ev = map_lookup(
+        let ev = VaultRecord::from_lookup(map_lookup(
             c,
             one,
             SIGN_BIDIRECTIONAL_EVENT_MAP,
             &request_id_val,
-            signet::SignBidirectionalEvent::<Private, 2, 34, 34>::atoms(),
-        );
+            VaultRecord::atoms(),
+        ));
         emit(
             c,
             one,
@@ -1211,13 +1233,13 @@ pub fn complete_swap() -> Compiled3 {
     let ev = c.region("event map consume", |c| {
         let pending = map_member(c, one, SWAP_REFUND_COMMITMENT, &request_id_val);
         c.assert(pending);
-        let ev = map_lookup(
+        let ev = SwapRecord::from_lookup(map_lookup(
             c,
             one,
             SWAP_EVENT_MAP,
             &request_id_val,
-            signet::SignBidirectionalEvent::<Private, 7, 38, 37>::atoms(),
-        );
+            SwapRecord::atoms(),
+        ));
         emit(c, one, &map_remove(SWAP_EVENT_MAP, &request_id_val));
         ev
     });
@@ -1245,7 +1267,7 @@ pub fn complete_swap() -> Compiled3 {
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
-    c.assert(ev[signet::layout::CALLDATA_IS_SOME]);
+    c.assert(ev.calldata_is_some());
     let recipient = minocrab_std::v3::own_public_key(&mut c);
     let recipient = B32 {
         hi: c.disclose(recipient.hi, "own public key as swap recipient (hi)"),
@@ -1253,15 +1275,9 @@ pub fn complete_swap() -> Compiled3 {
     };
 
     // Mint the EXACT amountOut of tokenOut: word 4 of tokenOut (word 1).
-    let word4 = B32 {
-        hi: ev[signet::layout::word_hi(4)],
-        lo: ev[signet::layout::word_lo(4)],
-    };
+    let word4 = ev.word(4);
     let amount_out = signet::abi_word_to_uint128(&mut c, &word4);
-    let word1 = B32 {
-        hi: ev[signet::layout::word_hi(1)],
-        lo: ev[signet::layout::word_lo(1)],
-    };
+    let word1 = ev.word(1);
     let token_out = signet::abi_word_low20(&mut c, &word1);
     let ds_out = vault_token_domain_separator(&mut c, token_out);
     let mint_nonce = B32 {
@@ -1273,20 +1289,14 @@ pub fn complete_swap() -> Compiled3 {
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
     let amount_in = c.disclose(output[0], "attested amountIn spent");
-    let word5 = B32 {
-        hi: ev[signet::layout::word_hi(5)],
-        lo: ev[signet::layout::word_lo(5)],
-    };
+    let word5 = ev.word(5);
     let amount_in_max = signet::abi_word_to_uint128(&mut c, &word5);
     let overspent = c.less_than(amount_in_max, amount_in, 128);
     let ok = c.not(overspent);
     c.assert(ok);
     let neg_in = c.neg(amount_in);
     let change = c.add(amount_in_max, neg_in);
-    let word0 = B32 {
-        hi: ev[signet::layout::word_hi(0)],
-        lo: ev[signet::layout::word_lo(0)],
-    };
+    let word0 = ev.word(0);
     let token_in = signet::abi_word_low20(&mut c, &word0);
     let ds_in = vault_token_domain_separator(&mut c, token_in);
     // changeNonce = persistentHash([mintNonce, pad(32, "change")])
@@ -1355,13 +1365,13 @@ pub fn refund() -> Compiled3 {
 
     // Withdrawal branch: completeWithdraw's failure path verbatim.
     let ev = c.region("event map consume", |c| {
-        let ev = minocrab_ledger::map_lookup_guarded(
+        let ev = VaultRecord::from_lookup(minocrab_ledger::map_lookup_guarded(
             c,
             is_withdrawal,
             SIGN_BIDIRECTIONAL_EVENT_MAP,
             &request_id_val,
-            signet::SignBidirectionalEvent::<Private, 2, 34, 34>::atoms(),
-        );
+            VaultRecord::atoms(),
+        ));
         emit(
             c,
             is_withdrawal,
@@ -1393,13 +1403,13 @@ pub fn refund() -> Compiled3 {
             &request_id_val,
         );
         common::assert_if(c, swapping, swap_pending);
-        let ev7 = minocrab_ledger::map_lookup_guarded(
+        let ev7 = SwapRecord::from_lookup(minocrab_ledger::map_lookup_guarded(
             c,
             swapping,
             SWAP_EVENT_MAP,
             &request_id_val,
-            signet::SignBidirectionalEvent::<Private, 7, 38, 37>::atoms(),
-        );
+            SwapRecord::atoms(),
+        ));
         emit(
             c,
             swapping,
@@ -1431,16 +1441,10 @@ pub fn refund() -> Compiled3 {
             &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
         );
     });
-    common::assert_if(&mut c, swapping, ev7[signet::layout::CALLDATA_IS_SOME]);
-    let word5 = B32 {
-        hi: ev7[signet::layout::word_hi(5)],
-        lo: ev7[signet::layout::word_lo(5)],
-    };
+    common::assert_if(&mut c, swapping, ev7.calldata_is_some());
+    let word5 = ev7.word(5);
     let amount_in_max = signet::abi_word_to_uint128_guarded(&mut c, swapping, &word5);
-    let word0 = B32 {
-        hi: ev7[signet::layout::word_hi(0)],
-        lo: ev7[signet::layout::word_lo(0)],
-    };
+    let word0 = ev7.word(0);
     let token_in = signet::abi_word_low20(&mut c, &word0);
     let ds_in = vault_token_domain_separator(&mut c, token_in);
     let own_pk = minocrab_std::v3::own_public_key_guarded(&mut c, swapping);
@@ -1560,13 +1564,13 @@ pub fn claim() -> Compiled3 {
     let ev = c.region("event map consume", |c| {
         let found = map_member(c, one, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
         c.assert(found);
-        let ev = map_lookup(
+        let ev = VaultRecord::from_lookup(map_lookup(
             c,
             one,
             SIGN_BIDIRECTIONAL_EVENT_MAP,
             &request_id_val,
-            signet::SignBidirectionalEvent::<Private, 2, 34, 34>::atoms(),
-        );
+            VaultRecord::atoms(),
+        ));
         emit(
             c,
             one,
@@ -1579,24 +1583,22 @@ pub fn claim() -> Compiled3 {
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
         let caller = common::commitment(c, USER_PAD, &sk);
-        let eq_hi = c.test_eq(caller.hi, ev[signet::layout::PATH].private());
-        let eq_lo = c.test_eq(caller.lo, ev[signet::layout::PATH + 1].private());
+        let path = ev.path();
+        let eq_hi = c.test_eq(caller.hi, path.hi.private());
+        let eq_lo = c.test_eq(caller.lo, path.lo.private());
         let is_depositor = c.mul(eq_hi, eq_lo);
         c.assert(is_depositor);
     });
 
     // assert(request.txParams.calldata.is_some)
-    c.assert(ev[signet::layout::CALLDATA_IS_SOME]);
+    c.assert(ev.calldata_is_some());
 
     // const amount = abiWordToUint128(calldata.words[1])
-    let word1 = B32 {
-        hi: ev[signet::layout::word_hi(1)],
-        lo: ev[signet::layout::word_lo(1)],
-    };
+    let word1 = ev.word(1);
     let amount = signet::abi_word_to_uint128(&mut c, &word1);
 
     // const domainSep = vaultTokenDomainSeparator(request.txParams.to)
-    let domain_sep = vault_token_domain_separator(&mut c, ev[signet::layout::TO]);
+    let domain_sep = vault_token_domain_separator(&mut c, ev.to());
 
     // const claimRecipient = disclose(recipient).is_some
     //   ? disclose(recipient).value : left(ownPublicKey())
