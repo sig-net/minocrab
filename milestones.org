@@ -233,7 +233,7 @@ is ranked by region-attributed instruction share (notes/benchmark.org).
 Driven by M6's cost profiles; every change re-measured with the M6 harness.
 - [ ] Const-generic circuit families, monomorphized per size/depth, unrolled by
       rustc.
-- [ ] Optimisation passes at the IR layer; measure with the M3 profiler against
+- [X] Optimisation passes at the IR layer; measure with the M3 profiler against
       compactc's output (RAM + proving-cost proxies).
       (Pass 1 DONE 2026-08-15 — native-instruction byte plumbing: ZKIR's
       ReverseBytes (~150 rows) replaces the mirrored explode/rebuild
@@ -252,9 +252,16 @@ Driven by M6's cost profiles; every change re-measured with the M6 harness.
       PI-coupled or real crypto — lowering-level work here is done;
       what's left of M7 is const-generic families + the write-up.
       Guard: refund/completeSwap sit ~300-450 rows under 2^16.)
-- [ ] Refresh the M6 benchmark and produce the presentable write-up
+- [X] Refresh the M6 benchmark and produce the presentable write-up
       (methodology, numbers, where the wins come from; honest about any
       losses — baseline parity vs optimised deltas cleanly attributed).
+      (BENCHMARK.md at the repo root, from a fresh single-session
+      24-cell run 2026-08-15: rows -18..-38% vault / -97.5% singleton,
+      8 of 12 circuits at least one k lower, prove -46..-51% on the
+      vault k-crossers and -95..-97% singleton, honest same-k rows
+      (deposit/withdraw ~0% prove despite -19..-35% rows — cost is the
+      padded 2^k) and initialize parity. notes/benchmark.org holds the
+      working history; baseline cells in results.jsonl.m6-baseline.)
 Exit criteria: a benchmark report you can present, reproducible from a clean
 checkout, with measurable wins over compactc and the correctness harness
 still green.

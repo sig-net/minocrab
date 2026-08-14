@@ -220,3 +220,14 @@ over k=14; refund 65,231 / completeSwap 65,071 sit ~300-450 under
 2^16 (PROTECT). M7's remaining bullets: const-generic circuit
 families, and the refreshed-benchmark write-up (full same-session
 re-run of all 24 cells for publication numbers).
+
+* M7 final run (2026-08-15): all 24 cells, one session
+Full fresh re-run after passes 1+2; presentable write-up at
+/BENCHMARK.md (repo root), raw data target/bench/. Same-session prove
+deltas are the honest ones: -46..-51% on the five k-crossing vault
+circuits, -37% approveRouter (k 14 vs 15), -95.7..-97.4% singleton,
+and ~0% where k is equal despite -19..-35% rows (deposit, withdraw:
+proving is dominated by the padded 2^k size, so row cuts pay at
+boundary crossings — this framing is in the write-up). initialize
+exact parity by construction. Baseline cells preserved in
+results.jsonl.m6-baseline for the baseline-vs-optimised attribution.

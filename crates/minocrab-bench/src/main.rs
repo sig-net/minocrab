@@ -332,7 +332,7 @@ fn write_profiles(out_dir: &std::path::Path) -> Result<()> {
 fn render_report(results: &[Measurement]) -> String {
     use std::fmt::Write;
     let mut s = String::new();
-    writeln!(s, "# M6 baseline: MinoCrab vs compactc (same preimage per circuit)\n").unwrap();
+    writeln!(s, "# MinoCrab vs compactc (same preimage per circuit)\n").unwrap();
     writeln!(
         s,
         "| circuit | side | k | rows | keygen (s) | prove (s) | verify (s) | proof (B) | peak RSS (MB) |"
