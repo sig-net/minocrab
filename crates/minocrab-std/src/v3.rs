@@ -157,6 +157,13 @@ const fn limb_len(len: usize, i: usize) -> usize {
     }
 }
 
+/// The FAB limb count of a `Bytes<len>` — the limbing rule as a `const fn`,
+/// so layouts that embed a `Bytes<len>` field ([`BytesN::LIMBS`], the Signet
+/// event record) derive their widths from it instead of counting by hand.
+pub const fn bytes_limbs(len: usize) -> usize {
+    len.div_ceil(31)
+}
+
 /// Bytes per limb of a `Bytes<len>`, slot order.
 fn limb_lens(len: usize) -> Vec<usize> {
     assert!(len > 31, "use B32 / a single limb for short byte strings");
@@ -177,7 +184,7 @@ pub struct BytesN<V: Vis3, const N: usize> {
 
 impl<V: Vis3, const N: usize> BytesN<V, N> {
     /// The FAB limb count.
-    pub const LIMBS: usize = N.div_ceil(31);
+    pub const LIMBS: usize = bytes_limbs(N);
 
     /// Bytes in limb `i`, slot order (limb 0 is the leftover chunk).
     pub const fn limb_len(i: usize) -> usize {
