@@ -457,10 +457,42 @@ comes from real-Op =field_repr=; upstream =check()= accepts both. This
 is the M3 differential-testing criterion working on a real
 ledger-writing contract.
 
-Still to build here: read shapes (dup/idx[c]/popeq[c] + the kernel
-self/context paths), Map member/lookup/rem, MerkleTree ops, log/events,
-the zswap/kernel effects ops (mint), and the ledger-declaration DSL that
-assigns field indices and picks op sequences automatically.
+READ SHAPES (added 2026-08-14): a read = =public_input= gates (one per
+FAB limb, minted before the op's impact instructions,
+reduce-to-zkir.ss:620-633) + the op's impact stream whose trailing
+=popeq[c]= embeds those same wires. Implemented per midnight-ledger.ss
+vm-code: =cell_read= (dup 0; idx; popeq — BOTH uncached, :547-551),
+=counter_read= (…popeqc — cached even on first access, :590-594),
+=counter_less_than= (:595), =map_member= (push key; member; popeqc,
+:734), =map_lookup= (idx by dynamic key; popeq uncached, :741),
+=map_size=/=map_is_empty= (:728/:720), =kernel_self= (dup 2; idxc [0];
+popeqc, :256). Read builders take =&mut Circuit3= and return the
+witnessed wires (Public). =idx_key= splices wire-valued keys into an
+idx path (Key::Value = AlignedValue::field_repr).
+
+Reference-preimage recipe for reads (see the differential tests):
+=public_transcript_outputs= = value-only reprs of the popeq results in
+read order — =ValueReprAlignedValue(av).field_repr= writes exactly
+that; =Alignment::parse_field_repr(&limbs)= (AlignmentExt,
+transient-crypto) builds an AlignedValue from Fr limbs (e.g. the
+Secp256k1Point cell value from =encode='s 5 natives); off-circuit
+=persistentHash= = SHA-256 over
+=ValueReprAlignedValue(av).binary_repr= bytes (ir_vm.rs:478-505).
+
+ACCEPTANCE #2 (minocrab-contracts): =test-caller-contract/initialise=
+and =erc20-vault/initialize= (the M7 target's setup circuit) rebuilt
+and call-compatible per §6 — Counter.read + Cell.read(Bytes<32>) +
+increment + Cell writes incl. a 5-atom Secp256k1Point (b24/b8/b24/b8/
+field, spliced from =encode=). Both reject the same guard failures as
+the corpus artifacts (already-initialised, wrong deployer sk, and for
+the vault zero chain-id / zero router).
+
+Still to build here: Map member/lookup differentials (shapes exist,
+no corpus circuit isolates them — first exercised by erc20-vault
+deposit/claim), Map rem, MerkleTree ops, log/events, the zswap/kernel
+effects ops (mint), conditional (guarded) reads, and the
+ledger-declaration DSL that assigns field indices and picks op
+sequences automatically.
 
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3

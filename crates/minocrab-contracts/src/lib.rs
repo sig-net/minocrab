@@ -7,3 +7,6 @@
 //! shared preimage).
 
 pub mod attest;
+pub mod common;
+pub mod erc20_vault;
+pub mod test_caller;

@@ -38,6 +38,22 @@ pub struct B32<V: Vis3> {
     pub lo: Wire3<FieldT, V>,
 }
 
+impl B32<Public> {
+    /// `pad(32, s)` as a constant pair: the string's bytes occupy bytes
+    /// 0.., the rest is zero (the stdlib pad builtin's layout, confirmed
+    /// against compactc's inline literals, e.g. test-caller-contract
+    /// initialise's `"signet-caller:deployer:"`).
+    pub fn pad(c: &mut Circuit3, s: &str) -> B32<Public> {
+        assert!(s.len() <= 32, "pad(32, ..) literal longer than 32 bytes");
+        let mut bytes = [0u8; 32];
+        bytes[..s.len()].copy_from_slice(s.as_bytes());
+        B32 {
+            hi: c.constant(minocrab::Fr::from(u64::from(bytes[31]))),
+            lo: c.constant(minocrab::Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")),
+        }
+    }
+}
+
 impl<V: Vis3> B32<V> {
     /// Constrain a `Bytes<32>` entering the circuit (8/248 bits).
     pub fn constrain_input(self, c: &mut Circuit3) {
