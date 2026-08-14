@@ -201,26 +201,28 @@ pub fn construct_sign_bidirectional_event<V: Vis3>(
     output_deserialization_schema: BytesN<V>,
     respond_serialization_schema: BytesN<V>,
 ) -> SignBidirectionalEvent<V> {
-    let zero = V::from_public(c.constant(0u64));
-    let is_zero = c.test_eq(key_version, zero);
-    let nonzero = c.not(is_zero);
-    c.assert(nonzero);
+    c.region("signet: event assembly", |c| {
+        let zero = V::from_public(c.constant(0u64));
+        let is_zero = c.test_eq(key_version, zero);
+        let nonzero = c.not(is_zero);
+        c.assert(nonzero);
 
-    let params = BytesN::new(64, vec![zero, zero, zero]); // pad(64, "")
-    SignBidirectionalEvent {
-        sender,
-        request_nonce,
-        key_version,
-        path,
-        algo: zero, // MPCSignatureAlgorithm.ecdsa
-        dest: zero, // MPCDestination.unused
-        params,
-        tx_param_type: zero, // TxParamType.evmType2
-        tx_params,
-        caip2_id,
-        output_deserialization_schema,
-        respond_serialization_schema,
-    }
+        let params = BytesN::new(64, vec![zero, zero, zero]); // pad(64, "")
+        SignBidirectionalEvent {
+            sender,
+            request_nonce,
+            key_version,
+            path,
+            algo: zero, // MPCSignatureAlgorithm.ecdsa
+            dest: zero, // MPCDestination.unused
+            params,
+            tx_param_type: zero, // TxParamType.evmType2
+            tx_params,
+            caip2_id,
+            output_deserialization_schema,
+            respond_serialization_schema,
+        }
+    })
 }
 
 /// `calculateRequestId(request)` — `keccak256` of the whole record in its
@@ -231,16 +233,18 @@ pub fn calculate_request_id<V: Vis3>(
     len_out: u32,
     len_respond: u32,
 ) -> B32<V> {
-    let alignment = Alignment(
-        request
-            .atoms(len_out, len_respond)
-            .into_iter()
-            .map(|a| AlignmentSegment::Atom(a))
-            .collect(),
-    );
-    let limbs: Vec<_> = request.limbs().iter().map(|w| w.erase()).collect();
-    let digest = c.keccak256(alignment, &limbs);
-    B32::from_typed(c, digest)
+    c.region("signet: request id (keccak)", |c| {
+        let alignment = Alignment(
+            request
+                .atoms(len_out, len_respond)
+                .into_iter()
+                .map(|a| AlignmentSegment::Atom(a))
+                .collect(),
+        );
+        let limbs: Vec<_> = request.limbs().iter().map(|w| w.erase()).collect();
+        let digest = c.keccak256(alignment, &limbs);
+        B32::from_typed(c, digest)
+    })
 }
 
 // ---- notification -----------------------------------------------------------
@@ -256,15 +260,17 @@ pub fn construct_notification_v1<V: Vis3>(
     requests_path_depth: u8,
     requests_path: [u8; 4],
 ) -> (Wire3<FieldT, V>, BytesN<V>) {
-    let version = V::from_public(c.constant(1u64));
-    let mut bytes: Vec<Wire3<FieldT, V>> = b32_to_bytes(c, caller_address);
-    bytes.push(V::from_public(c.constant(u64::from(requests_path_depth))));
-    for p in requests_path {
-        bytes.push(V::from_public(c.constant(u64::from(p))));
-    }
-    let zero = V::from_public(c.constant(0u64));
-    bytes.resize(128, zero); // ...default<Bytes<91>>
-    (version, BytesN::from_le_bytes(c, &bytes))
+    c.region("signet: notification", |c| {
+        let version = V::from_public(c.constant(1u64));
+        let mut bytes: Vec<Wire3<FieldT, V>> = b32_to_bytes(c, caller_address);
+        bytes.push(V::from_public(c.constant(u64::from(requests_path_depth))));
+        for p in requests_path {
+            bytes.push(V::from_public(c.constant(u64::from(p))));
+        }
+        let zero = V::from_public(c.constant(0u64));
+        bytes.resize(128, zero); // ...default<Bytes<91>>
+        (version, BytesN::from_le_bytes(c, &bytes))
+    })
 }
 
 // ---- attestation verify -----------------------------------------------------
@@ -279,11 +285,13 @@ pub fn calculate_attestation_digest<V: Vis3>(
     output_limbs: &[Wire3<FieldT, V>],
     len_output: u32,
 ) -> B32<V> {
-    let alignment = Alignment(vec![atom(32), atom(len_output)]);
-    let mut limbs = vec![request_id.hi.erase(), request_id.lo.erase()];
-    limbs.extend(output_limbs.iter().map(|w| w.erase()));
-    let digest = c.keccak256(alignment, &limbs);
-    B32::from_typed(c, digest)
+    c.region("signet: attestation digest (keccak)", |c| {
+        let alignment = Alignment(vec![atom(32), atom(len_output)]);
+        let mut limbs = vec![request_id.hi.erase(), request_id.lo.erase()];
+        limbs.extend(output_limbs.iter().map(|w| w.erase()));
+        let digest = c.keccak256(alignment, &limbs);
+        B32::from_typed(c, digest)
+    })
 }
 
 /// `reverseBytes32(b)` — byte-order adapter (stored records are
@@ -308,15 +316,17 @@ pub fn verify_respond_bidirectional_event<V: Vis3>(
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     let digest = calculate_attestation_digest(c, request_id, output_limbs, len_output);
-    let r_le = reverse_bytes32(c, big_r_x);
-    let s_le = reverse_bytes32(c, s);
-    let r_typed = r_le.to_typed(c);
-    let s_typed = s_le.to_typed(c);
-    let sig = Secp256k1EcdsaSignature {
-        r: c.from_bytes32(r_typed),
-        s: c.from_bytes32(s_typed),
-    };
-    secp256k1_ecdsa_verify(c, &digest, &sig, mpc_response_key)
+    c.region("signet: attestation verify (ecdsa)", |c| {
+        let r_le = reverse_bytes32(c, big_r_x);
+        let s_le = reverse_bytes32(c, s);
+        let r_typed = r_le.to_typed(c);
+        let s_typed = s_le.to_typed(c);
+        let sig = Secp256k1EcdsaSignature {
+            r: c.from_bytes32(r_typed),
+            s: c.from_bytes32(s_typed),
+        };
+        secp256k1_ecdsa_verify(c, &digest, &sig, mpc_response_key)
+    })
 }
 
 // ---- ABI calldata word utilities --------------------------------------------
@@ -324,21 +334,25 @@ pub fn verify_respond_bidirectional_event<V: Vis3>(
 /// `evmAddressAbiWord(addr)` — 12 zero bytes then the 20 display-order
 /// address bytes. `addr` is the `Bytes<20>` single limb.
 pub fn evm_address_abi_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V> {
-    let addr_bytes = explode_limb(c, addr, 20);
-    let zero = V::from_public(c.constant(0u64));
-    let mut bytes = vec![zero; 12];
-    bytes.extend(addr_bytes);
-    bytes_to_b32(c, &bytes)
+    c.region("abi words", |c| {
+        let addr_bytes = explode_limb(c, addr, 20);
+        let zero = V::from_public(c.constant(0u64));
+        let mut bytes = vec![zero; 12];
+        bytes.extend(addr_bytes);
+        bytes_to_b32(c, &bytes)
+    })
 }
 
 /// `numericAbiWord(value)` — the `Uint<128>` as a 32-byte big-endian
 /// integer: 16 zero bytes then the value's 16 LE bytes reversed.
 pub fn numeric_abi_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V> {
-    let le = explode_limb(c, value, 16);
-    let zero = V::from_public(c.constant(0u64));
-    let mut bytes = vec![zero; 16];
-    bytes.extend(le.into_iter().rev());
-    bytes_to_b32(c, &bytes)
+    c.region("abi words", |c| {
+        let le = explode_limb(c, value, 16);
+        let zero = V::from_public(c.constant(0u64));
+        let mut bytes = vec![zero; 16];
+        bytes.extend(le.into_iter().rev());
+        bytes_to_b32(c, &bytes)
+    })
 }
 
 /// `abiWordToUint128(word)` — asserts the leading 16 bytes are zero and
@@ -362,35 +376,39 @@ fn abi_word_to_uint128_with<V: Vis3>(
     guard: Option<Wire3<FieldT, V>>,
     word: &B32<V>,
 ) -> Wire3<FieldT, V> {
-    let bytes = b32_to_bytes(c, word);
-    // assert(slice<16>(word, 0) as Field == 0)
-    let head = rebuild_limb(c, &bytes[..16]);
-    let zero = V::from_public(c.constant(0u64));
-    let head_zero = c.test_eq(head, zero);
-    match guard {
-        Some(g) => {
-            let one = V::from_public(c.constant(1u64));
-            let gated = c.cond_select(g, head_zero, one);
-            c.assert(gated);
+    c.region("abi words", |c| {
+        let bytes = b32_to_bytes(c, word);
+        // assert(slice<16>(word, 0) as Field == 0)
+        let head = rebuild_limb(c, &bytes[..16]);
+        let zero = V::from_public(c.constant(0u64));
+        let head_zero = c.test_eq(head, zero);
+        match guard {
+            Some(g) => {
+                let one = V::from_public(c.constant(1u64));
+                let gated = c.cond_select(g, head_zero, one);
+                c.assert(gated);
+            }
+            None => c.assert(head_zero),
         }
-        None => c.assert(head_zero),
-    }
-    // Big-endian fold of bytes 16..31.
-    let byte_base = V::from_public(c.constant(256u64));
-    let mut acc = bytes[16];
-    for &b in &bytes[17..32] {
-        let shifted = c.mul(acc, byte_base);
-        acc = c.add(shifted, b);
-    }
-    acc
+        // Big-endian fold of bytes 16..31.
+        let byte_base = V::from_public(c.constant(256u64));
+        let mut acc = bytes[16];
+        for &b in &bytes[17..32] {
+            let shifted = c.mul(acc, byte_base);
+            acc = c.add(shifted, b);
+        }
+        acc
+    })
 }
 
 /// `slice<20>(word, 12)` — the low 20 bytes of an ABI word as the
 /// `Bytes<20>` single limb (the vault reads token addresses back out of
 /// stored calldata words).
 pub fn abi_word_low20<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT, V> {
-    let bytes = b32_to_bytes(c, word);
-    rebuild_limb(c, &bytes[12..32])
+    c.region("abi words", |c| {
+        let bytes = b32_to_bytes(c, word);
+        rebuild_limb(c, &bytes[12..32])
+    })
 }
 
 #[cfg(test)]

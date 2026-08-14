@@ -27,21 +27,23 @@ pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
 /// The identity commitment both contracts derive:
 /// `persistentHash<Vector<2, Bytes<32>>>([pad(32, prefix), sk])`.
 pub fn commitment(c: &mut Circuit3, prefix: &str, sk: &B32<Private>) -> B32<Private> {
-    let pad = B32::pad(c, prefix);
-    let alignment = Alignment(vec![
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-    ]);
-    let digest = c.persistent_hash(
-        alignment,
-        &[
-            pad.hi.private().erase(),
-            pad.lo.private().erase(),
-            sk.hi.erase(),
-            sk.lo.erase(),
-        ],
-    );
-    B32::from_typed(c, digest)
+    c.region("identity commitment", |c| {
+        let pad = B32::pad(c, prefix);
+        let alignment = Alignment(vec![
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+        ]);
+        let digest = c.persistent_hash(
+            alignment,
+            &[
+                pad.hi.private().erase(),
+                pad.lo.private().erase(),
+                sk.hi.erase(),
+                sk.lo.erase(),
+            ],
+        );
+        B32::from_typed(c, digest)
+    })
 }
 
 /// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
@@ -80,9 +82,11 @@ pub fn receive_shielded(
     guard: Wire3<FieldT, Public>,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
-    let recipient = self_recipient(c, guard);
-    let cm = coin_commitment(c, coin, &recipient);
-    emit(c, guard, &kernel_claim_zswap_coin_receive(&b32_value(&cm)));
+    c.region("coin: receive", |c| {
+        let recipient = self_recipient(c, guard);
+        let cm = coin_commitment(c, coin, &recipient);
+        emit(c, guard, &kernel_claim_zswap_coin_receive(&b32_value(&cm)));
+    });
 }
 
 /// `<field>.writeCoin(coin, right(kernel.self()))` on a top-level
@@ -96,23 +100,25 @@ pub fn write_coin_to_self(
     field: u8,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
-    let recipient = self_recipient(c, guard);
-    let cm = coin_commitment(c, coin, &recipient);
-    let coin_val = LedgerValue::new(
-        vec![
-            AlignmentAtom::Bytes { length: 32 },
-            AlignmentAtom::Bytes { length: 32 },
-            AlignmentAtom::Bytes { length: 16 },
-        ],
-        vec![
-            ImpactElem::Wire(coin.nonce.hi),
-            ImpactElem::Wire(coin.nonce.lo),
-            ImpactElem::Wire(coin.color.hi),
-            ImpactElem::Wire(coin.color.lo),
-            ImpactElem::Wire(coin.value),
-        ],
-    );
-    emit(c, guard, &cell_write_coin(field, &b32_value(&cm), &coin_val));
+    c.region("coin: write", |c| {
+        let recipient = self_recipient(c, guard);
+        let cm = coin_commitment(c, coin, &recipient);
+        let coin_val = LedgerValue::new(
+            vec![
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Bytes { length: 16 },
+            ],
+            vec![
+                ImpactElem::Wire(coin.nonce.hi),
+                ImpactElem::Wire(coin.nonce.lo),
+                ImpactElem::Wire(coin.color.hi),
+                ImpactElem::Wire(coin.color.lo),
+                ImpactElem::Wire(coin.value),
+            ],
+        );
+        emit(c, guard, &cell_write_coin(field, &b32_value(&cm), &coin_val));
+    });
 }
 
 /// `Cell<Secp256k1Point>.read()` of a top-level field: the gate is a
@@ -155,36 +161,38 @@ pub fn mint_shielded_token(
     nonce: &B32<Public>,
     recipient: &CoinRecipient<Public>,
 ) {
-    // color = tokenType(domain_sep, kernel.self())
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
-    let color = token_type(c, domain_sep, &me);
+    c.region("coin: mint", |c| {
+        // color = tokenType(domain_sep, kernel.self())
+        let me = kernel_self(c, one);
+        let me = B32 { hi: me[0], lo: me[1] };
+        let color = token_type(c, domain_sep, &me);
 
-    // kernel.mintShielded(domain_sep, value)
-    let ds_val = b32_value(domain_sep);
-    let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
-    emit(c, one, &kernel_mint_shielded(&ds_val, &amount_val));
+        // kernel.mintShielded(domain_sep, value)
+        let ds_val = b32_value(domain_sep);
+        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
+        emit(c, one, &kernel_mint_shielded(&ds_val, &amount_val));
 
-    // cm = coinCommitment({nonce, color, value}, recipient)
-    let coin = ShieldedCoinInfo3 {
-        nonce: *nonce,
-        color,
-        value,
-    };
-    let cm = coin_commitment(c, &coin, recipient);
-    let cm_val = b32_value(&cm);
+        // cm = coinCommitment({nonce, color, value}, recipient)
+        let coin = ShieldedCoinInfo3 {
+            nonce: *nonce,
+            color,
+            value,
+        };
+        let cm = coin_commitment(c, &coin, recipient);
+        let cm_val = b32_value(&cm);
 
-    // kernel.claimZswapCoinSpend(cm)
-    emit(c, one, &kernel_claim_zswap_coin_spend(&cm_val));
+        // kernel.claimZswapCoinSpend(cm)
+        emit(c, one, &kernel_claim_zswap_coin_spend(&cm_val));
 
-    // Auto-receive when minting to this contract itself.
-    let not_left = c.not(recipient.is_left);
-    let self2 = kernel_self_guarded(c, not_left);
-    let eq_hi = c.test_eq(recipient.right.hi, self2[0]);
-    let eq_lo = c.test_eq(recipient.right.lo, self2[1]);
-    let eq = c.mul(eq_hi, eq_lo);
-    let receive = c.mul(not_left, eq);
-    emit(c, receive, &kernel_claim_zswap_coin_receive(&cm_val));
+        // Auto-receive when minting to this contract itself.
+        let not_left = c.not(recipient.is_left);
+        let self2 = kernel_self_guarded(c, not_left);
+        let eq_hi = c.test_eq(recipient.right.hi, self2[0]);
+        let eq_lo = c.test_eq(recipient.right.lo, self2[1]);
+        let eq = c.mul(eq_hi, eq_lo);
+        let receive = c.mul(not_left, eq);
+        emit(c, receive, &kernel_claim_zswap_coin_receive(&cm_val));
+    });
 }
 
 /// `sendImmediateShielded(coin, shieldedBurnAddress(), coin.value)` as
@@ -199,35 +207,37 @@ pub fn burn_coin(
     one: Wire3<FieldT, Public>,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
-    // const selfAddr = kernel.self(); claimZswapNullifier(coinNullifier(...))
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
-    let nul = coin_nullifier_contract(c, coin, &me);
-    emit(c, one, &kernel_claim_zswap_nullifier(&b32_value(&nul)));
+    c.region("coin: burn", |c| {
+        // const selfAddr = kernel.self(); claimZswapNullifier(coinNullifier(...))
+        let me = kernel_self(c, one);
+        let me = B32 { hi: me[0], lo: me[1] };
+        let nul = coin_nullifier_contract(c, coin, &me);
+        emit(c, one, &kernel_claim_zswap_nullifier(&b32_value(&nul)));
 
-    // nonce' = upgradeFromTransient(transientHash([
-    //   "midnight:kernel:nonce_evolve" as Field, degradeToTransient(nonce)
-    // ])) — degrade takes the low limb; upgrade is [hi: 0, lo: mod 2^248].
-    let tag = c.constant(
-        minocrab::Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
-    );
-    let evolved = c.transient_hash(&[tag, coin.nonce.lo]);
-    let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
-    let zero = c.constant(0u64);
-    let output = ShieldedCoinInfo3 {
-        nonce: B32 { hi: zero, lo },
-        color: coin.color,
-        value: coin.value,
-    };
+        // nonce' = upgradeFromTransient(transientHash([
+        //   "midnight:kernel:nonce_evolve" as Field, degradeToTransient(nonce)
+        // ])) — degrade takes the low limb; upgrade is [hi: 0, lo: mod 2^248].
+        let tag = c.constant(
+            minocrab::Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
+        );
+        let evolved = c.transient_hash(&[tag, coin.nonce.lo]);
+        let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
+        let zero = c.constant(0u64);
+        let output = ShieldedCoinInfo3 {
+            nonce: B32 { hi: zero, lo },
+            color: coin.color,
+            value: coin.value,
+        };
 
-    // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
-    let burn = CoinRecipient {
-        is_left: one,
-        left: B32 { hi: zero, lo: zero },
-        right: B32 { hi: zero, lo: zero },
-    };
-    let cm = coin_commitment(c, &output, &burn);
-    emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
+        // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
+        let burn = CoinRecipient {
+            is_left: one,
+            left: B32 { hi: zero, lo: zero },
+            right: B32 { hi: zero, lo: zero },
+        };
+        let cm = coin_commitment(c, &output, &burn);
+        emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
+    });
 }
 
 /// [`witness_sk`] under a branch guard.
@@ -267,26 +277,28 @@ fn mint_to_key_body(
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
-    let color = token_type(c, domain_sep, &me);
+    c.region("coin: mint", |c| {
+        let color = token_type(c, domain_sep, &me);
 
-    let ds_val = b32_value(domain_sep);
-    let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
-    emit(c, guard, &kernel_mint_shielded(&ds_val, &amount_val));
+        let ds_val = b32_value(domain_sep);
+        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
+        emit(c, guard, &kernel_mint_shielded(&ds_val, &amount_val));
 
-    let one = c.constant(1u64);
-    let zero = c.constant(0u64);
-    let coin = ShieldedCoinInfo3 {
-        nonce: *nonce,
-        color,
-        value,
-    };
-    let left = CoinRecipient {
-        is_left: one,
-        left: *pk,
-        right: B32 { hi: zero, lo: zero },
-    };
-    let cm = coin_commitment(c, &coin, &left);
-    emit(c, guard, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
+        let one = c.constant(1u64);
+        let zero = c.constant(0u64);
+        let coin = ShieldedCoinInfo3 {
+            nonce: *nonce,
+            color,
+            value,
+        };
+        let left = CoinRecipient {
+            is_left: one,
+            left: *pk,
+            right: B32 { hi: zero, lo: zero },
+        };
+        let cm = coin_commitment(c, &coin, &left);
+        emit(c, guard, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
+    });
 }
 
 /// `mintShieldedToken(domain_sep, value, nonce, left(pk))` straight-line

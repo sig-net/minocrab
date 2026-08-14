@@ -17,48 +17,88 @@
   =~/.cache/midnight/zk-params= and warmed before timing.
 - Outputs: =target/bench/results.json=, =report.md=, and per-region
   MinoCrab cost profiles under =profiles/= (minocrab-sim's v3 profiler).
-- Caveats: single iteration per cell (proving variance is small relative
-  to the deltas observed; re-run for publication numbers); keygen/prove
-  timings include re-reading the cached SRS file from disk (identical for
-  both sides); corpus side has no region breakdown (no span info in
-  compactc output).
+- Caveats: prove time is the median of 3 in-process iterations per cell
+  (MINOCRAB_PROVE_ITERS); keygen is single-shot. Keygen/prove timings
+  include re-reading the cached SRS file from disk (identical for both
+  sides); corpus side has no region breakdown (no span info in compactc
+  output).
 
-* Results (2026-08-14, Apple Silicon)
-IN FLIGHT: the final median-of-3 run (MINOCRAB_PROVE_ITERS=3, default)
-was launched 2026-08-14 evening, detached (nohup, log
-target/bench/final.log); it writes
-target/bench/{results.jsonl,results.json,report.md,profiles/}
-incrementally and takes ~45-60 min. When it lands: copy report.md's
-numbers here, tick the M6 measurement bullets, commit.
+* Results (final median-of-3 run, 2026-08-14, Apple Silicon, quiet machine)
+MINOCRAB_PROVE_ITERS=3 (default); k/rows/RSS/proof-size deterministic,
+prove/keygen are per-cell medians. Full data: target/bench/report.md,
+results.json, profiles/ (regenerate: ./bench.sh or nix run .#bench).
 
-Findings already established (stable across runs — k/rows/RSS are
-deterministic, wall-clock is not):
-- Wall-clock prove/keygen times swing up to 3x with machine state
-  (identical circuits measured 8s vs 11s; one k=16 cell measured 22s
-  quiet vs 103s loaded) — hence median-of-3 per cell, and k/rows/RSS
-  as the primary comparison metrics.
-- Row parity (±0.7%) on 7/9 vault circuits, as designed — the lowering
-  mirrors compactc's op sequences. MinoCrab strictly better elsewhere:
-  refund -12.2% rows, completeSwap -14.6% (compactc pays extra
-  div_mod/reconstitute byte-repacking there).
-- k strictly lower for MinoCrab on 5 circuits: claim + completeWithdraw
-  (16 vs 17 — near-equal rows sit just under 2^16 for us, over for
-  them, likely lookup/custom-gate accounting) and all 3 singleton
-  circuits (15 vs 16, on -53..-55% rows: their emit path explodes and
-  rebuilds bytes twice, e.g. respond 270 div_mod vs our 120). One k
-  lower ~= half the RAM and roughly half the prove time.
-- Proof sizes identical per circuit (same proof system).
+| circuit              | side  |  k |   rows | prove (s) | RSS (MB) | rows Δ | prove Δ | RSS Δ  |
+|----------------------+-------+----+--------+-----------+----------+--------+---------+--------|
+| initialize           | ours  | 13 |   4272 |      2.61 |      171 |  +0.0% |  +13.7% |  +2.2% |
+|                      | cpctc | 13 |   4272 |      2.30 |      167 |        |         |        |
+| deposit              | ours  | 15 |  26962 |     10.13 |      778 |  -0.1% |   -8.2% |  -9.2% |
+|                      | cpctc | 15 |  27002 |     11.04 |      856 |        |         |        |
+| claim                | ours  | 16 |  64985 |     22.12 |     1845 |  +0.7% |  -42.0% | -43.5% |
+|                      | cpctc | 17 |  64549 |     38.17 |     3266 |        |         |        |
+| approveRouter        | ours  | 15 |  20616 |      8.65 |      644 |  -0.0% |   -0.1% |  -0.5% |
+|                      | cpctc | 15 |  20619 |      8.66 |      647 |        |         |        |
+| withdraw             | ours  | 16 |  51833 |     17.47 |     1575 |  -0.3% |   +0.5% |  +0.0% |
+|                      | cpctc | 16 |  52009 |     17.38 |     1574 |        |         |        |
+| completeWithdraw     | ours  | 16 |  64791 |     20.23 |     1850 |  +0.5% |  -52.3% | -43.0% |
+|                      | cpctc | 17 |  64498 |     42.40 |     3245 |        |         |        |
+| refund               | ours  | 17 |  85185 |     44.00 |     3214 | -12.2% |   -2.3% |  -2.5% |
+|                      | cpctc | 17 |  97026 |     45.05 |     3297 |        |         |        |
+| swap                 | ours  | 17 |  70860 |     35.90 |     2992 |  -0.3% |   +4.5% |  +0.2% |
+|                      | cpctc | 17 |  71104 |     34.35 |     2986 |        |         |        |
+| completeSwap         | ours  | 17 |  89300 |     40.20 |     3162 | -14.6% |   -2.2% |  -3.9% |
+|                      | cpctc | 17 | 104615 |     41.09 |     3292 |        |         |        |
+| signBidirectional    | ours  | 15 |  23573 |      4.70 |      444 | -53.3% |  -43.6% | -49.1% |
+|                      | cpctc | 16 |  50429 |      8.33 |      872 |        |         |        |
+| respond              | ours  | 15 |  18582 |      4.34 |      442 | -54.6% |  -47.4% | -49.5% |
+|                      | cpctc | 16 |  40931 |      8.24 |      875 |        |         |        |
+| respondBidirectional | ours  | 15 |  18594 |      4.39 |      440 | -54.6% |  -46.9% | -49.3% |
+|                      | cpctc | 16 |  40931 |      8.27 |      869 |        |         |        |
 
-* Ranked M7 optimisation targets (from the op-mix profiles)
-1. Byte explode/rebuild chains: div_mod_power_of_two + reconstitute_field
-   are 50-75% of instructions in EVERY circuit (serialization, event
-   payloads, hash input prep). Batched/wider limb handling attacks all
-   circuits at once.
-2. k-boundary circuits: refund (85,185 rows) and completeSwap (89,300)
-   at k=17 need ~25% row cuts to reach k=16 (→ ~half RAM/time); claim
-   (64,985) and completeWithdraw (64,791) sit just under 2^16 — protect
-   that boundary while optimising.
-3. Region annotation: the vault circuits don't use Circuit3::region()
-   yet, so profiles are whole-circuit op mixes; add spans (the
-   signet/coin/serializer compositions are natural regions) to attribute
-   rows before committing to specific M7 passes.
+Findings:
+- BASELINE PARITY CONFIRMED where designed: rows within ±0.7% on 7/9
+  vault circuits (the lowering mirrors compactc's op sequences), and
+  the wall-clock deltas there are noise-level (median-of-3 still swings
+  a few % — initialize's +13.7% prove is 0.3s on a 2.3s cell). This is
+  the correctness-preservation evidence the milestone wanted.
+- MinoCrab strictly better on rows where compactc pays extra
+  div_mod/reconstitute byte-repacking: refund -12.2%, completeSwap
+  -14.6%, singleton circuits -53..-55% (their emit path explodes and
+  rebuilds bytes twice — respond 270 div_mod vs our 120).
+- k strictly lower on 5 circuits → ~half prove time and RAM there:
+  claim + completeWithdraw (16 vs 17: near-equal rows sit just under
+  2^16 for us, just over for them) and all 3 singleton circuits (15 vs
+  16). Measured: completeWithdraw -52% prove / -43% RSS, respond -47% /
+  -50%.
+- Proof sizes identical per circuit (same proof system); verify times
+  all ~10-20ms.
+- Wall-clock methodology note: single-shot proves swing up to 3x with
+  machine state (one k=16 cell: 22s quiet vs 103s loaded) — hence
+  median-of-3 and k/rows/RSS as primary metrics.
+
+* Ranked M7 optimisation targets (region-attributed profiles, profiles/)
+Region spans landed with this run (helpers annotate all 12 circuits;
+innermost region wins; regenerate with minocrab-bench --profiles — no
+proving needed). Instruction shares below; div_mod_power_of_two +
+reconstitute_field chains dominate every top region.
+1. reverse_bytes32 in the ECDSA attestation verify: "signet:
+   attestation verify" is 198 instructions (180 of them div_mod +
+   reconstitute from the two byte-order reversals) — 45% of claim, 30%
+   of refund/completeSwap, in every settle circuit. A byte-order-aware
+   scalar import (fold big-endian directly instead of
+   explode→reverse→rebuild) removes ~all of it.
+2. "abi words" (calldata word build/parse): 18-44% everywhere —
+   swap 288 instr (44%), completeSwap 256 (39%), refund 211 (30%).
+   Same fix shape: fold bytes with mul-add chains instead of full
+   explode/rebuild round-trips (the ×15 add/mul fold in
+   abi_word_to_uint128 is already the cheap form — the explode side
+   is the cost).
+3. "signet: notification" (160 instr: 123 reconstitute) — 44% of
+   deposit, 37% of withdraw, 25% of swap — and the singleton's "event
+   serialize + emit" (98% of respond: 278 reconstitute + 120 div_mod).
+   Batched/wider-limb serializer output attacks both.
+4. k-boundary circuits: refund (85,185 rows) and completeSwap (89,300)
+   at k=17 need ~25% row cuts to reach k=16 (→ ~half RAM/prove);
+   targets 1+2 are together ~60-70% of their instructions, so the
+   headroom is there. Protect claim (64,985) and completeWithdraw
+   (64,791) sitting just under 2^16 while optimising.

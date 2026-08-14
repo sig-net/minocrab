@@ -16,6 +16,8 @@
 //!   MinoCrab's per-region cost profiles.
 //! - `--measure <circuit> <side>`: keygen + prove + verify one artifact,
 //!   print a JSON result line. RAM is `getrusage` peak RSS.
+//! - `--profiles`: rewrite `target/bench/profiles/` alone (no proving) —
+//!   for refreshing region attribution after annotation changes.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -295,7 +297,22 @@ fn orchestrate() -> Result<()> {
         &results,
     )?;
 
-    // MinoCrab per-region cost profiles (the M7 target-picker).
+    write_profiles(&out_dir)?;
+
+    let report = render_report(&results);
+    std::fs::write(out_dir.join("report.md"), &report)?;
+    println!("{report}");
+    eprintln!(
+        "written: {}/results.json, report.md, profiles/",
+        out_dir.display()
+    );
+    Ok(())
+}
+
+/// MinoCrab per-region cost profiles (the M7 target-picker). Built
+/// in-process from the eDSL circuits — no proving, so `--profiles` can
+/// refresh them alone after a region-annotation change.
+fn write_profiles(out_dir: &std::path::Path) -> Result<()> {
     let profile_dir = out_dir.join("profiles");
     std::fs::create_dir_all(&profile_dir)?;
     for target in &targets() {
@@ -309,14 +326,6 @@ fn orchestrate() -> Result<()> {
             &profile,
         )?;
     }
-
-    let report = render_report(&results);
-    std::fs::write(out_dir.join("report.md"), &report)?;
-    println!("{report}");
-    eprintln!(
-        "written: {}/results.json, report.md, profiles/",
-        out_dir.display()
-    );
     Ok(())
 }
 
@@ -380,6 +389,12 @@ async fn main() -> Result<()> {
             let side = args.get(3).context("--measure <circuit> <side>")?;
             let m = measure(name, side).await?;
             println!("{}", serde_json::to_string(&m)?);
+            Ok(())
+        }
+        Some("--profiles") => {
+            let out_dir = bench_dir();
+            write_profiles(&out_dir)?;
+            eprintln!("written: {}/profiles/", out_dir.display());
             Ok(())
         }
         Some(other) => bail!("unknown mode {other}"),

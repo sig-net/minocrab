@@ -207,14 +207,27 @@ Confirmed target (dmd, 2026-08-13): the erc20-vault contract
 (sig-net/midnight-examples, examples/erc20-vault) — plus its Signet singleton
 dependency (sig-net/midnight-integration) as needed for the cross-contract
 calls. See notes/signet-corpus.org.
-- [ ] Both contracts running under both toolchains at the same pinned versions,
+- [X] Both contracts running under both toolchains at the same pinned versions,
       with the M3 correctness harness green on the MinoCrab versions.
-- [ ] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
+      (bench.sh re-runs the erc20-vault + signet-contract differentials
+      with preimage dumping before measuring, so every benchmarked
+      preimage is corpus-verified first.)
+- [X] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
       breakdowns, reproducible via a single nix-run command.
-- [ ] Baseline write-up: methodology + numbers, and the cost-profile breakdown
+      (nix run .#bench → target/bench/{results.json,report.md,profiles/};
+      median-of-3 proving, per-cell subprocess RSS. Final run 2026-08-14.)
+- [X] Baseline write-up: methodology + numbers, and the cost-profile breakdown
       that picks M7's optimisation targets.
+      (notes/benchmark.org: full table + findings + the ranked list from
+      the region-attributed profiles — regions landed in
+      minocrab-contracts with this run; minocrab-bench --profiles
+      refreshes attribution without re-proving.)
 Exit criteria: reproducible baseline numbers from a clean checkout, and a
-ranked list of where optimisation should attack.
+ranked list of where optimisation should attack. MET — parity confirmed on
+the mirrored circuits (rows ±0.7%), strictly better where compactc
+over-serializes (refund -12%, completeSwap -15%, singleton -53..-55% rows;
+5 circuits a full k lower → ~half prove time/RAM), and the M7 attack list
+is ranked by region-attributed instruction share (notes/benchmark.org).
 
 * M7 — Optimisation + presentable deliverable
 Driven by M6's cost profiles; every change re-measured with the M6 harness.

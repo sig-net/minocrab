@@ -330,21 +330,23 @@ fn check_fresh_request(
     map_field: u8,
 ) -> (B32<Public>, LedgerValue) {
     let request_id_priv = signet::calculate_request_id(c, request, len_out, len_respond);
-    let request_id = B32 {
-        hi: c.disclose(request_id_priv.hi, "request id (hi)"),
-        lo: c.disclose(request_id_priv.lo, "request id (lo)"),
-    };
-    let request_id_val = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(request_id.hi),
-            ImpactElem::Wire(request_id.lo),
-        ],
-    );
-    let exists = map_member(c, one, map_field, &request_id_val);
-    let fresh = c.not(exists);
-    c.assert(fresh);
-    (request_id, request_id_val)
+    c.region("record: freshness", |c| {
+        let request_id = B32 {
+            hi: c.disclose(request_id_priv.hi, "request id (hi)"),
+            lo: c.disclose(request_id_priv.lo, "request id (lo)"),
+        };
+        let request_id_val = LedgerValue::bytes(
+            32,
+            vec![
+                ImpactElem::Wire(request_id.hi),
+                ImpactElem::Wire(request_id.lo),
+            ],
+        );
+        let exists = map_member(c, one, map_field, &request_id_val);
+        let fresh = c.not(exists);
+        c.assert(fresh);
+        (request_id, request_id_val)
+    })
 }
 
 /// `signetRequestNonce.increment(1)` + `map.insert(requestId,
@@ -358,15 +360,17 @@ fn insert_request(
     map_field: u8,
     request_id_val: &LedgerValue,
 ) {
-    emit(c, one, &counter_increment(SIGNET_REQUEST_NONCE, 1));
-    let event_atoms = request.atoms(len_out, len_respond);
-    let event_limbs: Vec<ImpactElem> = request
-        .limbs()
-        .into_iter()
-        .map(|w| ImpactElem::Wire(c.disclose(w, "request record")))
-        .collect();
-    let event_val = LedgerValue::new(event_atoms, event_limbs);
-    emit(c, one, &map_insert(map_field, request_id_val, &event_val));
+    c.region("record: insert", |c| {
+        emit(c, one, &counter_increment(SIGNET_REQUEST_NONCE, 1));
+        let event_atoms = request.atoms(len_out, len_respond);
+        let event_limbs: Vec<ImpactElem> = request
+            .limbs()
+            .into_iter()
+            .map(|w| ImpactElem::Wire(c.disclose(w, "request record")))
+            .collect();
+        let event_val = LedgerValue::new(event_atoms, event_limbs);
+        emit(c, one, &map_insert(map_field, request_id_val, &event_val));
+    });
 }
 
 /// `signetSigner.signBidirectional(requestId,
@@ -379,18 +383,20 @@ fn notify_signet(
     request_id: &B32<Public>,
     notify_path: [u8; 4],
 ) {
-    let signer = cell_read(
-        c,
-        one,
-        SIGNET_SIGNER,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
-    let (version, payload) = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
-    let mut args = vec![request_id.hi, request_id.lo, version];
-    args.extend(payload.limbs.iter().copied());
-    contract_call(c, one, [signer[0], signer[1]], &args, &[]);
+    c.region("xcall: notify signet", |c| {
+        let signer = cell_read(
+            c,
+            one,
+            SIGNET_SIGNER,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let me = kernel_self(c, one);
+        let me = B32 { hi: me[0], lo: me[1] };
+        let (version, payload) = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
+        let mut args = vec![request_id.hi, request_id.lo, version];
+        args.extend(payload.limbs.iter().copied());
+        contract_call(c, one, [signer[0], signer[1]], &args, &[]);
+    });
 }
 
 /// The contiguous tail deposit/approveRouter share: freshness check,
@@ -419,24 +425,26 @@ fn withdraw_refund_commitment(
     sk: &B32<Private>,
     request_id: &B32<Private>,
 ) -> B32<Private> {
-    let pad = B32::pad(c, REFUND_PAD);
-    let alignment = Alignment(vec![
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-    ]);
-    let digest = c.persistent_hash(
-        alignment,
-        &[
-            pad.hi.private().erase(),
-            pad.lo.private().erase(),
-            sk.hi.erase(),
-            sk.lo.erase(),
-            request_id.hi.erase(),
-            request_id.lo.erase(),
-        ],
-    );
-    B32::from_typed(c, digest)
+    c.region("refund commitment hash", |c| {
+        let pad = B32::pad(c, REFUND_PAD);
+        let alignment = Alignment(vec![
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+        ]);
+        let digest = c.persistent_hash(
+            alignment,
+            &[
+                pad.hi.private().erase(),
+                pad.lo.private().erase(),
+                sk.hi.erase(),
+                sk.lo.erase(),
+                request_id.hi.erase(),
+                request_id.lo.erase(),
+            ],
+        );
+        B32::from_typed(c, digest)
+    })
 }
 
 /// `export circuit withdraw(evmNonce: Uint<64>, keyVersion: Uint<8>,
@@ -954,22 +962,24 @@ fn vault_token_domain_separator(
     c: &mut Circuit3,
     erc20_address: Wire3<FieldT, Public>,
 ) -> B32<Public> {
-    let pad = B32::pad(c, TOKEN_PAD);
-    let zero = c.constant(0u64);
-    let alignment = Alignment(vec![
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-    ]);
-    let digest = c.persistent_hash(
-        alignment,
-        &[
-            pad.hi.erase(),
-            pad.lo.erase(),
-            zero.erase(),
-            erc20_address.erase(),
-        ],
-    );
-    B32::from_typed(c, digest)
+    c.region("token domain separator", |c| {
+        let pad = B32::pad(c, TOKEN_PAD);
+        let zero = c.constant(0u64);
+        let alignment = Alignment(vec![
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+        ]);
+        let digest = c.persistent_hash(
+            alignment,
+            &[
+                pad.hi.erase(),
+                pad.lo.erase(),
+                zero.erase(),
+                erc20_address.erase(),
+            ],
+        );
+        B32::from_typed(c, digest)
+    })
 }
 
 /// The shared argument block of the settle circuits: requestId, the
@@ -1076,23 +1086,25 @@ fn refund_surrendered_value(
 ) {
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
-    let sk = common::witness_sk_guarded(c, guard);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
-    let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-    let stored = minocrab_ledger::map_lookup_guarded(
-        c,
-        guard,
-        REFUND_COMMITMENT,
-        request_id_val,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let eq_hi = c.test_eq(rc.hi, stored[0].private());
-    let eq_lo = c.test_eq(rc.lo, stored[1].private());
-    let is_withdrawer = c.mul(eq_hi, eq_lo);
-    common::assert_if(c, guard.private(), is_withdrawer);
+    c.region("withdrawer gate", |c| {
+        let sk = common::witness_sk_guarded(c, guard);
+        let rid_priv = B32 {
+            hi: request_id.hi.private(),
+            lo: request_id.lo.private(),
+        };
+        let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
+        let stored = minocrab_ledger::map_lookup_guarded(
+            c,
+            guard,
+            REFUND_COMMITMENT,
+            request_id_val,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let eq_hi = c.test_eq(rc.hi, stored[0].private());
+        let eq_lo = c.test_eq(rc.lo, stored[1].private());
+        let is_withdrawer = c.mul(eq_hi, eq_lo);
+        common::assert_if(c, guard.private(), is_withdrawer);
+    });
 
     // assert(signatureRequest.txParams.calldata.is_some)
     common::assert_if(c, guard, ev[signet::event_limb::CALLDATA_IS_SOME]);
@@ -1141,23 +1153,25 @@ pub fn complete_withdraw() -> Compiled3 {
     );
 
     // assert(refundCommitment.member(requestId), "Withdrawal not found")
-    let pending = map_member(&mut c, one, REFUND_COMMITMENT, &request_id_val);
-    c.assert(pending);
-
     // const signatureRequest = signBidirectionalEventMap.lookup(requestId);
     // signBidirectionalEventMap.remove(requestId)
-    let ev = map_lookup(
-        &mut c,
-        one,
-        SIGN_BIDIRECTIONAL_EVENT_MAP,
-        &request_id_val,
-        signet::event_atoms(2, 34, 34),
-    );
-    emit(
-        &mut c,
-        one,
-        &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-    );
+    let ev = c.region("event map consume", |c| {
+        let pending = map_member(c, one, REFUND_COMMITMENT, &request_id_val);
+        c.assert(pending);
+        let ev = map_lookup(
+            c,
+            one,
+            SIGN_BIDIRECTIONAL_EVENT_MAP,
+            &request_id_val,
+            signet::event_atoms(2, 34, 34),
+        );
+        emit(
+            c,
+            one,
+            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
+        );
+        ev
+    });
 
     // const succeeded = disclose(deserialize<VaultResponse, 1>(output).success)
     let succeeded = c.test_eq(output[0], one.private());
@@ -1210,38 +1224,42 @@ pub fn complete_swap() -> Compiled3 {
     );
 
     // assert(swapRefundCommitment.member(requestId), "Swap not found")
-    let pending = map_member(&mut c, one, SWAP_REFUND_COMMITMENT, &request_id_val);
-    c.assert(pending);
-
     // const signatureRequest = swapEventMap.lookup(requestId); remove.
-    let ev = map_lookup(
-        &mut c,
-        one,
-        SWAP_EVENT_MAP,
-        &request_id_val,
-        signet::event_atoms(7, 38, 37),
-    );
-    emit(&mut c, one, &map_remove(SWAP_EVENT_MAP, &request_id_val));
+    let ev = c.region("event map consume", |c| {
+        let pending = map_member(c, one, SWAP_REFUND_COMMITMENT, &request_id_val);
+        c.assert(pending);
+        let ev = map_lookup(
+            c,
+            one,
+            SWAP_EVENT_MAP,
+            &request_id_val,
+            signet::event_atoms(7, 38, 37),
+        );
+        emit(c, one, &map_remove(SWAP_EVENT_MAP, &request_id_val));
+        ev
+    });
 
     // Swapper gate.
-    let sk = common::witness_sk(&mut c);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
-    let rc = withdraw_refund_commitment(&mut c, &sk, &rid_priv);
-    let stored = map_lookup(
-        &mut c,
-        one,
-        SWAP_REFUND_COMMITMENT,
-        &request_id_val,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let eq_hi = c.test_eq(rc.hi, stored[0].private());
-    let eq_lo = c.test_eq(rc.lo, stored[1].private());
-    let is_swapper = c.mul(eq_hi, eq_lo);
-    c.assert(is_swapper);
-    emit(&mut c, one, &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val));
+    c.region("swapper gate", |c| {
+        let sk = common::witness_sk(c);
+        let rid_priv = B32 {
+            hi: request_id.hi.private(),
+            lo: request_id.lo.private(),
+        };
+        let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
+        let stored = map_lookup(
+            c,
+            one,
+            SWAP_REFUND_COMMITMENT,
+            &request_id_val,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let eq_hi = c.test_eq(rc.hi, stored[0].private());
+        let eq_lo = c.test_eq(rc.lo, stored[1].private());
+        let is_swapper = c.mul(eq_hi, eq_lo);
+        c.assert(is_swapper);
+        emit(c, one, &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val));
+    });
 
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev[signet::event_limb::CALLDATA_IS_SOME]);
@@ -1353,18 +1371,21 @@ pub fn refund() -> Compiled3 {
     };
 
     // Withdrawal branch: completeWithdraw's failure path verbatim.
-    let ev = minocrab_ledger::map_lookup_guarded(
-        &mut c,
-        is_withdrawal,
-        SIGN_BIDIRECTIONAL_EVENT_MAP,
-        &request_id_val,
-        signet::event_atoms(2, 34, 34),
-    );
-    emit(
-        &mut c,
-        is_withdrawal,
-        &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-    );
+    let ev = c.region("event map consume", |c| {
+        let ev = minocrab_ledger::map_lookup_guarded(
+            c,
+            is_withdrawal,
+            SIGN_BIDIRECTIONAL_EVENT_MAP,
+            &request_id_val,
+            signet::event_atoms(2, 34, 34),
+        );
+        emit(
+            c,
+            is_withdrawal,
+            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
+        );
+        ev
+    });
     refund_surrendered_value(
         &mut c,
         is_withdrawal,
@@ -1381,47 +1402,52 @@ pub fn refund() -> Compiled3 {
 
     // Swap branch: re-mint the surrendered amountInMaximum of tokenIn.
     let swapping = c.not(is_withdrawal);
-    let swap_pending = minocrab_ledger::map_member_guarded(
-        &mut c,
-        swapping,
-        SWAP_REFUND_COMMITMENT,
-        &request_id_val,
-    );
-    common::assert_if(&mut c, swapping, swap_pending);
-    let ev7 = minocrab_ledger::map_lookup_guarded(
-        &mut c,
-        swapping,
-        SWAP_EVENT_MAP,
-        &request_id_val,
-        signet::event_atoms(7, 38, 37),
-    );
-    emit(
-        &mut c,
-        swapping,
-        &map_remove(SWAP_EVENT_MAP, &request_id_val),
-    );
-    let sk = common::witness_sk_guarded(&mut c, swapping);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
-    let rc = withdraw_refund_commitment(&mut c, &sk, &rid_priv);
-    let stored = minocrab_ledger::map_lookup_guarded(
-        &mut c,
-        swapping,
-        SWAP_REFUND_COMMITMENT,
-        &request_id_val,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let eq_hi = c.test_eq(rc.hi, stored[0].private());
-    let eq_lo = c.test_eq(rc.lo, stored[1].private());
-    let is_swapper = c.mul(eq_hi, eq_lo);
-    common::assert_if(&mut c, swapping.private(), is_swapper);
-    emit(
-        &mut c,
-        swapping,
-        &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
-    );
+    let ev7 = c.region("event map consume", |c| {
+        let swap_pending = minocrab_ledger::map_member_guarded(
+            c,
+            swapping,
+            SWAP_REFUND_COMMITMENT,
+            &request_id_val,
+        );
+        common::assert_if(c, swapping, swap_pending);
+        let ev7 = minocrab_ledger::map_lookup_guarded(
+            c,
+            swapping,
+            SWAP_EVENT_MAP,
+            &request_id_val,
+            signet::event_atoms(7, 38, 37),
+        );
+        emit(
+            c,
+            swapping,
+            &map_remove(SWAP_EVENT_MAP, &request_id_val),
+        );
+        ev7
+    });
+    c.region("swapper gate", |c| {
+        let sk = common::witness_sk_guarded(c, swapping);
+        let rid_priv = B32 {
+            hi: request_id.hi.private(),
+            lo: request_id.lo.private(),
+        };
+        let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
+        let stored = minocrab_ledger::map_lookup_guarded(
+            c,
+            swapping,
+            SWAP_REFUND_COMMITMENT,
+            &request_id_val,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let eq_hi = c.test_eq(rc.hi, stored[0].private());
+        let eq_lo = c.test_eq(rc.lo, stored[1].private());
+        let is_swapper = c.mul(eq_hi, eq_lo);
+        common::assert_if(c, swapping.private(), is_swapper);
+        emit(
+            c,
+            swapping,
+            &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
+        );
+    });
     common::assert_if(&mut c, swapping, ev7[signet::event_limb::CALLDATA_IS_SOME]);
     let word5 = B32 {
         hi: ev7[signet::event_limb::word_hi(5)],
@@ -1549,28 +1575,33 @@ pub fn claim() -> Compiled3 {
             ImpactElem::Wire(request_id.lo),
         ],
     );
-    let found = map_member(&mut c, one, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
-    c.assert(found);
-    let ev = map_lookup(
-        &mut c,
-        one,
-        SIGN_BIDIRECTIONAL_EVENT_MAP,
-        &request_id_val,
-        signet::event_atoms(2, 34, 34),
-    );
-    emit(
-        &mut c,
-        one,
-        &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-    );
+    let ev = c.region("event map consume", |c| {
+        let found = map_member(c, one, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
+        c.assert(found);
+        let ev = map_lookup(
+            c,
+            one,
+            SIGN_BIDIRECTIONAL_EVENT_MAP,
+            &request_id_val,
+            signet::event_atoms(2, 34, 34),
+        );
+        emit(
+            c,
+            one,
+            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
+        );
+        ev
+    });
 
     // Depositor gate: userCommitment(callerSecretKey()) == request.path.
-    let sk = common::witness_sk(&mut c);
-    let caller = common::commitment(&mut c, USER_PAD, &sk);
-    let eq_hi = c.test_eq(caller.hi, ev[signet::event_limb::PATH_HI].private());
-    let eq_lo = c.test_eq(caller.lo, ev[signet::event_limb::PATH_LO].private());
-    let is_depositor = c.mul(eq_hi, eq_lo);
-    c.assert(is_depositor);
+    c.region("depositor gate", |c| {
+        let sk = common::witness_sk(c);
+        let caller = common::commitment(c, USER_PAD, &sk);
+        let eq_hi = c.test_eq(caller.hi, ev[signet::event_limb::PATH_HI].private());
+        let eq_lo = c.test_eq(caller.lo, ev[signet::event_limb::PATH_LO].private());
+        let is_depositor = c.mul(eq_hi, eq_lo);
+        c.assert(is_depositor);
+    });
 
     // assert(request.txParams.calldata.is_some)
     c.assert(ev[signet::event_limb::CALLDATA_IS_SOME]);
@@ -1587,32 +1618,34 @@ pub fn claim() -> Compiled3 {
 
     // const claimRecipient = disclose(recipient).is_some
     //   ? disclose(recipient).value : left(ownPublicKey())
-    let rec_is_some = c.disclose(rec_is_some, "claim recipient tag");
-    let rec_is_left = c.disclose(rec_is_left, "claim recipient side");
-    let not_some = c.not(rec_is_some);
-    let own_pk = own_public_key_guarded(&mut c, not_some);
-    let own_pk = B32 {
-        hi: c.disclose(own_pk.hi, "own public key as claim recipient (hi)"),
-        lo: c.disclose(own_pk.lo, "own public key as claim recipient (lo)"),
-    };
-    let rec_left = B32 {
-        hi: c.disclose(rec_left.hi, "claim recipient key (hi)"),
-        lo: c.disclose(rec_left.lo, "claim recipient key (lo)"),
-    };
-    let rec_right = B32 {
-        hi: c.disclose(rec_right.hi, "claim recipient contract (hi)"),
-        lo: c.disclose(rec_right.lo, "claim recipient contract (lo)"),
-    };
-    let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-    let left = B32 {
-        hi: c.cond_select(rec_is_some, rec_left.hi, own_pk.hi),
-        lo: c.cond_select(rec_is_some, rec_left.lo, own_pk.lo),
-    };
-    let right = B32 {
-        hi: c.cond_select(rec_is_some, rec_right.hi, zero),
-        lo: c.cond_select(rec_is_some, rec_right.lo, zero),
-    };
-    let recipient = CoinRecipient { is_left, left, right };
+    let recipient = c.region("recipient select", |c| {
+        let rec_is_some = c.disclose(rec_is_some, "claim recipient tag");
+        let rec_is_left = c.disclose(rec_is_left, "claim recipient side");
+        let not_some = c.not(rec_is_some);
+        let own_pk = own_public_key_guarded(c, not_some);
+        let own_pk = B32 {
+            hi: c.disclose(own_pk.hi, "own public key as claim recipient (hi)"),
+            lo: c.disclose(own_pk.lo, "own public key as claim recipient (lo)"),
+        };
+        let rec_left = B32 {
+            hi: c.disclose(rec_left.hi, "claim recipient key (hi)"),
+            lo: c.disclose(rec_left.lo, "claim recipient key (lo)"),
+        };
+        let rec_right = B32 {
+            hi: c.disclose(rec_right.hi, "claim recipient contract (hi)"),
+            lo: c.disclose(rec_right.lo, "claim recipient contract (lo)"),
+        };
+        let is_left = c.cond_select(rec_is_some, rec_is_left, one);
+        let left = B32 {
+            hi: c.cond_select(rec_is_some, rec_left.hi, own_pk.hi),
+            lo: c.cond_select(rec_is_some, rec_left.lo, own_pk.lo),
+        };
+        let right = B32 {
+            hi: c.cond_select(rec_is_some, rec_right.hi, zero),
+            lo: c.cond_select(rec_is_some, rec_right.lo, zero),
+        };
+        CoinRecipient { is_left, left, right }
+    });
 
     // mintShieldedToken(domainSep, amount as Uint<64>, disclose(mintNonce),
     //   claimRecipient)
