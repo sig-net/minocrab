@@ -236,7 +236,7 @@ off-chain twins regenerate (never a constraint).
 - constrain_bits on arguments: −150-250/circuit — DO NOT TAKE, see
   verdict below.
 
-** UNSURE — resolve before acting
+** UNSURE — resolve before acting (RESOLVED 2026-08-15, see "UNSURE resolutions" below)
 - Burn restructure to one coin commitment (−11,280 in withdraw AND
   swap; the only path to k15 there): claim the burn as a shielded
   SPEND (subset-checked vs offer outputs, verify.rs:1596, no
@@ -260,6 +260,100 @@ off-chain twins regenerate (never a constraint).
 - Field-typed Map value where Bytes<32> was (FAB field vs bytes<32>
   atom): flatten-datatypes.ss:80-126 + a Cell<Field> write differential
   (the hashing experiment's fdigest is precedent).
+
+* UNSURE resolutions (2026-08-15, source-level; pinned ledger rev 04c9c5d)
+Full evidence trail in the session survey; the load-bearing citations
+are inlined here so verdicts are re-checkable.
+
+** Q1 burn restructure — FEASIBLE (avenue 6 CLEARED; land it FIRST among risky)
+claimed_shielded_spends is keyed (u16, Commitment) with NO contract-
+address component (verify.rs:1559, 1582-1608): a claimed spend needs
+only "commitment exists in this segment's offer, unclaimed by another
+contract". Receives equality (strict, contract-associated only,
+verify.rs:1489-1557) and nullifier equality (verify.rs:1503-1535) are
+satisfied vacuously because shieldedBurnAddress() is left(default) =
+Recipient::User → contract_address: None. Shielded claims contribute
+NOTHING to the balance equation (verify.rs:736-920); value destruction
+is enforced by the offer's Pedersen balance + the circuit's colour/
+value constraints. Proven precedents in the pinned suite: micro-dao.rs
+:840-953 (contract claims spend of a user-recipient output),
+composable.rs:1311-1315 (spend claim of ANOTHER contract's output),
+token_vault_shielded.rs:432-535. Off-chain: the burn Output is the
+same ZswapOutput the vault already builds (no ciphertext needed);
+segment routing already keys on spends ∪ receives (construct.rs:
+163-175). Replay: global CommitmentAlreadyPresent (zswap/ledger.rs:
+100-104) — same gate as today, but now the ONLY one (nullifier set no
+longer a second gate; note in deviation log).
+New harness obligations replacing what receiveShielded gave for free:
+(1) exactly one ClaimSpend per burn, ClaimReceive/ClaimNullifier
+empty; (2) the commitment is coinCommitment(constrained coin, left(0));
+(3) adversarial: second contract claiming the same commitment rejected;
+(4) off-chain twin emits the burn Output with no createZswapInput.
+Honest gap: no pinned test has a contract claim a spend with NO
+contract-owned input in the tx — add a local well-formedness test
+against the pinned ledger (mirror micro-dao.rs:840-960) BEFORE landing.
+Bonus: drops one Transient (two zswap proofs) — smaller tx, lower fee.
+
+** Q2 MPC requestId verification — UNRESOLVABLE LOCALLY, PINNED stands
+No MPC/indexer/TS-client code in the corpus (one .ts file total).
+Signet.compact:22 defines the id as keccak256 of the record; :173-175
+says off-chain twins must reproduce the layout (suggestive, not
+dispositive). Structural arguments keep the default: the id must be
+globally unique across Signet clients (sender is inside the record),
+and key derivation is id-independent so a wrong id fails SILENT, not
+closed. Settles only with sig-net MPC/indexer ingestion source.
+No k crossing depends on it.
+
+** Q3 receives semantics — CONFIRMED (helps Q1)
+Strict multiset EQUALITY (!=, not has_subset) over contract-associated
+commitments only. If the burn recipient ever became a contract
+address, this check re-arms — note in deviation log.
+
+** Q4 Poseidon durability — SPLIT (the important negative finding)
+Midnight's own guidance quoted: persistent_hash "guaranteed for
+long-term support" (base-crypto/src/hash.rs:92-95); transient_hash
+"may be changed on hard-forks" (transient-crypto/src/hash.rs:75-81);
+zkir spec: persistent for "standard, stable hash across contexts".
+Midnight's own Dust subsystem stores Poseidon in fund-bearing
+long-lived state, so the pattern isn't forbidden — the question is
+per-value recompute-later exposure:
+- withdrawRefundCommitment (avenue 3): CLEARED. Internal, one
+  round-trip window, never leaves the contract. Poseidon fine; log it.
+- userCommitment (avenue 1): NOT CLEARED as written. It is the
+  request PATH, which feeds the MPC's derivedSigningKey
+  (Signet.compact:78-85) and therefore determines the user's real
+  derived EVM account. A hash change makes the sk→path mapping
+  unrecomputable → ERC-20 at the old derived address stranded FOREVER
+  (redeployment does not rescue it: with SHA a redeployed vault honours
+  old commitments; with Poseidon-over-BLS12-381 it cannot). The "MPC
+  treats path as opaque" aside is true and irrelevant — the hazard is
+  the sk→path mapping's stability. SUBSTITUTE: keep SHA-256, shrink
+  the preimage to ≤55 bytes (1 block): −1,880/use, zero exposure.
+  Deposit's k14 does NOT depend on Poseidon; initialize lands k12
+  instead of k10 — documented trade. Full Poseidon there would need an
+  affirmative sig-net answer (same artifact as Q2).
+
+** Q5 Field-typed map values — FEASIBLE, half-proven in-repo
+Field → one afield atom → 1 FAB limb (vs 2 for Bytes<32>); saves one
+popeq limb + the ~143-row div_mod + read-back constrain. Legal Compact
+(map_bytes_field.compact compiler test); Cell<Field> write already
+differential-green in this repo (hashing fdigest,
+tests/hashing_differential.rs). Gap: Map<_, Field> insert/lookup not
+yet differentially exercised — one case against map_bytes_field
+before landing.
+
+** Resolved best-case k table
+| circuit | now | best case | k | condition |
+|---------+-----+-----------+---+-----------|
+| initialize | 4,272 k13 | ~2,392 | k12 | short-SHA userCommit (k10 needs the rejected Poseidon) |
+| deposit | 17,502 k15 | ~15,300 | k14 ✅ | short-SHA + framing; independent of Poseidon |
+| approveRouter | 13,344 k14 | ~13,040 | k14 | keccak floor 12,651 measured |
+| withdraw | 42,373 k16 | ~23,300 | k15 ✅ | avenue 6 ALONE suffices (42,373−11,280 = 31,093; margin 1,675) |
+| swap | 51,485 k16 | ~32,420 | k15 ⚠ | needs 6 AND 3 AND 2; margin ~348 rows — measure, don't project; ~450 extra headroom exists (verbatim-nonce burn ~165, avenue 7 upper band). "If it lands 32,8xx, say so and stop." |
+| claim / completeWithdraw / refund / completeSwap | — | rows −16..−58% | k16 | ECDSA-floored; cosmetic for prove time |
+Plan changes vs the original sequencing: avenue 6 moves FIRST among
+the risky steps (self-sufficient, comfortable margin); avenue 1
+becomes the short-SHA variant everywhere.
 
 * k arithmetic — what decides everything
 Prove time and RAM track 2^k, not rows. Boundaries: k13=8,192,
