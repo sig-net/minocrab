@@ -183,6 +183,65 @@ impl<V: Vis3> BytesN<V> {
         }
         bytes
     }
+
+    /// Rebuild from byte wires (byte 0 first): 31-byte chunks from the
+    /// front, the leftover chunk becoming limb 0.
+    pub fn from_le_bytes(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> BytesN<V> {
+        let len = bytes.len();
+        let mut limbs: Vec<Wire3<FieldT, V>> = bytes
+            .chunks(31)
+            .map(|chunk| rebuild_limb(c, chunk))
+            .collect();
+        limbs.reverse();
+        BytesN::new(len, limbs)
+    }
+}
+
+/// `serialize<T, N>` (compiler/analysis-passes/expand-serialize.ss):
+/// value-only FAB binary, fields concatenated in declaration order,
+/// zero-padded to N — assembled as LE byte wires and rebuilt into
+/// [`BytesN`] limbs.
+pub struct Serializer<V: Vis3> {
+    bytes: Vec<Wire3<FieldT, V>>,
+}
+
+impl<V: Vis3> Serializer<V> {
+    pub fn new() -> Serializer<V> {
+        Serializer { bytes: Vec::new() }
+    }
+
+    /// A `Uint` field: `nbytes` LE bytes (Boolean = 1 byte).
+    pub fn push_uint(&mut self, c: &mut Circuit3, value: Wire3<FieldT, V>, nbytes: usize) {
+        self.bytes.extend(explode_limb(c, value, nbytes));
+    }
+
+    /// A `Bytes<32>` field.
+    pub fn push_b32(&mut self, c: &mut Circuit3, value: &B32<V>) {
+        self.bytes.extend(b32_to_bytes(c, value));
+    }
+
+    /// A literal byte string.
+    pub fn push_literal(&mut self, c: &mut Circuit3, bytes: &[u8]) {
+        self.bytes.extend(
+            bytes
+                .iter()
+                .map(|&b| V::from_public(c.constant(Fr::from(u64::from(b))))),
+        );
+    }
+
+    /// Zero-pad to `len` and rebuild as `Bytes<len>` limbs.
+    pub fn finish(mut self, c: &mut Circuit3, len: usize) -> BytesN<V> {
+        assert!(self.bytes.len() <= len, "serialized size exceeds Bytes<{len}>");
+        let zero = V::from_public(c.constant(0u64));
+        self.bytes.resize(len, zero);
+        BytesN::from_le_bytes(c, &self.bytes)
+    }
+}
+
+impl<V: Vis3> Default for Serializer<V> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// `struct Secp256k1EcdsaSignature { r: Secp256k1Scalar, s: Secp256k1Scalar }`

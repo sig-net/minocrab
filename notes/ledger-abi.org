@@ -519,11 +519,25 @@ circuits differential-green incl. shaVerify/keccakVerify
 success assert, real ECDSA; rejects agree on bad sig / success=0 /
 tampered output).
 
+EVENTS/LOG (added 2026-08-14): =emit= (lower-emit.ss:20-27) = push
+=Array[Cell(version u32 as bytes<4>), Cell(tag bytes<1>),
+Cell(payload bytes<n>)]= + the VM =log= op (0x09); Misc = tag 10,
+version 1, size 288 = name(32) ‖ payload(256)
+(midnight-events.ss:71). minocrab-ledger =emit_event= (unit-tested
+against real Op::Push{Array}+Log field_repr); minocrab-std::v3
+=Serializer= (LE byte-wire assembly → BytesN limbs) +
+=BytesN::from_le_bytes=. DECODING TRAP resolved: zkir immediates
+print as LITTLE-ENDIAN hex, so emit1.zkir's payload atom "0x2001" is
+288 (0x120), not 8193 — mind this when reading corpus dumps.
+ACCEPTANCE: events base/emit1/emit2/emit4 all call-compatible
+(tests/events_differential.rs) incl. reject agreement on a tampered
+event payload spliced into the transcript.
+
 Still to build here: Map member/lookup differentials (shapes exist,
 no corpus circuit isolates them — first exercised by erc20-vault
-deposit/claim), Map rem, MerkleTree ops, log/events, conditional
-(guarded) reads, and the ledger-declaration DSL that assigns field
-indices and picks op sequences automatically.
+deposit/claim), Map rem, MerkleTree ops, conditional (guarded)
+reads, and the ledger-declaration DSL that assigns field indices and
+picks op sequences automatically.
 
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3

@@ -485,6 +485,35 @@ pub fn kernel_claim_zswap_coin_spend(note: &LedgerValue) -> Vec<ImpactOp> {
     kernel_claim(2, note)
 }
 
+// --- events -----------------------------------------------------------------
+
+/// `emit <event>` (compiler/analysis-passes/lower-emit.ss:20-27): push the
+/// MIP-0002 wrapper `Array[Cell(version: u32 as bytes<4>), Cell(tag:
+/// bytes<1>), Cell(payload)]`, then the VM `log` op. `payload` is the
+/// serialized event value (a single `bytes<n>` atom for the declared
+/// event size).
+pub fn emit_event(version: u32, tag: u8, payload: &LedgerValue) -> Vec<ImpactOp> {
+    let mut elems = vec![
+        ImpactElem::Imm(Fr::from(0x10u64)), // push, storage = false
+        ImpactElem::Imm(Fr::from(3u64 | (3 << 4))), // StateValue::Array(3) tag
+        // Cell(version as bytes<4>)
+        ImpactElem::Imm(Fr::from(1u64)),
+        ImpactElem::Imm(Fr::from(1u64)),
+        ImpactElem::Imm(Fr::from(4u64)),
+        ImpactElem::Imm(Fr::from(u64::from(version))),
+        // Cell(tag as bytes<1>)
+        ImpactElem::Imm(Fr::from(1u64)),
+        ImpactElem::Imm(Fr::from(1u64)),
+        ImpactElem::Imm(Fr::from(1u64)),
+        ImpactElem::Imm(Fr::from(u64::from(tag))),
+        // Cell(payload)
+        ImpactElem::Imm(Fr::from(1u64)),
+    ];
+    elems.extend(alignment_header(&payload.atoms));
+    elems.extend(payload.elems.iter().copied());
+    vec![ImpactOp(elems), ImpactOp::constant(&Op::Log)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,6 +619,48 @@ mod tests {
             ],
         )));
         assert_eq!(ours, real);
+    }
+
+    /// `emit_event` with a constant payload must match the real
+    /// `Op::Push` of the MIP-0002 wrapper Array followed by `Op::Log`.
+    #[test]
+    fn emit_event_matches_field_repr() {
+        use midnight_onchain_state::state::StateValue;
+
+        let payload_bytes: Vec<u8> = (1u8..=40).collect();
+        let payload_av = AlignedValue::new(
+            Value(vec![ValueAtom(payload_bytes.clone()).normalize()]),
+            Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+                length: 40,
+            })]),
+        )
+        .unwrap();
+        let version_av = AlignedValue::new(
+            Value(vec![ValueAtom(1u32.to_le_bytes().to_vec()).normalize()]),
+            Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+                length: 4,
+            })]),
+        )
+        .unwrap();
+        let real_push = Op::Push {
+            storage: false,
+            value: StateValue::Array(
+                vec![
+                    StateValue::Cell(Sp::new(version_av)),
+                    StateValue::Cell(Sp::new(field_key(10))),
+                    StateValue::Cell(Sp::new(payload_av)),
+                ]
+                .into(),
+            ),
+        };
+
+        // 40 bytes = 2 limbs: [leftover 9 bytes = bytes 31..39, bytes 0..30].
+        let hi = Fr::from_le_bytes(&(32u8..=40).collect::<Vec<_>>()).unwrap();
+        let lo = Fr::from_le_bytes(&(1u8..=31).collect::<Vec<_>>()).unwrap();
+        let payload = LedgerValue::bytes(40, vec![ImpactElem::Imm(hi), ImpactElem::Imm(lo)]);
+        let ours = emit_event(1, 10, &payload);
+        assert_eq!(imms(&ours[0]), repr(&real_push));
+        assert_eq!(imms(&ours[1]), repr(&Op::Log));
     }
 
     /// The read shapes' constant ops, against initialise.zkir's annotated

@@ -126,9 +126,10 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       popeq[c] embeds per compactc's vm-code; accepted via the initialise/
       initialize differentials below. KERNEL EFFECTS DONE + accepted:
       mintShielded + the three zswap claims (mint-tokens differentials).
-      REMAINING: Map rem, MerkleTree ops, log/events, guarded/conditional
-      reads, and the ledger-declaration DSL on top. Priority per
-      notes/signet-corpus.org (erc20-vault inventory).
+      EVENTS DONE + accepted: emit/log op + Serializer (events experiment,
+      all 4 circuits). REMAINING: Map rem, MerkleTree ops,
+      guarded/conditional reads, and the ledger-declaration DSL on top.
+      Priority per notes/signet-corpus.org (erc20-vault inventory).
 - [ ] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
       a differential + property test. (ABI modeled: notes/ledger-abi.org.
       Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
