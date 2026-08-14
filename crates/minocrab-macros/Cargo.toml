@@ -14,4 +14,6 @@ proc-macro = true
 # cannot smuggle circuit-building code into an expansion.
 proc-macro2 = "1"
 quote = "1"
-syn = "2"
+# "full" is what lets `#[circuit]` parse a whole `fn` (item syntax); the
+# derive needs only the default features.
+syn = { version = "2", features = ["full"] }

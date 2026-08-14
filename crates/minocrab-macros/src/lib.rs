@@ -8,6 +8,7 @@
 
 use proc_macro::TokenStream;
 
+mod circuit;
 mod circuit_arg;
 
 /// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
@@ -38,6 +39,44 @@ mod circuit_arg;
 pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     circuit_arg::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Turn a plain typed function into a circuit entry point.
+///
+/// ```ignore
+/// #[circuit]
+/// pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
+///     let one = c.constant(1u64);
+///     ..
+/// }
+/// ```
+///
+/// The parameters after `c: &mut Circuit3` are the circuit's arguments, in
+/// declaration order — **which is the wire contract**, exactly as for
+/// [`macro@CircuitArg`]: they become the fields of a hidden argument struct
+/// carrying that derive's impls, and `deposit` becomes the familiar
+/// `pub fn deposit() -> Compiled3` that declares them, constrains them from
+/// their types, and runs the body. Labels are the same mechanical
+/// `snake_case` → `lowerCamelCase` rule, with the same
+/// `#[arg(name = "…")]` escape hatch, written on the parameter.
+///
+/// A function returning `()` is Compact's `: []` entry point. One that
+/// returns a value discloses it, and names it with
+/// `#[circuit(output = "…")]`; only `CircuitOut` types — which are `Public`
+/// — can be returned, so a private value has to pass through `disclose`
+/// first.
+///
+/// An unused argument is legitimate (a slot can exist only to be part of the
+/// wire shape); silence the warning the way Rust always does, with a leading
+/// underscore — the label is unaffected, since `_recovery_id` and
+/// `recovery_id` both map to `recoveryId`.
+#[proc_macro_attribute]
+pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = syn::parse_macro_input!(attr as circuit::CircuitAttr);
+    let item = syn::parse_macro_input!(item as syn::ItemFn);
+    circuit::expand(attr, item)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

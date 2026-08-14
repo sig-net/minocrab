@@ -24,13 +24,20 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 #[cfg(feature = "macros")]
 pub use minocrab_macros::CircuitArg;
 
-/// Implementation detail of `#[derive(CircuitArg)]`: the two upstream types
-/// its expansion has to name, re-exported so the generated code needs only
-/// `minocrab_std` in scope and the macro crate needs no dependency of ours.
-/// Not a stable API.
+/// `#[circuit]` — a plain typed function becomes an entry point: the
+/// parameters after `c: &mut Circuit3` are the arguments (declaration order
+/// is the wire contract), and the function itself becomes
+/// `fn name() -> Compiled3` built through [`entry`] / [`entry_out`].
+#[cfg(feature = "macros")]
+pub use minocrab_macros::circuit;
+
+/// Implementation detail of `#[derive(CircuitArg)]` and `#[circuit]`: the
+/// upstream types their expansions have to name, re-exported so the
+/// generated code needs only `minocrab_std` in scope and the macro crate
+/// needs no dependency of ours. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
-    pub use minocrab::v3::Circuit3;
+    pub use minocrab::v3::{Circuit3, Compiled3};
     pub use minocrab::AlignmentAtom;
 }
 

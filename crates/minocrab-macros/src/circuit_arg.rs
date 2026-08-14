@@ -22,16 +22,19 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{Data, DeriveInput, Fields, Ident, LitStr, Type};
+use syn::{Attribute, Data, DeriveInput, Fields, Generics, Ident, LitStr, Type};
 
-/// One field of the derived struct: where its value lives and how its slots
+/// One field of the argument struct: where its value lives and how its slots
 /// are labelled.
-struct ArgField {
-    ident: Ident,
-    ty: Type,
+///
+/// The same three facts describe a derived struct's field and a `#[circuit]`
+/// function's parameter, which is why both go through [`impl_arg_traits`].
+pub(crate) struct ArgField {
+    pub(crate) ident: Ident,
+    pub(crate) ty: Type,
     /// The path segment this field contributes — `lowerCamelCase` of the
     /// field name, or the `#[arg(name = "…")]` override.
-    label: String,
+    pub(crate) label: String,
 }
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -44,8 +47,18 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let fields = arg_fields(&input)?;
-    let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    Ok(impl_arg_traits(&input.ident, &input.generics, &fields))
+}
+
+/// The two impls, from a struct's name and its fields in wire order — the
+/// whole of `#[derive(CircuitArg)]`, and the half of `#[circuit]` that
+/// describes its hidden argument struct.
+pub(crate) fn impl_arg_traits(
+    name: &Ident,
+    generics: &Generics,
+    fields: &[ArgField],
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
@@ -59,7 +72,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // notes/contract-api.org §macros).
     let root = quote!(::minocrab_std::v3);
 
-    Ok(quote! {
+    quote! {
         #[automatically_derived]
         impl #impl_generics #root::CircuitArg for #name #ty_generics #where_clause {
             const SLOTS: usize = 0usize #( + <#types as #root::CircuitArg>::SLOTS )*;
@@ -110,7 +123,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 <Self as #root::CircuitArg>::atoms()
             }
         }
-    })
+    }
 }
 
 /// The fields, in declaration order — which IS the wire order.
@@ -139,29 +152,32 @@ fn arg_fields(input: &DeriveInput) -> syn::Result<Vec<ArgField>> {
         .iter()
         .map(|field| {
             let ident = field.ident.clone().expect("named fields");
-            let label = match arg_name(field)? {
-                Some(name) => name,
-                None => {
-                    let name = lower_camel_case(&ident.to_string());
-                    if name.is_empty() {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "field name yields an empty label; give one with \
-                             #[arg(name = \"…\")]",
-                        ));
-                    }
-                    name
-                }
-            };
+            let label = arg_label(&ident, &field.attrs)?;
             Ok(ArgField { ident, ty: field.ty.clone(), label })
         })
         .collect()
 }
 
-/// The `#[arg(name = "…")]` override, if the field carries one.
-fn arg_name(field: &syn::Field) -> syn::Result<Option<String>> {
+/// The label one field or parameter contributes: its `#[arg(name = "…")]`
+/// override, else the mechanical `lowerCamelCase` of its name.
+pub(crate) fn arg_label(ident: &Ident, attrs: &[Attribute]) -> syn::Result<String> {
+    if let Some(name) = arg_name(attrs)? {
+        return Ok(name);
+    }
+    let name = lower_camel_case(&ident.to_string());
+    if name.is_empty() {
+        return Err(syn::Error::new(
+            ident.span(),
+            "the name yields an empty label; give one with #[arg(name = \"…\")]",
+        ));
+    }
+    Ok(name)
+}
+
+/// The `#[arg(name = "…")]` override, if the field or parameter carries one.
+fn arg_name(attrs: &[Attribute]) -> syn::Result<Option<String>> {
     let mut name = None;
-    for attr in field.attrs.iter().filter(|a| a.path().is_ident("arg")) {
+    for attr in attrs.iter().filter(|a| a.path().is_ident("arg")) {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("name") {
                 let lit: LitStr = meta.value()?.parse()?;
