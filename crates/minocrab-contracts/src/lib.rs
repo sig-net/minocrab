@@ -9,4 +9,5 @@
 pub mod attest;
 pub mod common;
 pub mod erc20_vault;
+pub mod mint_tokens;
 pub mod test_caller;

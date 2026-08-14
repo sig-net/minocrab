@@ -10,7 +10,7 @@
 use minocrab::v3::{
     Bytes32T, Circuit3, FieldT, IrTy, Secp256k1PointT, Secp256k1ScalarT, Wire3,
 };
-use minocrab::{AlignmentAtom, AlignmentSegment, Meet, Private, Public, Visibility};
+use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
 /// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
@@ -48,8 +48,23 @@ impl B32<Public> {
         let mut bytes = [0u8; 32];
         bytes[..s.len()].copy_from_slice(s.as_bytes());
         B32 {
-            hi: c.constant(minocrab::Fr::from(u64::from(bytes[31]))),
-            lo: c.constant(minocrab::Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")),
+            hi: c.constant(Fr::from(u64::from(bytes[31]))),
+            lo: c.constant(Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")),
+        }
+    }
+}
+
+impl<V: Vis3> B32<V> {
+    /// `bit ? a : b`, limbwise.
+    pub fn cond_select(
+        c: &mut Circuit3,
+        bit: Wire3<FieldT, V>,
+        a: &B32<V>,
+        b: &B32<V>,
+    ) -> B32<V> {
+        B32 {
+            hi: c.cond_select(bit, a.hi, b.hi),
+            lo: c.cond_select(bit, a.lo, b.lo),
         }
     }
 }
@@ -219,4 +234,110 @@ pub fn secp256k1_ethereum_address<V: Vis3>(
     let pair = B32::from_typed(c, hash);
     let hash_bytes = b32_to_bytes(c, &pair);
     rebuild_limb(c, &hash_bytes[12..32])
+}
+
+// --- coins (the zswap stdlib circuits, v3) -----------------------------------
+
+/// `circuit ownPublicKey(): ZswapCoinPublicKey` — witness-backed: the
+/// local secret key never enters the circuit, the runtime supplies the
+/// derived key as a witness, input-constrained like any `Bytes<32>`
+/// (confirmed against the mint-tokens corpus artifact).
+pub fn own_public_key(c: &mut Circuit3) -> B32<Private> {
+    let pk = B32 {
+        hi: c.witness::<FieldT>(),
+        lo: c.witness::<FieldT>(),
+    };
+    pk.constrain_input(c);
+    pk
+}
+
+/// A `bytes<n>` (n ≤ 31) literal as a single constant limb.
+fn short_literal<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Wire3<FieldT, V> {
+    assert!(bytes.len() <= 31);
+    V::from_public(c.constant(Fr::from_le_bytes(bytes).expect("≤31 bytes fit")))
+}
+
+fn b32_atom() -> AlignmentSegment {
+    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 })
+}
+
+/// `circuit tokenType(domain_sep: Bytes<32>, contract: ContractAddress):
+/// Bytes<32>` — `persistentHash([pad(32, "midnight:derive_token"),
+/// domain_sep, contract])` (input order confirmed against the mint-tokens
+/// corpus artifact).
+pub fn token_type<V: Vis3>(
+    c: &mut Circuit3,
+    domain_sep: &B32<V>,
+    contract: &B32<V>,
+) -> B32<V> {
+    let prefix = B32::pad(c, "midnight:derive_token");
+    let (p_hi, p_lo) = (V::from_public(prefix.hi), V::from_public(prefix.lo));
+    let alignment = Alignment(vec![b32_atom(), b32_atom(), b32_atom()]);
+    let digest = c.persistent_hash(
+        alignment,
+        &[
+            p_hi.erase(),
+            p_lo.erase(),
+            domain_sep.hi.erase(),
+            domain_sep.lo.erase(),
+            contract.hi.erase(),
+            contract.lo.erase(),
+        ],
+    );
+    B32::from_typed(c, digest)
+}
+
+/// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
+/// value: Uint<128> }`.
+#[derive(Clone, Copy)]
+pub struct ShieldedCoinInfo3<V: Vis3> {
+    pub nonce: B32<V>,
+    pub color: B32<V>,
+    pub value: Wire3<FieldT, V>,
+}
+
+/// `Either<ZswapCoinPublicKey, ContractAddress>` — a coin recipient. Both
+/// arms are `Bytes<32>` on the wire; `is_left` = 1 selects the public key.
+#[derive(Clone, Copy)]
+pub struct CoinRecipient<V: Vis3> {
+    pub is_left: Wire3<FieldT, V>,
+    pub left: B32<V>,
+    pub right: B32<V>,
+}
+
+/// `circuit coinCommitment(coin, recipient): Bytes<32>` —
+/// `persistentHash` over the coin preimage `["midnight:zswap-cc[v1]"
+/// (Bytes<21>), nonce, color, value (Uint<128>), is_left (Boolean),
+/// recipient bytes]`, mirroring the v2 port (`crate::coin`) and the
+/// mint-tokens corpus artifact.
+pub fn coin_commitment<V: Vis3>(
+    c: &mut Circuit3,
+    coin: &ShieldedCoinInfo3<V>,
+    recipient: &CoinRecipient<V>,
+) -> B32<V> {
+    let prefix = short_literal::<V>(c, b"midnight:zswap-cc[v1]");
+    let data = B32::cond_select(c, recipient.is_left, &recipient.left, &recipient.right);
+    let alignment = Alignment(vec![
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 21 }),
+        b32_atom(),
+        b32_atom(),
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 16 }),
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
+        b32_atom(),
+    ]);
+    let digest = c.persistent_hash(
+        alignment,
+        &[
+            prefix.erase(),
+            coin.nonce.hi.erase(),
+            coin.nonce.lo.erase(),
+            coin.color.hi.erase(),
+            coin.color.lo.erase(),
+            coin.value.erase(),
+            recipient.is_left.erase(),
+            data.hi.erase(),
+            data.lo.erase(),
+        ],
+    );
+    B32::from_typed(c, digest)
 }

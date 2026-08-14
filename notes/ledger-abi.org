@@ -487,12 +487,29 @@ field, spliced from =encode=). Both reject the same guard failures as
 the corpus artifacts (already-initialised, wrong deployer sk, and for
 the vault zero chain-id / zero router).
 
+KERNEL EFFECTS OPS (added 2026-08-14): the zswap/kernel update ops
+operate on the EFFECTS array — each sequence is `swap 0` … `swap 0`
+bracketed. Implemented per midnight-ledger.ss: =kernel_mint_shielded=
+(:216 — member test on effects[4] then insert-or-add via a VM-side
+=branch=; the PI stream is identical on both paths) and the three
+claims =kernel_claim_zswap_{nullifier,coin_receive,coin_spend}=
+(effects[0]/[1]/[2], :162/:184/:173 — note the index/name pairing:
+CoinSpend is effects[2], CoinReceive effects[1]). minocrab-std::v3
+gained =token_type= (hash [pad("midnight:derive_token"), domain_sep,
+contract]), =coin_commitment= (hash [b21 "midnight:zswap-cc[v1]",
+nonce, color, value b16, is_left b1, recipient b32]),
+=own_public_key= (a witnessed, input-constrained Bytes<32> — the
+secret key never enters the circuit). ACCEPTANCE: both mint-tokens
+circuits call-compatible (tests/mint_tokens_differential.rs),
+including a full tamper sweep (every transcript element flipped ⇒
+both artifacts reject, zero acceptance disagreements). This also
+validates =kernel_self= against a real corpus artifact.
+
 Still to build here: Map member/lookup differentials (shapes exist,
 no corpus circuit isolates them — first exercised by erc20-vault
-deposit/claim), Map rem, MerkleTree ops, log/events, the zswap/kernel
-effects ops (mint), conditional (guarded) reads, and the
-ledger-declaration DSL that assigns field indices and picks op
-sequences automatically.
+deposit/claim), Map rem, MerkleTree ops, log/events, conditional
+(guarded) reads, and the ledger-declaration DSL that assigns field
+indices and picks op sequences automatically.
 
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3

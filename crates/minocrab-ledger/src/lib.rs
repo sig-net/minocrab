@@ -402,6 +402,89 @@ pub fn kernel_self<V: Visibility + Copy>(
     [wires[0], wires[1]]
 }
 
+// --- kernel effects ops -----------------------------------------------------
+//
+// The zswap/kernel update ops operate on the EFFECTS array (not contract
+// state): each sequence starts `swap 0` to bring effects to the top and
+// ends `swap 0` to restore [context, effects, state]. Sequences are
+// midnight-ledger.ss's Kernel vm-code verbatim; these ops write no popeq,
+// so they return nothing.
+
+/// `push` of `StateValue::Null` (the claim maps hold `Null` values).
+fn push_null() -> ImpactOp {
+    ImpactOp::constant(&Op::Push {
+        storage: false,
+        value: midnight_onchain_state::state::StateValue::Null,
+    })
+}
+
+/// `kernel.mintShielded(domain_sep, amount)` (midnight-ledger.ss:216-254):
+/// upsert into the effects' shielded-mints map (effects[4]) — member test,
+/// then either insert `amount` or add it to the existing entry via a
+/// VM-side `branch` (the PI stream is identical on both paths; the branch
+/// is resolved on chain).
+pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: true,
+            path: vec![Key::Value(field_key(4))].into(),
+        }),
+        push_cell(false, domain_sep),
+        ImpactOp::constant(&Op::Dup { n: 1 }),
+        ImpactOp::constant(&Op::Dup { n: 1 }),
+        ImpactOp::constant(&Op::Member),
+        push_cell(false, amount),
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+        ImpactOp::constant(&Op::Neg),
+        ImpactOp::constant(&Op::Branch { skip: 4 }),
+        ImpactOp::constant(&Op::Dup { n: 2 }),
+        ImpactOp::constant(&Op::Dup { n: 2 }),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: false,
+            path: vec![Key::Stack].into(),
+        }),
+        ImpactOp::constant(&Op::Add),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+    ]
+}
+
+/// The shared claim shape (claimZswapNullifier :162 / claimZswapCoinSpend
+/// :173 / claimZswapCoinReceive :184): insert `note → Null` into the
+/// claim map at `effects[index]`.
+fn kernel_claim(effect_index: u8, note: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: true,
+            path: vec![Key::Value(field_key(effect_index))].into(),
+        }),
+        push_cell(false, note),
+        push_null(),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+    ]
+}
+
+/// `kernel.claimZswapNullifier(nul)` — effects[0].
+pub fn kernel_claim_zswap_nullifier(nul: &LedgerValue) -> Vec<ImpactOp> {
+    kernel_claim(0, nul)
+}
+
+/// `kernel.claimZswapCoinReceive(note)` — effects[1].
+pub fn kernel_claim_zswap_coin_receive(note: &LedgerValue) -> Vec<ImpactOp> {
+    kernel_claim(1, note)
+}
+
+/// `kernel.claimZswapCoinSpend(note)` — effects[2].
+pub fn kernel_claim_zswap_coin_spend(note: &LedgerValue) -> Vec<ImpactOp> {
+    kernel_claim(2, note)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

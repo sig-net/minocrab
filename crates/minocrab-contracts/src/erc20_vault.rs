@@ -40,7 +40,6 @@
 //! persistentHash<Vector<2, Bytes<32>>>([pad(32, "vault:user:"), sk])`.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT};
-use minocrab::AlignmentAtom;
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
 use minocrab_std::v3::B32;
 

@@ -124,10 +124,11 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       READS DONE + accepted: cell/counter read, counter lessThan, map
       member/lookup/size/isEmpty, kernel self — public_input gates +
       popeq[c] embeds per compactc's vm-code; accepted via the initialise/
-      initialize differentials below. REMAINING: Map rem, MerkleTree ops,
-      log/events, zswap effects ops (mint), guarded/conditional reads, and
-      the ledger-declaration DSL on top. Priority per notes/signet-corpus.org
-      (erc20-vault inventory).
+      initialize differentials below. KERNEL EFFECTS DONE + accepted:
+      mintShielded + the three zswap claims (mint-tokens differentials).
+      REMAINING: Map rem, MerkleTree ops, log/events, guarded/conditional
+      reads, and the ledger-declaration DSL on top. Priority per
+      notes/signet-corpus.org (erc20-vault inventory).
 - [ ] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
       a differential + property test. (ABI modeled: notes/ledger-abi.org.
       Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
@@ -138,7 +139,9 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       test-caller-contract initialise + erc20-vault initialize (the
       benchmark target's setup circuit) call-compatible incl. reject
       agreement on all guard failures — the first read-exercising
-      differentials.)
+      differentials. mint-tokens COMPLETE (both circuits): kernel.self +
+      zswap mint/claim effects + tokenType/coinCommitment/ownPublicKey
+      v3 ports, with a full transcript-tamper sweep.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Cross-contract calling
