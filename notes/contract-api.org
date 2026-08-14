@@ -1,0 +1,184 @@
+#+title: Contract-API ergonomics (M9): entry points, disclosure declarations, rusty interfaces
+
+Design agreed with dmd 2026-08-14 (session discussion; survey by Plan agent).
+This file is the design of record for M9 — phases and decisions below are
+settled unless dmd reopens them.
+
+* Survey facts the design rests on
+- The differential comparator (assert_call_compatible, e.g.
+  erc20_vault_differential.rs:275) compares only the input schema's TYPE
+  column (nearly all Scalar<BLS12-381>), the output schema, pi_skips, pis.
+  Argument NAMES are cosmetic (ledger-abi.org §6 says so); argument ORDER
+  is the real contract (feeds the commitment + preimage layout), and a
+  same-typed permutation is caught only by PI equality. Hence phase 0:
+  an interface-snapshot instrument, frozen at HEAD, before any port.
+- compactc does NOT flatten struct args with underscore paths — it emits
+  the repeated base name (%depositRequest.5, %depositRequest.6).
+  depositRequest_erc20Address is OUR convention (strictly more
+  informative). DECIDED: keep ours.
+- v3 has no scalar wrapper types: circuits pass raw Wire3<FieldT,Private>
+  and hand-write assert_bits in a block parallel to the c.arg block
+  (deposit: 7+7 lines, claim: 13+13, agreeing by eye). Nothing ties
+  Compact's Uint<64> to our assert_bits(w, 64) — an under-constrained arg
+  is invisible to PI equality on honest preimages. The typed-argument
+  layer closes a soundness hole, not just an ergonomics gap.
+- Witnesses are NOT entry-point arguments: Compact declares them at
+  module level and calls them in the body; common::witness_sk already
+  mirrors that. They stay out of the signature (optional #[witness]
+  decorator later, low priority).
+- Builder3::input asserts all inputs precede instructions — the
+  declare-then-constrain two-phase split must live in the API (entry()).
+- Prior art: ic-cdk (CandidType: ONE trait yields both schema and
+  materialization so they cannot disagree; macro is a shim) and NEAR
+  (#[near_bindgen]: per-method struct whose fields are the fn params).
+
+* The design
+** Typed v3 leaves (minocrab-std/src/v3.rs)
+#+begin_src rust
+#[repr(transparent)] pub struct Uint<const BITS: u32, V: Vis3 = Private>(Wire3<FieldT, V>);
+#[repr(transparent)] pub struct Bool<V: Vis3 = Private>(Wire3<FieldT, V>);
+#[repr(transparent)] pub struct Bytes<const N: usize, V: Vis3 = Private>(Wire3<FieldT, V>); // N ≤ 31
+#+end_src
+DECIDED (dmd): const-first Uint<64> with V defaulted, accepting the
+inconsistency with B32<V>/BytesN<V,N> parameter order — the Compact
+side-by-side wins for argument types. .field() unwraps to the raw wire
+(zero instructions). B32/BytesN<V,N> stay as they are.
+DECIDED (dmd): where possible, methods should also accept native Rust
+values (u64 etc.) — via impl Into<Operand> immediates (see literals
+phase) and typed const constructors with compile-time range checks.
+Native types can't BE argument types (args are wires), but they should
+flow into constant/operand positions without ceremony.
+DECIDED (dmd): users must be able to derive their own argument types
+following the Compact FAB rules — #[derive(CircuitArg)] on their structs
+is the mechanism; hand-impls of CircuitArg for custom leaves allowed.
+
+** CircuitArg: one trait = schema + materialization + constraints
+const SLOTS; push_atoms (FAB atoms); declare(c, &ArgPath) (ONLY c.arg
+calls, names from the path); constrain(&self, c) (exactly compactc's
+input constraints, slot order). ArgPath builds depositRequest_erc20Address
+style labels (head + _-joined segments; structural suffixes _hi/_lo/_{i}/
+_is_some/_is_left come from the leaf impls, stated once).
+Leaf table: Uint<BITS>=1 slot/bytes ceil(BITS/8)/assert_bits(BITS);
+Bool=1/bytes 1/assert_boolean; Bytes<N≤31>=1/bytes N/8N bits;
+B32=2 (path_hi, path_lo); BytesN<N>=bytes_limbs(N) (path_0..); arrays
+(path_{i}); Maybe (1+T, path_is_some); Either (1+A+B, path_is_left).
+Struct impls: field order IS the wire contract (rule precedented in
+signet.rs).
+
+** CircuitArgs + entry()
+CircuitArgs: SLOTS / declare / constrain / atoms — the whole argument
+list (per-circuit struct, later macro-generated). entry() owns
+Circuit3::new → A::declare → debug_assert arg_count == SLOTS →
+A::constrain → body → CircuitOut::emit → finish(true).
+dmd's original wrap(("names",..), |tuple|..) sketch rejected for: two
+hand-parallel lists that desync silently; hand-flattening at call sites;
+strings carry no width so no assert_bits; tuple arity at 13+ args.
+
+** Return values / CircuitOut
+DECIDED (typed return — dmd's Discloses<D, R> sketch implies it):
+circuits return real values mapped through CircuitOut to c.output calls
+(matches Compact's `: Bytes<32>`). CircuitOut implemented ONLY for
+Public-visibility types ⇒ returning is disclosing, compiler-enforced;
+a private value must pass disclose() to be returnable. Output schema is
+pinned by the differentials (ours.outputs == theirs.outputs), so
+CircuitOut impls carry the output atom order the same way CircuitArg
+carries the input order.
+
+** Disclosure declaration (DECIDED: option B, typed labels)
+#+begin_src rust
+label!(RequestId = "request id");           // zero-sized label type
+#[circuit]
+fn deposit(c, ...) -> Discloses<(DepositorCommitment, RequestId, RequestRecord), Bool<Public>> {
+    ... let key = c.disclose_as::<RequestId>(rid_b32); ... Discloses::of(ok)
+}
+#+end_src
+- Discloses<D, R = ()> is a REAL zero-cost wrapper (PhantomData<D> +
+  value: R), constructed with Discloses::of(..) — works in the non-macro
+  core; the macro does no signature surgery. (Confirmed by dmd; standing
+  principle for all of M9: prefer real types over macro rewriting — the
+  more the macros do, the more rust-analyzer/tooling struggle, and real
+  types give better type errors. Macros only generate impls/shims that
+  could have been written by hand.)
+- disclose_as::<L> on multi-wire values (B32 etc.) fans out to the limb
+  disclosures under one symbol (the current "request id (hi)/(lo)" pairs
+  become one label type). Labels are per logical value, not per limb.
+- Enforcement split: rustc checks the SYMBOLS (typo/rename = compile
+  error; declaration, call sites, generated test share one type). The
+  set-equality of declared vs actual is a macro-GENERATED #[test]
+  running the simulator — full static enforcement would need type-state
+  threading of a label set through &mut c (rejected as baroque).
+- dmd's proviso: acceptable only if the failure is not confusing. So the
+  generated test's assertion message is part of the design: it must name
+  the circuit and print "declared but never disclosed: [..]" /
+  "disclosed but not declared: [..]" with the fix spelled out. It is a
+  plain test failure, never a type error.
+- Also generated (feature-gated, needs preimage): a valued disclosure
+  report golden via minocrab-sim v3 report.
+- Prerequisites: v3 Disclosure must carry the Identifier (today index: 0,
+  crates/minocrab/src/v3.rs:572) and minocrab-sim needs a v3 report()
+  twin (~30 lines).
+- Rejected: const-assertion variant (circuits are built at runtime;
+  nothing const to assert) — do not re-litigate.
+
+** #[circuit] / #[derive(CircuitArg)] (crates/minocrab-macros)
+proc-macro crate, syn 2 + quote; re-exported from minocrab behind a
+default-on `macros` feature; depends on nothing of ours (emits paths).
+#[circuit] on fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, ...)
+generates: hidden __deposit_Args struct + CircuitArgs impl + pub fn
+deposit() -> Compiled3 calling entry(). THINNESS RULE: the expansion
+contains NO Circuit3 method call — everything via entry/CircuitArg;
+enforced by a cargo-expand/trybuild golden + review grep.
+Naming: mechanical snake_case → lowerCamelCase (reproduces 53/53
+existing leaf labels); #[arg(name = "...")] escape hatch. Accepted
+consequence: hand-abbreviated labels (claim's respond_bigR_x) lengthen —
+name-only movement, visible in the interface snapshot.
+
+** Later phases (each separately gated)
+- Maps: #[derive(Ledger)] on a struct mirroring the Compact export
+  ledger block → declaration-order indices + typed LedgerMap<K,V> with
+  Compact's method names (member/lookup/insert/remove/size/is_empty),
+  atoms derived via a LedgerRepr trait (kills hand-written value_atoms —
+  a real PI-bug hazard — and the hand-maintained index consts).
+  REJECTED on the no-hidden-cost rule: Index/map[k] sugar, Deref, entry(),
+  iterators. Invariant: no method issues more Impact ops than the one
+  Compact operation it names; c + guard stay visible.
+- Literals: builder methods accept impl Into<Operand> so native Rust
+  values become inline v3 immediates — c.less_than(0u64, amount, 128)
+  emits NO instruction (today's c.constant emits a Copy just to name an
+  immediate). Typed const constructors Uint::<128>::constant(c, v) with
+  compile-time range check. CAUTION: removing Copys is exactly the
+  row-snapshot's measured blind spot (Copy = 0 rows, see
+  const-generics.org) — gate on differentials + hand-reviewed
+  instruction-count delta. REJECTED: std::ops overloading (needs hidden
+  builder state; hides cost). Note: Meet already gives mixed-visibility
+  ops; sprinkled .private() calls are removable noise.
+
+* Phasing (M9 bullets mirror this)
+0. Interface-snapshot test: ordered (label, type) of ir.inputs +
+   ir.outputs + witnesses, all 55 circuits, frozen at HEAD (instrument
+   first, like row_snapshot was for const generics).
+1. Typed leaves Uint/Bool/Bytes<N≤31> (v3).
+2. CircuitArg/ArgPath/CircuitArgs/entry/CircuitOut core, hand impls;
+   port signet_contract::sign_bidirectional + erc20_vault::deposit.
+3. minocrab-macros + #[derive(CircuitArg)]; port withdraw + claim
+   (Maybe<Either<..>> = hardest flattening).
+4. #[circuit] attribute; re-port the same four (diff = struct→attribute).
+5. Mechanical port of the remaining circuits (interface snapshot: name
+   column may move where mechanical naming lengthens labels; order/types
+   NEVER).
+6. Disclosure: Identifier fix + v3 report + label!/disclose_as/
+   Discloses + generated tests.
+7. Maps + literals (separate commits, separate gates as above).
+Gates for every phase: interface snapshot + row_snapshot + all 13
+differential suites; ports must be zero-movement (except documented
+name-column changes in 5).
+
+* Risks
+- Order drift in derived structs = silent preimage change; backstops:
+  interface snapshot (slot granularity) + PI equality + the written
+  field-order rule.
+- declare() emitting an instruction: trips Builder3::input's assert;
+  entry() also asserts arg_count == SLOTS.
+- Macro-hidden work: thinness rule + expand golden.
+- rustc 1.97 stable only — nothing here needs generic_const_exprs
+  (SLOTS sums are associated consts, not array lengths).

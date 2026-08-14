@@ -288,3 +288,40 @@ still green.
 - [ ] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
       (update pin → run corpus + harness → fix drift).
 Exit criteria: a version bump is a routine chore, not a project.
+
+* M9 — Contract-API ergonomics
+Design of record: notes/contract-api.org (agreed with dmd 2026-08-14).
+Circuit entry points as plain typed Rust fns (NEAR/dfinity-style
+decorator over a non-macro CircuitArg/entry core), typed disclosure
+declarations with generated tests, then rusty maps + literals. Standing
+principle: real types over macro rewriting — macros only generate
+impls/shims writable by hand. Zero circuit overhead throughout; every
+phase gated on interface snapshot + row_snapshot + all differential
+suites.
+- [ ] Phase 0: interface-snapshot test — ordered (label, type) of
+      inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
+- [ ] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
+      with .field() unwrap; native-Rust values accepted where possible.
+- [ ] Phase 2: CircuitArg (schema+declare+constrain in one trait),
+      ArgPath naming, CircuitArgs, entry(), CircuitOut (Public-only ⇒
+      returning is disclosing); hand impls; port sign_bidirectional +
+      deposit with zero movement.
+- [ ] Phase 3: crates/minocrab-macros — #[derive(CircuitArg)]; port
+      withdraw + claim (Maybe<Either<..>> flattening).
+- [ ] Phase 4: #[circuit] attribute (thinness rule: expansion contains
+      no Circuit3 call); re-port the phase-2/3 circuits.
+- [ ] Phase 5: mechanical port of the remaining circuits (order/types
+      never move; name column only where mechanical naming lengthens
+      hand-abbreviated labels).
+- [ ] Phase 6: disclosure — v3 Disclosure carries the Identifier, v3
+      report(), label!/disclose_as::<L>/Discloses<D, R> +
+      Discloses::of, macro-generated set-equality tests with
+      prescriptive failure messages + valued-report golden.
+- [ ] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
+      method names, no hidden Impact ops) and inline-immediate literals
+      (impl Into<Operand>; gated on hand-reviewed instruction deltas —
+      row snapshot is blind to Copy removal).
+Exit criteria: the benchmark contracts read side-by-side with their
+Compact sources, disclosure declarations are part of every circuit's
+signature and enforced by generated tests, and every instrument (rows,
+interfaces, differentials) shows zero unexplained movement.
