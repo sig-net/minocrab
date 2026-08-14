@@ -102,23 +102,24 @@ produce today's numbers are written in the explicit builder form —
 Selected cells from `BENCHMARK.md` (one session, 2026-08-15, Apple Silicon; MinoCrab
 `mc` vs compactc `cc`, prove = median of 3, identical statements proved):
 
-| circuit | rows mc | rows cc | k mc/cc | prove mc | prove cc |
+| circuit | k mc/cc | prove mc | prove cc | RAM mc | RAM cc |
 |---|---|---|---|---|---|
-| deposit | 17,502 | 27,002 | 15 / 15 | 4.79s | 4.96s |
-| claim | 47,660 | 64,549 | **16 / 17** | 9.45s | 19.13s |
-| completeSwap | 65,071 | 104,615 | **16 / 17** | 13.05s | 25.14s |
-| respond (singleton) | 1,004 | 40,931 | **10 / 16** | 0.13s | 5.12s |
-| initialize | 4,272 | 4,272 | 13 / 13 | 0.90s | 0.89s |
+| deposit | 15 / 15 | 4.79s | 4.96s | 781MB | 783MB |
+| claim | **16 / 17** | 9.45s | 19.13s | **1.8GB** | 3.2GB |
+| completeSwap | **16 / 17** | 13.05s | 25.14s | **1.9GB** | 3.5GB |
+| respond (singleton) | **10 / 16** | 0.13s | 5.12s | **41MB** | 879MB |
+| initialize | 13 / 13 | 0.90s | 0.89s | 176MB | 179MB |
 
 Wins come from instruction selection — ZKIR's native `ReverseBytes` and byte-aligned
 slices instead of compactc's per-byte `div_mod_power_of_two` / `reconstitute_field`
 chains — plus a segment-based serializer that splits limbs only at output-limb
-boundaries; row cuts turn into time only when they cross a power-of-two `k`
-boundary, which they did on eight of twelve circuits.
+boundaries; constraint cuts turn into time and RAM only when they cross a
+power-of-two `k` boundary — each crossing roughly halves both — which they did on
+eight of twelve circuits.
 
 Parity is real too: `initialize` has no byte plumbing and is identical row for row,
-and `deposit` (−35% rows) and `withdraw` (−19% rows) prove in essentially compactc's
-time because Halo2's cost is dominated by the padded size 2^k, not the occupied rows.
+and `deposit` (−35% rows) and `withdraw` (−19% rows) prove in compactc's time and
+memory because Halo2's cost is dominated by the padded size 2^k, not the occupied rows.
 
 Full table (all 24 cells, RSS, keygen), methodology and per-region profiles:
 [BENCHMARK.md](BENCHMARK.md).
