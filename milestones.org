@@ -162,9 +162,14 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       reads/witnesses/asserts, the coin ports (receiveShielded, burn
       via sendImmediateShielded's folded form, coinNullifier,
       nonce evolution, dynamic + static-left + guarded mints).
-      REMAINING for the M6 "both contracts" bullet: the Signet
-      singleton's own circuits (Signet.compact / midnight-integration),
-      then the benchmark harness.)
+      Signet singleton DONE 2026-08-14: its on-chain circuits turn out
+      to live in signet-contract.compact (Signet.compact is the module,
+      already ported; circuits.compact is --skip-zk, no zkir) — all 3
+      emit-only circuits (signBidirectional/respond/respondBidirectional)
+      differential-green with tamper rejection agreement
+      (minocrab-contracts::signet_contract). See notes/signet-corpus.org.
+      With that, every M6-scope circuit is ported: REMAINING here is
+      nothing — the benchmark harness is M6's own bullet.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Cross-contract calling

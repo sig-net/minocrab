@@ -14,9 +14,25 @@ The =full-stack-demo= repo is the Next.js front-end for this vault (no
 .compact of its own).
 
 * midnight-integration — packages/
-- =signet-midnight/src/Signet.compact= (+ =circuits.compact=) — the Signet
-  MPC singleton the vault calls into.
-- =signet-contract/src/signet-contract.compact=
+- =signet-midnight/src/Signet.compact= — a *module* (library): structs,
+  RequestId hashing, the SignetSigner contract interface, attestation
+  verify. No circuits of its own on chain (its compiled contract-info has
+  an empty circuits list). Ported as =minocrab-contracts::signet=.
+- =signet-midnight/src/circuits.compact= — contract-less re-export of the
+  module's pure circuits for TS unit tests; compiled with =--skip-zk=, so
+  NO zkir output → nothing to differential against.
+- =signet-contract/src/signet-contract.compact= — *this is the Signet
+  singleton contract* the vault calls cross-contract ("the central Sig
+  Network contract on Midnight", its own header). Three stateless
+  emit-only circuits: signBidirectional / respond / respondBidirectional,
+  each one Misc event (name pad(32,…) ‖ 256-byte payload), no ledger
+  fields, no witnesses, unauthenticated by design. The 2026-08-13
+  "NOT in scope" line below predates this finding — it read
+  signet-contract.compact as a separate client contract; the singleton's
+  circuits ARE signet-contract.compact's. Ported 2026-08-14:
+  =minocrab-contracts::signet_contract=, all 3 differential-green incl.
+  tamper + swapped-event-name rejection agreement
+  (tests/signet_contract_differential.rs).
 - =test-caller-contract{,-20-field}/src/*.compact= — cross-contract test
   callers.
 - =midnight-serde/tests/fixtures/serde-fixtures.compact=
