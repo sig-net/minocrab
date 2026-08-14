@@ -134,17 +134,18 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       a differential + property test. (ABI modeled: notes/ledger-abi.org.
       Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
       on a shared ProofPreimage; instruction shape free to differ.
-      STARTED — crates/minocrab-contracts: attest COMPLETE (all 4
-      circuits: mapOnly, verifyOnly, shaVerify, keccakVerify — the last
-      two via the deserialize<T,N> byte-layout port, BytesN limbs +
-      byte-surgery in minocrab-std::v3), incl. real-ECDSA paths and
-      reject agreement (bad signature, success=0, tampered output).
-      test-caller-contract initialise + erc20-vault initialize (the
-      benchmark target's setup circuit) call-compatible incl. reject
-      agreement on all guard failures — the first read-exercising
-      differentials. mint-tokens COMPLETE (both circuits): kernel.self +
-      zswap mint/claim effects + tokenType/coinCommitment/ownPublicKey
-      v3 ports, with a full transcript-tamper sweep.)
+      STARTED — crates/minocrab-contracts. Every non-cross-contract
+      experiment in signet-midnight-experiments is COMPLETE and
+      differential-green: baseline (noop/base), attest (all 4, incl.
+      shaVerify/keccakVerify via the deserialize<T,N> port), events
+      (base/emit1/2/4), hashing (all 10), keccak (all 9), mint-tokens
+      (both), serde-builtin (checkRoundtrip). Plus test-caller-contract
+      initialise and erc20-vault initialize (the benchmark target's
+      setup circuit), each with reject-agreement tests. REMAINING
+      rewrites need M5 cross-contract calling: xcall{,-with-payment},
+      xcontract-events, Signet.compact, the rest of test-caller and of
+      erc20-vault (deposit/claim/withdraw… also need the event-map
+      composite + guarded reads).)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Cross-contract calling

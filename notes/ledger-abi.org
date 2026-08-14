@@ -533,11 +533,22 @@ ACCEPTANCE: events base/emit1/emit2/emit4 all call-compatible
 (tests/events_differential.rs) incl. reject agreement on a tampered
 event payload spliced into the transcript.
 
+MORE ACCEPTANCE (2026-08-14): hashing + keccak experiments (all 19
+circuits — persistent/transient/keccak hashing over Bytes<32..1024>,
+Field-atom cell write for fdigest, Vector<8, Bytes<32>> alignment)
+and serde-builtin checkRoundtrip (deserialize→serialize→assert;
+rejects agree on flag=2 and nonzero padding). With these, EVERY
+non-cross-contract experiment in signet-midnight-experiments is
+differential-green.
+
 Still to build here: Map member/lookup differentials (shapes exist,
 no corpus circuit isolates them — first exercised by erc20-vault
 deposit/claim), Map rem, MerkleTree ops, conditional (guarded)
-reads, and the ledger-declaration DSL that assigns field indices and
-picks op sequences automatically.
+reads, the ledger-declaration DSL that assigns field indices and
+picks op sequences automatically — and then M5's cross-contract
+layer (claimContractCall + caller-side commitment,
+desugar-contract-calls.ss), which the remaining corpus rewrites all
+block on.
 
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3

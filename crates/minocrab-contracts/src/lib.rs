@@ -10,5 +10,7 @@ pub mod attest;
 pub mod common;
 pub mod erc20_vault;
 pub mod events;
+pub mod hashing;
 pub mod mint_tokens;
+pub mod serde_builtin;
 pub mod test_caller;
