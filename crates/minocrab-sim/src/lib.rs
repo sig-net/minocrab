@@ -480,6 +480,12 @@ pub struct RegionCost {
     pub instructions: usize,
     /// Share of the whole circuit's instructions, in percent.
     pub percent: f64,
+    /// Estimated share of the *proving table* — the number k, prove time and
+    /// RAM track. `None` for v2 profiles, which have no row-cost model
+    /// (see [`crate::v3::rowcost`]).
+    pub est_rows: Option<usize>,
+    /// Share of the circuit's estimated rows, in percent.
+    pub est_rows_percent: Option<f64>,
     pub op_counts: BTreeMap<&'static str, u32>,
 }
 
@@ -491,7 +497,12 @@ pub struct Profile {
     pub k: u8,
     pub rows: usize,
     pub total_instructions: usize,
-    /// Most expensive region first.
+    /// Sum of the per-region row estimates. It undershoots `rows`: the
+    /// difference is the circuit's fixed cost (chip stand-up, the pow2range
+    /// table), which belongs to no region. `None` for v2 profiles.
+    pub est_rows_total: Option<usize>,
+    /// Most expensive region first — by estimated rows where they exist,
+    /// else by instruction count.
     pub regions: Vec<RegionCost>,
 }
 
@@ -502,6 +513,15 @@ impl std::fmt::Display for Profile {
             "circuit: k={} ({} rows), {} instructions",
             self.k, self.rows, self.total_instructions
         )?;
+        if let Some(est) = self.est_rows_total {
+            writeln!(
+                f,
+                "rows attributed: {est} of {} ({} unattributed: chip stand-up + fixed tables)",
+                self.rows,
+                self.rows.saturating_sub(est),
+            )?;
+            writeln!(f, "  {:>7}  {:>7}  {:<24}", "rows%", "instr%", "region")?;
+        }
         for r in &self.regions {
             let mut ops: Vec<(&&str, &u32)> = r.op_counts.iter().collect();
             ops.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -510,14 +530,26 @@ impl std::fmt::Display for Profile {
                 .take(3)
                 .map(|(op, n)| format!("{op}×{n}"))
                 .collect();
-            writeln!(
-                f,
-                "  {:>5.1}%  {:<24} {} instr  ({})",
-                r.percent,
-                r.label,
-                r.instructions,
-                top.join(", "),
-            )?;
+            match (r.est_rows, r.est_rows_percent) {
+                (Some(rows), Some(pct)) => writeln!(
+                    f,
+                    "  {:>6.1}%  {:>6.1}%  {:<24} ~{} rows, {} instr  ({})",
+                    pct,
+                    r.percent,
+                    r.label,
+                    rows,
+                    r.instructions,
+                    top.join(", "),
+                )?,
+                _ => writeln!(
+                    f,
+                    "  {:>5.1}%  {:<24} {} instr  ({})",
+                    r.percent,
+                    r.label,
+                    r.instructions,
+                    top.join(", "),
+                )?,
+            }
         }
         Ok(())
     }
@@ -547,6 +579,9 @@ pub fn profile(compiled: &Compiled) -> Profile {
             label: label.to_string(),
             instructions: 0,
             percent: 0.0,
+            // v2 has no row-cost model; only v3 profiles carry row shares.
+            est_rows: None,
+            est_rows_percent: None,
             op_counts: BTreeMap::new(),
         });
         entry.instructions += 1;
@@ -567,6 +602,7 @@ pub fn profile(compiled: &Compiled) -> Profile {
         k,
         rows,
         total_instructions: instructions.len(),
+        est_rows_total: None,
         regions,
     }
 }

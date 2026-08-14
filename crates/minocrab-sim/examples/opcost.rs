@@ -124,8 +124,20 @@ fn main() {
     });
 
     // Native reversal straight into a scalar import (the verify-path shape:
-    // BE-stored Bytes<32> → Secp256k1Scalar).
+    // BE-stored Bytes<32> → Secp256k1Scalar). The secp256k1 chip is enabled
+    // only when a secp type appears in the INPUT SCHEMA (`used_chips`,
+    // ir_vm.rs:1246) — a `from_bytes32` alone does not do it, and the cost
+    // model panics without the chip — so both this shape and its own
+    // baseline declare an (unused) public key.
+    rows("baseline (arg + secp pk)", |c| {
+        let _pk = c.arg::<minocrab::v3::Secp256k1PointT>("pk");
+        let hi = c.arg::<FieldT>("hi");
+        let lo = c.arg::<FieldT>("lo");
+        c.assert_bits(hi, 8);
+        c.assert_bits(lo, 248);
+    });
     rows("native reverse -> from_bytes32", |c| {
+        let _pk = c.arg::<minocrab::v3::Secp256k1PointT>("pk");
         let hi = c.arg::<FieldT>("hi");
         let lo = c.arg::<FieldT>("lo");
         c.assert_bits(hi, 8);

@@ -73,6 +73,88 @@ effectively all pinned keccak. refund's high removable share is its
 duplicated branch. "Removable" is a row statement, not a prove-time
 statement — prove time only moves at k crossings (see k arithmetic).
 
+* Measured (step 0)
+Direct measurement, not residual arithmetic:
+=cargo run --release -p minocrab-sim --example cryptocost= builds minimal
+circuits per primitive and differences Midnight's own cost model. Two
+numbers exist per primitive, because zkir-v3 enables a chip only when the
+circuit uses one (=used_chips=, ir_vm.rs:1212): FIRST (primitive circuit −
+control, chip stand-up included) and MARGINAL (n+1 uses − n uses). The
+model's figures are marginal costs, so that is the column compared.
+
+| primitive | measured (marginal) | model | Δ |
+|-----------+---------------------+-------+---|
+| persistent_hash | 1,879/64-byte block | 1,880 | −0.1% |
+| keccak256 | 4,175/136-byte block + 0.25/byte | 4,220 + 1.7/byte | −1.1% / −85% |
+| secp256k1EcdsaVerify | 24,450 | 25,140 | −2.7% |
+| transient_hash | 22/permutation = 10.5/limb | 15/limb | −30% |
+| div_mod_power_of_two | 143 (248-bit operand) | 90-147 | in band |
+| constrain_bits | ceil(bits/4) — 62 at 248 bits | "≈17 at k=16" | WRONG in the analysis |
+| everything else | 1-2 rows/instruction | 4-7 | −60% |
+
+Composites (what the per-circuit budget is actually built from):
+| shape | measured | model | Δ |
+|-------+----------+-------+---|
+| SHA-256 pair hash (64 B) | 3,739 | 3,760 | −0.6% |
+| keccak attestation digest (32 B, 1 blk) | 4,207 | 4,280 | −1.7% |
+| keccak vault event record (404 B) | 12,651 | 12,900 | −1.9% |
+| keccak swap event record (571 B) | 21,042 | 22,070 | −4.7% |
+
+ECDSA's interior (marginal, chip already up): ec_mul 11,329 ×2 =
+92.7% of the verify; point add 189; into_bytes32(base) 399;
+from_bytes32(→scalar) 139; foreign-field mul/inv 24 each; test_eq 31.
+Jubjub for contrast: ec_mul 252, hash_to_curve 237,
+jubjub_scalar_from_native 394, point add 1.
+
+Mechanism confirmations (all measured, none assumed):
+- SHA-256 blocks = ceil((len+9)/64) — the 55→56 and 119→120 steps move
+  the block count with the per-block cost flat.
+- keccak blocks = floor(len/136)+1 — the 135→136→137 steps.
+- Poseidon's unit is the PERMUTATION, rate 2: 1 and 2 limbs both cost
+  20, 3 and 4 both ~41. "Per limb" is a fiction that happens to average.
+- Cost is FLAT IN k. Every shape is priced twice, in a minimal circuit
+  and in one padded to ~35k rows; nothing moved by >5%. The analysis's
+  "at k=16 a 248-bit check ≈ 17 rows" is wrong — it is 62 rows at every
+  size (4 bits per row, =nr_pow2range_cols = 4=). Each check is thus
+  ~3.6× the analysis's estimate — claim's whole top-level region (16
+  constrain_bits among 36 instructions) is ~499 rows, 1.1% of the
+  circuit. Still ≤4% of any circuit, still no k crossing, still not
+  worth the soundness surface: the "do not dedup" verdict is unchanged.
+
+What the deviations change:
+- keccak's per-byte term (0.25, not 1.7) makes the record hashes 2-5%
+  cheaper than modelled. approveRouter/deposit/swap projections shift
+  by a few hundred rows; no verdict moves, no k boundary moves.
+- Poseidon at 10.5/limb (22/permutation) makes avenues 1 and 3
+  (commitments → Poseidon) slightly BETTER than projected.
+- Everything the k arithmetic turns on (SHA per block, ECDSA, keccak
+  composites) is within 3% of the model. The §"k arithmetic" verdicts
+  and the §"Ranked avenues" numbers stand as written.
+
+Region attribution by estimated rows (=minocrab_sim::v3::rowcost=, the
+same measured constants applied per instruction; profiles now print row
+share alongside instruction share, =cargo run -p minocrab-bench --
+--profiles=):
+| circuit | rows | attributed | top region by rows |
+|---------+------+------------+--------------------|
+| initialize | 4,272 | 96.1% | identity commitment 91.7% rows / 7.3% instr |
+| deposit | 17,502 | 99.2% | request id (keccak) 72.8% / 1.7% |
+| approveRouter | 13,344 | 99.2% | request id (keccak) 95.4% / 2.0% |
+| withdraw | 42,373 | 99.6% | request id 29.9% / 1.0%, burn 27.2% / 15.5% |
+| swap | 51,485 | 99.6% | request id 41.0% / 0.9%, burn 22.4% / 13.2% |
+| claim | 47,660 | 98.8% | ecdsa 52.6% rows / 12.6% instr |
+| completeWithdraw | 47,466 | 98.9% | ecdsa 52.8% / 13.3% |
+| refund | 65,231 | 99.2% | ecdsa 38.3% / 7.4% |
+| completeSwap | 65,071 | 99.3% | ecdsa 38.4% / 9.7% |
+claim's ecdsa region lands at 52.6% of rows against the analysis's ~53%
+prediction — the headline finding is confirmed by direct measurement.
+The unattributed 0.4-3.9% is per-circuit fixed cost (chip stand-up,
+fixed tables) that belongs to no region; it is largest, in relative
+terms, in the smallest circuit.
+Instruction-share inversions worth remembering: claim's "event map
+consume" is 24.1% of instructions and 0.3% of rows; approveRouter's
+whole non-keccak body is 98% of instructions and 4.6% of rows.
+
 * Pin taxonomy
 Framing: the M10 artifact is necessarily a SEPARATE DEPLOYMENT
 (different verifier key ⇒ different ContractOperation ⇒ different

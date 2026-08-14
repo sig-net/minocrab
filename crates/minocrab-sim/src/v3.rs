@@ -29,6 +29,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+pub mod rowcost;
+
 use group::Group;
 use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_curves::{curve25519, k256, p256, Fr as JubjubFr, JubjubSubgroup};
@@ -864,9 +866,14 @@ pub fn cost(ir: &IrSource) -> (u8, usize) {
 /// Attribute each instruction to its innermost region and price the circuit
 /// — the v3 twin of [`crate::profile`]. Instructions outside every region
 /// land in "(top level)".
+///
+/// Regions are attributed twice: by instruction count, and by *estimated
+/// rows* ([`rowcost`]) — the two disagree wildly wherever crypto lives, and
+/// rows are what k, prove time and RAM track.
 pub fn profile(compiled: &minocrab::v3::Compiled3) -> crate::Profile {
     let instructions = compiled.ir.instructions.as_slice();
     let (k, rows) = cost(&compiled.ir);
+    let est = rowcost::est_rows(&compiled.ir);
 
     // regions are pushed on scope exit, so for nested regions the inner one
     // appears first — the first region containing an index is the innermost.
@@ -886,26 +893,40 @@ pub fn profile(compiled: &minocrab::v3::Compiled3) -> crate::Profile {
             label: label.to_string(),
             instructions: 0,
             percent: 0.0,
+            est_rows: Some(0),
+            est_rows_percent: Some(0.0),
             op_counts: BTreeMap::new(),
         });
         entry.instructions += 1;
+        *entry.est_rows.get_or_insert(0) += est[idx];
         *entry.op_counts.entry(op_name(ins)).or_default() += 1;
     }
 
     let total = instructions.len().max(1);
+    let est_total: usize = est.iter().sum();
     let mut regions: Vec<crate::RegionCost> = by_label
         .into_values()
         .map(|mut r| {
             r.percent = r.instructions as f64 * 100.0 / total as f64;
+            r.est_rows_percent =
+                Some(r.est_rows.unwrap_or(0) as f64 * 100.0 / est_total.max(1) as f64);
             r
         })
         .collect();
-    regions.sort_by(|a, b| b.instructions.cmp(&a.instructions).then(a.label.cmp(&b.label)));
+    // Rows first: instruction count is the misleading order (a keccak is one
+    // instruction and a tenth of the circuit).
+    regions.sort_by(|a, b| {
+        b.est_rows
+            .cmp(&a.est_rows)
+            .then(b.instructions.cmp(&a.instructions))
+            .then(a.label.cmp(&b.label))
+    });
 
     crate::Profile {
         k,
         rows,
         total_instructions: instructions.len(),
+        est_rows_total: Some(est_total),
         regions,
     }
 }
