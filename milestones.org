@@ -39,7 +39,8 @@ we know exactly which Midnight code we're reusing and how.
       equivalence. (Green on the counter fixture.)
 - [X] Extend the round-trip test to sweep every .zkir in corpus/ once the
       corpus build lands. (722 v2 files round-trip clean.)
-- [X] ZKIR v3 bindings: the sig-net contracts (incl. the M7 erc20-vault)
+- [X] ZKIR v3 bindings: the sig-net contracts (incl. the erc20-vault
+      benchmark target, now M6)
       compile with --feature-zkir-v3 and emit v3 (typed IR, inputs/outputs
       schema). Bind =midnight-zkir-v3= (git; rev the compact flake pins) the
       same way as v2, round-trip the 66 skipped v3 corpus files.
@@ -134,29 +135,30 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       STARTED — crates/minocrab-contracts: attest mapOnly + verifyOnly
       call-compatible incl. real-ECDSA path and reject agreement;
       shaVerify/keccakVerify need the serialize<T,N> byte-layout port.
-      test-caller-contract initialise + erc20-vault initialize (the M7
-      target's setup circuit) call-compatible incl. reject agreement on
-      all guard failures — the first read-exercising differentials.)
+      test-caller-contract initialise + erc20-vault initialize (the
+      benchmark target's setup circuit) call-compatible incl. reject
+      agreement on all guard failures — the first read-exercising
+      differentials.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
-* M5 — Optimisation
-- [ ] Const-generic circuit families, monomorphized per size/depth, unrolled by
-      rustc.
-- [ ] Optimisation passes at the IR layer; measure with the M3 profiler against
-      compactc's output (RAM + proving-cost proxies).
-Exit criteria: measurable wins over compactc on the corpus, with the
-correctness harness still green.
+* M5 — Cross-contract calling
+Pulled ahead of the benchmark (dmd, 2026-08-14): the erc20-vault runtime
+circuits call the Signet singleton cross-contract, so this is a benchmark
+prerequisite.
+- [ ] Cross-contract calls in the eDSL on the ZKIR version that supports them
+      (v3; caller-side commitment + Kernel.claimContractCall, see
+      notes/ledger-abi.org §2 on the communications commitment and
+      desugar-contract-calls.ss).
+Exit criteria: the xcall/xcontract-events corpus experiments run on MinoCrab
+with their differentials green.
 
-* M6 — Cross-contract calling + churn resilience
-- [ ] Cross-contract calls in the eDSL on the ZKIR version that supports them.
-- [ ] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
-      (update pin → run corpus + harness → fix drift).
-Exit criteria: a version bump is a routine chore, not a project.
-
-* M7 — Deliverable: cross-chain deposit/withdrawal benchmark
-Benchmark the sig-net cross chain deposit and withdrawal contracts using
-MinoCrab and using Compact, as a presentable deliverable (ideally showing
-we're better than Compact).
+* M6 — Baseline benchmark: cross-chain deposit/withdrawal
+Benchmark the sig-net cross-chain deposit and withdrawal contracts under
+MinoCrab and under Compact. This pass is the BASELINE: our lowering mirrors
+compactc's op sequences, so expect parity on constraint/cost numbers —
+parity here is evidence the rewrite is correctness-preserving, and it gives
+M7's optimisation work its targets. The presentable "better than Compact"
+write-up comes after M7, from a refreshed run of this harness.
 Confirmed target (dmd, 2026-08-13): the erc20-vault contract
 (sig-net/midnight-examples, examples/erc20-vault) — plus its Signet singleton
 dependency (sig-net/midnight-integration) as needed for the cross-contract
@@ -165,7 +167,25 @@ calls. See notes/signet-corpus.org.
       with the M3 correctness harness green on the MinoCrab versions.
 - [ ] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
       breakdowns, reproducible via a single nix-run command.
-- [ ] Presentable write-up of the results (methodology, numbers, where the wins
-      come from; honest about any losses).
+- [ ] Baseline write-up: methodology + numbers, and the cost-profile breakdown
+      that picks M7's optimisation targets.
+Exit criteria: reproducible baseline numbers from a clean checkout, and a
+ranked list of where optimisation should attack.
+
+* M7 — Optimisation + presentable deliverable
+Driven by M6's cost profiles; every change re-measured with the M6 harness.
+- [ ] Const-generic circuit families, monomorphized per size/depth, unrolled by
+      rustc.
+- [ ] Optimisation passes at the IR layer; measure with the M3 profiler against
+      compactc's output (RAM + proving-cost proxies).
+- [ ] Refresh the M6 benchmark and produce the presentable write-up
+      (methodology, numbers, where the wins come from; honest about any
+      losses — baseline parity vs optimised deltas cleanly attributed).
 Exit criteria: a benchmark report you can present, reproducible from a clean
-checkout.
+checkout, with measurable wins over compactc and the correctness harness
+still green.
+
+* M8 — Churn resilience
+- [ ] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
+      (update pin → run corpus + harness → fix drift).
+Exit criteria: a version bump is a routine chore, not a project.

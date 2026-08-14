@@ -5,7 +5,8 @@ GitHub org is =sig-net= (not sig-network). All repos below are public; gh auth
 total across three repos.
 
 * midnight-examples — examples/erc20-vault/contract/src/erc20-vault.compact
-*The M7 benchmark target.* Shielded ERC-20 vault: =initialize=, =deposit=,
+*The benchmark target (M6 since the 2026-08-14 reorder; was M7).*
+Shielded ERC-20 vault: =initialize=, =deposit=,
 =claim=, withdraw/swap request+settle circuits, schema/commitment pure
 circuits. Cross-contract calls the Signet singleton; =pragma
 language_version >= 0.25= → needs toolchain 0.33 (matches our pin).
@@ -29,9 +30,9 @@ ones exercise cross-contract calling.
 * TODO
 - [ ] Add these three repos (pinned revs) to corpus/sources.json + fetch.sh
       once the public-corpus build lands, then recompile.
-- [X] For M7: confirmed by dmd (2026-08-13) — the target is erc20-vault
-      (+ its Signet singleton dependency for cross-contract calls);
-      signet-contract.compact is NOT in scope for M7.
+- [X] For the benchmark (now M6, was M7): confirmed by dmd (2026-08-13) —
+      the target is erc20-vault (+ its Signet singleton dependency for
+      cross-contract calls); signet-contract.compact is NOT in scope.
 
 * erc20-vault ledger-op inventory (2026-08-13, for the M4 ledger layer)
 Grep of the vault: kernel.self ×11, Map .member ×9 / .lookup ×8 /

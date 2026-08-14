@@ -1,4 +1,4 @@
-//! `erc20-vault` (signet-midnight-examples) — THE M7 benchmark target: the
+//! `erc20-vault` (signet-midnight-examples) — THE benchmark target: the
 //! shielded cross-chain ERC-20 vault. Ported circuit by circuit; each port
 //! carries a differential test against compactc's artifact.
 //!

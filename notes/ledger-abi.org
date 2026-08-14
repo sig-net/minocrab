@@ -480,7 +480,7 @@ Secp256k1Point cell value from =encode='s 5 natives); off-circuit
 =ValueReprAlignedValue(av).binary_repr= bytes (ir_vm.rs:478-505).
 
 ACCEPTANCE #2 (minocrab-contracts): =test-caller-contract/initialise=
-and =erc20-vault/initialize= (the M7 target's setup circuit) rebuilt
+and =erc20-vault/initialize= (the benchmark target's setup circuit) rebuilt
 and call-compatible per §6 — Counter.read + Cell.read(Bytes<32>) +
 increment + Cell writes incl. a 5-atom Secp256k1Point (b24/b8/b24/b8/
 field, spliced from =encode=). Both reject the same guard failures as

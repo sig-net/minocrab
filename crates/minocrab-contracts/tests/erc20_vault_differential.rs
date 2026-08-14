@@ -1,5 +1,5 @@
 //! erc20-vault `initialize`: call-compatibility with the corpus artifact
-//! per notes/ledger-abi.org §6 — first circuit of the M7 benchmark target
+//! per notes/ledger-abi.org §6 — first circuit of the benchmark target
 //! running on MinoCrab, plus acceptance agreement on every guard failure.
 
 use std::borrow::Cow;
