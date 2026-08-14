@@ -243,9 +243,15 @@ Driven by M6's cost profiles; every change re-measured with the M6 harness.
       approveRouter 15→14; prove time -49..-76% vs compactc, RSS -43..-51%
       on the k-crossers. All 13 differential suites green unchanged.
       Row-cost method + numbers: notes/benchmark.org "M7 pass 1",
-      crates/minocrab-sim/examples/opcost.rs. NEXT: Serializer
-      re-limbing — the singleton's 98%-of-instructions region; guard
-      refund/completeSwap now ~300-450 rows under 2^16.)
+      crates/minocrab-sim/examples/opcost.rs.
+      Pass 2 DONE 2026-08-15 — segment-based Serializer re-limbing
+      (≤1 div_mod per output-limb straddle instead of full byte
+      explosion): singleton circuits -97.5..-97.6% rows vs compactc,
+      respond k 15→10 (1,004 rows, 0.11s prove / 44MB vs their
+      8.24s / 875MB). All suites green. Remaining vault cost is
+      PI-coupled or real crypto — lowering-level work here is done;
+      what's left of M7 is const-generic families + the write-up.
+      Guard: refund/completeSwap sit ~300-450 rows under 2^16.)
 - [ ] Refresh the M6 benchmark and produce the presentable write-up
       (methodology, numbers, where the wins come from; honest about any
       losses — baseline parity vs optimised deltas cleanly attributed).

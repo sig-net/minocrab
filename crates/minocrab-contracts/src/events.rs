@@ -90,9 +90,9 @@ fn base_with_emits(emits: usize) -> Compiled3 {
 
             let mut s = Serializer::<Public>::new();
             s.push_literal(c, &name);
-            s.push_uint(c, a, 16); // amount: Uint<128>
-            s.push_uint(c, sequence.expect("sequence read exists"), 8); // sequence: Uint<64>
-            s.push_b32(c, &r); // recipient: Bytes<32>
+            s.push_uint(a, 16); // amount: Uint<128>
+            s.push_uint(sequence.expect("sequence read exists"), 8); // sequence: Uint<64>
+            s.push_b32(&r); // recipient: Bytes<32>
             let serialized = s.finish(c, MISC_SIZE);
 
             let payload = LedgerValue::bytes(

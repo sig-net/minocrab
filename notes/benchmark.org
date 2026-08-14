@@ -185,3 +185,38 @@ Remaining targets after pass 1 (from the refreshed profiles):
    different public-transcript framing, which PI-equality forbids in
    the differential harness. The eDSL-vs-eDSL freedom starts where
    compact-compatibility ends; note for the M7 write-up.
+
+* M7 pass 2 (2026-08-15): Serializer re-limbing
+The Serializer (event payloads: the 3 singleton circuits, the events
+experiment, xcontract-events' token deposit) kept every field as
+exploded byte wires and reconstituted all output limbs — the same
+explode disease at ~150 rows per byte. Rewritten segment-based
+(minocrab-std::v3::Serializer): fields stay as (wire, byte-length)
+limb segments in string order; finish() re-limbs with ONE div_mod per
+output-limb-boundary straddle and constant-weight mul/add packing;
+zero-padding costs nothing (missing tail limbs are the zero constant).
+Precondition documented: pushed wires must be range-constrained by the
+caller (all corpus callers are; the byte-wise form relied on the same).
+
+Singleton results (deterministic rows; timing re-measured median-of-3):
+| circuit              | rows before → after |     k | vs compactc                     |
+|----------------------+---------------------+-------+---------------------------------|
+| signBidirectional    | 23573 → 1205        | 15→11 | -97.6% rows, -97.9% prove (0.17s vs 8.33s), -93.9% RSS (53MB vs 872MB) |
+| respond              | 18582 → 1004        | 15→10 | -97.5% rows, -98.7% prove (0.11s vs 8.24s), -95.0% RSS (44MB vs 875MB) |
+| respondBidirectional | 18594 → 1004        | 15→10 | -97.5% rows, -98.7% prove, -95.3% RSS |
+All differential suites green unchanged (signet-contract's tamper
+agreement included — the emitted Misc limbs are PI-checked against
+compactc's artifacts, so the packing is value-verified).
+
+* State after passes 1+2, remaining headroom
+Every benchmark circuit now beats compactc on rows except initialize
+(exact parity — it has no byte plumbing). Prove-time deltas -49..-99%.
+What remains in the vault circuits is PI-coupled (impact op streams,
+public_input embeds of map lookups, argument constrain_bits) plus the
+real crypto (keccak request id / attestation, persistent_hash
+commitments, ECDSA) — not reachable by lowering changes under the
+PI-equality harness. Notable boundaries: deposit 17,502 rows is ~1.1k
+over k=14; refund 65,231 / completeSwap 65,071 sit ~300-450 under
+2^16 (PROTECT). M7's remaining bullets: const-generic circuit
+families, and the refreshed-benchmark write-up (full same-session
+re-run of all 24 cells for publication numbers).

@@ -16,7 +16,9 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment};
-use minocrab_std::v3::{secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, Vis3, BytesN, B32};
+use minocrab_std::v3::{
+    pow2_const, secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, Vis3, BytesN, B32,
+};
 
 fn atom(n: u32) -> AlignmentSegment {
     AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
@@ -419,12 +421,6 @@ pub fn abi_word_low20<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT,
     })
 }
 
-/// The constant `2^(8·byte_shift)`.
-fn pow2_const(c: &mut Circuit3, byte_shift: usize) -> minocrab::v3::Wire3<FieldT, minocrab::Public> {
-    let mut bytes = [0u8; 31];
-    bytes[byte_shift] = 1;
-    c.constant(minocrab::Fr::from_le_bytes(&bytes[..=byte_shift]).expect("fits"))
-}
 
 #[cfg(test)]
 mod tests {

@@ -39,10 +39,10 @@ pub fn check_roundtrip() -> Compiled3 {
 
     // serialize<Mixed, 128>(v)
     let mut s = Serializer::<Private>::new();
-    s.push_uint(&mut c, flag, 1); // Boolean: the 0/1 wire as one byte
-    s.push_uint(&mut c, amount, 16);
-    s.push_uint(&mut c, small, 1);
-    s.push_b32(&mut c, &tag);
+    s.push_uint(flag, 1); // Boolean: the 0/1 wire as one byte
+    s.push_uint(amount, 16);
+    s.push_uint(small, 1);
+    s.push_b32(&tag);
     let reserialized = s.finish(&mut c, 128);
 
     // assert(… == bytes): limbwise equality, folded by multiplication.

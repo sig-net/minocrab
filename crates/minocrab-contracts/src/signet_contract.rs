@@ -95,10 +95,9 @@ pub fn sign_bidirectional() -> Compiled3 {
     // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
     c.region("event serialize + emit", |c| {
         let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
-        s.push_uint(c, version, 1);
-        s.push_b32(c, &rid);
-        let payload_bytes = payload.to_le_bytes(c);
-        s.push_bytes(&payload_bytes);
+        s.push_uint(version, 1);
+        s.push_b32(&rid);
+        s.push_bytes_n(&payload);
         emit_misc(c, s);
     });
 
@@ -129,11 +128,11 @@ fn respond_like(name: &str) -> Compiled3 {
     // payload: requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1) ‖ zeros(127)
     c.region("event serialize + emit", |c| {
         let mut s = misc_name(c, name);
-        s.push_b32(c, &rid);
-        s.push_b32(c, &x);
-        s.push_b32(c, &y);
-        s.push_b32(c, &s_scalar);
-        s.push_uint(c, recovery_id, 1);
+        s.push_b32(&rid);
+        s.push_b32(&x);
+        s.push_b32(&y);
+        s.push_b32(&s_scalar);
+        s.push_uint(recovery_id, 1);
         emit_misc(c, s);
     });
 

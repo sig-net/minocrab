@@ -212,49 +212,119 @@ impl<V: Vis3> BytesN<V> {
 
 /// `serialize<T, N>` (compiler/analysis-passes/expand-serialize.ss):
 /// value-only FAB binary, fields concatenated in declaration order,
-/// zero-padded to N — assembled as LE byte wires and rebuilt into
-/// [`BytesN`] limbs.
+/// zero-padded to N.
+///
+/// Fields are kept as `(wire, byte-length)` segments in string order and
+/// re-limbed at [`Serializer::finish`]: a segment straddling an output
+/// 31-byte limb boundary is split with ONE `div_mod` at the boundary,
+/// everything else is constant-weight mul/add packing — instead of the
+/// Compact-stdlib shape (explode every field to bytes, reconstitute every
+/// output limb), which costs ~150 rows per exploded byte.
+///
+/// PRECONDITION: every pushed wire must already be constrained to its
+/// byte length (circuit arguments via `constrain_input`/`assert_bits`,
+/// typed-conversion limbs by their instruction, literals by
+/// construction) — the limb packing is only injective for in-range
+/// segments. This matches the callers the corpus needs; the old
+/// byte-wise form relied on the same property (an explode chain leaves
+/// its most-significant byte unconstrained too).
 pub struct Serializer<V: Vis3> {
-    bytes: Vec<Wire3<FieldT, V>>,
+    /// `(wire, byte length)` in string order; each wire packs its bytes LE.
+    segments: Vec<(Wire3<FieldT, V>, usize)>,
 }
 
 impl<V: Vis3> Serializer<V> {
     pub fn new() -> Serializer<V> {
-        Serializer { bytes: Vec::new() }
+        Serializer { segments: Vec::new() }
     }
 
     /// A `Uint` field: `nbytes` LE bytes (Boolean = 1 byte).
-    pub fn push_uint(&mut self, c: &mut Circuit3, value: Wire3<FieldT, V>, nbytes: usize) {
-        self.bytes.extend(explode_limb(c, value, nbytes));
+    pub fn push_uint(&mut self, value: Wire3<FieldT, V>, nbytes: usize) {
+        assert!(nbytes <= 31, "Uint fields fit one limb");
+        self.segments.push((value, nbytes));
     }
 
     /// A `Bytes<32>` field.
-    pub fn push_b32(&mut self, c: &mut Circuit3, value: &B32<V>) {
-        self.bytes.extend(b32_to_bytes(c, value));
+    pub fn push_b32(&mut self, value: &B32<V>) {
+        self.segments.push((value.lo, 31));
+        self.segments.push((value.hi, 1));
     }
 
-    /// Already-exploded byte wires (e.g. a `Bytes<n>` field's
-    /// [`BytesN::to_le_bytes`]).
-    pub fn push_bytes(&mut self, bytes: &[Wire3<FieldT, V>]) {
-        self.bytes.extend(bytes.iter().copied());
+    /// A `Bytes<N>` field (N > 31), limbs taken as segments directly.
+    pub fn push_bytes_n(&mut self, value: &BytesN<V>) {
+        for (limb, nbytes) in value
+            .limbs
+            .iter()
+            .zip(BytesN::<V>::limb_lens(value.len))
+            .rev()
+        {
+            self.segments.push((*limb, nbytes));
+        }
     }
 
-    /// A literal byte string.
+    /// A literal byte string, packed into constant segments.
     pub fn push_literal(&mut self, c: &mut Circuit3, bytes: &[u8]) {
-        self.bytes.extend(
-            bytes
-                .iter()
-                .map(|&b| V::from_public(c.constant(Fr::from(u64::from(b))))),
-        );
+        for chunk in bytes.chunks(31) {
+            let limb = V::from_public(
+                c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit")),
+            );
+            self.segments.push((limb, chunk.len()));
+        }
     }
 
-    /// Zero-pad to `len` and rebuild as `Bytes<len>` limbs.
-    pub fn finish(mut self, c: &mut Circuit3, len: usize) -> BytesN<V> {
-        assert!(self.bytes.len() <= len, "serialized size exceeds Bytes<{len}>");
+    /// Zero-pad to `len` and re-limb as `Bytes<len>`.
+    pub fn finish(self, c: &mut Circuit3, len: usize) -> BytesN<V> {
+        let total: usize = self.segments.iter().map(|&(_, n)| n).sum();
+        assert!(total <= len, "serialized size exceeds Bytes<{len}>");
         let zero = V::from_public(c.constant(0u64));
-        self.bytes.resize(len, zero);
-        BytesN::from_le_bytes(c, &self.bytes)
+        let mut segments = std::collections::VecDeque::from(self.segments);
+
+        // Fill output limbs least-significant first; missing tail
+        // segments mean the remaining limbs are the zero pad.
+        let le_lens: Vec<usize> = BytesN::<V>::limb_lens(len).into_iter().rev().collect();
+        let mut le_limbs = Vec::with_capacity(le_lens.len());
+        for out_len in le_lens {
+            let mut acc: Option<Wire3<FieldT, V>> = None;
+            let mut filled = 0usize;
+            while filled < out_len {
+                let Some((wire, seg_len)) = segments.pop_front() else {
+                    break;
+                };
+                let (piece, piece_len) = if seg_len > out_len - filled {
+                    // Split at the limb boundary; the high rest opens
+                    // the next limb.
+                    let take = out_len - filled;
+                    let (rest, low) = c.div_mod_power_of_two(wire, (8 * take) as u32);
+                    segments.push_front((rest, seg_len - take));
+                    (low, take)
+                } else {
+                    (wire, seg_len)
+                };
+                let weighted = if filled == 0 {
+                    piece
+                } else {
+                    let shift = V::from_public(pow2_const(c, filled));
+                    c.mul(piece, shift)
+                };
+                acc = Some(match acc {
+                    None => weighted,
+                    Some(a) => c.add(a, weighted),
+                });
+                filled += piece_len;
+            }
+            le_limbs.push(acc.unwrap_or(zero));
+        }
+        let mut limbs = le_limbs;
+        limbs.reverse();
+        BytesN::new(len, limbs)
     }
+}
+
+/// The constant `2^(8·byte_shift)`.
+pub fn pow2_const(c: &mut Circuit3, byte_shift: usize) -> Wire3<FieldT, minocrab::Public> {
+    let mut bytes = [0u8; 31];
+    bytes[byte_shift] = 1;
+    c.constant(Fr::from_le_bytes(&bytes[..=byte_shift]).expect("≤31 bytes fit"))
 }
 
 impl<V: Vis3> Default for Serializer<V> {

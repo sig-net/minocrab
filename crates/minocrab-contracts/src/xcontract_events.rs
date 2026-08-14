@@ -127,9 +127,9 @@ pub fn token_deposit() -> Compiled3 {
 
     // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
     let mut s = Serializer::<Public>::new();
-    s.push_uint(&mut c, a, 16);
-    s.push_uint(&mut c, sequence, 8);
-    s.push_b32(&mut c, &cal);
+    s.push_uint(a, 16);
+    s.push_uint(sequence, 8);
+    s.push_b32(&cal);
     let payload = s.finish(&mut c, PAYLOAD_SIZE);
 
     // eventHash = persistentHash<Bytes<256>>(payload).
@@ -151,8 +151,7 @@ pub fn token_deposit() -> Compiled3 {
     name[..EVENT_NAME.len()].copy_from_slice(EVENT_NAME.as_bytes());
     let mut misc = Serializer::<Public>::new();
     misc.push_literal(&mut c, &name);
-    let payload_bytes = payload.to_le_bytes(&mut c);
-    misc.push_bytes(&payload_bytes);
+    misc.push_bytes_n(&payload);
     let misc = misc.finish(&mut c, MISC_SIZE);
     let misc_val = LedgerValue::bytes(
         MISC_SIZE as u32,
