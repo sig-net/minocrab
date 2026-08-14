@@ -152,6 +152,50 @@ name-only movement, visible in the interface snapshot.
   instruction-count delta. REJECTED: std::ops overloading (needs hidden
   builder state; hides cost). Note: Meet already gives mixed-visibility
   ops; sprinkled .private() calls are removable noise.
+- Assertion predicates (DECIDED dmd 2026-08-15, no macros): deferred
+  descriptor types — less_than(a, b) / eq / etc. return an inert
+  #[must_use] value describing the check; c.assert(p) lowers it (the
+  comparison instruction + assert, emitted at the assert site). Both
+  surfaces: free constructors AND methods on the typed leaves
+  (amount.gt(0u64) delegates to the free fn). What it buys is soundness
+  wearing ergonomics clothing: the bits argument disappears into the
+  operand TYPES (today's hand-typed c.less_than(.., .., 128) width is
+  the same genus of bug as the old assert_bits blocks), and the constant
+  side becomes a checked immediate (shares the Into<Operand> machinery —
+  build together with literals). Descriptors carry an optional message
+  (Compact's second assert arg, surfaced in simulator failure reports);
+  maybe later a guard (.when(g)) — deferred. Scope hard limit:
+  comparisons + not/and/or combinators + eval(c) -> Bool escape hatch
+  (for branchy circuits wanting the wire). NO deferred arithmetic /
+  expression templates (technically possible via Add-etc. returning
+  custom types — rejected: hides emission inside operators, breaks the
+  no-hidden-cost rule). Rust fact shaping all this: PartialOrd is
+  hardwired to return bool, so operator syntax for comparisons is
+  unreachable; named constructors are the ceiling. Safety note: an
+  unasserted descriptor emits NOTHING (+ must_use warning) — strictly
+  safer than today's unasserted c.less_than, which emits cost and
+  constrains nothing with no lint. Port note: lowering moves to the
+  assert site; comparisons contribute no PIs and rows are
+  position-independent, but keep asserts adjacent to the old let sites
+  and lean on the gates. Consequence for port style: predicates want
+  typed leaves flowing THROUGH bodies (types carry the widths), so the
+  boundary-only .field() unwrap style evolves toward keeping leaves
+  typed until raw arithmetic needs wires.
+- Showcase twin (DECIDED dmd 2026-08-15): alongside the zero-movement
+  direct ports (which remain the differential/benchmark reference), a
+  "modern" rewrite of the erc20-vault circuits using every M9 feature to
+  fullest effect — typed leaves throughout, predicates, #[circuit],
+  Discloses, typed maps, inline immediates. Key insight making this
+  honest rather than a demo: the M3/M4 equivalence criterion (same typed
+  I/O schema + equal pis/pi_skips on a shared ProofPreimage) leaves the
+  instruction stream FREE — so the showcase is corpus-verified against
+  compactc's artifacts by the same differential harness, plus property
+  tests, and gets its own row/interface snapshot entries (its row counts
+  may legitimately differ — e.g. fewer Copys — and are reported, not
+  hidden). Lives beside the direct ports (e.g. a showcase module in
+  minocrab-contracts); becomes the README's honest source for the
+  full-featured snippet. Timing: after phase 7 lands the features it
+  exercises (call it phase 8).
 
 * Phasing (M9 bullets mirror this)
 0. Interface-snapshot test: ordered (label, type) of ir.inputs +
@@ -168,10 +212,16 @@ name-only movement, visible in the interface snapshot.
    NEVER).
 6. Disclosure: Identifier fix + v3 report + label!/disclose_as/
    Discloses + generated tests.
-7. Maps + literals (separate commits, separate gates as above).
+7. Maps + literals + assertion predicates (separate commits, separate
+   gates as above; predicates and literals share the Into<Operand>
+   machinery).
+8. Showcase twin: the modern erc20-vault rewrite, differential- and
+   property-tested, own snapshot entries; README snippet then points at
+   real code.
 Gates for every phase: interface snapshot + row_snapshot + all 13
 differential suites; ports must be zero-movement (except documented
-name-column changes in 5).
+name-column changes in 5 and the showcase twin in 8, whose deltas are
+reported).
 dmd 2026-08-14: if any phase moves measured performance significantly
 (realistically only phase 7's Copy-removal; anything else should be
 zero-movement), refresh the benchmark — re-run the M6 harness

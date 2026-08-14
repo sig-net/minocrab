@@ -318,10 +318,21 @@ suites.
       Discloses::of, macro-generated set-equality tests with
       prescriptive failure messages + valued-report golden.
 - [ ] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
-      method names, no hidden Impact ops) and inline-immediate literals
+      method names, no hidden Impact ops), inline-immediate literals
       (impl Into<Operand>; gated on hand-reviewed instruction deltas —
-      row snapshot is blind to Copy removal).
+      row snapshot is blind to Copy removal), and assertion predicates
+      (deferred #[must_use] descriptors: c.assert(less_than(0u64,
+      amount)) — widths from the operand types, optional message,
+      not/and/or + eval() only, no deferred arithmetic; shares the
+      Into<Operand> machinery with literals; no macros).
+- [ ] Phase 8: showcase twin — a "modern" erc20-vault rewrite using
+      every M9 feature to fullest effect, kept BESIDE the zero-movement
+      direct ports; corpus-verified by the same differential harness
+      (instruction streams are free under PI-equality) + property
+      tests, own snapshot entries with deltas reported; README's
+      full-featured snippet then points at real code.
 Exit criteria: the benchmark contracts read side-by-side with their
 Compact sources, disclosure declarations are part of every circuit's
 signature and enforced by generated tests, and every instrument (rows,
-interfaces, differentials) shows zero unexplained movement.
+interfaces, differentials) shows zero unexplained movement — plus the
+showcase twin differential-green with its deltas explained.
