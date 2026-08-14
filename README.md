@@ -63,7 +63,8 @@ fn deposit(
     // ... compose calldata, tx params, request ...
     let id = signet::calculate_request_id(c, &request);
     let request_id = c.disclose_as::<RequestId>(id);
-    let exists = map_member(c, one, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id.value());
+    let always = c.constant(1u64);
+    let exists = map_member(c, always, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id);
     let fresh = c.not(exists);
     c.assert(fresh);
     Discloses::of(())
