@@ -187,6 +187,14 @@ pub struct AnyWire3<V: Visibility> {
     _vis: PhantomData<V>,
 }
 
+/// One element of an Impact public-input block: an inline constant or a
+/// circuit-computed (necessarily public) native value.
+#[derive(Clone, Copy)]
+pub enum ImpactElem {
+    Imm(Fr),
+    Wire(Wire3<FieldT, Public>),
+}
+
 impl<V: Visibility> Clone for AnyWire3<V> {
     fn clone(&self) -> Self {
         *self
@@ -579,15 +587,28 @@ impl Circuit3 {
         guard: Wire3<FieldT, V>,
         inputs: &[Wire3<FieldT, Public>],
     ) {
-        for w in inputs {
-            self.disclosures.push(Disclosure {
-                label: "impact public input".to_string(),
-                kind: DisclosureKind::Statement,
-                index: 0,
-            });
-            let _ = w;
-        }
-        let args: Vec<Arg> = inputs.iter().map(|w| Arg::Val(w.val)).collect();
+        let elems: Vec<ImpactElem> = inputs.iter().map(|&w| ImpactElem::Wire(w)).collect();
+        self.impact_mixed(guard, &elems);
+    }
+
+    /// [`Circuit3::impact`] with mixed operands: constants go inline as
+    /// immediates (as compactc emits opcode/alignment elements), computed
+    /// values as wires.
+    pub fn impact_mixed<V: Visibility>(&mut self, guard: Wire3<FieldT, V>, elems: &[ImpactElem]) {
+        let args: Vec<Arg> = elems
+            .iter()
+            .map(|e| match e {
+                ImpactElem::Imm(imm) => Arg::Imm(*imm),
+                ImpactElem::Wire(w) => {
+                    self.disclosures.push(Disclosure {
+                        label: "impact public input".to_string(),
+                        kind: DisclosureKind::Statement,
+                        index: 0,
+                    });
+                    Arg::Val(w.val)
+                }
+            })
+            .collect();
         self.b.impact(Arg::Val(guard.val), &args);
     }
 

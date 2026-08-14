@@ -25,6 +25,9 @@ name = "archery"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ca55ee147b1926dbea904f50fe4902494e97bc742205abbbf10c709e43815f"
+dependencies = [
+ "triomphe",
+]
 
 [[package]]
 name = "arrayref"
@@ -701,7 +704,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1560,6 +1563,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-coin-structure"
+version = "3.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "fake",
+ "lazy_static",
+ "midnight-base-crypto",
+ "midnight-serialize",
+ "midnight-storage-core 1.2.0 (git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14)",
+ "midnight-transient-crypto 3.0.0",
+ "rand 0.8.7",
+ "serde",
+ "zeroize",
+]
+
+[[package]]
 name = "midnight-curves"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1614,6 +1633,46 @@ dependencies = [
  "serde_arrays",
  "sha2 0.10.9",
  "subtle",
+]
+
+[[package]]
+name = "midnight-onchain-state"
+version = "4.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "derive-where",
+ "fake",
+ "hex",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 2.2.0",
+ "midnight-transient-crypto 3.0.0",
+ "rand 0.8.7",
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
+name = "midnight-onchain-vm"
+version = "4.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "derive-where",
+ "fake",
+ "hex",
+ "konst",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-onchain-state",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.0",
+ "rand 0.8.7",
+ "rpds",
+ "serde",
+ "serde_bytes",
 ]
 
 [[package]]
@@ -1689,6 +1748,25 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "midnight-storage"
+version = "2.0.1"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "crypto",
+ "derive-where",
+ "digest 0.11.3",
+ "midnight-base-crypto",
+ "midnight-serialize",
+ "midnight-storage-core 1.2.0 (git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14)",
+ "parking_lot",
+ "rand 0.8.7",
+ "serde",
+ "sha2 0.11.0",
+ "sysinfo 0.39.6",
+ "tempfile",
 ]
 
 [[package]]
@@ -1964,6 +2042,22 @@ version = "0.1.0"
 dependencies = [
  "midnight-base-crypto",
  "midnight-zkir",
+ "minocrab-zkir",
+ "serde_json",
+]
+
+[[package]]
+name = "minocrab-ledger"
+version = "0.1.0"
+dependencies = [
+ "midnight-base-crypto",
+ "midnight-onchain-state",
+ "midnight-onchain-vm",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.0",
+ "minocrab",
+ "minocrab-ir",
+ "minocrab-sim",
  "minocrab-zkir",
  "serde_json",
 ]
@@ -2361,7 +2455,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2607,6 +2701,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpds"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e025feb26210bc196b908e72deb063b1b4000754304341cbc168a1e72c857ebc"
+dependencies = [
+ "archery",
+ "smallvec",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2631,7 +2735,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2688,7 +2792,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3134,10 +3238,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3306,6 +3410,12 @@ checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
 ]
+
+[[package]]
+name = "triomphe"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b40688ea6389c8171614b25491f71d4a27946e0c7ce2da1c6de27e25abf1a0ae"
 
 [[package]]
 name = "try-lock"
@@ -3559,7 +3669,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

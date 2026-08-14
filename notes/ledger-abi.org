@@ -435,6 +435,33 @@ Practical notes:
 - =Counter.increment(k)= embeds k as an =addi= *immediate* (constants only;
   =rt-value->int=, =midnight-ledger.ss:604-616=).
 
+* Implementation notes (minocrab-ledger, 2026-08-14)
+
+crates/minocrab-ledger implements §2's write repertoire. Fully-constant
+ops go through the real =Op<ResultModeVerify, InMemoryDB>= and its
+=field_repr= (never hand-encoded); ops embedding circuit values
+(push/pushs/popeq) lay out =[opcode, Cell tag, alignment header, limbs…]=
+with wires spliced into the limb positions — the header layout is
+unit-tested equal to =field_repr= of real Ops. Circuit3 gained
+=impact_mixed= (inline immediates + wires), matching compactc's operand
+mix. Builders so far: =counter_increment= (idxp/addi/insc),
+=cell_write= (push key/pushs value/ins — top-level suppression baked in),
+=map_insert= (idxp/push/pushs/ins/insc), =popeq= (for reads; the
+dup/idx read shapes still to come).
+
+ACCEPTANCE (tests/differential_baseline.rs): baseline =noop= and =base=
+rebuilt from scratch are call-compatible with the corpus artifacts per
+§6 — equal typed schemas, equal =pis= (37 for base: binding + comm +
+35 op elements) and =pi_skips= on a shared preimage whose transcript
+comes from real-Op =field_repr=; upstream =check()= accepts both. This
+is the M3 differential-testing criterion working on a real
+ledger-writing contract.
+
+Still to build here: read shapes (dup/idx[c]/popeq[c] + the kernel
+self/context paths), Map member/lookup/rem, MerkleTree ops, log/events,
+the zswap/kernel effects ops (mint), and the ledger-declaration DSL that
+assigns field indices and picks op sequences automatically.
+
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3
   assembler (=reduce-to-zkir.ss:610-612=) — if a sig-net contract ever uses
