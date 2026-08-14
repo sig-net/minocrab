@@ -6,9 +6,15 @@ use minocrab::{Circuit, Private, Wire};
 use minocrab_ir::Fr;
 use minocrab_sim::simulate;
 use minocrab_std::{
-    cond_select, eq, merkle_tree_path_root_from_leaf_digest, none, some, Bundle, Maybe,
-    MerkleTreeDigest, MerkleTreePathEntry,
+    cond_select, eq, merkle_tree_path_root_from_leaf_digest, none, some, Bundle, Bytes32, Maybe,
+    MerkleTreeDigest, MerkleTreePath, MerkleTreePathEntry,
 };
+
+/// `MerkleTreePath` is a `Bundle` because its depth is a const parameter:
+/// leaf (`Bytes<32>` = 2 slots) + 2 slots per entry.
+const _: () = assert!(
+    <MerkleTreePath<Private, Bytes32<Private>, 8> as Bundle<Private>>::WIDTH == 2 + 2 * 8
+);
 
 /// Simulate a circuit whose result wire is disclosed, returning the value of
 /// that wire.

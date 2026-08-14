@@ -20,6 +20,7 @@ use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
+use minocrab_contracts::events;
 use minocrab_contracts::xcontract_events as xce;
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
@@ -316,7 +317,7 @@ impl Scenario {
             bytesn_value(32, &self.event_hash()),
         ));
         // emit (Misc { name: pad(32, "deposit"), payload })
-        let mut misc = vec![0u8; xce::MISC_SIZE];
+        let mut misc = vec![0u8; events::MISC_SIZE];
         misc[..xce::EVENT_NAME.len()].copy_from_slice(xce::EVENT_NAME.as_bytes());
         misc[32..].copy_from_slice(&self.payload());
         ops.extend([
@@ -326,7 +327,7 @@ impl Scenario {
                     vec![
                         cell(bytesn_value(4, &1u32.to_le_bytes())),
                         cell(bytesn_value(1, &[10])),
-                        cell(bytesn_value(xce::MISC_SIZE as u32, &misc)),
+                        cell(bytesn_value(events::MISC_SIZE as u32, &misc)),
                     ]
                     .into(),
                 ),

@@ -43,6 +43,8 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::{BytesN, Serializer, B32};
 
+use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+
 /// Vault ledger fields, in declaration order.
 pub const TOKEN: u8 = 0;
 pub const VAULT_CALL_COUNT: u8 = 1;
@@ -53,11 +55,11 @@ pub const DEPOSIT_COUNT: u8 = 0;
 pub const LAST_AMOUNT: u8 = 1;
 pub const EMITTED_DEPOSITS: u8 = 2;
 
-/// The token's event: `Misc { name: pad(32, "deposit"), payload }`,
-/// tag 10, version 1, 288 = name(32) ‖ payload(256).
+/// The token's event: `Misc { name: pad(32, "deposit"), payload }` — the
+/// `Misc` shape itself (tag, version, 288 = name(32) ‖ payload(256)) is
+/// declared once, in [`crate::events`].
 pub const EVENT_NAME: &str = "deposit";
 pub const PAYLOAD_SIZE: usize = 256;
-pub const MISC_SIZE: usize = 288;
 
 fn b32_atoms() -> Vec<AlignmentAtom> {
     vec![AlignmentAtom::Bytes { length: 32 }]
@@ -155,7 +157,7 @@ pub fn token_deposit() -> Compiled3 {
         MISC_SIZE as u32,
         misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
     );
-    emit(&mut c, one, &emit_event(1, 10, &misc_val));
+    emit(&mut c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
 
     c.output(event_hash.hi, "event hash (hi)");
     c.output(event_hash.lo, "event hash (lo)");

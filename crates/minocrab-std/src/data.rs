@@ -18,7 +18,7 @@ pub struct Maybe<V: Vis, T: Bundle<V>> {
 }
 
 impl<V: Vis, T: Bundle<V>> Bundle<V> for Maybe<V, T> {
-    const WIDTH: usize = 1 + T::WIDTH;
+    const WIDTH: usize = Bool::<V>::WIDTH + T::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.is_some.push_wires(out);
@@ -63,7 +63,7 @@ pub struct Either<V: Vis, A: Bundle<V>, B: Bundle<V>> {
 }
 
 impl<V: Vis, A: Bundle<V>, B: Bundle<V>> Bundle<V> for Either<V, A, B> {
-    const WIDTH: usize = 1 + A::WIDTH + B::WIDTH;
+    const WIDTH: usize = Bool::<V>::WIDTH + A::WIDTH + B::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.is_left.push_wires(out);

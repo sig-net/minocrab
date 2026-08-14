@@ -33,7 +33,7 @@ pub struct UserAddress<V: Vis> {
 macro_rules! bytes32_newtype_bundle {
     ($ty:ident) => {
         impl<V: Vis> Bundle<V> for $ty<V> {
-            const WIDTH: usize = 2;
+            const WIDTH: usize = Bytes32::<V>::WIDTH;
 
             fn push_wires(&self, out: &mut Vec<Wire<V>>) {
                 self.bytes.push_wires(out);
@@ -65,7 +65,7 @@ pub struct ShieldedCoinInfo<V: Vis> {
 }
 
 impl<V: Vis> Bundle<V> for ShieldedCoinInfo<V> {
-    const WIDTH: usize = 5;
+    const WIDTH: usize = Bytes32::<V>::WIDTH * 2 + U128::<V>::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.nonce.push_wires(out);
@@ -98,7 +98,7 @@ pub struct QualifiedShieldedCoinInfo<V: Vis> {
 }
 
 impl<V: Vis> Bundle<V> for QualifiedShieldedCoinInfo<V> {
-    const WIDTH: usize = 6;
+    const WIDTH: usize = ShieldedCoinInfo::<V>::WIDTH + U64::<V>::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.nonce.push_wires(out);
@@ -187,7 +187,10 @@ struct CoinPreimage<V: Vis> {
 }
 
 impl<V: Vis> Bundle<V> for CoinPreimage<V> {
-    const WIDTH: usize = 1 + 5 + 1 + 2;
+    const WIDTH: usize = BytesN::<V, 21>::WIDTH
+        + ShieldedCoinInfo::<V>::WIDTH
+        + Bool::<V>::WIDTH
+        + Bytes32::<V>::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.domain_sep.push_wires(out);

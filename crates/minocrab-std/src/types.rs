@@ -196,7 +196,8 @@ pub struct JubjubPoint<V: Vis> {
 }
 
 impl<V: Vis> Bundle<V> for JubjubPoint<V> {
-    const WIDTH: usize = 2;
+    /// Two `Field` slots (x, y).
+    const WIDTH: usize = Wire::<V>::WIDTH * 2;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         out.push(self.x);

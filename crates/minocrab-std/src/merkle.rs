@@ -45,7 +45,7 @@ pub struct MerkleTreePathEntry<V: Vis> {
 }
 
 impl<V: Vis> Bundle<V> for MerkleTreePathEntry<V> {
-    const WIDTH: usize = 2;
+    const WIDTH: usize = MerkleTreeDigest::<V>::WIDTH + Bool::<V>::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.sibling.push_wires(out);
@@ -66,11 +66,38 @@ impl<V: Vis> Bundle<V> for MerkleTreePathEntry<V> {
 }
 
 /// `struct MerkleTreePath<#n, T> { leaf: T; path: Vector<n, MerkleTreePathEntry>; }`
-/// (n is a runtime slice here; compactc unrolls the fold anyway.)
+/// — `#n` is the const parameter `DEPTH`, so the path is a real array and
+/// the type is itself a [`Bundle`] (a `Vec` path could not be: its width
+/// would not be static).
 #[derive(Clone)]
-pub struct MerkleTreePath<V: Vis, T: Bundle<V>> {
+pub struct MerkleTreePath<V: Vis, T: Bundle<V>, const DEPTH: usize> {
     pub leaf: T,
-    pub path: Vec<MerkleTreePathEntry<V>>,
+    pub path: [MerkleTreePathEntry<V>; DEPTH],
+}
+
+impl<V: Vis, T: Bundle<V>, const DEPTH: usize> Bundle<V> for MerkleTreePath<V, T, DEPTH> {
+    const WIDTH: usize = T::WIDTH + MerkleTreePathEntry::<V>::WIDTH * DEPTH;
+
+    fn push_wires(&self, out: &mut Vec<Wire<V>>) {
+        self.leaf.push_wires(out);
+        for entry in &self.path {
+            entry.push_wires(out);
+        }
+    }
+
+    fn from_wires(wires: &mut dyn Iterator<Item = Wire<V>>) -> Self {
+        MerkleTreePath {
+            leaf: T::from_wires(wires),
+            path: std::array::from_fn(|_| MerkleTreePathEntry::from_wires(wires)),
+        }
+    }
+
+    fn push_atoms(out: &mut Vec<AlignmentAtom>) {
+        T::push_atoms(out);
+        for _ in 0..DEPTH {
+            MerkleTreePathEntry::<V>::push_atoms(out);
+        }
+    }
 }
 
 /// `struct LeafPreimage<T> { domain_sep: Bytes<6>, data: T }` — private in
@@ -81,7 +108,7 @@ struct LeafPreimage<V: Vis, T: Bundle<V>> {
 }
 
 impl<V: Vis, T: Bundle<V>> Bundle<V> for LeafPreimage<V, T> {
-    const WIDTH: usize = 1 + T::WIDTH;
+    const WIDTH: usize = BytesN::<V, 6>::WIDTH + T::WIDTH;
 
     fn push_wires(&self, out: &mut Vec<Wire<V>>) {
         self.domain_sep.push_wires(out);
@@ -116,7 +143,8 @@ pub fn merkle_tree_path_entry_root<V: Vis>(
 }
 
 /// The fold shared by both root circuits: fold the path entries over an
-/// already-degraded leaf digest.
+/// already-degraded leaf digest. Slice-taking, so both depths and lengths
+/// reach it (a `[_; DEPTH]` path coerces).
 pub fn merkle_tree_path_root_from_leaf_digest<V: Vis>(
     c: &mut Circuit,
     leaf_digest: Wire<V>,
@@ -129,13 +157,10 @@ pub fn merkle_tree_path_root_from_leaf_digest<V: Vis>(
 }
 
 /// `circuit merkleTreePathRoot<#n, T>(path: MerkleTreePath<n, T>): MerkleTreeDigest`
-pub fn merkle_tree_path_root<V: Vis, T: Bundle<V>>(
+pub fn merkle_tree_path_root<V: Vis, T: Bundle<V> + Clone, const DEPTH: usize>(
     c: &mut Circuit,
-    path: &MerkleTreePath<V, T>,
-) -> MerkleTreeDigest<V>
-where
-    T: Clone,
-{
+    path: &MerkleTreePath<V, T, DEPTH>,
+) -> MerkleTreeDigest<V> {
     let domain_sep = BytesN::literal(c, b"mdn:lh");
     let preimage = LeafPreimage {
         domain_sep,
@@ -147,9 +172,9 @@ where
 }
 
 /// `circuit merkleTreePathRootNoLeafHash<#n>(path: MerkleTreePath<n, Bytes<32>>)`
-pub fn merkle_tree_path_root_no_leaf_hash<V: Vis>(
+pub fn merkle_tree_path_root_no_leaf_hash<V: Vis, const DEPTH: usize>(
     c: &mut Circuit,
-    path: &MerkleTreePath<V, Bytes32<V>>,
+    path: &MerkleTreePath<V, Bytes32<V>, DEPTH>,
 ) -> MerkleTreeDigest<V> {
     let leaf_digest = degrade_to_transient(&path.leaf);
     merkle_tree_path_root_from_leaf_digest(c, leaf_digest, &path.path)
