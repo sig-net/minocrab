@@ -45,7 +45,10 @@ use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, contract_call, emit, kernel_self,
     map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{own_public_key_guarded, BytesN, CoinRecipient, B32};
+use minocrab_std::v3::{
+    entry, own_public_key_guarded, ArgPath, Bytes, BytesN, CircuitArg, CircuitArgs, CoinRecipient,
+    Uint, B32,
+};
 
 use crate::common;
 use crate::signet;
@@ -206,6 +209,92 @@ fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
     c.assert(positive);
 }
 
+/// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`
+/// — the vault-specific arguments of a deposit. Field order is the wire
+/// contract; the labels are `depositRequest_erc20Address` /
+/// `depositRequest_amount`.
+struct DepositRequest {
+    erc20_address: Bytes<20>,
+    amount: Uint<128>,
+}
+
+impl CircuitArg for DepositRequest {
+    const SLOTS: usize = <Bytes<20> as CircuitArg>::SLOTS + <Uint<128> as CircuitArg>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <Bytes<20> as CircuitArg>::push_atoms(atoms);
+        <Uint<128> as CircuitArg>::push_atoms(atoms);
+    }
+
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        DepositRequest {
+            erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
+            amount: CircuitArg::declare(c, &path.field("amount")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.erc20_address.constrain(c);
+        self.amount.constrain(c);
+    }
+}
+
+/// `deposit(evmNonce: Uint<64>, gasLimit: Uint<64>, maxFeePerGas: Uint<128>,
+/// maxPriorityFeePerGas: Uint<128>, keyVersion: Uint<8>,
+/// depositRequest: DepositRequest)` — the parameter list, in declaration
+/// order.
+struct DepositArgs {
+    evm_nonce: Uint<64>,
+    gas_limit: Uint<64>,
+    max_fee_per_gas: Uint<128>,
+    max_priority_fee_per_gas: Uint<128>,
+    key_version: Uint<8>,
+    deposit_request: DepositRequest,
+}
+
+impl CircuitArgs for DepositArgs {
+    const SLOTS: usize = <Uint<64> as CircuitArg>::SLOTS
+        + <Uint<64> as CircuitArg>::SLOTS
+        + <Uint<128> as CircuitArg>::SLOTS
+        + <Uint<128> as CircuitArg>::SLOTS
+        + <Uint<8> as CircuitArg>::SLOTS
+        + DepositRequest::SLOTS;
+
+    fn declare(c: &mut Circuit3) -> Self {
+        DepositArgs {
+            evm_nonce: CircuitArg::declare(c, &ArgPath::root("evmNonce")),
+            gas_limit: CircuitArg::declare(c, &ArgPath::root("gasLimit")),
+            max_fee_per_gas: CircuitArg::declare(c, &ArgPath::root("maxFeePerGas")),
+            max_priority_fee_per_gas: CircuitArg::declare(
+                c,
+                &ArgPath::root("maxPriorityFeePerGas"),
+            ),
+            key_version: CircuitArg::declare(c, &ArgPath::root("keyVersion")),
+            deposit_request: CircuitArg::declare(c, &ArgPath::root("depositRequest")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.evm_nonce.constrain(c);
+        self.gas_limit.constrain(c);
+        self.max_fee_per_gas.constrain(c);
+        self.max_priority_fee_per_gas.constrain(c);
+        self.key_version.constrain(c);
+        self.deposit_request.constrain(c);
+    }
+
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<128> as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<128> as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<8> as CircuitArg>::push_atoms(&mut atoms);
+        DepositRequest::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
 /// `export circuit deposit(evmNonce: Uint<64>, gasLimit: Uint<64>,
 /// maxFeePerGas: Uint<128>, maxPriorityFeePerGas: Uint<128>, keyVersion:
 /// Uint<8>, depositRequest: DepositRequest): []` — Runtime step 1 of a
@@ -215,132 +304,124 @@ fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
 /// initialized, vaultEvmAddress, evmChainId, signetRequestNonce,
 /// kernel.self, caip2Id, map member, signetSigner, kernel.self).
 pub fn deposit() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let evm_nonce = c.arg::<FieldT>("evmNonce");
-    let gas_limit = c.arg::<FieldT>("gasLimit");
-    let max_fee_per_gas = c.arg::<FieldT>("maxFeePerGas");
-    let max_priority_fee_per_gas = c.arg::<FieldT>("maxPriorityFeePerGas");
-    let key_version = c.arg::<FieldT>("keyVersion");
-    let erc20_address = c.arg::<FieldT>("depositRequest_erc20Address");
-    let amount = c.arg::<FieldT>("depositRequest_amount");
-    c.assert_bits(evm_nonce, 64);
-    c.assert_bits(gas_limit, 64);
-    c.assert_bits(max_fee_per_gas, 128);
-    c.assert_bits(max_priority_fee_per_gas, 128);
-    c.assert_bits(key_version, 8);
-    c.assert_bits(erc20_address, 160);
-    c.assert_bits(amount, 128);
+    entry(|c, args: DepositArgs| {
+        let evm_nonce = args.evm_nonce.field();
+        let gas_limit = args.gas_limit.field();
+        let max_fee_per_gas = args.max_fee_per_gas.field();
+        let max_priority_fee_per_gas = args.max_priority_fee_per_gas.field();
+        let key_version = args.key_version.field();
+        let erc20_address = args.deposit_request.erc20_address.field();
+        let amount = args.deposit_request.amount.field();
 
-    let one = c.constant(1u64);
-    let zero = c.constant(0u64);
+        let one = c.constant(1u64);
+        let zero = c.constant(0u64);
 
-    // assert(initialized >= 1, "Not initialized")
-    c.region("guards", |c| {
-        assert_initialized(c, one);
+        // assert(initialized >= 1, "Not initialized")
+        c.region("guards", |c| {
+            assert_initialized(c, one);
 
-        // assert(erc20Address as Field != 0)
-        let erc20_zero = c.test_eq(erc20_address, zero.private());
-        let erc20_nonzero = c.not(erc20_zero);
-        c.assert(erc20_nonzero);
+            // assert(erc20Address as Field != 0)
+            let erc20_zero = c.test_eq(erc20_address, zero.private());
+            let erc20_nonzero = c.not(erc20_zero);
+            c.assert(erc20_nonzero);
 
-        // assert(amount > 0)
-        let amount_positive = c.less_than(zero.private(), amount, 128);
-        c.assert(amount_positive);
+            // assert(amount > 0)
+            let amount_positive = c.less_than(zero.private(), amount, 128);
+            c.assert(amount_positive);
 
-        // assert(amount <= u64::MAX) — claims mint via a Uint<64> API.
-        let u64_max = c.constant(u64::MAX);
-        let too_big = c.less_than(u64_max.private(), amount, 128);
-        let fits = c.not(too_big);
-        c.assert(fits);
+            // assert(amount <= u64::MAX) — claims mint via a Uint<64> API.
+            let u64_max = c.constant(u64::MAX);
+            let too_big = c.less_than(u64_max.private(), amount, 128);
+            let fits = c.not(too_big);
+            c.assert(fits);
 
-        // assert(gasLimit > 0)
-        let gas_positive = c.less_than(zero.private(), gas_limit, 64);
-        c.assert(gas_positive);
-    });
+            // assert(gasLimit > 0)
+            let gas_positive = c.less_than(zero.private(), gas_limit, 64);
+            c.assert(gas_positive);
+        });
 
-    // const caller = disclose(userCommitment(callerSecretKey()))
-    let sk = common::witness_sk(&mut c);
-    let caller_priv = common::commitment(&mut c, USER_PAD, &sk);
-    let caller = B32 {
-        hi: c.disclose(caller_priv.hi, "depositor identity commitment (hi)"),
-        lo: c.disclose(caller_priv.lo, "depositor identity commitment (lo)"),
-    };
+        // const caller = disclose(userCommitment(callerSecretKey()))
+        let sk = common::witness_sk(c);
+        let caller_priv = common::commitment(c, USER_PAD, &sk);
+        let caller = B32 {
+            hi: c.disclose(caller_priv.hi, "depositor identity commitment (hi)"),
+            lo: c.disclose(caller_priv.lo, "depositor identity commitment (lo)"),
+        };
 
-    // Contract-enforced calldata: transfer(vaultEvmAddress, amount).
-    let vault_evm = cell_read(
-        &mut c,
-        one,
-        VAULT_EVM_ADDRESS,
-        vec![AlignmentAtom::Bytes { length: 20 }],
-    )[0];
-    let word0 = signet::evm_address_abi_word(&mut c, vault_evm.private());
-    let word1 = signet::numeric_abi_word(&mut c, amount);
-    let selector = c.constant(minocrab::Fr::from_le_bytes(&TRANSFER_SELECTOR).unwrap());
-    let two = c.constant(2u64);
-    let calldata = signet::EvmCalldata::<Private, VAULT_WORDS> {
-        selector: selector.private(),
-        no_words: two.private(),
-        words: [word0, word1],
-    };
+        // Contract-enforced calldata: transfer(vaultEvmAddress, amount).
+        let vault_evm = cell_read(
+            c,
+            one,
+            VAULT_EVM_ADDRESS,
+            vec![AlignmentAtom::Bytes { length: 20 }],
+        )[0];
+        let word0 = signet::evm_address_abi_word(c, vault_evm.private());
+        let word1 = signet::numeric_abi_word(c, amount);
+        let selector = c.constant(minocrab::Fr::from_le_bytes(&TRANSFER_SELECTOR).unwrap());
+        let two = c.constant(2u64);
+        let calldata = signet::EvmCalldata::<Private, VAULT_WORDS> {
+            selector: selector.private(),
+            no_words: two.private(),
+            words: [word0, word1],
+        };
 
-    // The full transaction the MPC will sign.
-    let chain_id = cell_read(
-        &mut c,
-        one,
-        EVM_CHAIN_ID,
-        vec![AlignmentAtom::Bytes { length: 8 }],
-    )[0];
-    let tx_params = signet::EvmType2TxParams::<Private, VAULT_WORDS> {
-        chain_id: chain_id.private(),
-        nonce: evm_nonce,
-        max_priority_fee_per_gas,
-        max_fee_per_gas,
-        gas_limit,
-        to: erc20_address,
-        value: zero.private(),
-        calldata_is_some: one.private(),
-        calldata,
-        access_list_entry_count: zero.private(),
-    };
+        // The full transaction the MPC will sign.
+        let chain_id = cell_read(
+            c,
+            one,
+            EVM_CHAIN_ID,
+            vec![AlignmentAtom::Bytes { length: 8 }],
+        )[0];
+        let tx_params = signet::EvmType2TxParams::<Private, VAULT_WORDS> {
+            chain_id: chain_id.private(),
+            nonce: evm_nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to: erc20_address,
+            value: zero.private(),
+            calldata_is_some: one.private(),
+            calldata,
+            access_list_entry_count: zero.private(),
+        };
 
-    // constructSignBidirectionalEvent(kernel.self(), requestNonce,
-    // keyVersion, caller, ecdsa, unused, pad(64, ""), evmType2, txParams,
-    // caip2Id, schema, schema)
-    let request_nonce = counter_read(&mut c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(&mut c, one);
-    let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
-    };
-    let caip2 = cell_read(
-        &mut c,
-        one,
-        CAIP2_ID,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let caip2 = B32 {
-        hi: caip2[0].private(),
-        lo: caip2[1].private(),
-    };
-    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
-    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
-        &mut c,
-        sender,
-        request_nonce.private(),
-        key_version,
-        B32 {
-            hi: caller.hi.private(),
-            lo: caller.lo.private(),
-        },
-        tx_params,
-        caip2,
-        schema.clone(),
-        schema,
-    );
+        // constructSignBidirectionalEvent(kernel.self(), requestNonce,
+        // keyVersion, caller, ecdsa, unused, pad(64, ""), evmType2, txParams,
+        // caip2Id, schema, schema)
+        let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
+        let sender = kernel_self(c, one);
+        let sender = B32 {
+            hi: sender[0].private(),
+            lo: sender[1].private(),
+        };
+        let caip2 = cell_read(
+            c,
+            one,
+            CAIP2_ID,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let caip2 = B32 {
+            hi: caip2[0].private(),
+            lo: caip2[1].private(),
+        };
+        let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
+        let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
+            c,
+            sender,
+            request_nonce.private(),
+            key_version,
+            B32 {
+                hi: caller.hi.private(),
+                lo: caller.lo.private(),
+            },
+            tx_params,
+            caip2,
+            schema.clone(),
+            schema,
+        );
 
-    record_and_notify(&mut c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
-
-    c.finish(true)
+        record_and_notify(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    })
 }
 
 /// `requestId = disclose(calculateRequestId(request))` +

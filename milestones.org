@@ -302,7 +302,7 @@ suites.
       inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
 - [X] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
       with .field() unwrap; native-Rust values accepted where possible.
-- [ ] Phase 2: CircuitArg (schema+declare+constrain in one trait),
+- [X] Phase 2: CircuitArg (schema+declare+constrain in one trait),
       ArgPath naming, CircuitArgs, entry(), CircuitOut (Public-only ⇒
       returning is disclosing); hand impls; port sign_bidirectional +
       deposit with zero movement.

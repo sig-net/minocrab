@@ -243,3 +243,88 @@ raw wires — equality is the zero-cost claim, stronger than an
 instruction count — plus a 0-instruction check for .field(), the
 range-check panic, and the BITS >= 64 no-overflow path. No circuit was
 converted (phase 2), and both snapshots stayed bit-identical.
+** Phase 2 — the entry-point core (crates/minocrab-std/src/v3/entry.rs)
+Placement: minocrab-std, next to the leaves — the core needs both the
+leaves and Circuit3/Compiled3, and minocrab-std is the only crate that
+already has both (minocrab has no leaves; minocrab-contracts is the
+consumer). Reachable as minocrab_std::v3::{...}, re-exported from v3.rs.
+Real signatures:
+#+begin_src rust
+pub struct ArgPath(String);          // root / field / index / suffix / as_str
+pub trait CircuitArg: Sized {
+    const SLOTS: usize;
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>);
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
+    fn constrain(&self, c: &mut Circuit3);
+    fn atoms() -> Vec<AlignmentAtom> { .. }   // provided, from push_atoms
+}
+pub trait CircuitArgs: Sized {
+    const SLOTS: usize;
+    fn declare(c: &mut Circuit3) -> Self;
+    fn constrain(&self, c: &mut Circuit3);
+    fn atoms() -> Vec<AlignmentAtom>;
+}
+pub trait CircuitOut { const SLOTS: usize; fn emit(self, c: &mut Circuit3, label: &str); }
+pub fn entry<A: CircuitArgs>(body: impl FnOnce(&mut Circuit3, A)) -> Compiled3;
+pub fn entry_out<A: CircuitArgs, O: CircuitOut>(
+    label: &str, body: impl FnOnce(&mut Circuit3, A) -> O) -> Compiled3;
+#+end_src
+The three laws are in the module docs; entry() checks the two checkable
+halves of law 1 with plain asserts (NOT debug_assert as the design text
+said — the suites run --release, where a debug_assert is compiled out,
+and circuit build happens once so the cost is nil): arg_count == SLOTS,
+and instruction_count == 0 after declare, so a declare() that computes is
+caught even when it is the last one declared. Both counts come from two
+new non-circuit-affecting accessors, Circuit3::arg_count /
+instruction_count over Builder3::input_count / len.
+Leaf impls, Private only (c.arg cannot hand back a public wire, so
+"argument ⇒ private" is enforced by the impl set): Uint<BITS> (1 slot,
+atom bytes ceil(BITS/8)), Bool, Bytes<N ≤ 31>, B32 (2 slots, _hi/_lo,
+8/248 bits, one bytes-32 atom), BytesN<N> (LIMBS slots, _0.., per-limb
+widths). CircuitArgs is also implemented for () (the empty argument list,
+used by the output test). Arrays/Maybe/Either are NOT here: neither port
+needs them and phase 3 ports the circuits (withdraw/claim) that do —
+deferred deliberately, with the flattening decided there.
+Deviations from the phasing bullet, all deliberate:
+- entry() is TWO functions. A circuit that returns nothing has no label
+  to give its output, and a returning circuit's label cannot come from
+  the argument list; rather than thread an unused "" through every
+  call site, entry(body) is the []-returning form and entry_out(label,
+  body) the general one (entry delegates to it with O = ()).
+- CircuitOut::emit takes the label as a &str parameter. The impls own
+  the multi-slot suffixes (B32 emits "{label} (hi)"/"(lo)", matching
+  xcontract_events' hand-written labels) but not the base name. Phase 6
+  replaces the string with the declared label type; until then this is
+  the only honest place for it.
+- Discloses<D, R> is NOT built. Without label!/disclose_as there are no
+  label types to put in D, so Discloses::of would be a wrapper around
+  nothing that phase 6 would immediately rewrite. Deferred to phase 6
+  whole, as its design section describes.
+- entry() hard-codes finish(true). All 32 finish() calls in
+  minocrab-contracts pass true; when a circuit needs false, that becomes
+  a parameter (and the differential that needs it will say so).
+Tests (crates/minocrab-std/tests/v3_entry.rs): a five-argument list
+(Uint<64>, Bool, a nested struct of Bytes<20>+Uint<128>, B32,
+BytesN<128> = 11 slots) built through entry() is compared as serialized
+ZKIR against the same circuit hand-written over raw wires — byte equality
+pins the LABELS too, since Builder3 names every value %label.index — plus
+the atom table, the ArgPath rule, and both law violations reaching their
+asserts (a lying SLOTS, a declare() that emits an instruction).
+** Phase 2 — the two ports
+signet_contract::sign_bidirectional: SignBidirectionalArgs { request_id:
+B32, notification: Notification { version: Uint<8>, payload:
+BytesN<128> } } — one nested struct, so the port exercises the same
+path-joining the derive will. erc20_vault::deposit: DepositArgs with the
+five scalars + DepositRequest { erc20_address: Bytes<20>, amount:
+Uint<128> } (Compact's own field order and names).
+Every label the mechanical rule produces equals the hand-written one, at
+both circuits, with no escape hatch needed: requestId_hi/_lo,
+notification_version, notification_payload_0..4, evmNonce .. keyVersion,
+depositRequest_erc20Address, depositRequest_amount. So the interface
+snapshot's name column did not move either.
+The bodies are unchanged except that `&mut c` becomes `c` (inside the
+entry closure `c` is already `&mut Circuit3`) — verified by a
+whitespace-and-reborrow-normalized diff of deposit's body: the only other
+hunks are the argument block itself and `c.finish(true)` → the closing
+`})`. Zero movement everywhere: interface_snapshot, row_snapshot and all
+13 differential suites bit-identical/green.
