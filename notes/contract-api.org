@@ -172,6 +172,10 @@ name-only movement, visible in the interface snapshot.
 Gates for every phase: interface snapshot + row_snapshot + all 13
 differential suites; ports must be zero-movement (except documented
 name-column changes in 5).
+dmd 2026-08-14: if any phase moves measured performance significantly
+(realistically only phase 7's Copy-removal; anything else should be
+zero-movement), refresh the benchmark — re-run the M6 harness
+(nix run .#bench) and update BENCHMARK.md the way the M7 passes did.
 
 * Risks
 - Order drift in derived structs = silent preimage change; backstops:
