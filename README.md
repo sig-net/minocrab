@@ -4,6 +4,8 @@ A Rust eDSL for writing Midnight contracts, replacing the Compact language. Same
 target (ZKIR, never below it), same statements proved, measurably cheaper proofs,
 and disclosure tracked in the type system.
 
+This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose money, and neither you or I will know why.
+
 ## Side by side
 
 `erc20-vault`'s `deposit`, from the sig-net corpus
