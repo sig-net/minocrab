@@ -213,3 +213,33 @@ than the phasing bullet assumed):
 Failure output: a line-level LCS diff per changed circuit (`-` frozen,
 `+` built), so a reorder reads as one moved line and a rename as one
 -/+ pair. The diff renderer has its own unit test.
+** Phase 1 — typed v3 leaves (crates/minocrab-std/src/v3.rs)
+Uint<BITS, V = Private> / Bool<V = Private> / Bytes<N ≤ 31, V = Private>:
+#[repr(transparent)] newtypes over one Wire3<FieldT, V>, with
+.field() / from_field() (no instructions) and, mirroring types.rs's v2
+leaves, constrain_input() — assert_bits(BITS) / assert_boolean /
+assert_bits(8N). That method is the point of the layer: the constraint
+now comes from the argument's type instead of a hand-written parallel
+block, so phase 2's CircuitArg::constrain just calls it.
+- Bounds are inline-const asserts in from_field (BytesN's idiom, so
+  every constructor inherits them): 0 < BITS < 255 and 0 < N <= 31.
+  The upper Uint bound is not decoration — upstream's ConstrainBits
+  passes `bits >= FR_BITS` (255) straight through to
+  assigned_to_le_bits' overflow flag, i.e. a Uint<255> would be range-
+  constrained to nothing. Both fire as E0080 at compile time (checked).
+- Constant constructors take native Rust values today (u64 / bool /
+  &[u8; N], the array form so the length is checked by the type) and
+  return the Public visibility; the Uint one asserts the value fits
+  BITS at circuit-build time, short-circuiting the shift for BITS >= 64
+  so it cannot overflow. These still emit c.constant's naming Copy —
+  turning them into inline immediates is phase 7, deliberately not now.
+- No naming collision with the v2 types.rs Bool/UintN/BytesN: the new
+  leaves are reachable only as minocrab_std::v3::{Uint, Bool, Bytes}
+  and are NOT added to the crate-root re-export list (which still
+  exports the v2 Bool/BytesN).
+Tests (crates/minocrab-std/tests/v3_leaves.rs): each leaf's circuit is
+compared as serialized ZKIR against the same circuit hand-written over
+raw wires — equality is the zero-cost claim, stronger than an
+instruction count — plus a 0-instruction check for .field(), the
+range-check panic, and the BITS >= 64 no-overflow path. No circuit was
+converted (phase 2), and both snapshots stayed bit-identical.

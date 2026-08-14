@@ -300,7 +300,7 @@ phase gated on interface snapshot + row_snapshot + all differential
 suites.
 - [X] Phase 0: interface-snapshot test — ordered (label, type) of
       inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
-- [ ] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
+- [X] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
       with .field() unwrap; native-Rust values accepted where possible.
 - [ ] Phase 2: CircuitArg (schema+declare+constrain in one trait),
       ArgPath naming, CircuitArgs, entry(), CircuitOut (Public-only ⇒

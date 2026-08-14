@@ -30,6 +30,142 @@ impl Vis3 for Private {
     }
 }
 
+// ---- typed leaves -----------------------------------------------------------
+//
+// Compact's scalar leaves as single-wire newtypes, so a circuit argument
+// carries its width in its type: the input constraint compactc emits for a
+// leaf (`assert_bits(BITS)` / `assert_boolean` / `assert_bits(8N)`) is then
+// derived from the argument type instead of hand-written in a block
+// parallel to the argument list, where an omission is invisible to PI
+// equality on honest preimages (notes/contract-api.org §Survey).
+//
+// Parameter order is const-first with the visibility defaulted to Private
+// (`Uint<64>`, `Bytes<20>`), deliberately unlike `B32<V>` / `BytesN<V, N>`:
+// these are the types circuit signatures are written in, and reading
+// side-by-side with the Compact source wins (DECIDED, notes/contract-api.org).
+//
+// All three are `#[repr(transparent)]` around one wire, and `.field()`
+// unwraps to it without emitting an instruction.
+
+/// Compact's `Uint<0..2^BITS - 1>`: one native slot, `assert_bits(BITS)` on
+/// entry, alignment atom `bytes ceil(BITS/8)`.
+///
+/// `BITS` must satisfy `0 < BITS < 255`: at or above the native field's
+/// width upstream's `ConstrainBits` constrains nothing, so a wider `Uint`
+/// would silently be no `Uint` at all.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Uint<const BITS: u32, V: Vis3 = Private>(Wire3<FieldT, V>);
+
+impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
+    /// Wrap a wire already known to hold a `Uint<BITS>` (a circuit argument
+    /// about to be constrained, or the result of a checked operation).
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        const {
+            assert!(
+                BITS > 0 && BITS < 255,
+                "Uint<BITS> needs 0 < BITS < 255 — the native field is 255 bits \
+                 wide, and a range constraint at or above that is vacuous"
+            )
+        };
+        Uint(w)
+    }
+
+    /// `x as Field` — the same slot, no instructions.
+    pub fn field(self) -> Wire3<FieldT, V> {
+        self.0
+    }
+
+    /// Range-constrain a `Uint<BITS>` entering the circuit, exactly as
+    /// compactc constrains its `Uint<BITS>` arguments.
+    pub fn constrain_input(self, c: &mut Circuit3) {
+        c.assert_bits(self.0, BITS);
+    }
+}
+
+impl<const BITS: u32> Uint<BITS, Public> {
+    /// A `Uint<BITS>` constant from a native Rust value; panics at
+    /// circuit-build time if `v` does not fit in `BITS` bits.
+    pub fn constant(c: &mut Circuit3, v: u64) -> Self {
+        assert!(
+            BITS >= 64 || v >> BITS == 0,
+            "{v} does not fit in Uint<{BITS}>"
+        );
+        Uint::from_field(c.constant(v))
+    }
+}
+
+/// Compact's `Boolean`: one native slot holding 0 or 1, `assert_boolean` on
+/// entry, alignment atom `bytes 1`.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Bool<V: Vis3 = Private>(Wire3<FieldT, V>);
+
+impl<V: Vis3> Bool<V> {
+    /// Wrap a wire already known to hold 0 or 1.
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        Bool(w)
+    }
+
+    /// The underlying 0/1 wire — the same slot, no instructions.
+    pub fn field(self) -> Wire3<FieldT, V> {
+        self.0
+    }
+
+    /// Constrain a `Boolean` entering the circuit, as compactc does for
+    /// every `tunsigned 1` slot.
+    pub fn constrain_input(self, c: &mut Circuit3) {
+        c.assert_boolean(self.0);
+    }
+}
+
+impl Bool<Public> {
+    /// A `Boolean` constant from a native Rust `bool`.
+    pub fn constant(c: &mut Circuit3, v: bool) -> Self {
+        Bool(c.constant(u64::from(v)))
+    }
+}
+
+/// Compact's `Bytes<N>` for `N <= 31`: one native slot holding the bytes
+/// little-endian, `assert_bits(8N)` on entry, alignment atom `bytes N`.
+/// Above 31 bytes a `Bytes<N>` no longer fits a slot — use [`B32`] at 32
+/// and [`BytesN`] beyond.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Bytes<const N: usize, V: Vis3 = Private>(Wire3<FieldT, V>);
+
+impl<const N: usize, V: Vis3> Bytes<N, V> {
+    /// Wrap a wire already known to hold `N` little-endian bytes.
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        const {
+            assert!(
+                N > 0 && N <= 31,
+                "Bytes<N> here needs 0 < N <= 31 — use B32 at 32, BytesN above"
+            )
+        };
+        Bytes(w)
+    }
+
+    /// The packed little-endian limb — the same slot, no instructions.
+    pub fn field(self) -> Wire3<FieldT, V> {
+        self.0
+    }
+
+    /// Constrain a `Bytes<N>` entering the circuit (`8N` bits), as compactc
+    /// constrains a short byte-string argument.
+    pub fn constrain_input(self, c: &mut Circuit3) {
+        c.assert_bits(self.0, 8 * N as u32);
+    }
+}
+
+impl<const N: usize> Bytes<N, Public> {
+    /// A `Bytes<N>` constant from native Rust bytes, `bytes[0]` least
+    /// significant (the in-slot order of [`B32`]'s low limb).
+    pub fn constant(c: &mut Circuit3, bytes: &[u8; N]) -> Self {
+        Bytes::from_field(c.constant(Fr::from_le_bytes(bytes).expect("N <= 31 bytes fit")))
+    }
+}
+
 /// A Compact-level `Bytes<32>`: the `[hi, lo]` native slot pair (hi = byte
 /// 31, lo = bytes 0..30 little-endian).
 #[derive(Clone, Copy)]
