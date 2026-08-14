@@ -12,14 +12,19 @@
 //!     assert(secp256k1EcdsaVerify(digest, {r as Secp256k1Scalar, s as ..}, pk));
 //!     verified.insert(disclose(requestId), true)
 //! ```
-//! (`shaVerify`/`keccakVerify` additionally hash the attested output and
-//! deserialize a RespondOutput; they land once the serialize<T,N> byte
-//! layout is ported.)
+//! `shaVerify`/`keccakVerify` additionally hash the attested output —
+//! `digest = persistentHash/keccak256<[Bytes<32>, Bytes<128>]>([requestId,
+//! output])` — and read the packed output back with `deserialize
+//! <RespondOutput, 128>` (`struct RespondOutput { success: Boolean;
+//! amount: Uint<128>; recipient: Bytes<20> }`, 37 packed bytes,
+//! zero-padded), asserting `out.success`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT};
-use minocrab::{Fr, Private};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
+use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
-use minocrab_std::v3::{secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, B32};
+use minocrab_std::v3::{
+    rebuild_limb, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
+};
 
 /// Ledger field indices, in declaration order.
 const CALL_COUNT: u8 = 0;
@@ -84,6 +89,95 @@ pub fn verify_only() -> Compiled3 {
 
     c.region("ledger writes", |c| ledger_writes(c, &request_id));
     c.finish(true)
+}
+
+/// `struct RespondOutput { success: Boolean; amount: Uint<128>;
+/// recipient: Bytes<20> }` as circuit wires.
+pub struct RespondOutput<V: Vis3> {
+    pub success: Wire3<FieldT, V>,
+    pub amount: Wire3<FieldT, V>,
+    pub recipient: Wire3<FieldT, V>,
+}
+
+/// `deserialize<RespondOutput, 128>(output)` (expand-serialize.ss
+/// build-deserialize): `success = (byte 0 == 1)`, `amount = bytes 1..17`
+/// (Uint<128>, LE), `recipient = bytes 17..37` (`Bytes<20>`, one limb);
+/// the 91 padding bytes are ignored.
+fn deserialize_respond_output<V: Vis3>(c: &mut Circuit3, output: &BytesN<V>) -> RespondOutput<V> {
+    let bytes = output.to_le_bytes(c);
+    let one = V::from_public(c.constant(1u64));
+    RespondOutput {
+        success: c.test_eq(bytes[0], one),
+        amount: rebuild_limb(c, &bytes[1..17]),
+        recipient: rebuild_limb(c, &bytes[17..37]),
+    }
+}
+
+/// The shared body of `shaVerify` / `keccakVerify`, parameterized by the
+/// digest hash.
+fn hash_verify(
+    hash: impl FnOnce(
+        &mut Circuit3,
+        Alignment,
+        &[minocrab::v3::AnyWire3<Private>],
+    ) -> Wire3<minocrab::v3::Bytes32T, Private>,
+) -> Compiled3 {
+    let mut c = Circuit3::new();
+    let request_id = bytes32_arg(&mut c, "requestId");
+    let output = BytesN::new(
+        128,
+        (0..5)
+            .map(|i| c.arg::<FieldT>(&format!("output_{i}")))
+            .collect(),
+    );
+    let r = bytes32_arg(&mut c, "r");
+    let s = bytes32_arg(&mut c, "s");
+    let pk = c.arg::<Secp256k1PointT>("pk");
+    request_id.constrain_input(&mut c);
+    output.constrain_input(&mut c);
+    r.constrain_input(&mut c);
+    s.constrain_input(&mut c);
+
+    // digest = hash<[Bytes<32>, Bytes<128>]>([requestId, output])
+    let digest = c.region("digest", |c| {
+        let alignment = Alignment(vec![
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 128 }),
+        ]);
+        let mut inputs = vec![request_id.hi.erase(), request_id.lo.erase()];
+        inputs.extend(output.limbs.iter().map(|w| w.erase()));
+        let typed = hash(c, alignment, &inputs);
+        B32::from_typed(c, typed)
+    });
+
+    let ok = c.region("signature verification", |c| {
+        let r_typed = r.to_typed(c);
+        let s_typed = s.to_typed(c);
+        let sig = Secp256k1EcdsaSignature {
+            r: c.from_bytes32(r_typed),
+            s: c.from_bytes32(s_typed),
+        };
+        secp256k1_ecdsa_verify(c, &digest, &sig, pk)
+    });
+    c.assert(ok); // "attestation signature invalid"
+
+    let out = c.region("deserialize RespondOutput", |c| {
+        deserialize_respond_output(c, &output)
+    });
+    c.assert(out.success); // "respond reported failure"
+
+    c.region("ledger writes", |c| ledger_writes(c, &request_id));
+    c.finish(true)
+}
+
+/// `export circuit shaVerify(requestId, output, r, s, pk): []`
+pub fn sha_verify() -> Compiled3 {
+    hash_verify(|c, alignment, inputs| c.persistent_hash(alignment, inputs))
+}
+
+/// `export circuit keccakVerify(requestId, output, r, s, pk): []`
+pub fn keccak_verify() -> Compiled3 {
+    hash_verify(|c, alignment, inputs| c.keccak256(alignment, inputs))
 }
 
 /// The ledger field indices (callCount, verified), for reference

@@ -505,6 +505,20 @@ including a full tamper sweep (every transcript element flipped ⇒
 both artifacts reject, zero acceptance disagreements). This also
 validates =kernel_self= against a real corpus artifact.
 
+SERIALIZE LAYOUT (added 2026-08-14, from
+compiler/analysis-passes/expand-serialize.ss): =serialize<T,N>= packs
+value-only FAB binary — Boolean → 1 byte, Uint<8·k> → k bytes LE,
+Bytes<n> → n bytes, structs/tuples/vectors concatenated in order,
+zero-padded to N. =deserialize<T,N>= reads it back; Boolean = (byte
+== 1), padding IGNORED (not asserted zero). Bytes<N> for N>31 = FAB
+limbs in slot order [leftover (N mod 31) MSB bytes, then 31-byte
+limbs down to LSB] — Bytes<128> = 5 limbs constrained 32/248×4
+(minocrab-std::v3 BytesN). With this, attest is COMPLETE: all 4
+circuits differential-green incl. shaVerify/keccakVerify
+(in-circuit digest over [Bytes<32>, Bytes<128>], deserialize +
+success assert, real ECDSA; rejects agree on bad sig / success=0 /
+tampered output).
+
 Still to build here: Map member/lookup differentials (shapes exist,
 no corpus circuit isolates them — first exercised by erc20-vault
 deposit/claim), Map rem, MerkleTree ops, log/events, conditional

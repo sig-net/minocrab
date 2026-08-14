@@ -22,3 +22,4 @@ midnight-zkir-v3.workspace = true
 midnight-curves.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+sha3.workspace = true

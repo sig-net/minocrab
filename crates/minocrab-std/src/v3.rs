@@ -91,7 +91,7 @@ impl<V: Vis3> B32<V> {
 /// Explode a limb into `nbytes` byte wires, least-significant first: a
 /// chain of `div_mod_power_of_two(_, 8)` where each remainder is a byte and
 /// the final quotient is the last byte (compactc's `bytes->vector` shape).
-fn explode_limb<V: Vis3>(
+pub fn explode_limb<V: Vis3>(
     c: &mut Circuit3,
     limb: Wire3<FieldT, V>,
     nbytes: usize,
@@ -109,7 +109,7 @@ fn explode_limb<V: Vis3>(
 
 /// Rebuild a limb from byte wires (least-significant first): a right-fold
 /// of `reconstitute_field(rest, byte, 8)` (compactc's `vector->bytes`).
-fn rebuild_limb<V: Vis3>(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> Wire3<FieldT, V> {
+pub fn rebuild_limb<V: Vis3>(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> Wire3<FieldT, V> {
     let mut acc = *bytes.last().expect("at least one byte");
     for &byte in bytes[..bytes.len() - 1].iter().rev() {
         acc = c.reconstitute_field(acc, byte, 8);
@@ -131,6 +131,57 @@ pub fn bytes_to_b32<V: Vis3>(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> B3
     B32 {
         lo: rebuild_limb(c, &bytes[..31]),
         hi: bytes[31],
+    }
+}
+
+/// A Compact-level `Bytes<N>` for `N > 31`: FAB slot order — a leftover
+/// limb of `N mod 31` bytes (the most significant bytes) followed by
+/// 31-byte limbs down to the least significant. Confirmed against the
+/// attest corpus artifact: `Bytes<128>` = 5 limbs of 4+31+31+31+31 bytes,
+/// input-constrained 32/248/248/248/248 bits.
+#[derive(Clone)]
+pub struct BytesN<V: Vis3> {
+    len: usize,
+    /// Slot order: `limbs[0]` = the leftover (most significant) bytes.
+    pub limbs: Vec<Wire3<FieldT, V>>,
+}
+
+impl<V: Vis3> BytesN<V> {
+    /// Bytes per limb, slot order.
+    fn limb_lens(len: usize) -> Vec<usize> {
+        assert!(len > 31, "use B32 / a single limb for short byte strings");
+        let full = len / 31;
+        let leftover = len - 31 * full;
+        let mut lens = Vec::with_capacity(full + 1);
+        if leftover > 0 {
+            lens.push(leftover);
+        }
+        lens.extend(std::iter::repeat_n(31, full));
+        lens
+    }
+
+    pub fn new(len: usize, limbs: Vec<Wire3<FieldT, V>>) -> BytesN<V> {
+        assert_eq!(limbs.len(), Self::limb_lens(len).len(), "Bytes<{len}> limb count");
+        BytesN { len, limbs }
+    }
+
+    /// Constrain a `Bytes<N>` entering the circuit (8·leftover bits, then
+    /// 248 per full limb).
+    pub fn constrain_input(&self, c: &mut Circuit3) {
+        for (limb, nbytes) in self.limbs.iter().zip(Self::limb_lens(self.len)) {
+            c.assert_bits(*limb, 8 * nbytes as u32);
+        }
+    }
+
+    /// All `N` bytes as wires, least-significant first (byte 0 first) —
+    /// the limbs exploded in reverse slot order.
+    pub fn to_le_bytes(&self, c: &mut Circuit3) -> Vec<Wire3<FieldT, V>> {
+        let lens = Self::limb_lens(self.len);
+        let mut bytes = Vec::with_capacity(self.len);
+        for (limb, nbytes) in self.limbs.iter().zip(lens).rev() {
+            bytes.extend(explode_limb(c, *limb, nbytes));
+        }
+        bytes
     }
 }
 
