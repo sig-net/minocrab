@@ -851,3 +851,61 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
         op_counts,
     })
 }
+
+// --- cost + profiling ------------------------------------------------------------
+
+/// Static circuit cost via Midnight's own cost model (k = log2 rows needed)
+/// — the v3 twin of [`crate::cost`].
+pub fn cost(ir: &IrSource) -> (u8, usize) {
+    let model = ir.model();
+    (model.k(), model.rows())
+}
+
+/// Attribute each instruction to its innermost region and price the circuit
+/// — the v3 twin of [`crate::profile`]. Instructions outside every region
+/// land in "(top level)".
+pub fn profile(compiled: &minocrab::v3::Compiled3) -> crate::Profile {
+    let instructions = compiled.ir.instructions.as_slice();
+    let (k, rows) = cost(&compiled.ir);
+
+    // regions are pushed on scope exit, so for nested regions the inner one
+    // appears first — the first region containing an index is the innermost.
+    let region_of = |idx: usize| -> &str {
+        compiled
+            .regions
+            .iter()
+            .find(|r| r.start <= idx && idx < r.end)
+            .map(|r| r.label.as_str())
+            .unwrap_or("(top level)")
+    };
+
+    let mut by_label: BTreeMap<&str, crate::RegionCost> = BTreeMap::new();
+    for (idx, ins) in instructions.iter().enumerate() {
+        let label = region_of(idx);
+        let entry = by_label.entry(label).or_insert_with(|| crate::RegionCost {
+            label: label.to_string(),
+            instructions: 0,
+            percent: 0.0,
+            op_counts: BTreeMap::new(),
+        });
+        entry.instructions += 1;
+        *entry.op_counts.entry(op_name(ins)).or_default() += 1;
+    }
+
+    let total = instructions.len().max(1);
+    let mut regions: Vec<crate::RegionCost> = by_label
+        .into_values()
+        .map(|mut r| {
+            r.percent = r.instructions as f64 * 100.0 / total as f64;
+            r
+        })
+        .collect();
+    regions.sort_by(|a, b| b.instructions.cmp(&a.instructions).then(a.label.cmp(&b.label)));
+
+    crate::Profile {
+        k,
+        rows,
+        total_instructions: instructions.len(),
+        regions,
+    }
+}

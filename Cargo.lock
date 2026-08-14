@@ -2037,6 +2037,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "midnight-base-crypto",
+ "midnight-serialize",
+ "midnight-transient-crypto 3.0.0",
+ "minocrab",
+ "minocrab-contracts",
+ "minocrab-sim",
+ "minocrab-zkir",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "minocrab-contracts"
 version = "0.1.0"
 dependencies = [
@@ -2044,6 +2063,7 @@ dependencies = [
  "midnight-curves 0.3.1",
  "midnight-onchain-state",
  "midnight-onchain-vm",
+ "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir-v3",
@@ -3329,7 +3349,19 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "socket2",
+ "tokio-macros",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]

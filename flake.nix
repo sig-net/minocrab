@@ -56,6 +56,18 @@
       {
         packages.compactc = compactc;
 
+        # M6 baseline benchmark, from a clean checkout: `nix run .#bench`.
+        # Nix only supplies the binaries (toolchain, compactc); the build
+        # itself is plain cargo via ./bench.sh.
+        apps.bench = {
+          type = "app";
+          program = "${pkgs.writeShellApplication {
+            name = "minocrab-bench-app";
+            runtimeInputs = [ rustToolchain pkgs.stdenv.cc compactc ];
+            text = ''exec ./bench.sh'';
+          }}/bin/minocrab-bench-app";
+        };
+
         devShells.default = pkgs.mkShell {
           packages = [
             rustToolchain

@@ -21,6 +21,8 @@ use minocrab_contracts::signet_contract;
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
 
+mod support;
+
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir(name: &str) -> IrSource {
@@ -181,7 +183,9 @@ impl SignScenario {
 fn sign_bidirectional_matches_corpus() {
     let theirs = corpus_zkir("signBidirectional");
     let ours = signet_contract::sign_bidirectional().ir;
-    assert_call_compatible(&ours, &theirs, &SignScenario::new().preimage());
+    let pi = SignScenario::new().preimage();
+    support::dump_preimage("signBidirectional", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// Criterion 3: a transcript whose logged payload disagrees with the
@@ -262,7 +266,9 @@ fn respond_matches_corpus() {
     let theirs = corpus_zkir("respond");
     let ours = signet_contract::respond().ir;
     let s = RespondScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage(signet_contract::SIGNATURE_RESPONDED_EVENT));
+    let pi = s.preimage(signet_contract::SIGNATURE_RESPONDED_EVENT);
+    support::dump_preimage("respond", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 #[test]
@@ -270,11 +276,9 @@ fn respond_bidirectional_matches_corpus() {
     let theirs = corpus_zkir("respondBidirectional");
     let ours = signet_contract::respond_bidirectional().ir;
     let s = RespondScenario::new();
-    assert_call_compatible(
-        &ours,
-        &theirs,
-        &s.preimage(signet_contract::RESPOND_BIDIRECTIONAL_EVENT),
-    );
+    let pi = s.preimage(signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
+    support::dump_preimage("respondBidirectional", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// The two respond circuits differ only by event name: each must reject

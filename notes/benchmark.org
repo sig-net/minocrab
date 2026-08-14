@@ -1,0 +1,36 @@
+#+title: M6 baseline benchmark: erc20-vault + Signet singleton, MinoCrab vs compactc
+
+* Methodology
+- Targets: all 9 erc20-vault circuits + the Signet singleton's 3
+  (signet-contract.compact). Both artifact sets at the same pinned
+  versions: compactc 0.33.0-rc.2 goldens from =corpus/zkir=, MinoCrab
+  artifacts built in-process from =crates/minocrab-contracts=.
+- Same statement per circuit: each measurement proves the *same*
+  =ProofPreimage=, dumped by the differential tests (which first verify
+  PI-equality of both artifacts on it — the M3 harness). So the numbers
+  compare circuits proving identical statements, not merely similar ones.
+- Harness: =crates/minocrab-bench= via =./bench.sh= (or =nix run .#bench=).
+  One subprocess per circuit × side; peak RSS is =getrusage= of that
+  process. Keygen/prove/verify through midnight's own =Zkir= impl
+  (midnight-zkir-v3 rev 04c9c5d, the rev our compactc's bundled zkir-v3
+  binary is built from); SRS params hash-verified into
+  =~/.cache/midnight/zk-params= and warmed before timing.
+- Outputs: =target/bench/results.json=, =report.md=, and per-region
+  MinoCrab cost profiles under =profiles/= (minocrab-sim's v3 profiler).
+- Caveats: single iteration per cell (proving variance is small relative
+  to the deltas observed; re-run for publication numbers); keygen/prove
+  timings include re-reading the cached SRS file from disk (identical for
+  both sides); corpus side has no region breakdown (no span info in
+  compactc output).
+
+* Results (2026-08-14 run, Apple Silicon, single iteration)
+To be filled from target/bench/report.md when the full run lands.
+
+Early observation (respond, the first pair measured): parity was the
+expectation — the lowering mirrors compactc's op sequences — but the
+MinoCrab artifact is *already* markedly cheaper on byte-plumbing-heavy
+circuits: respond is k=15 / 18,582 rows / 20.6s prove / 443MB vs
+compactc's k=16 / 40,931 rows / 69.5s prove / 786MB (same preimage,
+same proof size). Likely cause: leaner byte explode/rebuild lowering
+(fewer reconstitute/constrain chains) — to be confirmed against the
+per-region profiles when picking M7 targets.

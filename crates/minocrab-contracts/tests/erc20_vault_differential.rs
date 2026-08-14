@@ -33,6 +33,8 @@ use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
+mod support;
+
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
 fn corpus_zkir_named(name: &str) -> IrSource {
@@ -1194,7 +1196,9 @@ fn claim_matches_corpus() {
     let theirs = corpus_zkir_named("claim");
     let ours = erc20_vault::claim().ir;
     let s = ClaimScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("claim", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// recipient = some(right(vault)) — the auto-receive branch FIRES: the
@@ -2029,7 +2033,9 @@ fn withdraw_matches_corpus() {
     let theirs = corpus_zkir_named("withdraw");
     let ours = erc20_vault::withdraw().ir;
     let s = WithdrawScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("withdraw", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 #[test]
@@ -2395,7 +2401,9 @@ fn complete_withdraw_success_matches_corpus() {
     let theirs = corpus_zkir_named("completeWithdraw");
     let ours = erc20_vault::complete_withdraw().ir;
     let s = CompleteWithdrawScenario::new(1);
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("completeWithdraw", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// Attested false return: the guarded refund branch fires.
@@ -2901,7 +2909,9 @@ fn swap_matches_corpus() {
     let theirs = corpus_zkir_named("swap");
     let ours = erc20_vault::swap().ir;
     let s = SwapScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("swap", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 #[test]
@@ -3233,7 +3243,9 @@ fn complete_swap_matches_corpus() {
     let theirs = corpus_zkir_named("completeSwap");
     let ours = erc20_vault::complete_swap().ir;
     let s = CompleteSwapScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("completeSwap", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// Exact spend: change is 0 (a harmless 0-value coin).
@@ -3608,7 +3620,9 @@ fn refund_withdrawal_matches_corpus() {
     let theirs = corpus_zkir_named("refund");
     let ours = erc20_vault::refund().ir;
     let s = RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()));
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("refund", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 #[test]
@@ -3676,7 +3690,9 @@ fn approve_router_matches_corpus() {
     let theirs = corpus_zkir_named("approveRouter");
     let ours = erc20_vault::approve_router().ir;
     let s = ApproveScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("approveRouter", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 #[test]
@@ -3704,7 +3720,9 @@ fn deposit_matches_corpus() {
     let theirs = corpus_zkir_named("deposit");
     let ours = erc20_vault::deposit().ir;
     let s = DepositScenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage());
+    let pi = s.preimage();
+    support::dump_preimage("deposit", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// Guard failures must be rejected by BOTH artifacts.
@@ -3809,7 +3827,9 @@ fn initialize_matches_corpus() {
     let theirs = corpus_zkir();
     let ours = erc20_vault::initialize().ir;
     let s = Scenario::new();
-    assert_call_compatible(&ours, &theirs, &s.preimage(0));
+    let pi = s.preimage(0);
+    support::dump_preimage("initialize", &pi);
+    assert_call_compatible(&ours, &theirs, &pi);
 }
 
 /// Criterion 3 (same acceptance): each guard failure must be rejected by
