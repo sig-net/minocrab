@@ -336,3 +336,41 @@ Compact sources, disclosure declarations are part of every circuit's
 signature and enforced by generated tests, and every instrument (rows,
 interfaces, differentials) shows zero unexplained movement — plus the
 showcase twin differential-green with its deltas explained.
+
+* M10 — Final: ERC-20 vault, maximally verified and maximally optimized
+(dmd, 2026-08-15: "test the shit out of the ERC-20 contract and do
+everything in your power to optimise it, then output a report of how
+fast the super optimized version is.")
+The M7 profiles say the remaining vault cost is PI-COUPLED — pinned by
+byte-identical-to-compactc framing, not by the protocol. M10 drops the
+compactc-framing constraint where the protocol permits, and re-anchors
+correctness on the M3 harness at scale. The direct ports stay intact as
+the compatibility reference; the optimized vault is its own artifact
+(natural base: M9's showcase twin).
+- [ ] Verification first — the license to optimize: spec-based property
+      harness for all 9 vault circuits (specs in ordinary Rust, every
+      branch — claim's four recipient shapes, completeWithdraw's two
+      routes, refund's two, completeSwap exact-spend — every guard,
+      accepted runs re-validated by the reference VM; PROPTEST_CASES
+      scaled to millions in CI), plus adversarial/boundary sweeps
+      (2^128-1 amounts, zero addresses, malformed witnesses, tampered
+      records) and the existing tamper/reject-agreement suites.
+- [ ] Scope the freed space: what the protocol actually pins (Impact op
+      stream ↔ on-chain state machine, cross-contract commitment to the
+      Signet singleton, MPC attestation formats, coin commitments) vs
+      what only compactc-artifact PI-equality pinned (constrain_bits
+      placement/redundancy, transcript framing details, serialization
+      shapes). Written analysis before any change.
+- [ ] Optimize everything the analysis frees, re-measured per change:
+      k-boundary attacks first (deposit 17,502 is ~1.1k rows over k=14;
+      protect nothing — this artifact has no compactc row parity to
+      keep), constrain-bits dedup, framing/serialization, then the
+      crypto regions if headroom remains. Every change lands with the
+      harness green at full scale.
+- [ ] The report: fresh single-session benchmark — super-optimized vault
+      vs compactc vs the direct port (three-way, so ergonomics-neutral
+      lowering wins and freed-framing wins are attributed separately);
+      RAM + prove + k/rows; honest about what could not move and why.
+Exit criteria: report reproducible from a clean checkout; the property
+harness green at millions of cases per circuit; the optimized artifact's
+every deviation from compactc framing documented and spec-justified.
