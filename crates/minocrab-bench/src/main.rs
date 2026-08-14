@@ -167,12 +167,26 @@ async fn measure(name: &str, side: &str) -> Result<Measurement> {
     let (pk, vk) = ir.keygen(&params).await?;
     let keygen_s = t.elapsed().as_secs_f64();
 
-    let t = Instant::now();
-    let (proof, pis, _skips) = ir
-        .prove(rand::rngs::OsRng, &params, pk, &pi)
-        .await
-        .map_err(|e| anyhow::anyhow!("prove: {e}"))?;
-    let prove_s = t.elapsed().as_secs_f64();
+    // Median of N proves (MINOCRAB_PROVE_ITERS, default 3): single-shot
+    // wall-clock proved to swing ~3× with machine state.
+    let iters: usize = std::env::var("MINOCRAB_PROVE_ITERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let mut times = Vec::with_capacity(iters);
+    let mut last = None;
+    for _ in 0..iters {
+        let t = Instant::now();
+        let (proof, pis, _skips) = ir
+            .prove(rand::rngs::OsRng, &params, pk.clone(), &pi)
+            .await
+            .map_err(|e| anyhow::anyhow!("prove: {e}"))?;
+        times.push(t.elapsed().as_secs_f64());
+        last = Some((proof, pis));
+    }
+    times.sort_by(f64::total_cmp);
+    let prove_s = times[times.len() / 2];
+    let (proof, pis) = last.expect("at least one prove iteration");
     let proof_bytes = proof.0.len();
 
     // `ParamsProver::as_verifier` is pub(crate); read the verifier params
@@ -213,10 +227,26 @@ fn orchestrate() -> Result<()> {
     let out_dir = bench_dir();
     std::fs::create_dir_all(&out_dir)?;
     let exe = std::env::current_exe()?;
-    let mut results: Vec<Measurement> = Vec::new();
+
+    // Incremental: one JSON line per finished cell; a restarted run skips
+    // what's already measured. Delete results.jsonl for a fresh run.
+    let jsonl_path = out_dir.join("results.jsonl");
+    let mut results: Vec<Measurement> = match std::fs::read_to_string(&jsonl_path) {
+        Ok(s) => s
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?,
+        Err(_) => Vec::new(),
+    };
 
     for target in &targets() {
         for side in ["minocrab", "compactc"] {
+            if results
+                .iter()
+                .any(|m| m.circuit == target.name && m.side == side)
+            {
+                continue;
+            }
             eprint!("{:>20} {:>8} … ", target.name, side);
             std::io::stderr().flush().ok();
             let t = Instant::now();
@@ -242,9 +272,23 @@ fn orchestrate() -> Result<()> {
                 m.peak_rss_bytes as f64 / 1e6,
                 t.elapsed().as_secs_f64()
             );
+            let mut jsonl = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&jsonl_path)?;
+            writeln!(jsonl, "{}", serde_json::to_string(&m)?)?;
             results.push(m);
         }
     }
+
+    // Report in target order regardless of when each cell was measured.
+    let order: Vec<&str> = targets().iter().map(|t| t.name).collect();
+    results.sort_by_key(|m| {
+        (
+            order.iter().position(|n| *n == m.circuit),
+            m.side != "minocrab",
+        )
+    });
 
     serde_json::to_writer_pretty(
         std::fs::File::create(out_dir.join("results.json"))?,

@@ -23,14 +23,42 @@
   both sides); corpus side has no region breakdown (no span info in
   compactc output).
 
-* Results (2026-08-14 run, Apple Silicon, single iteration)
-To be filled from target/bench/report.md when the full run lands.
+* Results (2026-08-14, Apple Silicon)
+IN FLIGHT: the final median-of-3 run (MINOCRAB_PROVE_ITERS=3, default)
+was launched 2026-08-14 evening, detached (nohup, log
+target/bench/final.log); it writes
+target/bench/{results.jsonl,results.json,report.md,profiles/}
+incrementally and takes ~45-60 min. When it lands: copy report.md's
+numbers here, tick the M6 measurement bullets, commit.
 
-Early observation (respond, the first pair measured): parity was the
-expectation — the lowering mirrors compactc's op sequences — but the
-MinoCrab artifact is *already* markedly cheaper on byte-plumbing-heavy
-circuits: respond is k=15 / 18,582 rows / 20.6s prove / 443MB vs
-compactc's k=16 / 40,931 rows / 69.5s prove / 786MB (same preimage,
-same proof size). Likely cause: leaner byte explode/rebuild lowering
-(fewer reconstitute/constrain chains) — to be confirmed against the
-per-region profiles when picking M7 targets.
+Findings already established (stable across runs — k/rows/RSS are
+deterministic, wall-clock is not):
+- Wall-clock prove/keygen times swing up to 3x with machine state
+  (identical circuits measured 8s vs 11s; one k=16 cell measured 22s
+  quiet vs 103s loaded) — hence median-of-3 per cell, and k/rows/RSS
+  as the primary comparison metrics.
+- Row parity (±0.7%) on 7/9 vault circuits, as designed — the lowering
+  mirrors compactc's op sequences. MinoCrab strictly better elsewhere:
+  refund -12.2% rows, completeSwap -14.6% (compactc pays extra
+  div_mod/reconstitute byte-repacking there).
+- k strictly lower for MinoCrab on 5 circuits: claim + completeWithdraw
+  (16 vs 17 — near-equal rows sit just under 2^16 for us, over for
+  them, likely lookup/custom-gate accounting) and all 3 singleton
+  circuits (15 vs 16, on -53..-55% rows: their emit path explodes and
+  rebuilds bytes twice, e.g. respond 270 div_mod vs our 120). One k
+  lower ~= half the RAM and roughly half the prove time.
+- Proof sizes identical per circuit (same proof system).
+
+* Ranked M7 optimisation targets (from the op-mix profiles)
+1. Byte explode/rebuild chains: div_mod_power_of_two + reconstitute_field
+   are 50-75% of instructions in EVERY circuit (serialization, event
+   payloads, hash input prep). Batched/wider limb handling attacks all
+   circuits at once.
+2. k-boundary circuits: refund (85,185 rows) and completeSwap (89,300)
+   at k=17 need ~25% row cuts to reach k=16 (→ ~half RAM/time); claim
+   (64,985) and completeWithdraw (64,791) sit just under 2^16 — protect
+   that boundary while optimising.
+3. Region annotation: the vault circuits don't use Circuit3::region()
+   yet, so profiles are whole-circuit op mixes; add spans (the
+   signet/coin/serializer compositions are natural regions) to attribute
+   rows before committing to specific M7 passes.
