@@ -12,6 +12,10 @@ use minocrab::v3::{
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
+mod entry;
+
+pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
+
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
 /// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
 pub trait Vis3: Visibility + Meet<Self, Out = Self> + Sized + Copy {

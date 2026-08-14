@@ -245,6 +245,18 @@ impl Circuit3 {
         Wire3::new(self.b.input(label, T::ir_type()))
     }
 
+    /// Argument slots declared so far — the entry-point core checks it
+    /// against the argument list's declared width.
+    pub fn arg_count(&self) -> usize {
+        self.b.input_count()
+    }
+
+    /// Instructions built so far — the entry-point core checks that
+    /// argument declaration emitted none.
+    pub fn instruction_count(&self) -> usize {
+        self.b.len()
+    }
+
     // --- inputs ------------------------------------------------------------------
 
     /// Read the next witness value from the private transcript.

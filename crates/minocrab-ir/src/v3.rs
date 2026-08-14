@@ -744,6 +744,11 @@ impl Builder3 {
         self.instructions.len()
     }
 
+    /// Number of circuit-argument slots declared so far.
+    pub fn input_count(&self) -> usize {
+        self.inputs.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.instructions.is_empty()
     }
