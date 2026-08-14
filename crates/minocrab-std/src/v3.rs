@@ -277,11 +277,9 @@ pub fn hash_to_secp256k1_scalar<V: Vis3>(
     c: &mut Circuit3,
     digest: &B32<V>,
 ) -> Wire3<Secp256k1ScalarT, V> {
-    let le_bytes = b32_to_bytes(c, digest);
-    let be_bytes: Vec<_> = le_bytes.into_iter().rev().collect();
-    let reversed = bytes_to_b32(c, &be_bytes);
-    let typed = reversed.to_typed(c);
-    c.from_bytes32(typed)
+    let typed = digest.to_typed(c);
+    let reversed = c.reverse_bytes(typed);
+    c.from_bytes32(reversed)
 }
 
 /// `circuit secp256k1EcdsaVerify(msgHash, sig, pk): Boolean`

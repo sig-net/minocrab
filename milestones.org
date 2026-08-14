@@ -235,6 +235,17 @@ Driven by M6's cost profiles; every change re-measured with the M6 harness.
       rustc.
 - [ ] Optimisation passes at the IR layer; measure with the M3 profiler against
       compactc's output (RAM + proving-cost proxies).
+      (Pass 1 DONE 2026-08-15 — native-instruction byte plumbing: ZKIR's
+      ReverseBytes (~150 rows) replaces the mirrored explode/rebuild
+      chains (~4,600); ABI words become algebraic div_mod shifts; the
+      notification payload collapses to one add (limb-aligned). All 9
+      vault circuits -18..-38% rows; every k=17 circuit crossed to k=16,
+      approveRouter 15→14; prove time -49..-76% vs compactc, RSS -43..-51%
+      on the k-crossers. All 13 differential suites green unchanged.
+      Row-cost method + numbers: notes/benchmark.org "M7 pass 1",
+      crates/minocrab-sim/examples/opcost.rs. NEXT: Serializer
+      re-limbing — the singleton's 98%-of-instructions region; guard
+      refund/completeSwap now ~300-450 rows under 2^16.)
 - [ ] Refresh the M6 benchmark and produce the presentable write-up
       (methodology, numbers, where the wins come from; honest about any
       losses — baseline parity vs optimised deltas cleanly attributed).

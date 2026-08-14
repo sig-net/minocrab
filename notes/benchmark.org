@@ -102,3 +102,86 @@ reconstitute_field chains dominate every top region.
    targets 1+2 are together ~60-70% of their instructions, so the
    headroom is there. Protect claim (64,985) and completeWithdraw
    (64,791) sitting just under 2^16 while optimising.
+
+* M7 pass 1 (2026-08-15): native-instruction byte plumbing
+The baseline's targets 1-3 all turned out to be the same defect: the
+ports mirrored compactc's Compact-stdlib byte handling (explode limbs
+into bytes with div_mod chains, rebuild with reconstitute chains), but
+ZKIR v3 has cheaper native forms. Measured row costs
+(crates/minocrab-sim/examples/opcost.rs, deterministic):
+- div_mod_power_of_two: ~90-147 rows EACH (large fixed floor; cost is
+  independent of split position, weakly dependent on operand width —
+  tree-splitting does not help). A 31-byte explode is ~4,400 rows.
+- reconstitute_field: ~12 rows. mul/add: ~3. The rebuild side was
+  never the problem; byte DECOMPOSITION is the entire cost.
+- Native ReverseBytes (Bytes<32>): ~150 rows — replaces a ~4,600-row
+  explode/reverse/rebuild round-trip.
+
+Rewrites (all value-preserving, so PI-equality holds — all 13
+differential suites green unchanged):
+- signet::reverse_bytes32 → native ReverseBytes (to_typed / reverse /
+  from_typed). Kills the 3 reversal round-trips per attestation verify
+  (r, s import) and hash_to_secp256k1_scalar's (z) in minocrab-std.
+- evm_address_abi_word: the word is addr·2^96 → one div_mod at bit 152
+  + one constant mul (was explode(20)).
+- numeric_abi_word: B32{lo: value, hi: 0} + native reverse IS the BE
+  rendering (was explode(16) + rebuild).
+- abi_word_to_uint128[_guarded]: reverse + div_mod at 128; value = the
+  low half, head-check = high half == 0 (was explode(31) + BE fold).
+- abi_word_low20: word >> 96 = one div_mod at 96 + hi re-shift (was
+  explode(31) + rebuild).
+- construct_notification_v1: the Bytes<128> payload's 31-byte limbs
+  align with the caller address — limb = caller.lo verbatim, next limb
+  = caller.hi + a compile-time constant (depth ‖ path at weights
+  2^8..2^47), rest zero. One add (was explode(31) + from_le_bytes(128),
+  the whole 160-instruction "signet: notification" region).
+
+Row results (deterministic; baseline → optimised, vs compactc):
+| circuit          | rows before | rows after |     k | vs compactc rows |
+|------------------+-------------+------------+-------+------------------|
+| initialize       |        4272 |  unchanged |    13 | +0.0%            |
+| deposit          |       26962 |      17502 |    15 | -35.2%           |
+| claim            |       64985 |      47660 |    16 | -26.2% (k 16v17) |
+| approveRouter    |       20616 |      13344 | 15→14 | -35.3% (k 14v15) |
+| withdraw         |       51833 |      42373 |    16 | -18.5%           |
+| completeWithdraw |       64791 |      47466 |    16 | -26.4% (k 16v17) |
+| refund           |       85185 |      65231 | 17→16 | -32.8% (k 16v17) |
+| swap             |       70860 |      51485 | 17→16 | -27.6% (k 16v17) |
+| completeSwap     |       89300 |      65071 | 17→16 | -37.8% (k 16v17) |
+ALL k=17 vault circuits crossed to k=16; approveRouter crossed 15→14.
+Singleton circuits untouched by this pass (their cost is the
+Serializer, see next target).
+
+Re-measured timing/RSS (minocrab cells re-proved 2026-08-15 median-of-3
+against the M6 run's compactc cells — k/rows/RSS deterministic, and the
+prove deltas are far beyond cross-session wall-clock noise; the M7
+write-up gets a full same-session re-run):
+| circuit          | prove (s) | vs cpctc | RSS (MB) | vs cpctc |
+|------------------+-----------+----------+----------+----------|
+| deposit          |      4.82 |   -56.4% |      781 |    -8.7% |
+| claim            |      9.37 |   -75.5% |     1844 |   -43.5% |
+| approveRouter    |      2.91 |   -66.4% |      316 |   -51.3% |
+| withdraw         |      8.87 |   -48.9% |     1587 |    +0.8% |
+| completeWithdraw |     10.14 |   -76.1% |     1850 |   -43.0% |
+| refund           |     10.67 |   -76.3% |     1877 |   -43.1% |
+| swap             |      9.88 |   -71.3% |     1583 |   -47.0% |
+| completeSwap     |     10.73 |   -73.9% |     1866 |   -43.3% |
+(withdraw/deposit RSS ~flat: same k both sides there — RAM is k-driven.
+The -43..-51% RSS cells are exactly the k-crossers.)
+
+CAUTION: refund (65,231) and completeSwap (65,071) now sit ~300-450
+rows under 2^16 — protect that boundary in later passes.
+
+Remaining targets after pass 1 (from the refreshed profiles):
+1. Serializer re-limbing (the singleton's "event serialize + emit" is
+   98% of respond's instructions: byte-explode + reconstitute across
+   31-byte limb boundaries). Same disease, needs a Serializer that
+   tracks byte offsets and splits input limbs with ≤2 div_mods at
+   output-limb boundaries instead of full explosion. Applies to the 3
+   singleton circuits (and the events experiment).
+2. What's left in the vault circuits is PI-coupled (impact ops,
+   public_input embeds of the map lookups, constrain_bits on
+   arguments) — not reachable by lowering changes; would need
+   different public-transcript framing, which PI-equality forbids in
+   the differential harness. The eDSL-vs-eDSL freedom starts where
+   compact-compatibility ends; note for the M7 write-up.

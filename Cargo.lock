@@ -2116,6 +2116,7 @@ dependencies = [
  "midnight-zkir-v3",
  "minocrab",
  "minocrab-ir",
+ "minocrab-std",
  "minocrab-zkir",
  "proptest",
  "serde",

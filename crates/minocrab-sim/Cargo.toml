@@ -27,3 +27,5 @@ anyhow.workspace = true
 proptest.workspace = true
 # v3 end-to-end tests build their circuits with the typed Builder3.
 minocrab-ir = { path = "../minocrab-ir" }
+# The opcost example prices minocrab-std's byte-plumbing shapes.
+minocrab-std = { path = "../minocrab-std" }

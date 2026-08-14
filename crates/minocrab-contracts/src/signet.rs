@@ -16,10 +16,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment};
-use minocrab_std::v3::{
-    b32_to_bytes, bytes_to_b32, explode_limb, rebuild_limb, secp256k1_ecdsa_verify,
-    Secp256k1EcdsaSignature, Vis3, BytesN, B32,
-};
+use minocrab_std::v3::{secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, Vis3, BytesN, B32};
 
 fn atom(n: u32) -> AlignmentSegment {
     AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
@@ -262,14 +259,19 @@ pub fn construct_notification_v1<V: Vis3>(
 ) -> (Wire3<FieldT, V>, BytesN<V>) {
     c.region("signet: notification", |c| {
         let version = V::from_public(c.constant(1u64));
-        let mut bytes: Vec<Wire3<FieldT, V>> = b32_to_bytes(c, caller_address);
-        bytes.push(V::from_public(c.constant(u64::from(requests_path_depth))));
-        for p in requests_path {
-            bytes.push(V::from_public(c.constant(u64::from(p))));
+        // The payload's 31-byte limbs line up with the caller address:
+        // bytes 0..30 are caller.lo verbatim; bytes 31..61 pack caller.hi
+        // (weight 1) with the compile-time depth ‖ path bytes at weights
+        // 2^8..2^47; bytes 62..127 are zero.
+        let mut packed: u64 = u64::from(requests_path_depth) << 8;
+        for (i, p) in requests_path.into_iter().enumerate() {
+            packed |= u64::from(p) << (16 + 8 * i);
         }
+        let packed = V::from_public(c.constant(packed));
+        let second = c.add(caller_address.hi, packed);
         let zero = V::from_public(c.constant(0u64));
-        bytes.resize(128, zero); // ...default<Bytes<91>>
-        (version, BytesN::from_le_bytes(c, &bytes))
+        let payload = BytesN::new(128, vec![zero, zero, zero, second, caller_address.lo]);
+        (version, payload)
     })
 }
 
@@ -295,11 +297,13 @@ pub fn calculate_attestation_digest<V: Vis3>(
 }
 
 /// `reverseBytes32(b)` — byte-order adapter (stored records are
-/// big-endian, the scalar casts read little-endian).
+/// big-endian, the scalar casts read little-endian). ZKIR's native
+/// `ReverseBytes` instruction (~150 rows) replaces the Compact stdlib's
+/// explode/rebuild chain (~4600 rows, what compactc emits).
 pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
-    let bytes = b32_to_bytes(c, b);
-    let reversed: Vec<_> = bytes.into_iter().rev().collect();
-    bytes_to_b32(c, &reversed)
+    let typed = b.to_typed(c);
+    let rev = c.reverse_bytes(typed);
+    B32::from_typed(c, rev)
 }
 
 /// `verifyRespondBidirectionalEvent(requestId, serializedOutput, event,
@@ -335,11 +339,12 @@ pub fn verify_respond_bidirectional_event<V: Vis3>(
 /// address bytes. `addr` is the `Bytes<20>` single limb.
 pub fn evm_address_abi_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V> {
     c.region("abi words", |c| {
-        let addr_bytes = explode_limb(c, addr, 20);
-        let zero = V::from_public(c.constant(0u64));
-        let mut bytes = vec![zero; 12];
-        bytes.extend(addr_bytes);
-        bytes_to_b32(c, &bytes)
+        // The word is addr·2^96 (a 12-byte shift), so split the 160-bit
+        // limb at bit 152: hi byte = addr >> 152, lo = the rest shifted.
+        let (hi, low152) = c.div_mod_power_of_two(addr, 152);
+        let shift96 = V::from_public(pow2_const(c, 12));
+        let lo = c.mul(low152, shift96);
+        B32 { hi, lo }
     })
 }
 
@@ -347,11 +352,12 @@ pub fn evm_address_abi_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -
 /// integer: 16 zero bytes then the value's 16 LE bytes reversed.
 pub fn numeric_abi_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V> {
     c.region("abi words", |c| {
-        let le = explode_limb(c, value, 16);
+        // value's 16 LE bytes sit at string positions 0..15 of
+        // `B32 { lo: value, hi: 0 }`; the native reversal moves them,
+        // reversed, to positions 16..31 — exactly the BE ABI rendering.
         let zero = V::from_public(c.constant(0u64));
-        let mut bytes = vec![zero; 16];
-        bytes.extend(le.into_iter().rev());
-        bytes_to_b32(c, &bytes)
+        let padded = B32 { hi: zero, lo: value };
+        reverse_bytes32(c, &padded)
     })
 }
 
@@ -377,11 +383,16 @@ fn abi_word_to_uint128_with<V: Vis3>(
     word: &B32<V>,
 ) -> Wire3<FieldT, V> {
     c.region("abi words", |c| {
-        let bytes = b32_to_bytes(c, word);
-        // assert(slice<16>(word, 0) as Field == 0)
-        let head = rebuild_limb(c, &bytes[..16]);
+        // Reversed, the BE value's bytes land at string positions 0..15
+        // (LSB first) and the zero head at 16..31: the value is the
+        // reversal mod 2^128, and the head check is "everything above
+        // bit 128 of the reversal is zero".
+        let rev = reverse_bytes32(c, word);
+        let (above, value) = c.div_mod_power_of_two(rev.lo, 128);
         let zero = V::from_public(c.constant(0u64));
-        let head_zero = c.test_eq(head, zero);
+        let above_zero = c.test_eq(above, zero);
+        let hi_zero = c.test_eq(rev.hi, zero);
+        let head_zero = c.mul(above_zero, hi_zero);
         match guard {
             Some(g) => {
                 let one = V::from_public(c.constant(1u64));
@@ -390,14 +401,7 @@ fn abi_word_to_uint128_with<V: Vis3>(
             }
             None => c.assert(head_zero),
         }
-        // Big-endian fold of bytes 16..31.
-        let byte_base = V::from_public(c.constant(256u64));
-        let mut acc = bytes[16];
-        for &b in &bytes[17..32] {
-            let shifted = c.mul(acc, byte_base);
-            acc = c.add(shifted, b);
-        }
-        acc
+        value
     })
 }
 
@@ -406,9 +410,20 @@ fn abi_word_to_uint128_with<V: Vis3>(
 /// stored calldata words).
 pub fn abi_word_low20<V: Vis3>(c: &mut Circuit3, word: &B32<V>) -> Wire3<FieldT, V> {
     c.region("abi words", |c| {
-        let bytes = b32_to_bytes(c, word);
-        rebuild_limb(c, &bytes[12..32])
+        // Bytes 12.. of the string are the word shifted right 96 bits:
+        // (lo >> 96) plus the top byte re-shifted to string position 19.
+        let (above96, _low12) = c.div_mod_power_of_two(word.lo, 96);
+        let shift152 = V::from_public(pow2_const(c, 19));
+        let top = c.mul(word.hi, shift152);
+        c.add(above96, top)
     })
+}
+
+/// The constant `2^(8·byte_shift)`.
+fn pow2_const(c: &mut Circuit3, byte_shift: usize) -> minocrab::v3::Wire3<FieldT, minocrab::Public> {
+    let mut bytes = [0u8; 31];
+    bytes[byte_shift] = 1;
+    c.constant(minocrab::Fr::from_le_bytes(&bytes[..=byte_shift]).expect("fits"))
 }
 
 #[cfg(test)]
