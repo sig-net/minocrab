@@ -2108,7 +2108,6 @@ dependencies = [
 name = "minocrab-std"
 version = "0.1.0"
 dependencies = [
- "group",
  "midnight-curves 0.3.1",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir-v3",

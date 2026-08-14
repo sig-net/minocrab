@@ -17,5 +17,4 @@ minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-curves.workspace = true
-group.workspace = true
 sha3.workspace = true
