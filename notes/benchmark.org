@@ -220,6 +220,10 @@ over k=14; refund 65,231 / completeSwap 65,071 sit ~300-450 under
 2^16 (PROTECT). M7's remaining bullets: const-generic circuit
 families, and the refreshed-benchmark write-up (full same-session
 re-run of all 24 cells for publication numbers).
+Both closed since: the write-up is /BENCHMARK.md (next section), and
+the const-generic pass landed 2026-08-15 with every circuit's (k,
+rows) bit-identical — the numbers below still stand
+(notes/const-generics.org; guard test tests/row_snapshot.rs).
 
 * M7 final run (2026-08-15): all 24 cells, one session
 Full fresh re-run after passes 1+2; presentable write-up at

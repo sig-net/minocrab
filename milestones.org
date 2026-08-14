@@ -231,8 +231,26 @@ is ranked by region-attributed instruction share (notes/benchmark.org).
 
 * M7 — Optimisation + presentable deliverable
 Driven by M6's cost profiles; every change re-measured with the M6 harness.
-- [ ] Const-generic circuit families, monomorphized per size/depth, unrolled by
+- [X] Const-generic circuit families, monomorphized per size/depth, unrolled by
       rustc.
+      (DONE 2026-08-15 in three type-level stages: BytesN<V, N> +
+      Serializer::finish::<N> + bytes_limbs() as the one limbing rule
+      (minocrab-std/src/v3.rs); the Signet event family
+      SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND> +
+      EvmCalldata<V, WORDS> + EventRecord with a derived signet::layout
+      replacing the hand-counted event_limb table, retyped in the vault
+      as VaultEvent<V, 2, 34, 34> / SwapEvent<V, 7, 38, 37> and
+      verify_attestation::<LEN_OUTPUT>; MerkleTreePath<V, T, DEPTH>
+      (a real [MerkleTreePathEntry; DEPTH], so it is finally a Bundle)
+      plus Bundle::WIDTH literals derived from their components.
+      Guard: tests/row_snapshot.rs freezes (k, rows) for all 55
+      workspace circuits — written first, bit-identical through all
+      three stages, differential suites green throughout. Skip
+      decisions with reasons (hashing's BytesNDyn, emit_n/call_n_times,
+      Serializer typestate, array-backed limbs, B32, ledger values) and
+      the dropped serde-unification, in notes/const-generics.org.
+      The snapshot doubles as an M8 asset: a toolchain bump that
+      changes lowering shows up as a moved row count per circuit.)
 - [X] Optimisation passes at the IR layer; measure with the M3 profiler against
       compactc's output (RAM + proving-cost proxies).
       (Pass 1 DONE 2026-08-15 — native-instruction byte plumbing: ZKIR's

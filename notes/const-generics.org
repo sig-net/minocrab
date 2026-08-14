@@ -1,0 +1,161 @@
+#+title: Const-generic circuit families (M7, 2026-08-15)
+
+The plan.org L2 bullet — "one definition, monomorphized per size/depth,
+unrolling done by rustc". Landed in three stages, all *type-level*: no
+=Circuit3= builder call was added, removed or reordered anywhere, and
+every circuit's =(k, rows)= is bit-identical to the pre-refactor values.
+Toolchain: rustc 1.97.1 (flake), so min-const-generics + associated
+consts only — =generic_const_exprs= is NOT available and every design
+below is shaped by that.
+
+* The verification instrument
+=crates/minocrab-contracts/tests/row_snapshot.rs= freezes =(circuit, k,
+rows)= for all *55* workspace circuits, priced with the same cost model
+the benchmark harness uses (=minocrab_sim::v3::cost=, i.e. Midnight's
+own =Model=). It was written FIRST, before any of the three stages, so
+each stage could be checked the same way: change types, run
+=cargo test --release -p minocrab-contracts --test row_snapshot=,
+require zero movement. It never moved. The differential suites stayed
+green throughout as the semantic check (the snapshot prices, it does
+not execute).
+
+Its twelve benchmark circuits agree with BENCHMARK.md, so the published
+numbers are pinned too. Regeneration after an *intentional* cost change
+is the =--ignored print_row_snapshot= helper in the same file.
+
+Known blind spot (measured 2026-08-15): an extra =Copy= of an immediate
+costs 0 rows in the model, so the snapshot cannot see a stray free
+constant. Instruction-stream identity is an argument you make by
+reading the diff; the snapshot only guarantees cost identity.
+
+* Stage 1 — =BytesN<V, N>= (minocrab-std/src/v3.rs)
+Byte-string sizes moved from runtime =usize= arguments into the type.
+- =BytesN<V, const N: usize>= with =LIMBS=, =limb_len(i)=, =atoms()=,
+  =alignment()=, =arg=, =literal=, =constrain_input=,
+  =to_le_bytes=/=from_le_bytes=.
+- =Serializer::finish::<N>= returns a =BytesN<V, N>=, so a serialized
+  payload's declared width and the type carrying it cannot disagree.
+- =pub const fn bytes_limbs(len)= states the FAB limbing rule ONCE;
+  both =BytesN= and everything that embeds a =Bytes<len>= field derive
+  their widths from it instead of counting limbs by hand.
+- =BytesNDyn= kept for the genuinely runtime-sized callers (below).
+
+* Stage 2 — the Signet event family (minocrab-contracts/src/signet.rs)
+=SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>= plus
+=EvmCalldata<V, WORDS>= (a real =[B32<V>; WORDS]=) and
+=EventRecord<WORDS, LEN_OUT, LEN_RESPOND>= for the map-lookup side.
+- =signet::layout= replaces the hand-counted =event_limb= table: each
+  field's first slot is the sum of the widths before it, so
+  =word_hi(i) = WORDS + 2i= falls out of the chain rather than being
+  typed in. =LIMBS= = 33 for the 2-word record, 43 for the 7-word one.
+- =erc20_vault= instantiates exactly two shapes, now named:
+  =VaultEvent<V> = ...<V, 2, 34, 34>=, =SwapEvent<V> = ...<V, 7, 38, 37>=
+  (+ =VaultRecord= / =SwapRecord=). Mixing a transfer record's words
+  into a swap is a compile error.
+- =verify_attestation::<LEN_OUTPUT>= takes the output width as a const
+  parameter, spelled at the call sites next to the =assert_bits= it has
+  to agree with.
+
+* Stage 3 — =MerkleTreePath<V, T, DEPTH>= + derived widths
+- =MerkleTreePath= (minocrab-std/src/merkle.rs) takes the Compact =#n=
+  as =const DEPTH=, so =path: [MerkleTreePathEntry<V>; DEPTH]= is a
+  real array and the type is a =Bundle= itself
+  (=WIDTH = T::WIDTH + MerkleTreePathEntry::WIDTH * DEPTH=) — the
+  Vec-backed version could not be, its width not being static.
+  =merkleTreePathRoot[NoLeafHash]= are generic over DEPTH; the fold
+  stays slice-taking so both entry points share one body and arrays
+  coerce into it.
+- Hand-written =Bundle::WIDTH= literals became expressions over their
+  component types (coin.rs 2/5/6 and CoinPreimage's =1+5+1+2=,
+  LeafPreimage, MerkleTreePathEntry, Maybe/Either's leading 1,
+  JubjubPoint). The =Bytes<32>= limbing rule and the Boolean slot are
+  each stated in one place, so a representation change cannot leave a
+  stale width behind.
+- =xcontract_events= re-declared =MISC_SIZE= and open-coded the Misc
+  tag/version; it now uses =events::{MISC_SIZE, MISC_TAG, MISC_VERSION}=
+  — one declaration of the MIP-0002 =Misc= shape.
+
+* Deliberately NOT const-generic — do not re-litigate
+- *hashing.rs* stays on =BytesNDyn=. Its lengths (32/64/128/256/1024)
+  are test-harness sweep data, chosen by the benchmark, not properties
+  of a contract type. Const-ifying them would reintroduce exactly the
+  per-size dispatch table the refactor deleted elsewhere.
+- *=events::emit_n= / =xcall::call_n_times=*: =n= counts *effect
+  repetitions* (how many Misc events, how many cross-contract calls),
+  not a value's size. There is no type to index by it — the emitted
+  values all have the same shape.
+- *=Serializer= compile-time width accounting* (a typestate carrying
+  FILLED bytes, so =finish::<N>= could prove =FILLED <= N= statically):
+  needs const arithmetic in return position (=Serializer<V, {FILLED +
+  n}>=) = =generic_const_exprs=, not on stable. The runtime assert in
+  =finish_dyn= stays.
+- *Array-backed =BytesN= limbs / =Bundle= wires*: =[T; N.div_ceil(31)]=
+  and =[Wire; Self::WIDTH]= are derived array lengths — also
+  =generic_const_exprs=. Vec + a constructor assert on the invariant
+  =limbs.len() == LIMBS= is the stable answer, and it is checked at
+  every construction site. Rejected alternative: a second const
+  parameter carrying the derived limb count (=BytesN<V, N, LIMBS>=) —
+  it type-checks on stable but puts the hand-computation back at every
+  call site, which is the thing this whole pass removes.
+- *=B32= stays its own =Copy= struct* rather than becoming
+  =BytesN<V, 32>=. It is the hot path with ~100 =B32 { hi, lo }=
+  struct-literal sites, and its two-slot shape is load-bearing in
+  readable code (=b.hi= / =b.lo= vs =limbs()[0]=). =From<B32> for
+  BytesN<V,32>= and =BytesN::to_b32= bridge the two where a generic
+  =Bytes<N>= API is wanted.
+- *=Circuit3::assert_bits= / =div_mod_power_of_two= / =less_than= bit
+  widths*: these are scalar *instruction operands* (the ZKIR ops take a
+  bit count), not sizes that drive a data structure. Typing them buys
+  nothing and would put turbofish on every arithmetic call.
+- *minocrab-ledger =LedgerValue= / atoms / ops*: genuinely dynamic —
+  the Impact encoding is built at runtime from op streams whose shape
+  depends on the contract's ledger fields. Typing it is a different
+  project, and it touches the PI encoding that the differential harness
+  pins byte-for-byte; the risk/benefit is nothing like the value-side
+  work above.
+
+* Task considered and dropped: unifying the two deserialize sites
+=attest::deserialize_respond_output= (RespondOutput from a
+=Bytes<128>=) and =serde_builtin::check_roundtrip= (Mixed) hand-roll
+the same recipe: =to_le_bytes=, =test_eq(byte, 1)= for a Boolean,
+=rebuild_limb= per field. A =SerdeStruct= trait (=const FIELDS:
+&[FieldSpec]= + =from_parts= / =to_serializer=) was specified for them.
+Dropped, for three reasons:
+
+1. *It cannot produce an identical instruction stream.* =attest= builds
+   its constant 1 after =to_le_bytes=; =serde_builtin= builds ONE
+   =c.constant(1u64)= *before* =to_le_bytes= and reuses it both for the
+   Boolean test and for the later =emit= guard. Any shared
+   deserializer must make its own constant, so serde_builtin gains an
+   extra =Copy= and moves one. Measured: rows are unaffected (=Copy= is
+   free in the cost model — see the blind spot above), so the guard
+   test would have waved it through. That is a reason for more caution,
+   not less.
+2. *The two field sets barely overlap.* attest is
+   Bool/Uint<128>/Bytes<20>; Mixed is Bool/Uint<128>/Uint<8>/Bytes<32>.
+   The trait needs four =FieldSpec= variants for two call sites, and
+   =from_parts= over a flattened =&[Wire]= is positional — the B32 has
+   to be reassembled from =parts[3], parts[4]=. That is strictly less
+   obviously correct than today's =bytes_to_b32(c, &bytes[18..50])=,
+   and obvious correctness outranks deduplication here.
+3. *The abstraction is bigger than the thing abstracted*: 6 and 5 lines
+   of deserialization against ~15 lines of trait impl each, and only
+   one of the two sites ever serializes, so =to_serializer= would be
+   dead weight in attest.
+
+The real win on offer was *derived* field offsets (=1..17=, =17..37=,
+=18..50= are hand-written today) — the same argument that justified
+=signet::layout=. If a third deserialize site ever appears, revisit it
+as a =Deserializer= cursor (the dual of =Serializer=: =bool(c)=,
+=uint(c, n)=, =b32(c)= advancing an offset), NOT as a FIELDS table —
+that form keeps every field named and explicit. Two sites did not earn
+it.
+
+* Toolchain caveat
+flake.nix pins =pkgs.rust-bin.stable.latest.default= — "latest stable",
+not a fixed version (1.97.1 as of 2026-08-15). So =nix flake update=
+can bump rustc silently, which matters here: if =generic_const_exprs=
+ever stabilises, the Vec-backed =BytesN= limbs and the =Bundle= wire
+vectors become real arrays and several notes above expire. Conversely,
+nothing in this pass relies on a feature newer than min-const-generics
++ associated consts, so a bump cannot break it.
