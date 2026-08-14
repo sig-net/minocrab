@@ -1,0 +1,348 @@
+#+title: M10 pre-work: what the vault's remaining cost is, what the protocol pins, what can move
+
+Analysis of record for M10 (Opus survey agent, 2026-08-15; supervised
+session). Nothing here is implemented yet. Verdicts marked UNSURE must
+be resolved before acting on anything that depends on them.
+
+* Headline finding — M10's premise corrected
+notes/benchmark.org says the remaining vault cost is "PI-coupled". True
+about LOWERING (no instruction-selection change reaches it), misleading
+about ROWS: reconstructing per-circuit budgets from the frozen row
+snapshot shows 95-99% of every vault circuit's rows are SHA-256,
+keccak-256 and secp256k1 ECDSA. The entire Impact-op stream, every
+public_input/popeq embed, every constrain_bits, select and assert
+together are 370-2,000 rows per circuit (1-4%).
+The region profiles attribute by INSTRUCTION COUNT, which inverts the
+picture (claim's ecdsa region: 12.6% of instructions, ~53% of rows;
+its keccak: 1.0% of instructions, ~9% of rows).
+Consequence: constrain_bits dedup / transcript framing / serialization
+— what the M10 milestone text was written around — is worth a few
+hundred rows per circuit and crosses NO k boundary. The real leverage
+is WHICH HASH CONSTRUCTIONS THE VAULT CHOOSES: a spec-level question.
+SHA-256 pair-hash = 3,760 rows; keccak block = 4,220; ECDSA = 25,140.
+
+* Row-cost model (calibrated; REPLACE WITH MEASUREMENT before reporting)
+Derived as residuals between snapshot circuits differing by one
+primitive; three independent confirmations (mint_with_recipient exact;
+sha_verify decomposition; swap predicted 51,471 vs actual 51,485).
+| primitive | rows |
+|-----------+------|
+| persistent_hash (SHA-256) | 1,880 per 64-byte block, blocks = ceil((len+9)/64) |
+| keccak256 | ~4,220 per 136-byte block + ~1.7/byte |
+| secp256k1EcdsaVerify | ~25,140 |
+| transient_hash (Poseidon) | ~15/limb (≈30-120 total) |
+| div_mod_power_of_two | 90-147 |
+| everything else | ~4-7 rows per instruction |
+FAB record lengths: vault event <2,34,34> = 404 bytes (3 keccak blocks
+≈ 12,900 rows); swap event <7,38,37> = 571 bytes (5 blocks ≈ 22,070).
+Attestation digest preimage 33/37/40 bytes (1 block ≈ 4,280).
+
+Per-circuit budget (model, ±3%):
+| circuit | rows | keccak | ECDSA | SHA-256 | non-crypto |
+|---------+------+--------+-------+---------+------------|
+| initialize | 4,272 | — | — | userCommitment 3,760 | ~512 |
+| deposit | 17,502 | 12,900 | — | userCommitment 3,760 | ~840 |
+| approveRouter | 13,344 | 12,900 | — | — | ~440 |
+| withdraw | 42,373 | 12,900 | — | domainSep+tokenType+refundCommit 11,280 · receive-cc 5,640 · burn 11,280 | ~1,270 |
+| swap | 51,485 | 22,070 | — | same 28,200 | ~1,215 |
+| claim | 47,660 | 4,276 | 25,140 | userCommit+domainSep+tokenType 11,280 · mint-cc 5,640 | ~1,324 |
+| completeWithdraw | 47,466 | 4,276 | 25,140 | refundCommit+domainSep+tokenType 11,280 · mint-cc 5,640 | ~1,130 |
+| refund | 65,231 | 4,283 | 25,140 | BOTH branches in full: 2×16,920 | ~1,970 |
+| completeSwap | 65,071 | 4,288 | 25,140 | refundCommit+changeNonce 7,520 · 2×(domainSep+tokenType+mint-cc) 18,800 | ~1,800 |
+
+* Pin taxonomy
+Framing: the M10 artifact is necessarily a SEPARATE DEPLOYMENT
+(different verifier key ⇒ different ContractOperation ⇒ different
+address). Compatibility means exactly: (1) the deployed ledger/Impact
+VM accepts the tx; (2) the deployed Signet singleton accepts the
+cross-contract call and the MPC can read/derive/sign/attest; (3) our
+off-chain twins regenerate (never a constraint).
+
+** (a) PROTOCOL-PINNED (immovable)
+- Impact op streams (opcodes/paths/values/popeq embeds/guard blocks),
+  ~200-800/circuit: the PI vector IS Op::field_repr of the transcript;
+  the verifier builds PIs from the tx's own transcript
+  (ledger/src/verify.rs:1946-1959). The SET of state changes is
+  discretionary; the encoding of each is not.
+- public_input + popeq read framing (~100-200/circuit): one op per
+  read, one FAB limb per gate (onchain-vm/src/result_mode.rs:44-62).
+  popeq embeds CANNOT merge; public_input gates CANNOT batch. Fewer/
+  wider READS is the only lever (see state layout, class c).
+- Cross-contract call machinery to the singleton (~150): comm =
+  poseidon([cc-rand] ++ callee-FAB args ++ results); ledger matches
+  (addr, ep-hash, comm) against a real ContractCall
+  (structure.rs:2722-2745), comm always PI #2. The singleton is
+  deployed compactc output — its layout/hashes are fixed by ITS
+  artifact.
+- keccak request id + record field order/widths (12,900 / 22,070): the
+  MPC decodes the record from raw ledger state; Signet.compact states
+  the field order is relied upon. (See UNSURE on whether the MPC
+  re-verifies the id — default verdict PINNED.)
+- keccak attestation digest (~4,280): it is what the MPC signed; already
+  1 block.
+- in-circuit secp256k1 ECDSA (25,140): the only authentication gate;
+  MPC is secp256k1-native.
+- tokenType(domainSep, self) (3,760/use): ledger derives the colour
+  itself (coin-structure/src/contract.rs:58-68, used verify.rs:856-865)
+  and balances it against the offer's coins.
+- coin commitments/nullifiers (5,640/use): multiset equality against
+  the offer (verify.rs:1517-1558, 1596-1608); preimage layout is
+  zswap's.
+- do_communications_commitment = true (~30): comm hard-coded at PI #2.
+- notification payload naming the map's ledger path (~5): the MPC
+  follows it (path VALUE may change with the layout; must agree).
+
+** (b) COMPACTC-FRAMING-ONLY (freed by dropping artifact PI-equality)
+- Repeated kernel.self() reads (~11× across the vault; ~100-250/circuit
+  freed): how many times we emit the read is our choice; each emitted
+  read still reconciles.
+- Uncached-vs-cached idx opcode choices (tens): both valid on-chain;
+  cached after idxp is cheaper in ops and gas (compactc hard-wires
+  f-cached #f, reduce-to-zkir.ss:622).
+- compactc's unfolded cond_select pairs (tens).
+- Instruction ordering/copies (tens-low hundreds): mostly harvested;
+  M9 phase 7 inline immediates take the rest.
+
+** (c) SPEC-DISCRETIONARY — the real M10 space
+- vaultTokenDomainSeparator = SHA-256([pad("erc20:vault:"), erc20]):
+  −3,760 × 9 uses. Ledger accepts an ARBITRARY 32-byte pre_token.
+  Replace with injective non-hashed encoding (0x01 ‖ zeros ‖ erc20).
+  No new disclosure (separator already public in the mint op; erc20
+  already public in the record) — log it anyway.
+- userCommitment = SHA-256 over 64 bytes: −~3,570 × (initialize,
+  deposit, claim). MPC treats path as 32 opaque bytes. Poseidon ≈ 45
+  rows + ~130 div_mod. (Or stay SHA with ≤55-byte preimage → 1 block,
+  −1,880.)
+- withdrawRefundCommitment = SHA-256 over 96 bytes: −~3,700 × 6 uses.
+  Purely internal (written then compared). Poseidon; storing as Field
+  cell drops the split too (see UNSURE on Field-typed map values).
+- changeNonce = persistentHash([mintNonce, pad("change")]) in
+  completeSwap: −3,760. Nonce needs uniqueness only; mintNonce is
+  caller-chosen + disclosed; mintNonce+1 (or Poseidon) equivalent.
+- refund's two branches compute the same mint twice: −~9,430.
+  Instructions cost rows unconditionally (guards gate PI emission
+  only); both routes feed an identical domainSep→tokenType→coinCm→mint
+  block and compute the identical refund commitment. cond_select the
+  inputs, run the block once, keep ledger ops guarded per route.
+- Ledger state layout: −200-400/circuit + smaller PI vector. Only
+  field 0 and the notification path are named by protocol;
+  vaultEvmAddress/evmChainId/caip2Id/uniswapRouter/initialized can
+  share one Cell<struct> → one idx+popeq instead of five.
+- constrain_bits on arguments: −150-250/circuit — DO NOT TAKE, see
+  verdict below.
+
+** UNSURE — resolve before acting
+- Burn restructure to one coin commitment (−11,280 in withdraw AND
+  swap; the only path to k15 there): claim the burn as a shielded
+  SPEND (subset-checked vs offer outputs, verify.rs:1596, no
+  contract-address requirement) instead of receive+nullifier+spend.
+  Resolve: zswap Offer/Output construction; can createZswapOutput make
+  an output to the burn address without contract_address; may an
+  unassociated output be claimed as a contract spend; nonce/replay at
+  the commitment tree. If wrong: burns nothing or tx unconstructible.
+- Does the MPC verify requestId == keccak256(record)? If NOT, cheaper
+  ids exist (−12,900 per request circuit) — but assuming so wrongly is
+  a catastrophic break. Resolve: sig-net MPC/indexer source,
+  integration-tests flows. DEFAULT VERDICT: PINNED.
+- claimed_shielded_receives equality semantics (bears on the burn
+  restructure): confirm against a real Intent well-formedness test.
+- Poseidon durability for values outliving one transaction (deployer
+  commitment; refund commitments spanning request→settle):
+  persistentHash is curve-independent SHA; transientHash is Poseidon
+  over BLS12-381 — a curve change would strand funds. Resolve via
+  Midnight guidance + M8 churn policy; else apply Poseidon only to
+  in-transaction recomputation paths, or accept as a documented trade.
+- Field-typed Map value where Bytes<32> was (FAB field vs bytes<32>
+  atom): flatten-datatypes.ss:80-126 + a Cell<Field> write differential
+  (the hashing experiment's fdigest is precedent).
+
+* k arithmetic — what decides everything
+Prove time and RAM track 2^k, not rows. Boundaries: k13=8,192,
+k14=16,384, k15=32,768, k16=65,536.
+| circuit | now | cut needed for −1k | pinned floor (model) | verdict |
+|---------+-----+--------------------+----------------------+---------|
+| initialize | 4,272 k13 | 176 | ~350 | crossable BY FOUR LEVELS (→ ~k10) |
+| deposit | 17,502 k15 | 1,118 | ~13,900 | crossable → k14 |
+| approveRouter | 13,344 k14 | 5,152 | ~13,300 | impossible (keccak = 12,900) |
+| withdraw | 42,373 k16 | 9,605 | ~34,800 / ~23,500 with burn | only via UNSURE burn item |
+| swap | 51,485 k16 | 18,717 | ~43,950 / ~32,670 with burn | razor-thin even then (~98 rows) |
+| claim | 47,660 k16 | 14,892 | ~39,800 | impossible (floor 7k above boundary) |
+| completeWithdraw | 47,466 k16 | 14,698 | ~39,800 | impossible |
+| refund | 65,231 k16 | 32,463 | ~40,300 | impossible |
+| completeSwap | 65,071 k16 | 32,303 | ~49,700 | impossible |
+Strategic consequence: the four settle circuits are FLOORED above 2^15
+by protocol crypto — row cuts there are honest but cosmetic for prove
+time (identical proof size; 2^k-bound keygen/prove). Spend risk budget
+where a boundary is in reach: initialize, deposit, conditionally
+withdraw/swap. "Maximally optimized" = MINIMAL k, not minimal rows —
+the report must frame it this way.
+
+* Ranked avenues
+| # | avenue | class | rows | risk |
+|---+--------+-------+------+------|
+| 1 | userCommitment → Poseidon | c | −3,570 × 3 | low; buys deposit k14 + initialize drop |
+| 2 | domain separator without SHA | c | −3,760 × 9 | low (ledger accepts arbitrary pre_token, verified in source) |
+| 3 | withdrawRefundCommitment → Poseidon | c | −3,700 × 6 | low-medium (durability UNSURE) |
+| 4 | refund branch merge | c | −9,430 | medium (guard/cond_select proof needed) |
+| 5 | changeNonce cheap derivation | c | −3,760 | low |
+| 6 | burn restructure (single spend claim) | a-UNSURE | −11,280 × 2 | HIGH — resolve first; only path to k15 for withdraw/swap |
+| 7 | config→one Cell; dedup kernel.self; cached idx; PI trim | b+c | −200..−600 each | low; also shrinks tx |
+| 8 | constrain_bits dedup | c | −50..−150 | NOT RECOMMENDED (see below) |
+| 9 | record reorder → const prefix one keccak block | a-upstream | −4,220 × 4 | needs Signet record v2 + sponge-state keccak in ZKIR; write up for sig-net |
+| 10 | jubjub-Schnorr attestations | a-upstream | ≈−20,000 × 4 | MPC is secp256k1-native; the single largest lever — footnote for sig-net |
+
+Projected (model; avenues 1-5+7, without 6):
+initialize 4,272→~550 (k13→10, −87% vs cc) · deposit 17,502→~13,630
+(k15→14, −50%) · approveRouter ~13,040 (k14) · claim ~39,870 (k16) ·
+withdraw ~34,580 (k16; →k15 ~23,300 with 6) · completeWithdraw ~39,680
+· refund ~40,550 (−58% vs cc) · swap ~43,700 (k16; →k15 ~32,420 with
+6, 350-row margin) · completeSwap ~49,760 (−52%).
+Prove/RAM: ≈−94% initialize, −50% deposit, −50% withdraw/swap IFF #6,
+~0% elsewhere despite −16..−58% rows — that clause goes in the report
+HEADLINE, not a footnote.
+
+* constrain_bits dedup — analyzed, rejected
+At k=16 a 248-bit check ≈ 17 rows; suite budget ~1,600 rows total.
+Directly-written values are implicitly bounded by their FAB atom on
+chain — but almost nothing goes to state raw: amount reaches the
+transcript via numericAbiWord, so its 128-bit bound is what makes the
+derivation sound (dropping it = over-mint soundness bug, not a compat
+bug). And the communications commitment does NOT imply input
+canonicity for root calls: ContractCallPrototype::public_inputs pushes
+the comm VERBATIM from the ContractCall (verify.rs:1946-1948), never
+recomputed from FAB inputs — recorded so nobody re-derives the
+optimistic version. ≤1% of rows, zero k crossings, a soundness surface
+in exchange. Exception worth taking: NARROW checks the port copied
+wider than the type (mechanical scan, expect tens of rows).
+
+* Framing/serialization direct answers
+popeq embeds cannot merge (no multi-read op). public_input gates
+cannot batch (one per FAB limb, forced by lowering rule
+reduce-to-zkir.ss:518-537); fewer/wider reads is the only lever.
+Serialization: done — M7 pass 2 was the whole story; the vault's
+remaining deserialize calls are Bytes<1>/<5>/<8>.
+
+* Verification-harness design
+Chain of trust:
+  compactc ≡(PI-equal, existing suites) direct port
+  direct port ≡(decoded ledger effects) optimized artifact
+  optimized ≡(spec, millions of cases) Rust spec
+  spec ≡(onchain-vm run_program) ledger semantics
+  every accepted run ⊨ IrSource::check (reference VM)
+Direct ports stay untouched → first link never degrades; M10 builds
+links 2-4.
+
+** Specs: symbolic effect algebra (the key design decision)
+Per circuit: fn spec_X(pre: &VaultState, args, wit) -> Outcome where
+Outcome = Reject(GuardId) | Accept { effects: Vec<Effect>, disclosures }.
+Effect = CounterInc | MapInsert(field, key: Term, value: Term) |
+MapRemove | CellWrite | MintShielded{domain_sep: Term, value} |
+ClaimSpend | ClaimReceive | ClaimNullifier |
+ClaimContractCall{addr, ep, comm: Term} | Emit(Term).
+Term = Const | Arg | UserCommit(sk) | RefundCommit(sk, rid) |
+DomainSep(erc20) | TokenType(sep, addr) | RequestId(record) | CoinCm(..).
+The symbolic layer lets the compat port and the optimized artifact
+share ONE spec; per-artifact Concretize maps UserCommit/DomainSep/
+RefundCommit to SHA-256 or Poseidon/identity. The concretization
+choices ARE the deviation log.
+(Per-circuit spec content — guards and effects for all nine circuits —
+enumerated in the survey; transcribe into the spec modules as built.
+completeSwap's amountInMaximum − amountIn subtraction is the most
+dangerous arithmetic in the contract: test the underflow boundary
+explicitly.)
+
+** Binding circuit ≡ spec (per generated case)
+1. Build pre-state + reference Vec<Op> from the spec (refactor the
+   existing Scenario::ops() builders in erc20_vault_differential.rs
+   into a shared reference model — they already are this).
+2. Execute through midnight_onchain_vm::vm::run_program (public) →
+   post-state, Effects, events; assert the spec's effects. THIS LINK
+   EXISTS NOWHERE IN THE REPO YET (ops are PI-compared, never run).
+3. Simulate the circuit on the same inputs/witnesses.
+4. Acceptance agreement (spec rejects ⇔ circuit rejects, guard id
+   matched where distinguishable).
+5. PI-equality RE-ANCHORED: circuit pis/pi_skips == field_repr of OUR
+   reference op stream (machinery exists; far stronger than
+   effect-level comparison). Trap: normalise adjacent-noop merging
+   (prove.rs:259-290; verify.rs:1889-1894 rejects unnormalised).
+6. IrSource::check on every accepted run.
+
+** Port ↔ optimized equivalence (what "replaces" artifact PI-equality)
+Level 1 symbolic: both reference models emit Vec<Effect> over the term
+algebra; assert structural equality — the honest statement of "same
+contract, different commitment scheme".
+Level 2 concrete: run both op streams through run_program from the
+same pre-state; compare post-state, Effects (claimed_nullifiers,
+claimed_shielded_receives/spends, shielded_mints,
+claimed_contract_calls), events; where terms concretise differently,
+compare under the declared re-mapping and ASSERT THE RE-MAPPING IS
+INJECTIVE on the generated corpus (the actual security property of
+changing a hash construction).
+
+** Generation strategies (per branch, equal weight — not uniform)
+claim: all four recipient shapes (none / some(left(pk)) /
+some(right(self)) auto-receive / some(right(other)) eq=0).
+completeWithdraw: output ∈ {0x00, 0x01, non-canonical (must reject)}.
+refund: both routes + cross-route traps (id in both maps, in neither,
+swap id via withdrawal route).
+completeSwap: amountIn ∈ {0, 1, max (exact spend → 0-coin), max−1,
+max+1 (assert impossible/guarded)}.
+deposit/withdraw/swap: amounts {0, 1, 2^64−2, 2^64−1, 2^64, 2^128−1};
+gasLimit {0,1}; keyVersion {0,1,255}; zero Bytes<20>; evmNonce u64::MAX.
+Pre-states: empty maps, id already present, counters at u64::MAX−1.
+
+** Adversarial sweeps
+Keep + extend tamper machinery (flip every PI element → reject). Add:
+witness malleability (sk limbs out of range, recoveryId garbage, s=0
+must ABORT not return false, r/s above order, point at infinity);
+wrong-branch (settle never-inserted id, double-settle, deposit id via
+completeWithdraw, success-shaped output via refund); re-mapping
+injectivity sweep; PROPTEST_CASES=1_000_000 per circuit in CI, gating
+the OPTIMIZED artifact, not just the port.
+
+* Sequencing
+DO NOT WAIT for M9 phases 5-8 — start from the current direct ports.
+M9 is contractually zero-row-movement and commutes with M10's semantic
+changes; when phase 8 lands, the optimized artifact re-expresses in
+the ergonomic API as a phase-5-style mechanical port and the showcase
+twin + M10 artifact converge. (Genuine reverse dependency: phase 6's
+disclosure declarations would machine-check the report's disclosure
+claims; until then specs carry them by hand.)
+0. Instruments: examples/cryptocost.rs (measure SHA/keccak/ECDSA/
+   Poseidon rows directly); profiler region attribution by ESTIMATED
+   ROWS not instruction share; minocrab-bench third side (load_ir
+   matches minocrab|compactc only today) + per-side preimages.
+1. Verification first, on the untouched ports (spec modules,
+   run_program executor, bindings, strategies, sweeps, millions of
+   cases). Bootstrap: ports are known-good, so any disagreement is a
+   SPEC bug — debug the harness against a trusted artifact.
+2. This file (done).
+3. Resolve UNSUREs (burn restructure; MPC id verification; Poseidon
+   durability).
+4. Fork the artifact byte-identically (erc20_vault_opt / the showcase
+   twin): snapshots identical, suites green — every later commit is a
+   one-optimization diff.
+5. Land optimizations ascending risk, each re-measured + harness green
+   + deviation-log entry: (i) framing/dedup #7 → (ii) changeNonce #5 →
+   (iii) domain separator #2 → (iv) refund merge #4 → (v) commitments
+   → Poseidon #1+#3 (verify deposit k14, initialize drop) → (vi) burn
+   #6 only if resolved (verify withdraw k15; if swap lands 32,8xx,
+   say so and stop).
+6. Three-way benchmark + report, single session, all cells.
+METHODOLOGY CAVEAT for the report: compactc-vs-port stays
+statement-identical (shared ProofPreimage); the optimized side CANNOT
+share that preimage — it proves its own preimage for the same LOGICAL
+operation, with symbolic-effect equality as the "same operation"
+warrant. Weaker comparability claim than M6/M7 — label it.
+
+* Verdict summary
+The vault is HASH-BOUND, not framing-bound. Pinned and immovable:
+keccak request id, attestation digest, secp256k1 ECDSA, tokenType,
+coin commitments/nullifiers, Impact/popeq encodings, cross-contract
+comm. Free (~7,500-24,700 rows/circuit): the three vault-internal hash
+constructions, changeNonce, refund's duplicate branch, state layout.
+k crossings: initialize 13→~10, deposit 15→14; withdraw 16→15 and
+marginally swap ONLY via the unresolved burn restructure. Settle
+circuits floored above 2^15 — cuts there are cosmetic. Do not dedup
+constrain_bits (comm does not imply canonicity for root calls —
+verified verify.rs:1946-1948).

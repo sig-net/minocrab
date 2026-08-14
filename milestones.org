@@ -308,7 +308,7 @@ suites.
       deposit with zero movement.
 - [X] Phase 3: crates/minocrab-macros — #[derive(CircuitArg)]; port
       withdraw + claim (Maybe<Either<..>> flattening).
-- [ ] Phase 4: #[circuit] attribute (thinness rule: expansion contains
+- [X] Phase 4: #[circuit] attribute (thinness rule: expansion contains
       no Circuit3 call); re-port the phase-2/3 circuits.
 - [ ] Phase 5: mechanical port of the remaining circuits (order/types
       never move; name column only where mechanical naming lengthens
@@ -355,12 +355,25 @@ the compatibility reference; the optimized vault is its own artifact
       scaled to millions in CI), plus adversarial/boundary sweeps
       (2^128-1 amounts, zero addresses, malformed witnesses, tampered
       records) and the existing tamper/reject-agreement suites.
-- [ ] Scope the freed space: what the protocol actually pins (Impact op
+- [X] Scope the freed space: what the protocol actually pins (Impact op
       stream ↔ on-chain state machine, cross-contract commitment to the
       Signet singleton, MPC attestation formats, coin commitments) vs
       what only compactc-artifact PI-equality pinned (constrain_bits
       placement/redundancy, transcript framing details, serialization
       shapes). Written analysis before any change.
+      (DONE 2026-08-15 — notes/vault-optimization.org. PREMISE
+      CORRECTED: the vault is hash-bound, not framing-bound (95-99% of
+      rows are SHA/keccak/ECDSA; framing is 1-4%). The freed space is
+      the vault's OWN hash constructions (userCommitment, refund
+      commitments, domain separators — SPEC-discretionary), refund's
+      duplicated branch, changeNonce, state layout. k crossings in
+      reach: initialize 13→~10, deposit 15→14; withdraw/swap 16→15
+      only via the UNSURE burn restructure. Settle circuits are
+      floored above 2^15 by protocol crypto — cuts there are cosmetic;
+      "maximally optimized" = minimal k. Do NOT dedup constrain_bits
+      (soundness surface; comm doesn't imply canonicity — verified).
+      Three UNSUREs to resolve before the risky avenues. Sequencing:
+      M10 starts from the direct ports NOW, in parallel with M9 5-8.)
 - [ ] Optimize everything the analysis frees, re-measured per change:
       k-boundary attacks first (deposit 17,502 is ~1.1k rows over k=14;
       protect nothing — this artifact has no compactc row parity to
