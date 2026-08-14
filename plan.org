@@ -52,5 +52,7 @@ Be aware that you're going to lose context sometimes, so write things down.
 in future we're going to want to hook this up to a proof system. Don't implement it yet, but bear in mind that we're going to develop it in future.
 
 * Non-goals (v1)
-- No custom surface grammar / block macros.
+- No custom surface grammar; "very minimal" block macros — only
+  decorator/derive shims that generate impls writable by hand
+  (see notes/contract-api.org).
 - No proving-stack work below ZKIR, ever.
