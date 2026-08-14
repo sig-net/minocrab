@@ -22,7 +22,7 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{entry, BytesN, CircuitArg, Serializer, Uint, B32};
+use minocrab_std::v3::{circuit, BytesN, CircuitArg, Serializer, Uint, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -75,35 +75,29 @@ struct Notification {
     payload: BytesN<Private, 128>,
 }
 
-/// `signBidirectional(requestId: RequestId,
-/// notification: SignBidirectionalEventNotification)`
-#[derive(CircuitArg)]
-struct SignBidirectionalArgs {
+/// `export circuit signBidirectional(requestId: RequestId,
+/// notification: SignBidirectionalEventNotification): []`
+#[circuit]
+pub fn sign_bidirectional(
+    c: &mut Circuit3,
     request_id: B32<Private>,
     notification: Notification,
-}
+) {
+    let version = notification.version.field();
+    let payload = notification.payload;
 
-/// `export circuit signBidirectional(requestId, notification): []`
-pub fn sign_bidirectional() -> Compiled3 {
-    entry(|c, args: SignBidirectionalArgs| {
-        let request_id = args.request_id;
-        let version = args.notification.version.field();
-        let payload = args.notification.payload;
+    let rid = disclose_b32(c, &request_id, "requestId");
+    let version = c.disclose(version, "notification.version");
+    let payload = payload.map_limbs(|i, w| c.disclose(w, &format!("notification.payload ({i})")));
 
-        let rid = disclose_b32(c, &request_id, "requestId");
-        let version = c.disclose(version, "notification.version");
-        let payload =
-            payload.map_limbs(|i, w| c.disclose(w, &format!("notification.payload ({i})")));
-
-        // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
-        c.region("event serialize + emit", |c| {
-            let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
-            s.push_uint(version, 1);
-            s.push_b32(&rid);
-            s.push_bytes_n(&payload);
-            emit_misc(c, s);
-        });
-    })
+    // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
+    c.region("event serialize + emit", |c| {
+        let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
+        s.push_uint(version, 1);
+        s.push_b32(&rid);
+        s.push_bytes_n(&payload);
+        emit_misc(c, s);
+    });
 }
 
 /// The shared body of `respond`/`respondBidirectional`: only the event

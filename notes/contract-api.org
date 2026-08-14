@@ -471,3 +471,78 @@ diff (strip indentation, rewrite `&mut c`, drop the argument block and the
 `c.finish(true)` line) — claim's body diff is EMPTY, withdraw's is empty
 but for the closing `})`. Zero movement everywhere: interface_snapshot and
 row_snapshot bit-identical, all 13 differential suites green.
+** Phase 4 — #[circuit] (crates/minocrab-macros/src/circuit.rs)
+Expansion shape, for `#[circuit] pub fn deposit(c: &mut Circuit3, evm_nonce:
+Uint<64>, …, deposit_request: DepositRequest)`:
+#+begin_src rust
+pub fn deposit() -> ::minocrab_std::v3::__private::Compiled3 {
+    struct __deposit_Args { evm_nonce: Uint<64>, .., deposit_request: DepositRequest }
+    impl CircuitArg for __deposit_Args { .. }   // the derive's own codegen
+    impl CircuitArgs for __deposit_Args { .. }
+    fn __deposit_body(c: &mut Circuit3, evm_nonce: Uint<64>, ..) { <body, verbatim> }
+    ::minocrab_std::v3::entry(|__c, __args: __deposit_Args| {
+        __deposit_body(__c, __args.evm_nonce, .., __args.deposit_request)
+    })
+}
+#+end_src
+Two decisions worth writing down:
+- Everything but the public fn is scoped INSIDE its body. Two circuits in
+  one module then cannot collide (erc20_vault has nine) and nothing hidden
+  reaches the module namespace; items in a fn body still resolve the
+  module's `use`s, so the generated impls need no imports of their own.
+- The body is MOVED, not rewritten: a real fn with the parameters as
+  written, called from the closure. Spans, type errors, `return` and
+  rust-analyzer behave as if the attribute were absent — the standing
+  "real types over macro rewriting" principle applied to the body itself.
+  An unused argument is legitimate (a slot can exist only for the wire
+  shape) and warns like any unused parameter; the fix is Rust's own
+  leading underscore, which does not move the label (`_recovery_id` and
+  `recovery_id` both camel-case to `recoveryId`).
+Shared codegen, not a second copy: circuit_arg.rs exposes
+`impl_arg_traits(name, generics, &[ArgField])` and `arg_label(ident, attrs)`;
+the derive and the attribute differ only in where the ArgField list is
+collected (struct fields vs parameters after `c`). So the camelCase rule and
+`#[arg(name = "…")]` — written on the PARAMETER for the attribute — are one
+code path. The hidden struct gets BOTH impls, since the derive's CircuitArgs
+delegates constrain/atoms to its CircuitArg.
+Return types, as phase 2 actually built them: `()` (however spelled) maps to
+`entry`, anything else to `entry_out(label, ..)` with the label from
+`#[circuit(output = "…")]`. The label is required there and rejected on a
+returnless circuit — entry_out's label is still a string, so there is
+nowhere else for it to come from until phase 6 makes it a declared label
+type. Discloses<D, R> was not touched. None of the four ported circuits
+returns anything (all are Compact `: []`), so entry_out has only the tests
+as a user for now.
+Error inventory (each with its own span, unit-tested against expand()'s
+Result — still no trybuild): missing first parameter / first parameter not
+`&mut Circuit3` / `self`; generic parameters; where-clause; async; unsafe;
+const; extern ABI; variadic; a parameter that is not a plain `name: Type`
+(`_`, tuple pattern, `ref`, sub-pattern); an unknown attribute on a
+parameter; `#[arg]` on the circuit parameter itself; an unknown `#[circuit]`
+argument or a repeated `output`; and both halves of the output-label rule.
+The first-parameter check is by NAME (a path ending in `Circuit3`), which
+rejects an aliased spelling — deliberate: the message is worth more than the
+alias.
+Gates: the thinness unit test now covers the attribute (the scaffolding
+contains no `c .` and no `Circuit3 ::`; the fixture body is empty, since the
+author's body is copied verbatim and is naturally full of circuit calls),
+and the real one is crates/minocrab-std/tests/v3_circuit.rs — the same
+circuit written twice, attributed and as an explicit struct + entry call,
+compared as serialized ZKIR (which pins the labels), plus the entry_out
+shape and the argument-free circuit. syn gained its "full" feature (item
+syntax; no new package in the lock), and `__private` gained Compiled3.
+** Phase 4 — the four re-ports
+sign_bidirectional, deposit, withdraw and claim lost their four argument
+structs (DepositArgs, WithdrawArgs, ClaimArgs, SignBidirectionalArgs — the
+nested ones like DepositRequest stay, as derives) and became plain fns whose
+parameters are the Compact parameter list. claim keeps its one escape hatch
+as a parameter attribute: `#[arg(name = "respond")] respond_bidirectional_event`.
+The bodies are unchanged apart from the de-indent, the disappearance of the
+`args.` prefix in the unwrapping preamble, and three now-identity `let x =
+args.x;` lines that simply went away; a normalized diff (strip indentation,
+delete the `args.` prefix, drop scaffolding) shows no builder call added,
+removed or reordered — the only remaining hunks are the parameter list
+itself and one `let payload = …` that rustfmt-style fits on one line at the
+shallower indent. Zero movement everywhere: interface_snapshot and
+row_snapshot bit-identical, all 13 differential suites green,
+`cargo test --workspace --release` clean.
