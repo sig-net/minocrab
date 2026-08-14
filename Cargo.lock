@@ -2104,6 +2104,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "minocrab-sim"
 version = "0.1.0"
 dependencies = [
@@ -2135,6 +2144,7 @@ dependencies = [
  "midnight-zkir-v3",
  "minocrab",
  "minocrab-ir",
+ "minocrab-macros",
  "minocrab-sim",
  "minocrab-zkir",
  "sha3",

@@ -46,8 +46,7 @@ use minocrab_ledger::{
     map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    entry, own_public_key_guarded, ArgPath, Bytes, BytesN, CircuitArg, CircuitArgs, CoinRecipient,
-    Uint, B32,
+    entry, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, Uint, B32,
 };
 
 use crate::common;
@@ -213,36 +212,17 @@ fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
 /// — the vault-specific arguments of a deposit. Field order is the wire
 /// contract; the labels are `depositRequest_erc20Address` /
 /// `depositRequest_amount`.
+#[derive(CircuitArg)]
 struct DepositRequest {
     erc20_address: Bytes<20>,
     amount: Uint<128>,
-}
-
-impl CircuitArg for DepositRequest {
-    const SLOTS: usize = <Bytes<20> as CircuitArg>::SLOTS + <Uint<128> as CircuitArg>::SLOTS;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Bytes<20> as CircuitArg>::push_atoms(atoms);
-        <Uint<128> as CircuitArg>::push_atoms(atoms);
-    }
-
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        DepositRequest {
-            erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
-            amount: CircuitArg::declare(c, &path.field("amount")),
-        }
-    }
-
-    fn constrain(&self, c: &mut Circuit3) {
-        self.erc20_address.constrain(c);
-        self.amount.constrain(c);
-    }
 }
 
 /// `deposit(evmNonce: Uint<64>, gasLimit: Uint<64>, maxFeePerGas: Uint<128>,
 /// maxPriorityFeePerGas: Uint<128>, keyVersion: Uint<8>,
 /// depositRequest: DepositRequest)` — the parameter list, in declaration
 /// order.
+#[derive(CircuitArg)]
 struct DepositArgs {
     evm_nonce: Uint<64>,
     gas_limit: Uint<64>,
@@ -250,49 +230,6 @@ struct DepositArgs {
     max_priority_fee_per_gas: Uint<128>,
     key_version: Uint<8>,
     deposit_request: DepositRequest,
-}
-
-impl CircuitArgs for DepositArgs {
-    const SLOTS: usize = <Uint<64> as CircuitArg>::SLOTS
-        + <Uint<64> as CircuitArg>::SLOTS
-        + <Uint<128> as CircuitArg>::SLOTS
-        + <Uint<128> as CircuitArg>::SLOTS
-        + <Uint<8> as CircuitArg>::SLOTS
-        + DepositRequest::SLOTS;
-
-    fn declare(c: &mut Circuit3) -> Self {
-        DepositArgs {
-            evm_nonce: CircuitArg::declare(c, &ArgPath::root("evmNonce")),
-            gas_limit: CircuitArg::declare(c, &ArgPath::root("gasLimit")),
-            max_fee_per_gas: CircuitArg::declare(c, &ArgPath::root("maxFeePerGas")),
-            max_priority_fee_per_gas: CircuitArg::declare(
-                c,
-                &ArgPath::root("maxPriorityFeePerGas"),
-            ),
-            key_version: CircuitArg::declare(c, &ArgPath::root("keyVersion")),
-            deposit_request: CircuitArg::declare(c, &ArgPath::root("depositRequest")),
-        }
-    }
-
-    fn constrain(&self, c: &mut Circuit3) {
-        self.evm_nonce.constrain(c);
-        self.gas_limit.constrain(c);
-        self.max_fee_per_gas.constrain(c);
-        self.max_priority_fee_per_gas.constrain(c);
-        self.key_version.constrain(c);
-        self.deposit_request.constrain(c);
-    }
-
-    fn atoms() -> Vec<AlignmentAtom> {
-        let mut atoms = Vec::new();
-        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
-        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
-        <Uint<128> as CircuitArg>::push_atoms(&mut atoms);
-        <Uint<128> as CircuitArg>::push_atoms(&mut atoms);
-        <Uint<8> as CircuitArg>::push_atoms(&mut atoms);
-        DepositRequest::push_atoms(&mut atoms);
-        atoms
-    }
 }
 
 /// `export circuit deposit(evmNonce: Uint<64>, gasLimit: Uint<64>,

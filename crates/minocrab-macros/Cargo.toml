@@ -1,0 +1,17 @@
+[package]
+name = "minocrab-macros"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Derives for the MinoCrab contract API — #[derive(CircuitArg)]"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# The macro crate depends on nothing of ours: it emits fully-qualified
+# `::minocrab_std::v3::…` paths, so it stays a leaf of the build graph and
+# cannot smuggle circuit-building code into an expansion.
+proc-macro2 = "1"
+quote = "1"
+syn = "2"

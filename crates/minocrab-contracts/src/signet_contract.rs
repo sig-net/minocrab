@@ -20,11 +20,9 @@
 //! experiment (name(32) ‖ payload(256) = 288 serialized bytes).
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
-use minocrab::{AlignmentAtom, Private, Public};
+use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{
-    entry, ArgPath, BytesN, CircuitArg, CircuitArgs, Serializer, Uint, B32,
-};
+use minocrab_std::v3::{entry, BytesN, CircuitArg, Serializer, Uint, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -71,61 +69,18 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
 
 /// `struct SignBidirectionalEventNotification { version: Uint<8>,
 /// payload: Bytes<128> }` — field order is the wire contract.
+#[derive(CircuitArg)]
 struct Notification {
     version: Uint<8>,
     payload: BytesN<Private, 128>,
 }
 
-impl CircuitArg for Notification {
-    const SLOTS: usize =
-        <Uint<8> as CircuitArg>::SLOTS + <BytesN<Private, 128> as CircuitArg>::SLOTS;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Uint<8> as CircuitArg>::push_atoms(atoms);
-        <BytesN<Private, 128> as CircuitArg>::push_atoms(atoms);
-    }
-
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Notification {
-            version: CircuitArg::declare(c, &path.field("version")),
-            payload: CircuitArg::declare(c, &path.field("payload")),
-        }
-    }
-
-    fn constrain(&self, c: &mut Circuit3) {
-        self.version.constrain(c);
-        self.payload.constrain(c);
-    }
-}
-
 /// `signBidirectional(requestId: RequestId,
 /// notification: SignBidirectionalEventNotification)`
+#[derive(CircuitArg)]
 struct SignBidirectionalArgs {
     request_id: B32<Private>,
     notification: Notification,
-}
-
-impl CircuitArgs for SignBidirectionalArgs {
-    const SLOTS: usize = <B32<Private> as CircuitArg>::SLOTS + Notification::SLOTS;
-
-    fn declare(c: &mut Circuit3) -> Self {
-        SignBidirectionalArgs {
-            request_id: CircuitArg::declare(c, &ArgPath::root("requestId")),
-            notification: CircuitArg::declare(c, &ArgPath::root("notification")),
-        }
-    }
-
-    fn constrain(&self, c: &mut Circuit3) {
-        self.request_id.constrain(c);
-        self.notification.constrain(c);
-    }
-
-    fn atoms() -> Vec<AlignmentAtom> {
-        let mut atoms = Vec::new();
-        <B32<Private> as CircuitArg>::push_atoms(&mut atoms);
-        Notification::push_atoms(&mut atoms);
-        atoms
-    }
 }
 
 /// `export circuit signBidirectional(requestId, notification): []`

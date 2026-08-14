@@ -16,6 +16,24 @@ mod entry;
 
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
+/// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
+/// [`CircuitArgs`], generated from the fields (field order is the wire
+/// contract). Named the same as the trait it implements, the way
+/// `serde::Serialize` is; one `use minocrab_std::v3::CircuitArg;` brings
+/// both.
+#[cfg(feature = "macros")]
+pub use minocrab_macros::CircuitArg;
+
+/// Implementation detail of `#[derive(CircuitArg)]`: the two upstream types
+/// its expansion has to name, re-exported so the generated code needs only
+/// `minocrab_std` in scope and the macro crate needs no dependency of ours.
+/// Not a stable API.
+#[doc(hidden)]
+pub mod __private {
+    pub use minocrab::v3::Circuit3;
+    pub use minocrab::AlignmentAtom;
+}
+
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
 /// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
 pub trait Vis3: Visibility + Meet<Self, Out = Self> + Sized + Copy {

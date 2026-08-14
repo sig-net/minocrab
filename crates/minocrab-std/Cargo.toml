@@ -7,6 +7,13 @@ description = "L3 — MinoCrab standard library: ports of Compact's standard-lib
 
 [dependencies]
 minocrab = { path = "../minocrab" }
+# `#[derive(CircuitArg)]`, re-exported next to the trait it implements
+# (v3::CircuitArg names both, as serde's does).
+minocrab-macros = { path = "../minocrab-macros", optional = true }
+
+[features]
+default = ["macros"]
+macros = ["dep:minocrab-macros"]
 
 [dev-dependencies]
 minocrab-sim = { path = "../minocrab-sim" }
