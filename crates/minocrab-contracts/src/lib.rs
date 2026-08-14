@@ -1,0 +1,9 @@
+//! The sig-net corpus contracts, rewritten in the MinoCrab eDSL.
+//!
+//! Milestone 4: each contract here is a mechanical rewrite of its Compact
+//! original (corpus/src/signet-*), and each circuit carries a differential
+//! test against compactc's compiled artifact — call-compatibility per
+//! notes/ledger-abi.org §6 (same typed I/O schema, same pis/pi_skips on a
+//! shared preimage).
+
+pub mod attest;

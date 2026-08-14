@@ -2037,6 +2037,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-contracts"
+version = "0.1.0"
+dependencies = [
+ "midnight-base-crypto",
+ "midnight-curves 0.3.1",
+ "midnight-onchain-state",
+ "midnight-onchain-vm",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.0",
+ "midnight-zkir-v3",
+ "minocrab",
+ "minocrab-ledger",
+ "minocrab-sim",
+ "minocrab-std",
+ "minocrab-zkir",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "minocrab-ir"
 version = "0.1.0"
 dependencies = [

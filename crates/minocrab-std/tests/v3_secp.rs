@@ -8,7 +8,6 @@
 
 use std::borrow::Cow;
 
-use group::Group;
 use midnight_curves::k256;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
@@ -20,7 +19,7 @@ use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcir
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Secp256k1ScalarT};
-use minocrab::{Fr, Private};
+use minocrab::Fr;
 use minocrab_std::v3::{secp256k1_ecdsa_verify, secp256k1_ethereum_address, Secp256k1EcdsaSignature, B32};
 use minocrab_zkir::v3::{IrType, IrValue};
 use sha3::{Digest, Keccak256};
