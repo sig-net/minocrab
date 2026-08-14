@@ -1,23 +1,37 @@
 //! M6 baseline benchmark harness: the erc20-vault contract and its Signet
-//! singleton dependency, proved under both toolchains at the same pinned
-//! versions — MinoCrab's artifacts (built in-process from
-//! `minocrab-contracts`) against compactc's (the corpus `.zkir` goldens).
+//! singleton dependency, proved under each toolchain at the same pinned
+//! versions.
 //!
-//! Both sides prove the SAME `ProofPreimage` per circuit: the differential
-//! tests establish PI-equality on these preimages and (with
-//! `MINOCRAB_DUMP_PREIMAGES`) dump them for this harness, so every number
-//! below prices the identical statement. Run via `./bench.sh` (dumps
-//! preimages, then runs this binary in release mode).
+//! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
+//! data: a name, where its circuits come from ([`Artifacts`]) and where its
+//! `ProofPreimage`s come from ([`Preimages`]). Three are declared:
+//! - `minocrab` — the direct ports, built in-process from `minocrab-contracts`;
+//! - `compactc` — the corpus `.zkir` goldens;
+//! - `opt` — the M10 optimized contract (M10 §Sequencing step 4), absent
+//!   until that artifact exists, at which point the bench becomes three-way
+//!   by filling in `Target::opt`.
 //!
-//! Modes:
+//! `minocrab` and `compactc` prove the SAME preimage per circuit: the
+//! differential tests establish PI-equality on these preimages and (with
+//! `MINOCRAB_DUMP_PREIMAGES`) dump them for this harness, so those numbers
+//! price the identical statement. The optimized side CANNOT share that
+//! preimage — a different commitment scheme is a different statement — so it
+//! reads its own preimage dump (`preimages/opt/`) and its comparability
+//! rests on the harness's symbolic-effect equality instead. Sides carry
+//! their preimage source for exactly this reason.
+//!
+//! Run via `./bench.sh` (dumps preimages, then runs this binary in release
+//! mode). Modes:
 //! - no args: orchestrate — spawn `--measure` subprocesses (one per
 //!   circuit × side, so peak RSS is per-measurement), collect JSON, write
 //!   `target/bench/results.json` + `target/bench/report.md`, and dump
-//!   MinoCrab's per-region cost profiles.
+//!   the eDSL sides' per-region cost profiles.
 //! - `--measure <circuit> <side>`: keygen + prove + verify one artifact,
 //!   print a JSON result line. RAM is `getrusage` peak RSS.
 //! - `--profiles`: rewrite `target/bench/profiles/` alone (no proving) —
 //!   for refreshing region attribution after annotation changes.
+//! - `--list`: print the circuit × side matrix this run would measure, with
+//!   each cell's artifact and preimage source. A dry run; proves nothing.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -35,8 +49,117 @@ struct Target {
     name: &'static str,
     /// Corpus artifact path relative to the repo root.
     corpus: &'static str,
-    /// The MinoCrab artifact.
+    /// The MinoCrab direct port.
     ours: fn() -> minocrab::v3::Compiled3,
+    /// The M10 optimized artifact, where one exists. `None` everywhere
+    /// today, so the bench runs two-sided; when `erc20_vault_opt` lands,
+    /// filling these in turns the third side on, circuit by circuit.
+    opt: Option<fn() -> minocrab::v3::Compiled3>,
+}
+
+/// Where a side's circuits come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Artifacts {
+    /// Built in-process from `minocrab-contracts`' direct ports.
+    Port,
+    /// compactc's `.zkir` goldens in `corpus/`.
+    Corpus,
+    /// Built in-process from the M10 optimized contract.
+    Optimized,
+}
+
+/// Where a side's [`ProofPreimage`]s come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Preimages {
+    /// The preimages the differential tests dump: compactc and the direct
+    /// port are PI-equal on these, so both sides price the identical
+    /// statement.
+    Shared,
+    /// A per-side subdirectory. The optimized artifact cannot share the
+    /// port's preimage — it proves its *own* statement for the same logical
+    /// operation, so its numbers are comparable only under the
+    /// symbolic-effect equality the M10 harness establishes (the
+    /// methodology caveat in notes/vault-optimization.org §Sequencing).
+    PerSide(&'static str),
+}
+
+/// One column of the benchmark.
+struct Side {
+    /// Name on the command line, in `results.json` and in the report.
+    name: &'static str,
+    artifacts: Artifacts,
+    preimages: Preimages,
+}
+
+fn sides() -> Vec<Side> {
+    vec![
+        Side {
+            name: "minocrab",
+            artifacts: Artifacts::Port,
+            preimages: Preimages::Shared,
+        },
+        Side {
+            name: "compactc",
+            artifacts: Artifacts::Corpus,
+            preimages: Preimages::Shared,
+        },
+        Side {
+            name: "opt",
+            artifacts: Artifacts::Optimized,
+            preimages: Preimages::PerSide("opt"),
+        },
+    ]
+}
+
+fn side(name: &str) -> Result<Side> {
+    sides()
+        .into_iter()
+        .find(|s| s.name == name)
+        .with_context(|| {
+            format!(
+                "unknown side {name}; known: {}",
+                sides()
+                    .iter()
+                    .map(|s| s.name)
+                    .collect::<Vec<_>>()
+                    .join("|")
+            )
+        })
+}
+
+impl Side {
+    /// The circuits this side contributes for `target`, or `None` when it
+    /// has no artifact for it (an absent side simply drops out of the run).
+    fn ir(&self, target: &Target) -> Option<Result<IrSource>> {
+        match self.artifacts {
+            Artifacts::Port => Some(Ok((target.ours)().ir)),
+            Artifacts::Corpus => {
+                let path = repo_root().join(target.corpus);
+                Some(
+                    minocrab_zkir::v3::read_zkir(path.to_str().unwrap())
+                        .with_context(|| format!("corpus artifact {}", target.corpus)),
+                )
+            }
+            Artifacts::Optimized => target.opt.map(|build| Ok(build().ir)),
+        }
+    }
+
+    /// Profiles are MinoCrab-side only: they need the eDSL's region
+    /// annotations, which a parsed `.zkir` does not carry.
+    fn profiled(&self, target: &Target) -> Option<minocrab::v3::Compiled3> {
+        match self.artifacts {
+            Artifacts::Port => Some((target.ours)()),
+            Artifacts::Corpus => None,
+            Artifacts::Optimized => target.opt.map(|build| build()),
+        }
+    }
+
+    fn preimage_path(&self, circuit: &str) -> PathBuf {
+        match self.preimages {
+            Preimages::Shared => preimage_dir().join(format!("{circuit}.preimage")),
+            Preimages::PerSide(dir) => preimage_dir().join(dir).join(format!("{circuit}.preimage")),
+        }
+    }
 }
 
 const VAULT: &str =
@@ -47,10 +170,14 @@ const SIGNET: &str =
 fn targets() -> Vec<Target> {
     macro_rules! t {
         ($dir:expr, $name:literal, $f:expr) => {
+            t!($dir, $name, $f, None)
+        };
+        ($dir:expr, $name:literal, $f:expr, $opt:expr) => {
             Target {
                 name: $name,
                 corpus: constcat($dir, $name),
                 ours: $f,
+                opt: $opt,
             }
         };
     }
@@ -87,8 +214,8 @@ fn preimage_dir() -> PathBuf {
         .unwrap_or_else(|| bench_dir().join("preimages"))
 }
 
-fn load_preimage(name: &str) -> Result<ProofPreimage> {
-    let path = preimage_dir().join(format!("{name}.preimage"));
+fn load_preimage(side: &Side, name: &str) -> Result<ProofPreimage> {
+    let path = side.preimage_path(name);
     let bytes = std::fs::read(&path).with_context(|| {
         format!(
             "no dumped preimage at {} — run the differential tests with \
@@ -99,16 +226,14 @@ fn load_preimage(name: &str) -> Result<ProofPreimage> {
     Ok(midnight_serialize::tagged_deserialize(&bytes[..])?)
 }
 
-fn load_ir(target: &Target, side: &str) -> Result<IrSource> {
-    match side {
-        "minocrab" => Ok((target.ours)().ir),
-        "compactc" => {
-            let path = repo_root().join(target.corpus);
-            minocrab_zkir::v3::read_zkir(path.to_str().unwrap())
-                .with_context(|| format!("corpus artifact {}", target.corpus))
-        }
-        _ => bail!("side must be minocrab|compactc"),
-    }
+fn load_ir(target: &Target, side: &Side) -> Result<IrSource> {
+    side.ir(target).unwrap_or_else(|| {
+        bail!(
+            "side {} has no artifact for circuit {}",
+            side.name,
+            target.name
+        )
+    })
 }
 
 fn params_provider() -> Result<MidnightDataProvider> {
@@ -146,15 +271,16 @@ struct Measurement {
     peak_rss_bytes: u64,
 }
 
-async fn measure(name: &str, side: &str) -> Result<Measurement> {
+async fn measure(name: &str, side_name: &str) -> Result<Measurement> {
     let target_list = targets();
     let target = target_list
         .iter()
         .find(|t| t.name == name)
         .with_context(|| format!("unknown circuit {name}"))?;
+    let side = side(side_name)?;
 
-    let ir = load_ir(target, side)?;
-    let pi = load_preimage(name)?;
+    let ir = load_ir(target, &side)?;
+    let pi = load_preimage(&side, name)?;
     let params = params_provider()?;
 
     let model = ir.model();
@@ -214,7 +340,7 @@ async fn measure(name: &str, side: &str) -> Result<Measurement> {
 
     Ok(Measurement {
         circuit: name.to_string(),
-        side: side.to_string(),
+        side: side.name.to_string(),
         k,
         rows,
         keygen_s,
@@ -241,8 +367,9 @@ fn orchestrate() -> Result<()> {
         Err(_) => Vec::new(),
     };
 
-    for target in &targets() {
-        for side in ["minocrab", "compactc"] {
+    for (target, side) in cells() {
+        {
+            let side = side.name;
             if results
                 .iter()
                 .any(|m| m.circuit == target.name && m.side == side)
@@ -283,12 +410,13 @@ fn orchestrate() -> Result<()> {
         }
     }
 
-    // Report in target order regardless of when each cell was measured.
+    // Report in target × side order regardless of when each cell was measured.
     let order: Vec<&str> = targets().iter().map(|t| t.name).collect();
+    let side_order: Vec<&str> = sides().iter().map(|s| s.name).collect();
     results.sort_by_key(|m| {
         (
             order.iter().position(|n| *n == m.circuit),
-            m.side != "minocrab",
+            side_order.iter().position(|n| *n == m.side),
         )
     });
 
@@ -309,22 +437,91 @@ fn orchestrate() -> Result<()> {
     Ok(())
 }
 
-/// MinoCrab per-region cost profiles (the M7 target-picker). Built
-/// in-process from the eDSL circuits — no proving, so `--profiles` can
-/// refresh them alone after a region-annotation change.
+/// Every (circuit, side) pair the run covers — sides without an artifact
+/// for a circuit drop out, so the bench is two-sided until the optimized
+/// contract exists.
+fn cells() -> Vec<(Target, Side)> {
+    let mut out = Vec::new();
+    for target in targets() {
+        for side in sides() {
+            if side.ir(&target).is_some() {
+                out.push((
+                    Target {
+                        name: target.name,
+                        corpus: target.corpus,
+                        ours: target.ours,
+                        opt: target.opt,
+                    },
+                    side,
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Per-region cost profiles (the M7 target-picker, now attributed by
+/// estimated rows as well as instruction count). Built in-process from the
+/// eDSL circuits — no proving, so `--profiles` can refresh them alone after
+/// a region-annotation change. compactc's parsed `.zkir` carries no regions,
+/// so only the eDSL sides are profiled; a side's files are suffixed with its
+/// name (the port keeps the bare `<circuit>.txt` names).
 fn write_profiles(out_dir: &std::path::Path) -> Result<()> {
     let profile_dir = out_dir.join("profiles");
     std::fs::create_dir_all(&profile_dir)?;
-    for target in &targets() {
-        let profile = minocrab_sim::v3::profile(&(target.ours)());
-        std::fs::write(
-            profile_dir.join(format!("{}.txt", target.name)),
-            format!("{profile}"),
-        )?;
+    for (target, side) in cells() {
+        let Some(compiled) = side.profiled(&target) else {
+            continue;
+        };
+        let stem = match side.artifacts {
+            Artifacts::Port => target.name.to_string(),
+            _ => format!("{}.{}", target.name, side.name),
+        };
+        let profile = minocrab_sim::v3::profile(&compiled);
+        std::fs::write(profile_dir.join(format!("{stem}.txt")), format!("{profile}"))?;
         serde_json::to_writer_pretty(
-            std::fs::File::create(profile_dir.join(format!("{}.json", target.name)))?,
+            std::fs::File::create(profile_dir.join(format!("{stem}.json")))?,
             &profile,
         )?;
+    }
+    Ok(())
+}
+
+/// `--list`: the (circuit, side) matrix this run would measure, with each
+/// cell's artifact and preimage source. A dry run — nothing is built or
+/// proved beyond reading what is on disk.
+fn list_cells() -> Result<()> {
+    /// The last two path components, enough to tell the cells apart.
+    fn tail(path: &std::path::Path) -> String {
+        let parts: Vec<_> = path.components().rev().take(2).collect();
+        let tail: PathBuf = parts.into_iter().rev().collect();
+        format!("…/{}", tail.display())
+    }
+    println!("{:>20} {:>10}  {:<28} preimage", "circuit", "side", "artifact");
+    for (target, side) in cells() {
+        let artifact = match side.artifacts {
+            Artifacts::Port => "minocrab-contracts (port)".to_string(),
+            Artifacts::Corpus => tail(std::path::Path::new(target.corpus)),
+            Artifacts::Optimized => "minocrab-contracts (opt)".to_string(),
+        };
+        let preimage = side.preimage_path(target.name);
+        let present = if preimage.exists() { "" } else { "  [missing]" };
+        println!(
+            "{:>20} {:>10}  {:<28} {}{}",
+            target.name,
+            side.name,
+            artifact,
+            tail(&preimage),
+            present
+        );
+    }
+    let absent: Vec<&str> = sides()
+        .iter()
+        .filter(|s| !cells().iter().any(|(_, c)| c.name == s.name))
+        .map(|s| s.name)
+        .collect();
+    if !absent.is_empty() {
+        println!("\nsides with no artifacts yet (skipped): {}", absent.join(", "));
     }
     Ok(())
 }
@@ -355,25 +552,43 @@ fn render_report(results: &[Measurement]) -> String {
         )
         .unwrap();
     }
-    // Side-by-side deltas.
-    writeln!(s, "\n## Deltas (minocrab vs compactc)\n").unwrap();
-    writeln!(s, "| circuit | rows Δ | prove Δ | RSS Δ |").unwrap();
-    writeln!(s, "|---|---|---|---|").unwrap();
+    // Deltas of every other side against compactc, the common baseline.
     let by = |c: &str, side: &str| results.iter().find(|m| m.circuit == c && m.side == side);
     let mut names: Vec<&str> = results.iter().map(|m| m.circuit.as_str()).collect();
     names.dedup();
-    for name in names {
-        if let (Some(a), Some(b)) = (by(name, "minocrab"), by(name, "compactc")) {
-            let pct = |x: f64, y: f64| if y != 0.0 { (x - y) / y * 100.0 } else { 0.0 };
+    for side in sides() {
+        if side.artifacts == Artifacts::Corpus {
+            continue;
+        }
+        if !results.iter().any(|m| m.side == side.name) {
+            continue;
+        }
+        writeln!(s, "\n## Deltas ({} vs compactc)\n", side.name).unwrap();
+        if let Preimages::PerSide(_) = side.preimages {
             writeln!(
                 s,
-                "| {} | {:+.1}% | {:+.1}% | {:+.1}% |",
-                name,
-                pct(a.rows as f64, b.rows as f64),
-                pct(a.prove_s, b.prove_s),
-                pct(a.peak_rss_bytes as f64, b.peak_rss_bytes as f64),
+                "This side proves its OWN preimage per circuit — the same logical \
+                 operation, not the same statement. Comparability rests on the \
+                 symbolic-effect equality of the two contracts, a weaker claim than \
+                 the PI-equality the other sides share.\n"
             )
             .unwrap();
+        }
+        writeln!(s, "| circuit | rows Δ | prove Δ | RSS Δ |").unwrap();
+        writeln!(s, "|---|---|---|---|").unwrap();
+        for name in &names {
+            if let (Some(a), Some(b)) = (by(name, side.name), by(name, "compactc")) {
+                let pct = |x: f64, y: f64| if y != 0.0 { (x - y) / y * 100.0 } else { 0.0 };
+                writeln!(
+                    s,
+                    "| {} | {:+.1}% | {:+.1}% | {:+.1}% |",
+                    name,
+                    pct(a.rows as f64, b.rows as f64),
+                    pct(a.prove_s, b.prove_s),
+                    pct(a.peak_rss_bytes as f64, b.peak_rss_bytes as f64),
+                )
+                .unwrap();
+            }
         }
     }
     s
@@ -397,6 +612,63 @@ async fn main() -> Result<()> {
             eprintln!("written: {}/profiles/", out_dir.display());
             Ok(())
         }
+        Some("--list") => list_cells(),
         Some(other) => bail!("unknown mode {other}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The optimized artifact does not exist yet, so the run is two-sided:
+    /// every target contributes exactly the port and the corpus.
+    #[test]
+    fn absent_side_drops_out() {
+        let cells = cells();
+        assert_eq!(cells.len(), targets().len() * 2);
+        for (_, side) in &cells {
+            assert_ne!(side.artifacts, Artifacts::Optimized);
+        }
+        // …and asking for it by name is an error, not a panic.
+        let opt = side("opt").expect("the side is declared");
+        assert!(opt.ir(&targets()[0]).is_none());
+        assert!(load_ir(&targets()[0], &opt).is_err());
+    }
+
+    #[test]
+    fn unknown_side_is_rejected() {
+        assert!(side("nonesuch").is_err());
+        assert!(side("minocrab").is_ok());
+        assert!(side("compactc").is_ok());
+    }
+
+    /// The two statement-identical sides read the shared preimage dump; the
+    /// optimized side reads its own, because it cannot share one.
+    #[test]
+    fn preimages_are_shared_except_for_the_optimized_side() {
+        let shared = side("minocrab").unwrap().preimage_path("claim");
+        assert_eq!(shared, side("compactc").unwrap().preimage_path("claim"));
+        let own = side("opt").unwrap().preimage_path("claim");
+        assert_ne!(own, shared);
+        assert_eq!(own.parent().unwrap().file_name().unwrap(), "opt");
+    }
+
+    /// Both toolchain-independent sides yield an IR for every target, and
+    /// only the eDSL ones can be profiled.
+    #[test]
+    fn every_target_has_a_port_and_a_corpus_artifact() {
+        for target in targets() {
+            for name in ["minocrab", "compactc"] {
+                let side = side(name).unwrap();
+                assert!(
+                    side.ir(&target).expect("side present").is_ok(),
+                    "{} / {name}",
+                    target.name
+                );
+            }
+            assert!(side("minocrab").unwrap().profiled(&target).is_some());
+            assert!(side("compactc").unwrap().profiled(&target).is_none());
+        }
     }
 }

@@ -379,7 +379,8 @@ the compatibility reference; the optimized vault is its own artifact
       protect nothing — this artifact has no compactc row parity to
       keep), constrain-bits dedup, framing/serialization, then the
       crypto regions if headroom remains. Every change lands with the
-      harness green at full scale.
+      harness green at full scale. (instruments landed: cryptocost
+      example, row-attributed profiles, bench third side)
 - [ ] The report: fresh single-session benchmark — super-optimized vault
       vs compactc vs the direct port (three-way, so ergonomics-neutral
       lowering wins and freed-framing wins are attributed separately);
