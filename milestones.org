@@ -141,23 +141,38 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       (base/emit1/2/4), hashing (all 10), keccak (all 9), mint-tokens
       (both), serde-builtin (checkRoundtrip). Plus test-caller-contract
       initialise and erc20-vault initialize (the benchmark target's
-      setup circuit), each with reject-agreement tests. REMAINING
-      rewrites need M5 cross-contract calling: xcall{,-with-payment},
-      xcontract-events, Signet.compact, the rest of test-caller and of
-      erc20-vault (deposit/claim/withdraw… also need the event-map
-      composite + guarded reads).)
+      setup circuit), each with reject-agreement tests. M5 done: the
+      xcall/xcontract-events/xcall-with-payment experiments are all
+      differential-green except notify/pay (receiveShielded — the
+      remaining stdlib coin-receive port, blocked here not on M5).
+      REMAINING rewrites: Signet.compact, the rest of test-caller and
+      of erc20-vault (deposit/claim/withdraw… also need the event-map
+      composite + guarded reads), xcall-with-payment notify/pay.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Cross-contract calling
 Pulled ahead of the benchmark (dmd, 2026-08-14): the erc20-vault runtime
 circuits call the Signet singleton cross-contract, so this is a benchmark
 prerequisite.
-- [ ] Cross-contract calls in the eDSL on the ZKIR version that supports them
+- [X] Cross-contract calls in the eDSL on the ZKIR version that supports them
       (v3; caller-side commitment + Kernel.claimContractCall, see
       notes/ledger-abi.org §2 on the communications commitment and
       desugar-contract-calls.ss).
+      (minocrab-ledger: kernel_claim_contract_call + contract_call — the
+      full desugar: result-limb witnesses, cc-rand/ep witnesses, in-circuit
+      transientCommit, effects[3] claim — plus set_insert. Lowering decoded
+      in notes/ledger-abi.org §Implementation "CROSS-CONTRACT CALLS".)
 Exit criteria: the xcall/xcontract-events corpus experiments run on MinoCrab
-with their differentials green.
+with their differentials green. MET — all differential-green incl. tamper
+reject-agreement sweeps (minocrab-contracts tests/xcall_differential.rs,
+xcontract_events_differential.rs, xcall_with_payment_differential.rs):
+xcall caller localBase/callOnce/callTwice/callBig/callEmit + target
+deposit/depositEmit/depositBig; xcontract-events depositViaVault (the
+return-value path: result witnesses bound by the comm commitment) + token
+deposit; xcall-with-payment caller callOnce/request + target confirmRequest.
+NOT here: xcall-with-payment's notify/pay — root-call coin-custody circuits
+(receiveShielded), no cross-contract machinery; they belong to the remaining
+M4 stdlib coin work.
 
 * M6 — Baseline benchmark: cross-chain deposit/withdrawal
 Benchmark the sig-net cross-chain deposit and withdrawal contracts under

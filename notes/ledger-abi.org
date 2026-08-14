@@ -544,11 +544,60 @@ differential-green.
 Still to build here: Map member/lookup differentials (shapes exist,
 no corpus circuit isolates them — first exercised by erc20-vault
 deposit/claim), Map rem, MerkleTree ops, conditional (guarded)
-reads, the ledger-declaration DSL that assigns field indices and
-picks op sequences automatically — and then M5's cross-contract
-layer (claimContractCall + caller-side commitment,
-desugar-contract-calls.ss), which the remaining corpus rewrites all
-block on.
+reads, and the ledger-declaration DSL that assigns field indices and
+picks op sequences automatically.
+
+CROSS-CONTRACT CALLS (M5, decoded 2026-08-14 from
+desugar-contract-calls.ss + midnight-ledger.ss:195-215 + the xcall /
+xcontract-events corpus artifacts). One call
+=target.circ(args…) → results= lowers to, in exact order:
+1. Evaluate the callee address — a fresh UNCACHED =cell_read= of the
+   target field per call site (callTwice re-reads with the same
+   uncached idx/popeq shape; no caching interplay), or =kernel_self=
+   etc.
+2. =private_input= per FAB limb of the callee's declared RETURN
+   type, each followed immediately by its =constrain_bits= (Bytes<32>
+   → 8/248; Field limbs unconstrained) — results come FIRST.
+3. =private_input= cc-rand (unconstrained), then ep-mod
+   (constrain 8), then ep-div (constrain 248) — the two FAB limbs of
+   the entry-point-hash Bytes<32>, hi (leftover byte) then lo.
+4. =transient_hash= comm = poseidon([cc-rand] ++ arg limbs ++ result
+   limbs) — value-only FAB order, args as passed (post-disclose).
+5. The =kernel.claimContractCall(addr, ep, comm)= vm-code
+   (midnight-ledger.ss:195): =swap 0; idxpc effects[3]; dup 0; size;
+   push cell(addr ‖ ep ‖ comm); concatc 160; push null; insc 2;
+   swap 0= — the pushed cell is ONE 3-atom value
+   [bytes<32>, bytes<32>, field] (rt-aligned-concat), so the map key
+   is size(claims) ‖ addr ‖ ep ‖ comm (the size prefix permits
+   repeated identical calls). =Op::Concat { cached: true, n: 160 }=
+   exists in onchain-vm (encodes [0x17, 0xa0]).
+The result wires then flow on as ordinary public values (the vault
+inserts them into a Set and outputs them). The callee compiles as a
+plain circuit — no caller machinery on its side. ep-mod/ep-div/
+cc-rand and the result limbs are prover-supplied witnesses; the
+ledger enforces the (addr, entry-point-hash, comm) triple matches a
+real ContractCall in the transaction (structure.rs:2722-2745), and
+comm binds args+results under cc-rand hiding.
+Set.insert(k) (xcontract-events vault, midnight-ledger.ss Set): =idxp
+[field]; push cell(k); pushs null (0x11 0x00 — storage=true, Null
+tag); ins 1 (0x91); insc 1 (0xa1)= — map_insert with a Null value.
+Implemented: minocrab-ledger =kernel_claim_contract_call= +
+=contract_call= (the full desugar including disclosure bookkeeping)
+and =set_insert=; minocrab-std::v3 =Serializer::push_bytes= (re-embed
+an existing =BytesN='s bytes, used by the token's Misc wrapper).
+ACCEPTANCE (M5 exit criteria MET, 2026-08-14): all of xcall (caller
+localBase/callOnce/callTwice/callBig/callEmit — callEmit is the
+callOnce circuit with a different ep witness — + target deposit/
+depositEmit/depositBig, where deposit/depositEmit ARE the events
+base/emit1 circuits), xcontract-events (depositViaVault — the
+return-value path — + token deposit with its serialize →
+persistentHash → Set.insert → emit pipeline), and xcall-with-payment
+caller callOnce/request + target confirmRequest are call-compatible
+with the corpus artifacts, incl. full tamper sweeps over both public
+and private transcripts with zero acceptance disagreements
+(minocrab-contracts tests/xcall*_differential.rs,
+xcontract_events_differential.rs). notify/pay (receiveShielded coin
+custody, no xcall machinery) remain with the M4 stdlib coin work.
 
 * Open questions / follow-ups
 - =ckpt= / =kernel.checkpoint()= is unimplemented in compactc's v3

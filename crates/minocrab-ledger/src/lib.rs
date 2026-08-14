@@ -212,6 +212,25 @@ pub fn map_insert(index: u8, key: &LedgerValue, value: &LedgerValue) -> Vec<Impa
     ]
 }
 
+/// `set.insert(elem)` on ledger field `index` — `map_insert` with a `Null`
+/// value (midnight-ledger.ss's Set vm-code; xcontract-events
+/// depositViaVault): `idxp [field]; push elem; pushs null; ins 1; insc 1`.
+pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        push_cell(false, elem),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: midnight_onchain_state::state::StateValue::Null,
+        }),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 1,
+        }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+    ]
+}
+
 /// Emit `ops` as Impact instructions (one per op) under `guard`.
 pub fn emit<V: Visibility>(c: &mut Circuit3, guard: Wire3<FieldT, V>, ops: &[ImpactOp])
 where
@@ -485,6 +504,108 @@ pub fn kernel_claim_zswap_coin_spend(note: &LedgerValue) -> Vec<ImpactOp> {
     kernel_claim(2, note)
 }
 
+/// `kernel.claimContractCall(addr, entry_point, comm)`
+/// (midnight-ledger.ss:195-215): insert `size(claims) ‖ addr ‖ ep ‖ comm →
+/// Null` into the claimed-contract-calls map at effects[3]. `addr_ep_comm`
+/// is the single 3-atom `[bytes<32>, bytes<32>, field]` concatenation
+/// (`rt-aligned-concat`); the size prefix (via `dup 0; size; concatc 160`)
+/// keys repeated identical calls apart.
+pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: true,
+            path: vec![Key::Value(field_key(3))].into(),
+        }),
+        dup(0),
+        ImpactOp::constant(&Op::Size),
+        push_cell(false, addr_ep_comm),
+        ImpactOp::constant(&Op::Concat {
+            cached: true,
+            n: 160,
+        }),
+        push_null(),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+    ]
+}
+
+// --- cross-contract calls ---------------------------------------------------
+
+/// One cross-contract call `target.circ(args…) → results`, exactly as
+/// compactc desugars it (circuit-passes/desugar-contract-calls.ss:116-137;
+/// notes/ledger-abi.org §Implementation): witness the callee's return
+/// limbs, the communication randomness and the entry-point-hash limbs;
+/// recompute `comm = transientHash([rand] ++ args ++ results)` in-circuit;
+/// claim `(addr, entry_point, comm)` via [`kernel_claim_contract_call`].
+///
+/// `addr` is the callee's address (`Bytes<32>` `[hi, lo]`, from a
+/// [`cell_read`] of the target field — one fresh uncached read per call
+/// site — or [`kernel_self`]). `args` are the call arguments' FAB limbs in
+/// order, already disclosed. `result_limb_bits` has one entry per FAB limb
+/// of the callee's declared return type: `Some(bits)` emits the
+/// `constrain_bits` compactc places right after that limb's witness
+/// (`Bytes<32>` → `[Some(8), Some(248)]`, `Uint<128>` → `[Some(128)]`),
+/// `None` (a Field limb) leaves it unconstrained.
+///
+/// Returns the callee's result wires. They are disclosed: the claim binds
+/// them publicly (under cc-rand hiding) via `comm`, and Compact treats
+/// them as public downstream.
+pub fn contract_call<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    addr: [Wire3<FieldT, Public>; 2],
+    args: &[Wire3<FieldT, Public>],
+    result_limb_bits: &[Option<u32>],
+) -> Vec<Wire3<FieldT, Public>> {
+    let results: Vec<_> = result_limb_bits
+        .iter()
+        .map(|&bits| {
+            let w = c.witness::<FieldT>();
+            if let Some(bits) = bits {
+                c.assert_bits(w, bits);
+            }
+            w
+        })
+        .collect();
+    let cc_rand = c.witness::<FieldT>();
+    let ep_hi = c.witness::<FieldT>();
+    c.assert_bits(ep_hi, 8);
+    let ep_lo = c.witness::<FieldT>();
+    c.assert_bits(ep_lo, 248);
+
+    let mut preimage = vec![cc_rand];
+    preimage.extend(args.iter().map(|w| w.private()));
+    preimage.extend(results.iter().copied());
+    let comm = c.transient_hash(&preimage);
+
+    let ep_hi = c.disclose(ep_hi, "xcall entry-point hash (hi)");
+    let ep_lo = c.disclose(ep_lo, "xcall entry-point hash (lo)");
+    let comm = c.disclose(comm, "xcall communications commitment");
+
+    let addr_ep_comm = LedgerValue::new(
+        vec![
+            AlignmentAtom::Bytes { length: 32 },
+            AlignmentAtom::Bytes { length: 32 },
+            AlignmentAtom::Field,
+        ],
+        vec![
+            ImpactElem::Wire(addr[0]),
+            ImpactElem::Wire(addr[1]),
+            ImpactElem::Wire(ep_hi),
+            ImpactElem::Wire(ep_lo),
+            ImpactElem::Wire(comm),
+        ],
+    );
+    emit(c, guard, &kernel_claim_contract_call(&addr_ep_comm));
+
+    results
+        .into_iter()
+        .map(|w| c.disclose(w, "xcall result"))
+        .collect()
+}
+
 // --- events -----------------------------------------------------------------
 
 /// `emit <event>` (compiler/analysis-passes/lower-emit.ss:20-27): push the
@@ -661,6 +782,122 @@ mod tests {
         let ours = emit_event(1, 10, &payload);
         assert_eq!(imms(&ours[0]), repr(&real_push));
         assert_eq!(imms(&ours[1]), repr(&Op::Log));
+    }
+
+    /// `kernel_claim_contract_call`'s constant ops and mixed push header
+    /// against real Op encodings and the callOnce.zkir annotated stream:
+    /// swap = 0x40, idxpc effects[3] = [0x80,1,1,3], dup 0 = 0x30,
+    /// size = 0x04, push cell = [0x10, 1, 3, 0x20, 0x20, −2, limbs…],
+    /// concatc 160 = [0x17, 0xa0], push null = [0x10, 0x00], insc 2 = 0xa2.
+    #[test]
+    fn claim_contract_call_matches_field_repr() {
+        use midnight_onchain_state::state::StateValue;
+
+        let mut addr = [0u8; 32];
+        addr[0] = 0xaa;
+        addr[31] = 0x01;
+        let mut ep = [0u8; 32];
+        ep[0] = 0xbb;
+        ep[31] = 0x02;
+        let comm = Fr::from(0x1234u64);
+
+        // The real rt-aligned-concat'd 3-atom cell.
+        let comm_bytes: Vec<u8> = {
+            let mut le = comm.as_le_bytes();
+            while le.last() == Some(&0) {
+                le.pop();
+            }
+            le
+        };
+        let av = AlignedValue::new(
+            Value(vec![
+                ValueAtom(addr.to_vec()).normalize(),
+                ValueAtom(ep.to_vec()).normalize(),
+                ValueAtom(comm_bytes).normalize(),
+            ]),
+            Alignment(vec![
+                AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+                AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+                AlignmentSegment::Atom(AlignmentAtom::Field),
+            ]),
+        )
+        .unwrap();
+
+        let value = LedgerValue::new(
+            vec![
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Field,
+            ],
+            vec![
+                ImpactElem::Imm(Fr::from(u64::from(addr[31]))),
+                ImpactElem::Imm(Fr::from_le_bytes(&addr[..31]).unwrap()),
+                ImpactElem::Imm(Fr::from(u64::from(ep[31]))),
+                ImpactElem::Imm(Fr::from_le_bytes(&ep[..31]).unwrap()),
+                ImpactElem::Imm(comm),
+            ],
+        );
+        let ours = kernel_claim_contract_call(&value);
+
+        let real: Vec<VmOp> = vec![
+            Op::Swap { n: 0 },
+            Op::Idx {
+                cached: true,
+                push_path: true,
+                path: vec![Key::Value(field_key(3))].into(),
+            },
+            Op::Dup { n: 0 },
+            Op::Size,
+            Op::Push {
+                storage: false,
+                value: midnight_onchain_state::state::StateValue::Cell(Sp::new(av)),
+            },
+            Op::Concat {
+                cached: true,
+                n: 160,
+            },
+            Op::Push {
+                storage: false,
+                value: StateValue::Null,
+            },
+            Op::Ins { cached: true, n: 2 },
+            Op::Swap { n: 0 },
+        ];
+        assert_eq!(ours.len(), real.len());
+        for (op, real_op) in ours.iter().zip(&real) {
+            assert_eq!(imms(op), repr(real_op));
+        }
+        // The annotated corpus bytes for the constant ops.
+        assert_eq!(imms(&ours[1]), vec![Fr::from(0x80u64), 1u64.into(), 1u64.into(), 3u64.into()]);
+        assert_eq!(imms(&ours[3]), vec![Fr::from(0x04u64)]);
+        assert_eq!(imms(&ours[5]), vec![Fr::from(0x17u64), Fr::from(0xa0u64)]);
+        assert_eq!(imms(&ours[6]), vec![Fr::from(0x10u64), Fr::from(0u64)]);
+        assert_eq!(imms(&ours[7]), vec![Fr::from(0xa2u64)]);
+    }
+
+    /// `set_insert` against real Op encodings (depositViaVault.zkir:
+    /// pushs null = [0x11, 0x00], ins = 0x91, insc = 0xa1).
+    #[test]
+    fn set_insert_matches_field_repr() {
+        use midnight_onchain_state::state::StateValue;
+
+        let ops = set_insert(2, &LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(7u64))]));
+        assert_eq!(
+            imms(&ops[2]),
+            repr(&Op::Push {
+                storage: true,
+                value: StateValue::Null,
+            })
+        );
+        assert_eq!(imms(&ops[2]), vec![Fr::from(0x11u64), Fr::from(0u64)]);
+        assert_eq!(
+            imms(&ops[3]),
+            repr(&Op::Ins {
+                cached: false,
+                n: 1,
+            })
+        );
+        assert_eq!(imms(&ops[3]), vec![Fr::from(0x91u64)]);
     }
 
     /// The read shapes' constant ops, against initialise.zkir's annotated

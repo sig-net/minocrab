@@ -220,6 +220,12 @@ impl<V: Vis3> Serializer<V> {
         self.bytes.extend(b32_to_bytes(c, value));
     }
 
+    /// Already-exploded byte wires (e.g. a `Bytes<n>` field's
+    /// [`BytesN::to_le_bytes`]).
+    pub fn push_bytes(&mut self, bytes: &[Wire3<FieldT, V>]) {
+        self.bytes.extend(bytes.iter().copied());
+    }
+
     /// A literal byte string.
     pub fn push_literal(&mut self, c: &mut Circuit3, bytes: &[u8]) {
         self.bytes.extend(
