@@ -182,3 +182,30 @@ name-column changes in 5).
 - Macro-hidden work: thinness rule + expand golden.
 - rustc 1.97 stable only — nothing here needs generic_const_exprs
   (SLOTS sums are associated consts, not array lengths).
+
+* As built
+** Phase 0 — interface snapshot (crates/minocrab-contracts/tests/interface_snapshot.rs)
+Frozen table: one multi-line block per circuit, 55 circuits, in the same
+order as row_snapshot; the circuit enumeration both guards share now
+lives in tests/support/mod.rs (the frozen tables stay independent).
+Regenerator: `--ignored --nocapture print_interface_snapshot`.
+What the three sections actually come from (the IR is less forthcoming
+than the phasing bullet assumed):
+- inputs: IrSource::inputs, read through serde (TypedIdentifier's fields
+  are pub(crate) upstream — the same route assert_call_compatible takes).
+  The label is Builder3's `%name.index` with the `%` and the `.index`
+  uniquifier stripped; index == slot for arguments, so dropping it makes
+  an insertion show up as one added line instead of renumbering every
+  line after it. Anything not of that exact shape is kept verbatim.
+- outputs: the IR's output signature is TYPES ONLY — there are no output
+  labels in ZKIR. Recovered by zipping ir.outputs with the
+  DisclosureKind::Output records, which Circuit3::output pushes 1:1 with
+  the queued outputs; the test asserts the two agree in length.
+- witnesses: Compiled3::witnesses is a COUNT, not a list. The ordered
+  list is recovered from the instruction stream (Instruction::PrivateInput,
+  type + whether the read is guarded), and the count is cross-checked
+  against Compiled3::witnesses. Guarded reads are marked, since a guard
+  changes whether the transcript is consumed.
+Failure output: a line-level LCS diff per changed circuit (`-` frozen,
+`+` built), so a reorder reads as one moved line and a rename as one
+-/+ pair. The diff renderer has its own unit test.

@@ -1,0 +1,991 @@
+//! A frozen snapshot of every circuit's ORDERED interface: arguments,
+//! outputs and witness reads.
+//!
+//! The differential comparator (`assert_call_compatible`) checks only the
+//! *type* column of the input schema — and nearly every argument is a
+//! `Scalar<BLS12-381>`, so a same-typed permutation of the argument list is
+//! invisible to it except through PI equality on the one honest preimage it
+//! runs. Argument ORDER is the real contract: it feeds the communications
+//! commitment and the preimage layout, so a reorder, rename or insertion
+//! silently breaks every caller. This test is the instrument that makes such
+//! movement mechanically visible before the M9 port starts rewriting the
+//! argument lists.
+//!
+//! Per circuit it freezes, in order:
+//!   - `in  <label>: <type>` — one line per `IrSource::inputs` entry (the
+//!     `c.arg` calls, in declaration order). The label is the declared name
+//!     with the `%`/`.index` disambiguator stripped.
+//!   - `out <label>: <type>` — one line per `IrSource::outputs` entry,
+//!     labelled from the matching `DisclosureKind::Output` record (the IR
+//!     itself carries no output names).
+//!   - `wit <type>` — one line per `PrivateInput` instruction, i.e. per
+//!     private-transcript read, in execution order; `(guarded)` marks a
+//!     conditional read. Witnesses are not entry-point arguments, and
+//!     `Compiled3` only counts them, so the list is recovered from the
+//!     instruction stream (the count is cross-checked against
+//!     `Compiled3::witnesses`).
+//!
+//! To regenerate after an INTENTIONAL interface change:
+//! `cargo test --release -p minocrab-contracts --test interface_snapshot -- \
+//!      --ignored --nocapture print_interface_snapshot`
+
+mod support;
+
+use minocrab::v3::Compiled3;
+use minocrab::DisclosureKind;
+use minocrab_zkir::v3::{Instruction, IrType};
+use support::circuits;
+
+/// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
+/// ordered interface in a snapshot guard test".
+const SNAPSHOT: &[(&str, &str)] = &[
+    (
+        "erc20_vault::initialize",
+        "\
+in  vaultEvm: Scalar<BLS12-381>
+in  swapRouter: Scalar<BLS12-381>
+in  chainId: Scalar<BLS12-381>
+in  chainCaip2Id_hi: Scalar<BLS12-381>
+in  chainCaip2Id_lo: Scalar<BLS12-381>
+in  responseKey: Point<Secp256k1>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::deposit",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  gasLimit: Scalar<BLS12-381>
+in  maxFeePerGas: Scalar<BLS12-381>
+in  maxPriorityFeePerGas: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  depositRequest_erc20Address: Scalar<BLS12-381>
+in  depositRequest_amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::claim",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+in  recipient_is_some: Scalar<BLS12-381>
+in  recipient_is_left: Scalar<BLS12-381>
+in  recipient_left_hi: Scalar<BLS12-381>
+in  recipient_left_lo: Scalar<BLS12-381>
+in  recipient_right_hi: Scalar<BLS12-381>
+in  recipient_right_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+",
+    ),
+    (
+        "erc20_vault::approve_router",
+        "\
+in  erc20Address: Scalar<BLS12-381>
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::withdraw",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  withdrawRequest_erc20Address: Scalar<BLS12-381>
+in  withdrawRequest_amount: Scalar<BLS12-381>
+in  withdrawRequest_destEvmAddress: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_withdraw",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+",
+    ),
+    (
+        "erc20_vault::refund",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+",
+    ),
+    (
+        "erc20_vault::swap",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  swapRequest_tokenIn: Scalar<BLS12-381>
+in  swapRequest_tokenOut: Scalar<BLS12-381>
+in  swapRequest_fee: Scalar<BLS12-381>
+in  swapRequest_amountOut: Scalar<BLS12-381>
+in  swapRequest_amountInMaximum: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_swap",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "signet_contract::sign_bidirectional",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  notification_version: Scalar<BLS12-381>
+in  notification_payload_0: Scalar<BLS12-381>
+in  notification_payload_1: Scalar<BLS12-381>
+in  notification_payload_2: Scalar<BLS12-381>
+in  notification_payload_3: Scalar<BLS12-381>
+in  notification_payload_4: Scalar<BLS12-381>
+",
+    ),
+    (
+        "signet_contract::respond",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  bigR_x_hi: Scalar<BLS12-381>
+in  bigR_x_lo: Scalar<BLS12-381>
+in  bigR_y_hi: Scalar<BLS12-381>
+in  bigR_y_lo: Scalar<BLS12-381>
+in  s_hi: Scalar<BLS12-381>
+in  s_lo: Scalar<BLS12-381>
+in  recoveryId: Scalar<BLS12-381>
+",
+    ),
+    (
+        "signet_contract::respond_bidirectional",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  bigR_x_hi: Scalar<BLS12-381>
+in  bigR_x_lo: Scalar<BLS12-381>
+in  bigR_y_hi: Scalar<BLS12-381>
+in  bigR_y_lo: Scalar<BLS12-381>
+in  s_hi: Scalar<BLS12-381>
+in  s_lo: Scalar<BLS12-381>
+in  recoveryId: Scalar<BLS12-381>
+",
+    ),
+    (
+        "attest::map_only",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "attest::verify_only",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  digest_hi: Scalar<BLS12-381>
+in  digest_lo: Scalar<BLS12-381>
+in  r_hi: Scalar<BLS12-381>
+in  r_lo: Scalar<BLS12-381>
+in  s_hi: Scalar<BLS12-381>
+in  s_lo: Scalar<BLS12-381>
+in  pk: Point<Secp256k1>
+",
+    ),
+    (
+        "attest::sha_verify",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  output_0: Scalar<BLS12-381>
+in  output_1: Scalar<BLS12-381>
+in  output_2: Scalar<BLS12-381>
+in  output_3: Scalar<BLS12-381>
+in  output_4: Scalar<BLS12-381>
+in  r_hi: Scalar<BLS12-381>
+in  r_lo: Scalar<BLS12-381>
+in  s_hi: Scalar<BLS12-381>
+in  s_lo: Scalar<BLS12-381>
+in  pk: Point<Secp256k1>
+",
+    ),
+    (
+        "attest::keccak_verify",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  output_0: Scalar<BLS12-381>
+in  output_1: Scalar<BLS12-381>
+in  output_2: Scalar<BLS12-381>
+in  output_3: Scalar<BLS12-381>
+in  output_4: Scalar<BLS12-381>
+in  r_hi: Scalar<BLS12-381>
+in  r_lo: Scalar<BLS12-381>
+in  s_hi: Scalar<BLS12-381>
+in  s_lo: Scalar<BLS12-381>
+in  pk: Point<Secp256k1>
+",
+    ),
+    (
+        "events::base",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events::emit_n(1)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events::emit_n(2)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events::emit_n(4)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::control(32)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::control(64)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::control(128)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::control(256)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::control(1024)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+in  data_9: Scalar<BLS12-381>
+in  data_10: Scalar<BLS12-381>
+in  data_11: Scalar<BLS12-381>
+in  data_12: Scalar<BLS12-381>
+in  data_13: Scalar<BLS12-381>
+in  data_14: Scalar<BLS12-381>
+in  data_15: Scalar<BLS12-381>
+in  data_16: Scalar<BLS12-381>
+in  data_17: Scalar<BLS12-381>
+in  data_18: Scalar<BLS12-381>
+in  data_19: Scalar<BLS12-381>
+in  data_20: Scalar<BLS12-381>
+in  data_21: Scalar<BLS12-381>
+in  data_22: Scalar<BLS12-381>
+in  data_23: Scalar<BLS12-381>
+in  data_24: Scalar<BLS12-381>
+in  data_25: Scalar<BLS12-381>
+in  data_26: Scalar<BLS12-381>
+in  data_27: Scalar<BLS12-381>
+in  data_28: Scalar<BLS12-381>
+in  data_29: Scalar<BLS12-381>
+in  data_30: Scalar<BLS12-381>
+in  data_31: Scalar<BLS12-381>
+in  data_32: Scalar<BLS12-381>
+in  data_33: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent(32)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent(64)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent(128)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent(256)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent(1024)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+in  data_9: Scalar<BLS12-381>
+in  data_10: Scalar<BLS12-381>
+in  data_11: Scalar<BLS12-381>
+in  data_12: Scalar<BLS12-381>
+in  data_13: Scalar<BLS12-381>
+in  data_14: Scalar<BLS12-381>
+in  data_15: Scalar<BLS12-381>
+in  data_16: Scalar<BLS12-381>
+in  data_17: Scalar<BLS12-381>
+in  data_18: Scalar<BLS12-381>
+in  data_19: Scalar<BLS12-381>
+in  data_20: Scalar<BLS12-381>
+in  data_21: Scalar<BLS12-381>
+in  data_22: Scalar<BLS12-381>
+in  data_23: Scalar<BLS12-381>
+in  data_24: Scalar<BLS12-381>
+in  data_25: Scalar<BLS12-381>
+in  data_26: Scalar<BLS12-381>
+in  data_27: Scalar<BLS12-381>
+in  data_28: Scalar<BLS12-381>
+in  data_29: Scalar<BLS12-381>
+in  data_30: Scalar<BLS12-381>
+in  data_31: Scalar<BLS12-381>
+in  data_32: Scalar<BLS12-381>
+in  data_33: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::keccak(64)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::keccak(128)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::keccak(256)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::transient(32)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::transient(256)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::transient(1024)",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+in  data_9: Scalar<BLS12-381>
+in  data_10: Scalar<BLS12-381>
+in  data_11: Scalar<BLS12-381>
+in  data_12: Scalar<BLS12-381>
+in  data_13: Scalar<BLS12-381>
+in  data_14: Scalar<BLS12-381>
+in  data_15: Scalar<BLS12-381>
+in  data_16: Scalar<BLS12-381>
+in  data_17: Scalar<BLS12-381>
+in  data_18: Scalar<BLS12-381>
+in  data_19: Scalar<BLS12-381>
+in  data_20: Scalar<BLS12-381>
+in  data_21: Scalar<BLS12-381>
+in  data_22: Scalar<BLS12-381>
+in  data_23: Scalar<BLS12-381>
+in  data_24: Scalar<BLS12-381>
+in  data_25: Scalar<BLS12-381>
+in  data_26: Scalar<BLS12-381>
+in  data_27: Scalar<BLS12-381>
+in  data_28: Scalar<BLS12-381>
+in  data_29: Scalar<BLS12-381>
+in  data_30: Scalar<BLS12-381>
+in  data_31: Scalar<BLS12-381>
+in  data_32: Scalar<BLS12-381>
+in  data_33: Scalar<BLS12-381>
+",
+    ),
+    (
+        "hashing::persistent_vec8",
+        "\
+in  data_0_hi: Scalar<BLS12-381>
+in  data_0_lo: Scalar<BLS12-381>
+in  data_1_hi: Scalar<BLS12-381>
+in  data_1_lo: Scalar<BLS12-381>
+in  data_2_hi: Scalar<BLS12-381>
+in  data_2_lo: Scalar<BLS12-381>
+in  data_3_hi: Scalar<BLS12-381>
+in  data_3_lo: Scalar<BLS12-381>
+in  data_4_hi: Scalar<BLS12-381>
+in  data_4_lo: Scalar<BLS12-381>
+in  data_5_hi: Scalar<BLS12-381>
+in  data_5_lo: Scalar<BLS12-381>
+in  data_6_hi: Scalar<BLS12-381>
+in  data_6_lo: Scalar<BLS12-381>
+in  data_7_hi: Scalar<BLS12-381>
+in  data_7_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::local_base",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::call_once",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::call_twice",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::call_big",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::target_deposit",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::target_deposit_emit",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall::target_deposit_big",
+        "\
+in  data_0: Scalar<BLS12-381>
+in  data_1: Scalar<BLS12-381>
+in  data_2: Scalar<BLS12-381>
+in  data_3: Scalar<BLS12-381>
+in  data_4: Scalar<BLS12-381>
+in  data_5: Scalar<BLS12-381>
+in  data_6: Scalar<BLS12-381>
+in  data_7: Scalar<BLS12-381>
+in  data_8: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall_with_payment::call_once",
+        "\
+in  nonce_hi: Scalar<BLS12-381>
+in  nonce_lo: Scalar<BLS12-381>
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall_with_payment::request",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall_with_payment::notify",
+        "\
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall_with_payment::pay",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcall_with_payment::confirm_request",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcontract_events::deposit_via_vault",
+        "\
+in  amount: Scalar<BLS12-381>
+out event hash (hi): Scalar<BLS12-381>
+out event hash (lo): Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "xcontract_events::token_deposit",
+        "\
+in  amount: Scalar<BLS12-381>
+in  caller_hi: Scalar<BLS12-381>
+in  caller_lo: Scalar<BLS12-381>
+out event hash (hi): Scalar<BLS12-381>
+out event hash (lo): Scalar<BLS12-381>
+",
+    ),
+    (
+        "mint_tokens::mint_with_recipient_argument",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "mint_tokens::mint_with_recipient_own_public_key",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "serde_builtin::check_roundtrip",
+        "\
+in  bytes_0: Scalar<BLS12-381>
+in  bytes_1: Scalar<BLS12-381>
+in  bytes_2: Scalar<BLS12-381>
+in  bytes_3: Scalar<BLS12-381>
+in  bytes_4: Scalar<BLS12-381>
+",
+    ),
+    (
+        "test_caller::initialise",
+        "\
+in  responseKey: Point<Secp256k1>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+];
+
+/// The serde name of an [`IrType`], i.e. the type column the differential
+/// comparator compares (`Scalar<BLS12-381>`, `Bytes<32>`, ...).
+fn type_name(ty: &IrType) -> String {
+    match serde_json::to_value(ty).expect("IrType serializes") {
+        serde_json::Value::String(s) => s,
+        other => other.to_string(),
+    }
+}
+
+/// `%evmNonce.3` → `evmNonce`. The `%` prefix and the `.index` suffix are
+/// `Builder3`'s uniquifiers, not part of the declared name; anything that
+/// does not have that exact shape is kept verbatim.
+fn label(name: &str) -> &str {
+    let name = name.strip_prefix('%').unwrap_or(name);
+    match name.rsplit_once('.') {
+        Some((head, index)) if !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()) => {
+            head
+        }
+        _ => name,
+    }
+}
+
+/// One circuit's interface, one line per argument / output / witness read.
+fn interface(c: &Compiled3) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    let inputs = serde_json::to_value(&c.ir.inputs).expect("inputs serialize");
+    for ti in inputs.as_array().expect("inputs are an array") {
+        let name = ti["name"].as_str().expect("input name is a string");
+        let ty = ti["type"].as_str().expect("input type is a string");
+        lines.push(format!("in  {}: {ty}", label(name)));
+    }
+
+    // The IR's output signature is types only; `Circuit3::output` records one
+    // `Output` disclosure per queued output, in the same order.
+    let out_labels: Vec<&str> = c
+        .disclosures
+        .iter()
+        .filter(|d| d.kind == DisclosureKind::Output)
+        .map(|d| d.label.as_str())
+        .collect();
+    assert_eq!(
+        out_labels.len(),
+        c.ir.outputs.len(),
+        "output disclosures do not match the IR output signature"
+    );
+    for (l, ty) in out_labels.iter().zip(&c.ir.outputs) {
+        lines.push(format!("out {l}: {}", type_name(ty)));
+    }
+
+    let mut witnesses = 0;
+    for instr in c.ir.instructions.iter() {
+        if let Instruction::PrivateInput { guard, val_t, .. } = instr {
+            witnesses += 1;
+            let guarded = if guard.is_some() { " (guarded)" } else { "" };
+            lines.push(format!("wit {}{guarded}", type_name(val_t)));
+        }
+    }
+    assert_eq!(
+        witnesses, c.witnesses,
+        "private-transcript reads do not match the recorded witness count"
+    );
+
+    lines
+}
+
+/// Longest-common-subsequence table of `a` and `b` (`lcs[i][j]` = length of
+/// the LCS of `a[i..]` and `b[j..]`), for the failure diff.
+fn lcs_table(a: &[&str], b: &[&str]) -> Vec<Vec<usize>> {
+    let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for i in (0..a.len()).rev() {
+        for j in (0..b.len()).rev() {
+            lcs[i][j] = if a[i] == b[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+    lcs
+}
+
+/// A unified-style diff: `-` expected, `+` actual, ` ` unchanged.
+fn diff(expected: &[&str], actual: &[&str]) -> String {
+    let lcs = lcs_table(expected, actual);
+    let (mut i, mut j) = (0, 0);
+    let mut out = String::new();
+    while i < expected.len() && j < actual.len() {
+        if expected[i] == actual[j] {
+            out.push_str(&format!("      {}\n", expected[i]));
+            i += 1;
+            j += 1;
+        } else if lcs[i + 1][j] >= lcs[i][j + 1] {
+            out.push_str(&format!("    - {}\n", expected[i]));
+            i += 1;
+        } else {
+            out.push_str(&format!("    + {}\n", actual[j]));
+            j += 1;
+        }
+    }
+    for line in &expected[i..] {
+        out.push_str(&format!("    - {line}\n"));
+    }
+    for line in &actual[j..] {
+        out.push_str(&format!("    + {line}\n"));
+    }
+    out
+}
+
+#[test]
+fn every_circuit_matches_its_frozen_interface() {
+    let circuits = circuits();
+    assert_eq!(
+        circuits.len(),
+        SNAPSHOT.len(),
+        "snapshot table covers {} circuits but {} are built — add the new \
+         circuit to SNAPSHOT (regenerate with the `print_interface_snapshot` \
+         test)",
+        SNAPSHOT.len(),
+        circuits.len()
+    );
+
+    let mut failures = Vec::new();
+    for ((name, build), (snap_name, snap)) in circuits.iter().zip(SNAPSHOT) {
+        assert_eq!(name, snap_name, "snapshot table out of order");
+        let expected: Vec<&str> = snap.lines().collect();
+        let actual = interface(&build());
+        let actual: Vec<&str> = actual.iter().map(String::as_str).collect();
+        if expected != actual {
+            failures.push(format!("  {name}:\n{}", diff(&expected, &actual)));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "circuit interface changed — argument order and types are the wire \
+         contract (they feed the communications commitment and the proof \
+         preimage), so any movement here breaks callers. `-` is the frozen \
+         interface, `+` what this build produces:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// The diff is the whole value of the instrument when it fires, so it gets
+/// its own check: a reorder, a rename and an insertion, all at once.
+#[test]
+fn diff_shows_reorders_renames_and_insertions() {
+    let expected = ["a", "b", "c", "d"];
+    let actual = ["b", "a", "c", "new", "d2"];
+    assert_eq!(
+        diff(&expected, &actual),
+        concat!(
+            "    - a\n",
+            "      b\n",
+            "    + a\n",
+            "      c\n",
+            "    - d\n",
+            "    + new\n",
+            "    + d2\n",
+        )
+    );
+}
+
+/// Regeneration helper: prints the SNAPSHOT table body.
+#[test]
+#[ignore = "regeneration helper, not a check"]
+fn print_interface_snapshot() {
+    for (name, build) in circuits() {
+        let lines = interface(&build());
+        assert!(
+            lines.iter().all(|l| !l.contains('"')),
+            "{name}: a label contains a quote — it cannot go in the table verbatim"
+        );
+        println!("    (\n        \"{name}\",\n        \"\\");
+        for line in lines {
+            println!("{line}");
+        }
+        println!("\",\n    ),");
+    }
+}

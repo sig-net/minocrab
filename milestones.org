@@ -298,7 +298,7 @@ principle: real types over macro rewriting — macros only generate
 impls/shims writable by hand. Zero circuit overhead throughout; every
 phase gated on interface snapshot + row_snapshot + all differential
 suites.
-- [ ] Phase 0: interface-snapshot test — ordered (label, type) of
+- [X] Phase 0: interface-snapshot test — ordered (label, type) of
       inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
 - [ ] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
       with .field() unwrap; native-Rust values accepted where possible.

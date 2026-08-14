@@ -1,6 +1,94 @@
 //! Shared test support. Not a test target (lives in a subdirectory).
+//!
+//! Compiled into every test binary that declares `mod support`, each of
+//! which uses only the part it needs — hence the blanket `dead_code`
+//! allowance.
+#![allow(dead_code)]
 
 use midnight_transient_crypto::proofs::ProofPreimage;
+
+use minocrab::v3::Compiled3;
+use minocrab_contracts::{
+    attest, erc20_vault, events, hashing, mint_tokens, serde_builtin, signet_contract, test_caller,
+    xcall, xcall_with_payment, xcontract_events,
+};
+
+/// A circuit under snapshot: its name and how to build it.
+pub type Circuit = (&'static str, fn() -> Compiled3);
+
+/// Every circuit the workspace builds, in snapshot order. Shared by the
+/// snapshot guards (`row_snapshot`, `interface_snapshot`) so both cover
+/// exactly the same set; their frozen tables stay independent.
+pub fn circuits() -> Vec<Circuit> {
+    macro_rules! c {
+        ($name:literal, $f:expr) => {
+            ($name, { $f } as fn() -> Compiled3)
+        };
+    }
+    vec![
+        c!("erc20_vault::initialize", || erc20_vault::initialize()),
+        c!("erc20_vault::deposit", || erc20_vault::deposit()),
+        c!("erc20_vault::claim", || erc20_vault::claim()),
+        c!("erc20_vault::approve_router", || erc20_vault::approve_router()),
+        c!("erc20_vault::withdraw", || erc20_vault::withdraw()),
+        c!("erc20_vault::complete_withdraw", || erc20_vault::complete_withdraw()),
+        c!("erc20_vault::refund", || erc20_vault::refund()),
+        c!("erc20_vault::swap", || erc20_vault::swap()),
+        c!("erc20_vault::complete_swap", || erc20_vault::complete_swap()),
+        c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
+        c!("signet_contract::respond", || signet_contract::respond()),
+        c!("signet_contract::respond_bidirectional", || {
+            signet_contract::respond_bidirectional()
+        }),
+        c!("attest::map_only", || attest::map_only()),
+        c!("attest::verify_only", || attest::verify_only()),
+        c!("attest::sha_verify", || attest::sha_verify()),
+        c!("attest::keccak_verify", || attest::keccak_verify()),
+        c!("events::base", || events::base()),
+        c!("events::emit_n(1)", || events::emit_n(1)),
+        c!("events::emit_n(2)", || events::emit_n(2)),
+        c!("events::emit_n(4)", || events::emit_n(4)),
+        c!("hashing::control(32)", || hashing::control(32)),
+        c!("hashing::control(64)", || hashing::control(64)),
+        c!("hashing::control(128)", || hashing::control(128)),
+        c!("hashing::control(256)", || hashing::control(256)),
+        c!("hashing::control(1024)", || hashing::control(1024)),
+        c!("hashing::persistent(32)", || hashing::persistent(32)),
+        c!("hashing::persistent(64)", || hashing::persistent(64)),
+        c!("hashing::persistent(128)", || hashing::persistent(128)),
+        c!("hashing::persistent(256)", || hashing::persistent(256)),
+        c!("hashing::persistent(1024)", || hashing::persistent(1024)),
+        c!("hashing::keccak(64)", || hashing::keccak(64)),
+        c!("hashing::keccak(128)", || hashing::keccak(128)),
+        c!("hashing::keccak(256)", || hashing::keccak(256)),
+        c!("hashing::transient(32)", || hashing::transient(32)),
+        c!("hashing::transient(256)", || hashing::transient(256)),
+        c!("hashing::transient(1024)", || hashing::transient(1024)),
+        c!("hashing::persistent_vec8", || hashing::persistent_vec8()),
+        c!("xcall::local_base", || xcall::local_base()),
+        c!("xcall::call_once", || xcall::call_once()),
+        c!("xcall::call_twice", || xcall::call_twice()),
+        c!("xcall::call_big", || xcall::call_big()),
+        c!("xcall::target_deposit", || xcall::target_deposit()),
+        c!("xcall::target_deposit_emit", || xcall::target_deposit_emit()),
+        c!("xcall::target_deposit_big", || xcall::target_deposit_big()),
+        c!("xcall_with_payment::call_once", || xcall_with_payment::call_once()),
+        c!("xcall_with_payment::request", || xcall_with_payment::request()),
+        c!("xcall_with_payment::notify", || xcall_with_payment::notify()),
+        c!("xcall_with_payment::pay", || xcall_with_payment::pay()),
+        c!("xcall_with_payment::confirm_request", || xcall_with_payment::confirm_request()),
+        c!("xcontract_events::deposit_via_vault", || xcontract_events::deposit_via_vault()),
+        c!("xcontract_events::token_deposit", || xcontract_events::token_deposit()),
+        c!("mint_tokens::mint_with_recipient_argument", || {
+            mint_tokens::mint_with_recipient_argument()
+        }),
+        c!("mint_tokens::mint_with_recipient_own_public_key", || {
+            mint_tokens::mint_with_recipient_own_public_key()
+        }),
+        c!("serde_builtin::check_roundtrip", || serde_builtin::check_roundtrip()),
+        c!("test_caller::initialise", || test_caller::initialise()),
+    ]
+}
 
 /// Dump a differential test's honest, corpus-verified preimage for the
 /// benchmark harness (crates/minocrab-bench): no-op unless
