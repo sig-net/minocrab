@@ -5,20 +5,22 @@
 //! records the request id.
 //!
 //! The target's `notify`/`pay` circuits are root-call coin-custody
-//! circuits (`receiveShielded` + `treasury.writeCoin`) with no
-//! cross-contract machinery — they belong to the remaining M4 stdlib work
-//! (coin receive), not M5, and are not rewritten here.
+//! circuits: `receiveShielded` + `treasury.writeCoin` (and for `pay` a
+//! `paidRequests.insert`), with no cross-contract machinery.
 
+use crate::common::{receive_shielded, write_coin_to_self};
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{cell_read, contract_call, emit, set_insert, ImpactElem, LedgerValue};
-use minocrab_std::v3::B32;
+use minocrab_std::v3::{ShieldedCoinInfo3, B32};
 
 /// Caller ledger: the sealed target reference.
 pub const TARGET: u8 = 0;
 
 /// Target ledger fields: treasury (0), requests (1), paidRequests (2).
+pub const TREASURY: u8 = 0;
 pub const REQUESTS: u8 = 1;
+pub const PAID_REQUESTS: u8 = 2;
 
 /// Constrain and disclose an already-declared `Bytes<32>` argument (all
 /// `arg` declarations must precede the first instruction).
@@ -68,6 +70,63 @@ pub fn request() -> Compiled3 {
     let request_id = b32_arg(&mut c, request_id, "requestId");
     let one = c.constant(1u64);
     call_target(&mut c, one, &[request_id.hi, request_id.lo]);
+    c.finish(true)
+}
+
+/// Declare a `ShieldedCoinInfo` argument's five limbs (nonce, color,
+/// value) — declarations only, so callers can declare all args first.
+fn declare_coin(
+    c: &mut Circuit3,
+) -> (B32<minocrab::Private>, B32<minocrab::Private>, Wire3<FieldT, minocrab::Private>) {
+    (
+        declare_b32(c, "coin_nonce"),
+        declare_b32(c, "coin_color"),
+        c.arg::<FieldT>("coin_value"),
+    )
+}
+
+/// Constrain and disclose a declared coin argument.
+fn coin_arg(
+    c: &mut Circuit3,
+    (nonce, color, value): (B32<minocrab::Private>, B32<minocrab::Private>, Wire3<FieldT, minocrab::Private>),
+) -> ShieldedCoinInfo3<Public> {
+    let nonce = b32_arg(c, nonce, "coin nonce");
+    let color = b32_arg(c, color, "coin color");
+    c.assert_bits(value, 128);
+    let value = c.disclose(value, "coin value");
+    ShieldedCoinInfo3 { nonce, color, value }
+}
+
+/// Target `export circuit notify(coin: ShieldedCoinInfo): []` —
+/// `receiveShielded(disclose(coin)); treasury.writeCoin(disclose(coin),
+/// right(kernel.self()))`. Root-call only (pinned limitation upstream).
+pub fn notify() -> Compiled3 {
+    let mut c = Circuit3::new();
+    let coin = declare_coin(&mut c);
+    let coin = coin_arg(&mut c, coin);
+    let one = c.constant(1u64);
+    receive_shielded(&mut c, one, &coin);
+    write_coin_to_self(&mut c, one, TREASURY, &coin);
+    c.finish(true)
+}
+
+/// Target `export circuit pay(requestId: Bytes<32>, coin:
+/// ShieldedCoinInfo): []` — `notify`'s custody body, then the blind
+/// `paidRequests.insert(disclose(requestId))`.
+pub fn pay() -> Compiled3 {
+    let mut c = Circuit3::new();
+    let request_id = declare_b32(&mut c, "requestId");
+    let coin = declare_coin(&mut c);
+    let request_id = b32_arg(&mut c, request_id, "requestId");
+    let coin = coin_arg(&mut c, coin);
+    let one = c.constant(1u64);
+    receive_shielded(&mut c, one, &coin);
+    write_coin_to_self(&mut c, one, TREASURY, &coin);
+    let elem = LedgerValue::bytes(
+        32,
+        vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
+    );
+    emit(&mut c, one, &set_insert(PAID_REQUESTS, &elem));
     c.finish(true)
 }
 

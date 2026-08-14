@@ -13,6 +13,7 @@ pub mod events;
 pub mod hashing;
 pub mod mint_tokens;
 pub mod serde_builtin;
+pub mod signet;
 pub mod test_caller;
 pub mod xcall;
 pub mod xcall_with_payment;

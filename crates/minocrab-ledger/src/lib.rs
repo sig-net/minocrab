@@ -197,6 +197,38 @@ pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
     ]
 }
 
+/// `Cell<QualifiedShieldedCoinInfo>.writeCoin(coin, recipient)` on the
+/// top-level field `index` (midnight-ledger.ss:567-583): the coin's
+/// Merkle-tree index is resolved by indexing the context's
+/// commitment-index map (context[1]) with the coin's commitment (from the
+/// stack) and concatenated onto the coin, writing the resulting
+/// QualifiedShieldedCoinInfo. `push key; dup 3; push cm; idxc [1, stack];
+/// push coin; swap 0; concatc 91; ins 1` — the leading idx (empty path)
+/// and trailing insc 0 are compactc's depth-1 suppressions; the `dup 3`
+/// reaches the context past the key push, the result slot, and effects.
+/// `cm` is the runtime coin commitment (`rt-coin-commit`, a `bytes<32>`);
+/// `coin` the 3-atom `[bytes<32>, bytes<32>, bytes<16>]` ShieldedCoinInfo.
+pub fn cell_write_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    let key = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(u64::from(index)))]);
+    vec![
+        push_cell(false, &key),
+        dup(3),
+        push_cell(false, cm),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: false,
+            path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+        }),
+        push_cell(false, coin),
+        ImpactOp::constant(&Op::Swap { n: 0 }),
+        ImpactOp::constant(&Op::Concat { cached: true, n: 91 }),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 1,
+        }),
+    ]
+}
+
 /// `map.insert(key, value)` on ledger field `index`:
 /// `idxp [field]; push key; pushs value; ins 1; insc 1`.
 pub fn map_insert(index: u8, key: &LedgerValue, value: &LedgerValue) -> Vec<ImpactOp> {
@@ -208,6 +240,17 @@ pub fn map_insert(index: u8, key: &LedgerValue, value: &LedgerValue) -> Vec<Impa
             cached: false,
             n: 1,
         }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+    ]
+}
+
+/// `map.remove(key)` on ledger field `index` (midnight-ledger.ss Map
+/// `remove`; claim.zkir:287-291): `idxp [field]; push key; rem; insc 1`.
+pub fn map_remove(index: u8, key: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        push_cell(false, key),
+        ImpactOp::constant(&Op::Rem { cached: false }),
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
     ]
 }
@@ -252,14 +295,28 @@ where
 // line refs per function).
 
 /// Mint one `public_input` gate per FAB limb of `atoms`; returns the wires
-/// plus the same wires packaged for a `popeq[c]` embed.
-fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
+/// plus the same wires packaged for a `popeq[c]` embed. `guard` is the
+/// branch condition for reads inside a conditional (compactc puts the SAME
+/// guard on the gates and the op's impact instructions — completeWithdraw
+/// .zkir:292-297); `None` for straight-line reads (guard printed as null).
+fn mint_read_with<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Option<Wire3<FieldT, V>>,
+    atoms: Vec<AlignmentAtom>,
+) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
     let limbs: usize = atoms.iter().map(atom_limbs).sum();
     let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
-        .map(|_| c.public_transcript_input::<FieldT>())
+        .map(|_| match guard {
+            Some(g) => c.public_transcript_input_guarded::<FieldT, V>(g),
+            None => c.public_transcript_input::<FieldT>(),
+        })
         .collect();
     let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
     (wires, value)
+}
+
+fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
+    mint_read_with::<Public>(c, None, atoms)
 }
 
 const U64_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 8 };
@@ -412,6 +469,95 @@ pub fn kernel_self<V: Visibility + Copy>(
     guard: Wire3<FieldT, V>,
 ) -> [Wire3<FieldT, Public>; 2] {
     let (wires, value) = mint_read(c, vec![AlignmentAtom::Bytes { length: 32 }]);
+    let idx_context = ImpactOp::constant(&Op::Idx {
+        cached: true,
+        push_path: false,
+        path: vec![Key::Value(field_key(0))].into(),
+    });
+    emit(c, guard, &[dup(2), idx_context, popeq(true, &value)]);
+    [wires[0], wires[1]]
+}
+
+// --- guarded reads ----------------------------------------------------------
+//
+// A read inside a conditional carries the branch condition as the guard on
+// BOTH its public_input gates and its impact instructions
+// (completeWithdraw.zkir:292-297 — refundCommitment.lookup under the
+// !succeeded branch). A guarded-off read yields the value type's default
+// and does not consume the transcript (ir_vm.rs:348-366); asserts inside
+// the branch are the caller's job (`assert(select(guard, cond, 1))`).
+// Shapes are identical to the unguarded variants above; the first fetch of
+// a field is still the uncached idx even when it happens inside a branch
+// (completeWithdraw reads field 9 first at :295, `0x50` under the guard).
+
+/// Guarded [`cell_read`].
+pub fn cell_read_guarded<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    index: u8,
+    atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
+    let (wires, value) = mint_read_with(c, Some(guard), atoms);
+    emit(c, guard, &[dup(0), idx_field(index), popeq(false, &value)]);
+    wires
+}
+
+/// Guarded [`counter_read`].
+pub fn counter_read_guarded<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    index: u8,
+) -> Wire3<FieldT, Public> {
+    let (wires, value) = mint_read_with(c, Some(guard), vec![U64_ATOM]);
+    emit(c, guard, &[dup(0), idx_field(index), popeq(true, &value)]);
+    wires[0]
+}
+
+/// Guarded [`map_member`].
+pub fn map_member_guarded<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    index: u8,
+    key: &LedgerValue,
+) -> Wire3<FieldT, Public> {
+    let (wires, value) = mint_read_with(c, Some(guard), vec![BOOL_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            push_cell(false, key),
+            ImpactOp::constant(&Op::Member),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// Guarded [`map_lookup`].
+pub fn map_lookup_guarded<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    index: u8,
+    key: &LedgerValue,
+    value_atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
+    let (wires, value) = mint_read_with(c, Some(guard), value_atoms);
+    emit(
+        c,
+        guard,
+        &[dup(0), idx_field(index), idx_key(key), popeq(false, &value)],
+    );
+    wires
+}
+
+/// Guarded [`kernel_self`].
+pub fn kernel_self_guarded<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+) -> [Wire3<FieldT, Public>; 2] {
+    let (wires, value) = mint_read_with(c, Some(guard), vec![AlignmentAtom::Bytes { length: 32 }]);
     let idx_context = ImpactOp::constant(&Op::Idx {
         cached: true,
         push_path: false,
@@ -873,6 +1019,92 @@ mod tests {
         assert_eq!(imms(&ours[5]), vec![Fr::from(0x17u64), Fr::from(0xa0u64)]);
         assert_eq!(imms(&ours[6]), vec![Fr::from(0x10u64), Fr::from(0u64)]);
         assert_eq!(imms(&ours[7]), vec![Fr::from(0xa2u64)]);
+    }
+
+    /// `map_remove` against real Op encodings and the claim.zkir annotated
+    /// stream (:287-291): idxp = [0x70, 1, 1, 0], rem = 0x19, insc 1 = 0xa1.
+    #[test]
+    fn map_remove_matches_field_repr() {
+        let key = LedgerValue::bytes(
+            32,
+            vec![ImpactElem::Imm(Fr::from(1u64)), ImpactElem::Imm(Fr::from(2u64))],
+        );
+        let ops = map_remove(0, &key);
+        assert_eq!(ops.len(), 4);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![Fr::from(0x70u64), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+        assert_eq!(imms(&ops[2]), repr(&Op::Rem { cached: false }));
+        assert_eq!(imms(&ops[2]), vec![Fr::from(0x19u64)]);
+        assert_eq!(imms(&ops[3]), vec![Fr::from(0xa1u64)]);
+    }
+
+    /// `cell_write_coin` against real Op encodings and the notify.zkir
+    /// annotated stream: push field key = [0x10, 1, 1, 1, 0], dup 3 =
+    /// 0x33, idxc [1, stack] = [0x61, 1, 1, 1, −1] (opcode = 0x60 |
+    /// (path_len − 1), Key::Stack = −1), concatc 91 = [0x17, 0x5b],
+    /// ins 1 = 0x91.
+    #[test]
+    fn cell_write_coin_matches_field_repr() {
+        let cm = LedgerValue::bytes(
+            32,
+            vec![ImpactElem::Imm(Fr::from(3u64)), ImpactElem::Imm(Fr::from(4u64))],
+        );
+        let coin = LedgerValue::new(
+            vec![
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Bytes { length: 32 },
+                AlignmentAtom::Bytes { length: 16 },
+            ],
+            vec![
+                ImpactElem::Imm(Fr::from(5u64)),
+                ImpactElem::Imm(Fr::from(6u64)),
+                ImpactElem::Imm(Fr::from(7u64)),
+                ImpactElem::Imm(Fr::from(8u64)),
+                ImpactElem::Imm(Fr::from(9u64)),
+            ],
+        );
+        let ops = cell_write_coin(0, &cm, &coin);
+        assert_eq!(ops.len(), 8);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![Fr::from(0x10u64), 1u64.into(), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+        assert_eq!(imms(&ops[1]), vec![Fr::from(0x33u64)]);
+        assert_eq!(
+            imms(&ops[3]),
+            repr(&Op::Idx {
+                cached: true,
+                push_path: false,
+                path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+            })
+        );
+        assert_eq!(
+            imms(&ops[3]),
+            vec![
+                Fr::from(0x61u64),
+                1u64.into(),
+                1u64.into(),
+                1u64.into(),
+                Fr::from(0u64) - Fr::from(1u64),
+            ]
+        );
+        // push coin: [0x10, Cell tag, 3 atoms, 0x20, 0x20, 0x10, limbs…]
+        assert_eq!(
+            imms(&ops[4])[..6],
+            [
+                Fr::from(0x10u64),
+                1u64.into(),
+                3u64.into(),
+                0x20u64.into(),
+                0x20u64.into(),
+                0x10u64.into(),
+            ]
+        );
+        assert_eq!(imms(&ops[5]), repr(&Op::Swap { n: 0 }));
+        assert_eq!(imms(&ops[6]), vec![Fr::from(0x17u64), Fr::from(0x5bu64)]);
+        assert_eq!(imms(&ops[7]), vec![Fr::from(0x91u64)]);
     }
 
     /// `set_insert` against real Op encodings (depositViaVault.zkir:

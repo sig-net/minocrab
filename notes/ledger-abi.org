@@ -541,11 +541,107 @@ rejects agree on flag=2 and nonzero padding). With these, EVERY
 non-cross-contract experiment in signet-midnight-experiments is
 differential-green.
 
-Still to build here: Map member/lookup differentials (shapes exist,
-no corpus circuit isolates them — first exercised by erc20-vault
-deposit/claim), Map rem, MerkleTree ops, conditional (guarded)
-reads, and the ledger-declaration DSL that assigns field indices and
-picks op sequences automatically.
+COIN CUSTODY (added 2026-08-14, M6 session): =receiveShielded= is
+in-circuit just coinCommitment + claimZswapCoinReceive —
+=createZswapOutput= is a *Void-returning witness native*
+(midnight-natives.ss:113), off-circuit only, contributing nothing to
+the ZKIR (and no private_transcript entry either).
+=Cell<QualifiedShieldedCoinInfo>.writeCoin(coin, recipient)=
+(midnight-ledger.ss:567-583) = a fresh kernel.self read + a second
+coinCommitment (rt-coin-commit; compactc emits unfolded cond_selects
+for the Either arms — PI-irrelevant, we skip them) + minocrab-ledger
+=cell_write_coin=: =push key; dup 3; push cm; idxc [1, stack]; push
+coin(3-atom b32/b32/b16); swap 0; concatc 91; ins 1= — the mt_index
+comes from indexing the CONTEXT's commitment-index map (context[1])
+by the commitment taken from the stack; it never enters the circuit.
+Op::Idx opcode encodes path length: =base | (len-1)=, so the 2-key
+path is 0x61; =Key::Stack= reprs as −1; an EMPTY-path Idx emits
+NOTHING (ops.rs:461-525) — that's the depth-1 idxp suppression.
+Compositions live in minocrab-contracts::common (=receive_shielded=,
+=write_coin_to_self=). ACCEPTANCE: xcall-with-payment notify + pay
+call-compatible incl. a full tamper sweep — the ENTIRE
+xcall-with-payment experiment is now differential-green, closing the
+M4 coin-receive leftover. (Also spotted for Map.remove: =Op::Rem=
+exists, 0x19 uncached / 0x1a cached.)
+
+MAP REMOVE + GUARDED READS (added 2026-08-14, M6 session):
+=map_remove= = =idxp [field]; push key; rem (0x19); insc 1=
+(midnight-ledger.ss Map remove; claim.zkir:287-291 — =Op::Rem=
+uncached 0x19 / cached 0x1a). Guarded (in-branch) reads: the branch
+condition rides as the guard on BOTH the read's public_input gates
+and its impact instructions (completeWithdraw.zkir:292-297); a
+guarded-off read yields the type's default and skips the transcript
+(ir_vm.rs:348-366). In-branch witnesses use guarded private_input;
+in-branch asserts are =assert(select(guard, cond, 1))= (cond_select
+pairs at :300-304). First-access-uncached is per-FIELD, orthogonal
+to branches (field 9's first read is 0x50 inside the branch).
+minocrab-ledger: =map_remove= + =_guarded= variants of cell_read/
+counter_read/map_member/map_lookup/kernel_self (the frontend already
+had public_transcript_input_guarded / witness_guarded; the sim
+handles guards).
+
+SIGNET MODULE + VAULT DEPOSIT (added 2026-08-14, M6 session):
+minocrab-contracts::signet ports the @sig-net/midnight module's
+in-circuit pieces: SignBidirectionalEvent (FAB layout confirmed
+against claim.zkir:287 — 24 atoms / 33 limbs for the vault's
+<EvmType2TxParams<2,0,0>,34,34> instantiation; access lists fixed
+empty), calculateRequestId (keccak256 of the record in its FAB
+alignment — off-circuit twin: keccak over
+ValueReprAlignedValue(av).binary_repr), the V1 notification
+(Bytes<128> payload = caller ‖ depth ‖ path[4] ‖ zeros),
+calculateSignetAttestationDigest + verifyRespondBidirectionalEvent
+(reverseBytes32 → scalars → secp256k1EcdsaVerify), and the ABI word
+utilities (evmAddressAbiWord/numericAbiWord/abiWordToUint128 +
+slice<20> low-bytes reader). Enums all lower to their 0 member.
+ACCEPTANCE: erc20-vault =deposit= differential-green incl. full
+tamper sweep + guard rejections (not-initialized / zero erc20 / zero
+amount / zero gasLimit / keyVersion 0 / request-already-exists).
+deposit's PI contract (read order): initialized(4), vaultEvm(5),
+chainId(6), requestNonce(3), kernel.self, caip2(7), member(0),
+increment(3), insert(0), signetSigner(1), kernel.self, claim. Cell
+reads popeq-uncached, Counter reads popeqc; private transcript =
+[sk hi, sk lo, cc-rand, ep hi, ep lo].
+
+VAULT COMPLETE (2026-08-14, M6 session): all nine erc20-vault
+circuits differential-green (minocrab-contracts tests/
+erc20_vault_differential.rs, 30 tests). Decoded shapes worth
+keeping:
+- Secp256k1Point cell read = ONE typed public_input + =encode= →
+  5 limbs embedded in an uncached popeq (claim.zkir:29-33);
+  common::cell_read_point.
+- coin burn (sendImmediateShielded to shieldedBurnAddress at full
+  value, withdraw.zkir:185-209): compactc FOLDS the change branch
+  (value − value ≡ 0) and the left-recipient auto-receive; what
+  remains is kernel.self + claimZswapNullifier(coinNullifier cn[v1],
+  dataType 0, data self) + nonce evolution + spend claim of the
+  output committed to left(default). Nonce evolution lowering:
+  degradeToTransient(Bytes<32>) takes ONLY the low limb;
+  upgradeFromTransient = [hi: literal 0, lo: hash mod 2^248]
+  (quotient dropped) — mirror this off-circuit or digests diverge.
+- mint recipients: dynamic Maybe/Either recipient (claim) keeps the
+  auto-receive as a REAL branch — self read guarded by !is_left, the
+  receive claim by !is_left && right==self, and ownPublicKey's
+  witnesses guarded by !is_some (consumed only when the branch runs).
+  Static left(pk) recipients fold everything (mint_tokens,
+  completeWithdraw's refund mint).
+- in-branch semantics: guarded private_input (sk/ownPk), guarded
+  public_input + ops for reads, asserts as assert(select(guard,
+  cond, 1)); when a guard is off, the ops vanish from the REAL
+  transcript and the artifact skips their PIs (pi_skips), so
+  reference preimages include only the taken branch's ops/outputs/
+  witnesses. refund routes on a DISCLOSED member(9) bool with
+  complementary guards over two fully-guarded blocks.
+- map ops are always-uncached idx/idxp regardless of prior access
+  (member then lookup then rem on the same field: 0x50/0x50/0x70).
+- settle-circuit PI contract: reads = initialized, mpcResponseKey,
+  pending-marker member, event lookup, [branch reads], mint self
+  read(s); witnesses = [sk, ownPk] as consumed.
+
+Still to build here: MerkleTree ops and the ledger-declaration DSL
+that assigns field indices and picks op sequences automatically.
+For M6 proper: the Signet singleton's own circuits, then the
+benchmark harness (head-to-head RAM / proving time / cost
+breakdowns, single-command reproducible).
 
 CROSS-CONTRACT CALLS (M5, decoded 2026-08-14 from
 desugar-contract-calls.ss + midnight-ledger.ss:195-215 + the xcall /

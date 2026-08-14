@@ -142,12 +142,29 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       (both), serde-builtin (checkRoundtrip). Plus test-caller-contract
       initialise and erc20-vault initialize (the benchmark target's
       setup circuit), each with reject-agreement tests. M5 done: the
-      xcall/xcontract-events/xcall-with-payment experiments are all
-      differential-green except notify/pay (receiveShielded — the
-      remaining stdlib coin-receive port, blocked here not on M5).
+      xcall/xcontract-events/xcall-with-payment experiments are ALL
+      differential-green — notify/pay landed 2026-08-14 (M6 session)
+      via the receiveShielded + writeCoin ports (createZswapOutput is a
+      Void witness native, nothing in-circuit; minocrab-ledger
+      cell_write_coin; compositions in minocrab-contracts::common).
       REMAINING rewrites: Signet.compact, the rest of test-caller and
       of erc20-vault (deposit/claim/withdraw… also need the event-map
-      composite + guarded reads), xcall-with-payment notify/pay.)
+      composite + guarded reads).
+      M6 session 2026-08-14: ALL NINE erc20-vault circuits
+      differential-green (initialize, deposit, claim, approveRouter,
+      withdraw, completeWithdraw, refund, swap, completeSwap) — every
+      circuit with guard-rejection agreement and (deposit/claim/
+      withdraw/completeWithdraw/refund/completeSwap) full tamper
+      sweeps, multi-scenario where circuits branch (claim's four
+      recipient shapes, completeWithdraw success/refund, refund's two
+      routes, completeSwap exact-spend). Built on: the Signet-module
+      port (minocrab-contracts::signet), map_remove + guarded
+      reads/witnesses/asserts, the coin ports (receiveShielded, burn
+      via sendImmediateShielded's folded form, coinNullifier,
+      nonce evolution, dynamic + static-left + guarded mints).
+      REMAINING for the M6 "both contracts" bullet: the Signet
+      singleton's own circuits (Signet.compact / midnight-integration),
+      then the benchmark harness.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 
 * M5 — Cross-contract calling
@@ -171,8 +188,8 @@ deposit/depositEmit/depositBig; xcontract-events depositViaVault (the
 return-value path: result witnesses bound by the comm commitment) + token
 deposit; xcall-with-payment caller callOnce/request + target confirmRequest.
 NOT here: xcall-with-payment's notify/pay — root-call coin-custody circuits
-(receiveShielded), no cross-contract machinery; they belong to the remaining
-M4 stdlib coin work.
+(receiveShielded), no cross-contract machinery; they belonged to the M4
+stdlib coin work and landed 2026-08-14 (M6 session, also green).
 
 * M6 — Baseline benchmark: cross-chain deposit/withdrawal
 Benchmark the sig-net cross-chain deposit and withdrawal contracts under

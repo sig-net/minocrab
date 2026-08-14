@@ -165,6 +165,19 @@ impl<V: Vis3> BytesN<V> {
         BytesN { len, limbs }
     }
 
+    /// A `Bytes<N>` literal (N > 31) as constant limbs — bytes given in
+    /// string order (byte 0 first), packed into FAB slot order.
+    pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> BytesN<V> {
+        let mut limbs: Vec<Wire3<FieldT, V>> = bytes
+            .chunks(31)
+            .map(|chunk| {
+                V::from_public(c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit")))
+            })
+            .collect();
+        limbs.reverse();
+        BytesN::new(bytes.len(), limbs)
+    }
+
     /// Constrain a `Bytes<N>` entering the circuit (8·leftover bits, then
     /// 248 per full limb).
     pub fn constrain_input(&self, c: &mut Circuit3) {
@@ -367,6 +380,21 @@ pub fn own_public_key(c: &mut Circuit3) -> B32<Private> {
     pk
 }
 
+/// [`own_public_key`] inside a conditional: the witnesses carry the branch
+/// guard (false ⇒ default, private transcript not consumed) while the bit
+/// constraints stay unguarded (claim.zkir:436-439).
+pub fn own_public_key_guarded<V: Vis3>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+) -> B32<Private> {
+    let pk = B32 {
+        hi: c.witness_guarded::<FieldT, V>(guard),
+        lo: c.witness_guarded::<FieldT, V>(guard),
+    };
+    pk.constrain_input(c);
+    pk
+}
+
 /// A `bytes<n>` (n ≤ 31) literal as a single constant limb.
 fn short_literal<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Wire3<FieldT, V> {
     assert!(bytes.len() <= 31);
@@ -419,6 +447,42 @@ pub struct CoinRecipient<V: Vis3> {
     pub is_left: Wire3<FieldT, V>,
     pub left: B32<V>,
     pub right: B32<V>,
+}
+
+/// `circuit coinNullifier(coin, addr): Bytes<32>` — the CoinPreimage hash
+/// with the `midnight:zswap-cn[v1]` domain and a ContractAddress
+/// (`dataType` = 0), as `sendShielded` computes for the spender
+/// (withdraw.zkir:190).
+pub fn coin_nullifier_contract<V: Vis3>(
+    c: &mut Circuit3,
+    coin: &ShieldedCoinInfo3<V>,
+    addr: &B32<V>,
+) -> B32<V> {
+    let prefix = short_literal::<V>(c, b"midnight:zswap-cn[v1]");
+    let zero = V::from_public(c.constant(0u64));
+    let alignment = Alignment(vec![
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 21 }),
+        b32_atom(),
+        b32_atom(),
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 16 }),
+        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
+        b32_atom(),
+    ]);
+    let digest = c.persistent_hash(
+        alignment,
+        &[
+            prefix.erase(),
+            coin.nonce.hi.erase(),
+            coin.nonce.lo.erase(),
+            coin.color.hi.erase(),
+            coin.color.lo.erase(),
+            coin.value.erase(),
+            zero.erase(),
+            addr.hi.erase(),
+            addr.lo.erase(),
+        ],
+    );
+    B32::from_typed(c, digest)
 }
 
 /// `circuit coinCommitment(coin, recipient): Bytes<32>` —
