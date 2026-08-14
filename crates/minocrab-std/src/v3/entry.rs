@@ -28,7 +28,7 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{AlignmentAtom, Private, Public};
 
-use super::{Bool, Bytes, BytesN, Uint, B32};
+use super::{Bool, Bytes, BytesN, Either, Maybe, Uint, B32};
 
 // ---- argument paths ---------------------------------------------------------
 
@@ -205,6 +205,92 @@ impl<const N: usize> CircuitArg for BytesN<Private, N> {
 
     fn constrain(&self, c: &mut Circuit3) {
         self.constrain_input(c);
+    }
+}
+
+/// Compact's `Vector<N, T>`: `N` copies of `T` back to back, each element
+/// labelled with its index (`words_0`, `words_1`, ...).
+impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
+    const SLOTS: usize = T::SLOTS * N;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        for _ in 0..N {
+            T::push_atoms(atoms);
+        }
+    }
+
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        // Built through a Vec rather than `array::from_fn`, whose call order
+        // is not part of its contract: here the order IS the wire layout.
+        let mut elements = Vec::with_capacity(N);
+        for i in 0..N {
+            elements.push(T::declare(c, &path.index(i)));
+        }
+        match <[T; N]>::try_from(elements) {
+            Ok(array) => array,
+            Err(_) => unreachable!("N elements were pushed"),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        for element in self {
+            element.constrain(c);
+        }
+    }
+}
+
+/// Compact's `Maybe<T>`: the `is_some` tag followed by the value, which
+/// occupies its slots whether or not the tag is set.
+///
+/// The tag takes the `_is_some` suffix and the value keeps the parent's
+/// path — a `Maybe` adds a slot, not a level (`recipient_is_some` then
+/// `recipient_...`), which is how the hand-written `claim` labels its
+/// `Maybe<Either<..>>` recipient.
+impl<T: CircuitArg> CircuitArg for Maybe<T, Private> {
+    const SLOTS: usize = <Bool<Private> as CircuitArg>::SLOTS + T::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <Bool<Private> as CircuitArg>::push_atoms(atoms);
+        T::push_atoms(atoms);
+    }
+
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        Maybe {
+            is_some: CircuitArg::declare(c, &path.suffix("is_some")),
+            value: T::declare(c, path),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.is_some.constrain(c);
+        self.value.constrain(c);
+    }
+}
+
+/// Compact's `Either<A, B>`: the `is_left` tag followed by both arms, each
+/// of which occupies its slots whichever way the tag points
+/// (`recipient_is_left`, `recipient_left_...`, `recipient_right_...`).
+impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
+    const SLOTS: usize = <Bool<Private> as CircuitArg>::SLOTS + A::SLOTS + B::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <Bool<Private> as CircuitArg>::push_atoms(atoms);
+        A::push_atoms(atoms);
+        B::push_atoms(atoms);
+    }
+
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        Either {
+            is_left: CircuitArg::declare(c, &path.suffix("is_left")),
+            left: A::declare(c, &path.field("left")),
+            right: B::declare(c, &path.field("right")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.is_left.constrain(c);
+        self.left.constrain(c);
+        self.right.constrain(c);
     }
 }
 

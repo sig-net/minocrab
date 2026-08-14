@@ -792,6 +792,34 @@ pub struct CoinRecipient<V: Vis3> {
     pub right: B32<V>,
 }
 
+// ---- Compact's generic sum shapes -------------------------------------------
+//
+// Both are plain structs in Compact — the tag is a `Boolean` field and BOTH
+// arms are always present on the wire, so they flatten like any other struct
+// and a `Maybe`/`Either` argument costs its tag plus every arm (see the
+// `CircuitArg` impls for the slot layout). Parameter order is the argument
+// convention: the payload types first, the visibility last and defaulted, so
+// a signature reads like its Compact source.
+
+/// `struct Maybe<T> { is_some: Boolean; value: T; }` — the v3 twin of
+/// [`crate::data::Maybe`]. `value` is meaningful only when `is_some` is 1,
+/// but it occupies its slots either way.
+#[derive(Clone, Copy)]
+pub struct Maybe<T, V: Vis3 = Private> {
+    pub is_some: Bool<V>,
+    pub value: T,
+}
+
+/// `struct Either<A, B> { is_left: Boolean; left: A; right: B; }` — the v3
+/// twin of [`crate::data::Either`]. Both arms occupy their slots; `is_left`
+/// says which one is meaningful.
+#[derive(Clone, Copy)]
+pub struct Either<A, B, V: Vis3 = Private> {
+    pub is_left: Bool<V>,
+    pub left: A,
+    pub right: B,
+}
+
 /// `circuit coinNullifier(coin, addr): Bytes<32>` — the CoinPreimage hash
 /// with the `midnight:zswap-cn[v1]` domain and a ContractAddress
 /// (`dataType` = 0), as `sendShielded` computes for the spender

@@ -8,7 +8,8 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::{
-    entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitArg, CircuitArgs, Uint, B32,
+    entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitArg, CircuitArgs, Either, Maybe, Uint,
+    B32,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -159,6 +160,100 @@ fn atoms_describe_exactly_the_declared_slots() {
     );
     // Atoms are per Compact value, slots are per native wire.
     assert_eq!(DemoArgs::SLOTS, 11);
+}
+
+// ---- arrays, Maybe and Either -----------------------------------------------
+
+/// The shapes `claim` needs: an indexed vector, and a `Maybe` of an
+/// `Either`, where every arm occupies its slots whichever way the tags
+/// point.
+struct ShapeArgs {
+    words: [Uint<64>; 3],
+    recipient: Maybe<Either<B32<Private>, Bytes<20>>>,
+}
+
+type Recipient = Maybe<Either<B32<Private>, Bytes<20>>>;
+
+impl CircuitArgs for ShapeArgs {
+    const SLOTS: usize = <[Uint<64>; 3] as CircuitArg>::SLOTS + <Recipient as CircuitArg>::SLOTS;
+
+    fn declare(c: &mut Circuit3) -> Self {
+        ShapeArgs {
+            words: CircuitArg::declare(c, &ArgPath::root("words")),
+            recipient: CircuitArg::declare(c, &ArgPath::root("recipient")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.words.constrain(c);
+        self.recipient.constrain(c);
+    }
+
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        <[Uint<64>; 3] as CircuitArg>::push_atoms(&mut atoms);
+        <Recipient as CircuitArg>::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
+#[test]
+fn arrays_maybe_and_either_flatten_like_the_hand_written_block() {
+    let typed = entry(|c, a: ShapeArgs| {
+        let sum = c.add(a.words[0].field(), a.words[2].field());
+        c.assert_bits(sum, 65);
+        let tag = c.mul(a.recipient.is_some.field(), a.recipient.value.is_left.field());
+        c.assert(tag);
+        let arm = c.add(a.recipient.value.left.lo, a.recipient.value.right.field());
+        c.assert_bits(arm, 249);
+    });
+
+    let hand = {
+        let mut c = Circuit3::new();
+        let words: Vec<Wire3<FieldT, Private>> =
+            (0..3).map(|i| c.arg(&format!("words_{i}"))).collect();
+        let is_some: Wire3<FieldT, Private> = c.arg("recipient_is_some");
+        let is_left: Wire3<FieldT, Private> = c.arg("recipient_is_left");
+        let left_hi: Wire3<FieldT, Private> = c.arg("recipient_left_hi");
+        let left_lo: Wire3<FieldT, Private> = c.arg("recipient_left_lo");
+        let right: Wire3<FieldT, Private> = c.arg("recipient_right");
+        for word in &words {
+            c.assert_bits(*word, 64);
+        }
+        c.assert_boolean(is_some);
+        c.assert_boolean(is_left);
+        c.assert_bits(left_hi, 8);
+        c.assert_bits(left_lo, 248);
+        c.assert_bits(right, 160);
+
+        let sum = c.add(words[0], words[2]);
+        c.assert_bits(sum, 65);
+        let tag = c.mul(is_some, is_left);
+        c.assert(tag);
+        let arm = c.add(left_lo, right);
+        c.assert_bits(arm, 249);
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(&hand), zkir(&typed));
+}
+
+#[test]
+fn a_tag_costs_a_slot_and_every_arm_costs_its_own() {
+    let bytes = |length| AlignmentAtom::Bytes { length };
+    assert_eq!(
+        ShapeArgs::atoms(),
+        vec![
+            bytes(8),  // words: Vector<3, Uint<64>>
+            bytes(8),
+            bytes(8),
+            bytes(1),  // recipient.is_some
+            bytes(1),  // recipient.value.is_left
+            bytes(32), // recipient.value.left: Bytes<32>
+            bytes(20), // recipient.value.right: Bytes<20>
+        ]
+    );
+    assert_eq!(<ShapeArgs as CircuitArgs>::SLOTS, 8);
 }
 
 // ---- the laws entry() enforces ---------------------------------------------

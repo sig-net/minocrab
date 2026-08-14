@@ -306,7 +306,7 @@ suites.
       ArgPath naming, CircuitArgs, entry(), CircuitOut (Public-only ⇒
       returning is disclosing); hand impls; port sign_bidirectional +
       deposit with zero movement.
-- [ ] Phase 3: crates/minocrab-macros — #[derive(CircuitArg)]; port
+- [X] Phase 3: crates/minocrab-macros — #[derive(CircuitArg)]; port
       withdraw + claim (Maybe<Either<..>> flattening).
 - [ ] Phase 4: #[circuit] attribute (thinness rule: expansion contains
       no Circuit3 call); re-port the phase-2/3 circuits.

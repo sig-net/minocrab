@@ -378,3 +378,96 @@ whitespace-and-reborrow-normalized diff of deposit's body: the only other
 hunks are the argument block itself and `c.finish(true)` → the closing
 `})`. Zero movement everywhere: interface_snapshot, row_snapshot and all
 13 differential suites bit-identical/green.
+** Phase 3 — #[derive(CircuitArg)] (crates/minocrab-macros)
+A proc-macro crate depending on nothing of ours (syn 2 + quote +
+proc-macro2, all three already in Cargo.lock transitively, so the lock
+gained no new package but minocrab-macros itself). One derive on a
+named-field struct emits BOTH impls:
+- CircuitArg — SLOTS as `0usize + <FieldTy>::SLOTS + ..`, push_atoms /
+  constrain in field order, declare with
+  `ArgPath::field(path, "<camelCase>")` per field;
+- CircuitArgs — the same fields at the root (`ArgPath::root`), with
+  constrain and atoms DELEGATED to the CircuitArg impl so the two cannot
+  drift. Consequence (deliberate): a derived struct is usable both as a
+  circuit's whole parameter list and as one nested argument; the phase-2
+  ports' two struct kinds now need only one derive.
+Naming: mechanical snake_case -> lowerCamelCase (`split('_')`, first
+segment verbatim, later segments capitalised — `max_fee_per_gas` ->
+`maxFeePerGas`, `big_r` -> `bigR`, `erc20_address` -> `erc20Address`;
+raw identifiers lose their `r#`). `#[arg(name = "…")]` overrides one
+field's segment; anything else inside `#[arg(..)]`, an `#[arg]` on the
+struct itself, a tuple struct, or an enum is a compile error.
+Where the re-export landed (the design said "re-exported from minocrab
+behind a default-on macros feature"): the core lives in minocrab-std, so
+the derive is re-exported as `minocrab_std::v3::CircuitArg` — the SAME
+name as the trait it implements (trait in the type namespace, derive in
+the macro namespace, as `serde::Serialize` does), so the `use` the ported
+files already had brings both. Feature: minocrab-std's default-on
+`macros` (`dep:minocrab-macros`, optional). The expansion names exactly
+two upstream types (Circuit3, AlignmentAtom); they come from a
+`#[doc(hidden)] pub mod minocrab_std::v3::__private`, so generated code
+needs only `minocrab_std` in scope and the macro crate stays a leaf.
+THINNESS RULE, enforced two ways: a unit test in the macro crate asserts
+the expansion's token string contains no method call on the circuit
+(`"c ."`) and no `Circuit3 ::` associated call; and the real gate,
+crates/minocrab-std/tests/v3_derive.rs, builds a derived argument list
+through entry() and compares serialized ZKIR byte-for-byte against (a) the
+hand-written impl and (b) a raw `c.arg` block spelling every label out —
+which pins the camelCase rule and the `#[arg(name)]` override, since
+Builder3 names every value `%label.index`. No trybuild/macrotest golden:
+neither is in the lock file and neither is worth a new dev-dependency
+when byte-identical ZKIR is the stronger statement.
+** Phase 3 — arrays / Maybe / Either
+v3 had NO Maybe/Either at all: data.rs's are v2 (Bundle<V>-based, over
+`Circuit`), and the v3 circuits hand-flattened the shapes into raw wires
+(claim's five recipient slots; CoinRecipient is the hand-rolled Either).
+So the phase added the two argument-side types to v3.rs next to
+CoinRecipient — `Maybe<T, V: Vis3 = Private> { is_some: Bool<V>, value: T }`
+and `Either<A, B, V: Vis3 = Private> { is_left: Bool<V>, left: A,
+right: B }` — payload-first with the visibility defaulted, the parameter
+order the design chose for argument types (Uint<BITS, V = Private>).
+They are NOT in the crate-root re-export list, which still exports v2's
+data::{Maybe, Either}.
+Slot layouts (entry.rs), all confirmed against claim's frozen labels:
+- `[T; N]`: N * T::SLOTS, element i under `path.index(i)`. declare()
+  builds through a Vec rather than `array::from_fn`, whose call order is
+  not part of its contract — here the order IS the wire layout.
+- `Maybe<T>`: 1 + T::SLOTS. The tag takes `_is_some` and the value keeps
+  the PARENT's path: a Maybe adds a slot, not a level
+  (`recipient_is_some`, then straight to `recipient_is_left`). That is
+  what the hand-written claim does, and Compact's `value` field name
+  never appeared in a label.
+- `Either<A, B>`: 1 + A::SLOTS + B::SLOTS — `_is_left`, then `_left…`,
+  then `_right…`. Both arms occupy their slots whichever way the tag
+  points; that is Compact's own layout, not a padding choice of ours.
+Atoms follow the same order (bytes 1 for each tag), since both are plain
+structs in Compact.
+** Phase 3 — the two ports (withdraw, claim)
+withdraw: WithdrawArgs { evmNonce: Uint<64>, keyVersion: Uint<8>,
+withdrawRequest: WithdrawRequest { erc20Address: Bytes<20>, amount:
+Uint<128>, destEvmAddress: Bytes<20> }, coin: ShieldedCoinArg { nonce:
+B32, color: B32, value: Uint<128> } }. ShieldedCoinArg is a local typed
+twin of minocrab_std::v3::ShieldedCoinInfo3, whose `value` is a raw wire
+(the body handles the coin after disclosing it) and which therefore
+cannot carry the 128-bit input constraint in its type. Every label is
+mechanical; no escape hatch.
+claim: ClaimArgs { requestId: B32, #[arg(name = "respond")]
+respondBidirectionalEvent: RespondSignature { bigR: BigR { x, y }, s,
+recoveryId: Uint<8> }, serializedOutput: Bytes<1>, mintNonce: B32,
+recipient: Maybe<Either<B32, B32>> }.
+- The ONE escape hatch in the whole phase: `#[arg(name = "respond")]`.
+  The mechanical label would be `respondBidirectionalEvent_…`; the frozen
+  interface has `respond_bigR_x_hi`. Renames are phase 5's business.
+- Compact's RespondBidirectionalEvent wraps a single `signature` field;
+  the hand-written labels never carried that level and `#[arg(name)]` can
+  rename a segment but not delete one, so the port keeps the signature's
+  fields directly under the `respond` head (documented at the type). The
+  alternative — an `#[arg(flatten)]` — was not invented for one site.
+- bigR.y and recoveryId are declared and range-constrained but read by
+  nothing, exactly as in the hand-written circuit and the Compact source.
+Discipline: both bodies are textually unchanged apart from `&mut c` -> `c`
+and the four-space re-indent inside the closure, checked by a normalized
+diff (strip indentation, rewrite `&mut c`, drop the argument block and the
+`c.finish(true)` line) — claim's body diff is EMPTY, withdraw's is empty
+but for the closing `})`. Zero movement everywhere: interface_snapshot and
+row_snapshot bit-identical, all 13 differential suites green.
