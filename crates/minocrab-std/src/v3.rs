@@ -134,54 +134,98 @@ pub fn bytes_to_b32<V: Vis3>(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> B3
     }
 }
 
-/// A Compact-level `Bytes<N>` for `N > 31`: FAB slot order — a leftover
-/// limb of `N mod 31` bytes (the most significant bytes) followed by
-/// 31-byte limbs down to the least significant. Confirmed against the
-/// attest corpus artifact: `Bytes<128>` = 5 limbs of 4+31+31+31+31 bytes,
-/// input-constrained 32/248/248/248/248 bits.
-#[derive(Clone)]
-pub struct BytesN<V: Vis3> {
-    len: usize,
-    /// Slot order: `limbs[0]` = the leftover (most significant) bytes.
-    pub limbs: Vec<Wire3<FieldT, V>>,
+// ---- Bytes<N>, N > 31 -------------------------------------------------------
+//
+// FAB slot order for a `Bytes<len>`: a leftover limb of `len mod 31` bytes
+// (the most significant bytes) followed by 31-byte limbs down to the least
+// significant. Confirmed against the attest corpus artifact: `Bytes<128>` =
+// 5 limbs of 4+31+31+31+31 bytes, input-constrained 32/248/248/248/248 bits.
+//
+// The limbing rule lives in exactly one place — [`limb_len`] — which both
+// the const-generic [`BytesN`] and the runtime-sized [`BytesNDyn`] use.
+
+/// Bytes in limb `i` of a `Bytes<len>`, slot order: limb 0 is the leftover
+/// (most significant) chunk, every other limb is a full 31 bytes.
+const fn limb_len(len: usize, i: usize) -> usize {
+    if i == 0 {
+        match len % 31 {
+            0 => 31,
+            leftover => leftover,
+        }
+    } else {
+        31
+    }
 }
 
-impl<V: Vis3> BytesN<V> {
-    /// Bytes per limb, slot order.
-    fn limb_lens(len: usize) -> Vec<usize> {
-        assert!(len > 31, "use B32 / a single limb for short byte strings");
-        let full = len / 31;
-        let leftover = len - 31 * full;
-        let mut lens = Vec::with_capacity(full + 1);
-        if leftover > 0 {
-            lens.push(leftover);
-        }
-        lens.extend(std::iter::repeat_n(31, full));
-        lens
+/// Bytes per limb of a `Bytes<len>`, slot order.
+fn limb_lens(len: usize) -> Vec<usize> {
+    assert!(len > 31, "use B32 / a single limb for short byte strings");
+    (0..len.div_ceil(31)).map(|i| limb_len(len, i)).collect()
+}
+
+/// A Compact-level `Bytes<N>` for `N > 31`, its size in the type.
+///
+/// Vec-backed rather than `[_; N.div_ceil(31)]` because that array length
+/// needs `generic_const_exprs`; [`Self::LIMBS`] is the const width and
+/// every constructor asserts the invariant `limbs.len() == LIMBS`.
+#[derive(Clone)]
+pub struct BytesN<V: Vis3, const N: usize> {
+    /// Invariant: `limbs.len() == Self::LIMBS`; `limbs[0]` is the leftover
+    /// (most significant) chunk.
+    limbs: Vec<Wire3<FieldT, V>>,
+}
+
+impl<V: Vis3, const N: usize> BytesN<V, N> {
+    /// The FAB limb count.
+    pub const LIMBS: usize = N.div_ceil(31);
+
+    /// Bytes in limb `i`, slot order (limb 0 is the leftover chunk).
+    pub const fn limb_len(i: usize) -> usize {
+        limb_len(N, i)
     }
 
-    pub fn new(len: usize, limbs: Vec<Wire3<FieldT, V>>) -> BytesN<V> {
-        assert_eq!(limbs.len(), Self::limb_lens(len).len(), "Bytes<{len}> limb count");
-        BytesN { len, limbs }
+    /// Wrap existing limb wires (leftover chunk first).
+    pub fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
+        const { assert!(N > 31, "Bytes<N> here needs N > 31 — use B32 below that") };
+        assert_eq!(limbs.len(), Self::LIMBS, "Bytes<{N}> takes {} limbs", Self::LIMBS);
+        BytesN { limbs }
     }
 
-    /// A `Bytes<N>` literal (N > 31) as constant limbs — bytes given in
-    /// string order (byte 0 first), packed into FAB slot order.
-    pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> BytesN<V> {
-        let mut limbs: Vec<Wire3<FieldT, V>> = bytes
-            .chunks(31)
-            .map(|chunk| {
-                V::from_public(c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit")))
-            })
-            .collect();
-        limbs.reverse();
-        BytesN::new(bytes.len(), limbs)
+    /// Slot order: `limbs()[0]` = the leftover (most significant) bytes.
+    pub fn limbs(&self) -> &[Wire3<FieldT, V>] {
+        &self.limbs
+    }
+
+    /// Rebuild the same `Bytes<N>` from a per-limb wire transform (the
+    /// disclose loops) — limbs visited in slot order.
+    pub fn map_limbs<W: Vis3>(
+        &self,
+        mut f: impl FnMut(usize, Wire3<FieldT, V>) -> Wire3<FieldT, W>,
+    ) -> BytesN<W, N> {
+        BytesN::from_limbs(self.limbs.iter().enumerate().map(|(i, &w)| f(i, w)).collect())
+    }
+
+    /// The FAB atoms of a `Bytes<N>` field.
+    pub fn atoms() -> Vec<AlignmentAtom> {
+        vec![AlignmentAtom::Bytes { length: N as u32 }]
+    }
+
+    /// The alignment of a lone `Bytes<N>` value.
+    pub fn alignment() -> Alignment {
+        Alignment(Self::atoms().into_iter().map(AlignmentSegment::Atom).collect())
+    }
+
+    /// A `Bytes<N>` literal as constant limbs — bytes given in string
+    /// order (byte 0 first), packed into FAB slot order.
+    pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), N, "Bytes<{N}> literal length");
+        Self::from_limbs(literal_limbs(c, bytes))
     }
 
     /// Constrain a `Bytes<N>` entering the circuit (8·leftover bits, then
     /// 248 per full limb).
     pub fn constrain_input(&self, c: &mut Circuit3) {
-        for (limb, nbytes) in self.limbs.iter().zip(Self::limb_lens(self.len)) {
+        for (limb, nbytes) in self.limbs.iter().zip(limb_lens(N)) {
             c.assert_bits(*limb, 8 * nbytes as u32);
         }
     }
@@ -189,9 +233,8 @@ impl<V: Vis3> BytesN<V> {
     /// All `N` bytes as wires, least-significant first (byte 0 first) —
     /// the limbs exploded in reverse slot order.
     pub fn to_le_bytes(&self, c: &mut Circuit3) -> Vec<Wire3<FieldT, V>> {
-        let lens = Self::limb_lens(self.len);
-        let mut bytes = Vec::with_capacity(self.len);
-        for (limb, nbytes) in self.limbs.iter().zip(lens).rev() {
+        let mut bytes = Vec::with_capacity(N);
+        for (limb, nbytes) in self.limbs.iter().zip(limb_lens(N)).rev() {
             bytes.extend(explode_limb(c, *limb, nbytes));
         }
         bytes
@@ -199,15 +242,81 @@ impl<V: Vis3> BytesN<V> {
 
     /// Rebuild from byte wires (byte 0 first): 31-byte chunks from the
     /// front, the leftover chunk becoming limb 0.
-    pub fn from_le_bytes(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> BytesN<V> {
-        let len = bytes.len();
+    pub fn from_le_bytes(c: &mut Circuit3, bytes: &[Wire3<FieldT, V>]) -> Self {
+        assert_eq!(bytes.len(), N, "Bytes<{N}> takes {N} bytes");
         let mut limbs: Vec<Wire3<FieldT, V>> = bytes
             .chunks(31)
             .map(|chunk| rebuild_limb(c, chunk))
             .collect();
         limbs.reverse();
-        BytesN::new(len, limbs)
+        Self::from_limbs(limbs)
     }
+}
+
+impl<const N: usize> BytesN<Private, N> {
+    /// Declare a `Bytes<N>` circuit argument as the limb arguments
+    /// `{label}_0 ..= {label}_{LIMBS-1}`, in slot order.
+    pub fn arg(c: &mut Circuit3, label: &str) -> Self {
+        Self::from_limbs((0..Self::LIMBS).map(|i| c.arg(&format!("{label}_{i}"))).collect())
+    }
+}
+
+impl<V: Vis3> From<B32<V>> for BytesN<V, 32> {
+    /// `Bytes<32>` limbed as a `Bytes<N>`: the leftover chunk is byte 31
+    /// (`hi`), the full limb is bytes 0..30 (`lo`).
+    fn from(b: B32<V>) -> Self {
+        BytesN::from_limbs(vec![b.hi, b.lo])
+    }
+}
+
+impl<V: Vis3> BytesN<V, 32> {
+    pub fn to_b32(&self) -> B32<V> {
+        B32 { hi: self.limbs[0], lo: self.limbs[1] }
+    }
+}
+
+/// A `Bytes<len>` whose length is only known at runtime — the hash-cost
+/// experiments sweep `len` as test-harness data, and the Signet event's
+/// deserialization schemas differ in length per instantiation. Everything
+/// with a compile-time size uses [`BytesN`] instead.
+#[derive(Clone)]
+pub struct BytesNDyn<V: Vis3> {
+    len: usize,
+    /// Slot order: `limbs[0]` = the leftover (most significant) bytes.
+    pub limbs: Vec<Wire3<FieldT, V>>,
+}
+
+impl<V: Vis3> BytesNDyn<V> {
+    pub fn new(len: usize, limbs: Vec<Wire3<FieldT, V>>) -> BytesNDyn<V> {
+        assert_eq!(limbs.len(), limb_lens(len).len(), "Bytes<{len}> limb count");
+        BytesNDyn { len, limbs }
+    }
+
+    /// A `Bytes<len>` literal as constant limbs — bytes given in string
+    /// order (byte 0 first), packed into FAB slot order; `len` is the
+    /// literal's own length.
+    pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> BytesNDyn<V> {
+        BytesNDyn::new(bytes.len(), literal_limbs(c, bytes))
+    }
+
+    /// Constrain a `Bytes<len>` entering the circuit (8·leftover bits,
+    /// then 248 per full limb).
+    pub fn constrain_input(&self, c: &mut Circuit3) {
+        for (limb, nbytes) in self.limbs.iter().zip(limb_lens(self.len)) {
+            c.assert_bits(*limb, 8 * nbytes as u32);
+        }
+    }
+}
+
+/// The constant limbs of a byte-string literal (byte 0 first in), FAB slot
+/// order out.
+fn literal_limbs<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Vec<Wire3<FieldT, V>> {
+    let mut limbs: Vec<Wire3<FieldT, V>> = bytes
+        .chunks(31)
+        .map(|chunk| V::from_public(c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit"))))
+        .collect();
+    limbs.reverse();
+    limbs
 }
 
 /// `serialize<T, N>` (compiler/analysis-passes/expand-serialize.ss):
@@ -250,14 +359,9 @@ impl<V: Vis3> Serializer<V> {
         self.segments.push((value.hi, 1));
     }
 
-    /// A `Bytes<N>` field (N > 31), limbs taken as segments directly.
-    pub fn push_bytes_n(&mut self, value: &BytesN<V>) {
-        for (limb, nbytes) in value
-            .limbs
-            .iter()
-            .zip(BytesN::<V>::limb_lens(value.len))
-            .rev()
-        {
+    /// A `Bytes<M>` field (M > 31), limbs taken as segments directly.
+    pub fn push_bytes_n<const M: usize>(&mut self, value: &BytesN<V, M>) {
+        for (limb, nbytes) in value.limbs().iter().zip(limb_lens(M)).rev() {
             self.segments.push((*limb, nbytes));
         }
     }
@@ -272,8 +376,14 @@ impl<V: Vis3> Serializer<V> {
         }
     }
 
-    /// Zero-pad to `len` and re-limb as `Bytes<len>`.
-    pub fn finish(self, c: &mut Circuit3, len: usize) -> BytesN<V> {
+    /// Zero-pad to `N` and re-limb as `Bytes<N>`.
+    pub fn finish<const N: usize>(self, c: &mut Circuit3) -> BytesN<V, N> {
+        BytesN::from_limbs(self.finish_dyn(c, N).limbs)
+    }
+
+    /// The shared body of [`Self::finish`], for a `len` that need not be a
+    /// constant — make it `pub` the day a caller has a runtime length.
+    fn finish_dyn(self, c: &mut Circuit3, len: usize) -> BytesNDyn<V> {
         let total: usize = self.segments.iter().map(|&(_, n)| n).sum();
         assert!(total <= len, "serialized size exceeds Bytes<{len}>");
         let zero = V::from_public(c.constant(0u64));
@@ -281,7 +391,7 @@ impl<V: Vis3> Serializer<V> {
 
         // Fill output limbs least-significant first; missing tail
         // segments mean the remaining limbs are the zero pad.
-        let le_lens: Vec<usize> = BytesN::<V>::limb_lens(len).into_iter().rev().collect();
+        let le_lens: Vec<usize> = limb_lens(len).into_iter().rev().collect();
         let mut le_limbs = Vec::with_capacity(le_lens.len());
         for out_len in le_lens {
             let mut acc: Option<Wire3<FieldT, V>> = None;
@@ -316,7 +426,7 @@ impl<V: Vis3> Serializer<V> {
         }
         let mut limbs = le_limbs;
         limbs.reverse();
-        BytesN::new(len, limbs)
+        BytesNDyn::new(len, limbs)
     }
 }
 

@@ -17,7 +17,7 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, Secp256k1EcdsaSignature, Vis3, BytesN, B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, BytesNDyn, Secp256k1EcdsaSignature, Vis3, B32,
 };
 
 fn atom(n: u32) -> AlignmentSegment {
@@ -91,12 +91,15 @@ pub struct SignBidirectionalEvent<V: Vis3> {
     pub algo: Wire3<FieldT, V>,
     pub dest: Wire3<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
-    pub params: BytesN<V>,
+    pub params: BytesN<V, 64>,
     pub tx_param_type: Wire3<FieldT, V>,
     pub tx_params: EvmType2TxParams<V>,
     pub caip2_id: B32<V>,
-    pub output_deserialization_schema: BytesN<V>,
-    pub respond_serialization_schema: BytesN<V>,
+    /// The schemas' byte lengths vary per instantiation (34/37/38 in the
+    /// vault), so they stay runtime-sized until the whole event record
+    /// becomes const-generic in its `#LenOut`/`#LenRespond`.
+    pub output_deserialization_schema: BytesNDyn<V>,
+    pub respond_serialization_schema: BytesNDyn<V>,
 }
 
 /// `MPCSignatureAlgorithm.ecdsa` / `MPCDestination.unused` /
@@ -175,7 +178,7 @@ impl<V: Vis3> SignBidirectionalEvent<V> {
             self.algo,
             self.dest,
         ];
-        l.extend(self.params.limbs.iter().copied());
+        l.extend(self.params.limbs().iter().copied());
         l.push(self.tx_param_type);
         l.extend(self.tx_params.limbs());
         l.push(self.caip2_id.hi);
@@ -197,8 +200,8 @@ pub fn construct_sign_bidirectional_event<V: Vis3>(
     path: B32<V>,
     tx_params: EvmType2TxParams<V>,
     caip2_id: B32<V>,
-    output_deserialization_schema: BytesN<V>,
-    respond_serialization_schema: BytesN<V>,
+    output_deserialization_schema: BytesNDyn<V>,
+    respond_serialization_schema: BytesNDyn<V>,
 ) -> SignBidirectionalEvent<V> {
     c.region("signet: event assembly", |c| {
         let zero = V::from_public(c.constant(0u64));
@@ -206,7 +209,7 @@ pub fn construct_sign_bidirectional_event<V: Vis3>(
         let nonzero = c.not(is_zero);
         c.assert(nonzero);
 
-        let params = BytesN::new(64, vec![zero, zero, zero]); // pad(64, "")
+        let params = BytesN::from_limbs(vec![zero, zero, zero]); // pad(64, "")
         SignBidirectionalEvent {
             sender,
             request_nonce,
@@ -258,7 +261,7 @@ pub fn construct_notification_v1<V: Vis3>(
     caller_address: &B32<V>,
     requests_path_depth: u8,
     requests_path: [u8; 4],
-) -> (Wire3<FieldT, V>, BytesN<V>) {
+) -> (Wire3<FieldT, V>, BytesN<V, 128>) {
     c.region("signet: notification", |c| {
         let version = V::from_public(c.constant(1u64));
         // The payload's 31-byte limbs line up with the caller address:
@@ -272,7 +275,7 @@ pub fn construct_notification_v1<V: Vis3>(
         let packed = V::from_public(c.constant(packed));
         let second = c.add(caller_address.hi, packed);
         let zero = V::from_public(c.constant(0u64));
-        let payload = BytesN::new(128, vec![zero, zero, zero, second, caller_address.lo]);
+        let payload = BytesN::from_limbs(vec![zero, zero, zero, second, caller_address.lo]);
         (version, payload)
     })
 }
@@ -442,7 +445,7 @@ mod tests {
             path: b32,
             algo: zero,
             dest: zero,
-            params: BytesN::new(64, vec![zero, zero, zero]),
+            params: BytesN::from_limbs(vec![zero, zero, zero]),
             tx_param_type: zero,
             tx_params: EvmType2TxParams {
                 chain_id: zero,
@@ -461,8 +464,8 @@ mod tests {
                 access_list_entry_count: zero,
             },
             caip2_id: b32,
-            output_deserialization_schema: BytesN::new(34, vec![zero, zero]),
-            respond_serialization_schema: BytesN::new(34, vec![zero, zero]),
+            output_deserialization_schema: BytesNDyn::new(34, vec![zero, zero]),
+            respond_serialization_schema: BytesNDyn::new(34, vec![zero, zero]),
         };
 
         let atoms = event.atoms(34, 34);

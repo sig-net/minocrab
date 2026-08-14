@@ -25,7 +25,7 @@ pub const CHECKS: u8 = 0;
 /// `export circuit checkRoundtrip(bytes: Bytes<128>): []`
 pub fn check_roundtrip() -> Compiled3 {
     let mut c = Circuit3::new();
-    let data = BytesN::new(128, (0..5).map(|i| c.arg(&format!("bytes_{i}"))).collect());
+    let data = BytesN::<_, 128>::arg(&mut c, "bytes");
     data.constrain_input(&mut c);
     let one = c.constant(1u64);
 
@@ -43,11 +43,11 @@ pub fn check_roundtrip() -> Compiled3 {
     s.push_uint(amount, 16);
     s.push_uint(small, 1);
     s.push_b32(&tag);
-    let reserialized = s.finish(&mut c, 128);
+    let reserialized = s.finish::<128>(&mut c);
 
     // assert(… == bytes): limbwise equality, folded by multiplication.
     let mut all = c.constant(1u64).private();
-    for (ours, theirs) in reserialized.limbs.iter().zip(&data.limbs) {
+    for (ours, theirs) in reserialized.limbs().iter().zip(data.limbs()) {
         let eq = c.test_eq(*ours, *theirs);
         all = c.mul(all, eq);
     }

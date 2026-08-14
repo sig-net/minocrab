@@ -17,7 +17,7 @@
 use minocrab::v3::{Circuit3, Compiled3, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{BytesN, B32};
+use minocrab_std::v3::{BytesNDyn, B32};
 
 /// Ledger field indices (identical in both contracts; `fdigest` exists
 /// only in `hashing`).
@@ -26,11 +26,11 @@ pub const DIGEST: u8 = 1;
 pub const FDIGEST: u8 = 2;
 
 /// Declare a constrained `Bytes<len>` argument (len > 31).
-fn bytesn_arg(c: &mut Circuit3, len: usize) -> BytesN<Private> {
+fn bytesn_arg(c: &mut Circuit3, len: usize) -> BytesNDyn<Private> {
     let limbs = (0..len.div_ceil(31))
         .map(|i| c.arg(&format!("data_{i}")))
         .collect();
-    let data = BytesN::new(len, limbs);
+    let data = BytesNDyn::new(len, limbs);
     data.constrain_input(c);
     data
 }

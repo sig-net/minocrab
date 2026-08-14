@@ -45,7 +45,7 @@ use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, contract_call, emit, kernel_self,
     map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{own_public_key_guarded, BytesN, CoinRecipient, B32};
+use minocrab_std::v3::{own_public_key_guarded, BytesNDyn, CoinRecipient, B32};
 
 use crate::common;
 use crate::signet;
@@ -297,7 +297,7 @@ pub fn deposit() -> Compiled3 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
     };
-    let schema = BytesN::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let schema = BytesNDyn::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
     let request = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
@@ -394,7 +394,7 @@ fn notify_signet(
         let me = B32 { hi: me[0], lo: me[1] };
         let (version, payload) = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
         let mut args = vec![request_id.hi, request_id.lo, version];
-        args.extend(payload.limbs.iter().copied());
+        args.extend(payload.limbs().iter().copied());
         contract_call(c, one, [signer[0], signer[1]], &args, &[]);
     });
 }
@@ -565,7 +565,7 @@ pub fn withdraw() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let schema = BytesNDyn::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
     let request = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
@@ -783,8 +783,8 @@ pub fn swap() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let output_schema = BytesN::<Private>::literal(&mut c, SWAP_OUTPUT_SCHEMA);
-    let respond_schema = BytesN::<Private>::literal(&mut c, SWAP_RESPOND_SCHEMA);
+    let output_schema = BytesNDyn::<Private>::literal(&mut c, SWAP_OUTPUT_SCHEMA);
+    let respond_schema = BytesNDyn::<Private>::literal(&mut c, SWAP_RESPOND_SCHEMA);
     let request = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,
@@ -936,7 +936,7 @@ pub fn approve_router() -> Compiled3 {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let schema = BytesNDyn::<Private>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
     let request = signet::construct_sign_bidirectional_event(
         &mut c,
         sender,

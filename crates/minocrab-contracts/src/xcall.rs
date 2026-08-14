@@ -125,13 +125,10 @@ fn call_n_times(n: usize) -> Compiled3 {
 /// 256-byte argument (9 FAB limbs).
 pub fn call_big() -> Compiled3 {
     let mut c = Circuit3::new();
-    let data = BytesN::new(
-        256,
-        (0..9).map(|i| c.arg::<FieldT>(&format!("data_{i}"))).collect(),
-    );
+    let data = BytesN::<_, 256>::arg(&mut c, "data");
     data.constrain_input(&mut c);
     let data: Vec<Wire3<FieldT, Public>> = data
-        .limbs
+        .limbs()
         .iter()
         .map(|&w| c.disclose(w, "data"))
         .collect();
@@ -158,10 +155,7 @@ pub fn target_deposit_emit() -> Compiled3 {
 /// the contract boundary.
 pub fn target_deposit_big() -> Compiled3 {
     let mut c = Circuit3::new();
-    let data = BytesN::new(
-        256,
-        (0..9).map(|i| c.arg::<FieldT>(&format!("data_{i}"))).collect(),
-    );
+    let data = BytesN::<_, 256>::arg(&mut c, "data");
     data.constrain_input(&mut c);
     let one = c.constant(1u64);
     emit(&mut c, one, &counter_increment(T_CALL_COUNT, 1));

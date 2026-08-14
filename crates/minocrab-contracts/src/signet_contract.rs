@@ -51,10 +51,10 @@ fn disclose_b32(c: &mut Circuit3, b: &B32<Private>, label: &str) -> B32<Public> 
 /// name ‖ payload bytes, zero-padded to the 288-byte Misc.
 fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
     let one = c.constant(1u64);
-    let serialized = s.finish(c, MISC_SIZE);
+    let serialized = s.finish::<MISC_SIZE>(c);
     let payload = LedgerValue::bytes(
         MISC_SIZE as u32,
-        serialized.limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
     );
     emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
 }
@@ -72,25 +72,15 @@ pub fn sign_bidirectional() -> Compiled3 {
     let mut c = Circuit3::new();
     let request_id = arg_b32(&mut c, "requestId");
     let version = c.arg::<FieldT>("notification_version");
-    let payload = BytesN::<Private>::new(
-        128,
-        (0..5).map(|i| c.arg(&format!("notification_payload_{i}"))).collect(),
-    );
+    let payload = BytesN::<Private, 128>::arg(&mut c, "notification_payload");
     request_id.constrain_input(&mut c);
     c.assert_bits(version, 8);
     payload.constrain_input(&mut c);
 
     let rid = disclose_b32(&mut c, &request_id, "requestId");
     let version = c.disclose(version, "notification.version");
-    let payload = BytesN::<Public>::new(
-        128,
-        payload
-            .limbs
-            .iter()
-            .enumerate()
-            .map(|(i, &w)| c.disclose(w, &format!("notification.payload ({i})")))
-            .collect(),
-    );
+    let payload =
+        payload.map_limbs(|i, w| c.disclose(w, &format!("notification.payload ({i})")));
 
     // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
     c.region("event serialize + emit", |c| {

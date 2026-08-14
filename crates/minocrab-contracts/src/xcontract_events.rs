@@ -36,12 +36,12 @@
 //! ```
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
+use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{
     cell_read, cell_write, contract_call, counter_increment, counter_read, emit, emit_event,
     kernel_self, set_insert, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{Serializer, B32};
+use minocrab_std::v3::{BytesN, Serializer, B32};
 
 /// Vault ledger fields, in declaration order.
 pub const TOKEN: u8 = 0;
@@ -130,13 +130,11 @@ pub fn token_deposit() -> Compiled3 {
     s.push_uint(a, 16);
     s.push_uint(sequence, 8);
     s.push_b32(&cal);
-    let payload = s.finish(&mut c, PAYLOAD_SIZE);
+    let payload = s.finish::<PAYLOAD_SIZE>(&mut c);
 
     // eventHash = persistentHash<Bytes<256>>(payload).
-    let alignment = Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
-        length: PAYLOAD_SIZE as u32,
-    })]);
-    let limbs: Vec<_> = payload.limbs.iter().map(|w| w.erase()).collect();
+    let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
+    let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
     let digest = c.persistent_hash(alignment, &limbs);
     let event_hash = B32::from_typed(&mut c, digest);
 
@@ -152,10 +150,10 @@ pub fn token_deposit() -> Compiled3 {
     let mut misc = Serializer::<Public>::new();
     misc.push_literal(&mut c, &name);
     misc.push_bytes_n(&payload);
-    let misc = misc.finish(&mut c, MISC_SIZE);
+    let misc = misc.finish::<MISC_SIZE>(&mut c);
     let misc_val = LedgerValue::bytes(
         MISC_SIZE as u32,
-        misc.limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
     );
     emit(&mut c, one, &emit_event(1, 10, &misc_val));
 

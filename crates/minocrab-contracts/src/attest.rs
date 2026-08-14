@@ -103,7 +103,10 @@ pub struct RespondOutput<V: Vis3> {
 /// build-deserialize): `success = (byte 0 == 1)`, `amount = bytes 1..17`
 /// (Uint<128>, LE), `recipient = bytes 17..37` (`Bytes<20>`, one limb);
 /// the 91 padding bytes are ignored.
-fn deserialize_respond_output<V: Vis3>(c: &mut Circuit3, output: &BytesN<V>) -> RespondOutput<V> {
+fn deserialize_respond_output<V: Vis3>(
+    c: &mut Circuit3,
+    output: &BytesN<V, 128>,
+) -> RespondOutput<V> {
     let bytes = output.to_le_bytes(c);
     let one = V::from_public(c.constant(1u64));
     RespondOutput {
@@ -124,12 +127,7 @@ fn hash_verify(
 ) -> Compiled3 {
     let mut c = Circuit3::new();
     let request_id = bytes32_arg(&mut c, "requestId");
-    let output = BytesN::new(
-        128,
-        (0..5)
-            .map(|i| c.arg::<FieldT>(&format!("output_{i}")))
-            .collect(),
-    );
+    let output = BytesN::<_, 128>::arg(&mut c, "output");
     let r = bytes32_arg(&mut c, "r");
     let s = bytes32_arg(&mut c, "s");
     let pk = c.arg::<Secp256k1PointT>("pk");
@@ -145,7 +143,7 @@ fn hash_verify(
             AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 128 }),
         ]);
         let mut inputs = vec![request_id.hi.erase(), request_id.lo.erase()];
-        inputs.extend(output.limbs.iter().map(|w| w.erase()));
+        inputs.extend(output.limbs().iter().map(|w| w.erase()));
         let typed = hash(c, alignment, &inputs);
         B32::from_typed(c, typed)
     });

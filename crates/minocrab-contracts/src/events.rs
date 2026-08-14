@@ -93,11 +93,11 @@ fn base_with_emits(emits: usize) -> Compiled3 {
             s.push_uint(a, 16); // amount: Uint<128>
             s.push_uint(sequence.expect("sequence read exists"), 8); // sequence: Uint<64>
             s.push_b32(&r); // recipient: Bytes<32>
-            let serialized = s.finish(c, MISC_SIZE);
+            let serialized = s.finish::<MISC_SIZE>(c);
 
             let payload = LedgerValue::bytes(
                 MISC_SIZE as u32,
-                serialized.limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+                serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
             );
             emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
         });
