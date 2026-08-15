@@ -19,7 +19,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, LedgerRepr, Secp256k1EcdsaSignature, Vis3, B32,
 };
 
 fn atom(n: u32) -> AlignmentSegment {
@@ -258,22 +258,6 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
 {
     pub const LIMBS: usize = layout::limbs(WORDS, LEN_OUT, LEN_RESPOND);
 
-    /// The value atoms to look the record up with.
-    pub fn atoms() -> Vec<AlignmentAtom> {
-        SignBidirectionalEvent::<Public, WORDS, LEN_OUT, LEN_RESPOND>::atoms()
-    }
-
-    /// Wrap a map lookup's limbs.
-    pub fn from_lookup(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        assert_eq!(
-            limbs.len(),
-            Self::LIMBS,
-            "event record takes {} limbs",
-            Self::LIMBS
-        );
-        EventRecord(limbs)
-    }
-
     /// `path` — the depositor's identity commitment.
     pub fn path(&self) -> B32<Public> {
         B32 {
@@ -299,6 +283,33 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
             hi: self.0[layout::word_hi(i)],
             lo: self.0[layout::word_lo(i)],
         }
+    }
+}
+
+/// What the LEDGER holds a request as: the atoms of the record type, and its
+/// limbs in FAB slot order. Both directions live here, in ONE impl, which is
+/// the point — the map that stores a request and the settle circuit that
+/// reads it back cannot be given different atom lists, because neither
+/// writes one (`LedgerMap<_, VaultRecord>` takes them from this type).
+impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize> LedgerRepr
+    for EventRecord<WORDS, LEN_OUT, LEN_RESPOND>
+{
+    fn atoms() -> Vec<AlignmentAtom> {
+        SignBidirectionalEvent::<Public, WORDS, LEN_OUT, LEN_RESPOND>::atoms()
+    }
+
+    fn push_limbs(&self, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        limbs.extend_from_slice(&self.0);
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        assert_eq!(
+            limbs.len(),
+            Self::LIMBS,
+            "event record takes {} limbs",
+            Self::LIMBS
+        );
+        EventRecord(limbs)
     }
 }
 

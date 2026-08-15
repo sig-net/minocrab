@@ -2362,6 +2362,7 @@ dependencies = [
  "midnight-zkir-v3",
  "minocrab",
  "minocrab-ir",
+ "minocrab-ledger",
  "minocrab-macros",
  "minocrab-sim",
  "minocrab-zkir",

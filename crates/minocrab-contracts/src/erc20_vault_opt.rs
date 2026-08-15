@@ -55,13 +55,12 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_ledger::{
-    cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, map_insert,
-    map_lookup, map_member, map_remove, ImpactElem, LedgerValue, XcallCommitment,
-    XcallEntryPointHash,
+    cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, ImpactElem,
+    LedgerValue, XcallCommitment, XcallEntryPointHash,
 };
 use minocrab_std::v3::{
     circuit, label, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
-    Disclose, Discloses, Either, Maybe, Secp256k1Point, Uint, B32,
+    Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
 };
 
 use signet_signer_interface::notification::construct_notification_v1;
@@ -69,13 +68,11 @@ use signet_signer_interface::SignetSigner;
 
 use crate::common;
 use crate::erc20_vault::{
-    SwapEvent, SwapRecord, VaultEvent, VaultRecord, APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
+    SwapEvent, VaultEvent, VaultRecord, APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
     EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_FAILURE_OUTPUT, MPC_RESPONSE_KEY,
-    REFUND_COMMITMENT, REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER,
-    SIGN_BIDIRECTIONAL_EVENT_MAP, SWAP_EVENT_MAP, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
-    SWAP_REFUND_COMMITMENT, SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS,
-    TRANSFER_SELECTOR, UNISWAP_ROUTER, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA,
-    VAULT_SCHEMA_LEN, VAULT_WORDS,
+    REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
+    SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS, TRANSFER_SELECTOR, UNISWAP_ROUTER,
+    VAULT, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA, VAULT_SCHEMA_LEN, VAULT_WORDS,
 };
 use crate::signet;
 
@@ -360,7 +357,14 @@ pub fn deposit(
         schema,
     );
 
-    record_and_notify(c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    record_and_notify(
+        c,
+        one,
+        me,
+        &request,
+        &VAULT.sign_bidirectional_event_map,
+        [0, 0, 0, 0],
+    );
 
     Discloses::of(())
 }
@@ -372,22 +376,15 @@ fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPO
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map_field: u8,
-) -> (B32<Public>, LedgerValue) {
+    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+) -> B32<Public> {
     let request_id_priv = signet::calculate_request_id(c, request);
     c.region("record: freshness", |c| {
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
-        let request_id_val = LedgerValue::bytes(
-            32,
-            vec![
-                ImpactElem::Wire(request_id.hi),
-                ImpactElem::Wire(request_id.lo),
-            ],
-        );
-        let exists = map_member(c, one, map_field, &request_id_val);
-        let fresh = c.not(exists);
+        let exists = map.member(c, one, &request_id);
+        let fresh = c.not(exists.field());
         c.assert(fresh);
-        (request_id, request_id_val)
+        request_id
     })
 }
 
@@ -397,21 +394,15 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map_field: u8,
-    request_id_val: &LedgerValue,
+    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    request_id: &B32<Public>,
 ) {
     c.region("record: insert", |c| {
         emit(c, one, &counter_increment(SIGNET_REQUEST_NONCE, 1));
-        let event_atoms =
-            signet::SignBidirectionalEvent::<Private, WORDS, LEN_OUT, LEN_RESPOND>::atoms();
-        let event_limbs: Vec<ImpactElem> = request
-            .limbs()
-            .disclose_as::<RequestRecord>(c)
-            .into_iter()
-            .map(ImpactElem::Wire)
-            .collect();
-        let event_val = LedgerValue::new(event_atoms, event_limbs);
-        emit(c, one, &map_insert(map_field, request_id_val, &event_val));
+        // The record's atoms come from its TYPE — there is no atom list here
+        // to disagree with the one the settle circuits look it up with.
+        let record = signet::EventRecord::from_limbs(request.limbs().disclose_as::<RequestRecord>(c));
+        map.insert(c, one, request_id, &record);
     });
 }
 
@@ -445,11 +436,11 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
     one: Wire3<FieldT, Public>,
     me: B32<Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map_field: u8,
+    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
     notify_path: [u8; 4],
 ) -> B32<Public> {
-    let (request_id, request_id_val) = check_fresh_request(c, one, request, map_field);
-    insert_request(c, one, request, map_field, &request_id_val);
+    let request_id = check_fresh_request(c, one, request, map);
+    insert_request(c, one, request, map, &request_id);
     notify_signet(c, one, me, &request_id, notify_path);
     request_id
 }
@@ -658,8 +649,7 @@ pub fn withdraw(
         schema,
     );
 
-    let (request_id, request_id_val) =
-        check_fresh_request(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP);
+    let request_id = check_fresh_request(c, one, &request, &VAULT.sign_bidirectional_event_map);
 
     // The surrendered value is BURNED (rung vi, avenue 6): a SINGLE claimed
     // shielded spend of the burn-address output — no receive custody claim,
@@ -671,7 +661,13 @@ pub fn withdraw(
     };
     common::burn_spend(c, one, &coin);
 
-    insert_request(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
+    insert_request(
+        c,
+        one,
+        &request,
+        &VAULT.sign_bidirectional_event_map,
+        &request_id,
+    );
 
     // refundCommitment.insert(requestId,
     //   disclose(withdrawRefundCommitment(callerSecretKey(), requestId)))
@@ -682,12 +678,7 @@ pub fn withdraw(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<WithdrawerRefundCommitment>(c);
-    let rc_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(rc.hi), ImpactElem::Wire(rc.lo)]);
-    emit(
-        c,
-        one,
-        &map_insert(REFUND_COMMITMENT, &request_id_val, &rc_val),
-    );
+    VAULT.refund_commitment.insert(c, one, &request_id, &rc);
 
     notify_signet(c, one, me, &request_id, [0, 0, 0, 0]);
 
@@ -877,7 +868,7 @@ pub fn swap(
         respond_schema,
     );
 
-    let (request_id, request_id_val) = check_fresh_request(c, one, &request, SWAP_EVENT_MAP);
+    let request_id = check_fresh_request(c, one, &request, &VAULT.swap_event_map);
 
     // Burn the surrendered amountInMaximum of tokenIn (rung vi, avenue 6): a
     // SINGLE claimed shielded spend of the burn-address output — no receive
@@ -889,7 +880,7 @@ pub fn swap(
     };
     common::burn_spend(c, one, &coin);
 
-    insert_request(c, one, &request, SWAP_EVENT_MAP, &request_id_val);
+    insert_request(c, one, &request, &VAULT.swap_event_map, &request_id);
 
     // swapRefundCommitment.insert(requestId, disclose(...))
     let sk = common::witness_sk(c);
@@ -899,12 +890,7 @@ pub fn swap(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<SwapperRefundCommitment>(c);
-    let rc_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(rc.hi), ImpactElem::Wire(rc.lo)]);
-    emit(
-        c,
-        one,
-        &map_insert(SWAP_REFUND_COMMITMENT, &request_id_val, &rc_val),
-    );
+    VAULT.swap_refund_commitment.insert(c, one, &request_id, &rc);
 
     notify_signet(c, one, me, &request_id, [11, 0, 0, 0]);
 
@@ -1033,7 +1019,14 @@ pub fn approve_router(
         schema,
     );
 
-    record_and_notify(c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    record_and_notify(
+        c,
+        one,
+        me,
+        &request,
+        &VAULT.sign_bidirectional_event_map,
+        [0, 0, 0, 0],
+    );
 
     Discloses::of(())
 }
@@ -1153,7 +1146,6 @@ fn refund_surrendered_value(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
     request_id: &B32<Public>,
-    request_id_val: &LedgerValue,
     ev: &VaultRecord,
     mint_nonce: &B32<Public>,
 ) {
@@ -1166,15 +1158,9 @@ fn refund_surrendered_value(
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = minocrab_ledger::map_lookup_guarded(
-            c,
-            guard,
-            REFUND_COMMITMENT,
-            request_id_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        let eq_hi = c.test_eq(rc.hi, stored[0].private());
-        let eq_lo = c.test_eq(rc.lo, stored[1].private());
+        let stored = VAULT.refund_commitment.lookup_guarded(c, guard, request_id);
+        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
+        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_withdrawer = c.mul(eq_hi, eq_lo);
         common::assert_if(c, guard.private(), is_withdrawer);
     });
@@ -1223,32 +1209,18 @@ pub fn complete_withdraw(
     let one = c.constant(1u64);
 
     let request_id = verify_attestation::<1>(c, one, &args, &output);
-    let request_id_val = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(request_id.hi),
-            ImpactElem::Wire(request_id.lo),
-        ],
-    );
-
     // assert(refundCommitment.member(requestId), "Withdrawal not found")
     // const signatureRequest = signBidirectionalEventMap.lookup(requestId);
     // signBidirectionalEventMap.remove(requestId)
     let ev = c.region("event map consume", |c| {
-        let pending = map_member(c, one, REFUND_COMMITMENT, &request_id_val);
-        c.assert(pending);
-        let ev = VaultRecord::from_lookup(map_lookup(
-            c,
-            one,
-            SIGN_BIDIRECTIONAL_EVENT_MAP,
-            &request_id_val,
-            VaultRecord::atoms(),
-        ));
-        emit(
-            c,
-            one,
-            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-        );
+        let pending = VAULT.refund_commitment.member(c, one, &request_id);
+        c.assert(pending.field());
+        let ev = VAULT
+            .sign_bidirectional_event_map
+            .lookup(c, one, &request_id);
+        VAULT
+            .sign_bidirectional_event_map
+            .remove(c, one, &request_id);
         ev
     });
 
@@ -1259,17 +1231,10 @@ pub fn complete_withdraw(
     // if (!succeeded) { refundSurrenderedValue(...) }
     let refunding = c.not(succeeded);
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
-    refund_surrendered_value(
-        c,
-        refunding,
-        &request_id,
-        &request_id_val,
-        &ev,
-        &mint_nonce,
-    );
+    refund_surrendered_value(c, refunding, &request_id, &ev, &mint_nonce);
 
     // refundCommitment.remove(requestId)
-    emit(c, one, &map_remove(REFUND_COMMITMENT, &request_id_val));
+    VAULT.refund_commitment.remove(c, one, &request_id);
 
     Discloses::of(())
 }
@@ -1303,27 +1268,13 @@ pub fn complete_swap(
     let one = c.constant(1u64);
 
     let request_id = verify_attestation::<8>(c, one, &args, &output);
-    let request_id_val = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(request_id.hi),
-            ImpactElem::Wire(request_id.lo),
-        ],
-    );
-
     // assert(swapRefundCommitment.member(requestId), "Swap not found")
     // const signatureRequest = swapEventMap.lookup(requestId); remove.
     let ev = c.region("event map consume", |c| {
-        let pending = map_member(c, one, SWAP_REFUND_COMMITMENT, &request_id_val);
-        c.assert(pending);
-        let ev = SwapRecord::from_lookup(map_lookup(
-            c,
-            one,
-            SWAP_EVENT_MAP,
-            &request_id_val,
-            SwapRecord::atoms(),
-        ));
-        emit(c, one, &map_remove(SWAP_EVENT_MAP, &request_id_val));
+        let pending = VAULT.swap_refund_commitment.member(c, one, &request_id);
+        c.assert(pending.field());
+        let ev = VAULT.swap_event_map.lookup(c, one, &request_id);
+        VAULT.swap_event_map.remove(c, one, &request_id);
         ev
     });
 
@@ -1335,18 +1286,12 @@ pub fn complete_swap(
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = map_lookup(
-            c,
-            one,
-            SWAP_REFUND_COMMITMENT,
-            &request_id_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        let eq_hi = c.test_eq(rc.hi, stored[0].private());
-        let eq_lo = c.test_eq(rc.lo, stored[1].private());
+        let stored = VAULT.swap_refund_commitment.lookup(c, one, &request_id);
+        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
+        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_swapper = c.mul(eq_hi, eq_lo);
         c.assert(is_swapper);
-        emit(c, one, &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val));
+        VAULT.swap_refund_commitment.remove(c, one, &request_id);
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
@@ -1510,14 +1455,6 @@ pub fn refund(
     let one = c.constant(1u64);
 
     let request_id = verify_attestation::<5>(c, one, &args, &output);
-    let request_id_val = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(request_id.hi),
-            ImpactElem::Wire(request_id.lo),
-        ],
-    );
-
     // assert(serializedOutput == 0xdeadbeef01, "Not the MPC failure output")
     let failure = c.constant(minocrab::Fr::from_le_bytes(&MPC_FAILURE_OUTPUT).unwrap());
     let is_failure = c.test_eq(output[0], failure.private());
@@ -1526,7 +1463,10 @@ pub fn refund(
     // Route on which pending marker holds the id (public branch).
     // The member result is already Public; disclosure is the source's
     // explicit `disclose(...)` on the branch condition, a no-op here.
-    let is_withdrawal = map_member(c, one, REFUND_COMMITMENT, &request_id_val);
+    let is_withdrawal = VAULT
+        .refund_commitment
+        .member(c, one, &request_id)
+        .field();
     let swapping = c.not(is_withdrawal);
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
@@ -1538,43 +1478,27 @@ pub fn refund(
     // Withdrawal-route record consume (guarded): the VaultRecord and its
     // removal from the request map.
     let ev = c.region("event map consume", |c| {
-        let ev = VaultRecord::from_lookup(minocrab_ledger::map_lookup_guarded(
-            c,
-            is_withdrawal,
-            SIGN_BIDIRECTIONAL_EVENT_MAP,
-            &request_id_val,
-            VaultRecord::atoms(),
-        ));
-        emit(
-            c,
-            is_withdrawal,
-            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-        );
+        let ev = VAULT
+            .sign_bidirectional_event_map
+            .lookup_guarded(c, is_withdrawal, &request_id);
+        VAULT
+            .sign_bidirectional_event_map
+            .remove(c, is_withdrawal, &request_id);
         ev
     });
 
     // Swap-route record consume (guarded): the pending-swap marker assert,
     // the SwapRecord, and its removal from the swap request map.
     let ev7 = c.region("event map consume", |c| {
-        let swap_pending = minocrab_ledger::map_member_guarded(
-            c,
-            swapping,
-            SWAP_REFUND_COMMITMENT,
-            &request_id_val,
-        );
+        let swap_pending = VAULT
+            .swap_refund_commitment
+            .member_guarded(c, swapping, &request_id)
+            .field();
         common::assert_if(c, swapping, swap_pending);
-        let ev7 = SwapRecord::from_lookup(minocrab_ledger::map_lookup_guarded(
-            c,
-            swapping,
-            SWAP_EVENT_MAP,
-            &request_id_val,
-            SwapRecord::atoms(),
-        ));
-        emit(
-            c,
-            swapping,
-            &map_remove(SWAP_EVENT_MAP, &request_id_val),
-        );
+        let ev7 = VAULT
+            .swap_event_map
+            .lookup_guarded(c, swapping, &request_id);
+        VAULT.swap_event_map.remove(c, swapping, &request_id);
         ev7
     });
 
@@ -1589,22 +1513,14 @@ pub fn refund(
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let wd_stored = minocrab_ledger::map_lookup_guarded(
-            c,
-            is_withdrawal,
-            REFUND_COMMITMENT,
-            &request_id_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        let sw_stored = minocrab_ledger::map_lookup_guarded(
-            c,
-            swapping,
-            SWAP_REFUND_COMMITMENT,
-            &request_id_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        let stored_hi = c.cond_select(is_withdrawal, wd_stored[0], sw_stored[0]);
-        let stored_lo = c.cond_select(is_withdrawal, wd_stored[1], sw_stored[1]);
+        let wd_stored = VAULT
+            .refund_commitment
+            .lookup_guarded(c, is_withdrawal, &request_id);
+        let sw_stored = VAULT
+            .swap_refund_commitment
+            .lookup_guarded(c, swapping, &request_id);
+        let stored_hi = c.cond_select(is_withdrawal, wd_stored.hi, sw_stored.hi);
+        let stored_lo = c.cond_select(is_withdrawal, wd_stored.lo, sw_stored.lo);
         let eq_hi = c.test_eq(rc.hi, stored_hi.private());
         let eq_lo = c.test_eq(rc.lo, stored_lo.private());
         let is_claimant = c.mul(eq_hi, eq_lo);
@@ -1612,16 +1528,12 @@ pub fn refund(
     });
 
     // The commitment-map removes, guarded per route (ledger EFFECT ops).
-    emit(
-        c,
-        is_withdrawal,
-        &map_remove(REFUND_COMMITMENT, &request_id_val),
-    );
-    emit(
-        c,
-        swapping,
-        &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
-    );
+    VAULT
+        .refund_commitment
+        .remove(c, is_withdrawal, &request_id);
+    VAULT
+        .swap_refund_commitment
+        .remove(c, swapping, &request_id);
 
     // Unified re-mint (avenue 4): cond_select the branch-varying token and
     // amount, then run ONE domainSep → tokenType → coinCommitment → mint.
@@ -1747,28 +1659,17 @@ pub fn claim(
     c.assert(valid);
 
     // Double-claim protection: member + lookup + remove.
-    let request_id_val = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(request_id.hi),
-            ImpactElem::Wire(request_id.lo),
-        ],
-    );
     let ev = c.region("event map consume", |c| {
-        let found = map_member(c, one, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
-        c.assert(found);
-        let ev = VaultRecord::from_lookup(map_lookup(
-            c,
-            one,
-            SIGN_BIDIRECTIONAL_EVENT_MAP,
-            &request_id_val,
-            VaultRecord::atoms(),
-        ));
-        emit(
-            c,
-            one,
-            &map_remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val),
-        );
+        let found = VAULT
+            .sign_bidirectional_event_map
+            .member(c, one, &request_id);
+        c.assert(found.field());
+        let ev = VAULT
+            .sign_bidirectional_event_map
+            .lookup(c, one, &request_id);
+        VAULT
+            .sign_bidirectional_event_map
+            .remove(c, one, &request_id);
         ev
     });
 

@@ -12,6 +12,7 @@ mod circuit;
 mod circuit_arg;
 mod circuit_borsh;
 mod interface;
+mod ledger;
 
 /// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
 /// argument list) for a struct with named fields.
@@ -90,6 +91,39 @@ pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
 pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     circuit_borsh::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive a contract's LEDGER BLOCK from a struct mirroring Compact's
+/// `export ledger` declarations.
+///
+/// ```ignore
+/// #[derive(Ledger)]
+/// struct Vault {
+///     sign_bidirectional_event_map: LedgerMap<B32<Public>, VaultRecord>,  // field 0
+///     signet_signer: LedgerField,                                        // field 1
+///     signet_request_nonce: LedgerCounter,                               // field 2
+///     vault_evm_address: LedgerCell<Bytes<20, Public>>,                  // field 3
+/// }
+/// const VAULT: Vault = Vault::new();
+/// ```
+///
+/// **Declaration order is the field index**, which is the on-chain contract:
+/// the state a deployed contract holds is keyed by position, so reordering
+/// the struct repoints every field after the move. That is the one fact the
+/// derive states — `Vault::new()` is a `const fn` whose only content is
+/// `<FieldTy>::at(index)` per field — and stating it here is what removes the
+/// hand-maintained `const REFUND_COMMITMENT: u8 = 9;` table from contracts.
+///
+/// The field types are the ledger ADTs of `minocrab_std::v3`
+/// (`LedgerMap`/`LedgerCell`/`LedgerCounter`, and `LedgerField` for a field
+/// this layer does not model yet); anything with a `const fn at(u8) -> Self`
+/// works, since that is all the expansion calls.
+#[proc_macro_derive(Ledger)]
+pub fn derive_ledger(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    ledger::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -7,6 +7,11 @@ description = "L3 — MinoCrab standard library: ports of Compact's standard-lib
 
 [dependencies]
 minocrab = { path = "../minocrab" }
+# The typed ledger block (M9 phase 7): `v3::ledger`'s LedgerMap/LedgerCell/
+# LedgerCounter are one-line wrappers over this crate's op emission, so the
+# ADTs sit ABOVE the ops — minocrab-ledger stays the pure op layer its module
+# docs describe and gains no dependency of its own.
+minocrab-ledger = { path = "../minocrab-ledger" }
 # The Borsh SCHEMA walk (v3::borsh::schema) only, behind the off-by-default
 # `borsh-schema` feature: nothing shipping links borsh, and a test build turns
 # the feature on from its own [dev-dependencies] entry (see

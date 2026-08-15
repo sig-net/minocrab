@@ -15,6 +15,7 @@ use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Pu
 mod call;
 mod disclose;
 mod entry;
+mod ledger;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
 /// — the serialization layer (M11, notes/borsh-format.org). Read its module
@@ -31,6 +32,13 @@ pub mod borsh;
 pub mod hash;
 
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
+
+/// The ledger block as types: `#[derive(Ledger)]`'s declaration-order
+/// indices and the typed slots ([`LedgerMap`] with Compact's method names,
+/// [`LedgerCell`], [`LedgerCounter`], [`LedgerField`]) over
+/// `minocrab_ledger`'s ops — one Impact operation per method, `c` and the
+/// guard visible at every call site.
+pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr};
 
 /// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns. The vocabulary lives in the
@@ -67,6 +75,13 @@ pub use minocrab_macros::CircuitArg;
 /// `fn name() -> Compiled3` built through [`entry`] / [`entry_out`].
 #[cfg(feature = "macros")]
 pub use minocrab_macros::circuit;
+
+/// `#[derive(Ledger)]` — a struct mirroring Compact's `export ledger` block
+/// becomes the contract's ledger handle, each field at its declaration-order
+/// index. Named the same as nothing else here: the slot TYPES are what the
+/// fields are written in.
+#[cfg(feature = "macros")]
+pub use minocrab_macros::Ledger;
 
 /// `#[interface]` — a bodyless trait declaring another contract's circuits
 /// becomes a typed calling handle over `minocrab_ledger::call`. The
