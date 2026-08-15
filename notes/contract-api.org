@@ -1137,3 +1137,65 @@ changed, which is why that piece carries the instruction-delta review
 instead. All 78 circuits' serialized ZKIR dumped at four points (HEAD, after
 each piece): byte-identical for pieces 1 and 3, and the reviewed 47-Copy
 delta for piece 2.
+
+*** Overhead-for-ergonomics candidates for dmd (phase 7)
+dmd 2026-08-15 loosened the "zero circuit overhead throughout" principle:
+where a small overhead would buy a clear ergonomic win, he wants to be ASKED
+with numbers rather than have the option auto-rejected. Phase 7 took NO
+overhead — every piece is byte-identical or a reviewed Copy removal — so
+what follows is the list of places where the zero-overhead (or
+zero-movement) rule shaped the API, each with what it would cost. Rows are
+Midnight's own cost model, measured on single-instruction circuits.
+Reference numbers: `less_than` costs 8 rows at ≤32 bits, 11 at 64, 17 at
+128, 23 at 192; `constrain_bits` costs ~bits/4 rows (2 at 8, 16 at 64, 32 at
+128); a `copy` of an immediate costs 0.
+
+1. MAPS — straight-line methods with the guard as an inline immediate.
+   Today every method takes the guard, and a straight-line circuit threads a
+   `one` wire through ~100 call sites and every helper signature
+   (`map.member(c, one, &key)`). The guard operand could be the immediate
+   `1` (v3 guards are operands), giving `map.member(c, &key)`.
+   COST: zero rows — it REMOVES a `Copy`. What it costs is MOVEMENT: the
+   impact instruction's guard reads `0x01` instead of `%imm.N`, so the
+   artifact is no longer byte-identical to compactc's stream. It is the
+   byte-identity gate that blocks this, not overhead; the showcase twin
+   (phase 8) is where it would be free to land.
+2. MAPS — typed cells for values whose limbs are COMPUTED. `mpcResponseKey`
+   (a curve point, limbs from an `encode` instruction) and coin cells are
+   `LedgerField`s with explicit ops, because `LedgerRepr::push_limbs` cannot
+   emit. Giving it `&mut Circuit3` would make them ordinary
+   `LedgerCell<T>`s.
+   COST: zero instructions — the `encode` is emitted at the call site today
+   anyway. The price is the invariant that a repr never emits, which is what
+   currently makes "building a LedgerValue is free" obvious by construction.
+3. PREDICATES — mixed-width comparisons instead of a build-time panic.
+   `less_than(u64_value, u128_limit)` panics today ("comparing a 64-bit
+   value with a 128-bit one"); it could compare at the wider width, which is
+   sound because each operand fits its own type.
+   COST: +6 rows for a 64→128 widening (11 → 17), +9 for the widest
+   realistic case (8→128). Buys: no manual widening, no panic to work
+   around.
+4. PREDICATES — orderings on RAW WIRES, made sound rather than rejected.
+   `less_than` is UB if an operand exceeds the width, so a wire with no type
+   is refused. The predicate could EMIT the range constraint the comparison
+   assumes.
+   COST: ~bits/4 rows per unconstrained operand — 16 rows at 64 bits, 32 at
+   128. Buys: predicates work on values already unwrapped to wires (swap's
+   tokenIn/tokenOut, the settle circuits' output limbs) instead of pushing
+   the author back to `c.less_than(.., bits)`, where the width is hand-typed
+   and unchecked again — which is the very bug this piece exists to remove.
+5. PREDICATES — a boolean LEAF (`is_true(bool_wire)`), so the combinators
+   and `.message(..)` work with a computed boolean (a map `member` result,
+   an in-branch guard).
+   COST: ZERO rows and zero instructions (it lowers to the wire itself).
+   Blocked by the design's hard scope, not by overhead; recorded because the
+   gap is real — those sites use `c.assert_with(cond, Some(msg))` and
+   `common::assert_if_with` instead of reading like the rest.
+6. PREDICATES — `.when(guard)`, the deferred in-branch form.
+   COST: ZERO — the lowering is `assert(select(guard, cond, 1))`, exactly
+   what `common::assert_if` emits today. It would fold the in-branch assert
+   idiom into the predicate surface rather than keeping a second spelling.
+Still rejected on their merits, no numbers needed: `map[k]` (an `Index` impl
+cannot take `c`), iterators over a ledger map (no in-circuit meaning), and
+deferred ARITHMETIC (`a + b` returning a descriptor hides emission inside an
+operator).
