@@ -1,0 +1,444 @@
+#+title: M15 — Opaque<'ts-type'> bridging
+
+Design of record for M15. Written before any code, per the milestone.
+Everything below that is a fact about compactc or about Midnight's ledger was
+read off a compiled artifact or upstream source, and the artifact is named.
+
+The probe fixture this note is built on is =probe.compact= / =probe2.compact=
+/ =probe3.compact=, sixteen circuits over every position an =Opaque= can
+occupy, compiled with the PINNED compactc under =--feature-zkir-v3=. It is
+reproduced as the M15 test fixture in §7 — nothing here rests on a probe that
+was thrown away.
+
+* 0. THE FINDINGS that reframe the milestone
+
+M15's own text guessed the Rust shape would be "an opaque handle type
+carrying the ts-type string, *never entering circuits*". Both halves of that
+guess are wrong, and in opposite directions.
+
+** (a) An =Opaque= DOES enter circuits, as one unconstrained slot
+
+=export circuit a_arg(x: Opaque<"string">)= compiles to
+
+: inputs: [ { "name": "%x.0", "type": "Scalar<BLS12-381>" } ]
+
+with *no constraint instruction at all* — which is compactc's own
+=[(topaque ,opaque-type) instr*]= line of =emit-constraints-for=, i.e.
+exactly [[file:../crates/minocrab/src/v3/abi.rs][=Prim::Opaque= →
+=LimbConstraint::None=]]. It can be a circuit argument, a circuit RESULT
+(=a_ret=: =outputs: ["Scalar<BLS12-381>"]=), a witness result (=a_wit=: a
+bare =private_input=, no constraint), a ledger =Cell= / =Map= key / =Map=
+value / =Set= element, a field of a struct, and it can cross a
+CROSS-CONTRACT boundary in both directions (=probe3.call_it=: the argument
+limb is =%x.0=, the result limb =%r.3= is a =private_input= with no
+constraint, and both are bound by the communications commitment
+=transient_hash [%cc-rand.4, %x.0, %r.3]=).
+
+So =Prim::Opaque=, which has existed in our ABI table since M12 stage 1 and
+has never been reachable from a typed leaf, is reachable — and this milestone
+is what reaches it.
+
+** (b) compactc publishes the two CURVE POINT types AS =Opaque=
+
+=contract-info.json= spells =Secp256k1Point= and =JubjubPoint= as
+
+: { "type-name": "Alias", "name": "Secp256k1Point",
+:   "type": { "type-name": "Opaque", "tsType": "Secp256k1Point" } }
+
+so 12 of the corpus's 74 =Opaque= nodes are curve points, which have a
+perfectly good in-circuit representation (=Point<Secp256k1>= /
+=Point<Jubjub>=, one typed slot) and one of which — =Secp256k1Point= — we
+have supported as a typed leaf since M9 phase 5.
+
+The consequence is not cosmetic. =minocrab-abi='s =TypeError::Opaque= says
+"has no in-circuit representation, so it cannot cross a contract boundary",
+and =CompactType::flatten= returns it for both halves. So today:
+
+- *=CompactType::flatten= cannot flatten the erc20-vault's own =initialize=*
+  (=responseKey: Secp256k1Point=), which means the benchmark contract is not
+  importable through our own interface machinery, and
+  =minocrab-interface-gen= refuses it with a message that is false about it.
+- The same is true of =test-caller-contract='s =initialise=, of
+  =signet-midnight='s =verifyRespondBidirectionalEvent32=, and of
+  =test-center/compact/schnorr='s =JubjubPoint= arguments.
+
+This is a bug found by M15 rather than a feature M15 adds, and it is the
+cheaper half of the milestone: the leaf already exists.
+
+** (c) The =CompactType= doc's corpus claim is too strong
+
+=CompactType='s doc says "Every =type-name= that occurs anywhere in the
+312-artifact corpus is a variant here, so a parse failure means a NEW
+compactc type rather than a gap in this list." Scanning every =type-name= in
+all 312 artifacts gives sixteen distinct names, and *four are not variants*:
+=JubjubScalar= (1), =Map= (9), =Counter= (2), =List= (1).
+
+It is currently harmless — all four occur only in LEDGER positions, and
+=ContractInfo= deserializes =circuits= and =contracts= only, never =ledger=
+or =witnesses=. But it is not harmless as written, because the curve
+scalar/base names ARE reachable in a position we parse: =probe2.compact='s
+=c_js(x: JubjubScalar)= compiles, and its =contract-info.json= carries
+={"type-name": "JubjubScalar"}= as a circuit ARGUMENT type. No corpus
+contract does it, so no corpus artifact trips it; a user's would.
+
+The claim gets narrowed to the positions the crate parses, and the three
+curve scalar/base names get modelled (§6), because the fixture exercises
+them and because leaving a known-reachable parse error in place is worse than
+the three lines that fix it.
+
+** (d) A witness's result type is spelled =result type=, with a SPACE
+
+Found by reconciling two counts of the same thing: a regex over the artifact
+text finds 74 =Opaque= nodes, a structural walk finds 73, and the missing one
+is =zerocash='s =witness context$encrypt(pk: Opaque<"Uint8Array">):
+Opaque<"Uint8Array">=.
+
+Every CIRCUIT in =contract-info.json= names its result =\"result-type\"=;
+every WITNESS names it =\"result type\"=. This is universal, not a one-off:
+66 of 66 witness entries across the 32 artifacts that have witnesses use the
+spaced form, and 0 use the hyphenated one.
+
+Nothing breaks today, because =ContractInfo= does not deserialize
+=witnesses= at all. It is recorded because it is a landmine with a
+=#[serde(rename)]= shape: the obvious way to add witness parsing is to copy
+=Circuit='s =#[serde(rename = "result-type")]=, which would silently fail —
+=serde= would report a missing field, and the natural conclusion would be
+"compactc does not publish witness result types", which is false. Anyone
+adding witness parsing should read this line first.
+
+* 1. What the corpus actually contains
+
+74 =Opaque= nodes across 23 of the 312 compiled artifacts, by =tsType= and by
+the position they occupy:
+
+| role        | =string= | =Uint8Array= | =Secp256k1Point= | =JubjubPoint= | total |
+|-------------+----------+--------------+------------------+---------------+-------|
+| circuit arg |        8 |            1 |                6 |             2 |    17 |
+| circuit ret |       19 |            1 |                — |             1 |    21 |
+| witness arg |        1 |            1 |                — |             — |     2 |
+| witness ret |        — |            1 |                — |             — |     1 |
+| ledger      |       27 |            3 |                2 |             1 |    33 |
+| TOTAL       |       55 |            6 |                8 |             4 |    74 |
+
+(The two point columns are always under an =Alias= whose =name= equals the
+=tsType=; the other two are always bare.)
+
+The genuinely-opaque uses are real production code, not test fixtures:
+=bboard='s =message: Maybe<Opaque<"string">>= with =post(new_message:
+Opaque<"string">)= and =take_down(): Opaque<"string">=; =micro-dao='s
+=topic=; =welcome='s =add_participant(participant: Opaque<"string">)= plus
+=witness set_local_id(participant: Opaque<"string">)=; =zerocash='s
+=ciphertexts: List<Opaque<"Uint8Array">>= with =witness
+context$encrypt(pk: …)=; and eleven OpenZeppelin token contracts whose
+=name()= / =symbol()= circuits return =Opaque<"string">=.
+
+*None of the 74 is in a v3 artifact.* Only the three sig-net sources carry
+=--feature-zkir-v3=, and their four =Opaque= nodes are all
+=Secp256k1Point=. This is the same wall M14 hit, and it has the same answer:
+a =tiny.compact=-style fixture compiled by the pinned compactc (§7).
+
+* 2. What an =Opaque= IS, at the ledger level
+
+The alignment atom is =compress= — =type->alignments=,
+=flatten-datatypes.ss:80-126=, already recorded in notes/ledger-abi.org §3 —
+and upstream's own comment on the variant is the whole semantics
+(=base-crypto/src/fab/encoding.rs:640=):
+
+: /// This atom should be represented by its hash in a field representation.
+: Compress,
+
+The representation function is =ValueAtom::field_repr_unchecked=
+(=transient-crypto/src/fab.rs:486-495=):
+
+#+begin_src rust
+AlignmentAtom::Compress => {
+    // Special case for the empty string to make defaults work well.
+    if self.0.is_empty() {
+        writer.write(&[0.into()])
+    } else {
+        writer.write(&[transient_commit(&self.0[..], (self.0.len() as u64).into())])
+    }
+}
+#+end_src
+
+Four facts follow, and they are what makes the Rust type designable:
+
+1. *The field element a circuit sees is a binding commitment*, not a handle
+   or a pointer: =transient_commit(bytes, len)= — Poseidon over the raw
+   bytes, opened by the byte length. So in-circuit equality on two opaques
+   is equality of the TS values up to Poseidon collision resistance. That is
+   much stronger than "two opaque handles happen to match", and it is why
+   =a_eq='s single =test_eq= is a sound thing for a contract to do.
+2. *The empty value is zero*, which is why =default<Opaque<"string">>=
+   lowers to the immediate =0x00= (=probe3.dflt=) and why our =default()=
+   can be the field constant zero with no special case.
+3. *A =compress= atom accepts a value of ANY length* (=AlignmentAtom::fits=
+   returns =true= unconditionally for it) — so the on-chain =ValueAtom= holds
+   the whole string, and the width is genuinely not fixed. This is the
+   formal reason an =Opaque= is outside the Borsh fixed-width subset (§5).
+4. *It is one-way.* =AlignmentAtom::parse_field_repr= returns =None= for
+   =Compress= (=fab.rs:545=), so the value cannot be recovered from its
+   field representation by anyone, including us. There is no byte view of an
+   opaque to be had, in circuit or out.
+
+In the Impact push encoding the atom is the immediate =-0x01= (=Field= is
+=-0x02=, a =bytes n= atom is =n=), which
+[[file:../crates/minocrab-ledger/src/lib.rs][=alignment_atom_elem=]] already
+emits — =AlignmentAtom::Compress => Fr::from(0) - Fr::from(1)=, and
+=atom_slots= already counts it as one. Every probe circuit's ledger write
+confirms it: =impact [0x11, 0x01, 0x01, -0x01, %x.0]=. *The ledger layer
+needs no new op for M15* — the atom it needs is already plumbed and was
+simply never produced by a typed value.
+
+* 3. The Rust shape
+
+Two Rust types, because compactc's one =type-name= is two things.
+
+** 3.1 The genuine opaque: =minocrab_std::v3::Opaque<T, V>=
+
+#+begin_src rust
+pub trait TsType { const TS_NAME: &'static str; }
+
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Opaque<T: TsType, V: Vis3 = Private>(Wire3<FieldT, V>, PhantomData<T>);
+#+end_src
+
+with the two the corpus uses predeclared as =minocrab_std::v3::ts::{Str,
+Uint8Array}= (=TS_NAME = "string"= / ="Uint8Array"=) and a =ts_type!=
+declaration macro for the rest.
+
+The ts-type is a MARKER TYPE rather than a =const TS: &'static str= because
+=adt_const_params= is unstable: a =&'static str= cannot be a const-generic
+argument on stable. The marker is not a workaround, though — it is the
+better shape for the reason that matters here, which is that =Opaque<Str>=
+and =Opaque<Uint8Array>= are *distinct types that do not unify*. Passing one
+where the other is wanted is a type error with no lowering consequence,
+which is the second-preference rejection mechanism in CLAUDE.md's
+compile-errors-over-panics order, and it is exactly Compact's own rule —
+checked, not assumed: assigning an =Opaque<"Uint8Array">= to an
+=Opaque<"string">= cell gets =expected right-hand side of = to have type
+Opaque<"string"> but received Opaque<"Uint8Array">= from the pinned
+compiler.
+
+Impls, each justified by a probe circuit:
+
+| trait                     | at         | why                                                      |
+|---------------------------+------------+----------------------------------------------------------|
+| =CircuitAbi=              | any =V=    | =SLOTS = 1=, atoms =[Compress]=, prims =[Prim::Opaque]=   |
+| =CircuitArg=              | =Private=  | =a_arg= — one =c.arg::<FieldT>=, no constraint            |
+| =CallArg= / =CallResult=  | =Public=   | =probe3.call_it= — both directions, result limb =None=     |
+| =LedgerRepr=              | =Public=   | =a_write= / =a_map= / =a_key= / =a_set= / =a_maybe=        |
+| =Disclose=                | =Private=  | every probe writes =disclose(x)=                          |
+| =CircuitOut=              | =Public=   | =a_ret= — one output slot                                 |
+
+and exactly two operations: =eq= / =ne= (one =test_eq=, =a_eq=) and
+=default()= (the constant zero, =probe3.dflt=). Nothing else.
+
+=Prim::Opaque= makes =CircuitArg::constrain='s provided body emit nothing
+for the slot, so no impl states that — the TABLE states it, which is M12
+stage 1's whole point. Unlike =Secp256k1Point=, an opaque slot IS a native
+field wire, so =push_slots= pushes it and the =Prim::Point= filter is not
+involved.
+
+** 3.2 The curve spelling: recognize, don't reject
+
+=Alias { name, ty: Opaque { ts_type } }= where =name == ts_type= and the
+name is one of =Secp256k1Point= / =JubjubPoint= is compactc's ABI spelling
+for a native curve type. It maps to =minocrab_std::v3::Secp256k1Point=
+(exists, M9 phase 5) and a new =JubjubPoint= leaf, which is the same
+five lines with a two-atom alignment:
+
+| leaf              | slots | prim         | atoms                                 |
+|-------------------+-------+--------------+---------------------------------------|
+| =Secp256k1Point=  |     1 | =Prim::Point= | =b24, b8, b24, b8, field=            |
+| =JubjubPoint=     |     1 | =Prim::Point= | =field, field=                        |
+
+Both read off the =encode= op in the probe: =a_pt= produces five outputs and
+pushes =[0x18, 0x08, 0x18, 0x08, -0x02]=, =a_jpt= produces two and pushes
+=[-0x02, -0x02]=. =JubjubPointT= already exists as an =IrTy= marker with
+=EqAddTy= and =PointTy= impls, so the leaf is a wrapper and nothing else.
+
+Recognition has to happen BEFORE the generic =Alias= branch in both places.
+In =minocrab-interface-gen= that is not an optimisation but a correctness
+requirement: the generic branch emits =pub type Name<V> = target=, so
+=Alias { Secp256k1Point, Opaque { Secp256k1Point } }= would generate
+=pub type Secp256k1Point<V> = Secp256k1Point<V>=, a self-referential alias
+(E0391). The same name+shape-match idiom =rust_struct= already uses for
+=ContractAddress= / =Maybe= / =Either= is the model.
+
+* 4. What an =Opaque= CANNOT do, and why each is a compile error
+
+Per CLAUDE.md's order, every rejection here lands at =missing impl= — the
+most preferred rung — with no new machinery:
+
+- *No hashing.* =persistent_hash= and =transient_hash= are bounded on
+  =CircuitBorsh=, and =Opaque= has no =CircuitBorsh= impl (§5), so
+  =persistent_hash(c, &opaque)= is E0277. This is compactc's own rule, and
+  it states it in almost the same words: =persistentHash cannot be applied
+  to a first argument containing opaque JavaScript values, received
+  Opaque<"string">= (the probe's first compile, before the circuit was
+  removed).
+- *No arithmetic, no ordering, no comparison against a literal.* Those live
+  on =Uint= / =BoundedUint= / =CheckOperand=; an =Opaque= implements none of
+  them, so =o.lt(5u64)= or =c.add(o, o)= names a method that does not exist.
+- *No =widen=, no =to_uint=, no byte view.* §2 fact 4: there is nothing to
+  widen to and no bytes to view. Absent by absence.
+- *No =Bytes<N>= conversion in either direction.* An =Opaque= cannot be
+  built from bytes in circuit either: the commitment is computed off-circuit
+  by the runtime, and the circuit only ever receives it.
+
+*The one honest hole*, recorded rather than walled off:
+=persistent_hash_compact= / =transient_hash_compact= take a raw =Alignment=
+and a slot list, so a caller CAN hand them a =Compress= atom and get a
+digest. That cannot be made a compile error without changing those two
+functions' shape, and it should not be, because the raw form is what makes
+them the interop escape hatch. The argument for leaving it is that the
+reachable case is empty: the =_compact= flavors exist ONLY to agree with a
+digest a Compact contract also computes, and compactc REFUSES to hash an
+opaque — so there is no Compact digest over an opaque for anyone to agree
+with. It goes in the module docs as a stated non-use, beside the existing
+list.
+
+* 5. Borsh interaction
+
+=Opaque= gets NO =CircuitBorsh= impl, and this is a rule of the format
+rather than a gap in our work: §2 fact 3 is that a =compress= atom's value
+has no fixed width, and M11's subset is *defined* by every circuit-visible
+type having one. There is no width to declare and no bytes to declare it
+over.
+
+=spec/borsh-subset.md= should therefore gain =Opaque= to its exclusion list,
+beside =Option= / =Vec= / =String= / maps / data-enums, with the reason —
+and the derive should say so: =#[derive(CircuitBorsh)]= on a struct with an
+=Opaque= field must be a SPAN ERROR naming the field, in the same style as
+the existing five ("=Opaque<T>= is a commitment to a value of unbounded
+length, so it has no fixed width and is outside the subset"), not a
+confusing missing-impl error deep in generated code.
+
+Note this is the one place M15 is *more* restrictive than the ledger:
+=persistent_hash_compact= over a =Compress= atom is well-defined FAB and we
+leave it reachable (§4). What has no Borsh spelling is the *subset*, not the
+hash.
+
+* 6. The ABI reader and the generator
+
+=minocrab-abi= (=src/info.rs=):
+
+1. =CompactType::flatten= — add a =Point= branch reached before the generic
+   =Alias= branch, keyed on (alias name == ts_type) ∈ {=Secp256k1Point=,
+   =JubjubPoint=}, pushing that leaf's atoms and =Prim::Point=.
+2. The bare =Opaque= branch stops being an error: one =Compress= atom, one
+   =Prim::Opaque=.
+3. =TypeError::Opaque= is DELETED, not reworded. There is no longer a
+   Compact type spelled =Opaque= that cannot cross a boundary, and a variant
+   nothing constructs is worse than no variant. (=TypeError::ContractValue=
+   stays: a contract handle really cannot be data.)
+4. Model =JubjubScalar= / =Secp256k1Base= / =Secp256k1Scalar= as
+   =CompactType= variants (§0c), each one slot with its =anative= expansion
+   per notes/ledger-abi.org §3: =JubjubScalar= → =field=,
+   =Secp256k1Base= and =Secp256k1Scalar= → =b24, b8= (probe2's =encode=
+   outputs and pushes: =[-0x02]=, =[0x18, 0x08]=, =[0x18, 0x08]=).
+5. Narrow the corpus claim in =CompactType='s doc to the positions the crate
+   parses, and say which four names are ledger-only.
+
+=minocrab-interface-gen= (=src/lib.rs= =Registry::rust_type=):
+
+6. The curve rows, before the =Alias= branch (§3.2 — self-referential alias
+   otherwise).
+7. The =Opaque= row: =Opaque<TsMarker, V>=, declaring the marker via
+   =ts_type!= as a generated =Item= the first time each distinct =tsType= is
+   met, named by =pascal(ts_type)= (so ="string"= → =Str=… see §8 Q2).
+8. The three curve scalar/base rows.
+9. =render='s =Opaque= arm prints =Opaque<string>= where Compact's own
+   spelling is =Opaque<"string">= — the quotes are part of the syntax. It
+   only feeds generated doc comments, but a doc comment that does not
+   round-trip through compactc is a small lie in a file whose job is to
+   mirror someone else's declaration.
+
+Both changes are additive: no existing artifact's flattening moves, because
+every position that changes is one that previously ERRORED. That makes the
+zero-movement gate trivially strong — the 87 circuits' ZKIR and both
+snapshots must be bit-identical, and there is no route by which they could
+not be.
+
+* 7. The fixture and the differential
+
+Same route and same reason as M14 (§1: no v3 corpus artifact carries a
+non-point =Opaque=): =crates/minocrab-contracts/tests/fixtures/opaque/=
+=opaque.compact=, compiled with the pinned compactc under
+=--feature-zkir-v3=, committed beside the test. The probe circuits of §0-§2
+become the fixture, so the facts this note asserts are the facts the suite
+checks:
+
+- =a_arg= / =a_ret= / =a_eq= — argument, result, equality.
+- =a_write= / =a_map= / =a_key= / =a_set= / =a_maybe= — every ledger
+  position, so the =-0x01= atom is exercised as cell, map key, map value,
+  set element and inside a =Maybe=.
+- =a_wit= — a witnessed opaque (=private_input=, no constraint).
+- =a_struct= — an opaque beside a constrained field, so the slot ORDER and
+  the fact that only the neighbour gets a =constrain_bits= are both pinned.
+- =a_pt= / =a_jpt= — the two curve spellings, which is what closes §0b.
+- =dflt= — =default<Opaque<…>>= as the immediate =0x00=.
+- =call_it= — the cross-contract round trip, which pins the result limb's
+  =LimbConstraint::None= and the commitment binding both limbs.
+
+The criterion is M14's, which is stronger than the §6 corpus criterion:
+*serialized ZKIR equal to compactc's up to identifier renaming* — op,
+immediate, width and operand position — since these circuits are small
+enough that we mirror them exactly. Plus the ABI round-trip against
+=contract-info.json= slot for slot, which is the test that would have caught
+§0b on day one.
+
+Additionally, and separately from the fixture: an *artifact-agreement test
+against the real vault*, asserting that =CompactType::flatten= of the
+erc20-vault's own =initialize= arguments now equals
+=Secp256k1Point='s =CircuitAbi=. That is the corpus provenance the fixture
+route costs, recovered for the half of the milestone where the corpus does
+have coverage.
+
+What we cannot check in Rust: that the commitment our simulator computes for
+an opaque input matches what the TS runtime would produce for a given
+string. §2 gives the function (=transient_commit(bytes, len)=, zero for
+empty) and our own =transient_commit= port can compute it, so the test can
+pin =Opaque= handling against *our* reading of upstream's Rust — but the TS
+runtime is not in the loop, and no corpus artifact ships a preimage with an
+opaque value in it. Stated as a limit, not papered over.
+
+* 8. For dmd — three questions, none blocking
+
+The implementation proceeds on the marked default for each; they are the
+kind of naming/scope call that is cheaper to revisit than to block on.
+
+*Q1. Scope of the curve half.* §0b is a bug fix, not the fairness bullet,
+and it is what makes the vault importable through its own machinery.
+DEFAULT: do it in M15, since the leaf exists and the alternative is
+shipping an =Opaque= story that still refuses the benchmark contract.
+
+*Q2. The name for =Opaque<"string">='s marker.* =pascal("string")= is
+=String=, which shadows =std::String= in generated code and would be a
+genuinely nasty import. DEFAULT: =Str= for ="string"= as a special case,
+=pascal(ts_type)= otherwise (so ="Uint8Array"= → =Uint8Array=), with the
+=TS_NAME= const carrying the real string so nothing is lost — and a
+generated =ts_type!= line is a readable place for a reader to see the
+mapping.
+
+*Q3. Should =Opaque= be =Copy=?* It is one wire, like every other leaf, so
+yes by consistency. The argument against is that a commitment is not
+obviously a value you want silently duplicated — but nothing about an
+opaque is spendable or consumed, so there is no resource discipline to
+protect. DEFAULT: =Copy=, like =Uint= and =Bytes=.
+
+* 9. What this milestone does NOT cover
+
+- *=List<Opaque<…>>= and =HistoricMerkleTree<Opaque<…>>=* (zerocash's
+  =ciphertexts=, pm-15405's fixtures). The =Opaque= half is M15's; the
+  =List= / tree ledger ops are M16's, and M15 does not pull them forward.
+  What M15 owes M16 is that =LedgerRepr= for =Opaque= is in place, so those
+  ADTs get opaque element types for free when they land.
+- *The =Contract= handle as data* (=TypeError::ContractValue=). Genuinely
+  cannot cross a boundary; unchanged.
+- *A bare =Field= argument.* Still refused by the generator, and for a
+  different reason than =Opaque= was (no range constraint vs no
+  representation) — worth keeping distinct now that the =Opaque= message is
+  gone, because the two used to read alike and only one was ever true.
