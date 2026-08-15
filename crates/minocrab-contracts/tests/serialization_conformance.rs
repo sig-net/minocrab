@@ -866,6 +866,19 @@ mod in_circuit {
             self.recovery_id.constrain_canonical(c);
         }
 
+        fn read<R: minocrab_std::v3::borsh::BorshReader<V>>(
+            c: &mut Circuit3,
+            r: &mut R,
+        ) -> Self {
+            RespondMiscCircuit {
+                request_id: CircuitBorsh::read(c, r),
+                big_r_x: CircuitBorsh::read(c, r),
+                big_r_y: CircuitBorsh::read(c, r),
+                s: CircuitBorsh::read(c, r),
+                recovery_id: CircuitBorsh::read(c, r),
+            }
+        }
+
         fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
             <B32<V>>::push_layout(&path.field("request_id"), offset, out);
             <B32<V>>::push_layout(&path.field("big_r_x"), offset, out);

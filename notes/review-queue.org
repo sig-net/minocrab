@@ -48,3 +48,10 @@ reviewer should look at.
       un-spellable CircuitArg supertrait; and Tag<K>'s claim that
       compactc emits no `< K` bound (asserted from the corpus's absence
       of enum-typed arguments, not from an artifact).
+- [ ] M11 stage 2 (BorshReader): the WitnessCheck soundness argument —
+      witnessed leaves are pinned only by constrain_canonical + the
+      re-pack limb equality, so check that read_witness_checked really
+      emits both and that Serializer's in-range precondition is met by
+      constrain_canonical for every leaf (a leaf whose canonical
+      constraint were weaker than its width would break injectivity).
+      Also Split's assumption that div_mod bounds the high rest.

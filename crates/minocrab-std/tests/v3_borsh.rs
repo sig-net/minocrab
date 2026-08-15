@@ -24,8 +24,8 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_sim::v3::simulate;
 use minocrab_std::v3::borsh::{
-    alignment_of, limbs_of, to_bytes, CircuitBorsh, CircuitBorshArg, FieldSpec, Flagged, LayoutPath,
-    Limbs, Tag,
+    alignment_of, limbs_of, read_split, read_witness_checked, to_bytes, BorshReader, CircuitBorsh,
+    CircuitBorshArg, FieldSpec, Flagged, LayoutPath, Limbs, Split, Tag, WitnessCheck,
 };
 use minocrab_std::v3::{ArgPath, Bool, Bytes, BytesN, CircuitArg, Serializer, Uint, Vis3, B32};
 use minocrab_zkir::v3::{to_zkir_string, IrValue};
@@ -150,6 +150,20 @@ impl<V: Vis3> CircuitBorsh<V> for Record<V> {
         self.calldata.constrain_canonical(c);
     }
 
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        Record {
+            version: CircuitBorsh::read(c, r),
+            flag: CircuitBorsh::read(c, r),
+            kind: CircuitBorsh::read(c, r),
+            amount: CircuitBorsh::read(c, r),
+            addr: CircuitBorsh::read(c, r),
+            id: CircuitBorsh::read(c, r),
+            payload: CircuitBorsh::read(c, r),
+            words: CircuitBorsh::read(c, r),
+            calldata: CircuitBorsh::read(c, r),
+        }
+    }
+
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
         <Uint<8, V>>::push_layout(&path.field("version"), offset, out);
         <Bool<V>>::push_layout(&path.field("flag"), offset, out);
@@ -232,9 +246,13 @@ fn ir_of(build: impl FnOnce(&mut Circuit3)) -> String {
 }
 
 fn preimage(inputs: Vec<Fr>) -> ProofPreimage {
+    preimage_with(inputs, vec![])
+}
+
+fn preimage_with(inputs: Vec<Fr>, private_transcript: Vec<Fr>) -> ProofPreimage {
     ProofPreimage {
         inputs,
-        private_transcript: vec![],
+        private_transcript,
         public_transcript_inputs: vec![],
         public_transcript_outputs: vec![],
         binding_input: 0.into(),
@@ -624,6 +642,295 @@ fn the_layout_table_is_the_offset_table() {
         last.2 + last.3,
         <Record<Private> as CircuitBorsh<Private>>::LEN
     );
+}
+
+// ---- (5) THE READER (stage 2) -------------------------------------------------------------
+//
+// A library component: no vault circuit uses it. Both modes are proven
+// against bytes borsh itself produced, not only against our own writer.
+
+/// The widths the record's `read` takes, in order: a `Bytes<32>` reads as
+/// 31 + 1 (the `[lo, hi]` slot pair), a `Bytes<64>` as its limbs in string
+/// order. Slicing borsh's own output by this list gives the witness values
+/// WitnessCheck mode consumes — the private transcript, straight off the
+/// wire format.
+const TAKE_WIDTHS: &[usize] = &[1, 1, 1, 16, 20, 31, 1, 31, 31, 2, 31, 1, 31, 1, 1, 4];
+
+fn take_order_values(bytes: &[u8]) -> Vec<Fr> {
+    let mut values = Vec::with_capacity(TAKE_WIDTHS.len());
+    let mut at = 0usize;
+    for &width in TAKE_WIDTHS {
+        values.push(Fr::from_le_bytes(&bytes[at..at + width]).expect("<= 31 bytes fit"));
+        at += width;
+    }
+    assert_eq!(at, <Record<Private> as CircuitBorsh<Private>>::LEN);
+    values
+}
+
+/// Disclose and output a record's leaf wires, in `CircuitArg` slot order —
+/// so the outputs are directly comparable with [`record_slots`].
+fn output_record_leaves(c: &mut Circuit3, record: &Record<Private>) {
+    let mut wires = vec![
+        record.version.field(),
+        record.flag.field(),
+        record.kind.field(),
+        record.amount.field(),
+        record.addr.field(),
+        record.id.hi,
+        record.id.lo,
+    ];
+    wires.extend(record.payload.limbs().iter().copied());
+    for word in &record.words {
+        wires.extend([word.hi, word.lo]);
+    }
+    wires.push(record.calldata.is_some.field());
+    wires.push(record.calldata.value.field());
+    for (i, wire) in wires.into_iter().enumerate() {
+        let public = c.disclose(wire, "leaf");
+        c.output(public, &format!("leaf {i}"));
+    }
+}
+
+/// Split mode parses bytes `borsh::to_vec` produced into the right field
+/// values — decode correctness against borsh itself, through the simulator.
+#[test]
+fn split_mode_reads_native_borsh_bytes() {
+    let spec = spec_record();
+    let bytes = borsh::to_vec(&spec).expect("serializes");
+
+    let mut c = Circuit3::new();
+    let packed = BytesN::<Private, 204>::arg(&mut c, "bytes");
+    packed.constrain_input(&mut c);
+    let record: Record<Private> = read_split(&mut c, &packed);
+    output_record_leaves(&mut c, &record);
+    let ir = c.finish(false).ir;
+
+    let run = simulate(&ir, &preimage(bytes_n_slots(&bytes))).expect("the reader accepts");
+    let outputs: Vec<Fr> = run
+        .outputs
+        .iter()
+        .map(|v| match v {
+            IrValue::Native(fr) => *fr,
+            other => panic!("expected a native output, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(outputs, record_slots(&spec));
+}
+
+/// WitnessCheck mode, same statement: the witnesses it accepts are exactly
+/// the fields borsh encoded, and it hands them back in the right slots.
+#[test]
+fn witness_check_mode_reads_native_borsh_bytes() {
+    let spec = spec_record();
+    let bytes = borsh::to_vec(&spec).expect("serializes");
+
+    let mut c = Circuit3::new();
+    let packed = BytesN::<Private, 204>::arg(&mut c, "bytes");
+    packed.constrain_input(&mut c);
+    let record: Record<Private> = read_witness_checked(&mut c, &packed);
+    output_record_leaves(&mut c, &record);
+    let ir = c.finish(false).ir;
+
+    let pi = preimage_with(bytes_n_slots(&bytes), take_order_values(&bytes));
+    let run = simulate(&ir, &pi).expect("the reader accepts");
+    let outputs: Vec<Fr> = run
+        .outputs
+        .iter()
+        .map(|v| match v {
+            IrValue::Native(fr) => *fr,
+            other => panic!("expected a native output, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(outputs, record_slots(&spec));
+}
+
+/// A lying witness is rejected: the re-pack equality is what makes
+/// WitnessCheck a proof rather than a hint. Every leaf is checked, one at a
+/// time.
+#[test]
+fn witness_check_rejects_a_lying_witness() {
+    let spec = spec_record();
+    let bytes = borsh::to_vec(&spec).expect("serializes");
+
+    let mut c = Circuit3::new();
+    let packed = BytesN::<Private, 204>::arg(&mut c, "bytes");
+    packed.constrain_input(&mut c);
+    let _record: Record<Private> = read_witness_checked(&mut c, &packed);
+    let ir = c.finish(false).ir;
+
+    let honest = take_order_values(&bytes);
+    assert!(simulate(&ir, &preimage_with(bytes_n_slots(&bytes), honest.clone())).is_ok());
+    for leaf in 0..honest.len() {
+        let mut lying = honest.clone();
+        lying[leaf] = lying[leaf] + Fr::from(1u64);
+        assert!(
+            simulate(&ir, &preimage_with(bytes_n_slots(&bytes), lying)).is_err(),
+            "leaf {leaf} was not checked against the buffer"
+        );
+    }
+}
+
+/// `read(to_bytes(v)) == v`, in circuit, in both modes: the round-trip
+/// property, asserted wire by wire and run through the simulator.
+#[test]
+fn both_modes_round_trip_in_circuit() {
+    fn round_trip(witness_check: bool) {
+        let spec = spec_record();
+        let mut c = Circuit3::new();
+        let original = <Record<Private> as CircuitArg>::declare(&mut c, &ArgPath::root("record"));
+        original.constrain(&mut c);
+        let packed = to_bytes::<204, _, _>(&mut c, &original);
+        let back: Record<Private> = if witness_check {
+            read_witness_checked(&mut c, &packed)
+        } else {
+            read_split(&mut c, &packed)
+        };
+        assert_records_equal(&mut c, &original, &back);
+        let ir = c.finish(false).ir;
+
+        let private = if witness_check {
+            take_order_values(&borsh::to_vec(&spec).expect("serializes"))
+        } else {
+            vec![]
+        };
+        simulate(&ir, &preimage_with(record_slots(&spec), private))
+            .expect("the round trip holds");
+    }
+
+    round_trip(false);
+    round_trip(true);
+}
+
+fn assert_records_equal(c: &mut Circuit3, a: &Record<Private>, b: &Record<Private>) {
+    c.assert_eq(a.version.field(), b.version.field());
+    c.assert_eq(a.flag.field(), b.flag.field());
+    c.assert_eq(a.kind.field(), b.kind.field());
+    c.assert_eq(a.amount.field(), b.amount.field());
+    c.assert_eq(a.addr.field(), b.addr.field());
+    c.assert_eq(a.id.hi, b.id.hi);
+    c.assert_eq(a.id.lo, b.id.lo);
+    for (x, y) in a.payload.limbs().iter().zip(b.payload.limbs()) {
+        c.assert_eq(*x, *y);
+    }
+    for (x, y) in a.words.iter().zip(&b.words) {
+        c.assert_eq(x.hi, y.hi);
+        c.assert_eq(x.lo, y.lo);
+    }
+    c.assert_eq(a.calldata.is_some.field(), b.calldata.is_some.field());
+    c.assert_eq(a.calldata.value.field(), b.calldata.value.field());
+}
+
+/// THE PADDING RULE, enforced by both modes: a 204-byte value read out of a
+/// 288-byte envelope accepts a zero tail and rejects a dirty one. (Split
+/// asserts it segment by segment; WitnessCheck gets it for free, because the
+/// re-pack zero-fills the tail and the equality covers every limb.)
+#[test]
+fn both_modes_reject_a_dirty_pad() {
+    let spec = spec_record();
+    let borsh_bytes = borsh::to_vec(&spec).expect("serializes");
+
+    for witness_check in [false, true] {
+        let mut c = Circuit3::new();
+        let packed = BytesN::<Private, 288>::arg(&mut c, "bytes");
+        packed.constrain_input(&mut c);
+        let _record: Record<Private> = if witness_check {
+            read_witness_checked(&mut c, &packed)
+        } else {
+            read_split(&mut c, &packed)
+        };
+        let ir = c.finish(false).ir;
+
+        let private = if witness_check {
+            take_order_values(&borsh_bytes)
+        } else {
+            vec![]
+        };
+
+        let mut envelope = vec![0u8; 288];
+        envelope[..borsh_bytes.len()].copy_from_slice(&borsh_bytes);
+        let pi = preimage_with(bytes_n_slots(&envelope), private.clone());
+        assert!(simulate(&ir, &pi).is_ok(), "a zero pad must be accepted");
+
+        for dirty in [204usize, 250, 287] {
+            let mut tampered = envelope.clone();
+            tampered[dirty] = 0xff;
+            let pi = preimage_with(bytes_n_slots(&tampered), private.clone());
+            assert!(
+                simulate(&ir, &pi).is_err(),
+                "pad byte {dirty} must be checked (witness_check = {witness_check})"
+            );
+        }
+    }
+}
+
+/// The reader consumes exactly what the writer wrote: `Split` is left with
+/// the envelope's pad and nothing else.
+#[test]
+fn the_reader_consumes_exactly_len_bytes() {
+    let mut c = Circuit3::new();
+    let packed = BytesN::<Private, 288>::arg(&mut c, "bytes");
+    let mut reader = Split::new(&packed);
+    assert_eq!(reader.remaining(), 288);
+    let _record = <Record<Private> as CircuitBorsh<Private>>::read(&mut c, &mut reader);
+    assert_eq!(
+        reader.remaining(),
+        288 - <Record<Private> as CircuitBorsh<Private>>::LEN
+    );
+}
+
+/// The two modes are not the same circuit, and the difference is the point:
+/// Split spends a ~143-row `div_mod` per field boundary interior to a limb,
+/// WitnessCheck spends 2w+1 rows per leaf (w bytes wide) plus one `div_mod`
+/// per straddled LIMB boundary in the re-pack — at most one per 31 bytes,
+/// whatever the field layout. Measured at this record: 2,587 vs 1,331 rows of
+/// reading, 1.9x; per leaf the ratio runs from 2.0x ([[u8; 32]; 2]) to 73x
+/// (bool). The table is `minocrab-sim/examples/borshcost.rs`.
+#[test]
+fn witness_check_is_the_cheaper_mode() {
+    fn rows(build: impl FnOnce(&mut Circuit3)) -> usize {
+        let mut c = Circuit3::new();
+        build(&mut c);
+        c.finish(false).ir.model().rows()
+    }
+    fn buffer(c: &mut Circuit3) -> BytesN<Private, 204> {
+        let packed = BytesN::<Private, 204>::arg(c, "bytes");
+        packed.constrain_input(c);
+        packed
+    }
+
+    let baseline = rows(|c| {
+        buffer(c);
+    });
+    let split = rows(|c| {
+        let packed = buffer(c);
+        let _record: Record<Private> = read_split(c, &packed);
+    }) - baseline;
+    let witness_check = rows(|c| {
+        let packed = buffer(c);
+        let _record: Record<Private> = read_witness_checked(c, &packed);
+    }) - baseline;
+    assert!(
+        witness_check * 3 < split * 2,
+        "WitnessCheck ({witness_check} rows of reading) should be at least 1.5x \
+         cheaper than Split ({split})"
+    );
+}
+
+/// A partial WitnessCheck read that never calls `finish` constrains nothing
+/// — which is why `read_witness_checked` exists and emits it for you.
+#[test]
+fn a_witness_check_without_finish_proves_nothing() {
+    let mut c = Circuit3::new();
+    let packed = BytesN::<Private, 204>::arg(&mut c, "bytes");
+    packed.constrain_input(&mut c);
+    let mut reader = WitnessCheck::<204>::new(&packed);
+    let _leaf = <Uint<64, Private> as CircuitBorsh<Private>>::read(&mut c, &mut reader);
+    drop(reader);
+    let ir = c.finish(false).ir;
+
+    // Any witness at all is accepted: nothing ties it to the buffer.
+    let bytes = borsh::to_vec(&spec_record()).expect("serializes");
+    assert!(simulate(&ir, &preimage_with(bytes_n_slots(&bytes), vec![Fr::from(9u64)])).is_ok());
 }
 
 // ---- the strict extension ---------------------------------------------------------------------

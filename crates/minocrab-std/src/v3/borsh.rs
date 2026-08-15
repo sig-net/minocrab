@@ -48,6 +48,12 @@
 //!   places that need the bytes as a value (log payloads, `Bytes<N>` fields).
 //!   This one costs the M7 segment packing, which is what it already cost.
 //!
+//! And one decoder, in two modes ([`BorshReader`], [`Split`],
+//! [`WitnessCheck`]) — deliberately off the critical path: no vault circuit
+//! uses it, because an attested output arrives as typed circuit ARGUMENTS and
+//! running the serializer forwards over declared fields is already a complete
+//! sound deserialization. The reader is for packed state and future formats.
+//!
 //! # The laws every impl must satisfy
 //!
 //! 1. `LEN` is the type's Borsh width — `borsh::object_length(v) == LEN` for
@@ -67,6 +73,11 @@
 //!    cross-checked against `borsh::schema_container_of` walked the same way
 //!    (stage 0's `layout_rows`), and published as the offset table the TS and
 //!    MPC sides implement against.
+//!
+//! 5. `read` takes the same fields in the same order, so it is the inverse of
+//!    the encoders: `read(to_bytes(v)) == v` in both modes, which
+//!    `tests/v3_borsh.rs` proves through the simulator — including against
+//!    bytes produced natively by `borsh::to_vec`.
 //!
 //! Laws 1, 2 and 4 are checked mechanically for every leaf: the layout widths
 //! must sum to `LEN` ([`CircuitBorsh::layout`] asserts it), the limbs must sum
@@ -102,6 +113,15 @@ pub trait CircuitBorsh<V: Vis3>: Sized {
     /// The serialized width in bytes — a compile-time constant, which is the
     /// whole point of the subset.
     const LEN: usize;
+
+    /// Read this value out of packed Borsh bytes, leaf by leaf, in
+    /// declaration order.
+    ///
+    /// Extraction ONLY: it emits no constraint, so on its own it is not a
+    /// sound deserialization in either mode. Use [`read_canonical`] (or the
+    /// whole-buffer [`read_split`] / [`read_witness_checked`]), which follow
+    /// it with [`CircuitBorsh::constrain_canonical`].
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self;
 
     /// Push this value's hash-preimage limbs: one alignment atom per Borsh
     /// leaf, with the wires that carry it. Emits NO instructions.
@@ -277,6 +297,230 @@ pub fn to_bytes<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     out.finish::<N>(c)
 }
 
+// ---- the deserializer ------------------------------------------------------------
+//
+// DELIBERATELY OFF THE CRITICAL PATH, and a library component: no vault
+// circuit uses it. The vault does not need a reader at all — an attested
+// output arrives as typed circuit ARGUMENTS and the MPC signs
+// keccak(requestId ‖ bytes), so declaring the fields and running the
+// SERIALIZER forwards is already a complete sound deserialization (the
+// four-line theorem: packing is injective on range-constrained inputs, the
+// MPC signed the digest, the circuit constrains bytes == serialize(fields)
+// with the fields in range, therefore the fields are what the MPC encoded).
+// What the reader is for is packed state and future formats — so it is built,
+// tested and PRICED here, and used by nothing.
+
+/// A source of packed Borsh bytes: hands back one little-endian field element
+/// per leaf, in byte order.
+///
+/// `V` is the visibility of the values it produces. The two implementations
+/// are the two modes of the design of record:
+///
+/// - [`Split`] — the M7 segment packing run BACKWARDS. One `div_mod` per
+///   field boundary that falls inside a limb, and the leaves keep the packed
+///   buffer's own visibility, so a public buffer yields public fields with no
+///   disclosure.
+/// - [`WitnessCheck`] — witness each leaf, constrain it, re-pack the lot and
+///   assert limb equality with the buffer. Much cheaper (the packing costs
+///   one `div_mod` per LIMB boundary rather than per FIELD boundary), but the
+///   leaves are witnesses, hence `Private`: ledger use needs `disclose`.
+///
+/// Two types rather than the one enum the design of record sketched, because
+/// the modes differ in the VISIBILITY they produce and that is a type, not a
+/// value: `Split<V>` reads at `V`, `WitnessCheck` reads at `Private`.
+pub trait BorshReader<V: Vis3> {
+    /// The next `width` bytes as one little-endian field element.
+    ///
+    /// PRECONDITION (both modes): the packed buffer's limbs are already
+    /// constrained to their byte widths — the same precondition
+    /// [`Serializer`] states, and for the same reason (the packing is
+    /// injective only on in-range limbs).
+    fn take(&mut self, c: &mut Circuit3, width: usize) -> Wire3<FieldT, V>;
+}
+
+/// Split mode: read fields out of the packed limbs directly, one `div_mod`
+/// per field boundary interior to a limb.
+///
+/// This is [`Serializer::finish`] backwards, segment for segment: the buffer
+/// is a queue of `(wire, byte length)` in string order, a field takes whole
+/// segments while they fit and splits the one that straddles.
+pub struct Split<V: Vis3> {
+    /// `(wire, byte length)` in STRING order — the packed limbs reversed,
+    /// since limb 0 is the leftover (most significant) chunk.
+    segments: std::collections::VecDeque<(Wire3<FieldT, V>, usize)>,
+}
+
+impl<V: Vis3> Split<V> {
+    /// Read from a packed `Bytes<N>`.
+    pub fn new<const N: usize>(bytes: &BytesN<V, N>) -> Split<V> {
+        let mut segments = std::collections::VecDeque::new();
+        for (i, limb) in bytes.limbs().iter().enumerate().rev() {
+            segments.push_back((*limb, BytesN::<V, N>::limb_len(i)));
+        }
+        Split { segments }
+    }
+
+    /// Bytes not yet read.
+    pub fn remaining(&self) -> usize {
+        self.segments.iter().map(|&(_, len)| len).sum()
+    }
+
+    /// The padding rule: everything after the value MUST be zero. One
+    /// `assert_eq` per leftover segment (never more than one per limb).
+    pub fn assert_pad_zero(self, c: &mut Circuit3) {
+        if self.segments.is_empty() {
+            return;
+        }
+        let zero = c.constant(0u64);
+        for (wire, _) in self.segments {
+            c.assert_eq(wire, V::from_public(zero));
+        }
+    }
+}
+
+impl<V: Vis3> BorshReader<V> for Split<V> {
+    fn take(&mut self, c: &mut Circuit3, width: usize) -> Wire3<FieldT, V> {
+        assert!(
+            width > 0 && width <= 31,
+            "a Borsh leaf is 1..=31 bytes here (Bytes<32> reads as 31 + 1, \
+             Bytes<N> limb by limb)"
+        );
+        let mut acc: Option<Wire3<FieldT, V>> = None;
+        let mut filled = 0usize;
+        while filled < width {
+            let (wire, len) = self
+                .segments
+                .pop_front()
+                .expect("the reader ran past the end of the buffer");
+            let (piece, piece_len) = if len > width - filled {
+                // The field ends inside this segment: split at the boundary
+                // and put the high rest back for the next read.
+                let take = width - filled;
+                let (rest, low) = c.div_mod_power_of_two(wire, (8 * take) as u32);
+                self.segments.push_front((rest, len - take));
+                (low, take)
+            } else {
+                (wire, len)
+            };
+            let weighted = if filled == 0 {
+                piece
+            } else {
+                let shift = V::from_public(super::pow2_const(c, filled));
+                c.mul(piece, shift)
+            };
+            acc = Some(match acc {
+                None => weighted,
+                Some(a) => c.add(a, weighted),
+            });
+            filled += piece_len;
+        }
+        acc.expect("width > 0")
+    }
+}
+
+/// WitnessCheck mode: witness every leaf, then prove the witnesses ARE the
+/// buffer by re-packing them and asserting limb equality.
+///
+/// Sound exactly when the leaves are range-constrained
+/// ([`CircuitBorsh::constrain_canonical`], which [`read_canonical`] emits):
+/// the packing is injective on in-range leaves, so the equality pins each
+/// leaf to the one value the buffer encodes. Cheaper than [`Split`] because
+/// the `div_mod`s move from field boundaries to LIMB boundaries — at most one
+/// per 31 bytes, whatever the field layout.
+///
+/// The re-pack also enforces the PADDING RULE for free: the [`Serializer`]
+/// zero-fills the tail of the `Bytes<N>`, so the equality asserts that the
+/// buffer's own tail is zero.
+///
+/// [`read_witness_checked`] is the entry point that cannot be misused; the
+/// bare struct exists for partial reads, where [`WitnessCheck::finish`] is
+/// the caller's responsibility and skipping it makes the whole read vacuous.
+#[must_use = "a WitnessCheck read proves nothing until finish() emits the equality"]
+pub struct WitnessCheck<const N: usize> {
+    /// The witnessed leaves, in byte order, ready to re-pack.
+    repack: Serializer<Private>,
+    /// The buffer's limbs, in slot order.
+    expected: Vec<Wire3<FieldT, Private>>,
+}
+
+impl<const N: usize> WitnessCheck<N> {
+    /// Read from a packed `Bytes<N>` of any visibility: the leaves are
+    /// witnesses, so they come back `Private` whatever the buffer was.
+    pub fn new<W: Vis3>(bytes: &BytesN<W, N>) -> WitnessCheck<N> {
+        WitnessCheck {
+            repack: Serializer::new(),
+            expected: bytes.limbs().iter().map(|w| w.private()).collect(),
+        }
+    }
+
+    /// Re-pack the witnessed leaves and assert they are the buffer, limb for
+    /// limb. WITHOUT THIS THE READ PROVES NOTHING.
+    pub fn finish(self, c: &mut Circuit3) {
+        let packed = self.repack.finish::<N>(c);
+        assert_eq!(packed.limbs().len(), self.expected.len());
+        for (got, want) in packed.limbs().iter().zip(&self.expected) {
+            c.assert_eq(*got, *want);
+        }
+    }
+}
+
+impl<const N: usize> BorshReader<Private> for WitnessCheck<N> {
+    fn take(&mut self, c: &mut Circuit3, width: usize) -> Wire3<FieldT, Private> {
+        assert!(width > 0 && width <= 31, "a Borsh leaf is 1..=31 bytes here");
+        let leaf = c.witness::<FieldT>();
+        self.repack.push_uint(leaf, width);
+        leaf
+    }
+}
+
+/// Read a value and constrain it — the sound single-value read, in either
+/// mode. (In WitnessCheck mode the caller still owes
+/// [`WitnessCheck::finish`]; [`read_witness_checked`] owes nothing.)
+pub fn read_canonical<V: Vis3, T: CircuitBorsh<V>, R: BorshReader<V>>(
+    c: &mut Circuit3,
+    r: &mut R,
+) -> T {
+    let value = T::read(c, r);
+    value.constrain_canonical(c);
+    value
+}
+
+/// Deserialize a whole `Bytes<N>` in [`Split`] mode: read the value,
+/// constrain it, and assert the padding is zero. The leaves keep the
+/// buffer's visibility.
+pub fn read_split<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
+    c: &mut Circuit3,
+    bytes: &BytesN<V, N>,
+) -> T {
+    assert!(
+        N >= T::LEN,
+        "a {}-byte value cannot be read out of Bytes<{N}>",
+        T::LEN
+    );
+    let mut reader = Split::new(bytes);
+    let value = read_canonical::<V, T, _>(c, &mut reader);
+    reader.assert_pad_zero(c);
+    value
+}
+
+/// Deserialize a whole `Bytes<N>` in [`WitnessCheck`] mode: witness the
+/// leaves, constrain them, re-pack and assert equality (which also asserts
+/// the padding is zero). The leaves are `Private`.
+pub fn read_witness_checked<const N: usize, W: Vis3, T: CircuitBorsh<Private>>(
+    c: &mut Circuit3,
+    bytes: &BytesN<W, N>,
+) -> T {
+    assert!(
+        N >= T::LEN,
+        "a {}-byte value cannot be read out of Bytes<{N}>",
+        T::LEN
+    );
+    let mut reader = WitnessCheck::<N>::new(bytes);
+    let value = read_canonical::<Private, T, _>(c, &mut reader);
+    reader.finish(c);
+    value
+}
+
 // ---- the layout table ------------------------------------------------------------
 
 /// One leaf of a type's published layout: where a primitive field sits and
@@ -385,6 +629,10 @@ macro_rules! borsh_uint {
                 self.constrain_input(c);
             }
 
+            fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+                Uint::from_field(r.take(c, $len))
+            }
+
             fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
                 push_leaf(path, $kind.to_string(), $len, offset, out);
             }
@@ -422,6 +670,10 @@ impl<V: Vis3> CircuitBorsh<V> for Bool<V> {
         self.constrain_input(c);
     }
 
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        Bool::from_field(r.take(c, 1))
+    }
+
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
         push_leaf(path, "bool".to_string(), 1, offset, out);
     }
@@ -446,6 +698,10 @@ impl<const N: usize, V: Vis3> CircuitBorsh<V> for Bytes<N, V> {
         self.constrain_input(c);
     }
 
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        Bytes::from_field(r.take(c, N))
+    }
+
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
         push_leaf(path, byte_array_kind(N), N, offset, out);
     }
@@ -465,6 +721,14 @@ impl<V: Vis3> CircuitBorsh<V> for B32<V> {
 
     fn constrain_canonical(&self, c: &mut Circuit3) {
         self.constrain_input(c);
+    }
+
+    /// Bytes 0..30 are the low limb and byte 31 is the high one, which is
+    /// the `[hi, lo]` pair's own layout — so a `Bytes<32>` is two reads.
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        let lo = r.take(c, 31);
+        let hi = r.take(c, 1);
+        B32 { hi, lo }
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -487,6 +751,17 @@ impl<const N: usize, V: Vis3> CircuitBorsh<V> for BytesN<V, N> {
 
     fn constrain_canonical(&self, c: &mut Circuit3) {
         self.constrain_input(c);
+    }
+
+    /// String order is the FAB limbs BACKWARDS — the full 31-byte limbs
+    /// first, the leftover (most significant) chunk last.
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        let mut limbs: Vec<Wire3<FieldT, V>> = (0..Self::LIMBS)
+            .rev()
+            .map(|i| r.take(c, Self::limb_len(i)))
+            .collect();
+        limbs.reverse();
+        BytesN::from_limbs(limbs)
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -584,6 +859,10 @@ impl<const K: u32, V: Vis3> CircuitBorsh<V> for Tag<K, V> {
         }
     }
 
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        Tag::from_field(r.take(c, 1))
+    }
+
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
         push_leaf(path, "u8".to_string(), 1, offset, out);
     }
@@ -610,6 +889,19 @@ impl<T: CircuitBorsh<V>, V: Vis3, const K: usize> CircuitBorsh<V> for [T; K] {
     fn constrain_canonical(&self, c: &mut Circuit3) {
         for element in self {
             element.constrain_canonical(c);
+        }
+    }
+
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        // Through a Vec rather than `array::from_fn`, whose call order is
+        // not part of its contract: here the order IS the byte layout.
+        let mut elements = Vec::with_capacity(K);
+        for _ in 0..K {
+            elements.push(T::read(c, r));
+        }
+        match <[T; K]>::try_from(elements) {
+            Ok(array) => array,
+            Err(_) => unreachable!("K elements were pushed"),
         }
     }
 
@@ -654,6 +946,13 @@ impl<T: CircuitBorsh<V>, V: Vis3> CircuitBorsh<V> for Maybe<T, V> {
     fn constrain_canonical(&self, c: &mut Circuit3) {
         self.is_some.constrain_canonical(c);
         self.value.constrain_canonical(c);
+    }
+
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        Maybe {
+            is_some: <Bool<V> as CircuitBorsh<V>>::read(c, r),
+            value: T::read(c, r),
+        }
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {

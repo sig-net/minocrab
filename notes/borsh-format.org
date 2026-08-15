@@ -457,6 +457,92 @@ widths. That is stage 3's =#[borsh(spec = …)]= cross-check, done by hand
 for one deployed shape, and it says the new library agrees with borsh's
 own schema of the deployed payload.
 
+* As built — stage 2 (2026-08-15)
+The deserializer, both modes, MEASURED. Same file
+(=crates/minocrab-std/src/v3/borsh.rs=); NO circuit uses it and none was
+touched — row_snapshot and interface_snapshot bit-identical, workspace
+release suite green (51 test binaries).
+
+** Shape: a trait with two implementors, not one struct with a mode flag
+=BorshReader<V>= is a TRAIT with one method, =take(c, width) ->
+Wire3<FieldT, V>=; =Split<V>= and =WitnessCheck<N>= implement it. The
+design of record's single =BorshReader<V>= with two modes cannot be
+written: the modes differ in the VISIBILITY of what they hand back
+(Split preserves the buffer's, WitnessCheck necessarily yields Private
+witnesses), and that is a type, not a value. =CircuitBorsh::read<R:
+BorshReader<V>>= is therefore generic in the source.
+- =Split::new(&BytesN<V, N>)= — the M7 =Serializer::finish= run backwards,
+  segment for segment: the buffer is a queue of (wire, byte length) in
+  string order, a field takes whole segments while they fit and splits the
+  one that straddles with ONE div_mod.
+- =WitnessCheck::<N>::new(&BytesN<W, N>)= — witness each leaf, collect it
+  into a re-pack Serializer, and =finish(c)= packs and asserts limb
+  equality against the buffer (whose limbs are taken =.private()=, free
+  and sound). Accepts a buffer of ANY visibility.
+Entry points that cannot be misused: =read_split= and
+=read_witness_checked= read the value, constrain_canonical it, and close
+the buffer (pad assertion / re-pack equality) in one call.
+=read_canonical= is the single-value form; the bare =read= is extraction
+only and says so.
+
+** The padding rule falls out of both modes
+=read_split= asserts every leftover segment == 0 (at most one per limb);
+=read_witness_checked= gets it FOR FREE — the re-pack zero-fills the tail
+of the =Bytes<N>=, so the limb equality already says the buffer's tail is
+zero. Both are tested by reading a 204-byte record out of a 288-byte
+envelope and dirtying bytes 204/250/287: rejected in both modes.
+
+** MEASURED per-leaf reader cost (=minocrab-sim/examples/borshcost.rs=)
+Marginal rows over a per-mode baseline (a =Bytes<204>= argument, its
+input constraint, and the mode's fixed cost at ZERO leaves = 416 rows for
+both), so these are the cost of the READS alone:
+| leaf         | Split | WitnessCheck | ratio |
+|--------------+-------+--------------+-------|
+| bool         |   147 |            2 | 73.5× |
+| u8           |   148 |            3 | 49.3× |
+| u16          |   150 |            5 | 30.0× |
+| u32          |   154 |            9 | 17.1× |
+| Tag<4>       |   157 |           12 | 13.1× |
+| u64          |   162 |           17 |  9.5× |
+| u128         |   178 |           33 |  5.4× |
+| [u8; 20]     |   186 |           41 |  4.5× |
+| [u8; 32]     |   210 |           66 |  3.2× |
+| [u8; 64]     |   274 |          131 |  2.1× |
+| [[u8; 32];2] |   568 |          282 |  2.0× |
+| Flagged<u32> |   301 |           13 | 23.2× |
+THE DESIGN'S PROJECTIONS HOLD, and now have exact laws behind them:
+- Split ≈ 143 rows per FIELD BOUNDARY interior to a limb (the div_mod),
+  plus ~4-15 for the shift/add. The projection said 143/boundary.
+- WitnessCheck = EXACTLY 2w+1 rows per leaf, w = width in BYTES (3/5/9/
+  17/33 at 1/2/4/8/16) — the range constraint and nothing else. The
+  projection said ~2w+4.
+- The 4-70× range the design quotes is the per-leaf spread above (2.0×
+  for a 64-byte array up to 73× for a bool).
+LAYOUT MATTERS, and the example shows it: a u64 read at byte offset 23
+costs Split just 16 rows (it consumes the rest of limb 0 exactly — no
+div_mod at all) but 162 at offsets 0/27/30; and at offsets 27/30
+WitnessCheck pays 165, because THERE the re-pack straddles a limb
+boundary. WitnessCheck's div_mods are per LIMB boundary (≤ one per 31
+bytes), Split's are per FIELD boundary — that is the whole difference.
+WHOLE 204-BYTE RECORD (9 fields, 16 takes): 3,003 rows Split vs 1,747
+WitnessCheck total; 2,587 vs 1,331 for the reads alone, 1.9×. The
+whole-record ratio is far below the per-leaf headline because the big
+byte arrays dominate and they are where the two modes converge.
+
+** Gates (20 tests in tests/v3_borsh.rs, 8 of them new)
+- BOTH MODES PARSE NATIVE BORSH: a circuit takes the 204 bytes
+  =borsh::to_vec= produced as its argument, reads the record, and outputs
+  every leaf — the outputs equal the field values, slot for slot, in both
+  modes. That is decode correctness against borsh itself, not against our
+  own writer.
+- ROUND TRIP: =read(to_bytes(v)) == v= in circuit, asserted wire by wire
+  and simulated, in both modes.
+- WitnessCheck's equality is real: perturbing ANY ONE of the 16 witnessed
+  leaves is rejected (all 16 checked individually), and a WitnessCheck
+  read whose =finish= is skipped accepts an arbitrary witness — pinned as
+  a test, which is why =read_witness_checked= exists.
+- The pad tests above; =Split::remaining()= after a read == N - LEN.
+
 * ANSWERED from MPC source (2026-08-15, ~/mpc; supersedes the open
 questions below — kept for history)
 Ingest path: chain-signatures/chain-midnight/ (PR #1059) — full

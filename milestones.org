@@ -526,7 +526,18 @@ external value and no dependency on 1-7.
       missing impl rather than a const assert; Flagged is a type alias of
       v3's Maybe. The conformance suite gained an in_circuit section
       tying the library to the DEPLOYED respond payload.)
-- [ ] 2. BorshReader both modes + cryptocost-style measured per-leaf costs.
+- [X] 2. BorshReader both modes + cryptocost-style measured per-leaf costs.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 2".
+      A trait with two implementors rather than one struct with a mode
+      flag: the modes differ in the visibility they hand back, which is a
+      type. Both parse bytes borsh::to_vec produced, in circuit, into the
+      right field values; read(to_bytes(v)) == v in both; every witnessed
+      leaf is individually pinned to the buffer; both enforce the padding
+      rule. MEASURED (minocrab-sim/examples/borshcost.rs): Split ≈ 143
+      rows per field boundary interior to a limb, WitnessCheck EXACTLY
+      2w+1 rows per leaf (w bytes) plus a div_mod per straddled limb
+      boundary — per-leaf 2.0× to 73× cheaper, 1.9× over a whole 204-byte
+      record. Used by no circuit, deliberately.)
 - [ ] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
 - [ ] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
       movement asserted.
