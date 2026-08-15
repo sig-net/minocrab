@@ -347,7 +347,7 @@ compactc-framing constraint where the protocol permits, and re-anchors
 correctness on the M3 harness at scale. The direct ports stay intact as
 the compatibility reference; the optimized vault is its own artifact
 (natural base: M9's showcase twin).
-- [ ] Verification first — the license to optimize: spec-based property
+- [X] Verification first — the license to optimize: spec-based property
       harness for all 9 vault circuits (specs in ordinary Rust, every
       branch — claim's four recipient shapes, completeWithdraw's two
       routes, refund's two, completeSwap exact-spend — every guard,
@@ -366,9 +366,11 @@ the compatibility reference; the optimized vault is its own artifact
       attested byte is ACCEPTED and refunds, both artifacts agree), and
       the reference model shared the same bug; initialize accepts an
       IDENTITY mpcResponseKey, which authenticates every attestation;
-      no counter-overflow guard. STILL OPEN: the millions-of-cases
-      gating run has been measured (~37 min wall for 1e6 x 9) but not
-      executed, so this bullet is not ticked.)
+      no counter-overflow guard. DONE 2026-08-15: the millions-of-cases
+      gating run EXECUTED — PROPTEST_CASES=1000000 × 9 specs + adversarial,
+      9 passed 0 failed, 3,121.83s (~52 min, exit 0), 9,000,000 spec
+      cases on the direct ports, harness clean. Re-run as the optimized
+      artifact's gate + before the final report.)
 - [X] Scope the freed space: what the protocol actually pins (Impact op
       stream ↔ on-chain state machine, cross-contract commitment to the
       Signet singleton, MPC attestation formats, coin commitments) vs

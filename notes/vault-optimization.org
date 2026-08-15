@@ -687,9 +687,14 @@ overnight one. Default is 48 cases/property (=gen::DEFAULT_CASES=), chosen
 so the whole workspace stays under 90 s; the settle circuits dominate
 because each case simulates an in-circuit secp256k1 verification.
 
+** Full-scale gating run EXECUTED (2026-08-15)
+PROPTEST_CASES=1000000 across all nine spec circuits + the adversarial
+suite: 9 passed, 0 failed, 3,121.83s wall (~52 min, exit 0) — 9,000,000
+spec cases on the trusted direct ports, harness clean. This is the
+verification bullet's evidence; bullet now DONE. Re-run this before the
+final report and as the gate on the optimized artifact.
+
 ** What step 1 does NOT yet cover
-- The million-case gating run has not been EXECUTED (only measured), so
-  M10's verification bullet stays open with this annotation.
 - Level-1/level-2 port ↔ optimized equivalence (§"Port ↔ optimized
   equivalence") is unbuilt by design: there is no second artifact yet. The
   pieces it needs exist — symbolic effects, =Term::concretize= as the
