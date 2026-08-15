@@ -90,6 +90,16 @@ reviewer should look at.
       minocrab-std `borsh-schema` optional feature — confirm with cargo
       tree that no shipping build enables it (checked in-session, worth
       a second look since it is a dependency-posture claim).
+- [ ] M11 stage 9 (hash flavors): the DOC CLAIM is the reviewable part —
+      =v3::hash='s module docs tell a reader when =_compact= is needed,
+      and a wrong list there is a wrong digest at an interop boundary
+      (check it against the pinned preimages: tokenType, coin cm/nullifier,
+      ep hash, comm, merkle interiors — the claim is that every one is
+      already encapsulated so a user never picks). Also: the borsh
+      =transient_hash='s limb REVERSAL (BytesNDyn is FAB slot order,
+      string order is its reverse — one wrong line is a different digest
+      that no ZKIR-equality test would catch, only the native-Poseidon
+      one does), and =Serializer::finish_dyn= becoming pub.
 - [ ] M12 stage 1 (the ABI table): the port of =emit-constraints-for=
       itself (crates/minocrab/src/v3/abi.rs) — the Bounded branch's
       even-width formula and the =Prim::unsigned= normalization are read

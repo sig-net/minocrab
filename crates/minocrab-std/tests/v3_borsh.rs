@@ -19,6 +19,7 @@
 use std::borrow::Cow;
 
 use borsh::BorshSerialize;
+use midnight_transient_crypto::hash::transient_hash as native_transient_hash;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use minocrab::v3::{Circuit3, FieldT, Prim, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
@@ -28,9 +29,10 @@ use minocrab_std::v3::borsh::{
     CircuitBorshArg, FieldSpec, Flagged, LayoutPath, Limbs, Split, Tag, WitnessCheck,
 };
 use minocrab_std::v3::{
-    ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Serializer, Uint, Vis3, B32,
+    hash, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Serializer, Uint, Vis3, B32,
 };
 use minocrab_zkir::v3::{to_zkir_string, IrValue};
+use sha2::Sha256;
 use sha3::{Digest, Keccak256};
 
 // ---- the two declarations of one record ----------------------------------------
@@ -981,4 +983,110 @@ fn the_leaves_are_arguments_and_borsh() {
     assert_both::<[B32<Private>; 2]>();
     assert_both::<Flagged<Uint<32, Private>, Private>>();
     assert_both::<Record<Private>>();
+}
+
+// ---- (6) THE HASH FLAVORS (stage 9) -------------------------------------------------------------
+//
+// `minocrab_std::v3::hash` offers each hash twice: over the value's Borsh
+// encoding (the default) and over Compact's FAB representation (`_compact`,
+// for digest agreement with a Compact contract). These four tests say what
+// each flavor hashes, where they agree and where they do not — so that
+// picking one is a decision with a test behind it rather than a habit.
+
+/// THE DEFAULT FLAVOR IS THE SPECIFIED ONE: the digest the chip produces is
+/// `SHA-256(borsh::to_vec(value))`, checked through the simulator against
+/// borsh's own encoder and a native SHA-256.
+#[test]
+fn persistent_hash_is_sha256_of_the_borsh_encoding() {
+    let spec = spec_record();
+    let outputs = run_record(&spec, |c, record| {
+        let digest = hash::persistent_hash(c, record);
+        let hi = c.disclose(digest.hi, "digest (hi)");
+        let lo = c.disclose(digest.lo, "digest (lo)");
+        c.output(hi, "digest (hi)");
+        c.output(lo, "digest (lo)");
+    });
+    let mut digest = outputs[1].as_le_bytes()[..31].to_vec();
+    digest.push(outputs[0].as_le_bytes()[0]);
+    let expected: [u8; 32] = Sha256::digest(borsh::to_vec(&spec).expect("serializes")).into();
+    assert_eq!(digest, expected);
+}
+
+/// THE TWO PERSISTENT FLAVORS AGREE ON THE SUBSET, as byte-identical ZKIR:
+/// for a value whose FAB alignment is all `bytes<n>` atoms, `binary_repr` IS
+/// the Borsh encoding (notes/borsh-format.org, finding #1). The two sides are
+/// built from independent descriptions — `CircuitBorsh::push_limbs` on one,
+/// `CircuitAbi::atoms` plus `CircuitArg::push_slots` on the other — so this
+/// is agreement between two statements of the layout, not a tautology.
+#[test]
+fn the_persistent_flavors_agree_on_the_subset() {
+    let borsh_flavor = ir_of(|c| {
+        let record = <Record<Private> as CircuitArg>::declare(c, &ArgPath::root("record"));
+        let _ = hash::persistent_hash(c, &record);
+    });
+
+    let fab_flavor = ir_of(|c| {
+        let record = <Record<Private> as CircuitArg>::declare(c, &ArgPath::root("record"));
+        let mut slots = Vec::new();
+        record.push_slots(&mut slots);
+        let slots: Vec<_> = slots.iter().map(|w| w.erase()).collect();
+        let alignment = Alignment(
+            <Record<Private> as CircuitAbi>::atoms()
+                .into_iter()
+                .map(AlignmentSegment::Atom)
+                .collect(),
+        );
+        let _ = hash::persistent_hash_compact(c, alignment, &slots);
+    });
+
+    assert_eq!(borsh_flavor, fab_flavor);
+}
+
+/// The Borsh transient flavor limbs the ENCODED BYTE STRING in 31-byte
+/// little-endian chunks IN STRING ORDER — chunk `i` is bytes `31i..31i+31`,
+/// the last one short — which a native implementation writes as
+/// `borsh::to_vec(v).chunks(31)`. This is the limbing the spec publishes; it
+/// is NOT FAB's, whose leftover chunk comes first.
+#[test]
+fn transient_hash_limbs_the_borsh_bytes_in_string_order() {
+    let spec = spec_record();
+    let outputs = run_record(&spec, |c, record| {
+        let digest = hash::transient_hash(c, record);
+        let public = c.disclose(digest, "digest");
+        c.output(public, "digest");
+    });
+
+    let bytes = borsh::to_vec(&spec).expect("serializes");
+    let limbs: Vec<Fr> = bytes
+        .chunks(31)
+        .map(|chunk| Fr::from_le_bytes(chunk).expect("<= 31 bytes fit"))
+        .collect();
+    assert_eq!(limbs.len(), 7, "204 bytes is six full chunks and an 18-byte tail");
+    assert_eq!(outputs[0], native_transient_hash(&limbs));
+}
+
+/// THE TRANSIENT FLAVORS GENUINELY DISAGREE, and the FAB one is Poseidon over
+/// the argument slots verbatim. Poseidon absorbs field elements, so the
+/// preimage is a limbing and the two limbings are different: Borsh's is the
+/// byte string in 31-byte chunks, FAB's is one slot per field with a byte
+/// string's leftover chunk first. Choosing between them is therefore a real
+/// choice, which is the reason the `_compact` spelling exists.
+#[test]
+fn the_transient_flavors_disagree() {
+    let spec = spec_record();
+    let borsh_digest = run_record(&spec, |c, record| {
+        let digest = hash::transient_hash(c, record);
+        let public = c.disclose(digest, "digest");
+        c.output(public, "digest");
+    });
+    let fab_digest = run_record(&spec, |c, record| {
+        let mut slots = Vec::new();
+        record.push_slots(&mut slots);
+        let digest = hash::transient_hash_compact(c, &slots);
+        let public = c.disclose(digest, "digest");
+        c.output(public, "digest");
+    });
+
+    assert_ne!(borsh_digest, fab_digest);
+    assert_eq!(fab_digest[0], native_transient_hash(&record_slots(&spec)));
 }

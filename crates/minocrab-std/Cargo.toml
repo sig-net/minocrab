@@ -31,6 +31,10 @@ midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-curves.workspace = true
 sha3.workspace = true
+# The persistent-hash oracle of the Borsh flavor (M11 stage 9): the digest the
+# chip produces must be SHA-256 of `borsh::to_vec`. Already in the lock (the
+# simulator hashes with it), so no new dependency enters the graph.
+sha2.workspace = true
 # The Borsh layer's conformance oracle (M11 stage 1): the in-circuit bytes are
 # asserted equal to `borsh::to_vec` of a plain Rust twin, which is the whole
 # claim of the module — the subset IS Borsh. Dev-dependency only, same posture

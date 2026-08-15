@@ -1042,3 +1042,86 @@ already promised) into spec/ts/, validated against spec/vectors/*.json
 prefer a library). Rust-side native parsing already exists via the
 serde+borsh derives on the same type declarations. README (M13) may
 then claim native parser generation in BOTH languages.
+
+* As built — stage 9 (2026-08-15)
+=minocrab_std::v3::hash= (crates/minocrab-std/src/v3/hash.rs): four functions,
+two flavors, and a module doc that says which one to reach for. NO circuit
+moved — row_snapshot and interface_snapshot bit-identical, =cargo test
+--workspace --release= green (68 test binaries).
+
+** The API
+#+begin_src rust
+pub fn persistent_hash<V, T: CircuitBorsh<V>>(&mut Circuit3, &T) -> B32<V>
+pub fn persistent_hash_compact<V>(&mut Circuit3, Alignment, &[AnyWire3<V>]) -> B32<V>
+pub fn transient_hash<V, T: CircuitBorsh<V>>(&mut Circuit3, &T) -> Wire3<FieldT, V>
+pub fn transient_hash_compact<V>(&mut Circuit3, &[Wire3<FieldT, V>]) -> Wire3<FieldT, V>
+#+end_src
+Always written module-qualified (=hash::persistent_hash(c, &v)=), never
+re-exported bare from =v3=: which bytes get hashed is a decision and it should
+be readable at the call site. The docs on each =_compact= fn say when it is
+needed (a digest a Compact contract also computes, or Compact-derived
+off-chain code — nothing else) and the milestone's list of what does NOT need
+it (ledger maps/state hash nothing in-circuit; every pinned protocol preimage
+is already inside its own stdlib/ledger wrapper).
+
+** NOTHING WAS RENAMED OUT FROM UNDER A CALLER
+The borsh-flavored pair is NEW; no existing spelling changed meaning.
+- =Circuit3::persistent_hash= / =transient_hash= (minocrab, L2) are the raw
+  INSTRUCTIONS and keep their names — renaming an instruction to =_compact=
+  would have been a category error.
+- The v2 =minocrab_std::hash= module is untouched. It is FAB by definition
+  (its job is to reproduce compactc's lowering for the compat ports, so there
+  is no flavor to choose), and it now says so in its module docs and points
+  at =v3::hash=. DEVIATION from the brief's "existing fns get the _compact
+  alias": adding =persistent_hash_compact= aliases in v2 would put a
+  disambiguating suffix on a layer with nothing to disambiguate from.
+- The v3 =_compact= flavor has three real callers immediately:
+  =token_type=, =coin_nullifier_contract= and =coin_commitment= in v3.rs now
+  route through =hash::persistent_hash_compact= instead of calling the
+  instruction plus =B32::from_typed= by hand. Byte-identical ZKIR (the
+  wrapper IS those two lines), and it makes "the pinned preimages are the
+  _compact flavor's real users" greppable rather than assertable.
+
+** The one mechanical change outside the new file
+=Serializer::finish_dyn= became =pub=. Its doc comment already said "make it
+pub the day a caller has a runtime length"; the borsh =transient_hash= is
+that caller, because its length is =T::LEN= — an associated const of a
+generic parameter, which Rust cannot pass as a const-generic argument, so
+=to_bytes::<N>= is unusable there.
+
+** COST: the persistent flavor is free, the transient flavor is not
+=persistent_hash= is =limbs_of(v).persistent_hash(c)= — stage 1's zero-row
+path, since the alignment atoms ARE the Borsh widths and the chip packs
+in-chip. =transient_hash= CANNOT be: Poseidon absorbs field elements, so the
+encoding has to be materialised and that is the M7 segment packing. Said in
+the doc comment, with the advice that a value which is only going to be
+hashed should take the persistent flavor.
+
+** Gates (4 new tests in crates/minocrab-std/tests/v3_borsh.rs, 24 total)
+- =persistent_hash_is_sha256_of_the_borsh_encoding= — THE ORACLE, through the
+  simulator: the digest the chip produces IS =Sha256::digest(borsh::to_vec(
+  &spec))= of the plain twin, all 32 bytes.
+- =the_persistent_flavors_agree_on_the_subset= — as BYTE-IDENTICAL ZKIR, and
+  not a tautology: one side is =CircuitBorsh::push_limbs=, the other is
+  =CircuitAbi::atoms= + =CircuitArg::push_slots=. Two independent statements
+  of the layout, agreeing — which is finding #1 (hashed FAB IS Borsh for the
+  subset) as a compile-time-checkable fact about our own types.
+- =transient_hash_limbs_the_borsh_bytes_in_string_order= — the limbing
+  pinned against a native Poseidon over
+  =borsh::to_vec(v).chunks(31).map(Fr::from_le_bytes)=: 204 bytes = six full
+  chunks and an 18-byte tail, in STRING order.
+- =the_transient_flavors_disagree= — they produce different digests, and the
+  =_compact= one is pinned as Poseidon over the argument slots verbatim. The
+  transient flavors are where the choice is real: Borsh limbs the byte string
+  in 31-byte chunks, FAB limbs per field with a byte string's leftover chunk
+  FIRST (the reversed-chunk rule).
+Dependency: =sha2= (workspace, already in the lock — the simulator hashes
+with it) became a dev-dependency of minocrab-std. Cargo.lock gained ONE line,
+an edge; no package.
+
+** Not done, deliberately
+No =keccak256= flavor pair. The borsh keccak path already exists and is used
+(=Limbs::keccak256=, stage 5's attestation digest), and no Compact-interop
+keccak digest exists to disambiguate against; adding a second spelling for
+symmetry alone would be API surface with no caller. The day one appears it is
+four lines, beside these.

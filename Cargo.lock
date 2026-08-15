@@ -2365,6 +2365,7 @@ dependencies = [
  "minocrab-macros",
  "minocrab-sim",
  "minocrab-zkir",
+ "sha2 0.11.0",
  "sha3",
 ]
 

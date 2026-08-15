@@ -21,6 +21,14 @@ mod entry;
 /// because a circuit cannot have data-dependent layout.
 pub mod borsh;
 
+/// The two hash FLAVORS — `persistent_hash`/`transient_hash` over a value's
+/// Borsh encoding (the default) and the `_compact` pair over Compact's FAB
+/// representation (Compact-interop digest agreement only). Always written
+/// module-qualified (`hash::persistent_hash(c, &v)`), never re-exported bare:
+/// which bytes get hashed is a decision, and it should be visible at the call
+/// site.
+pub mod hash;
+
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
 /// The ABI vocabulary, which lives in the frontend (`minocrab::v3::abi` —
@@ -612,8 +620,10 @@ impl<V: Vis3> Serializer<V> {
     }
 
     /// The shared body of [`Self::finish`], for a `len` that need not be a
-    /// constant — make it `pub` the day a caller has a runtime length.
-    fn finish_dyn(self, c: &mut Circuit3, len: usize) -> BytesNDyn<V> {
+    /// constant. Public because [`hash::transient_hash`] has exactly that:
+    /// its length is `T::LEN`, an associated const of a generic parameter,
+    /// which Rust cannot pass as a const-generic argument.
+    pub fn finish_dyn(self, c: &mut Circuit3, len: usize) -> BytesNDyn<V> {
         let total: usize = self.segments.iter().map(|&(_, n)| n).sum();
         assert!(total <= len, "serialized size exceeds Bytes<{len}>");
         let zero = V::from_public(c.constant(0u64));
@@ -825,7 +835,8 @@ pub fn token_type<V: Vis3>(
     let prefix = B32::pad(c, "midnight:derive_token");
     let (p_hi, p_lo) = (V::from_public(prefix.hi), V::from_public(prefix.lo));
     let alignment = Alignment(vec![b32_atom(), b32_atom(), b32_atom()]);
-    let digest = c.persistent_hash(
+    hash::persistent_hash_compact(
+        c,
         alignment,
         &[
             p_hi.erase(),
@@ -835,8 +846,7 @@ pub fn token_type<V: Vis3>(
             contract.hi.erase(),
             contract.lo.erase(),
         ],
-    );
-    B32::from_typed(c, digest)
+    )
 }
 
 /// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
@@ -926,7 +936,8 @@ pub fn coin_nullifier_contract<V: Vis3>(
         AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
         b32_atom(),
     ]);
-    let digest = c.persistent_hash(
+    hash::persistent_hash_compact(
+        c,
         alignment,
         &[
             prefix.erase(),
@@ -939,8 +950,7 @@ pub fn coin_nullifier_contract<V: Vis3>(
             addr.hi.erase(),
             addr.lo.erase(),
         ],
-    );
-    B32::from_typed(c, digest)
+    )
 }
 
 /// `circuit coinCommitment(coin, recipient): Bytes<32>` —
@@ -963,7 +973,8 @@ pub fn coin_commitment<V: Vis3>(
         AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
         b32_atom(),
     ]);
-    let digest = c.persistent_hash(
+    hash::persistent_hash_compact(
+        c,
         alignment,
         &[
             prefix.erase(),
@@ -976,6 +987,5 @@ pub fn coin_commitment<V: Vis3>(
             data.hi.erase(),
             data.lo.erase(),
         ],
-    );
-    B32::from_typed(c, digest)
+    )
 }

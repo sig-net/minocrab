@@ -1,5 +1,14 @@
 //! Hashing builtins over bundles, lowered exactly as compactc lowers them
 //! (notes/builtin-lowering.org §§2-5).
+//!
+//! EVERYTHING HERE IS THE COMPACT (FAB) FLAVOR, by definition: this is the v2
+//! layer, whose whole job is to reproduce compactc's own lowering for the
+//! compat ports, so a preimage is `binary_repr`/`field_repr` and there is no
+//! choice to make. The flavor SPLIT — a value's Borsh encoding as the default
+//! preimage, FAB kept for Compact-interop digest agreement — lives one layer
+//! up, in [`crate::v3::hash`], where the `_compact` suffix marks these
+//! semantics. Nothing here is renamed: the ports call these by the names
+//! compactc's builtins have.
 
 use minocrab::{Circuit, Wire};
 
