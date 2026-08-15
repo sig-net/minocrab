@@ -18,15 +18,15 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 ## Features
 
 - [Borsh](https://borsh.io) subset encoding/decoding ([spec](spec/borsh-subset.md), [vectors](spec/vectors), [conformance](crates/minocrab-contracts/tests/serialization_conformance.rs)), with Rust and TypeScript parser generation ([spec/ts](spec/ts), [vectors.test.ts](spec/ts/vectors.test.ts), [ts_codegen.rs](crates/minocrab-contracts/tests/serialization/ts_codegen.rs))
-- FAB spoken too, named at the call site: `persistent_hash_compact` / `transient_hash_compact` ([v3_borsh.rs](crates/minocrab-std/tests/v3_borsh.rs))
+- FAB Compact too, named at the call site: `persistent_hash_compact` / `transient_hash_compact` ([v3_borsh.rs](crates/minocrab-std/tests/v3_borsh.rs))
 - Hashing a Borsh value is free — the hash chips pack in-chip, zero extra rows
-- The spec document and its byte-offset tables are generated; three tests fail if the committed copy drifts ([spec_doc.rs](crates/minocrab-contracts/tests/serialization/spec_doc.rs))
-- x-contract call interfaces are just cargo crates — crates.io, git or path, semver'd
-- Interface crates are checked against the callee's compiled artifact ([signet-signer-interface](crates/signet-signer-interface/tests/artifact_agreement.rs), [xcall-target-interface](crates/xcall-target-interface/tests/artifact_agreement.rs))
+- Interfaces for contracts have to be explicitly altered ([spec_doc.rs](crates/minocrab-contracts/tests/serialization/spec_doc.rs))
+- x-contract call interfaces are exported/imported as cargo crates
+- Interface crates and disclosures are automatically checked against the callee's compiled artifact ([signet-signer-interface](crates/signet-signer-interface/tests/artifact_agreement.rs), [xcall-target-interface](crates/xcall-target-interface/tests/artifact_agreement.rs))
 - Any deployed Midnight contract is importable: `minocrab-interface-gen --crate <dir>` ([regenerate.rs](crates/minocrab-interface-gen/tests/regenerate.rs))
-- Native compilation of circuits for testing — `cargo test`, no proving, no keys ([minocrab-sim](crates/minocrab-sim/src/lib.rs))
+- Native compilation of circuits for testing — `cargo test`, fast, no proving, no keys ([minocrab-sim](crates/minocrab-sim/src/lib.rs))
 - Per-region cost profiler attributing rows, with calibrated primitive costs ([profile()](crates/minocrab-sim/src/lib.rs), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs), [opcost.rs](crates/minocrab-sim/examples/opcost.rs))
-- Circuit families as const generics, monomorphized and unrolled by rustc ([notes/const-generics.org](notes/const-generics.org))
+- Circuit families as const generics, allowing you to encode invariants using the rust type system, monomorphized and unrolled by rustc ([notes/const-generics.org](notes/const-generics.org))
 - Macros are thin decorators — `#[circuit]` moves your body, it does not rewrite it; the expansion calls no `Circuit3` method ([circuit.rs](crates/minocrab-macros/src/circuit.rs)), and every derive has a hand-written twin that must lower to byte-identical ZKIR ([v3_derive.rs](crates/minocrab-std/tests/v3_derive.rs), [interface_macro.rs](crates/minocrab-contracts/tests/interface_macro.rs))
 - Rust: modules, generics, `pub(crate)`, cargo, rust-analyzer, `#[test]`, crates.io
 
@@ -153,7 +153,7 @@ Limit: the circuit binds neither the entry point nor the argument types. `callOn
 
 - `corpus/` is 673 pinned `.compact` sources and the 788 ZKIR circuits (312 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
 - Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not against your reading of the source
-- The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ — that is the optimizer's room. Guard rejections and tampered inputs must agree too.
+- The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ because of our optimiser. Guard rejections and tampered inputs must agree too.
 
 ```rust
 fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
