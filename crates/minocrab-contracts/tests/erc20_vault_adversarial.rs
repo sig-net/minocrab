@@ -593,6 +593,36 @@ fn terms_of(w: &WithdrawScenario, d: &DepositScenario, mint_nonce: [u8; 32]) -> 
 proptest! {
     #![proptest_config(gen::config())]
 
+    /// Rung (iii)'s domain separator, checked as what it now is — a LAYOUT.
+    ///
+    /// The port's separator was a SHA-256 and its injectivity was a
+    /// collision-resistance assumption. The optimized one is an encoding,
+    /// so injectivity is a property of the bytes and can simply be
+    /// asserted: the ERC-20 address appears verbatim, the tag byte is
+    /// where the documentation says, nothing else is set, and two
+    /// separators are equal exactly when their addresses are. Also pinned:
+    /// the layout the doc comment tabulates, so prose and code cannot
+    /// drift.
+    #[test]
+    fn the_optimized_domain_separator_is_an_injective_encoding(
+        a in any::<[u8; 20]>(),
+        b in any::<[u8; 20]>(),
+    ) {
+        let sep = vault_domain_sep(Art::Opt, &a);
+        prop_assert_eq!(&sep[..20], &a[..], "bytes 0..19 are the address");
+        prop_assert!(sep[20..31].iter().all(|&x| x == 0), "bytes 20..30 are zero");
+        prop_assert_eq!(
+            sep[31],
+            minocrab_contracts::erc20_vault_opt::VAULT_TOKEN_TAG,
+            "byte 31 is the kind tag"
+        );
+        // Injective, both directions.
+        prop_assert_eq!(sep == vault_domain_sep(Art::Opt, &b), a == b);
+        // And it is a different construction from the port's, which is the
+        // whole reason the optimized vault's tokens are its own colour.
+        prop_assert_ne!(sep, vault_domain_sep(Art::Compat, &a));
+    }
+
     /// The concretization is injective on everything generation produces.
     #[test]
     fn concretization_is_injective(

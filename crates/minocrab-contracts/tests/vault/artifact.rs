@@ -136,25 +136,25 @@ pub enum Fork {
 pub fn fork_status(circuit: Circuit) -> Fork {
     /// Rung (i): one `kernel.self()` read per circuit instead of one per
     /// stdlib call site.
-    const DEDUP: Fork = Fork::Diverged {
-        rung: "M10 rung (i), avenue 7",
-        why: "kernel.self() read once per circuit and threaded",
-    };
+    const DEDUP: &str = "kernel.self() read once per circuit and threaded";
+    /// Rung (iii): the token domain separator is encoded, not hashed.
+    const SEPARATOR: &str = "vaultTokenDomainSeparator is an injective encoding, not a SHA-256";
+    let diverged = |rung, why| Fork::Diverged { rung, why };
     match circuit {
-        // No kernel.self read at all (initialize), or exactly one, which
-        // there is nothing to share it with (claim's second read is inside
-        // Compact's own mintShieldedToken auto-receive branch;
-        // completeWithdraw's is the refund branch's only one).
-        Circuit::Initialize | Circuit::Claim | Circuit::CompleteWithdraw => Fork::Identical,
-        Circuit::Deposit
-        | Circuit::ApproveRouter
-        | Circuit::Withdraw
-        | Circuit::Swap
-        | Circuit::Refund => DEDUP,
-        // Rung (ii) on top of the dedup.
-        Circuit::CompleteSwap => Fork::Diverged {
-            rung: "M10 rungs (i)+(ii), avenues 7+5",
-            why: "kernel.self() threaded; changeNonce derived, not hashed",
-        },
+        // No kernel.self read, no domain separator, no change nonce: the
+        // one circuit these three rungs have nothing to say about, and so
+        // the one still covered by compactc's differential.
+        Circuit::Initialize => Fork::Identical,
+        Circuit::Deposit | Circuit::ApproveRouter => diverged("M10 rung (i), avenue 7", DEDUP),
+        Circuit::Claim | Circuit::CompleteWithdraw => {
+            diverged("M10 rung (iii), avenue 2", SEPARATOR)
+        }
+        Circuit::Withdraw | Circuit::Swap | Circuit::Refund => {
+            diverged("M10 rungs (i)+(iii), avenues 7+2", "kernel.self() threaded; separator encoded")
+        }
+        Circuit::CompleteSwap => diverged(
+            "M10 rungs (i)+(ii)+(iii), avenues 7+5+2",
+            "kernel.self() threaded; changeNonce derived; separator encoded",
+        ),
     }
 }

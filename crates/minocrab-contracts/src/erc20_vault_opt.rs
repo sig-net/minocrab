@@ -38,6 +38,10 @@
 //!   `[255 − mintNonce.hi, mintNonce.lo]` instead of
 //!   `persistentHash([mintNonce, pad(32, "change")])`. See
 //!   [`change_nonce`] for the uniqueness argument.
+//! - (rung iii, avenue 2) `vaultTokenDomainSeparator(erc20)` is the
+//!   injective encoding `0x01 ‖ zeros ‖ erc20[20]` instead of
+//!   `persistentHash([pad(32, "erc20:vault:"), erc20])`, at all nine uses.
+//!   See [`vault_token_domain_separator`].
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
@@ -56,7 +60,7 @@ use crate::erc20_vault::{
     EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_FAILURE_OUTPUT, MPC_RESPONSE_KEY,
     REFUND_COMMITMENT, REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER,
     SIGN_BIDIRECTIONAL_EVENT_MAP, SWAP_EVENT_MAP, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
-    SWAP_REFUND_COMMITMENT, SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS, TOKEN_PAD,
+    SWAP_REFUND_COMMITMENT, SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS,
     TRANSFER_SELECTOR, UNISWAP_ROUTER, USER_PAD, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA,
     VAULT_SCHEMA_LEN, VAULT_WORDS,
 };
@@ -940,33 +944,62 @@ pub fn approve_router() -> Compiled3 {
     c.finish(true)
 }
 
-/// `vaultTokenDomainSeparator(erc20Address)` —
-/// `persistentHash<Vector<2, Bytes<32>>>([pad(32, "erc20:vault:"),
-/// erc20Address as Field as Bytes<32>])`. The address is a `Bytes<20>`
-/// limb, so its `Bytes<32>` rendering is `[hi: 0, lo: addr]`.
+/// `vaultTokenDomainSeparator(erc20Address)` (rung iii, avenue 2): the
+/// INJECTIVE ENCODING `0x01 ‖ 0x00 × 11 ‖ erc20[20]`, replacing the port's
+/// `persistentHash([pad(32, "erc20:vault:"), erc20])` — 3,739 measured
+/// rows per use, at nine uses across the vault.
+///
+/// Exactly one byte layout, and it is the whole specification:
+///
+/// | byte(s) | 0..19          | 20..30 | 31   |
+/// |---------|----------------|--------|------|
+/// | content | erc20, LE limb | zero   | 0x01 |
+///
+/// which is the `Bytes<32>` slot pair `[hi = 0x01, lo = erc20]` — the
+/// address limb carried VERBATIM, so the map `erc20 ↦ separator` is the
+/// identity in its low limb and injective by inspection, with no
+/// collision-resistance assumption anywhere. Byte 31 is a version/kind tag:
+/// `0x01` = "the vault token of an EVM ERC-20". A future vault that wants
+/// another token family gives it another tag rather than another hash.
+///
+/// Why this is safe to change at all:
+///
+/// - The separator is a PRE-TOKEN, not a colour. The ledger derives the
+///   colour itself — `tokenType(sep, self) = SHA-256([pad(32,
+///   "midnight:derive_token"), sep, self])`, coin-structure/src/contract.rs
+///   :58-68, used at ledger/src/verify.rs:856-865 — and accepts an
+///   ARBITRARY 32-byte pre-token (verified at the pinned rev; see
+///   notes/vault-optimization.org §"(c) SPEC-DISCRETIONARY"). The
+///   contract's own address is inside that derivation, so two contracts
+///   using the same separator still mint different colours.
+/// - Distinct ERC-20s therefore still get distinct colours: injective
+///   separator, then a collision-resistant `tokenType`.
+/// - No new disclosure. The separator already travels in the clear in
+///   `kernel.mintShielded(domain_sep, value)`, and the ERC-20 address is
+///   already public in the stored request record. It was never secret, so
+///   the hash was never hiding it; preimage resistance bought nothing.
+/// - The colour of the optimized vault's tokens differs from the port's,
+///   which is correct: this is a separate deployment with its own address
+///   and its own verifier key, and its tokens are its own.
+///
+/// The address argument is range-constrained to 160 bits where it enters
+/// the circuit, but injectivity does not lean on that: the low limb is
+/// carried through untouched, so distinct limbs give distinct separators
+/// whatever their width. The table above is the layout for a well-formed
+/// (on-chain-accepted) address.
 fn vault_token_domain_separator(
     c: &mut Circuit3,
     erc20_address: Wire3<FieldT, Public>,
 ) -> B32<Public> {
-    c.region("token domain separator", |c| {
-        let pad = B32::pad(c, TOKEN_PAD);
-        let zero = c.constant(0u64);
-        let alignment = Alignment(vec![
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        ]);
-        let digest = c.persistent_hash(
-            alignment,
-            &[
-                pad.hi.erase(),
-                pad.lo.erase(),
-                zero.erase(),
-                erc20_address.erase(),
-            ],
-        );
-        B32::from_typed(c, digest)
+    c.region("token domain separator", |c| B32 {
+        hi: c.constant(u64::from(VAULT_TOKEN_TAG)),
+        lo: erc20_address,
     })
 }
+
+/// Byte 31 of [`vault_token_domain_separator`]'s encoding: the kind tag of
+/// "the vault token of an EVM ERC-20".
+pub const VAULT_TOKEN_TAG: u8 = 0x01;
 
 /// The shared argument block of the settle circuits: requestId, the
 /// attestation event, and the mint nonce; `serializedOutput` is declared

@@ -39,7 +39,7 @@ use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcir
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
-use minocrab_contracts::erc20_vault;
+use minocrab_contracts::{erc20_vault, erc20_vault_opt};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
@@ -210,17 +210,25 @@ pub fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> ([u8; 32], [u8; 32],
 }
 
 /// DISCRETIONARY. `vaultTokenDomainSeparator(erc20)` off-circuit.
-///
-/// Both artifacts: SHA-256 over `[pad(32, "erc20:vault:"), erc20]`.
-/// (Avenue 2 — the injective non-hashed encoding — is a later rung.)
 pub fn vault_domain_sep(art: Art, erc20: &[u8; 20]) -> [u8; 32] {
     match art {
-        Art::Compat | Art::Opt => {
+        // SHA-256 over `[pad(32, "erc20:vault:"), erc20]`.
+        Art::Compat => {
             let mut erc20_b32 = [0u8; 32];
             erc20_b32[..20].copy_from_slice(erc20);
             let (e_hi, e_lo) = b32_slots(&erc20_b32);
             let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::TOKEN_PAD));
             fab_sha256(vec![atom(32), atom(32)], &[p_hi, p_lo, e_hi, e_lo])
+        }
+        // Rung (iii), avenue 2: the injective encoding
+        // `0x01 ‖ zeros ‖ erc20`, i.e. the slot pair [hi = 0x01, lo =
+        // erc20]. Layout and safety argument in
+        // `erc20_vault_opt::vault_token_domain_separator`.
+        Art::Opt => {
+            let mut out = [0u8; 32];
+            out[..20].copy_from_slice(erc20);
+            out[31] = erc20_vault_opt::VAULT_TOKEN_TAG;
+            out
         }
     }
 }
