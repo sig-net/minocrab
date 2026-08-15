@@ -554,8 +554,23 @@ external value and no dependency on 1-7.
       (oracle.rs now re-exports it) rather than duplicated. Gate: the
       same record declared derived and by hand, five circuits each,
       byte-identical ZKIR.)
-- [ ] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
+- [X] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
       movement asserted.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 4".
+      A third artifact forked from the OPTIMIZED vault, not the port, so
+      the chain is compactc ≡ port ≡ opt ≡ borsh with a ledger and a
+      both-ways gate per link: artifact.rs gained Art::Borsh, ARTS: [Art;3]
+      and a SECOND ledger borsh_fork_status, and tests/
+      erc20_vault_borsh_fork.rs asserts it. Zero movement: the row and
+      interface snapshots gained exactly nine entries each, carrying the
+      opt numbers verbatim. Deliberately absent is a "still PI-equal to
+      compactc" test — M10 diverged all nine circuits, so what the borsh
+      fork inherits is the spec harness, not compactc, and the vacuous
+      version is not shipped. The harness caught the one real wiring bug:
+      two RefundScenario branches asked `art == Art::Opt` where they meant
+      "not the port". BENCH DECISION: the borsh artifact is NOT benched
+      until stage 7 — at stage 4 a fourth column would repeat the opt one,
+      and stage 5 moves no k.)
 - [ ] 5. Attested outputs → the flat layout (four settle circuits,
       +2..+6 rows, deviation-log D6 for the 0x02 semantics + kind byte).
 - [ ] 6. Event payload twins (events_borsh/xcontract_events_borsh)

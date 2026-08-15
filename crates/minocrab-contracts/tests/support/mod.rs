@@ -9,8 +9,8 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    attest, erc20_vault, erc20_vault_opt, events, hashing, mint_tokens, serde_builtin,
-    signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
+    attest, erc20_vault, erc20_vault_borsh, erc20_vault_opt, events, hashing, mint_tokens,
+    serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -49,6 +49,19 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault_opt::refund", || erc20_vault_opt::refund()),
         c!("erc20_vault_opt::swap", || erc20_vault_opt::swap()),
         c!("erc20_vault_opt::complete_swap", || erc20_vault_opt::complete_swap()),
+        // erc20-vault, BORSH (M11 stage 4): the same nine circuits again, forked
+        // from the OPTIMIZED artifact. At the forking commit every row and every
+        // interface line below is identical to the opt block's; M11's format
+        // changes move the rows of this block ONLY.
+        c!("erc20_vault_borsh::initialize", || erc20_vault_borsh::initialize()),
+        c!("erc20_vault_borsh::deposit", || erc20_vault_borsh::deposit()),
+        c!("erc20_vault_borsh::claim", || erc20_vault_borsh::claim()),
+        c!("erc20_vault_borsh::approve_router", || erc20_vault_borsh::approve_router()),
+        c!("erc20_vault_borsh::withdraw", || erc20_vault_borsh::withdraw()),
+        c!("erc20_vault_borsh::complete_withdraw", || erc20_vault_borsh::complete_withdraw()),
+        c!("erc20_vault_borsh::refund", || erc20_vault_borsh::refund()),
+        c!("erc20_vault_borsh::swap", || erc20_vault_borsh::swap()),
+        c!("erc20_vault_borsh::complete_swap", || erc20_vault_borsh::complete_swap()),
         c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
         c!("signet_contract::respond", || signet_contract::respond()),
         c!("signet_contract::respond_bidirectional", || {

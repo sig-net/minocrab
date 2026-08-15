@@ -499,8 +499,10 @@ fn refund_routes_on_the_withdrawal_marker_even_when_both_are_set() {
             RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new())).with_art(art);
         r.also_other_marker = true;
         let outcome = spec::spec_refund(&r);
-        assert!(outcome.accepts());
-        assert!(simulate(&ours, &r.preimage()).is_ok());
+        assert!(outcome.accepts(), "{art:?}: the spec rejects");
+        if let Err(e) = simulate(&ours, &r.preimage()) {
+            panic!("{art:?}: the circuit rejects: {e}");
+        }
         let ex = exec::run(&r.pre_state(), &r.self_addr(), &r.ops()).expect("the ledger accepts");
         spec::check_effects(art, outcome.effects(), &r.pre_state(), &ex).expect("effects agree");
     }

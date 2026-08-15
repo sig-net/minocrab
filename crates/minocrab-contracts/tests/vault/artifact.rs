@@ -1,23 +1,34 @@
-//! The two artifacts the harness gates, and where each opt circuit stands
-//! relative to its direct port.
+//! The three artifacts the harness gates, and where each forked circuit
+//! stands relative to the artifact it was forked from.
 //!
 //! M10 forks the vault (§Sequencing step 4): `erc20_vault` stays the
 //! COMPATIBILITY reference — frozen rows, PI-equal to compactc — and
-//! `erc20_vault_opt` is where optimizations land. Everything below the
-//! artifact boundary (specs, scenarios, sweeps) is written once and run
-//! twice, selected by [`Art`]; the concretization of the spec's
-//! discretionary terms is likewise selected by [`Art`] (see
-//! [`super::prims`]), so the set of `Art::Opt` arms IS the deviation log.
+//! `erc20_vault_opt` is where optimizations land. M11 stage 4 forks again:
+//! `erc20_vault_borsh` starts byte-identical to the optimized fork and is
+//! where the Borsh WIRE-FORMAT changes land, so the optimized artifact's
+//! measured M10 ladder is not reopened. Everything below the artifact
+//! boundary (specs, scenarios, sweeps) is written once and run three times,
+//! selected by [`Art`]; the concretization of the spec's discretionary terms
+//! is likewise selected by [`Art`] (see [`super::prims`]), so the set of
+//! non-`Compat` arms IS the deviation log.
 //!
-//! [`Fork`] is the other half: an opt circuit that is still byte-identical
-//! to its port inherits the port's compactc PI-equality differential, and
-//! one that has diverged does not. Recording that per circuit — and
-//! asserting BOTH directions in `tests/erc20_vault_opt_fork.rs` — is what
-//! makes the moment a circuit leaves compactc's coverage an explicit,
+//! [`Fork`] is the other half, and there are now two ledgers because there
+//! are two forks:
+//!
+//! - [`fork_status`] — opt vs the direct port. An opt circuit that is still
+//!   byte-identical inherits the port's compactc PI-equality differential;
+//!   one that has diverged does not. Asserted both ways in
+//!   `tests/erc20_vault_opt_fork.rs`.
+//! - [`borsh_fork_status`] — borsh vs opt. Same discipline one link further
+//!   along the chain `compactc ≡ port ≡ opt ≡ borsh`, asserted both ways in
+//!   `tests/erc20_vault_borsh_fork.rs`.
+//!
+//! Recording that per circuit — and asserting BOTH directions — is what makes
+//! the moment a circuit leaves its predecessor's coverage an explicit,
 //! reviewed edit rather than a silent one.
 
 use minocrab::v3::Compiled3;
-use minocrab_contracts::{erc20_vault, erc20_vault_opt};
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh, erc20_vault_opt};
 use minocrab_zkir::v3::IrSource;
 
 /// Which artifact a case runs against.
@@ -27,16 +38,19 @@ pub enum Art {
     Compat,
     /// `erc20_vault_opt` — the M10 optimized fork.
     Opt,
+    /// `erc20_vault_borsh` — the M11 Borsh fork of the optimized vault.
+    Borsh,
 }
 
-/// Both artifacts, for the suites that run every case twice.
-pub const ARTS: [Art; 2] = [Art::Compat, Art::Opt];
+/// Every artifact, for the suites that run every case once per artifact.
+pub const ARTS: [Art; 3] = [Art::Compat, Art::Opt, Art::Borsh];
 
 impl Art {
     pub fn name(self) -> &'static str {
         match self {
             Art::Compat => "erc20_vault",
             Art::Opt => "erc20_vault_opt",
+            Art::Borsh => "erc20_vault_borsh",
         }
     }
 }
@@ -104,6 +118,15 @@ impl Circuit {
             (Art::Opt, Circuit::Refund) => erc20_vault_opt::refund(),
             (Art::Opt, Circuit::Swap) => erc20_vault_opt::swap(),
             (Art::Opt, Circuit::CompleteSwap) => erc20_vault_opt::complete_swap(),
+            (Art::Borsh, Circuit::Initialize) => erc20_vault_borsh::initialize(),
+            (Art::Borsh, Circuit::Deposit) => erc20_vault_borsh::deposit(),
+            (Art::Borsh, Circuit::Claim) => erc20_vault_borsh::claim(),
+            (Art::Borsh, Circuit::ApproveRouter) => erc20_vault_borsh::approve_router(),
+            (Art::Borsh, Circuit::Withdraw) => erc20_vault_borsh::withdraw(),
+            (Art::Borsh, Circuit::CompleteWithdraw) => erc20_vault_borsh::complete_withdraw(),
+            (Art::Borsh, Circuit::Refund) => erc20_vault_borsh::refund(),
+            (Art::Borsh, Circuit::Swap) => erc20_vault_borsh::swap(),
+            (Art::Borsh, Circuit::CompleteSwap) => erc20_vault_borsh::complete_swap(),
         }
     }
 
@@ -112,24 +135,26 @@ impl Circuit {
     }
 }
 
-/// Where an opt circuit stands relative to its direct port.
+/// Where a forked circuit stands relative to the artifact it was forked
+/// from — the port for [`fork_status`], the optimized vault for
+/// [`borsh_fork_status`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fork {
-    /// Byte-identical to the port. compactc's PI-equality differential
-    /// therefore covers this opt circuit transitively, and
-    /// `tests/erc20_vault_opt_fork.rs` runs it to say so out loud.
+    /// Byte-identical to the predecessor, so whatever covers the
+    /// predecessor covers this circuit transitively, and the fork test runs
+    /// it to say so out loud.
     Identical,
-    /// Deliberately different since `rung`. compactc's differential no
-    /// longer applies — the gates are the spec harness (acceptance
-    /// agreement, ledger effects), PI-equality RE-ANCHORED to the opt
-    /// reference model, and the adversarial sweeps.
+    /// Deliberately different since `rung`. The predecessor's differential
+    /// no longer applies — the gates are the spec harness (acceptance
+    /// agreement, ledger effects), PI-equality RE-ANCHORED to this
+    /// artifact's reference model, and the adversarial sweeps.
     Diverged {
         rung: &'static str,
         why: &'static str,
     },
 }
 
-/// THE DIVERGENCE LEDGER. Moving an entry from `Identical` to `Diverged` is
+/// THE OPT DIVERGENCE LEDGER. Moving an entry from `Identical` to `Diverged` is
 /// the moment a circuit leaves compactc's coverage; it is a deliberate edit,
 /// reviewed with the rung that causes it, and the fork test asserts the
 /// ledger against the built artifacts in both directions.
@@ -173,5 +198,29 @@ pub fn fork_status(circuit: Circuit) -> Fork {
             "M10 rungs (i)+(ii)+(iii)+5(v), avenues 7+5+2+3",
             "kernel.self() threaded; changeNonce derived; separator encoded; refund commitment Poseidon",
         ),
+    }
+}
+
+/// THE BORSH DIVERGENCE LEDGER — `erc20_vault_borsh` against
+/// `erc20_vault_opt`, the second fork and the second link that has to be
+/// declared rather than discovered.
+///
+/// At M11 stage 4 every entry is `Identical`: the borsh artifact is a
+/// byte-identical fork, so it inherits the whole chain (`compactc ≡ port ≡
+/// opt`) transitively, and `tests/erc20_vault_borsh_fork.rs` proves both
+/// halves of that inheritance rather than assuming it. M11's later stages
+/// move entries here — never in [`fork_status`], which is M10's ledger and
+/// is closed.
+pub fn borsh_fork_status(circuit: Circuit) -> Fork {
+    match circuit {
+        Circuit::Initialize
+        | Circuit::Deposit
+        | Circuit::Claim
+        | Circuit::ApproveRouter
+        | Circuit::Withdraw
+        | Circuit::CompleteWithdraw
+        | Circuit::Refund
+        | Circuit::Swap
+        | Circuit::CompleteSwap => Fork::Identical,
     }
 }

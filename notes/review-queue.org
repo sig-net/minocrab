@@ -55,6 +55,14 @@ reviewer should look at.
       constrain_canonical for every leaf (a leaf whose canonical
       constraint were weaker than its width would break injectivity).
       Also Split's assumption that div_mod bounds the high rest.
+- [ ] M11 stage 4 (erc20_vault_borsh, byte-identical fork): the fork is
+      1,788 duplicated lines, so check it really is a verbatim copy of
+      erc20_vault_opt modulo the module doc (the fork test proves the ZKIR
+      matches, which is stronger, but a comment that drifted would not
+      show); and check the two RefundScenario branches changed from
+      `art == Art::Opt` to `!= Art::Compat` — that is a claim about which
+      op stream the borsh artifact expects, and getting it backwards would
+      have made the harness agree with a wrong model.
 - [ ] M11 stage 3 (#[derive(CircuitBorsh)]): the impl_arg_traits
       refactor (existing derive/attribute output must be unchanged — the
       thinness tests and every differential suite say it is, but it is a

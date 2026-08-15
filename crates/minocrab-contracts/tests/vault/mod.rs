@@ -2,10 +2,11 @@
 //!
 //! Layering, outermost first:
 //!
-//! - [`artifact`] — WHICH vault is under test: the compat ports or the M10
-//!   optimized fork (`Art`), the nine circuits by name, and the divergence
-//!   ledger saying which opt circuits are still byte-identical to their
-//!   ports (and so still covered by compactc's differential).
+//! - [`artifact`] — WHICH vault is under test: the compat ports, the M10
+//!   optimized fork or the M11 Borsh fork (`Art`), the nine circuits by name,
+//!   and the two divergence ledgers saying which forked circuits are still
+//!   byte-identical to the artifact they were forked from (and so still
+//!   covered by what covers it).
 //! - [`spec`] — the symbolic effect algebra and the nine per-circuit total
 //!   functions `spec_initialize` .. `spec_complete_swap`. Artifact-agnostic:
 //!   it says WHICH commitment a circuit writes, never how that commitment is

@@ -10,9 +10,12 @@
 //! the reference model, they were just private to one test binary.
 //!
 //! Since M10 step 4 every scenario also carries the [`Art`] it models:
-//! `Art::Compat` reproduces the direct ports, `Art::Opt` the optimized
-//! fork. `with_art` rebuilds a generated scenario for the other artifact,
-//! so ONE generated case gates both. Everything artifact-dependent — the
+//! `Art::Compat` reproduces the direct ports, `Art::Opt` the optimized fork
+//! and `Art::Borsh` the M11 fork OF that fork (which inherits every M10
+//! rung, so it shares the optimized op stream — the artifact-dependent
+//! branches here ask `art == Art::Compat`, never `== Art::Opt`).
+//! `with_art` rebuilds a generated scenario for another artifact, so ONE
+//! generated case gates all three. Everything artifact-dependent — the
 //! discretionary hash constructions, and from rung (i) the op stream
 //! itself — is selected from `self.art`; a scenario that ignored it would
 //! show up immediately as a PI mismatch against its own circuit.
@@ -3296,7 +3299,11 @@ impl RefundScenario {
         // (rung i, avenue 7). The port instead reads it inside whichever
         // branch runs, so its read lands later — and in a different place
         // per route. Either way the transcript carries exactly one answer.
-        let shared_self = self.art() == Art::Opt;
+        // (`!= Compat` rather than `== Opt`: the M11 Borsh artifact is a fork
+        // OF the optimized one and inherits every M10 rung, so the op stream
+        // it expects is the optimized one — as it is everywhere else in this
+        // file, which asks `art == Art::Compat`.)
+        let shared_self = self.art() != Art::Compat;
         match &self.route {
             RefundRoute::Withdrawal(w) => {
                 ops.extend(member(erc20_vault::REFUND_COMMITMENT, 1));
@@ -3328,7 +3335,7 @@ impl RefundScenario {
                 let mint_ops =
                     mint(vault_domain_sep(self.art(), &w.erc20), w.amount_u64(), cm);
                 let remove_ops = remove(erc20_vault::REFUND_COMMITMENT);
-                if self.art() == Art::Opt {
+                if self.art() != Art::Compat {
                     // Rung 5(iv), avenue 4: the merged re-mint runs after BOTH
                     // routes' guarded commitment-map removes, so on the
                     // withdrawal route the refundCommitment remove precedes the

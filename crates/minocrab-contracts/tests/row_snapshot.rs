@@ -43,6 +43,21 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault_opt::refund", 16, 40806),
     ("erc20_vault_opt::swap", 16, 32819),
     ("erc20_vault_opt::complete_swap", 16, 50254),
+    // erc20-vault, BORSH (M11 stage 4 onwards). Frozen IDENTICAL to the
+    // optimized block above at the forking commit — same k, same rows, line
+    // for line — because the artifact is a byte-identical fork of it, which
+    // `tests/erc20_vault_borsh_fork.rs` asserts as ZKIR rather than leaving to
+    // this table. Each later M11 stage moves ONLY these rows, and its commit
+    // message states the before → after per circuit.
+    ("erc20_vault_borsh::initialize", 13, 2412),
+    ("erc20_vault_borsh::deposit", 14, 15632),
+    ("erc20_vault_borsh::claim", 16, 42051),
+    ("erc20_vault_borsh::approve_router", 14, 13332),
+    ("erc20_vault_borsh::withdraw", 15, 23707),
+    ("erc20_vault_borsh::complete_withdraw", 16, 40157),
+    ("erc20_vault_borsh::refund", 16, 40806),
+    ("erc20_vault_borsh::swap", 16, 32819),
+    ("erc20_vault_borsh::complete_swap", 16, 50254),
     // signet-contract singletons (the other three benchmark circuits)
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),

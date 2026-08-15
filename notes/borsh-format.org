@@ -709,3 +709,82 @@ discipline; format_version byte recommended.
 7. Confirm the attestation digest (stage 5) and the requestId (stage
    7) preimages can move independently in the MPC's code; if coupled,
    re-cut the phasing.
+
+* As built — stage 4 (2026-08-15)
+=crates/minocrab-contracts/src/erc20_vault_borsh.rs=: the THIRD artifact, a
+byte-identical fork of =erc20_vault_opt= (not of the port). The chain of trust
+is now =compactc ≡ port ≡ opt ≡ borsh=, with a ledger and a gate per link. NO
+circuit moved: every borsh row and every borsh interface line equals its
+optimized twin's, and the two snapshots gained exactly nine entries each and
+changed nothing else.
+
+** What was copied and what was imported
+Copied: the nine circuit functions and the private helpers they call —
+INCLUDING M10's (=vault_token_domain_separator=, =change_nonce=,
+=withdraw_refund_commitment=, =settle_args=, =verify_attestation=,
+=refund_surrendered_value=), which is what makes this a fork of the OPTIMIZED
+vault rather than of the port. Imported, exactly as at M10's fork:
+=crate::common=, =crate::signet=, and the protocol constants + record types
+from =crate::erc20_vault= — the vault's wire contract and Compact's standard
+library, which must not drift between artifacts.
+The duplicated M10 helpers are NOT left to trust: while a circuit's
+=borsh_fork_status= entry says =Identical= the fork test proves byte-identical
+ZKIR, so a drifted copy fails the build. After stage 5 diverges the four
+settle circuits, the other five still pin every shared helper.
+
+** Two ledgers, two gates
+- =tests/vault/artifact.rs= gained =Art::Borsh=, =ARTS: [Art; 3]=, the nine
+  build arms, and a SECOND divergence ledger =borsh_fork_status= (borsh vs
+  opt). M10's =fork_status= is untouched and closed — M11 stages move entries
+  in the new ledger only.
+- =tests/erc20_vault_borsh_fork.rs= (3 tests) asserts the ledger BOTH WAYS,
+  as M10's does: an =Identical= entry really is byte-identical ZKIR, a
+  =Diverged= entry really differs, and every borsh circuit accepts the
+  preimage its own reference model builds.
+- DELIBERATELY ABSENT: a "still PI-equal to compactc" test. M10 diverged ALL
+  NINE circuits, so =fork_status= is =Diverged= everywhere and compactc's
+  differential has already been replaced by the spec harness + re-anchored
+  PI-equality + the adversarial sweeps. What the borsh fork inherits is THAT,
+  not compactc; a doubly-identical test would be vacuous today and would stay
+  vacuous, since M10's ledger only moves one way. Said out loud in the file
+  rather than shipped as a green no-op.
+
+** The harness runs three artifacts, and one line had to change
+=ARTS= drove the spec suite and the adversarial suite onto the borsh artifact
+with no other edit — the model's artifact-dependent branches are all written
+=if art == Art::Compat= — EXCEPT two in =RefundScenario::ops_and_reads=, which
+asked =self.art() == Art::Opt= (the shared unguarded =kernel.self()= read of
+rung (i), and the merged re-mint's remove-then-mint order of rung 5(iv)).
+Those are properties of the OPTIMIZED op stream, which the borsh fork
+inherits, so they are now =!= Art::Compat=. The harness caught it immediately
+and precisely: =refund_routes_on_the_withdrawal_marker_even_when_both_are_set=
+failed at =Art::Borsh= with a public-transcript input mismatch — the model
+had built the PORT's op order for a circuit that is byte-identical to the
+optimized one. (That assert now names the artifact in its message; it did
+not, which cost a debugging round.)
+=tests/vault/prims.rs=: the four discretionary constructions' arms are now
+=Art::Opt | Art::Borsh=, which is the executable statement that M11 does not
+reopen M10's ladder. Splitting one of them would be the record that it did.
+
+** THE BENCH DECISION: the borsh artifact is NOT benched (revisit at stage 7)
+minocrab-bench keeps three sides. A fourth would need a new =Artifacts=
+variant, a =preimages/borsh/= dump, per-side plumbing through =load_ir= /
+=profiled= / the report, and a benchmark re-run — and at stage 4 it would
+report the opt column twice, since the artifacts are byte-identical by
+construction. Stage 5's expected +2..+6 rows per settle circuit move no k
+boundary either, and k is what decides prove time and RAM, so the fourth
+column stays uninformative until STAGE 7 (the record change, where swap is
+projected to cross k16 → k15). That is when to add it, together with the
+BENCHMARK.md refresh stage 7 already owes. Smaller change, no information
+lost: the row snapshot already publishes the borsh rows alongside the opt
+rows at every commit.
+
+** Gates
+=cargo test --workspace --release= green (53 test binaries, 0 failures);
+row_snapshot and interface_snapshot green with ONLY the nine new
+=erc20_vault_borsh::*= entries added, each carrying its opt twin's numbers
+verbatim (initialize 13/2412, deposit 14/15632, claim 16/42051,
+approveRouter 14/13332, withdraw 15/23707, completeWithdraw 16/40157, refund
+16/40806, swap 16/32819, completeSwap 16/50254); all differential suites
+green (the compat ports and erc20_vault_opt bit-identical — no src/ file but
+the new one was touched).
