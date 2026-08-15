@@ -25,3 +25,8 @@ midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-curves.workspace = true
 sha3.workspace = true
+# The Borsh layer's conformance oracle (M11 stage 1): the in-circuit bytes are
+# asserted equal to `borsh::to_vec` of a plain Rust twin, which is the whole
+# claim of the module — the subset IS Borsh. Dev-dependency only, same posture
+# as minocrab-contracts' (nothing shipping links borsh).
+borsh.workspace = true

@@ -40,3 +40,11 @@ reviewer should look at.
       signet.rs atoms (transcription risk); the two subset corrections
       (Option caught by fixed-width not dual-oracle; Tag<K> → u8) and
       the ByteArray<N> wrapper transparency bound.
+- [ ] M11 stage 1 (minocrab_std::v3::borsh): look at the leaf table's
+      atom widths vs the Borsh widths (a wrong atom is a wrong preimage
+      and the ZKIR-equality test would agree with it, since both sides
+      are ours — the independent check is the simulated
+      bytes-vs-borsh::to_vec one); the CircuitBorshArg substitute for the
+      un-spellable CircuitArg supertrait; and Tag<K>'s claim that
+      compactc emits no `< K` bound (asserted from the corpus's absence
+      of enum-typed arguments, not from an artifact).

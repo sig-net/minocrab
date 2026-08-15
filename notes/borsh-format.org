@@ -354,6 +354,109 @@ tx_params.to at 196, calldata.is_some at 232, words[0] at 239,
 caip2_id at 304, schemas at 336/370; swap record words[0..7] at
 239..463, schemas at 496/534.
 
+* As built — stage 1 (2026-08-15)
+=crates/minocrab-std/src/v3/borsh.rs= (a PUBLIC module, =minocrab_std::v3::borsh=,
+beside entry.rs): the trait, the leaf table, the two encoders, the
+layout table. NO circuit touched — row_snapshot and interface_snapshot
+bit-identical, =cargo test --workspace --release= green.
+
+** The framing is in the code, at the top of the module
+The module docs open with "THIS IS BORSH, RESTRICTED — NOT A SEPARATE
+FORMAT": every byte is valid canonical Borsh for the declared types,
+any Borsh implementation parses it from the same declarations, and the
+subset exists because A CIRCUIT CANNOT HAVE DATA-DEPENDENT LAYOUT —
+followed by the exclusion table (Vec/String, Option, data enums, off-width
+Uint) with each replacement, the Tag↦u8 spec rule, and the padding rule
+("bytes 0..LEN Borsh, LEN..N MUST be zero" — not Borsh, and not claimed
+to be).
+
+** Real signatures
+#+begin_src rust
+pub trait CircuitBorsh<V: Vis3>: Sized {
+    const LEN: usize;
+    fn push_limbs(&self, limbs: &mut Limbs<V>);          // hash path, 0 rows
+    fn push_segments(&self, out: &mut Serializer<V>);    // packed path
+    fn constrain_canonical(&self, c: &mut Circuit3);
+    fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>);
+    fn layout() -> Vec<FieldSpec>;                       // provided; asserts Σwidth == LEN
+}
+pub trait CircuitBorshArg: CircuitArg + CircuitBorsh<Private> {}  // blanket
+pub fn limbs_of<V, T>(&T) -> Limbs<V>                    // asserts Σatom == LEN
+pub fn alignment_of<V, T>(&T) -> Alignment
+pub fn to_bytes<const N: usize, V, T>(&mut Circuit3, &T) -> BytesN<V, N>
+pub struct Limbs<V> { push_atom(width, &[wires]); alignment(); keccak256(c); persistent_hash(c) }
+pub struct Tag<const K: u32, V = Private>(Wire3<FieldT, V>);
+pub type Flagged<T, V = Private> = Maybe<T, V>;
+#+end_src
+
+** Four deviations from the design of record, all deliberate
+1. =CircuitBorsh<V>: CircuitArg= CANNOT BE SPELLED. CircuitArg is
+   implemented for =Private= only (c.arg hands back private wires), while
+   serialization applies at both visibilities. The strict extension is
+   enforced instead by the blanket =CircuitBorshArg: CircuitArg +
+   CircuitBorsh<Private>=, at which every leaf and the test record are
+   named in =the_leaves_are_arguments_and_borsh= — a compile-time fact,
+   which is what the supertrait was for.
+2. =read= IS NOT IN THE TRAIT YET. A stub would have been a lie; stage 2
+   adds the method when BorshReader exists (a few lines per impl).
+3. OFF-WIDTH =Uint<BITS>= IS A MISSING IMPL, NOT A CONST ASSERT. The leaf
+   table is a macro over the five Borsh widths (8/16/32/64/128), so
+   =Uint<24>= fails as an unsatisfied trait bound naming CircuitBorsh
+   rather than as a const-eval panic — the same "leaf table as code" shape
+   stage 0's =fixed_len_primitives!= has. A narrower RANGE stays a range
+   constraint on the next width up.
+4. =Flagged= IS A TYPE ALIAS OF v3's =Maybe=, not a second struct: Compact's
+   Maybe already IS bool-tag + always-present payload, so the circuit type
+   is Compact's and the spec name is Borsh-side. (Reuse before writing our
+   own.)
+Also: =alignment_of=/=limbs_of= take the VALUE (they collect the wires;
+the atoms are value-independent, which is what fixed-width means), and
+=to_bytes::<N>= pads to N ≥ LEN, so the deployed 288-byte Misc envelope
+is the same call.
+
+** constrain_canonical, pinned against the argument constraint
+Defined as the FULL canonicity set, and proven equal to
+=CircuitArg::constrain= as serialized ZKIR for every leaf that is both
+(Uint×5, Bool, Bytes<20>, B32, BytesN<64>, [B32;2], Flagged) — so a value
+that entered as an argument is already canonical and nothing is emitted
+twice. =Tag<K>= is THE ONE EXCEPTION and the reason the method exists: it
+adds =less_than(tag, K)= + assert, which no Compact circuit emits (=K =
+256= emits nothing, and the ZKIR then equals the argument constraint
+exactly). The bound is also proven live: the circuit accepts variants
+0..3 of a =Tag<4>= and rejects 4/5/255 through the simulator.
+
+** Gates (crates/minocrab-std/tests/v3_borsh.rs, 12 tests)
+- ZERO COST, as byte-identical ZKIR: =limbs_of(&record).keccak256(c)= vs a
+  hand-written 11-atom alignment + hand operand list; =to_bytes::<204>= vs
+  the hand-written =Serializer= push sequence. Describing the preimage
+  emits no instruction at all (instruction_count unchanged).
+- P1 THROUGH THE SIMULATOR: a 204-byte record of every leaf kind
+  (Uint<8/32/128>, Bool, Tag<4>, Bytes<20>, B32, BytesN<64>, [B32;2],
+  Flagged<Uint<32>>) is packed in-circuit, read back out of =run.outputs=,
+  and compared to =borsh::to_vec= of a plain twin carrying borsh's own
+  derive — equal, all 204 bytes. The keccak path is checked the same way:
+  the digest the chip produces IS =Keccak256(borsh::to_vec(v))=. The padded
+  envelope =to_bytes::<288>= is Borsh then zeros.
+- FIXED WIDTH per leaf: =borsh::object_length= of the twin equals LEN at
+  every value, including the record with its Flagged tag UNSET — the
+  property that catches Option and the reason offsets are constants.
+- The layout table's 11 rows (path/kind/offset/width) are asserted
+  explicitly, and =layout()= itself asserts Σwidth == LEN.
+borsh 1.6.1 became a dev-dependency of minocrab-std too (design's posture,
+zero new lock entries — it was already in the graph via minocrab-contracts).
+
+** The library is tied to a DEPLOYED shape, not only to its own twin
+=serialization_conformance.rs= gained =mod in_circuit= (2 tests): a
+hand-written =CircuitBorsh= twin of stage 0's =RespondMisc= (the
+singleton's respond payload, whose bytes the PINNED COMPACTC ARTIFACT
+accepts) is built as a circuit, simulated per proptest case, and its
+packed output compared to =borsh_bytes(&payload)= — equal. And its
+=layout()= is compared row for row against =layout_rows(
+schema_container_of::<RespondMisc>())=: same paths, kinds, offsets,
+widths. That is stage 3's =#[borsh(spec = …)]= cross-check, done by hand
+for one deployed shape, and it says the new library agrees with borsh's
+own schema of the deployed payload.
+
 * ANSWERED from MPC source (2026-08-15, ~/mpc; supersedes the open
 questions below — kept for history)
 Ingest path: chain-signatures/chain-midnight/ (PR #1059) — full

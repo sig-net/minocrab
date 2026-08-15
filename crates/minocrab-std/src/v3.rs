@@ -14,6 +14,12 @@ use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Pu
 
 mod entry;
 
+/// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
+/// — the serialization layer (M11, notes/borsh-format.org). Read its module
+/// docs first: **this is Borsh, not a format of ours**, and the subset exists
+/// because a circuit cannot have data-dependent layout.
+pub mod borsh;
+
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and

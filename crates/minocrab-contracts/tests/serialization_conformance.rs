@@ -810,6 +810,193 @@ fn layout_matches_its_frozen_table() {
     );
 }
 
+// ---- (e) THE IN-CIRCUIT ENCODER against a deployed shape (M11 stage 1) ---------
+//
+// Stage 1 built `minocrab_std::v3::borsh` — the same Borsh subset, emitted by
+// a circuit. Its own suite proves it against a twin of its own. Here it is
+// pointed at a DEPLOYED payload shape, `RespondMisc`, whose bytes stage 0
+// proved the pinned compactc artifact itself accepts: the circuit's packed
+// output must equal `borsh::to_vec` of the spec type, and the circuit's
+// layout table must equal the table walked out of borsh's own schema.
+
+mod in_circuit {
+    use super::*;
+
+    use minocrab_std::v3::borsh::{to_bytes, CircuitBorsh, FieldSpec, LayoutPath, Limbs};
+    use minocrab_std::v3::{ArgPath, CircuitArg, Serializer, Uint, Vis3, B32};
+
+    use minocrab::v3::Circuit3;
+    use minocrab::Private;
+    use minocrab_zkir::v3::IrValue;
+
+    /// [`RespondMisc`] over wires. Hand-written, as stage 1's impls are — the
+    /// derive is stage 3.
+    struct RespondMiscCircuit<V: Vis3> {
+        request_id: B32<V>,
+        big_r_x: B32<V>,
+        big_r_y: B32<V>,
+        s: B32<V>,
+        recovery_id: Uint<8, V>,
+    }
+
+    impl<V: Vis3> CircuitBorsh<V> for RespondMiscCircuit<V> {
+        const LEN: usize = 4 * 32 + 1;
+
+        fn push_limbs(&self, limbs: &mut Limbs<V>) {
+            self.request_id.push_limbs(limbs);
+            self.big_r_x.push_limbs(limbs);
+            self.big_r_y.push_limbs(limbs);
+            self.s.push_limbs(limbs);
+            self.recovery_id.push_limbs(limbs);
+        }
+
+        fn push_segments(&self, out: &mut Serializer<V>) {
+            self.request_id.push_segments(out);
+            self.big_r_x.push_segments(out);
+            self.big_r_y.push_segments(out);
+            self.s.push_segments(out);
+            self.recovery_id.push_segments(out);
+        }
+
+        fn constrain_canonical(&self, c: &mut Circuit3) {
+            self.request_id.constrain_canonical(c);
+            self.big_r_x.constrain_canonical(c);
+            self.big_r_y.constrain_canonical(c);
+            self.s.constrain_canonical(c);
+            self.recovery_id.constrain_canonical(c);
+        }
+
+        fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
+            <B32<V>>::push_layout(&path.field("request_id"), offset, out);
+            <B32<V>>::push_layout(&path.field("big_r_x"), offset, out);
+            <B32<V>>::push_layout(&path.field("big_r_y"), offset, out);
+            <B32<V>>::push_layout(&path.field("s"), offset, out);
+            <Uint<8, V>>::push_layout(&path.field("recovery_id"), offset, out);
+        }
+    }
+
+    impl CircuitArg for RespondMiscCircuit<Private> {
+        const SLOTS: usize = 2 + 2 + 2 + 2 + 1;
+
+        fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
+            for _ in 0..4 {
+                <B32<Private> as CircuitArg>::push_atoms(atoms);
+            }
+            <Uint<8, Private> as CircuitArg>::push_atoms(atoms);
+        }
+
+        fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+            RespondMiscCircuit {
+                request_id: CircuitArg::declare(c, &path.field("requestId")),
+                big_r_x: CircuitArg::declare(c, &path.field("bigR_x")),
+                big_r_y: CircuitArg::declare(c, &path.field("bigR_y")),
+                s: CircuitArg::declare(c, &path.field("s")),
+                recovery_id: CircuitArg::declare(c, &path.field("recoveryId")),
+            }
+        }
+
+        fn constrain(&self, c: &mut Circuit3) {
+            self.request_id.constrain(c);
+            self.big_r_x.constrain(c);
+            self.big_r_y.constrain(c);
+            self.s.constrain(c);
+            self.recovery_id.constrain(c);
+        }
+    }
+
+    /// A preimage for a circuit that is nothing but its arguments: no
+    /// transcripts, no ledger operations.
+    fn arg_preimage(inputs: Vec<Fr>) -> midnight_transient_crypto::proofs::ProofPreimage {
+        midnight_transient_crypto::proofs::ProofPreimage {
+            inputs,
+            private_transcript: vec![],
+            public_transcript_inputs: vec![],
+            public_transcript_outputs: vec![],
+            binding_input: 0.into(),
+            communications_commitment: None,
+            key_location: midnight_transient_crypto::proofs::KeyLocation(
+                std::borrow::Cow::Borrowed("minocrab-contracts-test"),
+            ),
+        }
+    }
+
+    /// The packed bytes a circuit built through `CircuitBorsh` emits for the
+    /// deployed `respond` payload ARE `borsh::to_vec` of the spec type.
+    #[test]
+    fn the_circuit_encoder_emits_the_spec_bytes() {
+        let mut c = Circuit3::new();
+        let value =
+            <RespondMiscCircuit<Private> as CircuitArg>::declare(&mut c, &ArgPath::root("respond"));
+        value.constrain(&mut c);
+        let bytes = to_bytes::<{ RespondMisc::LEN }, _, _>(&mut c, &value);
+        for (i, limb) in bytes.limbs().to_vec().into_iter().enumerate() {
+            let public = c.disclose(limb, "payload limb");
+            c.output(public, &format!("payload limb {i}"));
+        }
+        let ir = c.finish(false).ir;
+
+        TestRunner::new(gen::config())
+            .run(&respond_misc(), |payload| {
+                let mut inputs = Vec::new();
+                for b32 in [
+                    &payload.request_id,
+                    &payload.big_r_x,
+                    &payload.big_r_y,
+                    &payload.s,
+                ] {
+                    let (hi, lo) = b32_slots(b32);
+                    inputs.extend([hi, lo]);
+                }
+                inputs.push(Fr::from(u64::from(payload.recovery_id)));
+
+                let run = simulate(&ir, &arg_preimage(inputs)).expect("the encoder circuit accepts");
+                let limbs: Vec<Fr> = run
+                    .outputs
+                    .iter()
+                    .map(|v| match v {
+                        IrValue::Native(fr) => *fr,
+                        other => panic!("expected a native output, got {other:?}"),
+                    })
+                    .collect();
+
+                // Slot 0 is the leftover (most significant) chunk, so string
+                // order is the slots reversed.
+                let mut bytes = Vec::with_capacity(RespondMisc::LEN);
+                for (i, limb) in limbs.iter().enumerate().rev() {
+                    let width =
+                        minocrab_std::v3::BytesN::<Private, { RespondMisc::LEN }>::limb_len(i);
+                    bytes.extend_from_slice(&limb.as_le_bytes()[..width]);
+                }
+                prop_assert_eq!(bytes, borsh_bytes(&payload));
+                Ok(())
+            })
+            .expect("the in-circuit encoder emits canonical Borsh");
+    }
+
+    /// The circuit type's layout table IS borsh's own schema walk of the spec
+    /// type — same paths, same kinds, same offsets, same widths. (This is the
+    /// cross-check `#[borsh(spec = …)]` generates in stage 3, done by hand for
+    /// one deployed shape.)
+    #[test]
+    fn the_circuit_layout_is_the_schema_layout() {
+        assert_eq!(
+            <RespondMiscCircuit<Private> as CircuitBorsh<Private>>::LEN,
+            RespondMisc::LEN
+        );
+        let ours: Vec<(String, String, usize, usize)> =
+            <RespondMiscCircuit<Private> as CircuitBorsh<Private>>::layout()
+                .into_iter()
+                .map(|f| (f.path, f.kind, f.offset, f.width))
+                .collect();
+        let theirs: Vec<(String, String, usize, usize)> =
+            layout_rows(&borsh::schema::BorshSchemaContainer::for_type::<RespondMisc>())
+                .into_iter()
+                .map(|r| (r.path, r.kind, r.offset, r.width))
+                .collect();
+        assert_eq!(ours, theirs);
+    }
+}
+
 /// Regeneration helper: prints the `LAYOUT_SNAPSHOT` table body.
 #[test]
 #[ignore = "regeneration helper, not a check"]

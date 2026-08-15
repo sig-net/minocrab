@@ -509,9 +509,23 @@ external value and no dependency on 1-7.
       (bincode-fixint writes a 4-byte variant index) so spec-level tags
       are u8. Records measured: vault 404 bytes, swap 571 — the number
       stage 7's estimate is built on.)
-- [ ] 1. v3::borsh core, hand impls (CircuitBorsh, leaves,
+- [X] 1. v3::borsh core, hand impls (CircuitBorsh, leaves,
       alignment_of/limbs_of/to_bytes, constrain_canonical, layout).
       ZKIR byte-equality + P1-P4 per leaf.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 1".
+      minocrab_std::v3::borsh, a public module whose docs open with the
+      subset framing. The hash path is FREE, as byte-identical ZKIR
+      against a hand-written alignment; the packed bytes ARE
+      borsh::to_vec of a plain twin and the chip's digest IS
+      keccak256(borsh(v)), both through the simulator. constrain_canonical
+      is proven equal to CircuitArg::constrain for every leaf that is
+      both, with Tag<K>'s `< K` bound the one documented exception.
+      Deviations: the CircuitArg supertrait cannot be spelled (Private
+      only) so the extension is the blanket CircuitBorshArg bound; `read`
+      waits for stage 2 rather than being stubbed; off-width Uint is a
+      missing impl rather than a const assert; Flagged is a type alias of
+      v3's Maybe. The conformance suite gained an in_circuit section
+      tying the library to the DEPLOYED respond payload.)
 - [ ] 2. BorshReader both modes + cryptocost-style measured per-leaf costs.
 - [ ] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
 - [ ] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
