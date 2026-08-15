@@ -2218,6 +2218,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "minocrab-abi"
+version = "0.1.0"
+dependencies = [
+ "midnight-zkir-v3",
+ "minocrab",
+ "minocrab-ledger",
+ "minocrab-std",
+ "minocrab-zkir",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror",
+]
+
+[[package]]
 name = "minocrab-bench"
 version = "0.1.0"
 dependencies = [
@@ -2265,6 +2280,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sha3",
+ "signet-signer-interface",
 ]
 
 [[package]]
@@ -3331,6 +3347,16 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "signet-signer-interface"
+version = "0.1.0"
+dependencies = [
+ "minocrab",
+ "minocrab-abi",
+ "minocrab-ledger",
+ "minocrab-std",
 ]
 
 [[package]]

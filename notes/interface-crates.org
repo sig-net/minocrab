@@ -419,3 +419,119 @@ and nothing else, and the vault's three artifacts are unchanged.
 the Compact name. =#[entry_point(name = "…")]= overrides the name where the
 two disagree; none of the four corpus interfaces needs it, which is itself
 evidence the mechanical rule is right.
+
+* As built — stage 4 (2026-08-15)
+The first IMPORTED interface crate. =signet-signer-interface= (a workspace
+crate the vault depends on like any other) plus =minocrab-abi= (the
+agreement checker). row_snapshot and interface_snapshot bit-identical, all
+differential suites green, =cargo test --workspace --release= clean (60 test
+binaries — five new).
+
+** THE PROOF IS THE DIFF: three artifacts, one import, zero movement
+=erc20_vault{,_opt,_borsh}.rs= changed by TWO IMPORT LINES each
+(=use signet_signer_interface::{notification::construct_notification_v1,
+SignetSigner}=) and nothing else. =signBidirectional= is now called through
+a crate that knows nothing about the vault, was written from the CALLEE's
+artifact, and carries its own test suite — and all three vaults' ZKIR is
+unchanged. That is the M12 claim, executable.
+
+** WHAT MOVED, AND WHY EACH THING LANDED WHERE IT DID
+- =SignetSigner= (the =#[interface]= trait) left =minocrab_contracts::
+  interfaces= for the new crate. What stayed behind is =Token=,
+  =XcallTarget=, =PaymentTarget= — experiments, not deployed callees.
+- =Notification= became =SignBidirectionalEventNotification=, THE COMPACT
+  NAME. A generated file cannot invent a shorter alias, and stage 5 has to
+  regenerate this file byte for byte, so the type carries the name the
+  artifact gives it. Rename only; the derive and the fields are stage 3's.
+- =construct_notification_v1= moved with it, into =src/notification.rs=.
+  It is the CALLEE's constructor (Signet.compact exports it), so the byte
+  layout of the payload is Signet's business; a caller that packed those
+  bytes itself would be reimplementing the callee's format per call site.
+  It is also the crate's ONLY hand-written module — a constructor is source
+  and no artifact carries it — which is why it is a module of its own
+  rather than lines in =src/lib.rs= (see stage 5's byte-for-byte rule).
+
+** THE CRATE DECLARES ALL THREE CIRCUITS, not just the one we call
+=respond= and =respondBidirectional= are in the trait too. An interface
+crate describes a CONTRACT, not one caller's usage of it, and the extra two
+pay their way immediately: they bring =Signature= (shared by both events,
+so the generator's name-dedup rule is exercised), =AffinePoint=, and a
+=RequestId= alias, and stage 6's =contract_matches_its_interface= checks the
+signet-contract port against all three.
+
+** =minocrab-abi=: SIX CHECKS, and the one that is an independent oracle
+=Artifact::assert_interface_matches::<A, R>(entry_point)= where =A= is the
+tuple of the =#[interface]= method's parameter types and =R= its result —
+the SAME types the generated call passes, so nothing is written twice and
+agreement about the artifact IS agreement about every call site. It checks:
+1. the entry point exists; 2. it is =proof: true= (not a formality: the
+whole =Signet= module is =proof: false=); 3. the argument tree, FLATTENED,
+equals =A='s atoms and per-slot =Prim=s; 4. likewise the result vs =R=;
+5. the circuit compiles a communications commitment; 6. the compiled
+=.zkir='s opening CONSTRAINT PREFIX equals =Prim::constraint= run over =A=,
+slot for slot, each constraint on the declared input of ITS slot.
+Check 6 is the only one that cannot agree with a mistake of ours: 1-5 read
+compactc's JSON and our own flattening, 6 reads the instruction stream the
+prover executes.
+
+*** The mutation suite proves it bites — and isolates check 6
+Nine cases. Seven damage the artifact (renamed circuit, =proof: false=,
+REORDERED arguments, retyped field, a new result, a pin with no
+communications commitment, a drifted pinned prefix). The last two leave
+=contract-info.json= and =pin.json= CORRECT — so checks 1-5 all pass — and
+forge only the compiled circuit: one swaps in another circuit's =.zkir=
+(caught: "declares 9 inputs"), one widens a single =constrain_bits= from 8
+to 16 (caught: ".zkir slot 2"). Without those two the suite would only be
+testing that our flattening agrees with itself.
+
+** =pin.json= IS DISTILLED, NOT MAINTAINED
+=Pin::distill(artifact_dir, source)= builds it; =the_committed_pin_is_the_
+artifacts_distillation= asserts the committed file IS that. So re-pinning
+is =cargo test -- --ignored= plus reading a diff, and a hand-edited pin
+fails immediately. It carries the two compiler version triples, the
+=contract-info.json= digest, and per circuit: =proof=, the =.zkir= digest,
+the input count, the =do_communications_commitment= flag and the constraint
+prefix. It does NOT carry the =.zkir= itself (74 KB for one circuit), and
+it is a hash pin, never a fetch instruction — the offline half of the check
+runs from these facts alone; the =.zkir= half runs additionally when the
+tree is reachable via =MINOCRAB_ARTIFACT_DIR= or =pin.source= under the
+workspace root, which in this workspace it always is.
+
+** THE FROZEN SCHEMA IS DERIVED FROM THE TYPES, NOT THE ARTIFACT
+=artifact/interface-schema.txt= renders, per circuit: the entry-point name
+and its 32-byte hash, then every argument slot's flattened primitive and
+the constraint compactc places on it, plus the FAB alignment. It is built
+by =minocrab_abi::circuit_schema::<A, R>= from the DECLARATIONS, so it says
+what the crate promises its dependants rather than what some artifact
+happens to contain — and its diff is the semver decision.
+
+** A CORPUS FINDING, and a correction to an M11 note
+=CompactType::Enum= flattens to =Prim::unsigned(k − 1)= for =k= variants —
+NOT assumed. =compact/examples/casts/advanced_casts='s =test17= takes two
+=enum TestEnum { A, B, C }= arguments and its compiled =.zkir= opens with
+=less_than tmp arg 3 (2 bits); assert= twice, which is exactly
+=Prim::unsigned(2).constraint()= = =Bounded{bound: 3, bits: 2}= — the first
+corpus evidence for the =Bounded= branch of the stage-1 table, which until
+now was exercised only by unit tests.
+This CORRECTS the justification recorded for M11 stage 1's =Tag<K>= ("no
+=< K= bound, asserted from the corpus's absence of enum-typed arguments"):
+the corpus has 30 enum-typed argument/result positions, and compactc plainly
+does emit the bound for an enum-typed circuit ARGUMENT. =Tag<K>= is a
+Borsh-decoded witness, a different position, so nothing moves and no M11
+code changes — but the stated reason was wrong and the review queue now
+says so.
+
+** Two implementation notes worth knowing
+- =CompactType='s =Deserialize= is HAND-WRITTEN, for one field: a
+  =Uint<128>='s =maxval= is 2^128 − 1, which =serde_json='s =Number= cannot
+  hold — it degrades to =f64= and silently loses the low bits, so a
+  =Uint<128>= argument would compare unequal to itself. =#[serde(tag = …)]=
+  cannot help either: an internally-tagged enum BUFFERS its input and the
+  buffer is where the precision goes. Each type node is therefore taken as
+  raw JSON text and dispatched by hand, with =maxval= parsed from its own
+  digits; every other field goes back through serde_json.
+- =pub type RequestId<V> = B32<V>= is the =Alias= mapping, and it survives
+  the =#[interface]= visibility check because that check is SYNTACTIC and
+  =RequestId<Public>= mentions =Public=. An alias that BAKED IN a
+  visibility would be rejected with a misleading message — the hazard the
+  review queue already flags for stage 3.

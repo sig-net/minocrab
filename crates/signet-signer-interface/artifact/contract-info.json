@@ -1,0 +1,215 @@
+{
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "circuits": [
+    {
+      "name": "signBidirectional",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "notification",
+          "type": {
+            "type-name": "Struct",
+            "name": "SignBidirectionalEventNotification",
+            "elements": [
+              {
+                "name": "version",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              },
+              {
+                "name": "payload",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 128
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "respond",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "signatureRespondedEvent",
+          "type": {
+            "type-name": "Struct",
+            "name": "SignatureRespondedEvent",
+            "elements": [
+              {
+                "name": "signature",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Signature",
+                  "elements": [
+                    {
+                      "name": "bigR",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "AffinePoint",
+                        "elements": [
+                          {
+                            "name": "x",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          },
+                          {
+                            "name": "y",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "s",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    },
+                    {
+                      "name": "recoveryId",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 255
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "respondBidirectional",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "requestId",
+          "type": {
+            "type-name": "Alias",
+            "name": "RequestId",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        },
+        {
+          "name": "respondBidirectionalEvent",
+          "type": {
+            "type-name": "Struct",
+            "name": "RespondBidirectionalEvent",
+            "elements": [
+              {
+                "name": "signature",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "Signature",
+                  "elements": [
+                    {
+                      "name": "bigR",
+                      "type": {
+                        "type-name": "Struct",
+                        "name": "AffinePoint",
+                        "elements": [
+                          {
+                            "name": "x",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          },
+                          {
+                            "name": "y",
+                            "type": {
+                              "type-name": "Bytes",
+                              "length": 32
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "name": "s",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    },
+                    {
+                      "name": "recoveryId",
+                      "type": {
+                        "type-name": "Uint",
+                        "maxval": 255
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

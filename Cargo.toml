@@ -10,6 +10,10 @@ members = [
     "crates/minocrab-contracts",
     "crates/minocrab-sim",
     "crates/minocrab-bench",
+    "crates/minocrab-abi",
+    # Interface crates (M12): one per callee contract, each a
+    # hand-authored-or-generated declaration plus its pinned artifact.
+    "crates/signet-signer-interface",
 ]
 
 [workspace.package]

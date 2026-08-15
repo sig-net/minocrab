@@ -50,8 +50,10 @@ use minocrab_std::v3::{
     Either, Maybe, Uint, B32,
 };
 
+use signet_signer_interface::notification::construct_notification_v1;
+use signet_signer_interface::SignetSigner;
+
 use crate::common;
-use crate::interfaces::SignetSigner;
 use crate::signet;
 
 /// Ledger field indices, in declaration order.
@@ -430,7 +432,7 @@ fn notify_signet(
         let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
         let me = ContractAddress::from_limbs(kernel_self(c, one));
         let notification =
-            signet::construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
+            construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
         signer.sign_bidirectional(c, one, *request_id, notification);
     });
 }

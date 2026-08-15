@@ -1,0 +1,27 @@
+[package]
+name = "minocrab-abi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Artifact agreement: check a MinoCrab interface crate against the callee's compiled compactc artifact"
+
+[dependencies]
+minocrab = { path = "../minocrab" }
+minocrab-ledger = { path = "../minocrab-ledger" }
+# The `.zkir` reader. compactc's v3 output is parsed through Midnight's own
+# `IrSource` rather than by poking at JSON, so the constraint-prefix check
+# reads the same typed instruction stream the prover does.
+minocrab-zkir = { path = "../minocrab-zkir" }
+midnight-zkir-v3.workspace = true
+serde = { workspace = true }
+# `raw_value` for ONE field: a Compact `Uint`'s `maxval` can be 2^128 − 1,
+# which serde_json's default `Number` cannot hold (it degrades to f64 and
+# loses the low bits). Deserializing that field from its RAW JSON text is
+# exact. The feature is additive — it adds `RawValue`, it does not change
+# how numbers are parsed anywhere else.
+serde_json = { workspace = true, features = ["raw_value"] }
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+minocrab-std = { path = "../minocrab-std" }

@@ -9,6 +9,11 @@ description = "The sig-net corpus contracts rewritten in the MinoCrab eDSL (M4)"
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
+# AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the Signet
+# singleton through the callee's own published declaration, not through a
+# transliteration kept here. Ordinary cargo dependency — that is the whole
+# point of the mechanism.
+signet-signer-interface = { path = "../signet-signer-interface" }
 
 [dev-dependencies]
 # The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated

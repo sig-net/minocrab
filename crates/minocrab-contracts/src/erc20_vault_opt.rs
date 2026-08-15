@@ -63,8 +63,10 @@ use minocrab_std::v3::{
     B32,
 };
 
+use signet_signer_interface::notification::construct_notification_v1;
+use signet_signer_interface::SignetSigner;
+
 use crate::common;
-use crate::interfaces::SignetSigner;
 use crate::erc20_vault::{
     SwapEvent, SwapRecord, VaultEvent, VaultRecord, APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
     EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_FAILURE_OUTPUT, MPC_RESPONSE_KEY,
@@ -386,7 +388,7 @@ fn notify_signet(
         // inside `call`, which is where Rust's argument-first evaluation
         // would otherwise land it.
         let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
-        let notification = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
+        let notification = construct_notification_v1::<Public>(c, &me, 1, notify_path);
         signer.sign_bidirectional(c, one, *request_id, notification);
     });
 }

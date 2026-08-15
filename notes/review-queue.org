@@ -122,3 +122,15 @@ reviewer should look at.
       CallArg/CallResult only in visibility-generic mode is a
       restriction rather than a gap (an all-Public plain struct gets no
       call impls today).
+- [ ] M12 stage 4 (signet-signer-interface + minocrab-abi): the FLATTENING
+      TABLE in crates/minocrab-abi/src/info.rs is a second, independent
+      transcription of the rule the minocrab-std leaves implement — check
+      it against them (Bytes limbing, the Uint atom width, the claim that
+      Compact structs add no slot). The hand-written `Deserialize` for
+      `CompactType` (raw-text `maxval`) is parsing code with no fuzzing
+      behind it. And the CORRECTION recorded in notes/interface-crates.org
+      §"As built — stage 4": compactc DOES emit a `less_than` bound for an
+      enum-typed circuit argument (advanced_casts/test17.zkir), so M11
+      stage 1's stated justification for `Tag<K>` emitting none is wrong —
+      confirm the conclusion still holds for `Tag<K>`'s actual position (a
+      Borsh-decoded witness, not an argument), since nothing was changed.

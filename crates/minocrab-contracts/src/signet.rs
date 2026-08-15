@@ -19,8 +19,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, BytesN, CircuitArg, Secp256k1EcdsaSignature, Uint, Vis3,
-    B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
 };
 
 fn atom(n: u32) -> AlignmentSegment {
@@ -368,54 +367,6 @@ pub fn calculate_request_id<
         let limbs: Vec<_> = request.limbs().iter().map(|w| w.erase()).collect();
         let digest = c.keccak256(alignment, &limbs);
         B32::from_typed(c, digest)
-    })
-}
-
-// ---- notification -----------------------------------------------------------
-
-/// `struct SignBidirectionalEventNotification { version: Uint<8>, payload:
-/// Bytes<128> }` — the Signet singleton's `signBidirectional` second
-/// argument (signet-contract's contract-info.json).
-///
-/// Field order IS the wire contract: its FAB limbs are `[version,
-/// payload…]` (`Bytes<128>` = 5 limbs of `[4, 31, 31, 31, 31]`), which is
-/// what [`CircuitAbi`] states below and what a caller's `CallArg` flattens.
-/// M12 stage 4 moves this type and [`construct_notification_v1`] into the
-/// signet-signer interface crate — they are the callee's vocabulary, not
-/// the vault's.
-#[derive(Clone, CircuitArg)]
-pub struct Notification<V: Vis3> {
-    pub version: Uint<8, V>,
-    pub payload: BytesN<V, 128>,
-}
-
-/// `constructSignBidirectionalEventNotificationV1(callerAddress, depth,
-/// path)` with a compile-time path: the version byte (1) and the
-/// `Bytes<128>` payload `callerAddress ‖ depth ‖ path[0..4] ‖ zeros`.
-pub fn construct_notification_v1<V: Vis3>(
-    c: &mut Circuit3,
-    caller_address: &B32<V>,
-    requests_path_depth: u8,
-    requests_path: [u8; 4],
-) -> Notification<V> {
-    c.region("signet: notification", |c| {
-        let version = V::from_public(c.constant(1u64));
-        // The payload's 31-byte limbs line up with the caller address:
-        // bytes 0..30 are caller.lo verbatim; bytes 31..61 pack caller.hi
-        // (weight 1) with the compile-time depth ‖ path bytes at weights
-        // 2^8..2^47; bytes 62..127 are zero.
-        let mut packed: u64 = u64::from(requests_path_depth) << 8;
-        for (i, p) in requests_path.into_iter().enumerate() {
-            packed |= u64::from(p) << (16 + 8 * i);
-        }
-        let packed = V::from_public(c.constant(packed));
-        let second = c.add(caller_address.hi, packed);
-        let zero = V::from_public(c.constant(0u64));
-        let payload = BytesN::from_limbs(vec![zero, zero, zero, second, caller_address.lo]);
-        Notification {
-            version: Uint::from_field(version),
-            payload,
-        }
     })
 }
 

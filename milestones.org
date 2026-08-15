@@ -658,7 +658,7 @@ a test failure, not a runtime surprise.
       names, comm layout DERIVED from the types — no hand-typed keys
       ("derive keys" bullet); contract address stays a runtime
       parameter. Macro thinness rules per M9.
-- [ ] Artifact agreement: machinery asserting an interface crate
+- [X] Artifact agreement: machinery asserting an interface crate
       matches a callee artifact's typed I/O schema (reuse
       assert_call_compatible / interface-snapshot idioms) — run in the
       interface crate's OWN test suite against a pinned artifact.
@@ -694,8 +694,10 @@ gates every stage: both snapshots bit-identical, all suites green):
       CallArg/CallResult at Public); the stage-2 handles re-expressed
       through it with NO call site touched; byte-equal-ZKIR gate against
       hand-written twins; 14-item error inventory, unit-tested.
-- [ ] 4. signet-signer-interface crate + minocrab-abi + pinned
-      artifact + mutation test + schema snapshot.
+- [X] 4. signet-signer-interface crate + minocrab-abi + pinned
+      artifact + mutation test + schema snapshot; the three vault
+      artifacts call signBidirectional through the imported crate at
+      zero movement (two import lines changed per artifact).
 - [ ] 5. minocrab-interface-gen (byte-for-byte regeneration of stage
       4's crate; a Compact-only contract imported).
 - [ ] 6. Callee-side export + contract_matches_its_interface.

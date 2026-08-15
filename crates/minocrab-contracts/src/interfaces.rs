@@ -18,27 +18,13 @@
 //! compile error naming `disclose()`.
 //!
 //! AN INTERFACE CONTAINS NO ADDRESS. `at_field` names a ledger field and
-//! `at` takes one at runtime, which is why stage 4 can lift these traits
-//! into published crates unchanged.
+//! `at` takes one at runtime, which is why a trait here lifts into a
+//! published crate unchanged — which is what happened to `SignetSigner`,
+//! now the `signet-signer-interface` crate and an ordinary dependency of
+//! this one.
 
 use minocrab::Public;
 use minocrab_std::v3::{interface, BytesN, ContractAddress, ShieldedCoinInfo3, Uint, B32};
-
-use crate::signet::Notification;
-
-/// The Signet singleton (`packages/signet-midnight/src/Signet.compact`), as
-/// the erc20-vault declares it:
-///
-/// ```text
-/// contract SignetSigner {
-///   circuit signBidirectional(requestId: Bytes<32>,
-///                             notification: SignBidirectionalEventNotification): [];
-/// }
-/// ```
-#[interface]
-pub trait SignetSigner {
-    fn sign_bidirectional(request_id: B32<Public>, notification: Notification<Public>);
-}
 
 /// The `xcontract-events` token — the one callee in the corpus with a
 /// RETURN VALUE, and so the one that exercises `CallResult`:

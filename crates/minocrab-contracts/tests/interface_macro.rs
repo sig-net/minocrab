@@ -13,8 +13,9 @@
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{Public, Visibility};
-use minocrab_contracts::interfaces::{PaymentTarget, SignetSigner, Token, XcallTarget};
-use minocrab_contracts::signet::{construct_notification_v1, Notification};
+use minocrab_contracts::interfaces::{PaymentTarget, Token, XcallTarget};
+use signet_signer_interface::notification::construct_notification_v1;
+use signet_signer_interface::{SignBidirectionalEventNotification, SignetSigner};
 use minocrab_contracts::{xcall, xcontract_events};
 use minocrab_ledger::{call, ep_hash, Callee, EntryPoint};
 use minocrab_std::v3::{BytesN, ContractAddress, ShieldedCoinInfo3, Uint, B32};
@@ -76,7 +77,7 @@ impl HandSigner {
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,
         request_id: B32<Public>,
-        notification: Notification<Public>,
+        notification: SignBidirectionalEventNotification<Public>,
     ) {
         call(
             c,
@@ -187,7 +188,7 @@ fn notify_call(build: impl FnOnce(&mut Circuit3, Wire3<FieldT, Public>)) -> Comp
     c.finish(true)
 }
 
-fn notification(c: &mut Circuit3, one: Wire3<FieldT, Public>) -> (B32<Public>, Notification<Public>) {
+fn notification(c: &mut Circuit3, one: Wire3<FieldT, Public>) -> (B32<Public>, SignBidirectionalEventNotification<Public>) {
     let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
     let id = B32::pad(c, "request-id");
     (
