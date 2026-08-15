@@ -30,12 +30,12 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::Public;
 use minocrab_ledger::{
-    cell_read, cell_write, contract_call, counter_increment, emit, map_insert, ImpactElem,
-    LedgerValue,
+    cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{BytesN, B32};
+use minocrab_std::v3::{BytesN, Uint, B32};
 
 use crate::events;
+use crate::interfaces::XcallTarget;
 
 /// Caller ledger fields, in declaration order.
 pub const TARGET: u8 = 0;
@@ -64,17 +64,9 @@ fn recipient_amount_args(c: &mut Circuit3) -> (B32<Public>, Wire3<FieldT, Public
     (r, a)
 }
 
-/// One `target.deposit`-shaped call site: the fresh uncached read of the
-/// sealed `target` cell, then the call itself (unit return).
-fn call_target(c: &mut Circuit3, one: Wire3<FieldT, Public>, args: &[Wire3<FieldT, Public>]) {
-    let addr = cell_read(
-        c,
-        one,
-        TARGET,
-        vec![minocrab::AlignmentAtom::Bytes { length: 32 }],
-    );
-    contract_call(c, one, [addr[0], addr[1]], args, &[]);
-}
+/// The sealed `target` reference. `at_field` means every call site does its
+/// own fresh uncached read of the cell — which `callTwice` relies on.
+const TARGET_CONTRACT: XcallTarget = XcallTarget::at_field(TARGET);
 
 /// `export circuit localBase(recipient, amount): []` — the control: the
 /// shared workload performed locally against the caller's own ledger.
@@ -96,9 +88,23 @@ pub fn local_base() -> Compiled3 {
 /// `export circuit callOnce/callEmit(recipient, amount): []` — one
 /// cross-contract call carrying `(Bytes<32>, Uint<128>)`. (`callEmit`
 /// claims `depositEmit` instead of `deposit`, which only changes the
-/// prover-supplied entry-point-hash witness, not the circuit.)
+/// prover-supplied entry-point-hash witness, not the circuit: see
+/// [`call_emit`], which builds the same circuit through the other typed
+/// method.)
 pub fn call_once() -> Compiled3 {
     call_n_times(1)
+}
+
+/// `export circuit callEmit(recipient, amount): []` — `target.depositEmit`.
+/// Structurally identical to [`call_once`]; the difference is which entry
+/// point the PROVER claims, and entry-point limbs are witnesses.
+pub fn call_emit() -> Compiled3 {
+    let mut c = Circuit3::new();
+    let (r, a) = recipient_amount_args(&mut c);
+    let one = c.constant(1u64);
+    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
+    TARGET_CONTRACT.deposit_emit(&mut c, one, r, Uint::from_field(a));
+    c.finish(true)
 }
 
 /// `export circuit callTwice(recipient, amount): []` — two calls in one
@@ -115,7 +121,7 @@ fn call_n_times(n: usize) -> Compiled3 {
 
     emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
     for _ in 0..n {
-        call_target(&mut c, one, &[r.hi, r.lo, a]);
+        TARGET_CONTRACT.deposit(&mut c, one, r, Uint::from_field(a));
     }
 
     c.finish(true)
@@ -127,15 +133,11 @@ pub fn call_big() -> Compiled3 {
     let mut c = Circuit3::new();
     let data = BytesN::<_, 256>::arg(&mut c, "data");
     data.constrain_input(&mut c);
-    let data: Vec<Wire3<FieldT, Public>> = data
-        .limbs()
-        .iter()
-        .map(|&w| c.disclose(w, "data"))
-        .collect();
+    let data: BytesN<Public, 256> = data.map_limbs(|_, w| c.disclose(w, "data"));
     let one = c.constant(1u64);
 
     emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
-    call_target(&mut c, one, &data);
+    TARGET_CONTRACT.deposit_big(&mut c, one, data);
 
     c.finish(true)
 }

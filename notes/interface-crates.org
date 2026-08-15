@@ -235,3 +235,101 @@ every call. The =[hi, lo]= limb split is checked against the ledger's own
 =constrain_eq 0=. The one call site with a non-empty list
 (xcontract_events =depositViaVault=, =Bytes<32>= return) became
 =[Bits(8), Bits(248)]= — same instructions, same rows.
+
+* As built — stage 2 (2026-08-15)
+The typed call core and all four call sites through it. row_snapshot and
+interface_snapshot bit-identical, all differential suites green (including
+the three vault artifacts and their fork tests), workspace release suite
+clean (54 test binaries).
+
+** DEVIATION: =CircuitAbi= moved to minocrab (L2), and why it had to
+Stage 1 put =CircuitAbi= in minocrab-std beside =CircuitArg=. Stage 2 needs
+=minocrab_ledger::call<A: CallArgs, R: CallResult>= — the design's own
+placement — and minocrab-ledger is L2.5, BELOW minocrab-std, so it cannot
+name a trait defined there. Since =CallArg=/=CallResult= must share
+=CircuitAbi= with =CircuitArg= (that sharing IS the design: one type
+describes both sides of a call), the whole ABI vocabulary moved down into
+=minocrab::v3::abi=, which is where the table already lived. minocrab-std
+re-exports all of it from =v3=, so every existing spelling still works.
+Consequence for the orphan rule: =impl CircuitAbi for [T; N]= and for =()=
+now live with the trait; the matching =CircuitArg= half for arrays stays
+with the leaves.
+
+** SECOND DEVIATION: =Callee::Pinned= holds limbs, not =ContractAddress=
+The design says =Pinned(ContractAddress<Public>)=. =ContractAddress= is a
+newtype over =B32=, which is L3, and =Callee= is named by =call= in L2.5 —
+same layering problem, no shared-vocabulary escape (an address type needs
+=B32='s slot layout). So =Callee::Pinned([Wire3<FieldT, Public>; 2])= holds
+the FAB limb pair, and every handle's =at(address: ContractAddress<Public>)=
+constructor does the one-line conversion. The user-visible API is the
+design's; only the enum payload differs.
+
+** THE ORDERING PROBLEM NOBODY WROTE DOWN, and =Callee::pin=
+compactc evaluates a call's RECEIVER before its argument expressions. Rust
+evaluates the arguments before the call. Where an argument expression emits
+instructions the two orders differ, and the public transcript is ORDERED, so
+the difference is real — not cosmetic.
+Three of the four call sites are unaffected (their argument expressions emit
+nothing between the read and the call), so =Callee::Field= resolving inside
+=call= reproduces compactc's stream exactly. The erc20-vault's is not: its
+second argument is
+=constructSignBidirectionalEventNotificationV1(kernel.self(), …)=, and
+=kernel.self()= is a public-transcript read. For that shape =Callee::pin(c,
+guard)= resolves the sealed-cell read at the point the port chooses — which
+is where compactc puts it. All three vault artifacts use the same spelling.
+This is the sort of thing that would have been found by a failing
+differential; it was found by reading compactc's evaluation order first, and
+the differentials then agreed.
+
+** =call= names the entry point and does NOT bind it
+=call(c, guard, callee, entry_point, args)=. The =entry_point= argument is
+deliberately unused in-circuit: ep limbs are prover-supplied WITNESSES, so
+the circuit cannot bind them (honest limit #1). What binds them is the
+ledger's =(address, ep, comm)= match. Naming the entry point types the
+developer's call and tells the transaction builder which circuit to run.
+=xcall::call_once= and =xcall::call_emit= now go through DIFFERENT typed
+methods and a new test asserts their SERIALIZED ZKIR is identical while
+=ep_hash("deposit") != ep_hash("depositEmit")= — honest limit #1 as an
+executable claim rather than a paragraph. (=call_emit= is deliberately NOT
+added to =support::circuits=: it would add a row_snapshot entry for a
+circuit proven byte-identical to one already there.)
+
+** Everything the caller no longer writes down
+Before: a flat =&[Wire3]= the caller hand-flattened in the callee's slot
+order, and a hand-written result-constraint list. After: =CallArgs= (tuples
+of =CallArg=, up to arity 12) flattens from the TYPES, and the result
+constraints come from =R::prims()= through =Prim::constraint= — the same
+table that constrains the callee's own arguments. A struct passed
+cross-contract cannot be flattened in the wrong order, and a result's range
+check cannot be forgotten, because neither is written.
+=CallArg=/=CallResult= exist at =Public= ONLY. Passing a value
+cross-contract discloses it (it enters the commitment the ledger matches),
+so a private value must =disclose()= first and forgetting is a compile
+error — the =CircuitOut= rule, for the same reason.
+
+** New types, and where they went
+- =minocrab::v3::abi=: =CircuitAbi=, =CallArg=, =CallArgs= (tuple impls
+  0..=12), =CallResult=, plus the =()= and =[T; N]= impls.
+- =minocrab_std::v3::call= (new file): the leaves as =CallArg=/=CallResult=
+  at =Public=. Mechanical; the content is that they exist at =Public= only.
+- =minocrab_std::v3::ContractAddress<V>= — a newtype over =B32<V>=, because
+  a contract address and a hash are not interchangeable and stopping them
+  being passed for each other is the interface layer's job. Its FAB shape IS
+  the inner =Bytes<32>='s (Compact structs flatten), which is why introducing
+  it moved nothing.
+- =minocrab_ledger::{Callee, call}=.
+- =minocrab_contracts::interfaces= — =SignetSigner=, =Token=, =XcallTarget=,
+  =PaymentTarget=: the hand-written target for stage 3's =#[interface]=
+  expansion. Each has =EntryPoint= consts derived from Compact names,
+  =at_field= / =at= / =pin= constructors, and typed methods.
+- =minocrab_contracts::signet::Notification= — the callee's
+  =SignBidirectionalEventNotification=; =construct_notification_v1= now
+  returns it instead of a =(version, payload)= tuple. Stage 4 moves both.
+
+** The scenarios now carry REAL entry-point hashes
+Four differential suites invented ep bytes (=b"ep:deposit"= etc.). All four
+now derive them: =ep_hash("deposit")=, =("depositEmit")=, =("notify")=,
+=("confirmRequest")=, =("signBidirectional")= — including the vault model's.
+Preimage-only, as predicted: the ZKIR is unchanged and every suite stayed
+green without any other edit. Nothing in any suite compares a preimage
+against a corpus artifact's ep, so there was nothing to investigate.

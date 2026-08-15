@@ -20,8 +20,9 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::{events, xcall};
+use minocrab_ledger::ep_hash;
 use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -194,11 +195,12 @@ impl Scenario {
         let mut target = [0u8; 32];
         target[..12].copy_from_slice(b"target-contr");
         target[31] = 0x21;
-        // The entry-point hash: any Bytes<32>; the hi slot is a byte, so
-        // any value fits the 8-bit constraint.
-        let mut ep = [0u8; 32];
-        ep[..10].copy_from_slice(b"ep:deposit");
-        ep[31] = 0x99;
+        // The entry-point hash, DERIVED from the callee circuit's name
+        // (M12 stage 1) rather than invented. The circuit does not bind it
+        // — the ep limbs are prover-supplied witnesses — so this is a
+        // preimage-only change; what it buys is that the scenario now
+        // carries the value a real transaction would.
+        let ep = ep_hash("deposit");
         Scenario {
             recipient,
             amount: 987_654_321,
@@ -380,14 +382,27 @@ fn call_once_matches_corpus() {
 }
 
 /// callEmit is the same circuit claiming a different entry point — only
-/// the prover-supplied ep witness changes.
+/// the prover-supplied ep witness changes. Built through the interface
+/// handle's OTHER method (`depositEmit`), which is the honest limit #1 of
+/// notes/interface-crates.org made concrete: two typed methods, one
+/// circuit.
 #[test]
 fn call_emit_matches_corpus() {
     let theirs = corpus_zkir("caller", "callEmit");
-    let ours = xcall::call_once().ir;
+    let ours = xcall::call_emit().ir;
     let mut s = Scenario::new();
-    s.ep[..14].copy_from_slice(b"ep:depositEmit");
+    s.ep = ep_hash("depositEmit");
     assert_call_compatible(&ours, &theirs, &s.preimage_call_n(1));
+}
+
+/// …and the two methods really do build one circuit: the entry point is a
+/// witness, so it cannot appear in the ZKIR.
+#[test]
+fn call_once_and_call_emit_are_the_same_circuit() {
+    let once = to_zkir_string(&xcall::call_once().ir).expect("serializes");
+    let emit = to_zkir_string(&xcall::call_emit().ir).expect("serializes");
+    assert_eq!(once, emit);
+    assert_ne!(ep_hash("deposit"), ep_hash("depositEmit"));
 }
 
 #[test]

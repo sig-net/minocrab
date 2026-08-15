@@ -22,6 +22,7 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::events;
 use minocrab_contracts::xcontract_events as xce;
+use minocrab_ledger::ep_hash;
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
 use sha2::{Digest, Sha256};
@@ -190,9 +191,9 @@ impl Scenario {
         let mut token_addr = [0u8; 32];
         token_addr[..9].copy_from_slice(b"token-adr");
         token_addr[31] = 0x22;
-        let mut ep = [0u8; 32];
-        ep[..10].copy_from_slice(b"ep:deposit");
-        ep[31] = 0x33;
+        // DERIVED from the callee circuit's name (M12 stage 1); the ep
+        // limbs are witnesses, so this is a preimage-only change.
+        let ep = ep_hash("deposit");
         Scenario {
             amount: 555_000_111,
             sequence: 9,

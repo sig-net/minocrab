@@ -20,7 +20,7 @@ use crate::{Disclosure, DisclosureKind, Meet, Private, Public, Region, Visibilit
 
 mod abi;
 
-pub use abi::{LimbConstraint, Prim};
+pub use abi::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
 
 // --- value-type markers -------------------------------------------------------
 

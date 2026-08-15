@@ -9,9 +9,10 @@
 //! `paidRequests.insert`), with no cross-contract machinery.
 
 use crate::common::{receive_shielded, write_coin_to_self};
+use crate::interfaces::PaymentTarget;
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::{AlignmentAtom, Public};
-use minocrab_ledger::{cell_read, contract_call, emit, set_insert, ImpactElem, LedgerValue};
+use minocrab::Public;
+use minocrab_ledger::{emit, set_insert, ImpactElem, LedgerValue};
 use minocrab_std::v3::{ShieldedCoinInfo3, B32};
 
 /// Caller ledger: the sealed target reference.
@@ -39,11 +40,8 @@ fn declare_b32(c: &mut Circuit3, name: &str) -> B32<minocrab::Private> {
     }
 }
 
-/// The call site: fresh uncached read of the sealed target, then the call.
-fn call_target(c: &mut Circuit3, one: Wire3<FieldT, Public>, args: &[Wire3<FieldT, Public>]) {
-    let addr = cell_read(c, one, TARGET, vec![AlignmentAtom::Bytes { length: 32 }]);
-    contract_call(c, one, [addr[0], addr[1]], args, &[]);
-}
+/// The sealed target reference: each call site reads the cell fresh.
+const TARGET_CONTRACT: PaymentTarget = PaymentTarget::at_field(TARGET);
 
 /// `export circuit callOnce(coin: ShieldedCoinInfo): []` —
 /// `target.notify(disclose(coin))`. ShieldedCoinInfo = { nonce: Bytes<32>,
@@ -58,7 +56,15 @@ pub fn call_once() -> Compiled3 {
     c.assert_bits(value, 128);
     let value = c.disclose(value, "value");
     let one = c.constant(1u64);
-    call_target(&mut c, one, &[nonce.hi, nonce.lo, color.hi, color.lo, value]);
+    TARGET_CONTRACT.notify(
+        &mut c,
+        one,
+        ShieldedCoinInfo3 {
+            nonce,
+            color,
+            value,
+        },
+    );
     c.finish(true)
 }
 
@@ -69,7 +75,7 @@ pub fn request() -> Compiled3 {
     let request_id = declare_b32(&mut c, "requestId");
     let request_id = b32_arg(&mut c, request_id, "requestId");
     let one = c.constant(1u64);
-    call_target(&mut c, one, &[request_id.hi, request_id.lo]);
+    TARGET_CONTRACT.confirm_request(&mut c, one, request_id);
     c.finish(true)
 }
 

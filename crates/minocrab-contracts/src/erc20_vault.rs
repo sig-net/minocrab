@@ -42,15 +42,16 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
 use minocrab_ledger::{
-    cell_read, cell_write, counter_increment, counter_read, contract_call, emit, kernel_self,
-    map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
+    cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, map_insert,
+    map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    circuit, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, Either, Maybe, Uint,
-    B32,
+    circuit, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, ContractAddress,
+    Either, Maybe, Uint, B32,
 };
 
 use crate::common;
+use crate::interfaces::SignetSigner;
 use crate::signet;
 
 /// Ledger field indices, in declaration order.
@@ -421,18 +422,16 @@ fn notify_signet(
     notify_path: [u8; 4],
 ) {
     c.region("xcall: notify signet", |c| {
-        let signer = cell_read(
-            c,
-            one,
-            SIGNET_SIGNER,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        let me = kernel_self(c, one);
-        let me = B32 { hi: me[0], lo: me[1] };
-        let (version, payload) = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
-        let mut args = vec![request_id.hi, request_id.lo, version];
-        args.extend(payload.limbs().iter().copied());
-        contract_call(c, one, [signer[0], signer[1]], &args, &[]);
+        // compactc evaluates a call's RECEIVER before its argument
+        // expressions, so the sealed-cell read is pinned FIRST — exactly
+        // where compactc's own stream puts it — rather than resolved
+        // inside `call`, which is where Rust's argument-first evaluation
+        // would otherwise land it.
+        let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
+        let me = ContractAddress::from_limbs(kernel_self(c, one));
+        let notification =
+            signet::construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
+        signer.sign_bidirectional(c, one, *request_id, notification);
     });
 }
 

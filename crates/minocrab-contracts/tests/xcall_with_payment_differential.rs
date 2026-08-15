@@ -22,6 +22,7 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::xcall_with_payment as xwp;
+use minocrab_ledger::ep_hash;
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
 
@@ -172,11 +173,10 @@ fn target_addr() -> [u8; 32] {
     t
 }
 
-fn ep(name: &[u8]) -> [u8; 32] {
-    let mut e = [0u8; 32];
-    e[..name.len()].copy_from_slice(name);
-    e[31] = 0x88;
-    e
+/// The entry-point hash, DERIVED from the callee circuit's name (M12
+/// stage 1). Preimage-only: the ep limbs are prover-supplied witnesses.
+fn ep(name: &str) -> [u8; 32] {
+    ep_hash(name)
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn call_once_matches_corpus() {
     let args = vec![n_hi, n_lo, c_hi, c_lo, Fr::from(31_337u64)];
 
     let target = target_addr();
-    let e = ep(b"ep:notify");
+    let e = ep("notify");
     let cc_rand = Fr::from(0xc0117u64);
     let comm = transient_commit(&args[..], cc_rand);
     let (ep_hi, ep_lo) = b32_slots(&e);
@@ -221,7 +221,7 @@ fn request_matches_corpus() {
     let args = vec![r_hi, r_lo];
 
     let target = target_addr();
-    let e = ep(b"ep:confirmRequest");
+    let e = ep("confirmRequest");
     let cc_rand = Fr::from(0x4e9_0e57u64);
     let comm = transient_commit(&args[..], cc_rand);
     let (ep_hi, ep_lo) = b32_slots(&e);

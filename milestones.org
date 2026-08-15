@@ -684,10 +684,11 @@ gates every stage: both snapshots bit-identical, all suites green):
       method; LimbConstraint replaces contract_call's &[Option<u32>];
       EntryPoint/ep_hash/ep_limbs via upstream, swept over all 312
       corpus artifacts (618 distinct circuit names).
-- [ ] 2. The call core, no macros: CallArg(s)/CallResult,
-      ContractAddress, Callee, call(); hand-written SignetSigner/Token
-      handles; ALL call sites re-expressed; xcall scenarios switched to
-      derived ep values.
+- [X] 2. The call core, no macros: CallArg(s)/CallResult,
+      ContractAddress, Callee, call(); hand-written SignetSigner/Token/
+      XcallTarget/PaymentTarget handles; ALL call sites re-expressed
+      (both vault forks identically); four differential suites switched
+      from invented ep bytes to derived name hashes.
 - [ ] 3. #[interface] + the visibility-generic derive mode; the
       stage-2 handles re-expressed through it (diff = attribute only).
 - [ ] 4. signet-signer-interface crate + minocrab-abi + pinned

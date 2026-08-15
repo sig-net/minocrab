@@ -100,3 +100,15 @@ reviewer should look at.
       =V ⊓ Public = V=); and the claim that =CircuitArg::constrain='s
       new provided body reproduces all nine deleted hand-written bodies
       slot for slot (both snapshots say it does).
+- [ ] M12 stage 2 (the call core): THE ORDERING ARGUMENT is the one to
+      check — compactc evaluates a call's receiver before its argument
+      expressions, Rust the reverse, so `Callee::pin` exists and the
+      erc20-vault's notify_signet uses it while the other three sites do
+      not. Verify the claim that the other three sites' argument
+      expressions emit nothing between the cell read and the call.
+      Also: the two layering deviations (`CircuitAbi` moved to L2;
+      `Callee::Pinned` holds limbs rather than `ContractAddress`), and
+      the hand-written `CircuitAbi` for `ShieldedCoinInfo3` — its
+      `value` field is a bare wire, so the `Uint<128>` width is stated
+      in the impl rather than carried by the field's type, which is
+      exactly the kind of hand-typed width M9 set out to delete.

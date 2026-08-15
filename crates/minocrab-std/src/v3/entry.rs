@@ -36,10 +36,10 @@
 //! and orders the two phases so law 3's "in slot order" is all an impl has
 //! to get right.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 
-use super::{Bool, Bytes, BytesN, Either, Maybe, Uint, Vis3, B32};
+use super::{Bool, Bytes, BytesN, ContractAddress, Either, Maybe, Uint, Vis3, B32};
 
 // ---- argument paths ---------------------------------------------------------
 
@@ -97,54 +97,6 @@ impl ArgPath {
 impl std::fmt::Display for ArgPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-// ---- CircuitAbi -------------------------------------------------------------
-
-/// The ABI of a Compact type: how many native slots it occupies, the FAB
-/// atoms of those slots, and the flattened PRIMITIVE type of each one.
-///
-/// This is the visibility-INDEPENDENT half of an argument type — a schema
-/// says nothing about who may see the value — so it is implemented for
-/// every [`Vis3`](super::Vis3), and both directions of the wire build on
-/// it: [`CircuitArg`] (the callee's own arguments, [`Private`]) adds
-/// declaration and constraints, and M12's `CallArg`/`CallResult` (the
-/// caller's side of a cross-contract call, [`Public`]) add flattening. One
-/// type therefore describes both sides and cannot describe them
-/// differently.
-///
-/// `SLOTS` counts NATIVE SLOTS, which is not the atom count: a
-/// `Bytes<32>` is one atom (`bytes 32`) across two slots (`hi`, `lo`).
-/// [`Self::prims`] is the per-slot list, so `prims().len() == SLOTS`.
-pub trait CircuitAbi {
-    /// Native slots this type occupies.
-    const SLOTS: usize;
-
-    /// The FAB atoms of these slots, in slot order.
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>);
-
-    /// The flattened primitive type of each slot, in slot order — what
-    /// compactc's constraint table dispatches on. Exactly [`Self::SLOTS`].
-    fn push_prims(prims: &mut Vec<Prim>);
-
-    /// The FAB atoms of these slots, in slot order.
-    fn atoms() -> Vec<AlignmentAtom> {
-        let mut atoms = Vec::new();
-        Self::push_atoms(&mut atoms);
-        atoms
-    }
-
-    /// The primitive type of each slot, in slot order.
-    fn prims() -> Vec<Prim> {
-        let mut prims = Vec::with_capacity(Self::SLOTS);
-        Self::push_prims(&mut prims);
-        debug_assert_eq!(
-            prims.len(),
-            Self::SLOTS,
-            "CircuitAbi::push_prims must describe exactly SLOTS slots"
-        );
-        prims
     }
 }
 
@@ -285,6 +237,30 @@ impl CircuitArg for B32<Private> {
     }
 }
 
+/// Compact's `ContractAddress`: a struct of one `Bytes<32>`, which flattens
+/// to exactly that `Bytes<32>`'s slots.
+impl<V: Vis3> CircuitAbi for ContractAddress<V> {
+    const SLOTS: usize = <B32<V> as CircuitAbi>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <B32<V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for ContractAddress<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        ContractAddress(B32::declare(c, path))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.0.push_slots(slots);
+    }
+}
+
 impl<const N: usize, V: Vis3> CircuitAbi for BytesN<V, N> {
     const SLOTS: usize = Self::LIMBS;
 
@@ -316,23 +292,9 @@ impl<const N: usize> CircuitArg for BytesN<Private, N> {
 }
 
 /// Compact's `Vector<N, T>`: `N` copies of `T` back to back, each element
-/// labelled with its index (`words_0`, `words_1`, ...).
-impl<T: CircuitAbi, const N: usize> CircuitAbi for [T; N] {
-    const SLOTS: usize = T::SLOTS * N;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        for _ in 0..N {
-            T::push_atoms(atoms);
-        }
-    }
-
-    fn push_prims(prims: &mut Vec<Prim>) {
-        for _ in 0..N {
-            T::push_prims(prims);
-        }
-    }
-}
-
+/// labelled with its index (`words_0`, `words_1`, ...). (The `CircuitAbi`
+/// half lives in `minocrab::v3::abi` beside the trait — an array is a
+/// foreign type, so only the trait's own crate may describe it.)
 impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         // Built through a Vec rather than `array::from_fn`, whose call order

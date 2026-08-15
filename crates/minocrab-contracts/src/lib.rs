@@ -14,6 +14,7 @@ pub mod erc20_vault_opt;
 pub mod events;
 pub mod events_borsh;
 pub mod hashing;
+pub mod interfaces;
 pub mod mint_tokens;
 pub mod serde_builtin;
 pub mod signet;

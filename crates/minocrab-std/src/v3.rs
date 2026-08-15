@@ -12,6 +12,7 @@ use minocrab::v3::{
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
+mod call;
 mod entry;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
@@ -20,14 +21,15 @@ mod entry;
 /// because a circuit cannot have data-dependent layout.
 pub mod borsh;
 
-pub use entry::{entry, entry_out, ArgPath, CircuitAbi, CircuitArg, CircuitArgs, CircuitOut};
+pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
-/// compactc's input-constraint table, which lives in the frontend
-/// (`minocrab::v3::abi`, the port of `emit-constraints-for`) and is
-/// re-exported here because this is where argument types are written: a
-/// [`CircuitAbi`] impl names [`Prim`]s, and `minocrab_ledger::contract_call`
-/// takes [`LimbConstraint`]s.
-pub use minocrab::v3::{LimbConstraint, Prim};
+/// The ABI vocabulary, which lives in the frontend (`minocrab::v3::abi` —
+/// the port of `emit-constraints-for` plus the traits `minocrab_ledger::call`
+/// has to name) and is re-exported here because this is where argument types
+/// are WRITTEN: a [`CircuitAbi`] impl names [`Prim`]s, `contract_call` takes
+/// [`LimbConstraint`]s, and [`CircuitArg`] / [`CallArg`] are the two
+/// visibility-specific halves of one schema.
+pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
 
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire
@@ -266,6 +268,39 @@ impl<V: Vis3> B32<V> {
     pub fn from_typed(c: &mut Circuit3, typed: Wire3<Bytes32T, V>) -> Self {
         let (lo, hi) = c.bytes32_into_low_high(typed);
         B32 { hi, lo }
+    }
+}
+
+/// Compact's `ContractAddress` — a struct of one `Bytes<32>`, and the type
+/// every cross-contract call names its target with (164 occurrences in the
+/// corpus). A newtype rather than a bare [`B32`] because a contract address
+/// and a hash are not interchangeable, and the interface layer's whole job
+/// is to stop them being passed for each other.
+///
+/// Its FAB shape IS the inner `Bytes<32>`'s: Compact structs flatten, so a
+/// `ContractAddress` argument is the same two slots a `Bytes<32>` argument
+/// is (which is why the ported circuits' hand-written `B32` reads are
+/// unchanged by its introduction).
+#[derive(Clone, Copy)]
+pub struct ContractAddress<V: Vis3>(pub B32<V>);
+
+impl<V: Vis3> ContractAddress<V> {
+    /// The address's FAB limbs, `[hi, lo]`.
+    pub fn limbs(self) -> [Wire3<FieldT, V>; 2] {
+        [self.0.hi, self.0.lo]
+    }
+
+    /// From the `[hi, lo]` limbs a ledger read or `kernel.self()` hands back.
+    pub fn from_limbs(limbs: [Wire3<FieldT, V>; 2]) -> Self {
+        ContractAddress(B32 {
+            hi: limbs[0],
+            lo: limbs[1],
+        })
+    }
+
+    /// The underlying `Bytes<32>`.
+    pub fn bytes(self) -> B32<V> {
+        self.0
     }
 }
 
@@ -804,6 +839,28 @@ pub struct ShieldedCoinInfo3<V: Vis3> {
     pub nonce: B32<V>,
     pub color: B32<V>,
     pub value: Wire3<FieldT, V>,
+}
+
+/// The ABI of Compact's `ShieldedCoinInfo`, in declaration order.
+///
+/// Written out rather than derived because `value` is a bare wire here, not
+/// a `Uint<128, V>` — the coin gadgets do field arithmetic on it. The width
+/// the Compact struct declares is therefore stated once, here, instead of
+/// being carried by the field's type.
+impl<V: Vis3> CircuitAbi for ShieldedCoinInfo3<V> {
+    const SLOTS: usize = <B32<V> as CircuitAbi>::SLOTS * 2 + 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+        <Uint<128, V> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <B32<V> as CircuitAbi>::push_prims(prims);
+        <B32<V> as CircuitAbi>::push_prims(prims);
+        <Uint<128, V> as CircuitAbi>::push_prims(prims);
+    }
 }
 
 /// `Either<ZswapCoinPublicKey, ContractAddress>` — a coin recipient. Both

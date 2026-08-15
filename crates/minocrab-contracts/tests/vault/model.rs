@@ -293,9 +293,9 @@ impl DepositScenario {
         let mut signer_addr = [0u8; 32];
         signer_addr[..11].copy_from_slice(b"signet-addr");
         signer_addr[31] = 0x32;
-        let mut ep = [0u8; 32];
-        ep[..20].copy_from_slice(b"ep:signBidirectional");
-        ep[31] = 0x33;
+        // DERIVED from the Signet singleton's circuit name (M12 stage 1);
+        // the ep limbs are witnesses, so this is a preimage-only change.
+        let ep = minocrab_ledger::ep_hash("signBidirectional");
         DepositScenario {
             art: Art::Compat,
             sk,

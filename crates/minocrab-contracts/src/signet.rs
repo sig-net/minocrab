@@ -19,7 +19,8 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, CallArg, CircuitAbi, Prim,
+    Secp256k1EcdsaSignature, Uint, Vis3, B32,
 };
 
 fn atom(n: u32) -> AlignmentSegment {
@@ -372,17 +373,52 @@ pub fn calculate_request_id<
 
 // ---- notification -----------------------------------------------------------
 
+/// `struct SignBidirectionalEventNotification { version: Uint<8>, payload:
+/// Bytes<128> }` — the Signet singleton's `signBidirectional` second
+/// argument (signet-contract's contract-info.json).
+///
+/// Field order IS the wire contract: its FAB limbs are `[version,
+/// payload…]` (`Bytes<128>` = 5 limbs of `[4, 31, 31, 31, 31]`), which is
+/// what [`CircuitAbi`] states below and what a caller's `CallArg` flattens.
+/// M12 stage 4 moves this type and [`construct_notification_v1`] into the
+/// signet-signer interface crate — they are the callee's vocabulary, not
+/// the vault's.
+#[derive(Clone)]
+pub struct Notification<V: Vis3> {
+    pub version: Uint<8, V>,
+    pub payload: BytesN<V, 128>,
+}
+
+impl<V: Vis3> CircuitAbi for Notification<V> {
+    const SLOTS: usize = <Uint<8, V> as CircuitAbi>::SLOTS + <BytesN<V, 128> as CircuitAbi>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <Uint<8, V> as CircuitAbi>::push_atoms(atoms);
+        <BytesN<V, 128> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Uint<8, V> as CircuitAbi>::push_prims(prims);
+        <BytesN<V, 128> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CallArg for Notification<Public> {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        self.version.push_call_slots(slots);
+        self.payload.push_call_slots(slots);
+    }
+}
+
 /// `constructSignBidirectionalEventNotificationV1(callerAddress, depth,
 /// path)` with a compile-time path: the version byte (1) and the
 /// `Bytes<128>` payload `callerAddress ‖ depth ‖ path[0..4] ‖ zeros`.
-/// Returns `(version, payload)` — the notification struct's FAB limbs
-/// are `[version, payload…]` (`Bytes<128>` = 5 limbs `[4, 31, 31, 31, 31]`).
 pub fn construct_notification_v1<V: Vis3>(
     c: &mut Circuit3,
     caller_address: &B32<V>,
     requests_path_depth: u8,
     requests_path: [u8; 4],
-) -> (Wire3<FieldT, V>, BytesN<V, 128>) {
+) -> Notification<V> {
     c.region("signet: notification", |c| {
         let version = V::from_public(c.constant(1u64));
         // The payload's 31-byte limbs line up with the caller address:
@@ -397,7 +433,10 @@ pub fn construct_notification_v1<V: Vis3>(
         let second = c.add(caller_address.hi, packed);
         let zero = V::from_public(c.constant(0u64));
         let payload = BytesN::from_limbs(vec![zero, zero, zero, second, caller_address.lo]);
-        (version, payload)
+        Notification {
+            version: Uint::from_field(version),
+            payload,
+        }
     })
 }
 

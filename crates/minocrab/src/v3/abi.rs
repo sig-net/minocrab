@@ -24,7 +24,7 @@
 //! itself, and [`LimbConstraint::emit`] the lowering. Nothing above this
 //! module decides what a slot's constraint is.
 
-use crate::{Fr, Visibility};
+use crate::{AlignmentAtom, Fr, Public, Visibility};
 
 use super::{Circuit3, FieldT, Wire3};
 
@@ -155,6 +155,206 @@ const fn bounded_bits(maxval: u128) -> u32 {
 fn fr_from_u128(v: u128) -> Fr {
     Fr::from_le_bytes(&v.to_le_bytes()).expect("16 bytes fit the native field")
 }
+
+// ---- CircuitAbi -------------------------------------------------------------
+
+/// The ABI of a Compact type: how many native slots it occupies, the FAB
+/// atoms of those slots, and the flattened PRIMITIVE type of each one.
+///
+/// This is the visibility-INDEPENDENT half of an argument type — a schema
+/// says nothing about who may see the value — so it is implemented for
+/// every visibility, and both directions of the wire build on it:
+/// `minocrab_std::v3::CircuitArg` (the callee's own arguments, `Private`)
+/// adds declaration and constraints, and [`CallArg`] / [`CallResult`] (the
+/// caller's side of a cross-contract call, `Public`) add flattening. One
+/// type therefore describes both sides of a call and cannot describe them
+/// differently.
+///
+/// It lives HERE rather than beside the leaves because
+/// `minocrab_ledger::call` — which is below the stdlib — has to name it.
+///
+/// `SLOTS` counts NATIVE SLOTS, which is not the atom count: a
+/// `Bytes<32>` is one atom (`bytes 32`) across two slots (`hi`, `lo`).
+/// [`Self::prims`] is the per-slot list, so `prims().len() == SLOTS`.
+pub trait CircuitAbi {
+    /// Native slots this type occupies.
+    const SLOTS: usize;
+
+    /// The FAB atoms of these slots, in slot order.
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>);
+
+    /// The flattened primitive type of each slot, in slot order — what
+    /// compactc's constraint table dispatches on. Exactly [`Self::SLOTS`].
+    fn push_prims(prims: &mut Vec<Prim>);
+
+    /// The FAB atoms of these slots, in slot order.
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        Self::push_atoms(&mut atoms);
+        atoms
+    }
+
+    /// The primitive type of each slot, in slot order.
+    fn prims() -> Vec<Prim> {
+        let mut prims = Vec::with_capacity(Self::SLOTS);
+        Self::push_prims(&mut prims);
+        debug_assert_eq!(
+            prims.len(),
+            Self::SLOTS,
+            "CircuitAbi::push_prims must describe exactly SLOTS slots"
+        );
+        prims
+    }
+}
+
+// ---- the caller's side of a cross-contract call -----------------------------
+//
+// Both traits are implemented at `Public` ONLY, and that is a soundness
+// statement, not a convenience: everything that crosses the contract
+// boundary enters the communications commitment the ledger matches
+// publicly, so passing a value cross-contract DISCLOSES it. A private value
+// has to go through `Circuit3::disclose` first, and forgetting is a compile
+// error rather than a leak — the same rule, for the same reason, as
+// `CircuitOut`.
+
+/// A value that can be PASSED to another contract's circuit.
+pub trait CallArg: CircuitAbi {
+    /// This value's slots, in slot order — exactly [`CircuitAbi::SLOTS`] of
+    /// them, in the order the callee will declare its arguments.
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>);
+}
+
+/// A whole cross-contract argument list: the callee's parameters, in
+/// declaration order.
+///
+/// Implemented for tuples (`()` for a parameterless circuit, `(a,)` for
+/// one), which is what a typed call method builds from its own parameters.
+/// A single struct standing for the whole list is a [`CallArg`], and
+/// `(that,)` makes it an argument list.
+pub trait CallArgs {
+    /// Total slots — the sum of the members'.
+    const SLOTS: usize;
+
+    /// Every member's slots, in declaration order.
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>);
+
+    /// The FAB atoms of the argument list, in slot order.
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>);
+
+    /// The flattened primitive type of each slot, in slot order.
+    fn push_prims(prims: &mut Vec<Prim>);
+
+    /// The argument list flattened into the limb vector `contract_call`
+    /// hashes into the communications commitment.
+    fn call_slots(&self) -> Vec<Wire3<FieldT, Public>> {
+        let mut slots = Vec::with_capacity(Self::SLOTS);
+        self.push_call_slots(&mut slots);
+        debug_assert_eq!(slots.len(), Self::SLOTS, "CallArgs::SLOTS disagrees");
+        slots
+    }
+
+    /// The FAB atoms of the argument list, in slot order.
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        Self::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
+/// A value a callee circuit RETURNS.
+///
+/// The caller witnesses one field element per slot and constrains each with
+/// [`CircuitAbi::prims`] run through the SAME table that constrains the
+/// callee's own arguments — which is the point of `CircuitAbi` being the
+/// shared half: the constraint on a returned `Uint<128>` is the constraint
+/// on a passed one, by construction rather than by hand.
+pub trait CallResult: CircuitAbi + Sized {
+    /// Rebuild from the witnessed result slots, in slot order. `slots` has
+    /// exactly [`CircuitAbi::SLOTS`] entries.
+    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self;
+}
+
+/// Compact's `Vector<N, T>`: `N` copies of `T` back to back. Arrays are a
+/// foreign type, so the impl lives with the trait rather than with the
+/// leaves (`minocrab_std::v3` has the matching `CircuitArg` half).
+impl<T: CircuitAbi, const N: usize> CircuitAbi for [T; N] {
+    const SLOTS: usize = T::SLOTS * N;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        for _ in 0..N {
+            T::push_atoms(atoms);
+        }
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        for _ in 0..N {
+            T::push_prims(prims);
+        }
+    }
+}
+
+impl<T: CallArg, const N: usize> CallArg for [T; N] {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        for element in self {
+            element.push_call_slots(slots);
+        }
+    }
+}
+
+/// `[]` — a circuit that takes or returns nothing.
+impl CircuitAbi for () {
+    const SLOTS: usize = 0;
+
+    fn push_atoms(_atoms: &mut Vec<AlignmentAtom>) {}
+
+    fn push_prims(_prims: &mut Vec<Prim>) {}
+}
+
+impl CallArg for () {
+    fn push_call_slots(&self, _slots: &mut Vec<Wire3<FieldT, Public>>) {}
+}
+
+impl CallResult for () {
+    fn from_call_slots(_slots: &[Wire3<FieldT, Public>]) -> Self {}
+}
+
+macro_rules! call_args_tuple {
+    ($($name:ident),*) => {
+        #[allow(non_snake_case, unused_variables)]
+        impl<$($name: CallArg),*> CallArgs for ($($name,)*) {
+            const SLOTS: usize = 0usize $( + <$name as CircuitAbi>::SLOTS )*;
+
+            fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+                let ($($name,)*) = self;
+                $( <$name as CallArg>::push_call_slots($name, slots); )*
+            }
+
+            fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+                $( <$name as CircuitAbi>::push_atoms(atoms); )*
+            }
+
+            fn push_prims(prims: &mut Vec<Prim>) {
+                $( <$name as CircuitAbi>::push_prims(prims); )*
+            }
+        }
+    };
+}
+
+// Compact's own arity ceiling is well under this; twelve matches the
+// tuple impls the Rust ecosystem conventionally stops at.
+call_args_tuple!();
+call_args_tuple!(A);
+call_args_tuple!(A, B);
+call_args_tuple!(A, B, C);
+call_args_tuple!(A, B, C, D);
+call_args_tuple!(A, B, C, D, E);
+call_args_tuple!(A, B, C, D, E, F);
+call_args_tuple!(A, B, C, D, E, F, G);
+call_args_tuple!(A, B, C, D, E, F, G, H);
+call_args_tuple!(A, B, C, D, E, F, G, H, I);
+call_args_tuple!(A, B, C, D, E, F, G, H, I, J);
+call_args_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+call_args_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 #[cfg(test)]
 mod tests {

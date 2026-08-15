@@ -36,14 +36,15 @@
 //! ```
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
-use minocrab::{AlignmentAtom, Public};
+use minocrab::Public;
 use minocrab_ledger::{
-    cell_read, cell_write, contract_call, counter_increment, counter_read, emit, emit_event,
-    kernel_self, set_insert, ImpactElem, LedgerValue, LimbConstraint,
+    cell_write, counter_increment, counter_read, emit, emit_event, kernel_self, set_insert,
+    ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{BytesN, Serializer, B32};
+use minocrab_std::v3::{BytesN, ContractAddress, Serializer, Uint, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+use crate::interfaces::Token;
 
 /// Vault ledger fields, in declaration order.
 pub const TOKEN: u8 = 0;
@@ -61,10 +62,6 @@ pub const EMITTED_DEPOSITS: u8 = 2;
 pub const EVENT_NAME: &str = "deposit";
 pub const PAYLOAD_SIZE: usize = 256;
 
-fn b32_atoms() -> Vec<AlignmentAtom> {
-    vec![AlignmentAtom::Bytes { length: 32 }]
-}
-
 fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
     LedgerValue::bytes(32, vec![ImpactElem::Wire(b.hi), ImpactElem::Wire(b.lo)])
 }
@@ -78,20 +75,12 @@ pub fn deposit_via_vault() -> Compiled3 {
     let one = c.constant(1u64);
 
     emit(&mut c, one, &counter_increment(VAULT_CALL_COUNT, 1));
-    let me = kernel_self(&mut c, one);
-    let token = cell_read(&mut c, one, TOKEN, b32_atoms());
-    // eventHash = token.deposit(a, me) — return type Bytes<32>.
-    let results = contract_call(
-        &mut c,
-        one,
-        [token[0], token[1]],
-        &[a, me[0], me[1]],
-        &[LimbConstraint::Bits(8), LimbConstraint::Bits(248)],
-    );
-    let event_hash = B32 {
-        hi: results[0],
-        lo: results[1],
-    };
+    let me = ContractAddress::from_limbs(kernel_self(&mut c, one));
+    // eventHash = token.deposit(a, me) — the Bytes<32> return type gives
+    // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
+    // `token` cell is read inside the call, as compactc reads it.
+    let event_hash: B32<Public> =
+        Token::at_field(TOKEN).deposit(&mut c, one, Uint::from_field(a), me);
     emit(
         &mut c,
         one,

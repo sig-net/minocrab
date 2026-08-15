@@ -24,7 +24,7 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::v3::{CallArgs, CallResult, Circuit3, FieldT, Prim, Wire3};
 use minocrab::{Fr, Public, Visibility};
 
 pub use minocrab::v3::LimbConstraint;
@@ -757,6 +757,100 @@ pub fn contract_call<V: Visibility + Copy>(
         .into_iter()
         .map(|w| c.disclose(w, "xcall result"))
         .collect()
+}
+
+/// WHERE a cross-contract call's target address comes from.
+///
+/// The two variants are the two things a Compact receiver expression can
+/// be, and they lower differently:
+///
+/// - [`Callee::Field`] is a sealed ledger cell holding the address
+///   (`export sealed ledger target: Target`). EVERY call site does its own
+///   FRESH UNCACHED read: `xcall`'s `callTwice` calls the same target twice
+///   in one circuit and compactc reads the cell twice, so caching the first
+///   read would be a row-count difference, not an optimization.
+/// - [`Callee::Pinned`] is an address the caller already holds as data
+///   (`kernel.self()`, an argument, a constant, or a `Field` callee resolved
+///   early with [`Callee::pin`]).
+///
+/// An interface crate NEVER contains an address: a deployment pins one via
+/// a sealed cell or passes it as data. That is why this type has no
+/// constant-address variant.
+#[derive(Clone, Copy)]
+pub enum Callee {
+    /// The ledger field whose cell holds the callee's address.
+    Field(u8),
+    /// The callee's address as FAB limbs `[hi, lo]`.
+    Pinned([Wire3<FieldT, Public>; 2]),
+}
+
+impl Callee {
+    /// Resolve the address NOW, returning a [`Callee::Pinned`].
+    ///
+    /// WHY THIS EXISTS: compactc evaluates a call's RECEIVER before its
+    /// argument expressions; Rust evaluates the arguments before the call.
+    /// Where an argument expression emits instructions — erc20-vault's
+    /// `constructSignBidirectionalEventNotificationV1(kernel.self(), …)` —
+    /// the two orders differ, and the public transcript is ordered, so the
+    /// difference is real. A port with such an argument pins its callee at
+    /// the point compactc reads it and the streams agree. Where the
+    /// arguments emit nothing (every other call site in the corpus),
+    /// `Field` resolved inside [`call`] gives the same stream and is the
+    /// simpler spelling.
+    pub fn pin<V: Visibility + Copy>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> Callee {
+        Callee::Pinned(self.address(c, guard))
+    }
+
+    /// The address limbs — for [`Callee::Field`], the fresh uncached read.
+    fn address<V: Visibility + Copy>(
+        self,
+        c: &mut Circuit3,
+        guard: Wire3<FieldT, V>,
+    ) -> [Wire3<FieldT, Public>; 2] {
+        match self {
+            Callee::Field(index) => {
+                let limbs = cell_read(c, guard, index, vec![AlignmentAtom::Bytes { length: 32 }]);
+                [limbs[0], limbs[1]]
+            }
+            Callee::Pinned(limbs) => limbs,
+        }
+    }
+}
+
+/// ONE TYPED CROSS-CONTRACT CALL: `callee.entry_point(args…) -> R`.
+///
+/// The whole of M12 above the desugar. [`contract_call`] takes flat limb
+/// vectors and a hand-written result-constraint list; this takes the
+/// callee's declared argument and result TYPES and derives both — the limb
+/// order from [`CallArgs::push_call_slots`], the result constraints from
+/// [`CircuitAbi::prims`] run through compactc's own table. A caller can no
+/// longer flatten a struct in the wrong order or forget a result's range
+/// check, because it never writes either down.
+///
+/// `entry_point` is the callee circuit's name. THE CIRCUIT DOES NOT BIND IT
+/// (notes/interface-crates.org §Honest limits #1): the entry-point hash is
+/// a prover-supplied witness, which is exactly why `xcall`'s `callOnce` and
+/// `callEmit` compile to the same circuit. What binds it is the LEDGER's
+/// `(address, entry_point, comm)` match against the callee's own
+/// transaction. Naming it here types the developer's call and tells the
+/// transaction builder which circuit to run; it is not a proof obligation.
+pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    callee: Callee,
+    entry_point: EntryPoint,
+    args: A,
+) -> R {
+    let _ = entry_point;
+    let addr = callee.address(c, guard);
+    let arg_slots = args.call_slots();
+    let constraints: Vec<LimbConstraint> = R::prims()
+        .into_iter()
+        .map(Prim::constraint)
+        .collect();
+    let results = contract_call(c, guard, addr, &arg_slots, &constraints);
+    debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
+    R::from_call_slots(&results)
 }
 
 /// A callee circuit's ENTRY POINT: its Compact name, and the `Bytes<32>`
