@@ -127,15 +127,21 @@ pub fn refund_commitment(art: Art, sk: &[u8; 32], request_id: &[u8; 32]) -> [u8;
 }
 
 /// DISCRETIONARY. completeSwap's change-coin nonce.
-///
-/// Both artifacts: `persistentHash([mintNonce, pad(32, "change")])`.
-/// (Avenue 5 is a later rung.)
 pub fn change_nonce(art: Art, mint_nonce: &[u8; 32]) -> [u8; 32] {
     match art {
-        Art::Compat | Art::Opt => {
+        // `persistentHash([mintNonce, pad(32, "change")])`.
+        Art::Compat => {
             let (n_hi, n_lo) = b32_slots(mint_nonce);
             let (p_hi, p_lo) = b32_slots(&pad32("change"));
             fab_sha256(vec![atom(32), atom(32)], &[n_hi, n_lo, p_hi, p_lo])
+        }
+        // Rung (ii), avenue 5: the mint nonce with its top byte
+        // complemented. Injective, fixed-point-free and total — the
+        // uniqueness argument is in `erc20_vault_opt::change_nonce`.
+        Art::Opt => {
+            let mut out = *mint_nonce;
+            out[31] = 255 - out[31];
+            out
         }
     }
 }

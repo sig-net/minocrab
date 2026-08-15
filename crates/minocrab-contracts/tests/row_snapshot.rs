@@ -42,7 +42,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault_opt::complete_withdraw", 16, 47466),
     ("erc20_vault_opt::refund", 16, 65219),
     ("erc20_vault_opt::swap", 16, 51437),
-    ("erc20_vault_opt::complete_swap", 16, 65059),
+    ("erc20_vault_opt::complete_swap", 16, 61312),
     // signet-contract singletons (the other three benchmark circuits)
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),

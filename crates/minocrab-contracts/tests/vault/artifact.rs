@@ -150,7 +150,11 @@ pub fn fork_status(circuit: Circuit) -> Fork {
         | Circuit::ApproveRouter
         | Circuit::Withdraw
         | Circuit::Swap
-        | Circuit::Refund
-        | Circuit::CompleteSwap => DEDUP,
+        | Circuit::Refund => DEDUP,
+        // Rung (ii) on top of the dedup.
+        Circuit::CompleteSwap => Fork::Diverged {
+            rung: "M10 rungs (i)+(ii), avenues 7+5",
+            why: "kernel.self() threaded; changeNonce derived, not hashed",
+        },
     }
 }

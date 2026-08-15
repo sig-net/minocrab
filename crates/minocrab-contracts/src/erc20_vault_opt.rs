@@ -34,6 +34,10 @@
 //!   dominating both: exactly one branch runs, so the transcript still
 //!   carries exactly one kernel.self answer, and the circuit carries one
 //!   read instead of two.
+//! - (rung ii, avenue 5) completeSwap's `changeNonce` is
+//!   `[255 − mintNonce.hi, mintNonce.lo]` instead of
+//!   `persistentHash([mintNonce, pad(32, "change")])`. See
+//!   [`change_nonce`] for the uniqueness argument.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
@@ -1298,27 +1302,58 @@ pub fn complete_swap() -> Compiled3 {
     let word0 = ev.word(0);
     let token_in = signet::abi_word_low20(&mut c, &word0);
     let ds_in = vault_token_domain_separator(&mut c, token_in);
-    // changeNonce = persistentHash([mintNonce, pad(32, "change")])
-    let change_pad = B32::pad(&mut c, "change");
-    let alignment = Alignment(vec![
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-    ]);
-    let change_nonce = c.persistent_hash(
-        alignment,
-        &[
-            mint_nonce.hi.erase(),
-            mint_nonce.lo.erase(),
-            change_pad.hi.erase(),
-            change_pad.lo.erase(),
-        ],
-    );
-    let change_nonce = B32::from_typed(&mut c, change_nonce);
+    let change_nonce = change_nonce(&mut c, &mint_nonce);
     common::mint_shielded_token_to_key_with(
         &mut c, one, me, &ds_in, change, &change_nonce, &recipient,
     );
 
     c.finish(true)
+}
+
+/// completeSwap's change-coin nonce (rung ii, avenue 5): the mint nonce
+/// with its top byte complemented, `[255 − hi, lo]`, replacing the port's
+/// `persistentHash([mintNonce, pad(32, "change")])` — a 64-byte SHA-256,
+/// 3,739 measured rows, for three field operations.
+///
+/// What a nonce here has to do, and why this does it:
+///
+/// 1. WITHIN THE CALL the two minted coins must not share a commitment.
+///    `coinCommitment` covers (nonce, colour, value, recipient), and both
+///    mints go to the same recipient — so when `tokenIn == tokenOut` and
+///    the change happens to equal `amountOut`, the nonce is the ONLY thing
+///    keeping them apart. A collision would not be caught: the effects'
+///    spend claims are a map keyed by commitment, so two identical
+///    commitments collapse into one entry and a coin is silently lost.
+///    `255 − hi` has no fixed point over the integers, and `mintNonce.hi`
+///    is range-constrained to 8 bits where it is declared
+///    (`settle_args`), so the two nonces differ in their top byte for
+///    EVERY caller-supplied mint nonce — unconditionally, with no guard.
+/// 2. ACROSS CALLS the map must not merge distinct requests' change coins.
+///    `hi ↦ 255 − hi` is a bijection on `[0, 255]`, so distinct mint
+///    nonces still give distinct change nonces: the freshness burden stays
+///    exactly where the port already put it — on the caller-chosen mint
+///    nonce — and zswap's global `CommitmentAlreadyPresent` remains the
+///    backstop, unchanged.
+/// 3. CANONICITY: `hi ∈ [0, 255] ⟹ 255 − hi ∈ [0, 255]`, so the result is
+///    a well-formed `Bytes<32>` for every input. `mintNonce + 1` — the
+///    other candidate the analysis names — is NOT total in that sense: it
+///    can carry a 248-bit low limb out of range.
+/// 4. NOTHING IS DISCLOSED that was not disclosed before. `mintNonce` is a
+///    circuit argument that both artifacts publish into the transcript
+///    (the port discloses both limbs for the out-coin mint), so an
+///    observer could always compute the hashed change nonce too. The
+///    SHA-256 was never buying preimage resistance over a secret; it was
+///    domain separation between two public values, which an injective,
+///    fixed-point-free map provides just as well.
+fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
+    c.region("change nonce", |c| {
+        let max_byte = c.constant(255u64);
+        let neg_hi = c.neg(mint_nonce.hi);
+        B32 {
+            hi: c.add(max_byte, neg_hi),
+            lo: mint_nonce.lo,
+        }
+    })
 }
 
 /// `export circuit refund(requestId, respondBidirectionalEvent,
