@@ -14,7 +14,6 @@
 use proptest::prelude::*;
 
 use super::model::*;
-use super::prims::*;
 
 /// Default cases per property. Deliberately modest: the settle circuits
 /// simulate an in-circuit secp256k1 ECDSA verification per case, so this
@@ -136,13 +135,13 @@ pub fn initialize() -> impl Strategy<Value = (Scenario, u64)> {
                 s.caip2 = caip2;
                 // Half the cases present the deployer's own secret (the
                 // gate passes), half present someone else's.
+                s.sk = sk;
                 if right_sk {
-                    s.sk = sk;
-                    s.commitment = user_commitment(&sk);
-                } else {
-                    s.sk = sk;
-                    // commitment stays the ORIGINAL deployer's.
+                    // The caller IS the deployer: the gate passes.
+                    s.deployer_sk = sk;
                 }
+                // Otherwise the stored commitment stays the ORIGINAL
+                // deployer's and the gate rejects.
                 (s, count)
             },
         )

@@ -31,6 +31,18 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault::refund", 16, 65231),
     ("erc20_vault::swap", 16, 51485),
     ("erc20_vault::complete_swap", 16, 65071),
+    // erc20-vault, OPTIMIZED (M10 step 4 onwards). Frozen identical to the
+    // ports at the forking commit; each later rung moves ONLY these rows, and
+    // its commit message states the before → after per circuit.
+    ("erc20_vault_opt::initialize", 13, 4272),
+    ("erc20_vault_opt::deposit", 15, 17502),
+    ("erc20_vault_opt::claim", 16, 47660),
+    ("erc20_vault_opt::approve_router", 14, 13344),
+    ("erc20_vault_opt::withdraw", 16, 42373),
+    ("erc20_vault_opt::complete_withdraw", 16, 47466),
+    ("erc20_vault_opt::refund", 16, 65231),
+    ("erc20_vault_opt::swap", 16, 51485),
+    ("erc20_vault_opt::complete_swap", 16, 65071),
     // signet-contract singletons (the other three benchmark circuits)
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),

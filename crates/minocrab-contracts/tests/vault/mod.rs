@@ -2,6 +2,10 @@
 //!
 //! Layering, outermost first:
 //!
+//! - [`artifact`] — WHICH vault is under test: the compat ports or the M10
+//!   optimized fork (`Art`), the nine circuits by name, and the divergence
+//!   ledger saying which opt circuits are still byte-identical to their
+//!   ports (and so still covered by compactc's differential).
 //! - [`spec`] — the symbolic effect algebra and the nine per-circuit total
 //!   functions `spec_initialize` .. `spec_complete_swap`. Artifact-agnostic:
 //!   it says WHICH commitment a circuit writes, never how that commitment is
@@ -26,6 +30,7 @@
 //! crate to host test infrastructure would be the wrong trade.
 #![allow(dead_code)]
 
+pub mod artifact;
 pub mod exec;
 pub mod gen;
 pub mod model;

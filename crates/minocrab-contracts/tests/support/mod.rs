@@ -9,8 +9,8 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    attest, erc20_vault, events, hashing, mint_tokens, serde_builtin, signet_contract, test_caller,
-    xcall, xcall_with_payment, xcontract_events,
+    attest, erc20_vault, erc20_vault_opt, events, hashing, mint_tokens, serde_builtin,
+    signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -35,6 +35,20 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault::refund", || erc20_vault::refund()),
         c!("erc20_vault::swap", || erc20_vault::swap()),
         c!("erc20_vault::complete_swap", || erc20_vault::complete_swap()),
+        // erc20-vault, OPTIMIZED (M10 step 4): the same nine circuits from the
+        // forked artifact. At the forking commit every row and every interface
+        // line below is identical to the port's; later M10 rungs move the rows
+        // of this block ONLY — a moved port row means an optimization leaked
+        // into the compatibility reference.
+        c!("erc20_vault_opt::initialize", || erc20_vault_opt::initialize()),
+        c!("erc20_vault_opt::deposit", || erc20_vault_opt::deposit()),
+        c!("erc20_vault_opt::claim", || erc20_vault_opt::claim()),
+        c!("erc20_vault_opt::approve_router", || erc20_vault_opt::approve_router()),
+        c!("erc20_vault_opt::withdraw", || erc20_vault_opt::withdraw()),
+        c!("erc20_vault_opt::complete_withdraw", || erc20_vault_opt::complete_withdraw()),
+        c!("erc20_vault_opt::refund", || erc20_vault_opt::refund()),
+        c!("erc20_vault_opt::swap", || erc20_vault_opt::swap()),
+        c!("erc20_vault_opt::complete_swap", || erc20_vault_opt::complete_swap()),
         c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
         c!("signet_contract::respond", || signet_contract::respond()),
         c!("signet_contract::respond_bidirectional", || {
@@ -96,10 +110,21 @@ pub fn circuits() -> Vec<Circuit> {
 /// PI-equal on these preimages, so the benchmark proves the SAME statement
 /// under both.
 pub fn dump_preimage(circuit: &str, pi: &ProofPreimage) {
+    dump_preimage_in(None, circuit, pi)
+}
+
+/// [`dump_preimage`] into a per-side subdirectory. The optimized artifact
+/// cannot share the port's preimage — it proves its own statement for the
+/// same logical operation — so the benchmark reads its preimages from
+/// `preimages/opt/` (crates/minocrab-bench: `Preimages::PerSide`).
+pub fn dump_preimage_in(side: Option<&str>, circuit: &str, pi: &ProofPreimage) {
     let Some(dir) = std::env::var_os("MINOCRAB_DUMP_PREIMAGES") else {
         return;
     };
-    let dir = std::path::PathBuf::from(dir);
+    let mut dir = std::path::PathBuf::from(dir);
+    if let Some(side) = side {
+        dir.push(side);
+    }
     std::fs::create_dir_all(&dir).expect("create preimage dump dir");
     let mut buf = Vec::new();
     midnight_serialize::tagged_serialize(pi, &mut buf).expect("preimage serializes");

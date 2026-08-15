@@ -7,9 +7,11 @@
 //! `ProofPreimage`s come from ([`Preimages`]). Three are declared:
 //! - `minocrab` — the direct ports, built in-process from `minocrab-contracts`;
 //! - `compactc` — the corpus `.zkir` goldens;
-//! - `opt` — the M10 optimized contract (M10 §Sequencing step 4), absent
-//!   until that artifact exists, at which point the bench becomes three-way
-//!   by filling in `Target::opt`.
+//! - `opt` — the M10 optimized contract (`minocrab_contracts::erc20_vault_opt`,
+//!   M10 §Sequencing step 4). It exists for the nine vault circuits only;
+//!   the Signet singleton is a deployed compactc artifact and is not ours to
+//!   optimize, so those three targets stay two-sided and the `opt` side
+//!   simply drops out of them.
 //!
 //! `minocrab` and `compactc` prove the SAME preimage per circuit: the
 //! differential tests establish PI-equality on these preimages and (with
@@ -40,7 +42,7 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use midnight_base_crypto::data_provider::{FetchMode, MidnightDataProvider, OutputMode};
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProofPreimage, Zkir};
-use minocrab_contracts::{erc20_vault, signet_contract};
+use minocrab_contracts::{erc20_vault, erc20_vault_opt, signet_contract};
 use minocrab_zkir::v3::IrSource;
 use serde::{Deserialize, Serialize};
 
@@ -51,9 +53,9 @@ struct Target {
     corpus: &'static str,
     /// The MinoCrab direct port.
     ours: fn() -> minocrab::v3::Compiled3,
-    /// The M10 optimized artifact, where one exists. `None` everywhere
-    /// today, so the bench runs two-sided; when `erc20_vault_opt` lands,
-    /// filling these in turns the third side on, circuit by circuit.
+    /// The M10 optimized artifact, where one exists — the nine vault
+    /// circuits. `None` for the Signet singleton, which is a deployed
+    /// compactc artifact rather than something M10 rewrites.
     opt: Option<fn() -> minocrab::v3::Compiled3>,
 }
 
@@ -185,15 +187,15 @@ fn targets() -> Vec<Target> {
         Box::leak(format!("{dir}/{name}.zkir").into_boxed_str())
     }
     vec![
-        t!(VAULT, "initialize", || erc20_vault::initialize()),
-        t!(VAULT, "deposit", || erc20_vault::deposit()),
-        t!(VAULT, "claim", || erc20_vault::claim()),
-        t!(VAULT, "approveRouter", || erc20_vault::approve_router()),
-        t!(VAULT, "withdraw", || erc20_vault::withdraw()),
-        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw()),
-        t!(VAULT, "refund", || erc20_vault::refund()),
-        t!(VAULT, "swap", || erc20_vault::swap()),
-        t!(VAULT, "completeSwap", || erc20_vault::complete_swap()),
+        t!(VAULT, "initialize", || erc20_vault::initialize(), Some(erc20_vault_opt::initialize)),
+        t!(VAULT, "deposit", || erc20_vault::deposit(), Some(erc20_vault_opt::deposit)),
+        t!(VAULT, "claim", || erc20_vault::claim(), Some(erc20_vault_opt::claim)),
+        t!(VAULT, "approveRouter", || erc20_vault::approve_router(), Some(erc20_vault_opt::approve_router)),
+        t!(VAULT, "withdraw", || erc20_vault::withdraw(), Some(erc20_vault_opt::withdraw)),
+        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw(), Some(erc20_vault_opt::complete_withdraw)),
+        t!(VAULT, "refund", || erc20_vault::refund(), Some(erc20_vault_opt::refund)),
+        t!(VAULT, "swap", || erc20_vault::swap(), Some(erc20_vault_opt::swap)),
+        t!(VAULT, "completeSwap", || erc20_vault::complete_swap(), Some(erc20_vault_opt::complete_swap)),
         t!(SIGNET, "signBidirectional", || signet_contract::sign_bidirectional()),
         t!(SIGNET, "respond", || signet_contract::respond()),
         t!(SIGNET, "respondBidirectional", || signet_contract::respond_bidirectional()),
@@ -438,8 +440,8 @@ fn orchestrate() -> Result<()> {
 }
 
 /// Every (circuit, side) pair the run covers — sides without an artifact
-/// for a circuit drop out, so the bench is two-sided until the optimized
-/// contract exists.
+/// for a circuit drop out, so the vault targets are three-sided and the
+/// Signet singleton's stay two-sided.
 fn cells() -> Vec<(Target, Side)> {
     let mut out = Vec::new();
     for target in targets() {
@@ -621,19 +623,22 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
 
-    /// The optimized artifact does not exist yet, so the run is two-sided:
-    /// every target contributes exactly the port and the corpus.
+    /// The optimized side covers the nine vault circuits and nothing else,
+    /// and a side with no artifact for a target drops out of the run rather
+    /// than failing it.
     #[test]
-    fn absent_side_drops_out() {
-        let cells = cells();
-        assert_eq!(cells.len(), targets().len() * 2);
-        for (_, side) in &cells {
-            assert_ne!(side.artifacts, Artifacts::Optimized);
-        }
-        // …and asking for it by name is an error, not a panic.
+    fn the_optimized_side_covers_the_vault_targets_only() {
+        let vault_targets = targets().iter().filter(|t| t.opt.is_some()).count();
+        assert_eq!(vault_targets, 9, "the vault has nine circuits");
+        assert_eq!(cells().len(), targets().len() * 2 + vault_targets);
+
         let opt = side("opt").expect("the side is declared");
-        assert!(opt.ir(&targets()[0]).is_none());
-        assert!(load_ir(&targets()[0], &opt).is_err());
+        let vault = targets().into_iter().find(|t| t.name == "claim").unwrap();
+        assert!(load_ir(&vault, &opt).is_ok());
+        // …and asking a target it has no artifact for is an error, not a panic.
+        let signet = targets().into_iter().find(|t| t.name == "respond").unwrap();
+        assert!(opt.ir(&signet).is_none());
+        assert!(load_ir(&signet, &opt).is_err());
     }
 
     #[test]
@@ -669,6 +674,12 @@ mod tests {
             }
             assert!(side("minocrab").unwrap().profiled(&target).is_some());
             assert!(side("compactc").unwrap().profiled(&target).is_none());
+            // Profiles need the eDSL's region annotations, which the
+            // optimized side has and the parsed corpus `.zkir` does not.
+            assert_eq!(
+                side("opt").unwrap().profiled(&target).is_some(),
+                target.opt.is_some()
+            );
         }
     }
 }

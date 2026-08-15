@@ -151,28 +151,19 @@ impl Term {
         Term::Const(bytes)
     }
 
-    /// CONCRETIZE for the compat artifact: realise the term as the 32
-    /// bytes this deployment's circuits actually compute. An optimized
-    /// artifact replaces exactly this function.
-    pub fn concretize(&self) -> [u8; 32] {
+    /// CONCRETIZE: realise the term as the 32 bytes `art`'s circuits
+    /// actually compute. THE artifact-swap point — the discretionary
+    /// variants delegate to [`super::prims`], whose `Art::Opt` arms are the
+    /// deviation log; the pinned ones ignore `art` by construction.
+    pub fn concretize(&self, art: Art) -> [u8; 32] {
         match self {
             Term::Const(b) => *b,
-            Term::UserCommit { sk } => user_commitment(sk),
+            Term::UserCommit { sk } => user_commitment(art, sk),
             Term::RefundCommit { sk, request_id } => {
-                let (p_hi, p_lo) = b32_slots(&pad32(v::REFUND_PAD));
-                let (sk_hi, sk_lo) = b32_slots(sk);
-                let (r_hi, r_lo) = b32_slots(&request_id.concretize());
-                fab_sha256(
-                    vec![atom(32), atom(32), atom(32)],
-                    &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
-                )
+                refund_commitment(art, sk, &request_id.concretize(art))
             }
-            Term::DomainSep { erc20 } => vault_domain_sep(erc20),
-            Term::ChangeNonce { mint_nonce } => {
-                let (n_hi, n_lo) = b32_slots(&mint_nonce.concretize());
-                let (p_hi, p_lo) = b32_slots(&pad32("change"));
-                fab_sha256(vec![atom(32), atom(32)], &[n_hi, n_lo, p_hi, p_lo])
-            }
+            Term::DomainSep { erc20 } => vault_domain_sep(art, erc20),
+            Term::ChangeNonce { mint_nonce } => change_nonce(art, &mint_nonce.concretize(art)),
             Term::RequestId { record } => {
                 use midnight_base_crypto::repr::BinaryHashRepr;
                 use midnight_transient_crypto::fab::ValueReprAlignedValue;
@@ -182,7 +173,7 @@ impl Term {
                 sha3::Keccak256::digest(&repr).into()
             }
             Term::TokenType { sep, addr } => {
-                let (d_hi, d_lo) = b32_slots(&sep.concretize());
+                let (d_hi, d_lo) = b32_slots(&sep.concretize(art));
                 let (t_hi, t_lo) = b32_slots(&pad32("midnight:derive_token"));
                 let (s_hi, s_lo) = b32_slots(addr);
                 fab_sha256(
@@ -197,8 +188,8 @@ impl Term {
                 is_left,
                 data,
             } => coin_commitment_of(
-                &b32_slots(&nonce.concretize()),
-                &color.concretize(),
+                &b32_slots(&nonce.concretize(art)),
+                &color.concretize(art),
                 *value,
                 *is_left,
                 data,
@@ -209,13 +200,13 @@ impl Term {
                 value,
                 addr,
             } => coin_nullifier_of(
-                &b32_slots(&nonce.concretize()),
-                &color.concretize(),
+                &b32_slots(&nonce.concretize(art)),
+                &color.concretize(art),
                 *value,
                 addr,
             ),
             Term::EvolvedNonce { nonce } => {
-                let (_hi, lo) = evolved_nonce(&nonce.concretize());
+                let (_hi, lo) = evolved_nonce(&nonce.concretize(art));
                 let mut out = [0u8; 32];
                 out[..31].copy_from_slice(&lo.as_le_bytes()[..31]);
                 out
@@ -301,7 +292,7 @@ pub fn spec_initialize(s: &Scenario, count: u64) -> Outcome {
     if count != 0 {
         return Outcome::Reject(GuardId::AlreadyInitialized);
     }
-    if user_commitment(&s.sk) != s.commitment {
+    if user_commitment(s.art, &s.sk) != s.commitment() {
         return Outcome::Reject(GuardId::NotTheDeployer);
     }
     if s.chain_id == 0 {
@@ -646,7 +637,7 @@ pub fn spec_claim(s: &ClaimScenario) -> Outcome {
     if !s.found {
         return Outcome::Reject(GuardId::RequestNotFound);
     }
-    if user_commitment(&s.claimant_sk()) != user_commitment(&s.d.sk) {
+    if user_commitment(s.art(), &s.claimant_sk()) != user_commitment(s.art(), &s.d.sk) {
         return Outcome::Reject(GuardId::NotTheDepositor);
     }
     let amount = s.d.amount_u64();
@@ -704,7 +695,7 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
         sk: s.claimant_sk(),
         request_id: Box::new(Term::c(s.w.request_id())),
     }
-    .concretize();
+    .concretize(s.art());
     if refunding && presented != s.w.refund_commitment() {
         return Outcome::Reject(GuardId::NotTheWithdrawer);
     }
@@ -752,7 +743,7 @@ pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
         sk: s.claimant_sk(),
         request_id: Box::new(Term::c(s.s.request_id())),
     }
-    .concretize();
+    .concretize(s.art());
     if presented != s.s.refund_commitment() {
         return Outcome::Reject(GuardId::NotTheSwapper);
     }
@@ -843,7 +834,7 @@ pub fn spec_refund(s: &RefundScenario) -> Outcome {
         sk: s.claimant_sk(),
         request_id: Box::new(Term::c(rid)),
     }
-    .concretize();
+    .concretize(s.art());
     match &s.route {
         RefundRoute::Withdrawal(w) => {
             if want != w.refund_commitment() {
@@ -952,7 +943,12 @@ fn pre_counter(pre: &PreState, field: u8) -> u64 {
 /// Assert that `effects` — the spec's declaration — is EXACTLY what the
 /// reference VM produced: the same post-state changes, and the same ledger
 /// `Effects` (equality, not containment, so an undeclared claim fails).
-pub fn check_effects(effects: &[Effect], pre: &PreState, ex: &Executed) -> Result<(), String> {
+pub fn check_effects(
+    art: Art,
+    effects: &[Effect],
+    pre: &PreState,
+    ex: &Executed,
+) -> Result<(), String> {
     use std::collections::{BTreeMap, BTreeSet};
     let mut want_nul: BTreeSet<[u8; 32]> = BTreeSet::new();
     let mut want_recv: BTreeSet<[u8; 32]> = BTreeSet::new();
@@ -972,19 +968,19 @@ pub fn check_effects(effects: &[Effect], pre: &PreState, ex: &Executed) -> Resul
                 }
             }
             Effect::MapInsert { field, key, value } => {
-                let k = key.concretize();
+                let k = key.concretize(art);
                 let got = map_get(&ex.post, usize::from(*field), &k)
                     .ok_or_else(|| format!("map {field} lacks the inserted key"))?;
                 let want = match value {
                     Val::Record(av) => av.clone(),
-                    Val::Term(t) => bytesn_value(32, &t.concretize()),
+                    Val::Term(t) => bytesn_value(32, &t.concretize(art)),
                 };
                 if got != want {
                     return Err(format!("map {field}: inserted value differs"));
                 }
             }
             Effect::MapRemove { field, key } => {
-                if exec::map_member(&ex.post, usize::from(*field), &key.concretize()) {
+                if exec::map_member(&ex.post, usize::from(*field), &key.concretize(art)) {
                     return Err(format!("map {field}: key survived the removal"));
                 }
             }
@@ -997,16 +993,16 @@ pub fn check_effects(effects: &[Effect], pre: &PreState, ex: &Executed) -> Resul
                 }
             }
             Effect::MintShielded { domain_sep, value } => {
-                *want_mint.entry(domain_sep.concretize()).or_insert(0) += value;
+                *want_mint.entry(domain_sep.concretize(art)).or_insert(0) += value;
             }
             Effect::ClaimSpend(t) => {
-                want_spend.insert(t.concretize());
+                want_spend.insert(t.concretize(art));
             }
             Effect::ClaimReceive(t) => {
-                want_recv.insert(t.concretize());
+                want_recv.insert(t.concretize(art));
             }
             Effect::ClaimNullifier(t) => {
-                want_nul.insert(t.concretize());
+                want_nul.insert(t.concretize(art));
             }
             Effect::ClaimContractCall { addr, ep, comm } => {
                 want_calls.insert((call_seq, *addr, *ep, *comm));
@@ -1076,9 +1072,9 @@ pub fn check_effects(effects: &[Effect], pre: &PreState, ex: &Executed) -> Resul
 }
 
 /// Marker used by [`CoinCommitment`]/[`Nullifier`] round-tripping in the
-/// adversarial injectivity sweep: the compat artifact's concretization is
-/// SHA-256, so injectivity of the term → bytes map is SHA-injectivity on
-/// the generated corpus.
+/// adversarial injectivity sweep: both artifacts' concretizations are
+/// SHA-256/keccak at this rung, so injectivity of the term → bytes map is
+/// hash-injectivity on the generated corpus.
 pub fn coin_types_are_hash_outputs() -> (CoinCommitment, Nullifier) {
     (
         CoinCommitment(HashOutput([0u8; 32])),

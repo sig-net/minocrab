@@ -21,6 +21,12 @@
 //! Plus the named underflow boundary of `completeSwap`'s
 //! `amountInMaximum - amountIn`, which the analysis calls the most
 //! dangerous arithmetic in the contract.
+//!
+//! Since M10 step 4 every sweep runs against BOTH artifacts. The compat
+//! side keeps its corpus comparisons (acceptance AGREEMENT with compactc);
+//! the optimized side is swept for SOUNDNESS alone, because once a circuit
+//! diverges compactc has no opinion about it — that is precisely what
+//! these sweeps have to replace.
 
 use std::collections::HashMap;
 
@@ -33,6 +39,7 @@ use proptest::prelude::*;
 
 mod vault;
 
+use vault::artifact::{Art, Circuit, ARTS};
 use vault::exec;
 use vault::gen;
 use vault::model::*;
@@ -71,6 +78,7 @@ fn order_minus(x: &[u8; 32]) -> [u8; 32] {
 /// AGREEMENT sweep as well as a soundness one.
 #[test]
 fn tamper_sweeps_the_remaining_circuits() {
+    // The compat side, against the corpus: soundness AND agreement.
     let s = Scenario::new();
     tamper::assert_full_sweep(
         &erc20_vault::initialize().ir,
@@ -91,6 +99,22 @@ fn tamper_sweeps_the_remaining_circuits() {
         &corpus_zkir_named("swap"),
         &sw.preimage(),
     );
+
+    // The optimized side, against its own reference model: soundness only.
+    let s = Scenario::new().with_art(Art::Opt);
+    let pi = s.preimage(0);
+    tamper::sweep(&Circuit::Initialize.ir(Art::Opt), None, &pi, Part::Transcript);
+    tamper::sweep(&Circuit::Initialize.ir(Art::Opt), None, &pi, Part::Witness);
+
+    let a = ApproveScenario::new().with_art(Art::Opt);
+    let pi = a.preimage();
+    tamper::sweep(&Circuit::ApproveRouter.ir(Art::Opt), None, &pi, Part::Transcript);
+    tamper::sweep(&Circuit::ApproveRouter.ir(Art::Opt), None, &pi, Part::Witness);
+
+    let sw = SwapScenario::new().with_art(Art::Opt);
+    let pi = sw.preimage();
+    tamper::sweep(&Circuit::Swap.ir(Art::Opt), None, &pi, Part::Transcript);
+    tamper::sweep(&Circuit::Swap.ir(Art::Opt), None, &pi, Part::Witness);
 }
 
 /// Perturbing ANY argument must reject — including the three slots the
@@ -98,16 +122,18 @@ fn tamper_sweeps_the_remaining_circuits() {
 /// the whole argument vector.
 #[test]
 fn argument_tampering_always_rejects_via_the_commitment() {
-    let ours = erc20_vault::claim().ir;
-    let c = ClaimScenario::new();
-    let pi = c.preimage();
-    for i in 0..pi.inputs.len() {
-        let mut t = pi.clone();
-        t.inputs[i] = t.inputs[i] + Fr::from(1u64);
-        assert!(
-            simulate(&ours, &t).is_err(),
-            "claim accepts a perturbed argument {i}"
-        );
+    for art in ARTS {
+        let ours = Circuit::Claim.ir(art);
+        let c = ClaimScenario::new().with_art(art);
+        let pi = c.preimage();
+        for i in 0..pi.inputs.len() {
+            let mut t = pi.clone();
+            t.inputs[i] = t.inputs[i] + Fr::from(1u64);
+            assert!(
+                simulate(&ours, &t).is_err(),
+                "{art:?}: claim accepts a perturbed argument {i}"
+            );
+        }
     }
 }
 
@@ -124,7 +150,6 @@ fn argument_tampering_always_rejects_via_the_commitment() {
 /// that leaked the unselected arm into the coin commitment, fails here.
 #[test]
 fn unread_argument_slots_are_exactly_the_declared_ones() {
-    let ours = erc20_vault::claim().ir;
     // Argument layout: 0,1 requestId · 2,3 bigR.x · 4,5 bigR.y · 6,7 s ·
     // 8 recoveryId · 9 serializedOutput · 10,11 mintNonce · 12 is_some ·
     // 13 is_left · 14,15 left(pk) · 16,17 right(contract).
@@ -155,19 +180,22 @@ fn unread_argument_slots_are_exactly_the_declared_ones() {
             vec![4, 5, 8, 13, 14, 15, 16, 17],
         ),
     ];
-    for (name, recipient, unread) in cases {
-        let mut c = ClaimScenario::new();
-        c.recipient = recipient;
-        let pi = c.preimage();
-        for i in 0..pi.inputs.len() {
-            let v = pi.inputs[i] + Fr::from(1u64);
-            let accepted = tamper::accepts_with_rebound_input(&ours, &pi, i, v);
-            assert_eq!(
-                accepted,
-                unread.contains(&i),
-                "{name}: argument {i} accepted = {accepted}, expected unread = {}",
-                unread.contains(&i)
-            );
+    for art in ARTS {
+        let ours = Circuit::Claim.ir(art);
+        for (name, recipient, unread) in &cases {
+            let mut c = ClaimScenario::new().with_art(art);
+            c.recipient = *recipient;
+            let pi = c.preimage();
+            for i in 0..pi.inputs.len() {
+                let v = pi.inputs[i] + Fr::from(1u64);
+                let accepted = tamper::accepts_with_rebound_input(&ours, &pi, i, v);
+                assert_eq!(
+                    accepted,
+                    unread.contains(&i),
+                    "{art:?}/{name}: argument {i} accepted = {accepted}, expected unread = {}",
+                    unread.contains(&i)
+                );
+            }
         }
     }
 }
@@ -179,23 +207,25 @@ fn unread_argument_slots_are_exactly_the_declared_ones() {
 /// without the bound, two different secrets could share a commitment.
 #[test]
 fn secret_key_limbs_out_of_range_reject() {
-    let ours = erc20_vault::claim().ir;
-    let c = ClaimScenario::new();
-    let pi = c.preimage();
-    // hi is a single byte.
-    for v in [256u64, 257, 1 << 32] {
+    for art in ARTS {
+        let ours = Circuit::Claim.ir(art);
+        let c = ClaimScenario::new().with_art(art);
+        let pi = c.preimage();
+        // hi is a single byte.
+        for v in [256u64, 257, 1 << 32] {
+            assert!(
+                !tamper::accepts_with(&ours, &pi, Part::Witness, 0, Fr::from(v)),
+                "{art:?}: claim accepts an out-of-range sk hi limb ({v})"
+            );
+        }
+        // lo is 248 bits, so the all-ones 31-byte limb is the largest legal
+        // value; one more must not fit.
+        let big = Fr::from_le_bytes(&[0xffu8; 31]).unwrap() + Fr::from(1u64);
         assert!(
-            !tamper::accepts_with(&ours, &pi, Part::Witness, 0, Fr::from(v)),
-            "claim accepts an out-of-range sk hi limb ({v})"
+            !tamper::accepts_with(&ours, &pi, Part::Witness, 1, big),
+            "{art:?}: claim accepts an out-of-range sk lo limb"
         );
     }
-    // lo is 248 bits, so the all-ones 31-byte limb is the largest legal
-    // value; one more must not fit.
-    let big = Fr::from_le_bytes(&[0xffu8; 31]).unwrap() + Fr::from(1u64);
-    assert!(
-        !tamper::accepts_with(&ours, &pi, Part::Witness, 1, big),
-        "claim accepts an out-of-range sk lo limb"
-    );
 }
 
 /// `recoveryId` is declared and `constrain_bits`-ed to 8 bits but never
@@ -204,20 +234,22 @@ fn secret_key_limbs_out_of_range_reject() {
 /// what makes the argument's on-chain rendering canonical.
 #[test]
 fn recovery_id_garbage_is_range_bound_but_unread() {
-    let ours = erc20_vault::claim().ir;
-    let c = ClaimScenario::new();
-    let pi = c.preimage();
-    for v in [0u64, 1, 27, 28, 255] {
-        assert!(
-            tamper::accepts_with_rebound_input(&ours, &pi, 8, Fr::from(v)),
-            "claim rejects an in-range recoveryId ({v}) it never reads"
-        );
-    }
-    for v in [256u64, 1 << 20] {
-        assert!(
-            !tamper::accepts_with_rebound_input(&ours, &pi, 8, Fr::from(v)),
-            "claim accepts an out-of-range recoveryId ({v})"
-        );
+    for art in ARTS {
+        let ours = Circuit::Claim.ir(art);
+        let c = ClaimScenario::new().with_art(art);
+        let pi = c.preimage();
+        for v in [0u64, 1, 27, 28, 255] {
+            assert!(
+                tamper::accepts_with_rebound_input(&ours, &pi, 8, Fr::from(v)),
+                "{art:?}: claim rejects an in-range recoveryId ({v}) it never reads"
+            );
+        }
+        for v in [256u64, 1 << 20] {
+            assert!(
+                !tamper::accepts_with_rebound_input(&ours, &pi, 8, Fr::from(v)),
+                "{art:?}: claim accepts an out-of-range recoveryId ({v})"
+            );
+        }
     }
 }
 
@@ -230,39 +262,43 @@ fn recovery_id_garbage_is_range_bound_but_unread() {
 /// instantiates the verification at a different output width.
 #[test]
 fn zero_signature_scalar_aborts() {
-    let cases: Vec<(&str, IrSource, ProofPreimage)> = vec![
-        (
-            "claim",
-            erc20_vault::claim().ir,
-            ClaimScenario::new().preimage(),
-        ),
-        (
-            "completeWithdraw",
-            erc20_vault::complete_withdraw().ir,
-            CompleteWithdrawScenario::new(1).preimage(),
-        ),
-        (
-            "completeSwap",
-            erc20_vault::complete_swap().ir,
-            CompleteSwapScenario::new().preimage(),
-        ),
-        (
-            "refund",
-            erc20_vault::refund().ir,
-            RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new())).preimage(),
-        ),
-    ];
-    for (name, ir, pi) in cases {
-        // s is inputs[6] (hi) and inputs[7] (lo); zero both.
-        let mut t = pi.clone();
-        t.inputs[6] = Fr::from(0u64);
-        t.inputs[7] = Fr::from(0u64);
-        let err = simulate(&ir, &t).err();
-        assert!(err.is_some(), "{name} accepts s = 0");
-        // And it must not be an ordinary "assert failed": the inversion
-        // itself is what refuses. Recorded rather than asserted on the
-        // message text, which is not a stable interface.
-        eprintln!("{name}: s = 0 -> {}", err.unwrap());
+    for art in ARTS {
+        let cases: Vec<(&str, IrSource, ProofPreimage)> = vec![
+            (
+                "claim",
+                Circuit::Claim.ir(art),
+                ClaimScenario::new().with_art(art).preimage(),
+            ),
+            (
+                "completeWithdraw",
+                Circuit::CompleteWithdraw.ir(art),
+                CompleteWithdrawScenario::new(1).with_art(art).preimage(),
+            ),
+            (
+                "completeSwap",
+                Circuit::CompleteSwap.ir(art),
+                CompleteSwapScenario::new().with_art(art).preimage(),
+            ),
+            (
+                "refund",
+                Circuit::Refund.ir(art),
+                RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()))
+                    .with_art(art)
+                    .preimage(),
+            ),
+        ];
+        for (name, ir, pi) in cases {
+            // s is inputs[6] (hi) and inputs[7] (lo); zero both.
+            let mut t = pi.clone();
+            t.inputs[6] = Fr::from(0u64);
+            t.inputs[7] = Fr::from(0u64);
+            let err = simulate(&ir, &t).err();
+            assert!(err.is_some(), "{art:?}/{name} accepts s = 0");
+            // And it must not be an ordinary "assert failed": the inversion
+            // itself is what refuses. Recorded rather than asserted on the
+            // message text, which is not a stable interface.
+            eprintln!("{art:?}/{name}: s = 0 -> {}", err.unwrap());
+        }
     }
 }
 
@@ -273,8 +309,14 @@ fn zero_signature_scalar_aborts() {
 /// every signed digest.
 #[test]
 fn signature_scalars_above_the_order_reject() {
-    let ours = erc20_vault::claim().ir;
-    let c = ClaimScenario::new();
+    for art in ARTS {
+        signature_scalars_above_the_order_reject_for(art);
+    }
+}
+
+fn signature_scalars_above_the_order_reject_for(art: Art) {
+    let ours = Circuit::Claim.ir(art);
+    let c = ClaimScenario::new().with_art(art);
     let pi = c.preimage();
     let (r_be, s_be) = c.signature_be();
 
@@ -287,7 +329,7 @@ fn signature_scalars_above_the_order_reject() {
             t.inputs[7] = n_slots.1;
             simulate(&ours, &t).is_ok()
         },
-        "claim accepts s = n"
+        "{art:?}: claim accepts s = n"
     );
     assert!(
         !{
@@ -296,7 +338,7 @@ fn signature_scalars_above_the_order_reject() {
             t.inputs[3] = n_slots.1;
             simulate(&ours, &t).is_ok()
         },
-        "claim accepts r = n"
+        "{art:?}: claim accepts r = n"
     );
 
     // The malleability partner. `(r, n - s)` verifies against -R, whose
@@ -311,13 +353,13 @@ fn signature_scalars_above_the_order_reject() {
     t.inputs[7] = alt.1;
     let malleable = simulate(&ours, &t).is_ok();
     eprintln!(
-        "claim: (r, n-s) accepted = {malleable} (r = {:02x?}..)",
+        "{art:?}/claim: (r, n-s) accepted = {malleable} (r = {:02x?}..)",
         &r_be[..4]
     );
     assert!(
         !malleable,
-        "claim accepts the low-s malleability partner: an attestation is \
-         NOT unique per digest, so nothing may key off it"
+        "{art:?}: claim accepts the low-s malleability partner: an \
+         attestation is NOT unique per digest, so nothing may key off it"
     );
 }
 
@@ -340,23 +382,25 @@ fn signature_scalars_above_the_order_reject() {
 /// test fails and the note gets updated.
 #[test]
 fn an_identity_response_key_authenticates_anything() {
-    // initialize accepts it: no guard on the response key.
-    let mut s = Scenario::new();
-    s.point = identity_point();
-    assert!(
-        simulate(&erc20_vault::initialize().ir, &s.preimage(0)).is_ok(),
-        "initialize rejects an identity responseKey — the gap is closed, \
-         update notes/vault-optimization.org"
-    );
+    for art in ARTS {
+        // initialize accepts it: no guard on the response key.
+        let mut s = Scenario::new().with_art(art);
+        s.point = identity_point();
+        assert!(
+            simulate(&Circuit::Initialize.ir(art), &s.preimage(0)).is_ok(),
+            "{art:?}: initialize rejects an identity responseKey — the gap \
+             is closed, update notes/vault-optimization.org"
+        );
 
-    // ...and with it stored, a signature made under secret key 0 verifies.
-    let mut c = ClaimScenario::new();
-    c.key_seed = 0;
-    assert!(
-        simulate(&erc20_vault::claim().ir, &c.preimage()).is_ok(),
-        "claim rejects an attestation under an identity response key — \
-         the gap is closed, update notes/vault-optimization.org"
-    );
+        // ...and with it stored, a signature made under secret key 0 verifies.
+        let mut c = ClaimScenario::new().with_art(art);
+        c.key_seed = 0;
+        assert!(
+            simulate(&Circuit::Claim.ir(art), &c.preimage()).is_ok(),
+            "{art:?}: claim rejects an attestation under an identity response \
+             key — the gap is closed, update notes/vault-optimization.org"
+        );
+    }
 }
 
 // --- family 3: wrong branch ---------------------------------------------------
@@ -366,28 +410,30 @@ fn an_identity_response_key_authenticates_anything() {
 /// marker is consumed, so it can never be settled twice.
 #[test]
 fn settling_without_a_pending_marker_rejects() {
-    let ours = erc20_vault::complete_withdraw().ir;
-    let mut c = CompleteWithdrawScenario::new(1);
-    c.pending = false;
-    assert!(
-        simulate(&ours, &c.preimage()).is_err(),
-        "completeWithdraw settles a request with no pending marker"
-    );
+    for art in ARTS {
+        let ours = Circuit::CompleteWithdraw.ir(art);
+        let mut c = CompleteWithdrawScenario::new(1).with_art(art);
+        c.pending = false;
+        assert!(
+            simulate(&ours, &c.preimage()).is_err(),
+            "{art:?}: completeWithdraw settles a request with no pending marker"
+        );
 
-    let ours = erc20_vault::complete_swap().ir;
-    let mut c = CompleteSwapScenario::new();
-    c.pending = false;
-    assert!(
-        simulate(&ours, &c.preimage()).is_err(),
-        "completeSwap settles a swap with no pending marker"
-    );
+        let ours = Circuit::CompleteSwap.ir(art);
+        let mut c = CompleteSwapScenario::new().with_art(art);
+        c.pending = false;
+        assert!(
+            simulate(&ours, &c.preimage()).is_err(),
+            "{art:?}: completeSwap settles a swap with no pending marker"
+        );
 
-    let ours = erc20_vault::claim().ir;
-    let c = ClaimScenario::new();
-    assert!(
-        simulate(&ours, &c.preimage_with_member(0)).is_err(),
-        "claim settles a request that is not in the map"
-    );
+        let ours = Circuit::Claim.ir(art);
+        let c = ClaimScenario::new().with_art(art);
+        assert!(
+            simulate(&ours, &c.preimage_with_member(0)).is_err(),
+            "{art:?}: claim settles a request that is not in the map"
+        );
+    }
 }
 
 /// THE case the `run_program` link exists for.
@@ -400,20 +446,22 @@ fn settling_without_a_pending_marker_rejects() {
 /// repository executed an op stream, so this defence was untested.
 #[test]
 fn a_forged_membership_answer_passes_the_circuit_and_fails_the_ledger() {
-    let ours = erc20_vault::complete_withdraw().ir;
-    let c = CompleteWithdrawScenario::new(1);
-    // The transcript claims the marker is present...
-    assert!(c.pending);
-    assert!(simulate(&ours, &c.preimage()).is_ok());
-    // ...but the ledger state does not hold it.
-    let mut pre = c.pre_state();
-    pre.refund_commitment.clear();
-    let err = exec::run(&pre, &c.w.self_addr, &c.ops())
-        .expect_err("the ledger accepted a forged membership answer");
-    assert!(
-        err.contains("ReadMismatch"),
-        "expected a read mismatch, got: {err}"
-    );
+    for art in ARTS {
+        let ours = Circuit::CompleteWithdraw.ir(art);
+        let c = CompleteWithdrawScenario::new(1).with_art(art);
+        // The transcript claims the marker is present...
+        assert!(c.pending);
+        assert!(simulate(&ours, &c.preimage()).is_ok());
+        // ...but the ledger state does not hold it.
+        let mut pre = c.pre_state();
+        pre.refund_commitment.clear();
+        let err = exec::run(&pre, &c.w.self_addr, &c.ops())
+            .expect_err("the ledger accepted a forged membership answer");
+        assert!(
+            err.contains("ReadMismatch"),
+            "{art:?}: expected a read mismatch, got: {err}"
+        );
+    }
 }
 
 /// `refund` settles only the protocol's fixed 5-byte failure sentinel. A
@@ -421,19 +469,22 @@ fn a_forged_membership_answer_passes_the_circuit_and_fails_the_ledger() {
 /// executed withdrawal could be refunded as well as delivered.
 #[test]
 fn refund_rejects_success_shaped_outputs() {
-    let ours = erc20_vault::refund().ir;
-    for output in [
-        [0u8, 0, 0, 0, 1],
-        [0xde, 0xad, 0xbe, 0xef, 0x00],
-        [0xde, 0xad, 0xbe, 0xee, 0x01],
-        [0u8; 5],
-    ] {
-        let mut r = RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()));
-        r.serialized_output = output;
-        assert!(
-            simulate(&ours, &r.preimage()).is_err(),
-            "refund accepts a non-sentinel output {output:02x?}"
-        );
+    for art in ARTS {
+        let ours = Circuit::Refund.ir(art);
+        for output in [
+            [0u8, 0, 0, 0, 1],
+            [0xde, 0xad, 0xbe, 0xef, 0x00],
+            [0xde, 0xad, 0xbe, 0xee, 0x01],
+            [0u8; 5],
+        ] {
+            let mut r = RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()))
+                .with_art(art);
+            r.serialized_output = output;
+            assert!(
+                simulate(&ours, &r.preimage()).is_err(),
+                "{art:?}: refund accepts a non-sentinel output {output:02x?}"
+            );
+        }
     }
 }
 
@@ -442,14 +493,17 @@ fn refund_rejects_success_shaped_outputs() {
 /// because `refund` branches on `refundCommitment.member` alone.
 #[test]
 fn refund_routes_on_the_withdrawal_marker_even_when_both_are_set() {
-    let ours = erc20_vault::refund().ir;
-    let mut r = RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()));
-    r.also_other_marker = true;
-    let outcome = spec::spec_refund(&r);
-    assert!(outcome.accepts());
-    assert!(simulate(&ours, &r.preimage()).is_ok());
-    let ex = exec::run(&r.pre_state(), &r.self_addr(), &r.ops()).expect("the ledger accepts");
-    spec::check_effects(outcome.effects(), &r.pre_state(), &ex).expect("effects agree");
+    for art in ARTS {
+        let ours = Circuit::Refund.ir(art);
+        let mut r =
+            RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new())).with_art(art);
+        r.also_other_marker = true;
+        let outcome = spec::spec_refund(&r);
+        assert!(outcome.accepts());
+        assert!(simulate(&ours, &r.preimage()).is_ok());
+        let ex = exec::run(&r.pre_state(), &r.self_addr(), &r.ops()).expect("the ledger accepts");
+        spec::check_effects(art, outcome.effects(), &r.pre_state(), &ex).expect("effects agree");
+    }
 }
 
 // --- family 4: re-mapping injectivity ----------------------------------------
@@ -464,12 +518,12 @@ fn refund_routes_on_the_withdrawal_marker_even_when_both_are_set() {
 /// SHA-injectivity on the generated corpus; for the optimized artifact it
 /// is whatever that artifact's concretization is. The sweep is written
 /// against `concretize`, so it transfers unchanged.
-fn injectivity_over(terms: Vec<Term>) -> Result<usize, String> {
+fn injectivity_over(art: Art, terms: Vec<Term>) -> Result<usize, String> {
     let mut seen: HashMap<[u8; 32], Term> = HashMap::new();
     for t in terms {
-        let bytes = t.concretize();
+        let bytes = t.concretize(art);
         // Determinism first: the same term must always concretise the same.
-        if t.concretize() != bytes {
+        if t.concretize(art) != bytes {
             return Err(format!("concretization is not deterministic for {t:?}"));
         }
         match seen.get(&bytes) {
@@ -548,20 +602,24 @@ proptest! {
     ) {
         let mut mint_nonce = [0u8; 32];
         mint_nonce[..31].copy_from_slice(&nonce);
-        let terms = terms_of(&w, &d, mint_nonce);
-        let n = terms.len();
-        // `Term` holds an `AlignedValue` and is only `Eq`, so distinctness
-        // is counted the quadratic way — n is 13.
-        let mut distinct: Vec<Term> = Vec::new();
-        for t in &terms {
-            if !distinct.contains(t) {
-                distinct.push(t.clone());
+        for art in ARTS {
+            let w = w.clone().with_art(art);
+            let d = d.clone().with_art(art);
+            let terms = terms_of(&w, &d, mint_nonce);
+            let n = terms.len();
+            // `Term` holds an `AlignedValue` and is only `Eq`, so distinctness
+            // is counted the quadratic way — n is 13.
+            let mut distinct: Vec<Term> = Vec::new();
+            for t in &terms {
+                if !distinct.contains(t) {
+                    distinct.push(t.clone());
+                }
             }
+            let want = distinct.len();
+            let got = injectivity_over(art, terms);
+            prop_assert!(got.is_ok(), "{:?}: {:?}", art, got);
+            prop_assert_eq!(got.unwrap(), want, "term count {}", n);
         }
-        let want = distinct.len();
-        let got = injectivity_over(terms);
-        prop_assert!(got.is_ok(), "{:?}", got);
-        prop_assert_eq!(got.unwrap(), want, "term count {}", n);
     }
 }
 
@@ -585,14 +643,19 @@ fn complete_swap_at(max: u128, amount_in: u64) -> CompleteSwapScenario {
 }
 
 fn assert_complete_swap(c: &CompleteSwapScenario, want_accept: bool, why: &str) {
-    let ours = erc20_vault::complete_swap().ir;
-    let outcome = spec::spec_complete_swap(c);
-    assert_eq!(outcome.accepts(), want_accept, "spec disagrees: {why}");
-    let accepted = simulate(&ours, &c.preimage()).is_ok();
-    assert_eq!(accepted, want_accept, "circuit disagrees: {why}");
-    if want_accept {
-        let ex = exec::run(&c.pre_state(), &c.s.self_addr, &c.ops()).expect("the ledger accepts");
-        spec::check_effects(outcome.effects(), &c.pre_state(), &ex).expect("effects agree");
+    for art in ARTS {
+        let c = c.clone().with_art(art);
+        let ours = Circuit::CompleteSwap.ir(art);
+        let outcome = spec::spec_complete_swap(&c);
+        assert_eq!(outcome.accepts(), want_accept, "{art:?}: spec disagrees: {why}");
+        let accepted = simulate(&ours, &c.preimage()).is_ok();
+        assert_eq!(accepted, want_accept, "{art:?}: circuit disagrees: {why}");
+        if want_accept {
+            let ex =
+                exec::run(&c.pre_state(), &c.s.self_addr, &c.ops()).expect("the ledger accepts");
+            spec::check_effects(art, outcome.effects(), &c.pre_state(), &ex)
+                .expect("effects agree");
+        }
     }
 }
 

@@ -2,11 +2,19 @@
 //! encodings, hash constructions and signature helpers that reproduce, in
 //! ordinary Rust, exactly what the circuits compute in-circuit.
 //!
-//! These are the CONCRETIZATION of the spec's symbolic terms for the
-//! compat artifact (`super::spec::Term`): `user_commitment` realises
-//! `Term::UserCommit`, `vault_domain_sep` realises `Term::DomainSep`, and
-//! so on. An optimized artifact that changes a hash construction supplies
-//! its own module here and reuses everything else.
+//! These are the CONCRETIZATION of the spec's symbolic terms
+//! (`super::spec::Term`): `user_commitment` realises `Term::UserCommit`,
+//! `vault_domain_sep` realises `Term::DomainSep`, and so on.
+//!
+//! The four DISCRETIONARY constructions — `user_commitment`,
+//! `refund_commitment`, `vault_domain_sep`, `change_nonce` — take an
+//! [`Art`], because they are exactly what an optimized artifact is free to
+//! change (notes/vault-optimization.org §"(c) SPEC-DISCRETIONARY"). Their
+//! `Art::Opt` arms ARE the deviation log, in executable form: the spec, the
+//! reference model and the injectivity sweep all route through them, so a
+//! deviation that is not written here fails the harness rather than
+//! silently passing it. Everything else in this module is protocol-pinned
+//! and must concretise identically in every artifact.
 //!
 //! Moved verbatim out of `erc20_vault_differential.rs` (M10 step 1) so the
 //! differential suite and the property harness share one model.
@@ -34,6 +42,8 @@ use minocrab::Fr;
 use minocrab_contracts::erc20_vault;
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
+
+pub use super::artifact::Art;
 
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -73,20 +83,61 @@ pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
     )
 }
 
-/// Off-circuit `userCommitment(sk)`: SHA-256 over the FAB bytes of
-/// `[pad(32, USER_PAD), sk]`.
-pub fn user_commitment(sk: &[u8; 32]) -> [u8; 32] {
-    let mut pad = [0u8; 32];
-    pad[..erc20_vault::USER_PAD.len()].copy_from_slice(erc20_vault::USER_PAD.as_bytes());
-    let (pad_hi, pad_lo) = b32_slots(&pad);
-    let (sk_hi, sk_lo) = b32_slots(sk);
-    let alignment = Alignment(vec![atom(32), atom(32)]);
-    let value = alignment
-        .parse_field_repr(&[pad_hi, pad_lo, sk_hi, sk_lo])
-        .expect("limbs match the alignment");
-    let mut repr = Vec::new();
-    ValueReprAlignedValue(value).binary_repr(&mut repr);
-    Sha256::digest(&repr).into()
+/// DISCRETIONARY. Off-circuit `userCommitment(sk)`.
+///
+/// Both artifacts: SHA-256 over the FAB bytes of `[pad(32, USER_PAD), sk]`.
+/// Avenue 1 (the short-SHA preimage) is a later rung; the full-Poseidon
+/// variant is REJECTED outright — the commitment is the MPC's key-derivation
+/// path, so a hash change strands funds at the old derived EVM account
+/// (notes/vault-optimization.org §"Q4 Poseidon durability").
+pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
+    match art {
+        Art::Compat | Art::Opt => {
+            let mut pad = [0u8; 32];
+            pad[..erc20_vault::USER_PAD.len()].copy_from_slice(erc20_vault::USER_PAD.as_bytes());
+            let (pad_hi, pad_lo) = b32_slots(&pad);
+            let (sk_hi, sk_lo) = b32_slots(sk);
+            let alignment = Alignment(vec![atom(32), atom(32)]);
+            let value = alignment
+                .parse_field_repr(&[pad_hi, pad_lo, sk_hi, sk_lo])
+                .expect("limbs match the alignment");
+            let mut repr = Vec::new();
+            ValueReprAlignedValue(value).binary_repr(&mut repr);
+            Sha256::digest(&repr).into()
+        }
+    }
+}
+
+/// DISCRETIONARY. Off-circuit `withdrawRefundCommitment(sk, requestId)`.
+///
+/// Both artifacts: SHA-256 over `[pad(32, REFUND_PAD), sk, requestId]`.
+/// (Avenue 3 — Poseidon — is a later rung.)
+pub fn refund_commitment(art: Art, sk: &[u8; 32], request_id: &[u8; 32]) -> [u8; 32] {
+    match art {
+        Art::Compat | Art::Opt => {
+            let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::REFUND_PAD));
+            let (sk_hi, sk_lo) = b32_slots(sk);
+            let (r_hi, r_lo) = b32_slots(request_id);
+            fab_sha256(
+                vec![atom(32), atom(32), atom(32)],
+                &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
+            )
+        }
+    }
+}
+
+/// DISCRETIONARY. completeSwap's change-coin nonce.
+///
+/// Both artifacts: `persistentHash([mintNonce, pad(32, "change")])`.
+/// (Avenue 5 is a later rung.)
+pub fn change_nonce(art: Art, mint_nonce: &[u8; 32]) -> [u8; 32] {
+    match art {
+        Art::Compat | Art::Opt => {
+            let (n_hi, n_lo) = b32_slots(mint_nonce);
+            let (p_hi, p_lo) = b32_slots(&pad32("change"));
+            fab_sha256(vec![atom(32), atom(32)], &[n_hi, n_lo, p_hi, p_lo])
+        }
+    }
 }
 
 pub fn scalar(v: u64) -> IrValue {
@@ -152,18 +203,28 @@ pub fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> ([u8; 32], [u8; 32],
     (r_le, s_le, pk)
 }
 
-/// `vaultTokenDomainSeparator(erc20)` off-circuit.
-pub fn vault_domain_sep(erc20: &[u8; 20]) -> [u8; 32] {
-    let mut erc20_b32 = [0u8; 32];
-    erc20_b32[..20].copy_from_slice(erc20);
-    let (e_hi, e_lo) = b32_slots(&erc20_b32);
-    let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::TOKEN_PAD));
-    fab_sha256(vec![atom(32), atom(32)], &[p_hi, p_lo, e_hi, e_lo])
+/// DISCRETIONARY. `vaultTokenDomainSeparator(erc20)` off-circuit.
+///
+/// Both artifacts: SHA-256 over `[pad(32, "erc20:vault:"), erc20]`.
+/// (Avenue 2 — the injective non-hashed encoding — is a later rung.)
+pub fn vault_domain_sep(art: Art, erc20: &[u8; 20]) -> [u8; 32] {
+    match art {
+        Art::Compat | Art::Opt => {
+            let mut erc20_b32 = [0u8; 32];
+            erc20_b32[..20].copy_from_slice(erc20);
+            let (e_hi, e_lo) = b32_slots(&erc20_b32);
+            let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::TOKEN_PAD));
+            fab_sha256(vec![atom(32), atom(32)], &[p_hi, p_lo, e_hi, e_lo])
+        }
+    }
 }
 
-/// `tokenType(vaultTokenDomainSeparator(erc20), self)` off-circuit.
-pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
-    let domain_sep = vault_domain_sep(erc20);
+/// `tokenType(vaultTokenDomainSeparator(erc20), self)` off-circuit. The
+/// `tokenType` construction itself is PINNED (the ledger derives the colour,
+/// coin-structure/src/contract.rs:58-68); only its separator argument is
+/// discretionary, hence the `art`.
+pub fn vault_color(art: Art, erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
+    let domain_sep = vault_domain_sep(art, erc20);
     let (d_hi, d_lo) = b32_slots(&domain_sep);
     let (t_hi, t_lo) = b32_slots(&pad32("midnight:derive_token"));
     let (s_hi, s_lo) = b32_slots(self_addr);

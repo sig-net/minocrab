@@ -8,6 +8,14 @@
 //! and the adversarial sweeps. Moved verbatim out of
 //! `erc20_vault_differential.rs` in M10 step 1 — the builders were already
 //! the reference model, they were just private to one test binary.
+//!
+//! Since M10 step 4 every scenario also carries the [`Art`] it models:
+//! `Art::Compat` reproduces the direct ports, `Art::Opt` the optimized
+//! fork. `with_art` rebuilds a generated scenario for the other artifact,
+//! so ONE generated case gates both. Everything artifact-dependent — the
+//! discretionary hash constructions, and from rung (i) the op stream
+//! itself — is selected from `self.art`; a scenario that ignored it would
+//! show up immediately as a PI mismatch against its own circuit.
 
 use std::borrow::Cow;
 
@@ -33,8 +41,15 @@ use super::prims::*;
 /// The concrete initialize() call every test shares.
 #[derive(Clone, Debug)]
 pub struct Scenario {
+    pub art: Art,
+    /// The secret the CALLER witnesses.
     pub sk: [u8; 32],
-    pub commitment: [u8; 32],
+    /// The secret whose commitment is STORED in the `deployer` field. Equal
+    /// to `sk` when the deployer gate should pass. Stored as the secret
+    /// rather than as the digest so the scenario survives `with_art`: the
+    /// commitment construction is discretionary, the deployer's identity is
+    /// not.
+    pub deployer_sk: [u8; 32],
     pub vault_evm: [u8; 20],
     pub swap_router: [u8; 20],
     pub chain_id: u64,
@@ -43,6 +58,17 @@ pub struct Scenario {
 }
 
 impl Scenario {
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> Scenario {
+        self.art = art;
+        self
+    }
+
+    /// The commitment the `deployer` field holds.
+    pub fn commitment(&self) -> [u8; 32] {
+        user_commitment(self.art, &self.deployer_sk)
+    }
+
     pub fn new() -> Scenario {
         let sk = {
             let mut b = [0u8; 32];
@@ -56,8 +82,9 @@ impl Scenario {
         let point =
             ec_mul_offcircuit(&IrValue::Secp256k1Point(k256::K256::generator()), &d).unwrap();
         Scenario {
+            art: Art::Compat,
             sk,
-            commitment: user_commitment(&sk),
+            deployer_sk: sk,
             vault_evm: *b"vault-evm-addr-20byt",
             swap_router: *b"uniswap-router-20byt",
             chain_id: 11155111,
@@ -138,7 +165,7 @@ impl Scenario {
             },
             Op::Popeq {
                 cached: false,
-                result: bytesn_value(32, &self.commitment),
+                result: bytesn_value(32, &self.commitment()),
             },
             // initialized.increment(1)
             Op::Idx {
@@ -171,7 +198,7 @@ impl Scenario {
         let mut out = Vec::new();
         for av in [
             bytesn_value(8, &count.to_le_bytes()),
-            bytesn_value(32, &self.commitment),
+            bytesn_value(32, &self.commitment()),
         ] {
             ValueReprAlignedValue(av).field_repr(&mut out);
         }
@@ -205,6 +232,7 @@ impl Scenario {
 /// kernel.self, caip2Id, signetSigner).
 #[derive(Clone, Debug)]
 pub struct DepositScenario {
+    pub art: Art,
     pub sk: [u8; 32],
     pub evm_nonce: u64,
     pub gas_limit: u64,
@@ -231,6 +259,12 @@ pub struct DepositScenario {
 }
 
 impl DepositScenario {
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> DepositScenario {
+        self.art = art;
+        self
+    }
+
     pub fn new() -> DepositScenario {
         let sk = {
             let mut b = [0u8; 32];
@@ -250,6 +284,7 @@ impl DepositScenario {
         ep[..20].copy_from_slice(b"ep:signBidirectional");
         ep[31] = 0x33;
         DepositScenario {
+            art: Art::Compat,
             sk,
             evm_nonce: 7,
             gas_limit: 65_000,
@@ -295,7 +330,7 @@ impl DepositScenario {
     /// and, parsed against the 24-atom alignment, the map-insert value).
     pub fn event_limbs(&self) -> Vec<Fr> {
         let (self_hi, self_lo) = b32_slots(&self.self_addr);
-        let path = user_commitment(&self.sk);
+        let path = user_commitment(self.art, &self.sk);
         let (path_hi, path_lo) = b32_slots(&path);
         let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
         let (w0_hi, w0_lo) = b32_slots(&self.word0());
@@ -652,6 +687,18 @@ pub struct ClaimScenario {
 }
 
 impl ClaimScenario {
+    /// The artifact this settle models — the deposit it settles owns it,
+    /// so the record and the commitment can never disagree.
+    pub fn art(&self) -> Art {
+        self.d.art
+    }
+
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> ClaimScenario {
+        self.d.art = art;
+        self
+    }
+
     pub fn new() -> ClaimScenario {
         let mut mint_nonce = [0u8; 32];
         mint_nonce[..11].copy_from_slice(b"mint-nonce!");
@@ -720,11 +767,11 @@ impl ClaimScenario {
 
     /// tokenType(vaultTokenDomainSeparator(erc20), self).
     pub fn color(&self) -> [u8; 32] {
-        vault_color(&self.d.erc20, &self.d.self_addr)
+        vault_color(self.art(), &self.d.erc20, &self.d.self_addr)
     }
 
     pub fn domain_sep(&self) -> [u8; 32] {
-        vault_domain_sep(&self.d.erc20)
+        vault_domain_sep(self.art(), &self.d.erc20)
     }
 
     /// coinCommitment({mintNonce, color, amount}, recipient).
@@ -1035,6 +1082,7 @@ impl ClaimScenario {
 /// A concrete approveRouter() call: the vault-account approve request.
 #[derive(Clone, Debug)]
 pub struct ApproveScenario {
+    pub art: Art,
     pub erc20: [u8; 20],
     pub evm_nonce: u64,
     pub key_version: u8,
@@ -1052,9 +1100,16 @@ pub struct ApproveScenario {
 }
 
 impl ApproveScenario {
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> ApproveScenario {
+        self.art = art;
+        self
+    }
+
     pub fn new() -> ApproveScenario {
         let d = DepositScenario::new();
         ApproveScenario {
+            art: Art::Compat,
             erc20: d.erc20,
             evm_nonce: 9,
             key_version: 1,
@@ -1354,6 +1409,7 @@ impl ApproveScenario {
 /// A concrete withdraw() call.
 #[derive(Clone, Debug)]
 pub struct WithdrawScenario {
+    pub art: Art,
     pub evm_nonce: u64,
     pub key_version: u8,
     pub erc20: [u8; 20],
@@ -1375,12 +1431,19 @@ pub struct WithdrawScenario {
 }
 
 impl WithdrawScenario {
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> WithdrawScenario {
+        self.art = art;
+        self
+    }
+
     pub fn new() -> WithdrawScenario {
         let d = DepositScenario::new();
         let mut coin_nonce = [0u8; 32];
         coin_nonce[..10].copy_from_slice(b"coin-nonce");
         coin_nonce[31] = 0x51;
         WithdrawScenario {
+            art: Art::Compat,
             evm_nonce: 11,
             key_version: 1,
             erc20: d.erc20,
@@ -1407,7 +1470,7 @@ impl WithdrawScenario {
     }
 
     pub fn color(&self) -> [u8; 32] {
-        vault_color(&self.erc20, &self.self_addr)
+        vault_color(self.art, &self.erc20, &self.self_addr)
     }
 
     pub fn event_limbs(&self) -> Vec<Fr> {
@@ -1474,13 +1537,7 @@ impl WithdrawScenario {
 
     /// withdrawRefundCommitment(sk, requestId).
     pub fn refund_commitment(&self) -> [u8; 32] {
-        let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::REFUND_PAD));
-        let (sk_hi, sk_lo) = b32_slots(&self.sk);
-        let (r_hi, r_lo) = b32_slots(&self.request_id());
-        fab_sha256(
-            vec![atom(32), atom(32), atom(32)],
-            &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
-        )
+        refund_commitment(self.art, &self.sk, &self.request_id())
     }
 
     pub fn call_args(&self) -> Vec<Fr> {
@@ -1788,6 +1845,17 @@ pub struct CompleteWithdrawScenario {
 }
 
 impl CompleteWithdrawScenario {
+    /// The artifact this settle models (owned by the withdrawal it settles).
+    pub fn art(&self) -> Art {
+        self.w.art
+    }
+
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> CompleteWithdrawScenario {
+        self.w.art = art;
+        self
+    }
+
     pub fn new(outcome: u8) -> CompleteWithdrawScenario {
         let mut mint_nonce = [0u8; 32];
         mint_nonce[..12].copy_from_slice(b"refund-nonce");
@@ -1984,8 +2052,8 @@ impl CompleteWithdrawScenario {
                 },
             ]);
             // kernel.mintShielded + claimZswapCoinSpend
-            let domain_sep = vault_domain_sep(&self.w.erc20);
-            let color = vault_color(&self.w.erc20, &self.w.self_addr);
+            let domain_sep = vault_domain_sep(self.art(), &self.w.erc20);
+            let color = vault_color(self.art(), &self.w.erc20, &self.w.self_addr);
             let cm = coin_commitment_of(
                 &b32_slots(&self.mint_nonce),
                 &color,
@@ -2102,6 +2170,7 @@ impl CompleteWithdrawScenario {
 /// A concrete swap() call.
 #[derive(Clone, Debug)]
 pub struct SwapScenario {
+    pub art: Art,
     pub evm_nonce: u64,
     pub key_version: u8,
     pub token_in: [u8; 20],
@@ -2128,12 +2197,19 @@ pub struct SwapScenario {
 }
 
 impl SwapScenario {
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> SwapScenario {
+        self.art = art;
+        self
+    }
+
     pub fn new() -> SwapScenario {
         let d = DepositScenario::new();
         let mut coin_nonce = [0u8; 32];
         coin_nonce[..10].copy_from_slice(b"swap-nonce");
         coin_nonce[31] = 0x71;
         SwapScenario {
+            art: Art::Compat,
             evm_nonce: 13,
             key_version: 1,
             token_in: d.erc20,
@@ -2252,13 +2328,7 @@ impl SwapScenario {
     }
 
     pub fn refund_commitment(&self) -> [u8; 32] {
-        let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::REFUND_PAD));
-        let (sk_hi, sk_lo) = b32_slots(&self.sk);
-        let (r_hi, r_lo) = b32_slots(&self.request_id());
-        fab_sha256(
-            vec![atom(32), atom(32), atom(32)],
-            &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
-        )
+        refund_commitment(self.art, &self.sk, &self.request_id())
     }
 
     pub fn call_args(&self) -> Vec<Fr> {
@@ -2327,7 +2397,7 @@ impl SwapScenario {
         };
 
         let request_id = self.request_id();
-        let color = vault_color(&self.token_in, &self.self_addr);
+        let color = vault_color(self.art, &self.token_in, &self.self_addr);
         let nonce_slots = b32_slots(&self.coin_nonce);
         let cm_receive = coin_commitment_of(
             &nonce_slots,
@@ -2502,7 +2572,7 @@ impl SwapScenario {
     pub fn preimage(&self) -> ProofPreimage {
         let ops = self.ops();
 
-        let color = vault_color(&self.token_in, &self.self_addr);
+        let color = vault_color(self.art, &self.token_in, &self.self_addr);
         let nonce_slots = b32_slots(&self.coin_nonce);
         let (c_hi, c_lo) = b32_slots(&color);
         let inputs = vec![
@@ -2576,6 +2646,17 @@ pub struct CompleteSwapScenario {
 }
 
 impl CompleteSwapScenario {
+    /// The artifact this settle models (owned by the swap it settles).
+    pub fn art(&self) -> Art {
+        self.s.art
+    }
+
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> CompleteSwapScenario {
+        self.s.art = art;
+        self
+    }
+
     pub fn new() -> CompleteSwapScenario {
         let mut mint_nonce = [0u8; 32];
         mint_nonce[..10].copy_from_slice(b"swap-mint!");
@@ -2624,11 +2705,9 @@ impl CompleteSwapScenario {
         (r_le, s_le)
     }
 
-    /// changeNonce = persistentHash([mintNonce, pad(32, "change")]).
+    /// The change coin's nonce, as this artifact derives it.
     pub fn change_nonce(&self) -> [u8; 32] {
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let (p_hi, p_lo) = b32_slots(&pad32("change"));
-        fab_sha256(vec![atom(32), atom(32)], &[n_hi, n_lo, p_hi, p_lo])
+        change_nonce(self.art(), &self.mint_nonce)
     }
 
     /// The reference Impact program, in the circuit's read/write order.
@@ -2700,8 +2779,8 @@ impl CompleteSwapScenario {
             ]
         };
 
-        let color_out = vault_color(&self.s.token_out, &self.s.self_addr);
-        let color_in = vault_color(&self.s.token_in, &self.s.self_addr);
+        let color_out = vault_color(self.art(), &self.s.token_out, &self.s.self_addr);
+        let color_in = vault_color(self.art(), &self.s.token_in, &self.s.self_addr);
         let change = self.s.amount_in_max_u64().wrapping_sub(self.amount_in);
         let cm_out = coin_commitment_of(
             &b32_slots(&self.mint_nonce),
@@ -2809,12 +2888,12 @@ impl CompleteSwapScenario {
         ];
         ops.extend(kernel_self_ops(&self.s.self_addr));
         ops.extend(mint(
-            vault_domain_sep(&self.s.token_out),
+            vault_domain_sep(self.art(), &self.s.token_out),
             self.s.amount_out_u64(),
             cm_out,
         ));
         ops.extend(kernel_self_ops(&self.s.self_addr));
-        ops.extend(mint(vault_domain_sep(&self.s.token_in), change, cm_change));
+        ops.extend(mint(vault_domain_sep(self.art(), &self.s.token_in), change, cm_change));
         ops
     }
 
@@ -2907,6 +2986,23 @@ pub struct RefundScenario {
 }
 
 impl RefundScenario {
+    /// The artifact this settle models (owned by the request it refunds).
+    pub fn art(&self) -> Art {
+        match &self.route {
+            RefundRoute::Withdrawal(w) => w.art,
+            RefundRoute::Swap(s) => s.art,
+        }
+    }
+
+    /// The same call against the other artifact.
+    pub fn with_art(mut self, art: Art) -> RefundScenario {
+        match &mut self.route {
+            RefundRoute::Withdrawal(w) => w.art = art,
+            RefundRoute::Swap(s) => s.art = art,
+        }
+        self
+    }
+
     pub fn new(route: RefundRoute) -> RefundScenario {
         let mut mint_nonce = [0u8; 32];
         mint_nonce[..11].copy_from_slice(b"never-nonce");
@@ -3142,7 +3238,7 @@ impl RefundScenario {
                 avs.push(bytesn_value(32, &w.refund_commitment()));
                 ops.extend(kernel_self_ops(&w.self_addr));
                 avs.push(bytesn_value(32, &w.self_addr));
-                let color = vault_color(&w.erc20, &w.self_addr);
+                let color = vault_color(self.art(), &w.erc20, &w.self_addr);
                 let cm = coin_commitment_of(
                     &b32_slots(&self.mint_nonce),
                     &color,
@@ -3150,7 +3246,7 @@ impl RefundScenario {
                     true,
                     &self.own_pk,
                 );
-                ops.extend(mint(vault_domain_sep(&w.erc20), w.amount_u64(), cm));
+                ops.extend(mint(vault_domain_sep(self.art(), &w.erc20), w.amount_u64(), cm));
                 ops.extend(remove(erc20_vault::REFUND_COMMITMENT));
             }
             RefundRoute::Swap(s) => {
@@ -3169,7 +3265,7 @@ impl RefundScenario {
                 ops.extend(remove(erc20_vault::SWAP_REFUND_COMMITMENT));
                 ops.extend(kernel_self_ops(&s.self_addr));
                 avs.push(bytesn_value(32, &s.self_addr));
-                let color = vault_color(&s.token_in, &s.self_addr);
+                let color = vault_color(self.art(), &s.token_in, &s.self_addr);
                 let cm = coin_commitment_of(
                     &b32_slots(&self.mint_nonce),
                     &color,
@@ -3178,7 +3274,7 @@ impl RefundScenario {
                     &self.own_pk,
                 );
                 ops.extend(mint(
-                    vault_domain_sep(&s.token_in),
+                    vault_domain_sep(self.art(), &s.token_in),
                     s.amount_in_max_u64(),
                     cm,
                 ));
@@ -3255,7 +3351,7 @@ impl Scenario {
     pub fn pre_state(&self, count: u64) -> PreState {
         PreState {
             initialized: count,
-            deployer: self.commitment,
+            deployer: self.commitment(),
             ..Default::default()
         }
     }

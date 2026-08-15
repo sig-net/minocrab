@@ -20,6 +20,15 @@
 //!    `IrSource::check`, so a MinoCrab simulator bug cannot hide a circuit
 //!    bug.
 //!
+//! Since M10 step 4 every property runs BOTH artifacts on each generated
+//! case: the direct port and the optimized fork, each against its own
+//! reference model (`Scenario::with_art`) and its own concretization. The
+//! spec itself is shared and unchanged — that sharing is the honest
+//! statement of "same contract, different constructions", and re-anchoring
+//! PI-equality to the opt reference model is what replaces the compactc
+//! differential once a circuit diverges (see
+//! `tests/erc20_vault_opt_fork.rs`).
+//!
 //! Case count: `PROPTEST_CASES=1000000 cargo test --release` for the
 //! gating run; the default is deliberately modest because the four settle
 //! circuits simulate an in-circuit secp256k1 verification per case.
@@ -33,6 +42,7 @@ use proptest::prelude::*;
 
 mod vault;
 
+use vault::artifact::{Art, Circuit, ARTS};
 use vault::exec::{self, PreState};
 use vault::gen;
 use vault::prims::VmOp;
@@ -63,6 +73,7 @@ fn counter_would_overflow(effects: &[Effect], pre: &PreState) -> bool {
 /// The whole per-case check. Returns `Err(reason)` so proptest reports the
 /// failing scenario rather than panicking inside a helper.
 fn check_case(
+    art: Art,
     ir: &IrSource,
     outcome: &Outcome,
     pre: &PreState,
@@ -121,7 +132,7 @@ fn check_case(
 
     // --- 3. ledger execution: declared effects == computed effects ------
     match exec::run(pre, self_addr, ops) {
-        Ok(ex) => spec::check_effects(outcome.effects(), pre, &ex),
+        Ok(ex) => spec::check_effects(art, outcome.effects(), pre, &ex),
         Err(e) => {
             if counter_would_overflow(outcome.effects(), pre) {
                 Ok(())
@@ -137,77 +148,104 @@ proptest! {
 
     #[test]
     fn initialize_matches_spec((s, count) in gen::initialize()) {
-        let ir = erc20_vault::initialize().ir;
-        let outcome = spec::spec_initialize(&s, count);
-        // initialize reads no kernel.self, so the address is arbitrary.
-        let r = check_case(&ir, &outcome, &s.pre_state(count), &[0u8; 32], &s.ops(count), &s.preimage(count));
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let s = s.clone().with_art(art);
+            let ir = Circuit::Initialize.ir(art);
+            let outcome = spec::spec_initialize(&s, count);
+            // initialize reads no kernel.self, so the address is arbitrary.
+            let r = check_case(art, &ir, &outcome, &s.pre_state(count), &[0u8; 32], &s.ops(count), &s.preimage(count));
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn deposit_matches_spec(d in gen::deposit()) {
-        let ir = erc20_vault::deposit().ir;
-        let outcome = spec::spec_deposit(&d);
-        let r = check_case(&ir, &outcome, &d.pre_state(), &d.self_addr, &d.ops(), &d.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let d = d.clone().with_art(art);
+            let ir = Circuit::Deposit.ir(art);
+            let outcome = spec::spec_deposit(&d);
+            let r = check_case(art, &ir, &outcome, &d.pre_state(), &d.self_addr, &d.ops(), &d.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn approve_router_matches_spec(a in gen::approve()) {
-        let ir = erc20_vault::approve_router().ir;
-        let outcome = spec::spec_approve_router(&a);
-        let r = check_case(&ir, &outcome, &a.pre_state(), &a.self_addr, &a.ops(), &a.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let a = a.clone().with_art(art);
+            let ir = Circuit::ApproveRouter.ir(art);
+            let outcome = spec::spec_approve_router(&a);
+            let r = check_case(art, &ir, &outcome, &a.pre_state(), &a.self_addr, &a.ops(), &a.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn withdraw_matches_spec(w in gen::withdraw()) {
-        let ir = erc20_vault::withdraw().ir;
-        let outcome = spec::spec_withdraw(&w);
-        let r = check_case(&ir, &outcome, &w.pre_state(), &w.self_addr, &w.ops(), &w.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let w = w.clone().with_art(art);
+            let ir = Circuit::Withdraw.ir(art);
+            let outcome = spec::spec_withdraw(&w);
+            let r = check_case(art, &ir, &outcome, &w.pre_state(), &w.self_addr, &w.ops(), &w.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn swap_matches_spec(s in gen::swap()) {
-        let ir = erc20_vault::swap().ir;
-        let outcome = spec::spec_swap(&s);
-        let r = check_case(&ir, &outcome, &s.pre_state(), &s.self_addr, &s.ops(), &s.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let s = s.clone().with_art(art);
+            let ir = Circuit::Swap.ir(art);
+            let outcome = spec::spec_swap(&s);
+            let r = check_case(art, &ir, &outcome, &s.pre_state(), &s.self_addr, &s.ops(), &s.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn claim_matches_spec(c in gen::claim()) {
-        let ir = erc20_vault::claim().ir;
-        let outcome = spec::spec_claim(&c);
-        let ops = c.ops(u8::from(c.found));
-        let pi = c.preimage_with_member(u8::from(c.found));
-        let r = check_case(&ir, &outcome, &c.pre_state(), &c.d.self_addr, &ops, &pi);
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let c = c.clone().with_art(art);
+            let ir = Circuit::Claim.ir(art);
+            let outcome = spec::spec_claim(&c);
+            let ops = c.ops(u8::from(c.found));
+            let pi = c.preimage_with_member(u8::from(c.found));
+            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.d.self_addr, &ops, &pi);
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn complete_withdraw_matches_spec(c in gen::complete_withdraw()) {
-        let ir = erc20_vault::complete_withdraw().ir;
-        let outcome = spec::spec_complete_withdraw(&c);
-        let r = check_case(&ir, &outcome, &c.pre_state(), &c.w.self_addr, &c.ops(), &c.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let c = c.clone().with_art(art);
+            let ir = Circuit::CompleteWithdraw.ir(art);
+            let outcome = spec::spec_complete_withdraw(&c);
+            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.w.self_addr, &c.ops(), &c.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn complete_swap_matches_spec(c in gen::complete_swap()) {
-        let ir = erc20_vault::complete_swap().ir;
-        let outcome = spec::spec_complete_swap(&c);
-        let r = check_case(&ir, &outcome, &c.pre_state(), &c.s.self_addr, &c.ops(), &c.preimage());
-        prop_assert!(r.is_ok(), "{:?}", r);
+        for art in ARTS {
+            let c = c.clone().with_art(art);
+            let ir = Circuit::CompleteSwap.ir(art);
+            let outcome = spec::spec_complete_swap(&c);
+            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.s.self_addr, &c.ops(), &c.preimage());
+            prop_assert!(r.is_ok(), "{art:?}: {r:?}");
+        }
     }
 
     #[test]
     fn refund_matches_spec(r in gen::refund()) {
-        let ir = erc20_vault::refund().ir;
-        let outcome = spec::spec_refund(&r);
-        let self_addr = r.self_addr();
-        let res = check_case(&ir, &outcome, &r.pre_state(), &self_addr, &r.ops(), &r.preimage());
-        prop_assert!(res.is_ok(), "{:?}", res);
+        for art in ARTS {
+            let r = r.clone().with_art(art);
+            let ir = Circuit::Refund.ir(art);
+            let outcome = spec::spec_refund(&r);
+            let self_addr = r.self_addr();
+            let res = check_case(art, &ir, &outcome, &r.pre_state(), &self_addr, &r.ops(), &r.preimage());
+            prop_assert!(res.is_ok(), "{art:?}: {res:?}");
+        }
     }
 }
