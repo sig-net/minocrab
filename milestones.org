@@ -476,3 +476,48 @@ Exit criteria: report reproducible from a clean checkout; the property
 harness green at millions of cases per circuit; the optimized artifact's
 every deviation from compactc framing documented and spec-justified.
 MET — M10 complete.
+
+(M11 — Borsh fixed-width-subset serialization — is being landed in
+stages; design of record notes/borsh-format.org. Its entry appears
+here as stages commit.)
+
+* M12 — Interface crates: import a contract's crate to call it
+(dmd, 2026-08-15: "import someone else's crate and use it for your
+interface while doing a cross contract call, think like how NEAR does
+it... this solves a big compact problem which is the lack of a package
+manager (it would be also great if you could do things like derive
+keys if necessary)")
+Cargo IS the package manager: contract interfaces ship as ordinary
+Rust crates (crates.io/git/path), semver'd. Grounding: the M5
+cross-contract machinery (contract_call + kernel_claim_contract_call,
+the full desugar, differential-green in the xcall suites) is the
+engine; M9's typed args/derives are the interface language. What NEAR
+cannot do and we can: an interface crate is CHECKABLE against the
+deployed artifact (zkir v3 carries the typed I/O schema), so drift is
+a test failure, not a runtime surprise.
+- [ ] Design (notes/interface-crates.org): the #[interface] decorator —
+      NEAR ext_contract-style trait declaring the callee's circuits with
+      typed args/results; expands to typed call builders over the M5
+      desugar (result-limb witnesses, cc-rand, in-circuit
+      transientCommit, effects claim). Entry-point hashes DERIVED from
+      names, comm layout DERIVED from the types — no hand-typed keys
+      ("derive keys" bullet); contract address stays a runtime
+      parameter. Macro thinness rules per M9.
+- [ ] Artifact agreement: machinery asserting an interface crate
+      matches a callee artifact's typed I/O schema (reuse
+      assert_call_compatible / interface-snapshot idioms) — run in the
+      interface crate's OWN test suite against a pinned artifact.
+- [ ] The Compact-interop importer: generate an interface crate from a
+      compactc artifact (contract-info.json + .zkir) — ANY deployed
+      Midnight contract becomes importable, Compact-authored or not.
+      This is the package-manager answer for the existing ecosystem.
+- [ ] Port the proof cases: the hand-written signet interface module
+      (the vault's calls to the Signet singleton) and the xcall
+      experiments re-expressed through interface crates, zero movement
+      on all snapshots/differentials.
+- [ ] Versioning/publishing conventions doc: semver semantics for
+      interface changes (argument reorder = major, by construction),
+      address/verifier-key pinning story, workspace vs published use.
+Exit criteria: the vault calls the Signet singleton through an
+imported interface crate with every gate green; a Compact-only
+artifact imports via the generator; the conventions doc exists.
