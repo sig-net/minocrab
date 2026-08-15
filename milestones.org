@@ -836,7 +836,36 @@ cases) → benchmarks condensed → layout/deeper. EXCLUDE until landed:
 Discloses labels, maps/predicates (M9 6-7). Runs AFTER the closing
 agent's README sections land; keep its voice (show-not-tell, no
 adjectives, honest markers).
-- [ ] The overhaul per the structure above.
+- [X] The overhaul per the structure above.
+      (DONE 2026-08-15 — twelve sections, docs-only (no crate touched,
+      both snapshots untouched). The feature table is 12 rows and EVERY
+      row links the test or document that enforces it; 47 distinct
+      repo-relative link targets, all verified to exist. Safety is the
+      organizing theme: the table leads with the compile_fail
+      disclosure doctest, typed-args-are-constraints and
+      drift-as-test-failure, and §"Safety: what actually stops a
+      mistake" replaces the old trust bullets with the 9M-case harness,
+      the adversarial sweeps and the 0x02 class closed by a bijective
+      format. THREE STRUCTURE ADDITIONS, all showcase: §"The macros are
+      decorators, not a compiler" (dmd's macros story, quoting the
+      thinness test verbatim), and the two M12 stage-7 sections kept
+      and extended — cross-contract unchanged, serialization gained the
+      Borsh-AND-FAB flavor pair and the both-languages parser-generation
+      block (Rust serde+borsh twins, spec/ts, 39 node tests re-run
+      green while writing). §"Porting kit" quotes the real
+      assert_call_compatible over 788 artifacts / 312 contracts.
+      FAIRNESS: five confirmed gaps after auditing eight candidates
+      against the code — arbitrary-bound Uint<0..n>, Opaque, the
+      List/MerkleTree/Set ledger ADTs, the unported kernel+unshielded
+      builtins, and the Agda spec as an assurance gap. THREE REJECTED
+      with evidence: enum exhaustiveness (Compact has no `match`; its
+      enums are Uint<0..k-1>, so the real gap is the bound row),
+      ZKIR 3.x curve breadth (our pinned IrType already carries
+      Curve25519 + secp256r1, and the pinned Compact stdlib exposes
+      only jubjub/secp256k1 — the rest is in flight upstream, so not
+      possible in Compact today either; this CORRECTS the note's
+      tentative VALID) and hardfork targeting. Audit written up in
+      notes/readme-research.org §"As built — M13 fairness audit".)
 Exit criteria: dmd recognizes the README as the feature showcase; every
 factual claim carries its enforcement link.
 

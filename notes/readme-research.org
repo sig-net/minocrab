@@ -70,3 +70,87 @@ by the M13 agent:
 - EXCLUDED per dmd: maturity/official support, toolchain-as-product
   polish, TS runtime (planned later via wasm), "not our own language"
   items.
+
+* As built — M13 fairness audit (2026-08-15)
+Every candidate from milestones M13 and the list above, checked
+against the tree before the README's "What Compact has and MinoCrab
+does not" section was written. Confirmed gaps are the section; the
+rejections are recorded here so the next agent does not re-litigate.
+
+** CONFIRMED — in the README
+- Arbitrary-bound =Uint<0..n>= for non-power-of-two n. Corpus has
+  =Uint<0..10>=, =<0..300>=, =<0..1000>=, =<0..70000>=. Our only leaf
+  is =Uint<BITS>= (minocrab-std/src/v3.rs:109-146), which emits
+  =Prim::Uint { bits }=. The bounded constraint DOES exist on the
+  interop side — =Prim::unsigned= normalizes a non-power-of-two bound
+  to =Prim::UintMax=, whose =constraint()= is
+  =LimbConstraint::Bounded= (minocrab/src/v3/abi.rs:61-92), so an
+  IMPORTED interface argument with such a bound is handled — but no
+  leaf type produces =UintMax=, so you cannot declare one. The README
+  says exactly that split.
+- =Opaque<'ts-type'>=. Real and used: =ledger ciphertexts:
+  Opaque<"Uint8Array">=, =witness set_local_id(participant:
+  Opaque<"string">)=, =Set<Opaque<"string">>=, =Maybe<Opaque<"string">>=
+  in the corpus. We reject it by design in TWO places
+  (minocrab-abi/src/info.rs:243 =TypeError::Opaque=,
+  minocrab-interface-gen/src/lib.rs:240).
+- Ledger ADTs. minocrab-ledger/src/lib.rs has cell/counter/map ops and
+  =set_insert= — nothing else for Set, and NOTHING for List,
+  MerkleTree or HistoricMerkleTree. Corpus ledger declarations: 25
+  List, 15 MerkleTree, 7 HistoricMerkleTree, 41 Set. The merkle PATH
+  circuits are ported (minocrab-std/src/merkle.rs); the tree STATE ops
+  are not.
+- Unported kernel/token builtins. Grep of minocrab-ledger's =pub fn=
+  list + minocrab-std's modules against
+  corpus/src/compact/compiler/standard-library.compact and the
+  corpus's =kernel.*= call sites: missing =checkpoint=,
+  =blockTimeLessThan/GreaterThan= (+ stdlib =blockTimeLt/Lte/Gt/Gte=),
+  the whole unshielded family (=mintUnshielded=, =sendUnshielded=,
+  =receiveUnshielded=, =claimUnshieldedCoinSpend=,
+  =incUnshieldedInputs/Outputs=, =unshieldedBalance*=),
+  =balance/balanceLessThan/balanceGreaterThan=, =sendShielded=,
+  =mergeCoin/mergeCoinImmediate=. Present: =self=, =mintShielded=, the
+  three zswap claims, =claimContractCall=, and the shielded-coin
+  compositions the vault needs (=receiveShielded=, the folded
+  =sendImmediateShielded= burn — compositions in
+  minocrab-contracts::common, not stdlib ports).
+- Agda formal spec. Kept per the VALID marking above, framed as an
+  ASSURANCE gap rather than a capability one, with an explicit "we do
+  not claim formal-verification parity".
+
+** REJECTED — with the evidence
+- Language-level enum exhaustiveness. Compact has NO =match=
+  statement (grep of the corpus: zero matches); its =enum= is a set of
+  named fieldless constants compiled to =Uint<0..k-1>=
+  (minocrab-abi/src/info.rs:269-272, corroborated there by
+  advanced_casts/test17's compiled .zkir). There is no exhaustiveness
+  feature to lack. A plain Rust =enum= gives the names and =Tag<K>=
+  gives the byte + bound. What DOES remain is the non-power-of-two
+  variant count, which is the =Uint<0..n>= row above, so the honest
+  version of this candidate is already in the README.
+- ZKIR 3.x curve/hash breadth. The pinned rev's =IrType= ALREADY
+  carries Curve25519{Point,Base,Scalar} and Secp256r1{Point,Base,Scalar}
+  alongside Jubjub and Secp256k1 (minocrab-ir/src/v3.rs:95-106), and
+  our v3 builder's curve ops are generic over =IrType=. More to the
+  point: the pinned COMPACT stdlib exposes only =jubjubSchnorrVerify=
+  (standard-library.compact) and the secp256k1 family
+  (zkir-v3-library.compact), both of which we have. Curve25519,
+  secp256r1, SHA-512 and RSA (compact#440) are IN FLIGHT upstream, so
+  they are not possible in Compact today either — which fails dmd's
+  rule ("possible in Compact, NOT possible in MinoCrab today"). This
+  CORRECTS the tentative VALID above.
+- Multi-environment/hardfork targeting (compact#568). They are
+  DESIGNING it; not available today, so not a gap by the rule. It is
+  also tooling rather than language, which the note already flagged.
+  Separately, we do emit both ZKIR v2 and v3 (minocrab v2 core +
+  minocrab::v3), and the corpus round-trip covers 722 v2 + 66 v3.
+- Everything under EXCLUDED per dmd above, unchanged.
+
+** Roadmap research, as used
+Only for emphasis, per the tone rules. Two neutral citations survived
+into the README: the package-manager phrasing ("no package manager;
+npm plus relative node_modules paths in practice, and no
+package-manager item on the public roadmap as of Aug 2026"), sourced
+to this file, and the Agda spec. Nothing else from the roadmap
+appears, and there is no "they plan it, we shipped it" sentence
+anywhere in the document.
