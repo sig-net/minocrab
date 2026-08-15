@@ -477,9 +477,59 @@ harness green at millions of cases per circuit; the optimized artifact's
 every deviation from compactc framing documented and spec-justified.
 MET — M10 complete.
 
-(M11 — Borsh fixed-width-subset serialization — is being landed in
-stages; design of record notes/borsh-format.org. Its entry appears
-here as stages commit.)
+* M11 — Borsh (fixed-width subset) serialization
+Design of record: =notes/borsh-format.org=. This IS Borsh, restricted
+to the fixed-width subset and documented as A SUBSET, NOT A SEPARATE
+FORMAT: every byte emitted is valid canonical Borsh for the declared
+types, and any Borsh implementation (borsh-js included) parses it from
+the same declarations. The subset rule is that every circuit-visible
+type has a fixed width, so Maybe ↦ Flagged (bool tag + always-present
+payload), never Option, and no Vec/String/data-enums. serde +
+bincode-fixint emits byte-identical output for the subset, so spec
+types derive both and conformance is a DUAL oracle. One agent per
+stage; usual gates + notes as-built per stage. Stages 0 and 8 have
+external value and no dependency on 1-7.
+- [X] 0. Instruments + oracle, NO circuit changes: borsh/bincode
+      dev-deps; spec types for the DEPLOYED payloads (singleton Misc ×3,
+      both records, four attested outputs, digest preimages);
+      byte-equality against the deployed bytes.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 0".
+      VERDICT: every deployed payload IS the flat layout, byte for byte
+      — both request records (and so the request ids: requestId ==
+      keccak256(borsh(record))), all four attestation digest preimages,
+      and all three singleton Misc payloads, the last verified by
+      handing the borsh envelope to the PINNED COMPACTC ARTIFACT, which
+      accepts it and rejects every single-bit perturbation including in
+      the zero pad. Zero divergences. New suite
+      tests/serialization_conformance.rs, 15 tests, green at default and
+      at PROPTEST_CASES=20000. Corrections to the design: the dual
+      oracle alone is NOT the whole subset checker (Option agrees under
+      both encoders and is caught by the fixed-width property instead),
+      and a Rust fieldless enum is OUTSIDE the dual-oracle subset
+      (bincode-fixint writes a 4-byte variant index) so spec-level tags
+      are u8. Records measured: vault 404 bytes, swap 571 — the number
+      stage 7's estimate is built on.)
+- [ ] 1. v3::borsh core, hand impls (CircuitBorsh, leaves,
+      alignment_of/limbs_of/to_bytes, constrain_canonical, layout).
+      ZKIR byte-equality + P1-P4 per leaf.
+- [ ] 2. BorshReader both modes + cryptocost-style measured per-leaf costs.
+- [ ] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
+- [ ] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
+      movement asserted.
+- [ ] 5. Attested outputs → the flat layout (four settle circuits,
+      +2..+6 rows, deviation-log D6 for the 0x02 semantics + kind byte).
+- [ ] 6. Event payload twins (events_borsh/xcontract_events_borsh)
+      beside the pinned originals.
+- [ ] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
+      swap k16→k15; re-run the 9M gate; refresh BENCHMARK.md.
+- [ ] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,
+      padding rule, Maybe↦Flagged, per-record offset tables GENERATED
+      from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
+      implements against.
+Exit criteria: the spec document and vectors exist and the TS/MPC side
+can implement against them; every in-circuit encoder is byte-equal to
+both oracles at millions of cases; the record change's k movement is
+measured and published.
 
 * M12 — Interface crates: import a contract's crate to call it
 (dmd, 2026-08-15: "import someone else's crate and use it for your
@@ -518,6 +568,14 @@ a test failure, not a runtime surprise.
 - [ ] Versioning/publishing conventions doc: semver semantics for
       interface changes (argument reorder = major, by construction),
       address/verifier-key pinning story, workspace vs published use.
+- [ ] README showcase section: the interface-crate story described in
+      the README with a real snippet (dmd: "the readme is a showcase
+      of our features") — same rule for other landed features as they
+      finish (Borsh subset, predicates, maps).
+Approved by dmd 2026-08-15: the approach as designed, including that
+contract interfaces are STATIC (address is data, interface is
+compile-time) — not a limitation to work around.
 Exit criteria: the vault calls the Signet singleton through an
 imported interface crate with every gate green; a Compact-only
-artifact imports via the generator; the conventions doc exists.
+artifact imports via the generator; the conventions doc exists; the
+README showcases it.
