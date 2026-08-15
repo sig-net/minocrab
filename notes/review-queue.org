@@ -24,11 +24,25 @@ Landed and NOT in this queue because an instrument covers them fully:
 the 87-circuit byte-identical ZKIR dumps (phases 5-8 and the closure),
 both frozen snapshots, and the eleven differential suites.
 Two agents were still running when this was written (M8 churn
-resilience, M14 bounded integers). M8 has since landed and its entry is
-below — read its DRIFT TAXONOMY early, since it is the document a future
+resilience, M14 bounded integers). Both have since landed and their entries are below.
+Read M8's DRIFT TAXONOMY early, since it is the document a future
 session will follow without re-deriving it, and the in-place snapshot
-regenerators it introduces are a new way to lose a baseline. M14's entry
-appends when it lands.
+regenerators it introduces are a new way to lose a baseline. In M14,
+the reviewable part is not the new leaf (its differential is equal to
+compactc up to identifier renaming) but the EXCLUSIVE-BOUND correction
+it forced on three of our own records, and the three width formulas
+that only a bounded type can tell apart.
+
+Housekeeping recorded here so it is not rediscovered: M14's four
+commits carry david@sig.network where the repo default is
+dmillardurrant@gmail.com — cosmetic, both are dmd, no trailers
+anywhere; unfixed because stage 1 sits nine commits down and a rebase
+would rewrite M8's commits too. And target/ reached 26G with the volume
+at 99% (the M14 agent hit zero bytes free and blocked mid-session):
+target/debug alone went 9.9G → 21G when the dev profile started
+building optimized deps. 4.8G of incremental cache was cleared at the
+end of this session; the underlying growth is structural, so a future
+session on a tight volume should expect to clear it again.
 
 * High value (protocol/soundness-adjacent)
 - [ ] f102ffe M10 burn restructure (erc20_vault_opt withdraw/swap):
@@ -339,6 +353,32 @@ reviewer should look at.
       but the recorded remainder: nobody has yet read a corpus diff
       produced by a different compiler, because upstream has not shipped
       one.
+- [ ] M14 (f56ee2b design, af13448 BoundedUint, e08ad8e the correction,
+      7ed49cc README): THE EXCLUSIVE-BOUND CORRECTION is the first thing
+      to check, because it changed prose in three places that had been
+      wrong since M0-era note-taking (notes/builtin-lowering.org §1 and
+      §8, minocrab-abi's "enum → Uint<0..k-1>" line, interface-gen's
+      render) — the claim is that NOTHING COMPILED was affected because
+      Prim::unsigned always took the inclusive maxval the artifact
+      publishes. Verify that claim rather than the prose: if any code path
+      ever derived a bound from a printed type name, it would be wrong in
+      exactly the way the notes were. Second: THREE WIDTHS now diverge
+      where they used to coincide — constraint 2·⌈intlen(n)/2⌉,
+      comparison intlen(n−1), FAB atom ⌈intlen(n−1)/8⌉ (18/17/3 for
+      Uint<0..70000>) — read the two new const fns on Prim against
+      compactc's artifact, since a sized type cannot distinguish them and
+      so no existing test would have caught a wrong formula. Third: the
+      Borsh rule (a bounded int serializes at the next Borsh primitive
+      width up, FAB 3 → wire 4) is a NEW row in the fixed-width subset
+      that spec/borsh-subset.md's prose does not yet describe — check
+      whether the spec needs it before an external team meets a bounded
+      field. The differential itself is self-checking and strong (equal to
+      compactc up to identifier renaming, plus first-illegal/largest-legal
+      acceptance at every arm), so it needs less attention than the above.
+      Also weigh candidate 2 from the agent's for-dmd list, which is a
+      real footgun rather than an ergonomics wish: a literal is
+      range-checked against the COMPARISON width, not the bound, so
+      b.lt(500u64) on a BoundedUint<300> compiles and is always true.
 - [ ] M9 closure (312c8ff, the 32 experiment declarations): the ZKIR is
       byte-identical for all 87, so what deserves eyes is the LABEL
       STRING mapping — every free-string `c.disclose(w, "x (hi)")` pair
