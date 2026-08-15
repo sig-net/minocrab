@@ -19,12 +19,13 @@
 //!
 //! AN INTERFACE CONTAINS NO ADDRESS. `at_field` names a ledger field and
 //! `at` takes one at runtime, which is why a trait here lifts into a
-//! published crate unchanged — which is what happened to `SignetSigner`,
-//! now the `signet-signer-interface` crate and an ordinary dependency of
-//! this one.
+//! published crate unchanged — which is what happened to `SignetSigner`
+//! (now the `signet-signer-interface` crate) and to `XcallTarget` (now
+//! `xcall-target-interface`, GENERATED from the callee's artifact by
+//! `minocrab-interface-gen`). Both are ordinary dependencies of this crate.
 
 use minocrab::Public;
-use minocrab_std::v3::{interface, BytesN, ContractAddress, ShieldedCoinInfo3, Uint, B32};
+use minocrab_std::v3::{interface, ContractAddress, ShieldedCoinInfo3, Uint, B32};
 
 /// The `xcontract-events` token — the one callee in the corpus with a
 /// RETURN VALUE, and so the one that exercises `CallResult`:
@@ -38,27 +39,6 @@ use minocrab_std::v3::{interface, BytesN, ContractAddress, ShieldedCoinInfo3, Ui
 #[interface]
 pub trait Token {
     fn deposit(amount: Uint<128, Public>, caller: ContractAddress<Public>) -> B32<Public>;
-}
-
-/// The `xcall` experiment's target:
-///
-/// ```text
-/// contract Target {
-///   circuit deposit(recipient: Bytes<32>, amount: Uint<128>): [];
-///   circuit depositEmit(recipient: Bytes<32>, amount: Uint<128>): [];
-///   circuit depositBig(data: Bytes<256>): [];
-/// }
-/// ```
-///
-/// `deposit` and `depositEmit` differ ONLY in the entry point claimed —
-/// which is a prover-supplied witness — so the two methods build the same
-/// circuit. That is honest limit #1 of notes/interface-crates.org, visible
-/// in the API and asserted in `tests/xcall_differential.rs`.
-#[interface]
-pub trait XcallTarget {
-    fn deposit(recipient: B32<Public>, amount: Uint<128, Public>);
-    fn deposit_emit(recipient: B32<Public>, amount: Uint<128, Public>);
-    fn deposit_big(data: BytesN<Public, 256>);
 }
 
 /// The `xcall-with-payment` target:

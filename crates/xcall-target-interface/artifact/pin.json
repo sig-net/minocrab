@@ -1,0 +1,48 @@
+{
+  "source": "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "contract-info-sha256": "a65b0b3f04966aeec80aa9c79f16311e93826e6dc37b28be4dd87a1c19b321cf",
+  "circuits": {
+    "deposit": {
+      "proof": true,
+      "zkir-sha256": "0154eac934c2cfde5863d73317ef8a5c2554447e774df0c9f32167ba89cd6aee",
+      "inputs": 3,
+      "do-communications-commitment": true,
+      "constraints": [
+        "bits:8",
+        "bits:248",
+        "bits:128"
+      ]
+    },
+    "depositBig": {
+      "proof": true,
+      "zkir-sha256": "70b3681ed5987c7f5dca17d32daa554c141a9f8b39e47e9579c62d4f102da5e6",
+      "inputs": 9,
+      "do-communications-commitment": true,
+      "constraints": [
+        "bits:64",
+        "bits:248",
+        "bits:248",
+        "bits:248",
+        "bits:248",
+        "bits:248",
+        "bits:248",
+        "bits:248",
+        "bits:248"
+      ]
+    },
+    "depositEmit": {
+      "proof": true,
+      "zkir-sha256": "ebfcd7be3f6a5d59851b032d896b91049eacb4db470b7c381c0dfe84d8fa6470",
+      "inputs": 3,
+      "do-communications-commitment": true,
+      "constraints": [
+        "bits:8",
+        "bits:248",
+        "bits:128"
+      ]
+    }
+  }
+}

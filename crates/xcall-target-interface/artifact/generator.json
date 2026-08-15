@@ -1,0 +1,5 @@
+{
+  "interface": "XcallTarget",
+  "summary": "the xcall experiment's target contract, importable from its compiled artifact alone.",
+  "source": "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target"
+}

@@ -134,3 +134,13 @@ reviewer should look at.
       stage 1's stated justification for `Tag<K>` emitting none is wrong —
       confirm the conclusion still holds for `Tag<K>`'s actual position (a
       Borsh-decoded witness, not an argument), since nothing was changed.
+- [ ] M12 stage 5 (minocrab-interface-gen): the TYPE-MAPPING TABLE is the
+      thing to read (crates/minocrab-interface-gen/src/lib.rs
+      `Registry::rust_type`) — a wrong row generates a crate that compiles,
+      passes its own agreement test only if the artifact agrees, and is
+      wrong at a call site otherwise; check especially the Maybe/Either
+      name+shape matches (the shape guard only inspects the TAG field) and
+      the `at_public` identifier substitution. Also `import_list`'s
+      reproduction of rustfmt's three case groups (cosmetic, but it is the
+      reason `--check` stays green) and `names::snake_case`'s round-trip
+      test, which decides when an explicit #[entry_point] is emitted.

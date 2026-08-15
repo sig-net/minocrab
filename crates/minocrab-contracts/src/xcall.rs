@@ -34,8 +34,9 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::{BytesN, Uint, B32};
 
+use xcall_target_interface::XcallTarget;
+
 use crate::events;
-use crate::interfaces::XcallTarget;
 
 /// Caller ledger fields, in declaration order.
 pub const TARGET: u8 = 0;

@@ -11,9 +11,11 @@ members = [
     "crates/minocrab-sim",
     "crates/minocrab-bench",
     "crates/minocrab-abi",
+    "crates/minocrab-interface-gen",
     # Interface crates (M12): one per callee contract, each a
     # hand-authored-or-generated declaration plus its pinned artifact.
     "crates/signet-signer-interface",
+    "crates/xcall-target-interface",
 ]
 
 [workspace.package]

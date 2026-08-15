@@ -662,7 +662,7 @@ a test failure, not a runtime surprise.
       matches a callee artifact's typed I/O schema (reuse
       assert_call_compatible / interface-snapshot idioms) — run in the
       interface crate's OWN test suite against a pinned artifact.
-- [ ] The Compact-interop importer: generate an interface crate from a
+- [X] The Compact-interop importer: generate an interface crate from a
       compactc artifact (contract-info.json + .zkir) — ANY deployed
       Midnight contract becomes importable, Compact-authored or not.
       This is the package-manager answer for the existing ecosystem.
@@ -698,8 +698,11 @@ gates every stage: both snapshots bit-identical, all suites green):
       artifact + mutation test + schema snapshot; the three vault
       artifacts call signBidirectional through the imported crate at
       zero movement (two import lines changed per artifact).
-- [ ] 5. minocrab-interface-gen (byte-for-byte regeneration of stage
-      4's crate; a Compact-only contract imported).
+- [X] 5. minocrab-interface-gen (regenerating stage 4's hand-authored
+      crate reproduced every declaration byte for byte — only the doc
+      wrapping moved; the xcall target, a Compact-only contract with no
+      port, imported and its callers re-expressed at zero movement;
+      --check wired as a test).
 - [ ] 6. Callee-side export + contract_matches_its_interface.
 - [ ] 7. README showcase + tick M12.
 Approved by dmd 2026-08-15: the approach as designed, including that

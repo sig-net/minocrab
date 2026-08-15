@@ -535,3 +535,91 @@ says so.
   =RequestId<Public>= mentions =Public=. An alias that BAKED IN a
   visibility would be rejected with a misleading message — the hazard the
   review queue already flags for stage 3.
+
+* As built — stage 5 (2026-08-15)
+=minocrab-interface-gen=: a compactc artifact becomes an interface crate.
+row_snapshot and interface_snapshot bit-identical, all differential suites
+green, workspace release suite clean (67 test binaries).
+
+** THE ACCEPTANCE RESULT: THE GENERATOR MATCHED THE HUMAN EXACTLY, and the
+human moved only on prose
+Regenerating =signet-signer-interface= — hand-authored in stage 4, before
+this generator existed — reproduced stage 4's =src/lib.rs= with the ONLY
+differences being doc-comment line wrapping in the crate header (the
+generator's greedy wrap chose different break points) and the =use= list's
+order. Every declaration was byte-identical: the =RequestId= alias, all five
+structs with their field names and types in order, the =contract { … }=
+block, and all three method signatures including the wrapped-parameter
+formatting. WHICH SIDE MOVED: the human's file (the committed =src/lib.rs=
+is now the generator's output, wrapping and all) plus one generator fix —
+its =use=-list order was byte-sorted where rustfmt's is three case groups
+(no-uppercase, mixed, no-lowercase), which is why =B32= sorts LAST rather
+than first. The generator now reproduces rustfmt's order and the generated
+files are =cargo fmt=-clean without shelling out to rustfmt, which would
+have made byte reproducibility depend on a toolchain version.
+Nothing about the TYPES moved on either side, which is the result that
+matters: the mechanical part of an interface crate is mechanical.
+
+** THE SECOND ACCEPTANCE: A CONTRACT NOBODY PORTED
+=crates/xcall-target-interface= is generated from
+=corpus/zkir/…/xcall/contract/src/target= — a Compact-only contract with no
+MinoCrab implementation anywhere in this workspace. =xcall.rs= now calls it
+through the GENERATED crate (one import line changed; =XcallTarget= left
+=minocrab_contracts::interfaces=), and =callOnce=, =callTwice=, =callBig=
+and =callEmit= are unchanged: same rows, same ZKIR, same differentials. The
+crate carries the same agreement suite as the hand-authored one, so a
+contract we did not write and cannot rebuild stays checked against the
+artifact it was imported from.
+
+** =--check= IS A TEST, NOT A HABIT
+=crates/minocrab-interface-gen/tests/regenerate.rs= regenerates EVERY crate
+carrying an =artifact/generator.json= and compares byte for byte, reporting
+the first differing line. That is what makes committing generated source
+safe: hand-editing a generated file, or re-pinning an artifact without
+regenerating, fails in CI.
+
+** =artifact/generator.json=: the invocation, committed
+=interface= (the handle's name — =contract-info.json= does NOT carry the
+contract's own name, so it has to be recorded), =summary= (one sentence for
+the crate docs), =source=, and optionally =modules= (hand-written modules
+the crate also declares — =signet-signer-interface='s =notification=),
+=circuits= (a subset, in order), and =from-caller=.
+The =modules= key is what lets =src/lib.rs= be FULLY generated while the
+crate still carries hand-written code: a constructor is Compact source and
+no artifact has one, so it lives in its own module and =lib.rs= declares it
+from the config.
+
+** =--from-caller=: a callee is importable from its CALLER's artifact
+A caller's =contract-info.json= carries a =contracts[]= entry — the
+=contract Target { … }= block it was compiled against — with every circuit's
+argument TYPES but no argument NAMES. The generator reads it and names the
+parameters positionally (=arg0=, =arg1=). It means a deployed contract can
+be imported by anyone who has any caller's artifact, not only the callee's.
+
+** THE TYPE-MAPPING TABLE, and what it REFUSES
+=Bytes<n≤31>= → =Bytes<n, V>=; =Bytes<32>= → =B32<V>=; =Bytes<n>32>= →
+=BytesN<V, n>=; =Uint<0..2^k−1>= → =Uint<k, V>=; =Boolean= → =Bool<V>=;
+=Vector<n, T>= → =[T; n]=; =Alias= → a =pub type=; =Enum= over 2^k names →
+=Uint<k, V>=; other structs → a generated =#[derive(Clone, CircuitArg)]=
+struct, deduplicated by name, with the SAME NAME AND A DIFFERENT SHAPE an
+error rather than a silent pick.
+=ContractAddress=, =Maybe= and =Either= are matched by NAME AND SHAPE
+against the stdlib's own types and declare nothing — and the shape half is
+load-bearing: a struct that merely calls itself =ContractAddress= and holds
+20 bytes is a different type and gets generated.
+Refused, each with a reason: =Opaque= (no in-circuit representation),
+=Contract= as a value, a non-empty =Tuple= (name the fields with a struct),
+a bare =Field= and a =Uint= or =Enum= whose bound is a =less_than= rather
+than a bit width — the last two for the same reason, that NO MINOCRAB LEAF
+TYPE CARRIES THOSE CONSTRAINTS. (The design left the =less_than= case behind
+an =--allow-bounded= flag; the flag is not offered, because there is nothing
+for it to generate.)
+
+** NAMES ARE A BIJECTION, OR THE ENTRY POINT IS PINNED BY HAND
+=snake_case= is the inverse of the =lower_camel_case= rule =#[interface]=
+and =#[derive(CircuitArg)]= share, and the generator CHECKS the round trip
+per circuit: where it does not close — a Compact circuit spelled
+=sign_bidirectional=, or an acronym run like =toEVMAddress= — it emits an
+explicit =#[entry_point(name = "…")]= rather than a name that would hash to
+a different entry point. None of the six corpus circuits generated here
+needs one, which is more evidence the mechanical rule is right.

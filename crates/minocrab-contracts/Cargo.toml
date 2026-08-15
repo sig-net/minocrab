@@ -14,6 +14,10 @@ minocrab-ledger = { path = "../minocrab-ledger" }
 # transliteration kept here. Ordinary cargo dependency — that is the whole
 # point of the mechanism.
 signet-signer-interface = { path = "../signet-signer-interface" }
+# A GENERATED interface crate (M12 stage 5): nothing here implements the
+# xcall target, and nothing needs to — the crate was produced from its
+# compiled artifact by minocrab-interface-gen.
+xcall-target-interface = { path = "../xcall-target-interface" }
 
 [dev-dependencies]
 # The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated

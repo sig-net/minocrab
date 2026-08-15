@@ -13,9 +13,10 @@
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{Public, Visibility};
-use minocrab_contracts::interfaces::{PaymentTarget, Token, XcallTarget};
+use minocrab_contracts::interfaces::{PaymentTarget, Token};
 use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::{SignBidirectionalEventNotification, SignetSigner};
+use xcall_target_interface::XcallTarget;
 use minocrab_contracts::{xcall, xcontract_events};
 use minocrab_ledger::{call, ep_hash, Callee, EntryPoint};
 use minocrab_std::v3::{BytesN, ContractAddress, ShieldedCoinInfo3, Uint, B32};
