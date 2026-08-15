@@ -1033,3 +1033,12 @@ contract is to be PRESENTED FOR DISCUSSION before integration into
 the rest of the stack — therefore M11 STAGE 7 (the record change) is
 HELD: designed + measured, not implemented, until after that
 discussion. Nothing else blocks on it.
+
+* Stage 10 (dmd 2026-08-15): TypeScript parser codegen
+Generate TS reader/writer code from CircuitBorsh::layout() (fixed
+offsets → DataView accessors, the dependency-free form the design
+already promised) into spec/ts/, validated against spec/vectors/*.json
+(vector-driven tests; borsh-js remains the alternative for teams that
+prefer a library). Rust-side native parsing already exists via the
+serde+borsh derives on the same type declarations. README (M13) may
+then claim native parser generation in BOTH languages.

@@ -736,3 +736,14 @@ adjectives, honest markers).
 - [ ] The overhaul per the structure above.
 Exit criteria: dmd recognizes the README as the feature showcase; every
 factual claim carries its enforcement link.
+
+M13 additions (dmd): include the MACROS story (thin decorators over
+hand-writable impls, tooling-friendly — bodies moved not rewritten);
+FOCUS HEAVILY ON SAFETY (typed args = range constraints, disclosure
+tracking, drift-as-test-failure, bijective serialization closing the
+0x02 class, the 9M-case harness — safety is the organizing theme, perf
+second); mention BOTH Borsh AND FAB support (Borsh default, _compact
+flavors + FAB compat ports — we speak both); NATIVE PARSER GENERATION
+in Rust (serde+borsh derives from the same types) and TypeScript (see
+M11 stage 10); check the COMPACT ROADMAP and emphasize anything big we
+already have (research task feeding the M13 agent).
