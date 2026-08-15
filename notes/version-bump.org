@@ -1,0 +1,530 @@
+#+title: Version bumps: the checklist, the instruments, and what a failure means (M8)
+
+The M8 deliverable: moving a pin is a chore, not a project. This file is the
+procedure; =../bump.sh= is the procedure made runnable. Read §"Drift
+taxonomy" when something fires — that is the part with the value in it.
+
+Everything below was exercised on 2026-08-15 against real upstream state;
+§"Dry run" records what actually happened, including the two bumps that were
+attempted and rejected.
+
+* The four pins
+There are exactly four things that can move underneath us, and they move
+independently.
+
+| pin | where | controls |
+|-----+-------+----------|
+| compactc release | =flake.nix= =compactcVersion= + =compactcHashes= | the compiler that produces =corpus/zkir/= — every differential's other side, plus the bundled =zkir= / =zkir-v3= binaries |
+| midnight-* crate rev | =Cargo.toml= =[workspace.dependencies]= (one rev, ~11 crates) + =[patch.crates-io]= | our ZKIR types, the Impact op set, the reference VM, =Transaction::well_formed= |
+| corpus source revs | =corpus/sources.json= (=corpus/update.sh=) | which contracts the corpus holds |
+| rustc | =flake.nix= =rust-bin.stable.latest= — *floating*, no version pinned | the language level; see Hazard 6 |
+
+The first two are coupled and the coupling is the whole hazard surface: the
+crates must describe the ZKIR that the *binaries* speak. Hazard 1.
+
+* The checklist
+Run everything inside the direnv/nix shell (=nix develop -c …= also works).
+Nix supplies BINARIES ONLY; every build is plain cargo.
+
+** 0. Look before touching anything
+#+begin_src sh
+./bump.sh pins
+#+end_src
+Prints, on one screen: our four pins and the tool version strings; the
+midnight-ledger revs the *pinned compactc release* was itself built from
+(read out of that release tag's own =flake.lock=); whether a newer compactc
+release exists; how midnight-ledger =main= relates to our rev; and which
+corpus sources have moved. Needs network.
+
+** 1. Move the pin
+*** compactc
+#+begin_src sh
+# the new hash, verified reproducible 2026-08-15 (5.6s, hits the nix store):
+nix store prefetch-file --json --hash-type sha256 \
+  "https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v<V>/compactc_v<V>_aarch64-darwin.zip" \
+  | jq -r .hash
+#+end_src
+Edit =compactcVersion= and the per-arch entry in =compactcHashes=
+(=notes/zkir.org= §"Option B" carries the older hashes and the URL scheme).
+Then =direnv reload= (or re-enter =nix develop=) and check =compactc
+--version= — bearing in mind Hazard 2.
+
+*** midnight-* crates
+One rev, everywhere:
+#+begin_src sh
+sed -i '' 's/<old-rev>/<new-rev>/g' Cargo.toml   # 11 workspace deps + 2 [patch] lines
+cargo metadata --format-version 1 >/dev/null     # resolve only; seconds
+#+end_src
+=[patch.crates-io]= must move with them (Hazard 4). Do NOT split the rev
+across crates: every =midnight-*= dep shares one rev so their =Fr=,
+=ProofPreimage= and =IrSource= types unify (Hazard 3).
+
+*** corpus sources
+#+begin_src sh
+./corpus/update.sh [name]     # repin to upstream HEAD, refetch, recompile
+#+end_src
+
+** 2. Recompile the corpus — compactc bumps only
+#+begin_src sh
+./corpus/compile.sh           # ~312 contracts; rewrites corpus/zkir/ + compile-report.tsv
+#+end_src
+Nothing else regenerates the other side of the differentials. A crate-rev
+bump does not need this; a corpus-source bump does it for you.
+
+** 3. Run the gates
+#+begin_src sh
+./bump.sh gates               # add --heavy for the elevated property run
+#+end_src
+Ordered by diagnosis value, cheapest first, with a PASS/FAIL/seconds summary
+and, on failure, the taxonomy line for whatever fired. It aborts immediately
+if the pin does not even resolve, since every later stage would only reprint
+the same cargo error.
+
+** 4. Read the taxonomy
+§"Drift taxonomy" below. Each instrument's failure has exactly one of four
+correct responses: ACCEPT the new baseline / FIX OUR LOWERING / REPIN /
+INVESTIGATE UPSTREAM. Deciding which is the only part of a bump that is not
+mechanical.
+
+** 5. Accept the new baseline — only what step 4 justified
+#+begin_src sh
+./bump.sh accept              # every regenerator, in dependency order
+./bump.sh gates               # and prove it
+#+end_src
+See §"Accepting a new baseline".
+
+** 6. Numbers, if they moved
+=./bench.sh= then refresh =BENCHMARK.md=. This is publishing, not a gate: no
+bump is blocked on it, but a bump that moved =k= for any benchmarked circuit
+leaves the published table wrong.
+
+** 7. Commit shape
+Two commits, not one: the *pin* (=flake.nix= / =Cargo.toml= / =Cargo.lock= /
+=corpus/=) and the *accepted baselines* (snapshots, pins, spec, generated
+crates). The second commit's message is where the reasons from step 4 go —
+one line per moved instrument. A reviewer must be able to read the baseline
+commit alone and know why each number moved.
+
+* Drift taxonomy
+What each instrument is, what a failure MEANS after a bump, and the response.
+
+** 1. Dependency resolution — =cargo metadata=
+Seconds. Fails when the new rev does not provide a crate we name.
+- MEANS: upstream renamed, split or dropped a crate.
+- RESPONSE: INVESTIGATE UPSTREAM — find the new name and decide whether the
+  rename is the whole change or the visible edge of a bigger one. Observed
+  for real: =midnight-ledger-v9= is =midnight-ledger= at main HEAD (dry run
+  B).
+
+** 2. Corpus compile report — =corpus/compile-report.tsv=
+The gate compares the OK count against =git show HEAD:=. 312 ok / 166 fail
+today.
+- FEWER ok MEANS: the new compiler rejects contracts the old one accepted —
+  a language-level break (a pragma range, a removed builtin, a stricter
+  check). The failures are *data*, not bugs to fix in the corpus: read the
+  new first-error lines in the report diff.
+- MORE ok MEANS: the new compiler accepts contracts that used to fail —
+  usually good, and it means the corpus grew new artifacts that everything
+  downstream now sweeps.
+- RESPONSE: ACCEPT (commit the report) once you can say which class each
+  moved line is in. If a *sig-net* contract stopped compiling, stop: that is
+  a REPIN decision, because those contracts are the benchmark and the ports.
+
+** 3. ZKIR round-trip — =cargo test -p minocrab-zkir=
+Parses, re-emits and re-parses all 788 =.zkir= in the corpus (722 v2 + 66
+v3), plus =toolchain_accepts= (a hand-built circuit through =zkir
+mock-compile=, skipped when =zkir= is off PATH).
+- MEANS: compactc's own output no longer round-trips through our bindings —
+  the JSON envelope, an instruction's field set, or the instruction set
+  itself moved. This is the most fundamental instrument in the tree: if it
+  is red, nothing downstream tells you anything new.
+- RESPONSE: FIX OUR LOWERING (the bindings in =crates/minocrab-zkir=), never
+  regenerate anything. If the change is large, REPIN and wait: a
+  pre-release toolchain is allowed to move the IR.
+
+** 4. ABI + Impact baseline — =cargo test -p minocrab-ledger=
+=entry_point.rs= sweeps every =contract-info.json= under =corpus/zkir= (312
+contracts, 618 circuit names) through the entry-point hash rule;
+=differential_baseline.rs= is the noop/base Impact op stream.
+- MEANS: =contract-info.json='s shape, the entry-point hash rule, or the
+  Impact op encoding moved.
+- RESPONSE: FIX OUR LOWERING. Everything cross-contract is downstream of
+  this — the interface crates' six checks, =contract_call='s commitment, the
+  vault's calls to the Signet singleton — so fix it here before reading any
+  other failure.
+
+** 5. The differential suites — 14 test targets named =*differential*=
+Our circuit vs compactc's artifact for the same contract: same typed I/O
+schema, equal =Preprocessed::pis= / =pi_skips= on a shared =ProofPreimage=
+(=notes/ledger-abi.org=). Instruction streams are free to differ.
+- MEANS: our lowering and the new compactc's disagree about the STATEMENT.
+  A bump can cause this legitimately — the compiler changed how it frames
+  something — and it is the one failure class that is never "accept".
+- RESPONSE: FIX OUR LOWERING, or REPIN if the new framing is a pre-release
+  experiment. Read the failing side first: a *schema* mismatch is an
+  argument-list change (see 8), a *pis* mismatch is a framing change.
+- NOT covered here: =erc20_vault_opt=, =_borsh= and =_modern= diverged from
+  compactc deliberately (M10/M11). Their gate is the fork ledger
+  (=erc20_vault_*_fork.rs=) plus the spec harness, so a compactc bump cannot
+  move them; only their own reference model can.
+
+** 6. Artifact agreement + the pins — the interface crates
+=crates/{signet-signer-interface,xcall-target-interface}/tests/artifact_agreement.rs=:
+the committed =artifact/pin.json= must be the distillation of the corpus
+artifact, its digests must match the bytes, and every declared circuit must
+pass the six checks against the compiled =.zkir=. Nine mutation cases prove
+the checker bites.
+- Digest/pin failure MEANS: the corpus was recompiled, i.e. exactly what a
+  compactc bump does. RESPONSE: ACCEPT — =./bump.sh accept= re-copies
+  =contract-info.json= and re-distills the pin.
+- =every_declared_circuit_matches_the_artifact= failure MEANS something
+  else entirely: the callee's ARGUMENT LAYOUT moved. RESPONSE: this is a
+  semver event for the published interface crate, not a regeneration; see
+  =notes/interface-crates.org= §Versioning.
+- =pin.json= also records =compiler_version= / =language_version= /
+  =runtime_version= — after a compactc bump those three fields are the
+  cheapest confirmation that the artifact really was rebuilt.
+
+** 7. Codegen check — =cargo test -p minocrab-interface-gen=
+Regenerates every crate carrying =artifact/generator.json= and compares byte
+for byte with the committed =src/lib.rs=.
+- MEANS: the artifact changed and the generated crate was not regenerated
+  (or someone hand-edited it).
+- RESPONSE: ACCEPT via =./bump.sh accept= step 3 — but only after 6 is
+  understood, because the generator's input is the artifact.
+
+** 8. Interface snapshot — 87 circuits' ordered (label, type) lists
+=crates/minocrab-contracts/tests/interface_snapshot.rs=.
+- MEANS: an argument, output or witness read moved, was renamed or was
+  inserted. A toolchain bump reaches this only through OUR code (a stdlib
+  port changing shape), so after a pure pin move this firing is a surprise
+  and deserves the investigation.
+- RESPONSE: ACCEPT only with a written reason per line; argument order feeds
+  the communications commitment, so movement breaks deployed callers.
+
+** 9. Row snapshot — =(k, rows)= for 87 circuits, =--release=
+=crates/minocrab-contracts/tests/row_snapshot.rs=. The M7 note calls this
+M8's asset and it is: a toolchain bump that changes lowering shows up as a
+moved row count per circuit.
+- MEANS: cost changed. After a compactc bump the corpus side may move
+  without our side moving at all (the snapshot prices OUR circuits) — so a
+  moved row here after a *pin-only* change means our own lowering depends on
+  something in the crates that moved.
+- RESPONSE: ACCEPT with a per-circuit reason, and re-run =./bench.sh= if any
+  =k= crossed. BLIND SPOT (measured, =notes/const-generics.org=): an extra
+  =Copy= of an immediate costs 0 rows, so this instrument cannot see one.
+  Instruction-stream identity is an argument you make by reading a dump.
+
+** 10. Spec, vectors and TypeScript — =serialization_conformance=
+Three drift tests: the generated region of =spec/borsh-subset.md=, every
+=spec/vectors/*.json= byte for byte (and the directory holding exactly the
+generated names), and every file in =spec/ts/=. Plus the node suite (39
+tests) behind =--ignored the_typescript_vectors_pass=.
+- MEANS: the schema walk's output moved. A toolchain bump cannot cause this
+  — the generator's input is OUR spec types, not compactc — so this firing
+  after a pin move means something in =borsh=/=bincode= moved instead.
+- RESPONSE: INVESTIGATE first, then ACCEPT. These files are what the TS and
+  MPC sides implement against; a silent regeneration is a published format
+  change.
+
+** 11. The spec/adversarial property harness
+=erc20_vault_spec.rs= (9 circuits) and =erc20_vault_adversarial.rs= (19),
+=PROPTEST_CASES= scaled by =./bump.sh gates --heavy=.
+- MEANS: the ledger semantics our reference model executes against changed —
+  this is the crate-rev bump's instrument, since the model runs op streams
+  through the pinned =QueryContext::query=.
+- RESPONSE: FIX OUR LOWERING or the model, never the assertion. A failing
+  case here is the harness doing its job; the M10 notes record two real bugs
+  it found.
+
+** 12. Bench — =./bench.sh=
+Not a gate. Proving time and RSS, three artifacts. Run it when 9 moved a
+=k=; its output changes =BENCHMARK.md=, which is a published claim.
+
+* Known hazards
+** Hazard 1 — a version string is not a rev (the M1 trap)
+The =ledger-9.1.0.0-rc.3= tag's =zkir-v3= says version =3.0.0-rc.2= and so
+does the =zkir-v3= binary in our compactc zip — and they are *different
+code*. That cost an M1 session; it is why every =midnight-*= dep pins a
+40-character rev and never a tag.
+
+The authority is not the version string and not the branch: it is *the rev
+the compact release's own =flake.lock= pins for the binaries it ships*.
+=./bump.sh pins= prints it. Today (2026-08-15) it reads:
+
+: onchain-runtime-v4  4823b5351b17cc49e30f19760dbd30a73cf95e22  ledger-9.1.0.0-rc.3
+: zkir                4823b5351b17cc49e30f19760dbd30a73cf95e22  ledger-9.1.0.0-rc.3
+: zkir-v3             b17df9d100812bfb2621a3e342108158e3c6b412  -
+: zkir-v3-wasm        b17df9d100812bfb2621a3e342108158e3c6b412  -
+: zkir-wasm           4823b5351b17cc49e30f19760dbd30a73cf95e22  ledger-9.1.0.0-rc.3
+
+We pin ONE rev (=04c9c5d9=) where upstream pins two, because all
+=midnight-*= crates must share a rev for their types to unify. So our pin
+cannot equal both — and in fact equals neither: =04c9c5d9= is 2026-07-31,
+sixteen days AFTER the =compactc-v0.33.0-rc.2= release, chosen in M1 because
+it is what the compact flake pinned *on main* at the time and its =zkir-v3=
+matches the binary's =3.0.0-rc.2= where the rc.3 tag's did not. What makes
+that safe is not the rev choice but instrument 3: 788 of compactc's own
+artifacts round-trip through these bindings, and 14 differential suites
+agree with its lowering. The rev is a hypothesis; the corpus is the proof.
+
+** Hazard 2 — =compactc --version= drops the pre-release suffix
+The binary from =compactc-v0.33.0-rc.2= reports =0.33.0=. It cannot
+distinguish rc.2 from a future final 0.33.0, so never use it to confirm a
+bump landed; use =flake.nix= and the nix store path.
+
+** Hazard 3 — one rev for every midnight-* crate
+=Fr=, =ProofPreimage= and =IrSource= cross crate boundaries constantly. Two
+revs in the graph gives two incompatible =Fr= types and an error message
+that names the same type twice. If a bump forces a split, it is not a bump.
+
+** Hazard 4 — the =[patch.crates-io]= mirror
+=midnight-zkir= depends on =transient-crypto-old= ^2.2.0, never published to
+crates.io. We mirror midnight-ledger's own workspace patches:
+=midnight-transient-crypto= from tag =transient-crypto-2.2.0-rc.1=, and
+=serialize= / =base-crypto= forced onto the pinned rev so old and new
+transient-crypto share one set of core types. The patch block moves with the
+rev — check upstream's own root =Cargo.toml= =[patch]= section at the new
+rev and mirror it again. When it goes stale cargo does NOT fail; it warns
+=patch `midnight-transient-crypto v2.2.0 (…)` was not used in the crate
+graph= and carries on with the unpatched dependency. Dry run B printed
+exactly that. Grep the build log for =was not used in the crate graph= after
+any rev bump.
+
+** Hazard 5 — per-source =--feature-zkir-v3=
+The three sig-net sources carry =flags: ["--feature-zkir-v3"]= in
+=corpus/sources.json=; everything else compiles v2. A toolchain that renames
+the flag, or makes v3 the default, silently changes which IR 66 corpus
+artifacts are in — visible as a mass round-trip or differential change, not
+as a compile failure. Check the flag against the new release notes before
+blaming the bindings.
+
+** Hazard 6 — rustc floats
+=flake.nix= pins =rust-bin.stable.latest.default=, i.e. whatever stable is
+current when the flake inputs are updated (1.97.1 today). =nix flake update=
+can therefore move the compiler with no diff in our files. Nothing in the
+tree needs a feature newer than min-const-generics, but
+=notes/const-generics.org= §"Toolchain caveat" lists designs that would be
+revisited if =generic_const_exprs= stabilised.
+
+** Hazard 7 — direnv does not follow a git worktree
+A dry run in =git worktree= gets no toolchain: =.envrc= is untrusted at the
+new path, so =cargo: command not found=. Export the environment from the
+main checkout FIRST and then =cd=, or use =nix develop -c=. Cost of learning
+this the hard way: one wasted gate run (dry run B).
+
+** Hazard 8 — a diff that is not the bump
+Two now fixed, both found by dry run A: =corpus/compile.sh= sorted its
+report in the caller's locale (26 lines of churn on any recompile, since
+en_US collation ignores =.= and =_=), and =corpus/update.sh= reformatted
+=sources.json= through jq. The report now sorts under =LC_ALL=C= and
+=sources.json= is stored in jq's own formatting, so a corpus bump's diff is
+the revs and the artifacts.
+
+* Accepting a new baseline
+=./bump.sh accept= runs every regenerator in dependency order, because after
+a real bump several move together and regenerating them one at a time is how
+a session ends with a half-accepted tree:
+
+1. re-copy each interface crate's =artifact/contract-info.json= from the
+   corpus (nothing else does this — =Pin::distill= reads the corpus but the
+   committed copy is the crate's own);
+2. =regenerate_pin_and_schema= per interface crate;
+3. =minocrab-interface-gen --crate= per generated crate;
+4. =regenerate_spec= — =spec/borsh-subset.md='s generated region,
+   =spec/vectors/*.json=, =spec/ts/=;
+5. =regenerate_row_snapshot= and =regenerate_interface_snapshot=
+   (=--release=; it prices 87 circuits).
+
+Then it prints =git status --short= and says the only thing that matters:
+every line of that diff needs a reason before it is committed.
+
+The two snapshot regenerators WRITE their tables in place now (M8) rather
+than printing them for a human to paste — the table sits between =GENERATED
+BEGIN= / =GENERATED END= markers and =support::rewrite_generated_region=
+splices it. Verified 2026-08-15: regenerating at HEAD reproduces both
+committed tables byte for byte.
+
+NOT regenerated, deliberately: =LAYOUT_SNAPSHOT= in
+=serialization_conformance.rs= (=print_layout_snapshot= still prints). It
+freezes the Borsh spec types' own layout, which no toolchain bump can move —
+only our own type definitions can, and that is a code review, not a chore.
+
+* Dry run — 2026-08-15
+Timings from an M4 Mac with a warm build cache unless stated.
+
+** Baseline, before anything moved
+| =cargo test --workspace= | 469 passed / 0 failed / 27 ignored | 1m50s |
+| =cargo test --release … row_snapshot= | 1 passed, table unmoved | 1m25s |
+
+** What upstream actually offers (=./bump.sh pins=)
+- *compactc: nothing newer exists.* The newest release of
+  LFDT-Minokawa/compact is still =compactc-v0.33.0-rc.2= (2026-07-15), the
+  one we pin. Three =compactc-dev-<sha>= pre-releases predate it. So the
+  toolchain bump this milestone is about could not be performed for real —
+  there is nothing to bump to.
+- *midnight-ledger main HEAD =c0d37686= (2026-08-14) has DIVERGED from our
+  pin*, it is not ahead of it. Merge base =d34a6723= (2026-06-25); main
+  carries 85 commits we do not have, our rev carries 342 that main does not.
+  Our pin is on the line the compact toolchain builds from, not on main.
+- *Corpus: two sources moved* — =example-counter= and =example-bboard=.
+  Everything else, including all three sig-net repos and the compact repo
+  itself, is at its pinned rev.
+
+** Exercise A — the corpus source bump (performed, then reverted)
+#+begin_src sh
+./corpus/update.sh example-counter    # 2.0s
+./corpus/update.sh example-bboard     # 2.0s
+#+end_src
+: >> example-counter -> 273f083ab36a
+:    1 files (+0 negative, +0 extra)
+: compiled 1/1 OK
+: >> example-bboard -> b687a824fad0
+:    1 files (+0 negative, +0 extra)
+: compiled 0/1 OK
+
+RESULT: *content-neutral*. =corpus/src/= and =corpus/zkir/= did not change
+at all — both repos moved without touching their =.compact= files — and the
+report stayed at 312 ok / 166 fail (bboard's single contract was already
+failing on its pragma before the bump). The two "changes" in the diff were
+both artifacts of our own scripts, and both are now fixed (Hazard 8): 26
+locale-sorted lines in =compile-report.tsv=, and a jq reformat of
+=sources.json=.
+DECISION: reverted. The bump buys nothing and the pins stay where they are.
+Recorded here so the next session does not re-derive it.
+
+** Exercise B — midnight-ledger =04c9c5d9= → main HEAD =c0d37686=
+In a throwaway worktree, following the checklist.
+
+Step 1, =sed= the rev in =Cargo.toml= (14 occurrences), then =./bump.sh
+gates=. It aborted in *2 seconds* at stage 1:
+
+: error: no matching package named `midnight-ledger-v9` found
+: location searched: git+https://github.com/midnightntwrk/midnight-ledger?rev=c0d37686…
+
+Upstream renamed the crate: at main HEAD it is =midnight-ledger= (edition
+2024), no =-v9= suffix. One line fixed it (=package = "midnight-ledger"=),
+and resolution then succeeded — Cargo re-locked the whole =midnight-*= graph
+without complaint, which is exactly the trap: *resolution passing means
+nothing*.
+
+Step 2, the build. =cargo test -p minocrab-zkir= reached
+=Compiling minocrab-ir= and stopped with 17 errors, all of them in the same
+three classes:
+
+: error[E0599]: no variant … named `Secp256r1Point` found for enum `IrType`
+: error[E0599]: no variant … named `Curve25519Point` found for enum `IrType`
+: error[E0559]: variant `Instruction::PersistentHash` has no field named `output`
+: error[E0559]: variant `Instruction::Keccak256` has no field named `output`
+: error[E0599]: no variant named `ReverseBytes` found for enum `Instruction`
+
+Confirmed against the source at both revs: =zkir-v3/src/ir_types.rs= has 39
+=Secp256r1= mentions at =04c9c5d9= and *zero* at =c0d37686=; =ir.rs= has
+=ReverseBytes= at ours and not at theirs. This is not a forward change we
+have to catch up with — it is the divergence above. The secp256r1/Curve25519
+typed leaves (04c9c5d9 IS the commit "Add secp256r1 operations to ZKIR") and
+=ReverseBytes= are on our line and not on main's. =ReverseBytes= in
+particular is load-bearing: M7 pass 1 spent it to replace ~4,600 rows of
+explode/rebuild with ~150.
+
+Two further things the attempt printed, both worth keeping:
+- =warning: patch `midnight-transient-crypto v2.2.0 (…transient-crypto-2.2.0-rc.1)`
+  was not used in the crate graph= — Hazard 4 firing exactly as described:
+  the =[patch]= block is pinned to the old line and goes silently inert.
+- rustc's own suggestion, =help: there is a variant with a similar name:
+  IrType::Secp256k1Base= — main HEAD has secp256*k*1 only.
+
+VERDICT: *not a bump — a branch change*, and one that would cost the M7
+optimisation and the v3 curve leaves. Rejected.
+
+COST OF FINDING OUT, and a fix it paid for: the first run took *8m33s*,
+because after the compile error every remaining stage rebuilt and reprinted
+the same 17 errors (=FAIL 268s / 24s / 70s / 122s / 28s=). That is a defect
+in the gate runner, not in the bump, so =bump.sh= gained a =workspace
+builds= stage (=cargo test --workspace --no-run=) that aborts the sequence.
+Re-run with it: *7.2 seconds*, one error block, one line of diagnosis.
+
+** Exercise C — synthetic drift, to prove the instruments fire
+Exercise B never reached a test, so the test instruments were exercised by
+deliberately breaking things at HEAD and checking each fired *as the
+taxonomy predicts* — including which ones stay silent, which is the half
+that is easy to get wrong. All reverted.
+
+*** C1 — an extra constraint (a lowering change that preserves the statement)
+One duplicated =c.assert(le(amount, u64::MAX))= in =erc20_vault::deposit=.
+
+| instrument | predicted | observed |
+|------------+-----------+----------|
+| row snapshot (9) | FAIL, deposit only | FAIL: =erc20_vault::deposit: expected k=15 rows=17502, got k=15 rows=17512 (+10)= |
+| differentials (5) | PASS | PASS — all 30, including =deposit_matches_corpus= |
+| interface snapshot (8) | PASS | PASS |
+
+This is the M3 equivalence criterion made visible: instruction streams are
+free under PI-equality, so a redundant constraint is invisible to compactc's
+own artifact and *only* the row snapshot sees it. A toolchain bump that
+changes lowering without changing the statement looks exactly like this.
+
+*** C2 — two same-typed arguments swapped (a wire-contract change)
+=max_fee_per_gas= and =max_priority_fee_per_gas= exchanged in =deposit='s
+parameter list — both =Uint<128>=, so the type column cannot see it.
+
+| instrument | predicted | observed |
+|------------+-----------+----------|
+| interface snapshot (8) | FAIL with the reorder named | FAIL: =- in maxFeePerGas= / =+ in maxFeePerGas= around =maxPriorityFeePerGas= |
+| differentials (5) | FAIL on PI | FAIL, 1 of 30: =deposit_matches_corpus= — =public transcript input mismatch for input 65; expected: Some(7e), computed: Some(06)= |
+| row snapshot (9) | PASS | PASS (a reorder costs nothing) |
+
+The pair is the point: C1 moves rows and not PIs, C2 moves PIs and not rows.
+Neither instrument alone would have caught both.
+
+** Exercise D — checklist steps 2 and 5, which B never reached
+A compactc bump's two remaining steps are "recompile the corpus" and
+"accept". Both were run at HEAD, where the answer is knowable: recompiling
+with the SAME compiler must reproduce the corpus, and accepting at HEAD must
+change nothing. If either is false, neither is usable as a bump instrument.
+
+*** D1 — is a corpus recompile a diff?
+=./corpus/compile.sh signet-midnight-examples= (1.8s, 1/1 OK) and
+=./corpus/compile.sh signet-midnight-integration= (4.3s, 6/6 OK) — the
+erc20-vault and the Signet singleton, the two artifacts the benchmark and
+the differentials lean on hardest — left =corpus/zkir/= *byte-identical*.
+Then the whole corpus:
+
+: ./corpus/compile.sh   →  compiled 312/478 OK   3m11s
+: git status --short corpus/zkir   →  (nothing)
+
+*Zero* of the 788 artifacts moved, and the report's ok/fail counts are the
+committed ones. So compactc is deterministic over this corpus and step 2
+costs three minutes. That is what makes the bump diff readable: after a real
+bump, every changed artifact is a change the NEW COMPILER made.
+
+*** D2 — is =./bump.sh accept= a no-op at HEAD?
+It has to be, or it is not a tool, it is a random number generator. Run at
+HEAD it rewrote, in order: two =contract-info.json=, two =pin.json= + two
+=interface-schema.txt=, two generated =src/lib.rs=, the generated region of
+=spec/borsh-subset.md=, five =spec/vectors/*.json=, seven =spec/ts/= files,
+and both snapshot tables. =git status= afterwards listed *not one* of them.
+Exit 0, 8m03s wall — of which most was cargo rebuilding the =midnight-*=
+graph between per-crate invocations, since resolving features for one
+package at a time is not the same resolution as for the workspace. Step 2
+now batches its packages into a single =cargo test= for that reason.
+
+** What the dry run says about the exit criterion
+Cost of the whole loop, measured: =pins= ~15s, corpus recompile 3m11s,
+=gates= on a green tree ~6-9m (dominated by one debug and one release build
+of the 87-circuit snapshot), =accept= a few minutes. A bad pin is rejected
+in *2 seconds* by resolution and in *7 seconds* by the build stage — cheap
+enough that attempting a bump costs nothing, which is the property that
+makes it a chore.
+
+What the dry run could NOT do is take a real compactc release, because none
+exists past the one we pin, so the corpus never changed and the
+accept-a-moved-baseline path was only exercised as an idempotent no-op. The
+instruments that a compactc bump would move (2, 3, 4, 5, 6, 9) were fired
+synthetically instead (Exercise C), and the two halves of the missing
+experiment — a deterministic recompile, and an =accept= that writes exactly
+what was already there — were each verified on their own (Exercise D).
+
+Left for the first real bump, and it is the honest remainder: nobody has yet
+read a corpus diff produced by a *different* compiler and decided what it
+means. The taxonomy says how; only the event can prove the saying.

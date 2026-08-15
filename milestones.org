@@ -310,9 +310,68 @@ checkout, with measurable wins over compactc and the correctness harness
 still green.
 
 * M8 — Churn resilience
-- [ ] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
+- [X] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
       (update pin → run corpus + harness → fix drift).
-Exit criteria: a version bump is a routine chore, not a project.
+      (DONE 2026-08-15 — notes/version-bump.org, and ./bump.sh, which is
+      that document's runnable half. THE DOCUMENT: the four pins that
+      can move independently (compactc release, the one midnight-*
+      rev, the corpus source revs, and rustc — which FLOATS); the
+      checklist as commands in order, ending in a two-commit shape (the
+      pin, then the accepted baselines, whose message carries the
+      reason per moved instrument); a DRIFT TAXONOMY of twelve
+      instruments saying what a failure in each MEANS after a bump and
+      which of four responses is right (accept the new baseline / fix
+      our lowering / repin / investigate upstream) — including which
+      instruments a bump CANNOT move, since a firing there is the
+      surprise; and eight hazards. THE TOOL: `./bump.sh pins` answers
+      "is there anything to take?" in one screen and closes M1's
+      version-string trap by tooling — it reads the pinned compactc
+      RELEASE TAG's own flake.lock and prints the ledger revs its
+      binaries were built from, and it asks GitHub for ANCESTRY rather
+      than assuming a newer date means newer code. `./bump.sh gates`
+      runs the sequence in diagnosis order with a PASS/FAIL/seconds
+      summary and the taxonomy line for whatever fired, aborting if the
+      pin does not resolve or the workspace does not build. `./bump.sh
+      accept` runs every regenerator in dependency order — including
+      the interface crates' contract-info.json re-copy, which NO tool
+      did before — and ends in a reviewable diff; the row and interface
+      snapshot regenerators now WRITE their tables between markers
+      instead of printing them to paste.
+      THE DRY RUN, real and recorded with its actual output. (a) There
+      is nothing to bump to: compactc-v0.33.0-rc.2 is still upstream's
+      newest release. (b) midnight-ledger main is not ahead of our pin,
+      it has DIVERGED from it (merge base 2026-06-25; main +85, ours
+      +342) — attempted anyway on a throwaway worktree, where it
+      renamed midnight-ledger-v9, dropped Instruction::ReverseBytes
+      (which M7 pass 1 spends to save ~4,500 rows) and the
+      secp256r1/Curve25519 IrTypes, and left our [patch] block silently
+      inert. Rejected. (c) Two corpus sources moved and their .compact
+      files did not. (d) The test instruments were then fired
+      synthetically and behaved exactly as the taxonomy predicts, in
+      BOTH directions: a redundant constraint moves rows (+10 on
+      deposit) and nothing else — all 30 differentials still green,
+      because PI-equality does not see instructions — while swapping
+      two same-typed arguments moves the interface snapshot and one PI
+      ("input 65; expected 7e, computed 06") and NOT rows. (e) The two
+      steps (b) never reached: recompiling the whole corpus with the
+      pinned compiler is deterministic (3m11s, 312/478 OK, zero of 788
+      artifacts moved) and `./bump.sh accept` at HEAD rewrites twenty
+      generated files and changes none of them.
+      FOUND AND FIXED, three frictions: corpus/compile.sh sorted its
+      report in the caller's LOCALE (26 lines of churn on any
+      recompile) and corpus/update.sh reformatted sources.json through
+      jq — a bump's diff is now the bump; and the gate runner used to
+      spend 8m33s re-printing one compile error five times, which is
+      now a 7.2s abort.)
+Exit criteria: a version bump is a routine chore, not a project. MET,
+with one honest remainder. Routine: the whole loop is `pins` (~15s) →
+edit → `compile.sh` (3m11s) → `gates` → `accept` → `gates`, a bad pin
+is rejected in 2 seconds by resolution and 7 by the build stage, and
+every instrument's failure has a written meaning and a written
+response. The remainder is that no session has yet read a corpus diff
+produced by a DIFFERENT compiler, because upstream has not shipped one
+since we pinned; the taxonomy says how to read it, and only the event
+can prove the saying.
 
 * M9 — Contract-API ergonomics
 Design of record: notes/contract-api.org (agreed with dmd 2026-08-14).
