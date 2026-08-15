@@ -415,17 +415,77 @@ zero overhead stays the default and the gates stay in place.
       and predicates, the reviewed 47-Copy delta for literals.
       row_snapshot bit-identical, interface_snapshot unchanged, cargo
       test --workspace --release green throughout.)
-- [ ] Phase 8: showcase twin — a "modern" erc20-vault rewrite using
+- [X] Phase 8: showcase twin — a "modern" erc20-vault rewrite using
       every M9 feature to fullest effect, kept BESIDE the zero-movement
       direct ports; corpus-verified by the same differential harness
       (instruction streams are free under PI-equality) + property
       tests, own snapshot entries with deltas reported; README's
       full-featured snippet then points at real code.
+      (2026-08-15 — two stages, two commits, two gates. STAGE 1, the API
+      items dmd decided today: polymorphic literals were already phase
+      7's, so what is new is `.widen::<N>()` (the same wire retyped, no
+      instruction and no second range constraint — a value below 2^BITS
+      is below 2^WIDER by construction); NO implicit widening and no
+      auto-constraining of raw wires (decisions A and B, candidates 3
+      and 4 declined); and the four zero-row candidates built —
+      guard-free ledger methods (the Impact guard is an OPERAND now, so
+      the straight-line form inlines the immediate `1` and drops the
+      `Copy` that named it), `LedgerRepr` with `&mut Circuit3` on both
+      sides of the crossing (which retires `LedgerField` for the
+      curve-point cell and the sealed deployer), the boolean leaf
+      `is_true`, and `.when(guard)`. Also dmd's new standing principle,
+      COMPILE ERRORS OVER PANICS: both width rejections are now E0080 at
+      the call site from inline-`const` asserts, and the panics that
+      cannot be (a runtime literal's magnitude is not a type) are listed
+      in the notes. The three forks moved to `_under` mechanically, 78
+      of 78 byte-identical. STAGE 2, `erc20_vault_modern`: the borsh
+      fork's contract written through all of it — no ledger op takes a
+      guard, no `AlignmentAtom`/`LedgerValue`/field index in the file,
+      typed cells including the `Secp256k1Point`, predicates for the
+      boolean and in-branch checks, `FixedGas::<700_000>` as a
+      const-generic family. Gated on the M3 criterion rather than on
+      bytes: all nine circuits accept the BORSH model's own preimage
+      with the same `pis`/`pi_skips`, recorded per circuit in a third
+      divergence ledger whose `Twin::PiEqual` variant says exactly that
+      and is asserted in both directions. ROWS AND k IDENTICAL to the
+      borsh fork, all nine — the modern spelling removes naming, not
+      work; ten `Copy`s of immediates go, which is zero rows.
+      `Art::Modern` is the fourth member of `ARTS`, so the spec harness,
+      the ledger-effect execution and the adversarial sweeps all run
+      against it (`PROPTEST_CASES=20000` elevated pass green). Both
+      snapshots grew by the twin's nine entries and nothing else moved.)
 Exit criteria: the benchmark contracts read side-by-side with their
 Compact sources, disclosure declarations are part of every circuit's
 signature and enforced by generated tests, and every instrument (rows,
 interfaces, differentials) shows zero unexplained movement — plus the
 showcase twin differential-green with its deltas explained.
+ASSESSMENT (2026-08-15, all nine phases done): THREE OF FOUR MET, one
+partially. Met: the benchmark contracts read side-by-side with their
+Compact sources (the vault in four artifacts and signet_contract are
+built through the typed API end to end; `erc20_vault_modern` is the
+side-by-side at its best). Met: every instrument shows zero unexplained
+movement — the 78 pre-existing circuits are byte-identical ZKIR through
+all of phases 6-8, the only movement anyone has to explain in the whole
+milestone is phase 5's five renamed labels and nine reordered input
+constraints, and phase 7's 47 removed `Copy`s. Met: the twin is green
+on the M3 criterion, PI-equal to the borsh fork on all nine circuits,
+with its deltas reported (zero rows, zero k, ten `Copy`s).
+NOT FULLY MET, and this is what remains of M9: "disclosure declarations
+are part of EVERY circuit's signature". 39 of the 87 snapshot circuits
+declare — the vault's nine in all FOUR artifacts and signet_contract's
+three — and each has a generated set-equality test. The 30 experiment
+circuits (attest, events, hashing, xcall, xcall_with_payment,
+xcontract_events, mint_tokens, serde_builtin, test_caller) still carry
+free-string `c.disclose` calls, as phase 6 recorded when it chose its
+rollout. Two of them are genuinely blocked rather than merely undone:
+the generated test only exists for a `#[circuit]` entry point, so the
+circuit FAMILIES built through `entry()` (events' `emit_n`, xcall's
+`call_n_times`) would get the declaration and no test; and the 16
+`hashing` circuits are not ported at all, for the reason written at
+their code. The rest is mechanical work nobody has done. Nothing about
+it is unknown, and none of it is load-bearing for the two REAL
+contracts — but the criterion says "every circuit", so M9 is not
+closed by it.
 
 * M10 — Final: ERC-20 vault, maximally verified and maximally optimized
 (dmd, 2026-08-15: "test the shit out of the ERC-20 contract and do

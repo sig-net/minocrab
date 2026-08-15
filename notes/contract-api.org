@@ -1199,3 +1199,268 @@ Still rejected on their merits, no numbers needed: `map[k]` (an `Index` impl
 cannot take `c`), iterators over a ledger map (no in-circuit meaning), and
 deferred ARITHMETIC (`a + b` returning a descriptor hides emission inside an
 operator).
+** Phase 8 — the showcase twin (2026-08-15)
+Two stages, separately gated and committed: the API items dmd decided today,
+then `erc20_vault_modern` — the fourth artifact, written through all of them.
+
+*** dmd's decisions, 2026-08-15 (binding; the phase-7 candidate list is closed)
+- A. MIXED-WIDTH COMPARISONS: RUST-STYLE. Polymorphic literals (a bare
+  integer literal adopts the typed operand's width and is checked at build
+  time — which is what phase 7 already built), and NO implicit widening.
+  Wire-vs-wire width mismatch stays a build error, with one explicit lossless
+  escape: `.widen::<N>()` on a typed leaf, free for an already-constrained
+  leaf. Candidate 3's +6-to-+9 rows are NOT taken.
+- B. RAW (unconstrained) WIRES IN ORDERINGS: keep refusing. The author wraps
+  explicitly (`Uint::<64>::from_field(w)`, plus its `constrain_input` if
+  nothing has constrained it yet); no auto-constraining. Candidate 4's
+  ~bits/4 rows are NOT taken.
+- C. The four ZERO-ROW candidates (1, 2, 5, 6) are APPROVED and built.
+- AND A STANDING PRINCIPLE, added the same day: COMPILE ERRORS ARE BETTER
+  THAN PANICS. Where a rejection can be a missing impl or a const assert, it
+  must be; where it cannot, the panic stays, is prescriptive, and is written
+  down (the list at the end of this section).
+
+*** Stage 1 — the API (crates/minocrab, minocrab-ledger, minocrab-std)
+Real signatures:
+#+begin_src rust
+// minocrab: the Impact guard is an OPERAND
+impl Circuit3 {
+    pub fn impact<V: Visibility>(&mut self, guard: impl Into<Operand<FieldT, V>>, inputs: &[Wire3<FieldT, Public>]);
+    pub fn impact_mixed<V: Visibility>(&mut self, guard: impl Into<Operand<FieldT, V>>, elems: &[ImpactElem]);
+}
+// minocrab-ledger: emit + every UNGUARDED op likewise (the `_guarded` ones
+// still take a wire — the guard rides their transcript gates)
+pub fn emit<V: Visibility>(c: &mut Circuit3, guard: impl Into<Operand<FieldT, V>>, ops: &[ImpactOp]);
+pub fn mint_read_with<V: Visibility + Copy>(..) -> (Vec<Wire3<FieldT, Public>>, LedgerValue);  // now pub
+pub fn cell_read_embedded<V: Visibility>(c, guard: impl Into<Operand<FieldT, V>>, index: u8, value: &LedgerValue);
+
+// minocrab-std: LedgerRepr both ways, and the three guard forms
+pub trait LedgerRepr: Sized {
+    fn atoms() -> Vec<AlignmentAtom>;
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>);   // C2: takes c
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self;
+    fn limbs(&self, c: &mut Circuit3) -> Vec<Wire3<FieldT, Public>>;                  // provided
+    fn ledger_value(&self, c: &mut Circuit3) -> LedgerValue;                          // provided
+    fn witness_read<V: Visibility + Copy>(c: &mut Circuit3, guard: Option<Wire3<FieldT, V>>)
+        -> (Self, LedgerValue);                                                       // provided
+}
+impl LedgerRepr for Secp256k1Point<Public> { .. }   // overrides both computed halves
+impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
+    fn member(&self, c, key: &K) -> Bool<Public>;                 // guard = the immediate 1
+    fn member_under<G: Visibility>(&self, c, guard: impl Into<Operand<FieldT, G>>, key: &K) -> Bool<Public>;
+    fn member_guarded<G: Visibility + Copy>(&self, c, guard: Wire3<FieldT, G>, key: &K) -> Bool<Public>;
+    // lookup / insert / remove / size / is_empty in the same three forms
+}
+// LedgerCell<T>: read / read_under / read_guarded / write / write_under
+// LedgerCounter: read / read_under / read_guarded / increment / increment_under
+//                / less_than / less_than_under
+
+// minocrab-std: the leaves
+impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
+    pub fn widen<const WIDER: u32>(self) -> Uint<WIDER, V>;   // const-asserts WIDER >= BITS
+}
+impl<V: Vis3> B32<V> { pub fn private(self) -> B32<Private>; }  // Wire3::private for the pair
+
+// minocrab-std: the predicates
+pub fn is_true<V: Vis3>(b: Bool<V>) -> Check<V>;                       // C5, zero instructions
+impl<V: Vis3> Check<V> {
+    pub fn when<G: Vis3>(self, guard: Wire3<FieldT, G>) -> Check<V>    // C6
+        where V: Meet<G, Out = V>, G: Meet<V, Out = V>;
+}
+#+end_src
+
+**** C1 — the guard-free methods, and why the plain name is theirs
+Compact writes `map.member(key)`: it has no guard argument at all, and ours
+exists only because an Impact instruction carries one. So the plain name is
+the straight-line form, `_under` takes a wire (an effect inside a branch), and
+`_guarded` is unchanged (a READ inside a branch, guard on the transcript gates
+too). The guard being an operand is what makes the straight-line form
+possible: it inlines the immediate `1` instead of naming a `Copy`.
+COST: zero rows, MINUS one instruction per circuit that no longer needs to
+name a `1`. What it costs is byte-identity with compactc, whose guard operand
+IS that named wire — so the three direct ports were mechanically moved to
+`_under` (66 call sites, one script, three files) and keep their streams, and
+only the twin uses the plain names. That mechanical move is itself gated: all
+78 circuits' serialized ZKIR dumped before and after, 78 of 78 byte-identical.
+
+**** C2 — a repr may emit, and what that costs
+`push_limbs` taking `c` is the smaller half. The bigger half is
+`witness_read`, the READ side: a `Secp256k1Point` cell mints ONE TYPED gate
+and derives its five FAB limbs with an `encode` instruction, which no
+limb-by-limb read can express. With both halves the point cell is an ordinary
+`LedgerCell<Secp256k1Point<Public>>` and `common::cell_read_point` is only the
+ports' spelling; `deployer` became a `LedgerCell<B32<Public>>` at the same
+time. `signetSigner` stays a `LedgerField` — it is a sealed HANDLE read
+through the interface crate, not a value.
+THE PRICE, recorded because phase 7 named it: "building a `LedgerValue` is
+free" is no longer true by construction. What replaces it is narrower and
+still checkable — a repr emits exactly the instructions the call site would
+have emitted itself, immediately before the op — and it is what
+`tests/v3_ledger.rs`'s byte-equality against the explicit form asserts.
+One honest wart: `Secp256k1Point::from_limbs` is `unreachable!`, because ZKIR
+has `encode` and no inverse. It is unreachable through `LedgerCell` (which
+goes through `witness_read`), and reachable only by declaring a
+`LedgerMap<_, Secp256k1Point>`, which Compact cannot declare either; the panic
+message says so and names the two supported shapes.
+
+**** A/B expressed as COMPILE errors (the standing principle applied)
+Both rejections the phase-7 module documented as build-time panics are now
+`error[E0080]` at the call site, from inline `const` asserts in the comparison
+constructors — checked by compiling both spellings:
+#+begin_example
+error[E0080]: evaluation panicked: the two operands of a comparison have different
+widths … or widen the narrow one explicitly with `.widen::<BITS>()`
+  … evaluation of `less_than::<Uint<128>, Uint<64>>::{constant#0}` failed here
+
+error[E0080]: evaluation panicked: an ordering comparison needs a width and neither
+operand's type carries one: compare TYPED values (a `Uint<BITS>`, a `Bytes<N>`)
+  … evaluation of `less_than::<Wire3<FieldT, Private>, Wire3<FieldT, Private>>::{constant#1}`
+#+end_example
+NOT as a missing `CheckOperand` impl for `Wire3`, which was the requested
+shape and is the nicer error, for one reason that covers both halves: the
+condition is a property of the PAIR. A raw wire on ONE side of a typed
+comparison is sound (the type supplies the width) and is what the frozen ports
+use — `amount.gt(zero.private())`, where the `zero` is also needed as a wire
+elsewhere so it stays named — and "at least one of A, B carries a width" is
+not sayable in a trait bound without overlapping impls. Dropping the impl
+would have rejected ten sound call sites in the ports and forced call-site
+changes that MOVE their streams.
+
+**** Panics that could NOT become compile errors, and why
+1. `predicate::check_literal_fits` — "the literal 300 does not fit the 8 bits
+   the comparison runs at". The magnitude of a runtime integer is not in the
+   type system: `300u64` is a value, not a type. A stricter form would need
+   the literal as a const generic (`lit::<300>()`), which is a different API
+   and dmd's call, not this phase's.
+2. `Uint::<BITS>::constant(c, v)` — same reason, same shape.
+3. `LedgerRepr::from_limbs` on `Secp256k1Point` — internal invariant, above.
+4. `entry()`'s two law checks (`arg_count == SLOTS`, no instruction before the
+   last declare) — phase 2's, unchanged: both are properties of a built
+   circuit, not of a type.
+
+**** Stage-1 gates
+All 78 circuits' serialized ZKIR dumped at HEAD and after the stage:
+78 of 78 BYTE-IDENTICAL. row_snapshot bit-identical, interface_snapshot
+unchanged, `cargo test --workspace --release` green (74 binaries).
+New unit tests, all byte-equality against the hand-written form where the
+claim is zero-cost: `v3_ledger.rs` gains the guard-free methods (equal to the
+explicit ops with an immediate guard), the one-`Copy` difference between the
+two forms, and the typed point cell; `v3_predicates.rs` gains `is_true`
+(equal to the bare wire, and composing with the combinators), `.when` (equal
+to `cond_select(guard, cond, 1)` + assert), a public guard over a private
+check, and `.widen` (equal to the hand-written comparison at the wider width,
+zero instructions on its own). The two panic tests it lost are replaced by
+`_COMPILE_ERRORS_NOT_PANICS`, a documented pair of `compile_fail` spellings.
+
+*** Stage 2 — erc20_vault_modern, the fourth artifact
+Based on the BORSH fork, which is the chain's last link (`compactc ≡ port ≡
+opt ≡ borsh`), and IMPORTING its Borsh response types rather than restating
+them — so the wire format cannot drift and every `Art::Borsh` arm of the
+harness's concretization serves the twin unchanged. Copied, per the fork
+convention: the nine circuits and their private helpers.
+
+What the rewrite is, feature by feature: `#[circuit]` + derived argument
+structs and `-> Discloses<(..)>` are already the ports' (phases 4 and 6);
+what moves is everything below. No ledger operation takes a guard. There is
+no `AlignmentAtom`, no `LedgerValue` and no field-index constant in the file,
+and `minocrab_ledger` is imported for `kernel_self` alone. `initialize`'s five
+configuration writes are five lines, each one typed end to end (a `Bytes<20>`
+argument is disclosed and written to a `LedgerCell<Bytes<20, Public>>`, atoms
+from the type). The MPC key and the deployer are typed cells. The boolean and
+in-branch checks are predicates at last — `is_true(pending).message("Withdrawal
+not found")`, `b32_eq(&rc, &stored.private()).when(guard).message("Not the
+withdrawer")` — where the ports drop to `assert_with` / `common::assert_if_with`.
+`b32_eq` is itself a predicate (`eq(hi, hi).and(eq(lo, lo))`, the same two
+`test_eq`s and `mul`), which is what makes the message and the `.when`
+possible. `FixedGas::<700_000>` is the const-generic family for the
+contract-fixed gas envelope; the gas LIMIT is the only thing that differs
+between an ERC-20 call and a swap, and it is part of the contract, not of the
+call.
+`let one = c.constant(1u64)` survives in five circuits, and only where a `1`
+is a VALUE: a limb of the signed transaction record (`calldata_is_some`), a
+limb of a burn coin commitment (`shieldedBurnAddress()`'s `is_left`), and the
+cross-contract call, whose guard is still a wire because M12's calling layer
+takes one (for dmd, below).
+
+**** The deltas vs the borsh fork — rows, k, PI-equality
+| circuit | rows borsh | rows modern | Δrows | k | instructions Δ | status |
+|---------+------------+-------------+-------+---+----------------+--------|
+| initialize | 2,412 | 2,412 | 0 | 13 → 13 | −2 | PI-equal |
+| deposit | 15,632 | 15,632 | 0 | 14 → 14 | 0 | PI-equal |
+| claim | 42,057 | 42,057 | 0 | 16 → 16 | 0 | PI-equal |
+| approveRouter | 13,332 | 13,332 | 0 | 14 → 14 | 0 | PI-equal |
+| withdraw | 23,707 | 23,707 | 0 | 15 → 15 | 0 | PI-equal |
+| completeWithdraw | 40,163 | 40,163 | 0 | 16 → 16 | −3 | PI-equal |
+| refund | 40,797 | 40,797 | 0 | 16 → 16 | −4 | PI-equal |
+| swap | 32,819 | 32,819 | 0 | 16 → 16 | 0 | PI-equal |
+| completeSwap | 50,263 | 50,263 | 0 | 16 → 16 | −1 | PI-equal |
+ZERO rows and zero k movement, all nine: the modern spelling costs nothing,
+it only removes NAMING. Every one of the ten removed instructions is a `Copy`
+of an immediate (zero rows in Midnight's model), which is why five circuits
+show 0: they still name a `1` and a `0` as record limbs, so the `Copy` the
+guard-free methods removed is a `Copy` they need anyway. The zero-row claim is
+not argued from the table alone — it is the row snapshot, which IS the
+`(k, rows)` of every circuit, and the twin's nine entries were generated
+beside the borsh block and match it line for line.
+PI-EQUALITY holds for ALL NINE: the twin accepts the BORSH model's own
+`ProofPreimage` with the same `pis` and the same `pi_skips`, so no circuit
+needed the spec-anchored fallback. The interface snapshot's modern block
+equals the borsh block entry for entry (same arguments, same order, same
+types, same witness reads), which is the other half of the criterion.
+
+**** How it is gated
+- `tests/erc20_vault_modern_fork.rs` + the third divergence ledger,
+  `vault::artifact::modern_fork_status`, whose `Twin` enum records something
+  the two byte-identity ledgers could not: `PiEqual { why }` — the stream
+  differs AND the statement does not. Both directions, one assertion per
+  variant: an `Identical` entry must really be byte-identical, a `PiEqual`
+  entry must really differ in bytes AND really agree on `pis`/`pi_skips`, and
+  a `SpecAnchored` entry must really have moved a PI. The last is asserted to
+  be UNUSED, so a future rewrite that moves a public input fails the
+  PI-equality test first and has to say so in the ledger before it can land.
+- `Art::Modern` is the fourth member of `ARTS`, so the nine spec properties,
+  the acceptance agreement, the ledger-effect execution through the real
+  Impact VM, the reference-VM check and the adversarial sweeps all run against
+  it, against the borsh model and the borsh concretization.
+- THE ONE HAZARD a fourth artifact adds, and how it is closed: an exhaustive
+  `match` on `Art` fails to compile until the new arm is added, but an
+  `art == Art::Borsh` compiles and silently answers "no". Every such site now
+  asks `Art::is_borsh_format()`, which is `matches!(self, Borsh | Modern)`.
+- Elevated pass: `PROPTEST_CASES=20000` on the nine spec properties, four
+  artifacts per case.
+
+**** Deviations, all deliberate
+- The twin does NOT change the contract. Every guard, effect, disclosure and
+  transcript read is the borsh fork's, in its order — which is what lets ONE
+  reference model build a preimage both artifacts accept. A twin that also
+  changed the semantics would prove nothing about the API.
+- `notify_signet` still takes the `one` wire: `Callee::pin` and
+  `minocrab_ledger::call` take a `Wire3` guard (M12's surface). Widening them
+  is the same zero-cost change the ledger ops got, and it is on the for-dmd
+  list rather than in this phase, because it touches the `#[interface]` macro
+  and every interface crate's expansion.
+- `assert_kind`, the depositor/swapper/claimant gates and the freshness check
+  gained MESSAGES the ports do not carry ("Wrong response kind", "Not the
+  depositor", …). Metadata only — no instruction, no row — and the simulator
+  spends them on a failed run.
+- `completeSwap`'s overspend guard is spelled `amount_in.le(amount_in_max)`
+  over two `Uint<128>`s built from `abiWordToUint128`, which lowers to exactly
+  the port's `less_than(max, in, 128)` + `not`. The 128 is now the type's.
+
+**** For dmd — overhead beyond the approved items, NOT taken
+Nothing in this phase cost a row, so this list is short and is about what the
+zero-cost rule left on the table rather than about overhead:
+1. The CROSS-CONTRACT CALL guard is still a `Wire3` (`Callee::pin`,
+   `minocrab_ledger::call`, `contract_call`, and the `#[interface]` macro's
+   generated methods). Widening it to an operand is ZERO rows and removes the
+   last `one` from three of the twin's circuits. Not taken because it touches
+   the interface macro and would regenerate every interface crate's expansion
+   — a change with its own gate, not a rider on this one.
+2. A `Bytes<N>`-to-`Uint` widening (`Bytes<20>` compared against a
+   `Uint<160>`). Zero rows by the same argument as `Uint::widen`, but no call
+   site wants it yet.
+3. `LedgerMap<_, Field>` value typing (notes/vault-optimization.org §Q5) is
+   still deferred; it is a ROW win, not an ergonomics one.
+4. A `lit::<N>()` const-generic literal, which would make the last
+   value-dependent panic (a literal too wide for the comparison) a compile
+   error. A different API, and a bigger one than this phase.

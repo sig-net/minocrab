@@ -1179,3 +1179,34 @@ circuits' −34% to −58% row cuts are cosmetic for prove time (ECDSA floor).
 "Maximally optimized = minimal k", and minimal k is reached: deposit k14,
 withdraw k15, everything else at its protocol/crypto floor. swap is the one
 documented near-miss (k16 at 51 rows over, Field-typing deferred).
+
+* A FOURTH artifact — the M9 phase-8 showcase twin (2026-08-15)
+`erc20_vault_modern` joins the harness beside port/opt/borsh, and the
+bookkeeping this file describes extends to it unchanged in shape and changed
+in KIND:
+- `Art::Modern` is the fourth member of `ARTS`, so every spec property, the
+  acceptance agreement, the ledger-effect execution and the adversarial
+  sweeps run against it. It shares every `Art::Borsh` arm of `prims.rs` and of
+  the spec's semantic splits, because it IMPORTS the borsh fork's response
+  types rather than restating them — the twin changes how the contract is
+  WRITTEN, never what it says on the wire. New hazard, closed: an exhaustive
+  `match` on `Art` fails to compile until the arm is added, but an
+  `art == Art::Borsh` compiles and silently answers "no", so every such site
+  now asks `Art::is_borsh_format()`.
+- The divergence ledger has a THIRD entry point, `modern_fork_status`, and a
+  variant the other two never needed. `Fork` records byte-identity; the twin
+  rewrites all nine circuits on purpose, so `Twin::PiEqual { why }` records
+  the weaker-but-sufficient link instead: the stream differs AND the statement
+  does not (same typed I/O schema, same `pis`/`pi_skips` on the SAME
+  `ProofPreimage`). That is this file's own §"Port ↔ optimized equivalence"
+  criterion read the other way round — where M10 spends PI-equality to buy
+  rows, phase 8 keeps it and spends only the instruction stream.
+  `tests/erc20_vault_modern_fork.rs` asserts all three variants in both
+  directions; `Twin::SpecAnchored` is asserted to be UNUSED, so a future
+  rewrite that moves a public input has to say so before it can land.
+- Rows: IDENTICAL to the borsh fork for all nine circuits, k unmoved — the
+  twin is not an optimization and does not touch M10's ladder. Ten `Copy`
+  instructions of immediates disappear (zero rows); the table is in
+  notes/contract-api.org §"Phase 8".
+- Not benched, for the same reason the borsh fork is not: it proves the borsh
+  artifact's statement at the borsh artifact's cost.
