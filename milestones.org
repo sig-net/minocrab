@@ -927,3 +927,63 @@ the unported kernel.* built-ins (blockTime*, unshieldedBalance*,
 mint/send/receive kernel circuits — M4 REMAINING), ledger MerkleTree
 ops if still unported. The M13 agent verifies each against the code
 before listing (only true gaps).
+
+* M14 — Bounded integers: Uint<0..n> for arbitrary n
+From the README's fairness list (dmd 2026-08-15: promote the gaps to
+milestones). Compact's Uint<0..n> takes any bound; our leaf is
+Uint<BITS> (power-of-two ranges only). compactc lowers a
+non-power-of-two bound via less_than + assert; the constraint already
+exists on the interop side (Prim::UintMax → LimbConstraint::Bounded,
+crates/minocrab/src/v3/abi.rs) — this milestone makes it DECLARABLE:
+a bounded leaf type whose constrain_input emits the same lowering,
+through the whole stack (CircuitArg, derives, interface crates,
+Borsh width rules). Covers non-power-of-two enums (Compact enums are
+Uint<0..k-1>).
+- [ ] Design note first (notes/): leaf shape (const-generic bound),
+      lowering, Borsh/FAB width interaction, interface-gen round-trip.
+- [ ] Implement + corpus differentials on contracts using Uint<0..10>,
+      <0..300>, <0..1000>, <0..70000>.
+Exit criteria: a corpus contract with a non-power-of-two bound ports
+with the usual differential green; the README fairness bullet moves to
+the feature list.
+
+* M15 — Opaque<'ts-type'> bridging
+Fairness-list gap: Compact contracts hold and thread TS-side values
+with no in-circuit representation (ledger cells, witness args,
+Set<Opaque<…>>); our ABI reader and interface generator reject Opaque
+by design (crates/minocrab-abi/src/info.rs,
+crates/minocrab-interface-gen/src/lib.rs).
+- [ ] Design note first: what Opaque means at the ZKIR/ledger level in
+      compactc's artifacts (survey the corpus uses), and what the Rust
+      shape should be (likely an opaque handle type carrying the
+      ts-type string, never entering circuits).
+- [ ] Implement through ABI reader + interface-gen + ledger layer;
+      corpus differential on a contract using Opaque.
+Exit criteria: an Opaque-using corpus contract imports and ports;
+fairness bullet retired.
+
+* M16 — Ledger ADTs: List, MerkleTree, HistoricMerkleTree, full Set
+Fairness-list gap. crates/minocrab-ledger has Cell/Counter/Map +
+Set::insert; the corpus declares 25 List, 15 MerkleTree, 7
+HistoricMerkleTree, 41 Set. Merkle PATH circuits are ported
+(minocrab-std/src/merkle.rs); the ledger-state ops on trees are not.
+Subsumes M4's "Map rem, MerkleTree ops" remainder at the ledger-op
+layer.
+- [ ] Per-ADT: Impact-op lowering via the real Op types (M4's
+      ledger-op method), differential per corpus contract that uses it.
+- [ ] Rusty API per M9 phase 7's #[derive(Ledger)] conventions.
+Exit criteria: corpus contracts using each ADT port with differentials
+green; fairness bullet retired.
+
+* M17 — Kernel + token stdlib remainder
+Fairness-list gap; this IS M4's REMAINING bullet, promoted: kernel.checkpoint,
+the block-time family (blockTimeLessThan/GreaterThan, blockTimeLt/Lte/
+Gt/Gte), the unshielded-token family (mintUnshielded, sendUnshielded,
+receiveUnshielded, claimUnshieldedCoinSpend, incUnshieldedInputs/
+Outputs, unshieldedBalance*), kernel.balance/balanceLessThan/
+balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
+- [ ] Port via the established route: compactc's vm-code lowering →
+      minocrab-ledger ops → stdlib circuits, each with a corpus (or
+      tiny.compact-style) differential.
+Exit criteria: the README fairness bullet shrinks to nothing in this
+class; M4's stdlib bullet finally ticks.
