@@ -36,6 +36,16 @@ midnight-onchain-vm = { git = "https://github.com/midnightntwrk/midnight-ledger"
 # The tagged (de)serialization framework (ProofPreimage/key files on disk).
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-onchain-state = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# The Impact VM's driver: QueryContext::query is the intended public entry for
+# "apply this op stream to this state" (it owns the [context, effects, state]
+# stack convention, the Effects encode/decode and the charged-state gas
+# update). M10's verification harness executes the reference op streams
+# through it rather than re-implementing any of that.
+midnight-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# ContractAddress/TokenType — the key types QueryContext and Effects are
+# expressed in. Already in the graph via onchain-state; named here so the
+# harness can spell them.
+midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
 # simulator mirrors it). Versions match what the pinned midnight-ledger rev

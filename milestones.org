@@ -355,6 +355,20 @@ the compatibility reference; the optimized vault is its own artifact
       scaled to millions in CI), plus adversarial/boundary sweeps
       (2^128-1 amounts, zero addresses, malformed witnesses, tampered
       records) and the existing tamper/reject-agreement suites.
+      (PARTIAL 2026-08-15 — harness BUILT and green; see
+      notes/vault-optimization.org §"As built — step 1". All nine specs,
+      the run_program executor (the ledger-semantics link that existed
+      nowhere before), the branch-aware strategies, the shared tamper
+      machinery, witness-malleability / wrong-branch / injectivity sweeps
+      and completeSwap's named underflow boundary. Three suites green:
+      differential 30, spec 9, adversarial 19. Found: the notes' own
+      completeWithdraw generation strategy was wrong (a non-canonical
+      attested byte is ACCEPTED and refunds, both artifacts agree), and
+      the reference model shared the same bug; initialize accepts an
+      IDENTITY mpcResponseKey, which authenticates every attestation;
+      no counter-overflow guard. STILL OPEN: the millions-of-cases
+      gating run has been measured (~37 min wall for 1e6 x 9) but not
+      executed, so this bullet is not ticked.)
 - [X] Scope the freed space: what the protocol actually pins (Impact op
       stream ↔ on-chain state machine, cross-contract commitment to the
       Signet singleton, MPC attestation formats, coin commitments) vs

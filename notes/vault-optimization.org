@@ -545,3 +545,159 @@ marginally swap ONLY via the unresolved burn restructure. Settle
 circuits floored above 2^15 — cuts there are cosmetic. Do not dedup
 constrain_bits (comm does not imply canonicity for root calls —
 verified verify.rs:1946-1948).
+
+* As built — step 1 (verification harness, 2026-08-15)
+The harness of §"Verification-harness design" exists and is green.
+Links 2-4 of the chain of trust are now machinery, not prose.
+
+** Module layout
+All under =crates/minocrab-contracts/tests/vault/= (a shared test module,
+not a test target; each binary that wants it writes =mod vault;=):
+| module | what |
+|--------+------|
+| spec.rs | Effect/Term/Val/Outcome/GuardId + the nine =spec_*= functions + =check_effects= |
+| prims.rs | the compat artifact's CONCRETIZATION (SHA/keccak/ECDSA/FAB) — moved verbatim out of the differential suite |
+| model.rs | the reference model: nine scenarios, each owning a pre-state, one call's args/witnesses, its op stream, popeq results and =ProofPreimage= |
+| exec.rs | the reference executor (=PreState= → =StateValue=; =run()=; the noop-normalisation guard) |
+| gen.rs | branch-aware strategies + the =PROPTEST_CASES= config |
+| tamper.rs | the perturbation sweeps, now shared by both suites |
+Test binaries: =erc20_vault_differential.rs= (unchanged assertions, 30
+tests), =erc20_vault_spec.rs= (9 properties), =erc20_vault_adversarial.rs=
+(19 tests).
+
+NOT under =src/spec/= as the design suggested: every layer needs
+midnight-onchain-vm / onchain-runtime / base-crypto / sha2 / sha3, all
+dev-dependencies. Promoting them to real dependencies of a *contracts*
+crate to host test infrastructure is the wrong trade; the layering
+argument for a separate module survives intact under =tests/=.
+
+** run_program reality — the link now exists
+=midnight_onchain_vm::vm::run_program= IS public at the pinned rev
+(onchain-vm/src/vm.rs:288). But the INTENDED entry for "apply this op
+stream to this state" is =QueryContext::query= in *midnight-onchain-runtime*
+(onchain-runtime/src/context.rs:923), which owns the initial stack
+convention =[context, effects, state]= (context.rs:981), the length-3
+final-stack check, the nine-map =Effects= encode/decode (context.rs:699-840)
+and the charged-state gas update. Re-deriving that by hand would have been
+exactly the kind of reimplementation the project forbids, so
+=midnight-onchain-runtime= (+ =midnight-coin-structure= for
+=ContractAddress=) joined the workspace deps at the same rev, as
+dev-dependencies of minocrab-contracts. Nothing in the shipping crates
+changed.
+
+Verify mode, not gather: our op streams already carry their =Popeq=
+results, so =ResultModeVerify::process_read= compares every read against
+the real state and errors =ReadMismatch= when the model and the state
+drift. That check is the point.
+
+Normalisation trap: guarded (=exec::assert_normalized=, run on every case)
+and a =prove.rs:291-327=-faithful =exec::normalize= supplied. Inert today —
+the vault's nine circuits emit no =Noop= at all (one contract call, no
+inactive sibling segments) — so the guard is against regression.
+
+** Spec-vs-notes disagreements found
+1. THE §4.2 ENUMERATION DOES NOT EXIST. This file's §"Specs" says the
+   per-circuit guards/effects were "enumerated in the survey; transcribe
+   into the spec modules as built" — they were never transcribed, and no
+   §4.2 exists here. The nine specs were derived from erc20-vault.compact
+   and Signet.compact directly. Two guards live in Signet's helpers, not
+   in the vault, and are easy to miss reading only the vault source:
+   =keyVersion >= 1= (Signet.compact:149, inside
+   =constructSignBidirectionalEvent=, so it fires in deposit / withdraw /
+   swap / approveRouter) and =abiWordToUint128='s leading-16-bytes-zero
+   check (Signet.compact:438).
+2. GENERATION STRATEGY WRONG FOR completeWithdraw. This file says
+   "output ∈ {0x00, 0x01, non-canonical (must reject)}". Non-canonical
+   must NOT reject. =deserialize<VaultResponse, 1>(o).success= is
+   =o == 1=, not a canonicity-checked decode, so EVERY attested byte other
+   than 0x01 — 0x02, 0xff — is accepted and routes to the REFUND branch.
+   Verified against BOTH artifacts (compactc's completeWithdraw.zkir and
+   the port agree exactly), so it is the note that is wrong, not the port.
+   Contrast =abiWordToBool= (Signet.compact:461-463), which DOES assert
+   canonicity: the asymmetry is in the Compact stdlib, not in the vault.
+   Consequence: an MPC attesting 0x02 over an EXECUTED, SUCCESSFUL
+   withdrawal refunds it — the value is delivered on EVM *and* re-minted.
+   Not caller-reachable (the MPC signs the output), but it means the
+   0x00/0x01 packing is load-bearing protocol, not just an encoding.
+   This also caught a bug in the reference model itself: it encoded
+   =refunding = (outcome == 0)=, which agrees with the circuit only on
+   {0x00, 0x01} — precisely the two values the differential suite ever
+   used. The property harness found it on its first run.
+
+** Findings the sweeps pinned (all now tests)
+- IDENTITY mpcResponseKey AUTHENTICATES ANYTHING, and =initialize= does
+  not reject one. With Q = O, verifying a signature made under d = 0
+  recomputes R' = (z/s)G + (r/s)O = (z/s)G, whose x IS r — so it verifies,
+  and anyone can produce such a signature knowing no secret. Every settle
+  circuit's ONLY authentication gate is then open. =initialize= validates
+  =chainId > 0= and =swapRouter != 0= but has no analogous check on
+  =responseKey=. Deployer-gated and one-shot, so misconfiguration-class,
+  not attacker-reachable — but it is a missing check of exactly the kind
+  the contract makes elsewhere. Test asserts the CURRENT behaviour, so
+  adding the check will fail the test and force this note to be updated.
+- NO COUNTER-OVERFLOW GUARD. At =signetRequestNonce == u64::MAX= every
+  circuit assert still passes; it is the Impact VM that refuses (=Addi= →
+  =ArithmeticOverflow=). Circuit acceptance and ledger acceptance genuinely
+  differ there, and the harness models the split rather than hiding it.
+  Needs 2^64 requests; recorded, not actionable.
+- FORGED MEMBERSHIP: circuit accepts, ledger refuses. A =member= answer is
+  a =Popeq= result, so a prover claiming a pending marker that does not
+  exist gets a valid PROOF; only =ResultModeVerify::process_read= catches
+  it (=ReadMismatch=). Before this step nothing in the repo executed an op
+  stream, so this defence was entirely untested. It is the single best
+  argument for the run_program link.
+- UNREAD ARGUMENT SLOTS pinned exactly: the attestation's =bigR.y= and
+  =recoveryId= always (declared + range-constrained, never consumed —
+  faithful to the Compact original), plus the unselected arm of claim's
+  =Maybe<Either<..>>= recipient, which varies by shape. Establishing this
+  needs the communications commitment RE-DERIVED after the perturbation:
+  =comm = transient_commit(inputs, rand)= binds the whole argument vector
+  in-circuit, so a naive sweep only re-proves that the commitment binds.
+  (On chain it does not: verify.rs:1946-1948 pushes the commitment
+  verbatim and never recomputes it — the §"constrain_bits dedup" verdict
+  is re-confirmed, not weakened.)
+- ECDSA malleability: =s = 0= ABORTS rather than returning false
+  ("instruction 49 (inv): cannot invert zero of type Secp256k1Scalar"),
+  =r = n= and =s = n= reject, and the classic partner =(r, n − s)= REJECTS
+  too. Attestations are therefore not trivially malleable in this
+  construction.
+- =amount <= u64::MAX= (deposit/withdraw) and the amountOut/amountInMaximum
+  equivalents were previously UNREACHABLE by the model, which typed
+  amounts as u64. Widened to u128 so generation reaches 2^64 − 1, 2^64 and
+  2^128 − 1, per this file's §"Generation strategies".
+- completeSwap's =amountInMaximum − amountIn= has six named boundary tests
+  (exact spend → 0-coin, cap−1, cap+1, u64::MAX against cap 1, the
+  smallest legal cap 1 at spend 0/1/2, and the u64 ceiling). Underflow
+  rejects in every direction; the 0-value change coin on an exact spend is
+  real and declared.
+
+** Timings (M4 Max, release, 2026-08-15)
+| run | wall |
+|-----+------|
+| whole workspace, default counts | 86 s (row_snapshot is 34 s of it) |
+| erc20_vault_spec, default (48 cases) | 0.11 s |
+| erc20_vault_spec, PROPTEST_CASES=20000, all 9 in parallel | 44.3 s |
+| deposit alone, 20000, single-threaded | 11.7 s (0.59 ms/case) |
+| claim alone, 20000, single-threaded | 15.3 s (0.76 ms/case) |
+| completeSwap alone, 20000, single-threaded | 20.4 s (1.02 ms/case) |
+| erc20_vault_adversarial, PROPTEST_CASES=20000 | 3.3 s |
+Extrapolating the parallel figure, PROPTEST_CASES=1000000 across all nine
+circuits is ~37 minutes wall — comfortably a gating CI job rather than an
+overnight one. Default is 48 cases/property (=gen::DEFAULT_CASES=), chosen
+so the whole workspace stays under 90 s; the settle circuits dominate
+because each case simulates an in-circuit secp256k1 verification.
+
+** What step 1 does NOT yet cover
+- The million-case gating run has not been EXECUTED (only measured), so
+  M10's verification bullet stays open with this annotation.
+- Level-1/level-2 port ↔ optimized equivalence (§"Port ↔ optimized
+  equivalence") is unbuilt by design: there is no second artifact yet. The
+  pieces it needs exist — symbolic effects, =Term::concretize= as the
+  single swap point, the injectivity sweep written against =concretize= —
+  so it is an afternoon once step 4 forks the artifact.
+- Disclosure declarations are carried by hand in =Outcome::Accept=, not
+  machine-checked; that waits on M9 phase 6 as this file's §Sequencing
+  already says.
+- The attestation-signature guard is always satisfied under generation
+  (scenarios build valid signatures); its failure modes live in the
+  adversarial suite instead.
