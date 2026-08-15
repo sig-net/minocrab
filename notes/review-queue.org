@@ -208,3 +208,26 @@ reviewer should look at.
       of eyes on the "rows are position-independent" half of that. Also
       skim the ONE name-column change (xcall_with_payment::callOnce's
       coin_ prefix) and the unported-family argument in hashing.rs.
+      (STILL OPEN after M9's closure commit, which touched the same two
+      files without touching either concern: the Secp256k1Point
+      push_slots/constrain filter and the settle constraint order are
+      untouched, and so is callOnce's name column — the closure changed
+      only how its coin fields are DISCLOSED. What it did change here is
+      the hashing unported-family argument, which now carries a second
+      paragraph saying the same sixteen circuits are the only ones in
+      the corpus without a typed disclosure declaration; read the two
+      together.)
+- [ ] M9 closure (312c8ff, the 32 experiment declarations): the ZKIR is
+      byte-identical for all 87, so what deserves eyes is the LABEL
+      STRING mapping — every free-string `c.disclose(w, "x (hi)")` pair
+      became one `label!(X = "x")`, and a REPORT is the only place a
+      wrong string would show, since nothing else reads a disclosure
+      label. Check the strings against the pre-change call sites,
+      especially xcall_with_payment's two different spellings for the
+      same coin ("nonce"/"color"/"value" on the caller side, "coin
+      nonce"/… on the target side, both preserved deliberately). Also
+      check the two `Discloses<()>` claims (serde_builtin::
+      check_roundtrip, xcall::target_deposit_big) really are circuits
+      that disclose nothing rather than circuits whose disclosure was
+      dropped — the generated test proves the SET matches the code, not
+      that the code is right.

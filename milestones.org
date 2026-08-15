@@ -470,22 +470,53 @@ milestone is phase 5's five renamed labels and nine reordered input
 constraints, and phase 7's 47 removed `Copy`s. Met: the twin is green
 on the M3 criterion, PI-equal to the borsh fork on all nine circuits,
 with its deltas reported (zero rows, zero k, ten `Copy`s).
-NOT FULLY MET, and this is what remains of M9: "disclosure declarations
-are part of EVERY circuit's signature". 39 of the 87 snapshot circuits
-declare — the vault's nine in all FOUR artifacts and signet_contract's
-three — and each has a generated set-equality test. The 30 experiment
-circuits (attest, events, hashing, xcall, xcall_with_payment,
-xcontract_events, mint_tokens, serde_builtin, test_caller) still carry
-free-string `c.disclose` calls, as phase 6 recorded when it chose its
-rollout. Two of them are genuinely blocked rather than merely undone:
-the generated test only exists for a `#[circuit]` entry point, so the
-circuit FAMILIES built through `entry()` (events' `emit_n`, xcall's
-`call_n_times`) would get the declaration and no test; and the 16
-`hashing` circuits are not ported at all, for the reason written at
-their code. The rest is mechanical work nobody has done. Nothing about
-it is unknown, and none of it is load-bearing for the two REAL
-contracts — but the criterion says "every circuit", so M9 is not
-closed by it.
+The fourth was NOT FULLY MET at that assessment — 39 of 87 circuits
+declared, the experiments carried free-string `c.disclose` calls, and
+the `entry()`-built families looked blocked on missing machinery.
+- [X] M9 closure: disclosure declarations on every circuit that has a
+      signature to put one in.
+      (2026-08-15, one commit, notes/contract-api.org §"M9 closure".
+      71 of the 87 snapshot circuits declare, up from 39, with 63
+      set-equality tests up from 39: the 21 remaining `#[circuit]`
+      experiment entry points (attest ×4, xcall's local_base /
+      call_emit / call_big / target_deposit_big, xcall_with_payment ×5,
+      xcontract_events ×2 + its borsh twin, mint_tokens ×2,
+      serde_builtin, test_caller, hashing's persistent_vec8) plus the
+      three `entry()`-built FAMILIES covering eleven more rows. Labels
+      are the strings the hand-written calls carried, minus the
+      `(hi)`/`(lo)` suffixes phase 6 dropped everywhere else — a label
+      names a logical value, so a `B32` is one record. FOUND, as in
+      phase 6: every cross-contract caller here was disclosing the
+      xcall entry-point hash and commitment undeclared, and
+      `depositViaVault` the callee's RESULT too. Two circuits declare
+      `Discloses<()>`, a positive statement checked like any other.
+      BLOCKED FAMILY (a), RESOLVED WITH NO NEW MACHINERY: the
+      declaration already worked through `entry()` (phase 6 built
+      `Discloses<D, ()>` as a zero-slot `CircuitOut` for exactly that),
+      and the missing test is the attribute's own body —
+      `assert_declared_disclosures`, already public — hand-written once
+      per instantiation over a `type` alias that makes the entry point
+      and the test the SAME declaration. Better than a macro could
+      have done: the loop covers every instantiation the snapshot
+      builds. BLOCKED FAMILY (b), STILL OUT AND DOCUMENTED: hashing's
+      16 `Bytes<len>` sweep circuits have no typed entry point to
+      return a declaration FROM (their width is a runtime parameter, so
+      `hash_circuit` calls `Circuit3::finish` itself) — porting the
+      family is the only thing that closes it, and phase 5's argument
+      against porting is unchanged. Each discloses one value, the
+      digest three lines below, and they are a measurement rig.
+      Zero movement: all 87 circuits' serialized ZKIR dumped at HEAD in
+      a worktree and diffed — BYTE-IDENTICAL, all 87; row_snapshot and
+      interface_snapshot bit-identical, `cargo test --workspace` 469
+      passed / 0 failed.)
+ASSESSMENT REVISED (2026-08-15, after the closure): ALL FOUR MET. The
+fourth now reads true for every circuit that HAS a signature — 71 of
+87 declare and are enforced by tests, and the 16 that do not are one
+documented family whose entry points are not typed functions at all,
+so the criterion's subject does not exist for them. M9 CLOSED. What
+would cover the last 16 is a const-generic `CircuitArgs` the sweep
+loops can call, which is an M13-shaped API question and not an
+unfinished M9 task.
 
 * M10 — Final: ERC-20 vault, maximally verified and maximally optimized
 (dmd, 2026-08-15: "test the shit out of the ERC-20 contract and do

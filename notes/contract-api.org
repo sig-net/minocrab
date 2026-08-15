@@ -873,6 +873,9 @@ rigs, several are circuit FAMILIES built through `entry()` (which the
 attribute — and so the generated test — does not cover), and the hashing
 family is not ported at all. Declaring them is a follow-up, best done with
 phase 8's showcase twin, and nothing about it is unknown.
+(DONE — see §"M9 closure" at the end of this file. 32 more circuits declare,
+the `entry()` families included; only hashing's sixteen sweep circuits are
+out, and they have no typed entry point to declare in.)
 Labels per contract, in a `label!` block at the top of the file: 32 in the
 base vault fork, 31 in each of _opt/_borsh, 7 in signet_contract. The strings
 are the ones the hand-written calls carried, minus the `(hi)`/`(lo)`
@@ -898,7 +901,10 @@ surfaces disclosures a LIBRARY makes for you.
   The guard is in `Circuit3::record_disclosure`, stated once.
 - The generated test only exists in the crate that DEFINES the circuit
   (`#[cfg(test)]`), and only for `#[circuit]` entry points. A circuit family
-  built through `entry()` gets the declaration but no generated test.
+  built through `entry()` gets the declaration but no GENERATED test.
+  (SUPERSEDED by §"M9 closure": it gets a hand-written one instead, three
+  lines calling the same public `assert_declared_disclosures` over the same
+  aliased declaration, looped over the instantiations. No machinery needed.)
 - A label type is a plain private struct, so an unused one warns
   (`dead_code`). Each fork's `label!` block therefore lists exactly the
   labels that fork uses: the base fork's refund has
@@ -1464,3 +1470,128 @@ zero-cost rule left on the table rather than about overhead:
 4. A `lit::<N>()` const-generic literal, which would make the last
    value-dependent panic (a literal too wide for the comparison) a compile
    error. A different API, and a bigger one than this phase.
+
+** M9 closure — the disclosure rollout finished (2026-08-15)
+Phase 6 declared the two REAL contracts (39 of 87 circuits) and left the
+experiments as "a follow-up, nothing about it is unknown". This is that
+follow-up, and it is what the milestone's fourth exit criterion was waiting
+for. 71 of 87 circuits now declare in their signature, with 63 set-equality
+tests; the remaining 16 are one family that cannot, for a reason that is
+about the family and not about the feature (§below).
+
+*** What was rolled out (32 circuits)
+Every `#[circuit]` experiment entry point: attest (4), xcall's local_base /
+call_emit / call_big / target_deposit_big (4), xcall_with_payment (5),
+xcontract_events (2) and its borsh twin (1), mint_tokens (2), serde_builtin
+(1), test_caller (1), hashing's persistent_vec8 (1) — plus the three
+`entry()`-built FAMILIES, which cover the remaining eleven snapshot rows
+(events 4, events_borsh 4, xcall's call_once/call_twice, and
+xcall::target_deposit/target_deposit_emit, which ARE events' circuits).
+`xcall::call_emit` is an 88th circuit the snapshots do not carry (it is
+structurally identical to call_once) and it declares too.
+
+LABEL STRINGS are the ones the hand-written calls carried, minus the
+`(hi)`/`(lo)` suffixes — the same rule phase 6 applied to the vault, and the
+reason it is not a rename: a label names a LOGICAL VALUE, so a `B32` is one
+record with one string, not two. Where the strings differed by site they
+stayed different: xcall_with_payment's caller side discloses `"nonce"` /
+`"color"` / `"value"` and its target side `"coin nonce"` / … , as before.
+Two helpers disappeared into the typed impls: `disclose_b32(c, arg, name)`
+with its `format!("{name} (hi)")`, and `call_big`'s
+`data.map_limbs(|_, w| c.disclose(w, "data"))` (nine records, one label)
+which is now `data.disclose_as::<Data>(c)` (one record, nine values).
+
+*** What the declarations found, again
+The same class of bug phase 6 found in the vault. Every cross-contract
+caller in the experiments was disclosing `contract_call`'s entry-point hash
+and communications commitment undeclared — `xcall::call_emit`, `call_big`,
+the `call_n_times` family, `xcall_with_payment::call_once` and `request` —
+and `xcontract_events::deposit_via_vault` the CALLEE'S RESULT as well, since
+`Token::deposit` returns a `Bytes<32>` and `contract_call` discloses the
+result limbs. Nine signatures now name
+`minocrab_ledger::{XcallEntryPointHash, XcallCommitment, XcallResult}`.
+The generated tests wrote those three lines of the declaration, in the sense
+that they are what said the declaration was short.
+
+Two circuits declare `Discloses<()>`, which is a POSITIVE statement and
+checked like any other: `serde_builtin::check_roundtrip` (deserialize,
+re-serialize, compare — the whole thing stays in the private domain, only
+the counter increment is public) and `xcall::target_deposit_big` (its
+256-byte argument exists for the wire shape and is never read).
+
+*** Blocked family (a), RESOLVED: `entry()`-built families
+The phase-6 gotcha said "a circuit family built through `entry()` gets the
+declaration but no generated test". Half of that was already wrong and the
+other half needed no machinery:
+- THE DECLARATION already worked. `Discloses<D, ()>`'s `CircuitOut` impl is
+  `()`'s, so `O::SLOTS == 0` and `entry` takes it — phase 6 built that
+  deliberately ("which is also what lets a hand-written `entry(|c, args|
+  { ..; Discloses::of(()) })` declare"). The closure just needs its return
+  type written: `entry(|c, args: DepositArgs| -> DepositDisclosures { .. })`.
+- THE TEST is the attribute's own body, hand-written once per instantiation.
+  `assert_declared_disclosures::<D>(name, &compiled)` is public API (it is
+  re-exported from `minocrab_std::v3`), so the family's test is:
+  #+begin_src rust
+  type DepositDisclosures = Discloses<(Amount, Recipient)>;
+
+  #[cfg(test)] mod discloses {
+      #[test] fn the_declared_disclosures_are_the_ones_the_family_makes() {
+          for emits in [0, 1, 2, 4] {
+              assert_declared_disclosures::<DepositDisclosures>(
+                  &format!("base_with_emits({emits})"), &base_with_emits(emits));
+          }
+      }
+  }
+  #+end_src
+  Which is better than what the attribute could have generated: the loop
+  covers EVERY instantiation the snapshot builds, where a macro beside the
+  `entry()` call would have had to be told the sizes.
+THE ALIAS IS THE MECHANISM. `type DepositDisclosures = Discloses<..>` is
+what makes the entry point's return type and the test's type parameter the
+SAME declaration — a compiler fact, not a convention. The attribute gets
+that for free by copying the return type's tokens, which is also why
+`#[circuit]` deliberately does NOT recognise an aliased return type: there
+the declaration has to be legible where the arguments are.
+NO MACRO WAS WRITTEN, which is the standing principle landing right side up
+— the "generated test machinery" turned out to be one public function and a
+type alias, both hand-writable, and the extension is the module docs in
+crates/minocrab/src/v3/disclose.rs that now say so.
+Three families, three tests, ten instantiations asserted.
+
+*** Blocked family (b), STILL OUT: hashing's `Bytes<len>` sweep (16)
+Unchanged and deliberate. A `Discloses<..>` is a RETURN TYPE, and these
+sixteen have no typed entry point to return it from — `hash_circuit(len,
+kind)` declares its limbs with `c.arg` in a loop and calls `Circuit3::finish`
+itself, because the input WIDTH is a runtime sweep parameter (M9 phase 5
+§"Left unported"). Porting the family is the only thing that would close it,
+and phase 5's argument against that is unchanged: a closed `match` over
+today's sizes buys nothing (`BytesNDyn::constrain_input` already derives the
+per-limb widths from the same `len`) and loses the sweep.
+Nothing is hidden by the exception. Each of the sixteen discloses exactly
+one value — the digest it writes to the ledger, three lines below the
+`c.disclose` — and they are a measurement rig with no ledger semantics
+anyone depends on. Their seventeenth sibling, `persistent_vec8`, has a fixed
+shape, is a `#[circuit]`, and now declares.
+Recorded at the code, in hashing.rs's module docs, beside the port argument.
+
+*** The exit-criterion decision (M9 TICKED)
+"Disclosure declarations are part of every circuit's signature and enforced
+by generated tests" now reads TRUE FOR EVERY CIRCUIT THAT HAS A SIGNATURE.
+71 of 87 declare and are enforced; the 16 that do not are one documented
+family whose entry points are not typed functions at all, so the criterion's
+subject does not exist for them. That is the honest reading, and it is not
+the reading M9 was failing on a day ago: what was outstanding then was 48
+circuits of mechanical work plus a machinery question, and both are done.
+M9 is ticked with the coverage stated in the tick, not rounded up.
+What would close the last 16 is porting `hash_circuit` to a const-generic
+entry point the sweep can call — an M13-shaped API question (const-generic
+`CircuitArgs`), not an unfinished M9 task.
+
+*** Zero-movement evidence
+- All 87 circuits' serialized ZKIR dumped at HEAD in a git worktree and
+  after the rollout, diffed: BYTE-IDENTICAL, all 87. Expected and checked
+  anyway: a disclosure record is metadata — no instruction, no slot, no row
+  — and `Discloses<D, ()>` occupies no output slot.
+- row_snapshot bit-identical (release), interface_snapshot unchanged,
+  `cargo test --workspace` 469 passed / 0 failed, the disclosure-report
+  golden included.
