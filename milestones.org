@@ -612,7 +612,7 @@ external value and no dependency on 1-7.
       padding rule, Maybe↦Flagged, per-record offset tables GENERATED
       from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
       implements against.
-- [ ] 9. Hash-flavor API (dmd 2026-08-15): expose persistent_hash
+- [X] 9. Hash-flavor API (dmd 2026-08-15): expose persistent_hash
       (BORSH flavor, the default — hashes the subset bytes) and
       persistent_hash_compact (FAB binary_repr semantics: field atoms
       reduced mod p, compress atoms via transient_commit, option
@@ -631,6 +631,27 @@ external value and no dependency on 1-7.
       anyway. Since contracts are never part-Compact/part-MinoCrab,
       the _compact flavors exist solely at interop boundaries; the
       compat-port artifacts keep FAB by definition.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 9".
+      minocrab_std::v3::hash, four functions, always written
+      module-qualified so the flavor is visible at the call site.
+      NOTHING WAS RENAMED: the borsh pair is new, Circuit3's raw
+      instructions keep their names, and the v2 hash module — FAB by
+      definition, since its job is compactc's own lowering — is
+      untouched but now says so and points here. The _compact flavor
+      has three callers immediately (token_type, coin_nullifier_contract,
+      coin_commitment route through it at byte-identical ZKIR), which
+      makes "the pinned preimages are its real users" greppable.
+      Gates: the digest IS Sha256(borsh::to_vec(twin)) through the
+      simulator; the two PERSISTENT flavors agree as byte-identical
+      ZKIR, from two independent descriptions (push_limbs vs
+      CircuitAbi::atoms + CircuitArg::push_slots) — finding #1 as a
+      checkable fact; the borsh transient limbing pinned against native
+      Poseidon over borsh::to_vec(v).chunks(31); and the two TRANSIENT
+      flavors pinned as genuinely different digests, which is where the
+      choice is real. sha2 became a dev-dep of minocrab-std: one lock
+      LINE, no new package. Deliberately absent: a keccak256 flavor
+      pair — the borsh keccak path already exists and is used, and no
+      Compact-interop keccak digest exists to disambiguate against.)
 Exit criteria: the spec document and vectors exist and the TS/MPC side
 can implement against them; every in-circuit encoder is byte-equal to
 both oracles at millions of cases; the record change's k movement is
@@ -757,3 +778,15 @@ features MinoCrab lacks (e.g. compactc's maturity/official support,
 the TS runtime + dapp tooling integration, language-level docs/
 tutorials/ecosystem, anything the roadmap research surfaces —
 excluding trivial "we're not our own language" items).
+
+M13 fairness refinement (dmd): the we-lack list contains ONLY actual
+language/feature gaps — things POSSIBLE in Compact but NOT possible in
+MinoCrab today. Not maturity/support (not a feature), not the TS
+runtime (planned later via wasm). Honest candidates to audit for the
+list: arbitrary-bound Uint<0..n> for non-power-of-two n (compactc
+lowers via less_than; our leaves are power-of-two widths only),
+Opaque<'ts-type'> bridging, enum exhaustiveness at the language level,
+the unported kernel.* built-ins (blockTime*, unshieldedBalance*,
+mint/send/receive kernel circuits — M4 REMAINING), ledger MerkleTree
+ops if still unported. The M13 agent verifies each against the code
+before listing (only true gaps).
