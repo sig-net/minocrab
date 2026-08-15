@@ -1,0 +1,225 @@
+{
+  "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
+  "format": "borsh-subset-vectors/1",
+  "spec": "spec/borsh-subset.md",
+  "about": "The leaf table as values — one vector per primitive the subset admits. Flagged<T> is the Maybe replacement: a bool tag and an ALWAYS-PRESENT payload, so its width does not depend on the tag (both vectors are 5 bytes).",
+  "vectors": [
+    {
+      "type": "bool (false)",
+      "len": 1,
+      "hex": "00",
+      "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "keccak256": "bc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "bool",
+          "offset": 0,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        }
+      ]
+    },
+    {
+      "type": "bool (true)",
+      "len": 1,
+      "hex": "01",
+      "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+      "keccak256": "5fe7f977e71dba2ea1a68e21057beebb9be2ac30c6410aa38d4f3fbe41dcffd2",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "bool",
+          "offset": 0,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        }
+      ]
+    },
+    {
+      "type": "u8",
+      "len": 1,
+      "hex": "a7",
+      "sha256": "2dbf9365a0b09d85bbd6176d8b2332aa5ae97bef652712473bc69165e74b22ed",
+      "keccak256": "526fc8876e447d37b12ef412ad1e302f461fd8f36060821a3d33f88c6f1a439d",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "a7",
+          "number": 167
+        }
+      ]
+    },
+    {
+      "type": "u16",
+      "len": 2,
+      "hex": "efbe",
+      "sha256": "e88acd79ec68c82eaf74c753d856090af55303d6355771fbb22416eeaddd9956",
+      "keccak256": "b20a9e86fecca61cad07ef67a4421c555b67e71ccfe8cb714809b1799cccb7ec",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "u16",
+          "offset": 0,
+          "width": 2,
+          "hex": "efbe",
+          "number": 48879
+        }
+      ]
+    },
+    {
+      "type": "u32",
+      "len": 4,
+      "hex": "efbeadde",
+      "sha256": "d9e0d4c3850aa130f909e1bcafebea98a16700e02171c1df5a2fe31789d94b0f",
+      "keccak256": "c872ba77ace375065e765f87fe30d0a9e3ca8d80d2751d734e084dc6057f18c1",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "u32",
+          "offset": 0,
+          "width": 4,
+          "hex": "efbeadde",
+          "number": 3735928559
+        }
+      ]
+    },
+    {
+      "type": "u64",
+      "len": 8,
+      "hex": "0807060504030201",
+      "sha256": "380b980886b7a3e726b5c2776160d7842b8f139eaea1e6acf7442cdf890e6287",
+      "keccak256": "815f7b0bfb1e4ba276acf210cccb3d91a4ee99a524cc32934bdfb5504d9c31aa",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "u64",
+          "offset": 0,
+          "width": 8,
+          "hex": "0807060504030201",
+          "number": 72623859790382856
+        }
+      ]
+    },
+    {
+      "type": "u128",
+      "len": 16,
+      "hex": "100f0e0d0c0b0a090807060504030201",
+      "sha256": "5919c17b36856d3a707e812a4e74385e632d4fc28528c4be9fa49ecd0755d640",
+      "keccak256": "3e43424d045a63703171c48e05edf1d4570261c2a329367b2213611c77b8be8b",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "u128",
+          "offset": 0,
+          "width": 16,
+          "hex": "100f0e0d0c0b0a090807060504030201",
+          "number": 1339673755198158349044581307228491536
+        }
+      ]
+    },
+    {
+      "type": "[u8; 20]",
+      "len": 20,
+      "hex": "01080f161d242b323940474e555c636a71787f86",
+      "sha256": "c0c1e4041fec91793f2ae907d8a09f4c225b4595de9178d79235cb8362333a90",
+      "keccak256": "1bb916eab1124b45c7410363eada44b178a59ae54da050f699de00265f0bd085",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "[u8; 20]",
+          "offset": 0,
+          "width": 20,
+          "hex": "01080f161d242b323940474e555c636a71787f86"
+        }
+      ]
+    },
+    {
+      "type": "[u8; 32]",
+      "len": 32,
+      "hex": "020d18232e39444f5a65707b86919ca7b2bdc8d3dee9f4ff0a15202b36414c57",
+      "sha256": "b6c9be83ae04da1df9fcc67c6dc85bd1e2ec007bf9046748f809c1b7b91bf2f2",
+      "keccak256": "c73b12c295d9b1cbb099a0e04e7269df34c5878eb6c6f54f0ca3a2beba4d9af5",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "020d18232e39444f5a65707b86919ca7b2bdc8d3dee9f4ff0a15202b36414c57"
+        }
+      ]
+    },
+    {
+      "type": "[u8; 64]",
+      "len": 64,
+      "hex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9aa7b4c1cedbe8f5020f1c2936",
+      "sha256": "5dfdec63aeb8e65e7e46e5014f865c7bae89164d80257b9cb976aba03dfffad2",
+      "keccak256": "400099ceffb0e33bd036c94ef5f12ac822b01e08b1bcd54ad0376c64506cd143",
+      "fields": [
+        {
+          "path": "(the value)",
+          "type": "[u8; 64]",
+          "offset": 0,
+          "width": 64,
+          "hex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9aa7b4c1cedbe8f5020f1c2936"
+        }
+      ]
+    },
+    {
+      "type": "Flagged<u32> (set)",
+      "len": 5,
+      "hex": "01efbeadde",
+      "sha256": "8eb04d0bcc0309ab8ba625564ff50a8cb4b20e2318dec98f509ad4ac59988226",
+      "keccak256": "b47186be3ae4a69bf826ccad307e8bb293fd42bf477f53218a758256a6d4b5dd",
+      "fields": [
+        {
+          "path": "is_some",
+          "type": "bool",
+          "offset": 0,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "value",
+          "type": "u32",
+          "offset": 1,
+          "width": 4,
+          "hex": "efbeadde",
+          "number": 3735928559
+        }
+      ]
+    },
+    {
+      "type": "Flagged<u32> (unset)",
+      "len": 5,
+      "hex": "0000000000",
+      "sha256": "8855508aade16ec573d21e6a485dfd0a7624085c1a14b5ecdd6485de0c6839a4",
+      "keccak256": "c41589e7559804ea4a2080dad19d876a024ccb05117835447d72ce08c1d020ec",
+      "fields": [
+        {
+          "path": "is_some",
+          "type": "bool",
+          "offset": 0,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "value",
+          "type": "u32",
+          "offset": 1,
+          "width": 4,
+          "hex": "00000000",
+          "number": 0
+        }
+      ]
+    }
+  ]
+}

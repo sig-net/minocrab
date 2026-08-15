@@ -15,6 +15,10 @@
 //!   be asked whether it accepts them.
 //! - [`records`] — the bridge from the reference model's scenarios to the
 //!   spec types.
+//! - [`spec_doc`] — the PUBLISHED artifact (M11 stage 8): `spec/borsh-subset.md`'s
+//!   offset tables and `spec/vectors/*.json`, generated from the same schema
+//!   walk, so the document a TS or MPC implementer reads cannot drift from
+//!   the format the suite checks.
 //!
 //! Not a test target (subdirectory of `tests/`). Requires `mod vault;` in
 //! the same binary: the deployed side reuses M10's reference model and
@@ -24,4 +28,5 @@
 pub mod deployed;
 pub mod oracle;
 pub mod records;
+pub mod spec_doc;
 pub mod spec_types;

@@ -1087,3 +1087,136 @@ fn print_layout_snapshot() {
         );
     }
 }
+
+// ---- (f) THE PUBLISHED SPEC (M11 stage 8) --------------------------------------
+//
+// `spec/borsh-subset.md` and `spec/vectors/*.json` are the artifact the TS and
+// MPC sides implement against. The prose is hand-written; every OFFSET and
+// every BYTE in them is generated from the same schema walk this suite
+// checks, and the two tests below fail if the committed files stop being that
+// generator's output. A spec that can drift from the format is worse than no
+// spec, so the document is a test fixture as much as a document.
+
+mod spec_document {
+    use super::*;
+
+    use serialization::spec_doc;
+
+    /// The generated region of `spec/borsh-subset.md` IS
+    /// `spec_doc::offset_tables_markdown()` — same types, same order, same
+    /// offsets. Prose outside the markers is not touched by either side.
+    #[test]
+    fn the_committed_offset_tables_are_generated() {
+        let path = spec_doc::spec_dir().join("borsh-subset.md");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+        let begin = text
+            .find(spec_doc::TABLES_BEGIN)
+            .expect("the document has no generated-tables begin marker")
+            + spec_doc::TABLES_BEGIN.len();
+        let end = text
+            .find(spec_doc::TABLES_END)
+            .expect("the document has no generated-tables end marker");
+        assert_eq!(
+            &text[begin..end],
+            spec_doc::offset_tables_markdown(),
+            "spec/borsh-subset.md's offset tables are not the generated ones — every offset \
+             there is a wire commitment; regenerate with the `regenerate_spec` test"
+        );
+    }
+
+    /// Every committed vector file IS the generator's output, and the
+    /// directory holds exactly those files (a stale vector is as misleading
+    /// as a wrong one).
+    #[test]
+    fn the_committed_vectors_are_generated() {
+        let dir = spec_doc::spec_dir().join("vectors");
+        let files = spec_doc::vector_files();
+        for (name, want) in &files {
+            let path = dir.join(name);
+            let got = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+            assert_eq!(
+                &got, want,
+                "{} is not the generated vector file — regenerate with the `regenerate_spec` test",
+                path.display()
+            );
+        }
+
+        let mut committed: Vec<String> = std::fs::read_dir(&dir)
+            .expect("spec/vectors exists")
+            .map(|entry| entry.expect("readable").file_name().to_string_lossy().into_owned())
+            .collect();
+        committed.sort();
+        let mut expected: Vec<String> = files.iter().map(|(name, _)| name.to_string()).collect();
+        expected.sort();
+        assert_eq!(committed, expected, "spec/vectors holds a file nobody generates");
+    }
+
+    /// The committed vectors are INTERNALLY consistent: the fields tile the
+    /// value exactly — same order, no gap, no overlap — and their bytes
+    /// concatenate to the vector's own `hex`. An implementer who decodes
+    /// field by field and one who hashes the whole string are looking at the
+    /// same bytes.
+    #[test]
+    fn every_vector_is_tiled_by_its_fields() {
+        for (name, text) in spec_doc::vector_files() {
+            let file: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name} is not JSON: {e}"));
+            let vectors = file["vectors"].as_array().expect("vectors is an array");
+            assert!(!vectors.is_empty(), "{name} carries no vectors");
+            for vector in vectors {
+                let ty = vector["type"].as_str().expect("type");
+                let hex = vector["hex"].as_str().expect("hex");
+                let len = vector["len"].as_u64().expect("len") as usize;
+                assert_eq!(hex.len(), 2 * len, "{name}/{ty}: hex is not len bytes");
+
+                let mut offset = 0usize;
+                let mut tiled = String::new();
+                for field in vector["fields"].as_array().expect("fields is an array") {
+                    let at = field["offset"].as_u64().expect("offset") as usize;
+                    let width = field["width"].as_u64().expect("width") as usize;
+                    let bytes = field["hex"].as_str().expect("field hex");
+                    assert_eq!(at, offset, "{name}/{ty}: a gap or overlap at offset {at}");
+                    assert_eq!(bytes.len(), 2 * width, "{name}/{ty}: field hex is not width bytes");
+                    assert_eq!(
+                        bytes,
+                        &hex[2 * at..2 * (at + width)],
+                        "{name}/{ty}: field at {at} is not the value's own bytes"
+                    );
+                    tiled.push_str(bytes);
+                    offset += width;
+                }
+                assert_eq!(offset, len, "{name}/{ty}: the fields do not cover the value");
+                assert_eq!(tiled, hex, "{name}/{ty}: the fields do not concatenate to the value");
+            }
+        }
+    }
+
+    /// Regeneration helper: rewrites the generated region of
+    /// `spec/borsh-subset.md` and every `spec/vectors/*.json`.
+    #[test]
+    #[ignore = "regeneration helper, not a check"]
+    fn regenerate_spec() {
+        let dir = spec_doc::spec_dir();
+        let doc = dir.join("borsh-subset.md");
+        let text = std::fs::read_to_string(&doc).expect("the document exists");
+        let begin = text.find(spec_doc::TABLES_BEGIN).expect("begin marker")
+            + spec_doc::TABLES_BEGIN.len();
+        let end = text.find(spec_doc::TABLES_END).expect("end marker");
+        let mut out = String::new();
+        out.push_str(&text[..begin]);
+        out.push_str(&spec_doc::offset_tables_markdown());
+        out.push_str(&text[end..]);
+        std::fs::write(&doc, out).expect("the document is writable");
+        println!("wrote {}", doc.display());
+
+        let vectors = dir.join("vectors");
+        std::fs::create_dir_all(&vectors).expect("spec/vectors is creatable");
+        for (name, contents) in spec_doc::vector_files() {
+            let path = vectors.join(name);
+            std::fs::write(&path, contents).expect("the vector file is writable");
+            println!("wrote {}", path.display());
+        }
+    }
+}

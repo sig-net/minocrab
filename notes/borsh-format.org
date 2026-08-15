@@ -1125,3 +1125,90 @@ No =keccak256= flavor pair. The borsh keccak path already exists and is used
 keccak digest exists to disambiguate against; adding a second spelling for
 symmetry alone would be API surface with no caller. The day one appears it is
 four lines, beside these.
+
+* As built — stage 8 (2026-08-15)
+=spec/borsh-subset.md= + =spec/vectors/*.json= — the artifact the TS and MPC
+sides implement against. NO code under src/ touched; row_snapshot and
+interface_snapshot bit-identical; =cargo test --workspace --release= green.
+
+** THE DOCUMENT CANNOT DRIFT, and that is the design
+Twelve sections of hand-written PROSE (the subset rule, the leaf table, the
+exclusions with their replacements, Maybe↦Flagged, the padding rule, the
+reject rules, the response kinds, the request id, the notification payload,
+the two oracles + the DataView note, status, provenance) around ONE GENERATED
+REGION: §9's per-type byte-offset tables, walked out of
+=borsh::schema_container_of= by =serialization::spec_doc= — the same walk the
+frozen LAYOUT_SNAPSHOT pins. Three tests fail if the committed artifact stops
+being the generator's output:
+- =the_committed_offset_tables_are_generated= — the text between the two
+  =<!-- … GENERATED: offset tables -->= markers IS
+  =spec_doc::offset_tables_markdown()=;
+- =the_committed_vectors_are_generated= — every =spec/vectors/*.json= is the
+  generator's byte-for-byte output, AND the directory holds exactly the files
+  the generator names (a stale vector is as misleading as a wrong one);
+- =every_vector_is_tiled_by_its_fields= — each vector's fields tile its value
+  exactly: declaration order, no gap, no overlap, each field's hex is the
+  value's own slice, and they concatenate back to it.
+DEVIATION from the brief: the regenerator is a NEW =--ignored= test
+(=spec_document::regenerate_spec=) rather than an extension of stage 0's
+=print_layout_snapshot=. The two do different things — print_layout_snapshot
+prints a Rust =const= body for a human to paste, regenerate_spec WRITES the
+published files — and merging them would have made the frozen table's
+regeneration touch the spec tree. Both are named in the docs of what they
+regenerate.
+
+** The vectors: five files, and why the value is an ARRAY
+| file                            | contents                                          |
+|---------------------------------+---------------------------------------------------|
+| leaves.json                     | one vector per leaf, incl. Flagged<u32> set/unset  |
+| records.json                    | VaultEvent (404 B), SwapEvent (571 B)             |
+| attested-outputs.json           | the stage-5 kinds + their signed preimages        |
+| attested-outputs-deployed.json  | what the DEPLOYED vault accepts today, for reference |
+| misc-payloads.json              | the singleton's payloads + the 288-byte envelope  |
+Each vector carries =type=, =len=, =hex= (the authoritative canonical Borsh
+bytes), =sha256= (persistentHash of this preimage), =keccak256= (the REQUEST
+ID for a record, the SIGNED DIGEST for an AttestationPreimage, a checksum
+otherwise) and =fields=: the value leaf by leaf with offset, width, its own
+hex and, for scalars, its decoded little-endian =number=.
+THE VALUE IS AN ORDERED ARRAY, NOT A JSON OBJECT, on purpose: the format is
+ordered and JSON objects are not — and it comes from the SAME layout rows the
+document's tables do, so a vector cannot disagree with its own offset table.
+That also sidesteps serde_json's alphabetical key order for =Value= maps,
+which would have published the fields in the wrong order in a document whose
+whole subject is field order.
+Values are fixed and deterministic, and REAL where the protocol fixes them:
+=erc20_vault::{TRANSFER_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR,
+VAULT_RESPONSE_SCHEMA, SWAP_OUTPUT_SCHEMA, SWAP_RESPOND_SCHEMA}= are the
+deployed constants; every free byte is a visible pattern (=start + i·step=),
+so a wrong offset shows up as a wrong byte rather than as a plausible one.
+
+** What the prose says that the tables cannot
+- THE HEADLINE, first line of the document: this IS Borsh, restricted — "if
+  you already have a Borsh library, you already have a decoder".
+- =Maybe ↦ Flagged=, its own section, with the failure mode spelled out
+  ("`Flagged<u32>` is FIVE bytes at every value; `Option<u32>` is one or five;
+  decode it as an Option and every offset after it is wrong on half your
+  inputs").
+- The five FINITE reject classes as a table, plus THE IN-CIRCUIT ASYMMETRY:
+  off-chain these are rejections with a reason, in-circuit there is no
+  "reject" — a malformed attestation is a different preimage, so the signature
+  fails and the transaction is unprovable.
+- The response-kind table and =attestationDigest =
+  keccak256(borsh({request_id, output}))=, with the two things that are GONE
+  (the 0xdeadbeef01 sentinel; acceptance of a non-boolean success byte).
+- The V1 notification payload's 128-byte layout, marked as the one layout in
+  the document that is NOT a Borsh struct — it is a fixed byte block the
+  callee's constructor packs (=construct_notification_v1=), and a log reader
+  needs it.
+- ENDIANNESS, stated twice because it is the classic mistake: Borsh integers
+  are little-endian everywhere, and the EVM ABI words carried INSIDE these
+  payloads are big-endian by the EVM's own rules — =[u8; 32]= byte arrays
+  here, whose contents Borsh does not touch.
+- §11 STATUS, so nobody implements the wrong half: the record, the request id
+  and the log payloads are DEPLOYED and this document specifies what is
+  already on the wire; the response kinds are SPECIFIED and not deployed (the
+  MPC has never settled on Midnight), which is why there is no migration.
+- The two-oracle statement (borsh == serde/bincode-fixint on the subset) AND
+  the explicit permission to use neither: "every offset in §9 is a constant,
+  so a DataView at the published offset is a complete decoder — this format
+  requires the offsets, not a library".

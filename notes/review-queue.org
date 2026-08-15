@@ -90,6 +90,18 @@ reviewer should look at.
       minocrab-std `borsh-schema` optional feature — confirm with cargo
       tree that no shipping build enables it (checked in-session, worth
       a second look since it is a dependency-posture claim).
+- [ ] M11 stage 8 (spec/borsh-subset.md + vectors): THE PROSE IS THE
+      REVIEWABLE ARTIFACT — the tables and vectors are generated and
+      self-checking, but §§1-8 and §11 are hand-written claims an external
+      team will implement against. Read them against the code: the leaf
+      table and exclusions vs v3::borsh's module docs, the reject classes
+      vs what the circuits actually enforce, the response-kind table vs
+      erc20_vault_borsh's RESPONSE_KIND_* constants, the 128-byte
+      notification layout vs construct_notification_v1's limb packing
+      (derived by hand from the packing weights — the one layout in the
+      document with no generated table behind it), and §11's
+      deployed-vs-specified split. Also the vector VALUES: they are
+      synthetic, so nothing pins their keccak256 to a real request id.
 - [ ] M11 stage 9 (hash flavors): the DOC CLAIM is the reviewable part —
       =v3::hash='s module docs tell a reader when =_compact= is needed,
       and a wrong list there is a wrong digest at an interop boundary

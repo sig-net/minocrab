@@ -1,0 +1,188 @@
+{
+  "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
+  "format": "borsh-subset-vectors/1",
+  "spec": "spec/borsh-subset.md",
+  "about": "The kind-tagged attested outputs and their digest preimages. keccak256 of an AttestationPreimage IS the digest the MPC signs; request_id here is the request id of the VaultEvent vector in records.json.",
+  "vectors": [
+    {
+      "type": "VaultResponse (kind 0, CLAIM, success)",
+      "len": 2,
+      "hex": "0001",
+      "sha256": "b413f47d13ee2fe6c845b2ee141af81de858df4ec549a58b7970bb96645bc8d2",
+      "keccak256": "49d03a195e239b52779866b33024210fc7dc66e9c2998975c0aa45c1702549d5",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "success",
+          "type": "bool",
+          "offset": 1,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        }
+      ]
+    },
+    {
+      "type": "VaultResponse (kind 1, WITHDRAW, failure)",
+      "len": 2,
+      "hex": "0100",
+      "sha256": "47dc540c94ceb704a23875c11273e16bb0b8a87aed84de911f2133568115f254",
+      "keccak256": "628bf3596747d233f1e6533345700066bf458fa48daedaf04a7be6c392902476",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "success",
+          "type": "bool",
+          "offset": 1,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        }
+      ]
+    },
+    {
+      "type": "SwapResponse (kind 2, SWAP)",
+      "len": 9,
+      "hex": "02d202964900000000",
+      "sha256": "b59cc123c9ce6178e4a3d2f8c3d70669e786d8dac2f837c2c3a788d187d4be89",
+      "keccak256": "89692286433ae75ecd426c4f75566a0fa7688c3ebe71b0fffe841efd761ceaa8",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "02",
+          "number": 2
+        },
+        {
+          "path": "amount_in",
+          "type": "u64",
+          "offset": 1,
+          "width": 8,
+          "hex": "d202964900000000",
+          "number": 1234567890
+        }
+      ]
+    },
+    {
+      "type": "FailureResponse (kind 3, FAILURE)",
+      "len": 1,
+      "hex": "03",
+      "sha256": "084fed08b978af4d7d196a7446a86b58009e636b611db16211b65a9aadff29c5",
+      "keccak256": "69c322e3248a5dfc29d73c5b0553b0185a35cd5bb6386747517ef7e53b15e287",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "03",
+          "number": 3
+        }
+      ]
+    },
+    {
+      "type": "AttestationPreimage<VaultResponse>",
+      "len": 34,
+      "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b2790001",
+      "sha256": "d657952f1e36e5a70a22481a37b27cc4d9374c5ff6057d9803f668ce445a51fc",
+      "keccak256": "746319c16a79cb3e21c5d34c8b7b523450c41123029777d36e0a795e27532382",
+      "fields": [
+        {
+          "path": "request_id",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b279"
+        },
+        {
+          "path": "output.kind",
+          "type": "u8",
+          "offset": 32,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "output.success",
+          "type": "bool",
+          "offset": 33,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        }
+      ]
+    },
+    {
+      "type": "AttestationPreimage<SwapResponse>",
+      "len": 41,
+      "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b27902d202964900000000",
+      "sha256": "c0593df4e52486356b73c6a75894b97fb11e0df9e21c2339a366f560152bd029",
+      "keccak256": "2038c9409a544cfe5bc5038f7db9f75c4b201f4c9128f926b6f3630efad37955",
+      "fields": [
+        {
+          "path": "request_id",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b279"
+        },
+        {
+          "path": "output.kind",
+          "type": "u8",
+          "offset": 32,
+          "width": 1,
+          "hex": "02",
+          "number": 2
+        },
+        {
+          "path": "output.amount_in",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "d202964900000000",
+          "number": 1234567890
+        }
+      ]
+    },
+    {
+      "type": "AttestationPreimage<FailureResponse>",
+      "len": 33,
+      "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b27903",
+      "sha256": "e6ae9ce95ed3ee44af5855927aaa955621e582adb38decc6214bb6072e2377d9",
+      "keccak256": "4cdff647ee475803deefeac1a7efbdf8188d270230cc2150c09382f5ec3eb1e6",
+      "fields": [
+        {
+          "path": "request_id",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b279"
+        },
+        {
+          "path": "output.kind",
+          "type": "u8",
+          "offset": 32,
+          "width": 1,
+          "hex": "03",
+          "number": 3
+        }
+      ]
+    }
+  ]
+}

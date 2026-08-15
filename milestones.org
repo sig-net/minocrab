@@ -608,10 +608,33 @@ external value and no dependency on 1-7.
       twinned: it serializes nothing.)
 - [ ] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
       swap k16→k15; re-run the 9M gate; refresh BENCHMARK.md.
-- [ ] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,
+- [X] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,
       padding rule, Maybe↦Flagged, per-record offset tables GENERATED
       from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
       implements against.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 8".
+      Twelve sections of hand-written prose around ONE GENERATED REGION
+      (§9's per-type offset tables, walked out of borsh's own schema by
+      tests/serialization/spec_doc.rs) plus five committed vector files.
+      THE DOCUMENT CANNOT DRIFT: three tests fail if the committed
+      artifact stops being the generator's output — the marked region,
+      every vector file byte for byte (and the directory holding exactly
+      the generated names), and each vector's fields tiling its value
+      with no gap or overlap. Vector values are the DEPLOYED constants
+      where the protocol fixes them and a visible byte pattern where it
+      does not; each carries hex (authoritative), sha256, keccak256 (the
+      request id for a record, the signed digest for an attestation
+      preimage) and the value leaf by leaf — as an ORDERED ARRAY, since
+      the format is ordered and JSON objects are not. The prose carries
+      what tables cannot: Maybe↦Flagged with its failure mode, the five
+      finite reject classes plus the in-circuit asymmetry, the
+      response-kind table and digest rule, the 128-byte V1 notification
+      layout (the one non-Borsh block, stated for log readers),
+      endianness twice, the two-oracle statement AND explicit permission
+      to use a plain DataView, and a STATUS section separating what is
+      deployed from what is specified. Deviation: the regenerator is a
+      new --ignored test rather than an extension of stage 0's
+      print_layout_snapshot — the two write different things.)
 - [X] 9. Hash-flavor API (dmd 2026-08-15): expose persistent_hash
       (BORSH flavor, the default — hashes the subset bytes) and
       persistent_hash_compact (FAB binary_repr semantics: field atoms

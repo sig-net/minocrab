@@ -1,0 +1,425 @@
+{
+  "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
+  "format": "borsh-subset-vectors/1",
+  "spec": "spec/borsh-subset.md",
+  "about": "The two request-record instantiations. keccak256 of these bytes IS the request id the vault stores and the MPC recomputes (it drops the request on mismatch).",
+  "vectors": [
+    {
+      "type": "VaultEvent",
+      "len": 404,
+      "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f070000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002a0000000000000000ca9a3b00000000000000000000000000ac23fc060000000000000000000000a086010000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b30000000000000000000000000000000001a9059cbb0200b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000000000000000000000000000000000000000000ff0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c227d5d5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c227d5d",
+      "sha256": "79a12713f3171b6b65754b34f7259916d1f9ef9288e3902bdbddc5f2a2adf14c",
+      "keccak256": "ae7b37c0e414fb7b4a30c61b9cbda5f8468c30a322b1eb1210e22c6916a2b279",
+      "fields": [
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 32,
+          "width": 8,
+          "hex": "0700000000000000",
+          "number": 7
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 40,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 41,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 73,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 75,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 139,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 140,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 148,
+          "width": 8,
+          "hex": "2a00000000000000",
+          "number": 42
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 156,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 172,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 188,
+          "width": 8,
+          "hex": "a086010000000000",
+          "number": 100000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 196,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 216,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 232,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 233,
+          "width": 4,
+          "hex": "a9059cbb"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 237,
+          "width": 2,
+          "hex": "0200",
+          "number": 2
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 239,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 271,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000ff"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 303,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 304,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "output_deserialization_schema",
+          "type": "[u8; 34]",
+          "offset": 336,
+          "width": 34,
+          "hex": "5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c227d5d"
+        },
+        {
+          "path": "respond_serialization_schema",
+          "type": "[u8; 34]",
+          "offset": 370,
+          "width": 34,
+          "hex": "5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c227d5d"
+        }
+      ]
+    },
+    {
+      "type": "SwapEvent",
+      "len": 571,
+      "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f090000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002b0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000060ae0a0000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000000000000000000000000000015023b4df0700000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000000000000000000006c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e74323536227d5d5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e743634227d5d",
+      "sha256": "9b1db9c5a039512b37781135bbce23228eafa3b51f8b0b044a27229c2e22ed4a",
+      "keccak256": "68b0e7ce013264119e04380fa9c6a312d305bdf63aa1c8e93b9e8d8369ea3b9c",
+      "fields": [
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 32,
+          "width": 8,
+          "hex": "0900000000000000",
+          "number": 9
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 40,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 41,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 73,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 75,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 139,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 140,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 148,
+          "width": 8,
+          "hex": "2b00000000000000",
+          "number": 43
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 156,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 172,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 188,
+          "width": 8,
+          "hex": "60ae0a0000000000",
+          "number": 700000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 196,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 216,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 232,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 233,
+          "width": 4,
+          "hex": "5023b4df"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 237,
+          "width": 2,
+          "hex": "0700",
+          "number": 7
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 239,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 271,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000002"
+        },
+        {
+          "path": "tx_params.calldata.value.words[2]",
+          "type": "[u8; 32]",
+          "offset": 303,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000003"
+        },
+        {
+          "path": "tx_params.calldata.value.words[3]",
+          "type": "[u8; 32]",
+          "offset": 335,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000004"
+        },
+        {
+          "path": "tx_params.calldata.value.words[4]",
+          "type": "[u8; 32]",
+          "offset": 367,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000005"
+        },
+        {
+          "path": "tx_params.calldata.value.words[5]",
+          "type": "[u8; 32]",
+          "offset": 399,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000006"
+        },
+        {
+          "path": "tx_params.calldata.value.words[6]",
+          "type": "[u8; 32]",
+          "offset": 431,
+          "width": 32,
+          "hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 463,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 464,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "output_deserialization_schema",
+          "type": "[u8; 38]",
+          "offset": 496,
+          "width": 38,
+          "hex": "5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e74323536227d5d"
+        },
+        {
+          "path": "respond_serialization_schema",
+          "type": "[u8; 37]",
+          "offset": 534,
+          "width": 37,
+          "hex": "5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e743634227d5d"
+        }
+      ]
+    }
+  ]
+}
