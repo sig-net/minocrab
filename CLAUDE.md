@@ -8,6 +8,11 @@ Priorities in order: correctness (and obvious correctness) > performance > idiom
 2. Read only the `notes/*.org` files that milestone links — don't re-survey what's already written down.
 3. Write new findings/decisions to `notes/` before ending; tick off tasks in `milestones.org`.
 
+## Testing
+- Routine loop: plain `cargo test` (deps are optimized under dev via the
+  workspace profile override). Use `--release` only for the heavy gates:
+  row_snapshot, elevated PROPTEST_CASES runs, and the bench harness.
+
 ## Hard rules
 - Never compile below ZKIR.
 - Reuse Midnight's code (fork/import/mechanical translation) before writing our own.
