@@ -23,6 +23,11 @@ midnight-transient-crypto.workspace = true
 midnight-serialize.workspace = true
 midnight-zkir-v3.workspace = true
 midnight-curves.workspace = true
+# The burn well-formedness test (M10 avenue 6) only: the pinned ledger's own
+# Transaction::well_formed, with mock-verify so no proof server is needed.
+midnight-zswap.workspace = true
+midnight-ledger.workspace = true
+rand.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sha3.workspace = true

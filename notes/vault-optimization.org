@@ -890,3 +890,40 @@ then the burn restructure (#6) — which needs its well-formedness test
 against the pinned ledger FIRST, per §"Q1". Nothing in these three rungs
 touched arguments, so the interface snapshot is unchanged and the opt
 artifact remains call-compatible in shape with the port.
+
+* As built — step 5(vi) Task A (burn well-formedness gate, 2026-08-15)
+The honest gap Q1 named is CLOSED, and the answer is PASS: the pinned
+ledger (rev 04c9c5d) accepts the optimized burn's exact shape.
+
+** The gate, executed against the pinned ledger
+=tests/erc20_vault_opt_burn_wellformed.rs= constructs a transaction of
+exactly the burn's shape and drives it through the pinned ledger's own
+=Transaction::well_formed=. Mirrors ledger/tests/micro-dao.rs:840-960's
+"claim a user-recipient output as a contract spend" precedent, reduced to
+the burn: ONE contract call whose transcript declares
+=claimed_shielded_spends = { coinCommitment(coin, shieldedBurnAddress) }=,
+with =claimed_shielded_receives= and =claimed_nullifiers= EMPTY, and a
+Zswap offer with the burn Output to a USER recipient (=Recipient::User=,
+=contract_address: None=) balanced by the user's own funding INPUT
+(=SenderEvidence::User=, =contract_address: None= — the exact "user-funded
+input" the resolution names). =well_formed().unwrap()= ACCEPTS.
+- VERDICT: PASS. =effects_check= (ledger/src/verify.rs:1517-1609) — the
+  subset rule the resolution cites — accepts: the claimed spend exists in
+  the offer, is unclaimed by another contract, and the receive/nullifier
+  EQUALITIES hold vacuously because a user-recipient output/input is not
+  contract-associated. Pedersen value-balance holds via the funding input.
+- Proof independence: built with =ProofPreimageMarker=, whose
+  =proof_verify= is a no-op (structure.rs:546-554) and whose offer
+  =well_formed= is structural+Pedersen only (zswap/src/verify.rs:381-386),
+  so NO proof server is needed and =effects_check= runs regardless. Only
+  fee/limit enforcement is relaxed (no Dust modelled). New dev-deps
+  =midnight-ledger= (package midnight-ledger-v9) + =midnight-zswap= at the
+  pinned rev, default features (NOT mock-verify — that needs a compile-time
+  =MIDNIGHT_PP=; unneeded on the preimage path). Nothing shipping links them.
+- Obligation (3) is a companion test in the same file: TWO contracts
+  claiming the SAME commitment in one tx is REJECTED
+  (=effects_check='s per-segment duplicate-spend rule, verify.rs:1570-1580)
+  — this is what makes "unclaimed by another contract" a real gate, and it
+  cannot be expressed on the single-circuit =simulate= path, so it lives
+  here at the transaction level. Both tests green.
+Consequence: avenue 6 is CLEARED to land. Proceed to step 5(vi) Task B.

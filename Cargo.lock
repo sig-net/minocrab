@@ -605,6 +605,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "digest-io"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2de63d600bc7fab91180bc17385f29b342468dc8ef2af09dceba450a293de3da"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "dispatch2"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1276,10 +1285,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "introspection"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8aef96cc8e702a9107d35e7eb802f60c8f3babb94c5b1d5eac7c6b99116344ff"
+dependencies = [
+ "quote 0.3.15",
+ "syn 0.11.11",
+]
+
+[[package]]
+name = "introspection-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f40c436bdcb61b4dcd7c302029c522150b45e4f048cacd0ad845b48ba3b1cac"
+dependencies = [
+ "introspection",
+ "quote 0.3.15",
+ "syn 0.11.11",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
+
+[[package]]
+name = "is_sorted"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357376465c37db3372ef6a00585d336ed3d0f11d4345eef77ebcb05865392b21"
 
 [[package]]
 name = "itertools"
@@ -1649,6 +1685,49 @@ dependencies = [
  "serde_arrays",
  "sha2 0.10.9",
  "subtle",
+]
+
+[[package]]
+name = "midnight-ledger-static"
+version = "9.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.47",
+]
+
+[[package]]
+name = "midnight-ledger-v9"
+version = "1.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "anyhow",
+ "derive-where",
+ "digest-io",
+ "fake",
+ "futures",
+ "introspection",
+ "introspection-derive",
+ "is_sorted",
+ "itertools",
+ "lazy_static",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-ledger-static",
+ "midnight-onchain-runtime",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 2.2.0",
+ "midnight-transient-crypto 3.0.0",
+ "midnight-zswap",
+ "rand 0.8.7",
+ "rayon",
+ "serde",
+ "sha2 0.11.0",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
@@ -2061,6 +2140,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-zswap"
+version = "9.0.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=04c9c5d9bcebb8d4427d8589fb54d58a55599c14#04c9c5d9bcebb8d4427d8589fb54d58a55599c14"
+dependencies = [
+ "anyhow",
+ "derive-where",
+ "fake",
+ "futures",
+ "is_sorted",
+ "itertools",
+ "lazy_static",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-ledger-static",
+ "midnight-onchain-runtime",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 2.2.0",
+ "midnight-transient-crypto 3.0.0",
+ "midnight-zkir",
+ "rand 0.8.7",
+ "serde",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2103,6 +2209,7 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-coin-structure",
  "midnight-curves 0.3.1",
+ "midnight-ledger-v9",
  "midnight-onchain-runtime",
  "midnight-onchain-state",
  "midnight-onchain-vm",
@@ -2110,12 +2217,14 @@ dependencies = [
  "midnight-storage",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir-v3",
+ "midnight-zswap",
  "minocrab",
  "minocrab-ledger",
  "minocrab-sim",
  "minocrab-std",
  "minocrab-zkir",
  "proptest",
+ "rand 0.8.7",
  "serde_json",
  "sha2 0.11.0",
  "sha3",
@@ -2236,6 +2345,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "nu-ansi-term"
+version = "0.50.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3144,6 +3262,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharded-slab"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3386,6 +3513,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "threadpool"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3542,6 +3678,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+ "valuable",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
+dependencies = [
+ "log",
+ "once_cell",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
+dependencies = [
+ "nu-ansi-term",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing-core",
+ "tracing-log",
 ]
 
 [[package]]
@@ -3633,6 +3795,12 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+
+[[package]]
+name = "valuable"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "version_check"

@@ -47,6 +47,14 @@ midnight-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-le
 # harness can spell them.
 midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# The zswap Offer/Input/Output types and the top-level ledger Transaction,
+# used ONLY by the M10 burn well-formedness test (avenue 6): it constructs a
+# transaction of the burn's exact shape and drives it through the pinned
+# ledger's own `Transaction::well_formed` to prove the single claimed shielded
+# spend of a user-recipient output is accepted with the receive/nullifier sets
+# empty. Dev-dependency of minocrab-contracts only; nothing shipping links it.
+midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14", package = "midnight-ledger-v9" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
 # simulator mirrors it). Versions match what the pinned midnight-ledger rev
 # already pulls in, so all types unify with midnight-zkir-v3's.
@@ -59,6 +67,9 @@ serde_json = "1"
 anyhow = "1"
 thiserror = "2"
 proptest = "1"
+# rand 0.8 to match the pinned midnight-ledger's zswap constructors (they take
+# `impl Rng + CryptoRng` from rand ^0.8). Test-only.
+rand = "0.8"
 
 [patch.crates-io]
 # midnight-zkir depends on "transient-crypto-old" ^2.2.0 (back-compat v1
