@@ -13,14 +13,22 @@
 use std::marker::PhantomData;
 
 use minocrab_ir::v3::{Arg, Builder3, IrSource, IrType, Val};
-pub use minocrab_ir::v3::Alignment;
+pub use minocrab_ir::v3::{Alignment, Identifier};
 use minocrab_ir::Fr;
 
-use crate::{Disclosure, DisclosureKind, Meet, Private, Public, Region, Visibility};
+use crate::{DisclosureKind, Meet, Private, Public, Region, Visibility};
 
 mod abi;
+mod disclose;
 
 pub use abi::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
+
+/// Typed disclosure declarations — `label!` types, `.disclose_as::<L>(c)`,
+/// and the `Discloses<D, R>` a circuit returns (see the module docs).
+pub use disclose::{
+    assert_declared_disclosures, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
+    LabelSet,
+};
 
 // --- value-type markers -------------------------------------------------------
 
@@ -206,12 +214,44 @@ impl<V: Visibility> Clone for AnyWire3<V> {
 }
 impl<V: Visibility> Copy for AnyWire3<V> {}
 
+// --- disclosure records ----------------------------------------------------------
+
+/// What a v3 circuit reveals, recorded at build time — the v3 twin of
+/// [`Disclosure`](crate::Disclosure).
+///
+/// It differs from the v2 record in the one way v3 differs from v2 about
+/// values: v2 names a disclosed value by its ZKIR *memory index*, and v3
+/// values have no index — they are [`Identifier`]s (`%label.N`), which is
+/// what the instruction stream refers to and what the simulator keys its
+/// value memory by. So the record carries identifiers, and a v3 report can
+/// resolve a disclosure to the value it actually took in a run (the v3
+/// record used to store a hard-coded `index: 0`, which resolved to
+/// nothing).
+///
+/// One record is one *logical* value, so `values` is a list: a
+/// `Bytes<32>` disclosed under one label contributes both of its limbs
+/// here rather than two records named `"… (hi)"` and `"… (lo)"`. That is
+/// what makes a declared label set comparable to the disclosed one — labels
+/// are per value, not per wire (notes/contract-api.org §Disclosure
+/// declaration).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disclosure3 {
+    /// What is being disclosed and why — the label type's
+    /// `DisclosureLabel::LABEL` for a declared disclosure, the call site's
+    /// string otherwise.
+    pub label: String,
+    /// How it leaves the circuit.
+    pub kind: DisclosureKind,
+    /// The disclosed value's wires, in wire order.
+    pub values: Vec<Identifier>,
+}
+
 // --- circuit ---------------------------------------------------------------------
 
 /// A ZKIR v3 circuit under construction.
 pub struct Circuit3 {
     b: Builder3,
-    disclosures: Vec<Disclosure>,
+    disclosures: Vec<Disclosure3>,
     witnesses: u32,
     regions: Vec<Region>,
     queued_outputs: Vec<(Val, IrType)>,
@@ -220,7 +260,7 @@ pub struct Circuit3 {
 /// A finished v3 circuit: the lowered ZKIR plus its disclosure record.
 pub struct Compiled3 {
     pub ir: IrSource,
-    pub disclosures: Vec<Disclosure>,
+    pub disclosures: Vec<Disclosure3>,
     pub witnesses: u32,
     pub regions: Vec<Region>,
 }
@@ -606,13 +646,56 @@ impl Circuit3 {
 
     /// Explicitly make a private value public — the greppable audit point,
     /// as in the v2 frontend.
+    ///
+    /// The typed form is `minocrab_std::v3::Disclose::disclose_as::<L>`,
+    /// which names the disclosure with a label TYPE that the circuit's
+    /// `Discloses<..>` declaration also names, so the two cannot drift; this
+    /// is its one-wire, free-string base case.
     pub fn disclose<T: IrTy>(&mut self, w: Wire3<T, Private>, label: &str) -> Wire3<T, Public> {
-        self.disclosures.push(Disclosure {
+        let [out] = self.disclose_all(label, [w]);
+        out
+    }
+
+    /// Disclose the wires of ONE logical value under ONE label — a
+    /// `Bytes<32>`'s `[hi, lo]` pair becomes a single record rather than a
+    /// `"… (hi)"` / `"… (lo)"` pair (see [`Disclosure3`]).
+    ///
+    /// The typed layer above (`minocrab_std::v3::Disclose`) is what call
+    /// sites use; this is the primitive it fans out through, and the only
+    /// place a `Disclosed` record is created.
+    pub fn disclose_all<T: IrTy, const N: usize>(
+        &mut self,
+        label: &str,
+        wires: [Wire3<T, Private>; N],
+    ) -> [Wire3<T, Public>; N] {
+        self.record_disclosure(label, &wires);
+        wires.map(|w| Wire3::new(w.val))
+    }
+
+    /// [`Circuit3::disclose_all`] for a run-time number of wires (a
+    /// `Bytes<N>`'s limbs, an event record's fields): still one record.
+    pub fn disclose_slice<T: IrTy>(
+        &mut self,
+        label: &str,
+        wires: &[Wire3<T, Private>],
+    ) -> Vec<Wire3<T, Public>> {
+        self.record_disclosure(label, wires);
+        wires.iter().map(|w| Wire3::new(w.val)).collect()
+    }
+
+    /// One `Disclosed` record over `wires` — or NONE, if there are no wires.
+    /// A value with no wires discloses nothing (a cross-contract call to a
+    /// `[]`-returning circuit has an empty result list), and recording it
+    /// anyway would put a label in the disclosed set that no value backs.
+    fn record_disclosure<T: IrTy>(&mut self, label: &str, wires: &[Wire3<T, Private>]) {
+        if wires.is_empty() {
+            return;
+        }
+        self.disclosures.push(Disclosure3 {
             label: label.to_string(),
             kind: DisclosureKind::Disclosed,
-            index: 0, // v3 values are named, not indexed; see `Builder3::ty`.
+            values: wires.iter().map(|w| self.b.identifier(w.val)).collect(),
         });
-        Wire3::new(w.val)
     }
 
     // --- public-input blocks and outputs (public only) --------------------------------------
@@ -637,10 +720,10 @@ impl Circuit3 {
             .map(|e| match e {
                 ImpactElem::Imm(imm) => Arg::Imm(*imm),
                 ImpactElem::Wire(w) => {
-                    self.disclosures.push(Disclosure {
+                    self.disclosures.push(Disclosure3 {
                         label: "impact public input".to_string(),
                         kind: DisclosureKind::Statement,
-                        index: 0,
+                        values: vec![self.b.identifier(w.val)],
                     });
                     Arg::Val(w.val)
                 }
@@ -652,10 +735,10 @@ impl Circuit3 {
     /// Queue a wire as a circuit output (the single v3 Output terminator is
     /// emitted by [`Circuit3::finish`]).
     pub fn output<T: IrTy>(&mut self, w: Wire3<T, Public>, label: &str) {
-        self.disclosures.push(Disclosure {
+        self.disclosures.push(Disclosure3 {
             label: label.to_string(),
             kind: DisclosureKind::Output,
-            index: 0,
+            values: vec![self.b.identifier(w.val)],
         });
         self.queued_outputs.push((w.val, T::ir_type()));
     }

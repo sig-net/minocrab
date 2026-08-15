@@ -13,6 +13,7 @@ use minocrab::v3::{
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
 mod call;
+mod disclose;
 mod entry;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
@@ -30,6 +31,19 @@ pub mod borsh;
 pub mod hash;
 
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
+
+/// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,
+/// and the `Discloses<D, R>` a circuit returns. The vocabulary lives in the
+/// frontend (`minocrab::v3::disclose`, whose docs explain the
+/// rustc-checks-symbols / generated-test-checks-the-set split) because
+/// minocrab-ledger discloses too; `v3::disclose` here holds the [`Disclose`]
+/// impls for this crate's value types. Re-exported so one
+/// `use minocrab_std::v3::…` brings the whole vocabulary in.
+pub use minocrab::label;
+pub use minocrab::v3::{
+    assert_declared_disclosures, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
+    LabelSet,
+};
 
 /// The ABI vocabulary, which lives in the frontend (`minocrab::v3::abi` —
 /// the port of `emit-constraints-for` plus the traits `minocrab_ledger::call`
@@ -69,6 +83,9 @@ pub use minocrab_macros::interface;
 pub mod __private {
     pub use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
     pub use minocrab::{AlignmentAtom, Private, Public, Visibility};
+
+    /// The body of the disclosure-declaration test `#[circuit]` generates.
+    pub use super::assert_declared_disclosures;
 }
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable

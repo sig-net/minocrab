@@ -108,7 +108,11 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
 
     let root = quote!(::minocrab_std::v3);
     // `entry(closure)` and `entry_out(label, closure)` differ only in the
-    // function and the argument that precedes the closure.
+    // function and the argument that precedes the closure. A
+    // `Discloses<D, R>` return is the R case wearing a declaration: the
+    // declaration occupies no output slot, so `Discloses<D>` /
+    // `Discloses<D, ()>` is as labelless as `()` — and MUST be, or a
+    // disclosure declaration would move the circuit's interface.
     let (entry_fn, label_arg) = match (&attr.output, returns_a_value(&sig.output)) {
         (None, false) => (quote!(#root::entry), quote!()),
         (Some(label), true) => (quote!(#root::entry_out), quote!(#label,)),
@@ -130,6 +134,7 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
     let call = quote! {
         #entry_fn(#label_arg |__c, __args: #args_ty| #body_fn(__c #(, __args.#idents)*))
     };
+    let declaration_test = discloses_test(&item.sig, name, &bare, &root);
 
     Ok(quote! {
         #(#attrs)*
@@ -146,7 +151,63 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
 
             #call
         }
+
+        #declaration_test
     })
+}
+
+/// The generated set-equality test, for a circuit that declares what it
+/// discloses (notes/contract-api.org §Disclosure declaration): build the
+/// circuit and compare the labels its return type declares against the ones
+/// it disclosed.
+///
+/// It is a module beside the entry point, not an item inside it — rustc
+/// does not collect `#[test]` functions from inside function bodies — and
+/// the declaration is named by copying the return type's tokens verbatim,
+/// so the macro parses nothing about `D` and rustc resolves the label types
+/// exactly as it does in the signature.
+fn discloses_test(
+    sig: &Signature,
+    name: &Ident,
+    bare: &str,
+    root: &TokenStream,
+) -> Option<TokenStream> {
+    let ReturnType::Type(_, ty) = &sig.output else {
+        return None;
+    };
+    if !is_discloses(ty) {
+        return None;
+    }
+    let module = format_ident!("__{bare}_discloses", span = name.span());
+    let circuit = name.to_string();
+    let circuit = circuit.strip_prefix("r#").unwrap_or(&circuit).to_string();
+    Some(quote! {
+        #[cfg(test)]
+        #[allow(non_snake_case)]
+        mod #module {
+            #[allow(unused_imports)]
+            use super::*;
+
+            #[test]
+            fn the_declared_disclosures_are_the_ones_the_circuit_makes() {
+                #root::__private::assert_declared_disclosures::<#ty>(#circuit, &super::#name());
+            }
+        }
+    })
+}
+
+/// A `Discloses<..>` return type, by the last segment of its path — the
+/// same shallow reading `is_circuit_ref` gives the first parameter. An
+/// aliased spelling is not recognised, deliberately: the declaration is
+/// meant to be legible in the signature.
+fn is_discloses(ty: &Type) -> bool {
+    let Type::Path(path) = ty else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "Discloses")
 }
 
 /// Everything a circuit entry point may not be. Each check owns the span of
@@ -294,13 +355,49 @@ fn arg_fields(sig: &Signature) -> syn::Result<Vec<ArgField>> {
         .collect()
 }
 
-/// Whether the function returns something to disclose. `-> ()` (however
-/// spelled) is the `[]` return of Compact's own entry points.
+/// Whether the function returns something that occupies output slots.
+/// `-> ()` (however spelled) is the `[]` return of Compact's own entry
+/// points, and so is `-> Discloses<D>` / `-> Discloses<D, ()>`: a
+/// disclosure declaration is type-level, and a circuit that gains one must
+/// keep the interface it had (the zero-movement rule — see the
+/// `Discloses` docs).
 fn returns_a_value(output: &ReturnType) -> bool {
     match output {
         ReturnType::Default => false,
-        ReturnType::Type(_, ty) => !matches!(&**ty, Type::Tuple(t) if t.elems.is_empty()),
+        ReturnType::Type(_, ty) => !is_unit(ty) && !matches!(discloses_value(ty), Some(false)),
     }
+}
+
+fn is_unit(ty: &Type) -> bool {
+    matches!(ty, Type::Tuple(t) if t.elems.is_empty())
+}
+
+/// For a `Discloses<..>` return type, whether it carries a returned VALUE:
+/// `Discloses<D>` and `Discloses<D, ()>` do not, `Discloses<D, R>` does.
+/// `None` for anything that is not a `Discloses`.
+fn discloses_value(ty: &Type) -> Option<bool> {
+    if !is_discloses(ty) {
+        return None;
+    }
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Some(false);
+    };
+    let types: Vec<&Type> = args
+        .args
+        .iter()
+        .filter_map(|a| match a {
+            syn::GenericArgument::Type(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    Some(match types.as_slice() {
+        [_declaration, value] => !is_unit(value),
+        _ => false,
+    })
 }
 
 #[cfg(test)]
@@ -395,6 +492,74 @@ mod tests {
             fn emit_it(c: &mut Circuit3) -> () {}
         });
         assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+    }
+
+    /// A disclosure declaration is type-level: it must not turn a `[]`
+    /// circuit into one with an output (that would move the IR interface).
+    #[test]
+    fn a_discloses_declaration_alone_needs_no_output_label() {
+        let expanded = expansion(syn::parse_quote! {
+            fn deposit(c: &mut Circuit3) -> Discloses<(RequestId, RequestRecord)> {
+                Discloses::of(())
+            }
+        });
+        assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+
+        let expanded = expansion(syn::parse_quote! {
+            fn deposit(c: &mut Circuit3) -> Discloses<(RequestId,), ()> { Discloses::of(()) }
+        });
+        assert!(expanded.contains("v3 :: entry ("), "{expanded}");
+    }
+
+    #[test]
+    fn a_discloses_with_a_value_still_names_its_output() {
+        let item: ItemFn = syn::parse_quote! {
+            fn hash(c: &mut Circuit3) -> Discloses<(EventHash,), B32<Public>> {
+                unimplemented!()
+            }
+        };
+        let err = expand(attr(quote!()), item.clone()).expect_err("label required").to_string();
+        assert!(err.contains("output = "), "{err}");
+
+        let expanded = expand(attr(quote!(output = "event hash")), item)
+            .expect("expands")
+            .to_string();
+        assert!(expanded.contains(r#"entry_out ("event hash" ,"#), "{expanded}");
+    }
+
+    /// The generated test names the circuit, calls it, and hands the
+    /// return type — the declaration — to the checker verbatim.
+    #[test]
+    fn a_declaring_circuit_gets_its_set_equality_test() {
+        let expanded = expansion(syn::parse_quote! {
+            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) -> Discloses<(RequestId,)> {
+                Discloses::of(())
+            }
+        });
+        assert!(expanded.contains("mod __deposit_discloses"), "{expanded}");
+        assert!(
+            expanded.contains(
+                "assert_declared_disclosures :: < Discloses < (RequestId ,) > > \
+                 (\"deposit\" , & super :: deposit ())"
+            ),
+            "{expanded}"
+        );
+    }
+
+    #[test]
+    fn a_circuit_without_a_declaration_gets_no_test() {
+        let expanded = expansion(syn::parse_quote! {
+            pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) {}
+        });
+        assert!(!expanded.contains("discloses"), "{expanded}");
+
+        let expanded = expand(
+            attr(quote!(output = "event hash")),
+            syn::parse_quote! { fn hash(c: &mut Circuit3) -> B32<Public> { unimplemented!() } },
+        )
+        .expect("expands")
+        .to_string();
+        assert!(!expanded.contains("discloses"), "{expanded}");
     }
 
     #[test]

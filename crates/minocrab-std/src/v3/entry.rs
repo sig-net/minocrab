@@ -485,8 +485,13 @@ impl CircuitArgs for () {
 /// `label` names the logical value; a multi-slot impl suffixes each slot
 /// the way the hand-written circuits do (`"event hash (hi)"` /
 /// `"(lo)"`). Output labels live only in the disclosure record — ZKIR's
-/// output signature is types only — and phase 6 replaces the string with a
-/// declared label type.
+/// output signature is types only.
+///
+/// It stayed a string through phase 6: a `Discloses<..>` declaration is
+/// about values crossing the private→public gate, and a RETURN already
+/// cannot leak (this trait is implemented for public values only), so the
+/// declared set is the `Disclosed` records and an output label has nothing
+/// to agree with.
 pub trait CircuitOut {
     /// Output slots this value occupies.
     const SLOTS: usize;
@@ -546,8 +551,20 @@ impl CircuitOut for B32<Public> {
 ///     entry(|c, args: DepositArgs| { .. })
 /// }
 /// ```
-pub fn entry<A: CircuitArgs>(body: impl FnOnce(&mut Circuit3, A)) -> Compiled3 {
-    entry_out("", |c, args| body(c, args))
+///
+/// The body may return anything that occupies no output slot — `()`, or a
+/// [`Discloses<D>`](super::Discloses) declaration over it. Returning a
+/// value means naming it, which is [`entry_out`].
+pub fn entry<A: CircuitArgs, O: CircuitOut>(
+    body: impl FnOnce(&mut Circuit3, A) -> O,
+) -> Compiled3 {
+    assert_eq!(
+        O::SLOTS,
+        0,
+        "this circuit returns {} output slots, which need a label: use entry_out",
+        O::SLOTS
+    );
+    entry_out("", body)
 }
 
 /// [`entry`] for a circuit that returns a value: `label` names the returned

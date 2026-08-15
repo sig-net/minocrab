@@ -854,6 +854,93 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
     })
 }
 
+// --- reporting -------------------------------------------------------------------
+
+/// A resolved disclosure: what the circuit made public, by label and by the
+/// value it took in this run — the v3 twin of [`crate::DisclosedValue`].
+///
+/// `values` is a list because a v3 disclosure record covers one *logical*
+/// value, which may be several wires (a `Bytes<32>`'s `[hi, lo]`); see
+/// [`minocrab::v3::Disclosure3`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DisclosedValue3 {
+    pub label: String,
+    pub kind: &'static str,
+    /// The concrete disclosed wires in this run, in wire order.
+    pub values: Vec<String>,
+}
+
+/// Structured simulation report: what ran, what it cost, what it disclosed
+/// — the v3 twin of [`crate::Report`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Report3 {
+    pub instructions_executed: u32,
+    pub op_counts: BTreeMap<&'static str, u32>,
+    pub witnesses_consumed: usize,
+    pub outputs: Vec<String>,
+    /// The proof system's public-input vector (v2's `public_statement` is
+    /// the transcript; v3's statement IS `pis`).
+    pub public_statement: Vec<String>,
+    /// Everything this circuit disclosed, with the values of this run.
+    pub disclosures: Vec<DisclosedValue3>,
+}
+
+fn value_display(value: &IrValue) -> String {
+    match value {
+        IrValue::Native(fr) => format!("{fr:?}"),
+        other => format!("{other:?}"),
+    }
+}
+
+/// Build the structured report for a v3 run — the v3 twin of
+/// [`crate::report`].
+///
+/// A disclosed value is resolved through the run's memory by the
+/// [`Identifier`] the record carries. `"<not computed>"` can only appear for
+/// a value the run never produced, which for a completed run means a
+/// disclosure of a wire that no instruction reached.
+pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 {
+    Report3 {
+        instructions_executed: run.op_counts.values().sum(),
+        op_counts: run.op_counts.clone(),
+        witnesses_consumed: run.consumed_private,
+        outputs: run.outputs.iter().map(value_display).collect(),
+        public_statement: run.pis.iter().map(|fr| format!("{fr:?}")).collect(),
+        disclosures: disclosures
+            .iter()
+            .map(|d| DisclosedValue3 {
+                label: d.label.clone(),
+                kind: match d.kind {
+                    minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::Statement => "statement",
+                    minocrab::DisclosureKind::Output => "output",
+                },
+                values: d
+                    .values
+                    .iter()
+                    .map(|id| {
+                        run.memory
+                            .get(id)
+                            .map(value_display)
+                            .unwrap_or_else(|| "<not computed>".into())
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Simulate a compiled v3 circuit and produce the structured report — the
+/// v3 twin of [`crate::simulate_compiled`].
+pub fn simulate_compiled(
+    compiled: &minocrab::v3::Compiled3,
+    preimage: &ProofPreimage,
+) -> Result<(Run3, Report3), Sim3Error> {
+    let run = simulate(&compiled.ir, preimage)?;
+    let report = report(&run, &compiled.disclosures);
+    Ok((run, report))
+}
+
 // --- cost + profiling ------------------------------------------------------------
 
 /// Static circuit cost via Midnight's own cost model (k = log2 rows needed)

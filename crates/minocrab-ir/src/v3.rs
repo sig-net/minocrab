@@ -150,6 +150,15 @@ impl Builder3 {
         self.names[v.0 as usize].clone()
     }
 
+    /// The identifier a value was registered under (`%label.N`) — the name
+    /// the instruction stream refers to it by, and the key the simulator's
+    /// value memory uses. Reads nothing and builds nothing; it exists so the
+    /// disclosure record can point at a value (v2 records a memory index,
+    /// which v3 does not have).
+    pub fn identifier(&self, v: Val) -> Identifier {
+        self.name(v)
+    }
+
     fn operand(&self, arg: Arg) -> Operand {
         match arg {
             Arg::Val(v) => Operand::Variable(self.name(v)),

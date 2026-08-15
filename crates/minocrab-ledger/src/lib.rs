@@ -24,12 +24,24 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::v3::{CallArgs, CallResult, Circuit3, FieldT, Prim, Wire3};
+use minocrab::v3::{
+    CallArgs, CallResult, Circuit3, Disclose, DisclosureLabel, FieldT, Prim, Wire3,
+};
 use minocrab::{Fr, Public, Visibility};
 
 pub use minocrab::v3::LimbConstraint;
 
 pub use minocrab::v3::ImpactElem;
+
+// What a cross-contract call itself discloses. A CALLER declares these in
+// its own `Discloses<..>` — a call is a disclosure the caller makes, so the
+// labels are part of this crate's public vocabulary rather than strings
+// buried in `contract_call`.
+minocrab::label! {
+    pub XcallEntryPointHash = "xcall entry-point hash";
+    pub XcallCommitment = "xcall communications commitment";
+    pub XcallResult = "xcall result";
+}
 
 /// The concrete op type whose `field_repr` defines the PI encoding.
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -733,9 +745,8 @@ pub fn contract_call<V: Visibility + Copy>(
     preimage.extend(results.iter().copied());
     let comm = c.transient_hash(&preimage);
 
-    let ep_hi = c.disclose(ep_hi, "xcall entry-point hash (hi)");
-    let ep_lo = c.disclose(ep_lo, "xcall entry-point hash (lo)");
-    let comm = c.disclose(comm, "xcall communications commitment");
+    let [ep_hi, ep_lo] = c.disclose_all(XcallEntryPointHash::LABEL, [ep_hi, ep_lo]);
+    let comm = comm.disclose_as::<XcallCommitment>(c);
 
     let addr_ep_comm = LedgerValue::new(
         vec![
@@ -753,10 +764,7 @@ pub fn contract_call<V: Visibility + Copy>(
     );
     emit(c, guard, &kernel_claim_contract_call(&addr_ep_comm));
 
-    results
-        .into_iter()
-        .map(|w| c.disclose(w, "xcall result"))
-        .collect()
+    results.disclose_as::<XcallResult>(c)
 }
 
 /// WHERE a cross-contract call's target address comes from.
