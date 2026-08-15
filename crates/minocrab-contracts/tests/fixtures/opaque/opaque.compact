@@ -1,0 +1,115 @@
+pragma language_version >= 0.25;
+
+// M15 fixture — Compact's `Opaque<'ts-type'>` in every position it can
+// occupy, plus the two CURVE POINT types, which compactc's ABI also spells
+// `Opaque`.
+//
+// NOT a corpus contract, for the same reason M14's `bounded.compact` is not:
+// the corpus has 74 `Opaque` nodes across 23 artifacts, and NONE of them is
+// in a v3 artifact. Only the three sig-net sources carry
+// `--feature-zkir-v3` (and our IR is v3), and their four `Opaque` nodes are
+// all `Secp256k1Point`. So this is the established tiny.compact-style
+// fallback, compiled with the PINNED compactc and committed beside the test:
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/opaque/opaque.compact \
+//       crates/minocrab-contracts/tests/fixtures/opaque/out
+//
+// WHAT AN OPAQUE IS (notes/opaque-bridging.org §2): one unconstrained
+// `Scalar<BLS12-381>` slot whose value is `transient_commit(bytes, len)` —
+// zero for the empty value — under a FAB `compress` atom, which the Impact
+// push encoding writes as the immediate `-0x01`. It is NOT absent from the
+// circuit, which is what the milestone originally guessed.
+
+import CompactStandardLibrary;
+
+export ledger dummy: Counter;
+
+// Every ledger shape an opaque can be stored in.
+export ledger cell: Opaque<"string">;
+export ledger bytes_cell: Opaque<"Uint8Array">;
+export ledger maybe: Maybe<Opaque<"string">>;
+export ledger names: Set<Opaque<"string">>;
+export ledger by_hash: Map<Bytes<32>, Opaque<"string">>;
+export ledger by_name: Map<Opaque<"string">, Uint<64>>;
+
+// The two curve spellings. compactc publishes both as
+// `Alias { name, Opaque { tsType: name } }`, which is why our ABI reader
+// used to refuse the erc20-vault's own `initialize`.
+export ledger response_key: Secp256k1Point;
+export ledger jubjub_key: JubjubPoint;
+
+witness w_name(): Opaque<"string">;
+
+// ---- the opaque itself ------------------------------------------------------
+
+// An argument and nothing else: one input slot, NO constraint instruction.
+export circuit opArg(x: Opaque<"string">): [] { dummy.increment(1); }
+
+// Returned: one output slot of the same unconstrained type.
+export circuit opRet(x: Opaque<"string">): Opaque<"string"> {
+  dummy.increment(1);
+  return x;
+}
+
+// The only operation an opaque has. Because the slot is
+// `transient_commit(bytes, len)`, this is collision-resistant equality of the
+// TS-side values, not handle identity.
+export circuit opEq(a: Opaque<"string">, b: Opaque<"string">): Boolean {
+  dummy.increment(1);
+  return a == b;
+}
+
+// The empty value, which is the field element zero — so `default` needs no
+// special case on our side either.
+export circuit opDefault(): [] { cell = default<Opaque<"string">>; }
+
+// ---- every ledger position --------------------------------------------------
+
+export circuit opCell(x: Opaque<"string">): [] { cell = disclose(x); }
+
+// A witnessed opaque: `private_input`, no constraint.
+export circuit opWitness(): [] { cell = disclose(w_name()); }
+
+export circuit opMapValue(k: Bytes<32>, v: Opaque<"string">): [] {
+  by_hash.insert(disclose(k), disclose(v));
+}
+
+export circuit opMapKey(k: Opaque<"string">): [] {
+  by_name.insert(disclose(k), 1);
+}
+
+export circuit opSet(k: Opaque<"string">): Boolean {
+  names.insert(disclose(k));
+  return names.member(disclose(k));
+}
+
+export circuit opMaybe(x: Opaque<"string">): [] {
+  maybe = some<Opaque<"string">>(disclose(x));
+}
+
+// ---- the ts-type is part of the type ----------------------------------------
+
+// A second ts-type, so that `Opaque<Str>` and `Opaque<Uint8Array>` being
+// distinct Rust types is exercised rather than asserted. compactc agrees:
+// assigning one to the other is `expected right-hand side of = to have type
+// Opaque<"string"> but received Opaque<"Uint8Array">`.
+export circuit opBytes(x: Opaque<"Uint8Array">): [] { bytes_cell = disclose(x); }
+
+// An opaque beside a CONSTRAINED field, so the slot order and the fact that
+// only the neighbour gets a `constrain_bits` are both pinned.
+struct Tagged {
+  tag: Uint<8>;
+  name: Opaque<"string">;
+}
+export circuit opStruct(w: Tagged): [] { cell = disclose(w.name); }
+
+// ---- the curve spellings ----------------------------------------------------
+
+// One typed `Point<Secp256k1>` slot, five FAB atoms (b24, b8, b24, b8,
+// field), written through an `encode`.
+export circuit opPoint(p: Secp256k1Point): [] { response_key = disclose(p); }
+
+// One typed `Point<Jubjub>` slot, two FAB atoms (field, field).
+export circuit opJubjub(p: JubjubPoint): [] { jubjub_key = disclose(p); }

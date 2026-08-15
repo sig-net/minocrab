@@ -22,8 +22,31 @@ use minocrab::v3::{CallArg, CallResult, FieldT, Wire3};
 use minocrab::Public;
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, ShieldedCoinInfo3, Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, Opaque, ShieldedCoinInfo3,
+    TsType, Uint, B32,
 };
+
+/// Compact's `Opaque<'ts-type'>` across a contract boundary — one limb, in
+/// both directions.
+///
+/// The argument limb is hashed into the communications commitment like any
+/// other, and the RESULT limb is witnessed back with
+/// [`LimbConstraint::None`](minocrab::v3::LimbConstraint::None) — which is
+/// compactc's own lowering: the fixture's caller emits `private_input %r` with
+/// no constraint and binds it only through `transient_hash [cc-rand, arg,
+/// result]` (notes/opaque-bridging.org §0a). Nothing here states that; the
+/// `Prim::Opaque` in the [`CircuitAbi`](minocrab::v3::CircuitAbi) impl does.
+impl<T: TsType> CallArg for Opaque<T, Public> {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        slots.push(self.field());
+    }
+}
+
+impl<T: TsType> CallResult for Opaque<T, Public> {
+    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
+        Opaque::from_field(slots[0])
+    }
+}
 
 impl<const BITS: u32> CallArg for Uint<BITS, Public> {
     fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {

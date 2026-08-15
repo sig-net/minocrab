@@ -13,7 +13,8 @@ use minocrab::{Private, Public};
 
 use super::entry::CircuitOut;
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Opaque, Secp256k1Point,
+    ShieldedCoinInfo3, TsType, Uint, B32,
 };
 
 impl<const BITS: u32> Disclose for Uint<BITS, Private> {
@@ -72,6 +73,27 @@ impl Disclose for Secp256k1Point<Private> {
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Secp256k1Point<Public> {
         Secp256k1Point::from_point(self.point().disclose_as::<L>(c))
+    }
+}
+
+impl Disclose for JubjubPoint<Private> {
+    type Public = JubjubPoint<Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> JubjubPoint<Public> {
+        JubjubPoint::from_point(self.point().disclose_as::<L>(c))
+    }
+}
+
+/// One slot, one label — and what the report records is the value's
+/// `compress` COMMITMENT, not the TS-side value, because that is all the
+/// circuit ever had (see [`Opaque`]'s docs). A disclosure report on an opaque
+/// therefore says "this commitment left the circuit", which is the true and
+/// the useful statement: the value itself was already on the caller's side.
+impl<T: TsType> Disclose for Opaque<T, Private> {
+    type Public = Opaque<T, Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Opaque<T, Public> {
+        Opaque::from_field(self.field().disclose_as::<L>(c))
     }
 }
 

@@ -30,7 +30,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use minocrab_abi::info::{Circuit, CompactType, ContractInfo, DeclaredCircuit, Element};
+use minocrab_abi::info::{
+    Circuit, CompactType, ContractInfo, CurvePoint, DeclaredCircuit, Element,
+};
 use serde::{Deserialize, Serialize};
 
 pub mod names;
@@ -125,14 +127,35 @@ enum Item {
     Alias { name: String, target: String, doc: String },
     /// `pub struct Name<V: Vis3> { … }`
     Struct { name: String, fields: Vec<(String, String)>, doc: String },
+    /// `ts_type!(Name = "ts-name");` — the marker type for one distinct
+    /// `Opaque<'ts-name'>` the interface mentions. One line per name, so the
+    /// mapping from a Compact ts-type to a Rust type is something a reader of
+    /// the generated crate can SEE.
+    TsType { name: String, ts_name: String },
 }
 
 impl Item {
     fn name(&self) -> &str {
         match self {
-            Item::Alias { name, .. } | Item::Struct { name, .. } => name,
+            Item::Alias { name, .. }
+            | Item::Struct { name, .. }
+            | Item::TsType { name, .. } => name,
         }
     }
+}
+
+/// The Rust marker name for a Compact `Opaque<'ts-type'>`.
+///
+/// `pascal` everywhere except `"string"`, whose `pascal` is `String` — and a
+/// generated crate that declares its own `String` shadowing
+/// `std::string::String` is a genuinely nasty import to inherit. `Str` matches
+/// `minocrab_std::v3::ts::Str`, and `TsType::TS_NAME` carries `"string"`
+/// verbatim either way, so nothing is lost (notes/opaque-bridging.org §8 Q2).
+fn ts_marker(ts_type: &str) -> String {
+    if ts_type == "string" {
+        return "Str".to_string();
+    }
+    pascal(ts_type)
 }
 
 /// What the walk accumulates: the generated items (in first-encounter
@@ -163,6 +186,9 @@ impl Registry {
     /// | other `struct`          | a generated struct      |
     /// | `Alias`                 | a generated `pub type`  |
     /// | `Enum` over k names     | the `Uint<0..k>` row    |
+    /// | `Opaque<'ts'>`          | `Opaque<Marker, V>` + a generated `ts_type!` |
+    /// | `Secp256k1Point`        | `Secp256k1Point<V>`     |
+    /// | `JubjubPoint`           | `JubjubPoint<V>`        |
     ///
     /// The two unsigned rows are one decision (`unsigned_type`), and the
     /// range end is EXCLUSIVE: compactc's `maxval` is `n − 1`, so a
@@ -170,11 +196,33 @@ impl Registry {
     /// (notes/bounded-integers.org §0). An `enum` of k names is
     /// `Uint<0..k>`, so it takes whichever unsigned row k lands on.
     ///
+    /// The last two rows are how compactc SPELLS a curve point — as an
+    /// `Opaque` under an `Alias` of the same name — so they are matched before
+    /// either the `Alias` row or the `Opaque` one (M15,
+    /// notes/opaque-bridging.org §0b). Before M15 they were refused, which is
+    /// why the erc20-vault's own `initialize` could not be imported.
+    ///
     /// What remains an error, with a reason: a bare `Field` (every MinoCrab
-    /// leaf is range-constrained and a `Field` carries no range), an
-    /// `Opaque` (no in-circuit representation at all), a `Contract` handle
-    /// passed as data, or a `Tuple` other than Compact's empty `[]`.
+    /// leaf is range-constrained and a `Field` carries no range — note this is
+    /// a DIFFERENT reason from the one `Opaque` used to be refused for, and
+    /// only this one was ever true), a `Contract` handle passed as data, a
+    /// `Tuple` other than Compact's empty `[]`, or one of the three curve
+    /// scalar/base types, which are native ZKIR values with no leaf yet.
     fn rust_type(&mut self, ty: &CompactType) -> Result<String, Unsupported> {
+        // The two curve POINT types, which compactc spells as an `Opaque`
+        // under an `Alias` of the same name. This MUST precede the `Alias`
+        // arm, and not only for tidiness: that arm emits `pub type Name<V> =
+        // target`, so `Alias { Secp256k1Point, Opaque { Secp256k1Point } }`
+        // would generate `pub type Secp256k1Point<V> = Secp256k1Point<V>` —
+        // a self-referential alias (E0391) in someone else's crate.
+        if let Some(point) = ty.curve_point() {
+            let name = match point {
+                CurvePoint::Secp256k1 => "Secp256k1Point",
+                CurvePoint::Jubjub => "JubjubPoint",
+            };
+            self.std_imports.insert(name);
+            return Ok(format!("{name}<V>"));
+        }
         Ok(match ty {
             CompactType::Bytes { length } => match length {
                 0..=31 => {
@@ -235,10 +283,29 @@ impl Registry {
                         .into(),
                 ))
             }
+            // `Opaque<'ts'>` — one unconstrained slot, and it DOES cross a
+            // boundary (notes/opaque-bridging.org §0a). Each distinct ts-type
+            // gets one generated `ts_type!` marker, so `Opaque<Str>` and
+            // `Opaque<Uint8Array>` are types that do not unify, exactly as
+            // compactc treats them.
             CompactType::Opaque { ts_type } => {
+                let marker = ts_marker(ts_type);
+                self.declare(Item::TsType {
+                    name: marker.clone(),
+                    ts_name: ts_type.clone(),
+                })?;
+                self.std_imports.insert("Opaque");
+                format!("Opaque<{marker}, V>")
+            }
+            // Parsed by minocrab-abi so the message can name the type; there
+            // is no leaf to name its slot with.
+            CompactType::JubjubScalar
+            | CompactType::Secp256k1Base
+            | CompactType::Secp256k1Scalar => {
                 return Err(Unsupported(format!(
-                    "`Opaque<{ts_type}>` has no in-circuit representation, so it cannot \
-                     cross a contract boundary"
+                    "`{}` is a native ZKIR value with no MinoCrab leaf type yet, so an \
+                     interface cannot name its slot",
+                    render(ty)
                 )))
             }
             CompactType::Contract { name, .. } => {
@@ -403,7 +470,14 @@ fn render(ty: &CompactType) -> String {
             "[{}]",
             types.iter().map(render).collect::<Vec<_>>().join(", ")
         ),
-        CompactType::Opaque { ts_type } => format!("Opaque<{ts_type}>"),
+        // The quotes are part of Compact's syntax: the source writes
+        // `Opaque<"string">`, not `Opaque<string>`. A doc comment that does not
+        // round-trip through compactc is a small lie in a file whose whole job
+        // is to mirror someone else's declaration.
+        CompactType::Opaque { ts_type } => format!("Opaque<{ts_type:?}>"),
+        CompactType::JubjubScalar => "JubjubScalar".into(),
+        CompactType::Secp256k1Base => "Secp256k1Base".into(),
+        CompactType::Secp256k1Scalar => "Secp256k1Scalar".into(),
         CompactType::Contract { name, .. } => name.clone(),
     }
 }
@@ -505,6 +579,13 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
                     out.push_str(&format!("    pub {field}: {ty},\n"));
                 }
                 out.push_str("}\n");
+            }
+            Item::TsType { name, ts_name } => {
+                out.push_str(&format!(
+                    "/// Compact `Opaque<{ts_name:?}>` — a TypeScript-side value, in \
+                     circuit as one\n/// unconstrained `compress` commitment.\n\
+                     ts_type!({name} = {ts_name:?});\n"
+                ));
             }
         }
     }
@@ -849,17 +930,113 @@ mod tests {
     #[test]
     fn the_inexpressible_types_are_refused_with_a_reason() {
         for (json, wanted) in [
-            (r#"{"type-name":"Opaque","tsType":"JubjubPoint"}"#, "no in-circuit representation"),
             (r#"{"type-name":"Field"}"#, "no range constraint"),
             (r#"{"type-name":"Contract","name":"Inner","circuits":[]}"#, "names circuits, not handles"),
             (
                 r#"{"type-name":"Tuple","types":[{"type-name":"Boolean"},{"type-name":"Boolean"}]}"#,
                 "name the fields",
             ),
+            // Native ZKIR values with no leaf to name their slot (M15).
+            (r#"{"type-name":"JubjubScalar"}"#, "no MinoCrab leaf type yet"),
+            (r#"{"type-name":"Secp256k1Base"}"#, "no MinoCrab leaf type yet"),
+            (r#"{"type-name":"Secp256k1Scalar"}"#, "no MinoCrab leaf type yet"),
         ] {
             let err = rust(json).expect_err(json);
             assert!(err.0.contains(wanted), "for {json}: {err}");
         }
+    }
+
+    /// `Opaque` is no longer inexpressible (M15): each distinct ts-type gets a
+    /// `ts_type!` marker, so two opaques of different TS types are Rust types
+    /// that do not unify — compactc's own rule.
+    #[test]
+    fn an_opaque_is_a_marker_parameterized_leaf() {
+        let mut reg = Registry::default();
+        assert_eq!(
+            reg.rust_type(&ty(r#"{"type-name":"Opaque","tsType":"string"}"#)).unwrap(),
+            "Opaque<Str, V>",
+            "`pascal(\"string\")` would shadow std::String"
+        );
+        assert_eq!(
+            reg.rust_type(&ty(r#"{"type-name":"Opaque","tsType":"Uint8Array"}"#)).unwrap(),
+            "Opaque<Uint8Array, V>"
+        );
+        // One marker per DISTINCT ts-type, declared once however often used.
+        reg.rust_type(&ty(r#"{"type-name":"Opaque","tsType":"string"}"#)).unwrap();
+        assert_eq!(
+            reg.items,
+            vec![
+                Item::TsType { name: "Str".into(), ts_name: "string".into() },
+                Item::TsType { name: "Uint8Array".into(), ts_name: "Uint8Array".into() },
+            ]
+        );
+    }
+
+    /// The curve POINT types map to their leaves — and the BARE `Opaque` of
+    /// the same ts-type does NOT, because only the full
+    /// `Alias { name, Opaque { tsType: name } }` spelling is compactc's way of
+    /// publishing a curve type. Getting this backwards would silently give a
+    /// user's `Opaque<"Secp256k1Point">` five atoms and a point slot.
+    #[test]
+    fn the_curve_point_spellings_map_to_their_leaves() {
+        for (json, wanted) in [
+            (
+                r#"{"type-name":"Alias","name":"Secp256k1Point",
+                     "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#,
+                "Secp256k1Point<V>",
+            ),
+            (
+                r#"{"type-name":"Alias","name":"JubjubPoint",
+                     "type":{"type-name":"Opaque","tsType":"JubjubPoint"}}"#,
+                "JubjubPoint<V>",
+            ),
+            // Bare, so an ordinary opaque.
+            (r#"{"type-name":"Opaque","tsType":"Secp256k1Point"}"#, "Opaque<Secp256k1Point, V>"),
+        ] {
+            assert_eq!(rust(json).unwrap(), wanted, "for {json}");
+        }
+
+        // Aliased under a DIFFERENT name: still an opaque, and the user's
+        // alias is preserved over it rather than being collapsed to a point.
+        let mut reg = Registry::default();
+        assert_eq!(
+            reg.rust_type(&ty(
+                r#"{"type-name":"Alias","name":"MpcKey",
+                     "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#
+            ))
+            .unwrap(),
+            "MpcKey<V>"
+        );
+        assert_eq!(
+            reg.items,
+            vec![
+                Item::TsType {
+                    name: "Secp256k1Point".into(),
+                    ts_name: "Secp256k1Point".into()
+                },
+                Item::Alias {
+                    name: "MpcKey".into(),
+                    target: "Opaque<Secp256k1Point, V>".into(),
+                    doc: "Compact `MpcKey = Opaque<\"Secp256k1Point\">`.".into(),
+                },
+            ],
+            "the alias target is the OPAQUE, not the point leaf"
+        );
+    }
+
+    /// The curve rows emit NO generated item — in particular no
+    /// `pub type Secp256k1Point<V> = Secp256k1Point<V>`, which is what the
+    /// generic `Alias` arm would have produced (E0391 in the generated crate).
+    #[test]
+    fn a_curve_point_generates_no_self_referential_alias() {
+        let mut reg = Registry::default();
+        reg.rust_type(&ty(
+            r#"{"type-name":"Alias","name":"Secp256k1Point",
+                 "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#,
+        ))
+        .unwrap();
+        assert!(reg.items.is_empty(), "the leaf is imported, not declared: {:?}", reg.items);
+        assert!(reg.std_imports.contains("Secp256k1Point"));
     }
 
     /// A bound that is not a bit width is no longer a refusal: it is the

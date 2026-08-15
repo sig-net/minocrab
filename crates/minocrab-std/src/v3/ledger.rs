@@ -28,7 +28,8 @@
 use std::marker::PhantomData;
 
 use minocrab::v3::{
-    CallArg, CallResult, Circuit3, CircuitAbi, FieldT, Operand, Secp256k1PointT, Wire3,
+    CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT, Operand, Secp256k1PointT,
+    Wire3,
 };
 use minocrab::{AlignmentAtom, Public, Visibility};
 use minocrab_ledger::{
@@ -37,7 +38,10 @@ use minocrab_ledger::{
     map_member, map_member_guarded, map_remove, map_size, mint_read_with, ImpactElem, LedgerValue,
 };
 
-use super::{Bool, BoundedUint, Bytes, BytesN, ContractAddress, Secp256k1Point, Uint, B32};
+use super::{
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Opaque, Secp256k1Point, TsType,
+    Uint, B32,
+};
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
 /// atoms, hand over its limbs, and be rebuilt from the limbs a read witnesses.
@@ -144,6 +148,13 @@ ledger_repr_via_abi! {
     [] B32<Public>,
     [const N: usize] BytesN<Public, N>,
     [] ContractAddress<Public>,
+    /// `Opaque<'ts-type'>` in a ledger slot — one limb under a `compress`
+    /// atom, which is the ordinary delegation. It is a `Cell` type, a `Map`
+    /// KEY type, a `Map` VALUE type and a `Set` element type, all four of
+    /// which the fixture exercises; unlike [`Secp256k1Point`] there is no
+    /// shape it cannot take, because the commitment is a plain field limb
+    /// that a read can hand straight back.
+    [T: TsType] Opaque<T, Public>,
 }
 
 /// `export ledger k: Secp256k1Point` — the one stored type whose limbs are
@@ -189,6 +200,51 @@ impl LedgerRepr for Secp256k1Point<Public> {
             None => c.public_transcript_input::<Secp256k1PointT>(),
         };
         let point = Secp256k1Point::from_point(point);
+        let mut limbs = Vec::new();
+        point.push_limbs(c, &mut limbs);
+        let value = LedgerValue::new(
+            <Self as LedgerRepr>::atoms(),
+            limbs.into_iter().map(ImpactElem::Wire).collect(),
+        );
+        (point, value)
+    }
+}
+
+/// `export ledger k: JubjubPoint` — the same computed-limb story as
+/// [`Secp256k1Point`] above, over two `field` limbs instead of five mixed ones.
+///
+/// Both halves are overridden for the same reason: `encode` produces the limbs
+/// and ZKIR has no inverse, so a write emits the `encode` and a read mints the
+/// TYPED gate and encodes that. A `LedgerMap<_, JubjubPoint>` is therefore not
+/// supported either — store it in a `Cell`, which is the only shape Compact's
+/// own `JubjubPoint` ledger fields take (`test-center/compact/test`'s `x15`).
+impl LedgerRepr for JubjubPoint<Public> {
+    fn atoms() -> Vec<AlignmentAtom> {
+        <JubjubPoint<Public> as CircuitAbi>::atoms()
+    }
+
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        limbs.extend(c.encode(self.point()));
+    }
+
+    /// UNREACHABLE by construction — see [`Secp256k1Point`]'s impl, which
+    /// carries the argument in full.
+    fn from_limbs(_limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        unreachable!(
+            "a JubjubPoint is read through its typed gate, not rebuilt from \
+             its `encode` limbs — see the impl's docs for the supported shapes"
+        )
+    }
+
+    fn witness_read<V: Visibility + Copy>(
+        c: &mut Circuit3,
+        guard: Option<Wire3<FieldT, V>>,
+    ) -> (Self, LedgerValue) {
+        let point = match guard {
+            Some(g) => c.public_transcript_input_guarded::<JubjubPointT, V>(g),
+            None => c.public_transcript_input::<JubjubPointT>(),
+        };
+        let point = JubjubPoint::from_point(point);
         let mut limbs = Vec::new();
         point.push_limbs(c, &mut limbs);
         let value = LedgerValue::new(

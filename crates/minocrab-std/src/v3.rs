@@ -8,7 +8,7 @@
 //! chains over the low limb.
 
 use minocrab::v3::{
-    Bytes32T, Circuit3, FieldT, IrTy, Secp256k1PointT, Secp256k1ScalarT, Wire3,
+    Bytes32T, Circuit3, FieldT, IrTy, JubjubPointT, Secp256k1PointT, Secp256k1ScalarT, Wire3,
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
@@ -918,6 +918,183 @@ impl<V: Vis3> Secp256k1Point<V> {
     /// The point wire — the same slot, no instructions.
     pub fn point(self) -> Wire3<Secp256k1PointT, V> {
         self.0
+    }
+}
+
+/// Compact's `JubjubPoint`: one slot of ZKIR type `Point<Jubjub>`, exactly as
+/// [`Secp256k1Point`] is one `Point<Secp256k1>` — same story about carrying no
+/// range constraint and contributing no native slot, a shorter alignment.
+///
+/// The FAB atoms are `encode()`'s two limbs, both `field` (notes/ledger-abi.org
+/// §3; the fixture's `opJubjub` pushes `[-0x02, -0x02]`), where a
+/// `Secp256k1Point`'s five are `b24, b8, b24, b8, field`.
+///
+/// compactc's ABI publishes this type as `Alias { name: "JubjubPoint", type:
+/// Opaque { tsType: "JubjubPoint" } }`, which is why it lives beside [`Opaque`]
+/// in the reader (notes/opaque-bridging.org §0b) and nowhere near it here: a
+/// curve point is not an opaque value, it just shares a spelling in one JSON
+/// file.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct JubjubPoint<V: Vis3 = Private>(Wire3<JubjubPointT, V>);
+
+impl<V: Vis3> JubjubPoint<V> {
+    /// Wrap a point wire (a circuit argument, or a ledger read's result).
+    pub fn from_point(w: Wire3<JubjubPointT, V>) -> Self {
+        JubjubPoint(w)
+    }
+
+    /// The point wire — the same slot, no instructions.
+    pub fn point(self) -> Wire3<JubjubPointT, V> {
+        self.0
+    }
+}
+
+/// The TypeScript type name a Compact `Opaque<'ts-type'>` carries — a MARKER
+/// TYPE, not a const string.
+///
+/// `const TS_NAME: &'static str` cannot be a const-generic ARGUMENT on stable
+/// (`adt_const_params`), so the name has to be carried by a type either way.
+/// That turns out to be the shape worth wanting: [`Opaque<Str>`](Opaque) and
+/// `Opaque<Uint8Array>` are then distinct types that do not unify, so mixing
+/// them is a type error with no lowering consequence — CLAUDE.md's
+/// second-preference rejection mechanism, and Compact's own rule (the pinned
+/// compiler: `expected right-hand side of = to have type Opaque<"string"> but
+/// received Opaque<"Uint8Array">`).
+///
+/// Declare your own with [`ts_type!`].
+pub trait TsType {
+    /// The name as it appears inside Compact's `Opaque<"…">` and as
+    /// `contract-info.json`'s `tsType`.
+    const TS_NAME: &'static str;
+}
+
+/// Declare a [`TsType`] marker: `ts_type!(MyType = "MyType");`
+///
+/// One line per distinct `tsType` a contract mentions. `minocrab-interface-gen`
+/// emits these into a generated interface crate, so the mapping from a Compact
+/// `Opaque<"…">` to a Rust type is something a reader can see rather than
+/// something the generator knows.
+#[macro_export]
+macro_rules! ts_type {
+    ($( $(#[$m:meta])* $name:ident = $ts:literal );* $(;)?) => {$(
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum $name {}
+        impl $crate::v3::TsType for $name {
+            const TS_NAME: &'static str = $ts;
+        }
+    )*};
+}
+
+/// The [`TsType`] markers for the two names the corpus uses.
+pub mod ts {
+    crate::ts_type! {
+        /// Compact's `Opaque<"string">` — 55 of the corpus's 74 `Opaque`
+        /// nodes. Named `Str` and not `String` deliberately: a generated
+        /// crate that shadows `std::string::String` is a nasty import, and
+        /// [`TsType::TS_NAME`] still carries `"string"` verbatim.
+        Str = "string";
+        /// Compact's `Opaque<"Uint8Array">`.
+        Uint8Array = "Uint8Array"
+    }
+}
+
+/// Compact's `Opaque<'ts-type'>`: a value that lives on the TypeScript side,
+/// which a circuit can hold, compare, store and pass on — and nothing else.
+///
+/// # What the wire actually holds
+///
+/// One native slot with NO range constraint (compactc's `[(topaque
+/// ,opaque-type) instr*]`, i.e. [`Prim::Opaque`] → [`LimbConstraint::None`])
+/// under a FAB `compress` atom. The value in that slot is not a handle or an
+/// index — it is a BINDING COMMITMENT to the underlying bytes
+/// (`transient-crypto/src/fab.rs`, `ValueAtom::field_repr_unchecked`):
+///
+/// ```text
+/// AlignmentAtom::Compress => transient_commit(bytes, len)   // 0 if bytes is empty
+/// ```
+///
+/// Three consequences, and they are the whole API:
+///
+/// - **[`Opaque::eq`] is sound.** Comparing two opaques compares their
+///   commitments, so it decides equality of the TS-side values up to Poseidon
+///   collision resistance. It is not pointer identity.
+/// - **[`Opaque::default`] is the field element zero**, because the empty byte
+///   string is special-cased upstream — which is why compactc lowers
+///   `default<Opaque<"string">>` to the immediate `0x00` with no ceremony.
+/// - **There is nothing else to offer.** The commitment is one-way
+///   (`AlignmentAtom::parse_field_repr` returns `None` for `Compress`), so
+///   there is no byte view, no length, no way to build one in circuit, and no
+///   hash: [`hash::persistent_hash`] is bounded on
+///   [`CircuitBorsh`](borsh::CircuitBorsh), which this type deliberately does
+///   not implement (§5 of notes/opaque-bridging.org). compactc refuses the same
+///   thing in almost the same words — *"persistentHash cannot be applied to a
+///   first argument containing opaque JavaScript values"*.
+///
+/// # Where it can appear
+///
+/// Everywhere a Compact `Opaque` can: circuit argument, circuit result,
+/// witness result, ledger `Cell` / `Map` key / `Map` value / `Set` element,
+/// struct field, and either side of a cross-contract call. The fixture
+/// `tests/fixtures/opaque/opaque.compact` in `minocrab-contracts` has one
+/// circuit per position.
+#[repr(transparent)]
+pub struct Opaque<T: TsType, V: Vis3 = Private>(Wire3<FieldT, V>, std::marker::PhantomData<T>);
+
+// `Copy` like every other leaf (there is no resource discipline to protect —
+// an opaque is not spendable or consumed), but HAND-WRITTEN: `#[derive(Copy)]`
+// on a struct with a `PhantomData<T>` field adds an implicit `T: Copy` bound,
+// and `T` here is an uninhabited marker that has no reason to carry one. The
+// derive would then make `self.field()` fail to compile behind a `&self`.
+impl<T: TsType, V: Vis3> Clone for Opaque<T, V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: TsType, V: Vis3> Copy for Opaque<T, V> {}
+
+impl<T: TsType, V: Vis3> Opaque<T, V> {
+    /// Wrap a wire holding an opaque's commitment (a circuit argument, a
+    /// witnessed value, a ledger read).
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        Opaque(w, std::marker::PhantomData)
+    }
+
+    /// The commitment wire — the same slot, no instructions.
+    ///
+    /// Named `field` like every other leaf's unwrap, but worth reading twice:
+    /// what comes out is `transient_commit(bytes, len)`, not the value. There
+    /// is no operation on it that means anything except equality.
+    pub fn field(self) -> Wire3<FieldT, V> {
+        self.0
+    }
+}
+
+impl<T: TsType> Opaque<T, Public> {
+    /// Compact's `default<Opaque<…>>` — the empty value, whose commitment is
+    /// the field element zero (see the type's docs). One `Circuit3::constant`,
+    /// which inlines as an immediate wherever it is used.
+    pub fn default_value(c: &mut Circuit3) -> Self {
+        Opaque::from_field(c.constant(Fr::from(0u64)))
+    }
+}
+
+impl<T: TsType, V: Vis3> Opaque<T, V> {
+    /// `a == b` — one `test_eq` over the two commitments, so this decides
+    /// equality of the TS-side values (see the type's docs on why that is
+    /// sound and not handle identity).
+    pub fn eq<W: Vis3>(
+        self,
+        c: &mut Circuit3,
+        other: Opaque<T, W>,
+    ) -> Wire3<FieldT, <V as Meet<W>>::Out>
+    where
+        V: Meet<W>,
+        <V as Meet<W>>::Out: Vis3,
+    {
+        c.test_eq(self.0, other.0)
     }
 }
 

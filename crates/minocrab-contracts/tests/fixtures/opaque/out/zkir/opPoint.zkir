@@ -1,0 +1,15 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%p.0", "type": "Point<Secp256k1>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "encode", "outputs": ["%fld.1", "%fld.2", "%fld.3", "%fld.4", "%fld.5"], "input": "%p.0" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x07"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x05", "0x18", "0x08", "0x18", "0x08", "-0x02", "%fld.1", "%fld.2", "%fld.3", "%fld.4", "%fld.5"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }
+  ]
+}

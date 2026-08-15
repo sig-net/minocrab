@@ -1,0 +1,18 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%a.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%b.1", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>"
+  ],
+  "instructions": [
+    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0e", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
+    { "op": "test_eq", "output": "%t.2", "a": "%a.0", "b": "%b.1" },
+    { "op": "output", "vals": ["%t.2"] }
+  ]
+}

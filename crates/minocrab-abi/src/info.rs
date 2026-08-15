@@ -101,9 +101,21 @@ pub struct DeclaredCircuit {
 
 /// A Compact type, in compactc's own JSON vocabulary.
 ///
-/// Every `type-name` that occurs anywhere in the 312-artifact corpus is a
-/// variant here, so a parse failure means a NEW compactc type rather than a
-/// gap in this list.
+/// Every `type-name` that occurs in a position THIS CRATE PARSES — a
+/// circuit's arguments and result, and the same for a declared `contract`
+/// interface — is a variant here, so a parse failure in one of those means a
+/// NEW compactc type rather than a gap in this list.
+///
+/// The qualifier is load-bearing and was once missing (this doc claimed the
+/// whole corpus). Scanning every `type-name` in all 312 artifacts gives
+/// sixteen distinct names, and four are NOT modelled: `Map`, `Counter`,
+/// `List`, and — before M15 — `JubjubScalar`. All four occur only under
+/// `ledger`, which [`ContractInfo`] does not deserialize at all, so nothing
+/// breaks. But "the corpus covers it" was the wrong warrant: no corpus
+/// contract takes a `JubjubScalar` ARGUMENT and one perfectly well could, so
+/// the three curve scalar/base names are modelled below on the strength of a
+/// compiled fixture rather than of corpus frequency
+/// (notes/opaque-bridging.org §0c).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompactType {
     /// `Bytes<length>`.
@@ -119,8 +131,46 @@ pub enum CompactType {
     Vector { length: usize, ty: Box<CompactType> },
     Alias { name: String, ty: Box<CompactType> },
     Enum { name: String, elements: Vec<String> },
+    /// `Opaque<'ts-type'>` — and ALSO, under an [`CompactType::Alias`] of the
+    /// same name, compactc's spelling for the two curve POINT types. See
+    /// [`CompactType::curve_point`].
     Opaque { ts_type: String },
+    /// `JubjubScalar` — one native `Scalar<Jubjub>` slot, one `field` atom.
+    JubjubScalar,
+    /// `Secp256k1Base` — one native `Base<Secp256k1>` slot, atoms `b24, b8`.
+    Secp256k1Base,
+    /// `Secp256k1Scalar` — one native `Scalar<Secp256k1>` slot, atoms `b24, b8`.
+    Secp256k1Scalar,
     Contract { name: String, circuits: Vec<DeclaredCircuit> },
+}
+
+/// Which curve type an `Opaque` spelling denotes, if any — the two POINT
+/// types, which compactc publishes as `Opaque` and which have perfectly
+/// ordinary in-circuit representations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurvePoint {
+    /// `Point<Secp256k1>`: one slot, atoms `b24, b8, b24, b8, field`.
+    Secp256k1,
+    /// `Point<Jubjub>`: one slot, atoms `field, field`.
+    Jubjub,
+}
+
+impl CurvePoint {
+    /// The FAB atoms the point's `encode` produces (notes/ledger-abi.org §3),
+    /// matching `minocrab_std::v3::{Secp256k1Point, JubjubPoint}`'s
+    /// `CircuitAbi::push_atoms` one for one.
+    pub fn atoms(self) -> Vec<AlignmentAtom> {
+        match self {
+            CurvePoint::Secp256k1 => vec![
+                AlignmentAtom::Bytes { length: 24 }, // x, low 24 bytes
+                AlignmentAtom::Bytes { length: 8 },  // x, high 8 bytes
+                AlignmentAtom::Bytes { length: 24 }, // y, low 24 bytes
+                AlignmentAtom::Bytes { length: 8 },  // y, high 8 bytes
+                AlignmentAtom::Field,                // the infinity flag
+            ],
+            CurvePoint::Jubjub => vec![AlignmentAtom::Field, AlignmentAtom::Field],
+        }
+    }
 }
 
 /// HAND-WRITTEN, for ONE field: a `Uint<128>`'s `maxval` is 2^128 − 1,
@@ -171,6 +221,9 @@ fn parse_type(text: &str) -> Result<CompactType, serde_json::Error> {
             elements: field(&fields, "elements")?,
         },
         "Opaque" => CompactType::Opaque { ts_type: field(&fields, "tsType")? },
+        "JubjubScalar" => CompactType::JubjubScalar,
+        "Secp256k1Base" => CompactType::Secp256k1Base,
+        "Secp256k1Scalar" => CompactType::Secp256k1Scalar,
         "Contract" => CompactType::Contract {
             name: field(&fields, "name")?,
             circuits: field(&fields, "circuits")?,
@@ -239,14 +292,34 @@ impl Flattened {
 }
 
 /// A Compact type an interface crate cannot express.
+///
+/// There used to be an `Opaque` variant here, saying that an `Opaque` "has no
+/// in-circuit representation, so it cannot cross a contract boundary". It was
+/// wrong twice over — an opaque is one unconstrained slot and does cross a
+/// boundary, and half the corpus's `Opaque` nodes are curve points — and the
+/// concrete cost was that the erc20-vault's own `initialize` could not be
+/// flattened. M15 DELETED the variant rather than rewording it: there is no
+/// longer a Compact type spelled `Opaque` that cannot cross a boundary, and a
+/// variant nothing constructs is worse than no variant at all
+/// (notes/opaque-bridging.org §0b).
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum TypeError {
-    /// `Opaque` is a TypeScript-side value with no circuit representation.
-    #[error("`Opaque<{ts_type}>` has no in-circuit representation, so it cannot cross a contract boundary")]
-    Opaque { ts_type: String },
     /// A `Contract` reference as a VALUE (a contract handle passed as data).
     #[error("a `Contract` value (`{name}`) cannot cross a contract boundary: an interface names circuits, not handles")]
     ContractValue { name: String },
+    /// A Compact type that IS a native ZKIR value but has no
+    /// `minocrab_std::v3` leaf yet, so nothing can name its slot.
+    ///
+    /// The three curve scalar/base types. They are modelled as
+    /// [`CompactType`] variants — a `JubjubScalar` circuit argument compiles,
+    /// so meeting one should say what it is rather than "compactc grew a type
+    /// this crate does not model" — and refused here, because flattening one
+    /// means giving it a [`Prim`], and the only honest `Prim` for a slot whose
+    /// wire is not a field element is a new variant with a leaf behind it.
+    /// M15 declined to invent that row for a type no corpus artifact takes as
+    /// an argument (notes/opaque-bridging.org §6, corrected as built).
+    #[error("`{compact_type}` is a native ZKIR value with no MinoCrab leaf type yet, so an interface cannot name its slot")]
+    NoLeaf { compact_type: &'static str },
 }
 
 impl CompactType {
@@ -269,20 +342,69 @@ impl CompactType {
     ///   declaration order. Compact structs FLATTEN: they add no slot of
     ///   their own, which is why `ContractAddress` and its inner
     ///   `Bytes<32>` have the same layout.
-    /// - `Alias` → the aliased type, unchanged.
+    /// - `Alias` → the aliased type, unchanged — EXCEPT the two curve-point
+    ///   spellings, which [`CompactType::curve_point`] catches first.
+    /// - `Opaque<'ts'>` → one slot, [`Prim::Opaque`] (so no constraint at all,
+    ///   which is compactc's `[(topaque …) instr*]` line) over one `compress`
+    ///   atom. NOT an error: an opaque enters circuits, it just carries no
+    ///   range (notes/opaque-bridging.org §0a).
+    /// - `Alias { name, Opaque { tsType: name } }` for `Secp256k1Point` /
+    ///   `JubjubPoint` → one slot, [`Prim::Point`], over that point's `encode`
+    ///   atoms. This is compactc's ABI spelling for a native curve type, which
+    ///   is why the arm must precede the generic `Alias` one.
+    /// - `JubjubScalar` / `Secp256k1Base` / `Secp256k1Scalar` → one native
+    ///   slot each, no constraint, over their `anative` expansions (`field`
+    ///   resp. `b24, b8` — read off the fixture's `encode` outputs).
     /// - `Enum` with `k` variants → `Uint<0..k>`, i.e. `Prim::unsigned(k
     ///   - 1)`. NOT assumed: `compact/examples/casts/advanced_casts`'s
     ///   `test17` takes two `enum TestEnum { A, B, C }` arguments and its
     ///   compiled `.zkir` opens with `less_than tmp arg 3 bits=2; assert`
     ///   twice — exactly `Prim::unsigned(2).constraint()`.
-    /// - `Opaque` / a `Contract` value → [`TypeError`].
+    /// - a `Contract` value → [`TypeError::ContractValue`], the only one left.
     pub fn flatten(&self) -> Result<Flattened, TypeError> {
         let mut out = Flattened::default();
         self.push_flat(&mut out)?;
         Ok(out)
     }
 
+    /// The curve POINT type this spelling denotes, if it is one.
+    ///
+    /// compactc publishes `Secp256k1Point` and `JubjubPoint` as
+    /// `Alias { name, type: Opaque { tsType: name } }` — the ts-type is how the
+    /// runtime names the value, and the alias name is the Compact type. Both
+    /// halves are required to match, and the name must be one of the two: an
+    /// `Opaque<"Secp256k1Point">` under a DIFFERENT alias, or a bare one, is a
+    /// user-declared opaque that happens to share a string and must stay one.
+    ///
+    /// Only the two POINT types get this treatment, because only they are
+    /// spelled `Opaque`. `JubjubScalar` and the secp256k1 base/scalar types
+    /// publish under their own `type-name` (verified against a compiled
+    /// fixture), so they are ordinary variants.
+    pub fn curve_point(&self) -> Option<CurvePoint> {
+        let CompactType::Alias { name, ty } = self else {
+            return None;
+        };
+        let CompactType::Opaque { ts_type } = &**ty else {
+            return None;
+        };
+        if name != ts_type {
+            return None;
+        }
+        match name.as_str() {
+            "Secp256k1Point" => Some(CurvePoint::Secp256k1),
+            "JubjubPoint" => Some(CurvePoint::Jubjub),
+            _ => None,
+        }
+    }
+
     fn push_flat(&self, out: &mut Flattened) -> Result<(), TypeError> {
+        // The curve-point spellings, BEFORE the generic `Alias` arm below
+        // would look through to a bare `Opaque`.
+        if let Some(point) = self.curve_point() {
+            out.atoms.extend(point.atoms());
+            out.prims.push(Prim::Point);
+            return Ok(());
+        }
         match self {
             CompactType::Bytes { length } => {
                 out.atoms.push(AlignmentAtom::Bytes { length: *length as u32 });
@@ -323,8 +445,28 @@ impl CompactType {
                 out.atoms.push(AlignmentAtom::Bytes { length: uint_bytes(maxval) });
                 out.prims.push(Prim::unsigned(maxval));
             }
-            CompactType::Opaque { ts_type } => {
-                return Err(TypeError::Opaque { ts_type: ts_type.clone() })
+            // One slot, one `compress` atom, and NO constraint — the prim
+            // says so, not this arm. The `ts_type` does not enter the
+            // flattening at all: two opaques of different TS types have the
+            // same layout, and it is the Rust type parameter that keeps them
+            // from being interchangeable.
+            CompactType::Opaque { .. } => {
+                out.atoms.push(AlignmentAtom::Compress);
+                out.prims.push(Prim::Opaque);
+            }
+            // PARSED so the error can name the type, but NOT flattened — see
+            // `TypeError::NoLeaf`. Their atoms are known
+            // (notes/ledger-abi.org §3: `field` resp. `b24, b8`) and are
+            // deliberately not written here, because atoms without a `Prim`
+            // are half a row and half a row is how a wrong one gets in.
+            CompactType::JubjubScalar => {
+                return Err(TypeError::NoLeaf { compact_type: "JubjubScalar" })
+            }
+            CompactType::Secp256k1Base => {
+                return Err(TypeError::NoLeaf { compact_type: "Secp256k1Base" })
+            }
+            CompactType::Secp256k1Scalar => {
+                return Err(TypeError::NoLeaf { compact_type: "Secp256k1Scalar" })
             }
             CompactType::Contract { name, .. } => {
                 return Err(TypeError::ContractValue { name: name.clone() })
@@ -459,14 +601,93 @@ mod tests {
     }
 
     #[test]
-    fn opaque_and_contract_values_are_rejected() {
-        let opaque = parse(r#"{"type-name":"Opaque","tsType":"JubjubPoint"}"#);
-        assert_eq!(
-            opaque.flatten(),
-            Err(TypeError::Opaque { ts_type: "JubjubPoint".into() })
-        );
+    fn contract_values_are_rejected() {
         let contract = parse(r#"{"type-name":"Contract","name":"Inner","circuits":[]}"#);
         assert!(matches!(contract.flatten(), Err(TypeError::ContractValue { .. })));
+    }
+
+    /// A genuine `Opaque` is one `compress` atom over one unconstrained slot.
+    #[test]
+    fn an_opaque_is_one_unconstrained_compress_slot() {
+        let ty = parse(r#"{"type-name":"Opaque","tsType":"string"}"#);
+        let flat = ty.flatten().unwrap();
+        assert_eq!(flat.atoms, vec![AlignmentAtom::Compress]);
+        assert_eq!(flat.prims, vec![Prim::Opaque]);
+        assert_eq!(flat.prims[0].constraint(), minocrab::v3::LimbConstraint::None);
+
+        // The ts-type does not enter the layout: two opaques of different TS
+        // types flatten identically, and it is the Rust type parameter that
+        // keeps them apart.
+        let other = parse(r#"{"type-name":"Opaque","tsType":"Uint8Array"}"#);
+        assert_eq!(other.flatten().unwrap(), flat);
+    }
+
+    /// The two curve POINT types, which compactc spells `Opaque` under an
+    /// `Alias` of the same name — the erc20-vault's `initialize` shape.
+    #[test]
+    fn the_curve_point_spellings_are_points() {
+        let secp = parse(
+            r#"{"type-name":"Alias","name":"Secp256k1Point",
+                 "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#,
+        );
+        assert_eq!(secp.curve_point(), Some(CurvePoint::Secp256k1));
+        let flat = secp.flatten().unwrap();
+        assert_eq!(flat.prims, vec![Prim::Point]);
+        assert_eq!(flat.atoms, CurvePoint::Secp256k1.atoms());
+        assert_eq!(flat.atoms.len(), 5);
+
+        let jubjub = parse(
+            r#"{"type-name":"Alias","name":"JubjubPoint",
+                 "type":{"type-name":"Opaque","tsType":"JubjubPoint"}}"#,
+        );
+        assert_eq!(jubjub.curve_point(), Some(CurvePoint::Jubjub));
+        let flat = jubjub.flatten().unwrap();
+        assert_eq!(flat.prims, vec![Prim::Point]);
+        assert_eq!(
+            flat.atoms,
+            vec![AlignmentAtom::Field, AlignmentAtom::Field]
+        );
+    }
+
+    /// BOTH halves of the curve spelling must match, or it is a user's opaque
+    /// that happens to share a string. This is the test that stops the
+    /// recognition from being a substring match on a name we like.
+    #[test]
+    fn only_the_exact_curve_spelling_is_a_point() {
+        // Right ts-type, different alias name.
+        let renamed = parse(
+            r#"{"type-name":"Alias","name":"MpcKey",
+                 "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#,
+        );
+        assert_eq!(renamed.curve_point(), None);
+        assert_eq!(renamed.flatten().unwrap().prims, vec![Prim::Opaque]);
+
+        // Bare, with no alias at all.
+        let bare = parse(r#"{"type-name":"Opaque","tsType":"Secp256k1Point"}"#);
+        assert_eq!(bare.curve_point(), None);
+        assert_eq!(bare.flatten().unwrap().prims, vec![Prim::Opaque]);
+
+        // An alias whose name matches its ts-type but is not a curve.
+        let neither = parse(
+            r#"{"type-name":"Alias","name":"Handle",
+                 "type":{"type-name":"Opaque","tsType":"Handle"}}"#,
+        );
+        assert_eq!(neither.curve_point(), None);
+        assert_eq!(neither.flatten().unwrap().prims, vec![Prim::Opaque]);
+    }
+
+    /// The three curve scalar/base names parse (so the error names the type)
+    /// and do not flatten (so nothing invents a `Prim` for them).
+    #[test]
+    fn curve_scalars_parse_but_have_no_leaf() {
+        for (json, name) in [
+            (r#"{"type-name":"JubjubScalar"}"#, "JubjubScalar"),
+            (r#"{"type-name":"Secp256k1Base"}"#, "Secp256k1Base"),
+            (r#"{"type-name":"Secp256k1Scalar"}"#, "Secp256k1Scalar"),
+        ] {
+            let ty = parse(json);
+            assert_eq!(ty.flatten(), Err(TypeError::NoLeaf { compact_type: name }));
+        }
     }
 
     /// `Tuple { types: [] }` is Compact's `[]` — the empty return type.

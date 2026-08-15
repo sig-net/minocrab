@@ -38,13 +38,14 @@
 //! to get right.
 
 use minocrab::v3::{
-    uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3,
+    uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, FieldT, JubjubPointT, Prim,
+    Secp256k1PointT, Wire3,
 };
 use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, Secp256k1Point, Uint, Vis3,
-    B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe, Opaque,
+    Secp256k1Point, TsType, Uint, Vis3, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -319,6 +320,59 @@ impl CircuitArg for Secp256k1Point<Private> {
     /// A point slot is not a native field wire: nothing to constrain, and
     /// nothing a slot list could carry it as.
     fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
+}
+
+/// Compact's `JubjubPoint`: the same one-non-field-slot story as
+/// [`Secp256k1Point`], over a two-`field` alignment.
+impl<V: Vis3> CircuitAbi for JubjubPoint<V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Field); // x
+        atoms.push(AlignmentAtom::Field); // y
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Point);
+    }
+}
+
+impl CircuitArg for JubjubPoint<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        JubjubPoint::from_point(c.arg::<JubjubPointT>(path.as_str()))
+    }
+
+    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
+}
+
+/// Compact's `Opaque<'ts-type'>`: ONE native slot carrying the value's
+/// `compress` commitment, and NO constraint — `Prim::Opaque` is compactc's
+/// `[(topaque ,opaque-type) instr*]` line, so the table emits nothing and this
+/// impl says nothing about it.
+///
+/// Unlike [`Secp256k1Point`], the slot IS a field wire, so `push_slots` pushes
+/// it in the ordinary way; what makes it constraint-free is the PRIM, which is
+/// where that decision belongs.
+impl<T: TsType, V: Vis3> CircuitAbi for Opaque<T, V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Compress);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Opaque);
+    }
+}
+
+impl<T: TsType> CircuitArg for Opaque<T, Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        Opaque::from_field(c.arg::<FieldT>(path.as_str()))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
+    }
 }
 
 /// Compact's `ContractAddress`: a struct of one `Bytes<32>`, which flattens

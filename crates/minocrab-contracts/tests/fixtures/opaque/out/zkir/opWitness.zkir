@@ -1,0 +1,14 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "private_input", "type": "Scalar<BLS12-381>", "output": "%tmp.0", "guard": null },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x01", "-0x01", "%tmp.0"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }
+  ]
+}

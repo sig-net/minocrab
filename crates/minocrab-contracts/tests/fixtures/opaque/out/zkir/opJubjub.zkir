@@ -1,0 +1,15 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%p.0", "type": "Point<Jubjub>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "encode", "outputs": ["%pt.1", "%pt.2"], "input": "%p.0" },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x08"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x02", "-0x02", "-0x02", "%pt.1", "%pt.2"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }
+  ]
+}
