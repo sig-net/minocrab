@@ -546,3 +546,145 @@ itself and one `let payload = …` that rustfmt-style fits on one line at the
 shallower indent. Zero movement everywhere: interface_snapshot and
 row_snapshot bit-identical, all 13 differential suites green,
 `cargo test --workspace --release` clean.
+** Phase 5 — the remaining circuits (2026-08-15)
+62 of the 78 snapshot rows are now built through the typed API (10 were,
+after phase 4). The 16 that are not are one experiment family, documented
+below with the reason.
+
+*** What was ported, by batch
+Batch 1 — the vault, THREE ARTIFACTS IN LOCKSTEP (18 circuits):
+initialize, approveRouter, swap, completeWithdraw, completeSwap, refund in
+each of erc20_vault / _opt / _borsh. The forks' argument blocks were
+verbatim copies of the port's, so one set of replacements was applied to all
+three files by script; that is not tidiness but a gate —
+`borsh_fork_status` calls initialize/deposit/approveRouter/withdraw/swap
+byte-identical to the opt fork's, and `erc20_vault_borsh_fork.rs` asserts it.
+New argument types: `SwapRequest { tokenIn: Bytes<20>, tokenOut: Bytes<20>,
+fee: Uint<24>, amountOut: Uint<128>, amountInMaximum: Uint<128> }` (a derive,
+one per fork, beside the existing DepositRequest/WithdrawRequest), and
+`Secp256k1Point` in the core (below). `settle_args` — the hand declarer the
+three settle circuits shared — is gone from all three files; the `SettleArgs`
+STRUCT stays as the selection they hand `verify_attestation`.
+
+Batch 2 — signet_contract (2): respond, respondBidirectional. Their
+arguments are now the interface crate's own `RequestId` / `AffinePoint` /
+`B32` / `Uint<8>`, but ONE LEVEL FLATTER than the Compact signature, which
+wraps them in `{ signature: { bigR, s, recoveryId } }`. Compact's wrapper
+carries no label in the frozen interface (`bigR_x_hi`, not
+`signatureRespondedEvent_signature_bigR_x_hi`) and `#[arg(name)]` renames a
+segment but cannot delete one — claim's precedent, same trade. So the
+fields sit at the head of the parameter list: zero movement, real types,
+and `tests/contract_matches_its_interface.rs` still the thing that says the
+flattening is faithful (its doc comment was updated to say so; the old text
+called these arguments hand-declared).
+
+Batch 3 — the experiments (32 rows):
+- attest (4): mapOnly, verifyOnly, shaVerify, keccakVerify. The last two
+  share one body parameterized by the hash builtin, which is now a plain
+  fn taking `c` and the typed arguments; each entry point is its own
+  `#[circuit]` passing a closure. (An attribute makes a NULLARY constructor,
+  so a body shared by a Rust parameter cannot itself carry the attribute.)
+- events / events_borsh (8): `base_with_emits(emits)` is a circuit FAMILY
+  parameterized by a Rust value, so it uses `entry(|c, args: DepositArgs|)`
+  directly — the argument list is the derived struct either way.
+- hashing (1 of 17): persistentVec8, whose `[B32; 8]` parameter declares
+  `data_0_hi` … `data_7_lo` and constrains all sixteen limbs from the type.
+- xcall (7 rows / 5 fns): localBase, callOnce/callTwice (the `call_n_times`
+  family, `entry`), callEmit, callBig, targetDepositBig. targetDeposit and
+  targetDepositEmit ARE `events::base`/`emit_n`, ported with them.
+- xcall_with_payment (5): callOnce, request, notify, pay, confirmRequest —
+  the one name-column change in the whole phase (below).
+- xcontract_events (2) + xcontract_events_borsh (1): the corpus's only
+  circuits with a return value, so the only users of `#[circuit(output =
+  "event hash")]`. `CircuitOut for B32<Public>` emits the `(hi)`/`(lo)`
+  suffixes the hand-written `c.output` calls used, so the output labels did
+  not move either. Their `caller` argument is now `ContractAddress<Private>`
+  (same two slots, `caller_hi`/`caller_lo`).
+- mint_tokens (2), serde_builtin (1), test_caller (1).
+
+*** New in the core: minocrab_std::v3::Secp256k1Point
+The corpus's only curve-point argument (initialize ×3, attest's
+verifyOnly/shaVerify/keccakVerify, test_caller's initialise — 7 circuits),
+and the first argument leaf whose slot is NOT a `Wire3<FieldT, _>`. That is
+the whole difficulty: `CircuitArg::push_slots` hands back native field
+wires, and a `Point<Secp256k1>` slot has none to hand back.
+- The leaf (v3.rs, beside the ECDSA gadgets): a `#[repr(transparent)]`
+  newtype over `Wire3<Secp256k1PointT, V>` with `from_point`/`point`.
+- `CircuitAbi`: SLOTS = 1, prims = `[Prim::Point]`, atoms = `encode()`'s
+  five limbs (x 24+8, y 24+8, the infinity field, notes/ledger-abi.org §3).
+  One slot, five atoms — the same slots-vs-atoms split a `Bytes<32>` has in
+  the other direction.
+- `CircuitArg::push_slots` pushes NOTHING, and the provided `constrain`
+  filters `Prim::Point` out of the prims before zipping. The filter is the
+  statement of law 3, not an exception to it: compactc's own table is
+  `[(tpoint ,ctype) instr*]` — no constraint — so a point slot has nothing
+  to be zipped against, and everything a slot list is used for (constraints,
+  FAB hashing) is native-field work. It lives in the ONE provided
+  `constrain`, so no impl gets an opinion about it.
+- Gate: `crates/minocrab-std/tests/v3_entry.rs`, a three-argument list with
+  the point in the MIDDLE, compared as serialized ZKIR against the
+  hand-written `c.arg::<Secp256k1PointT>` circuit (so the slot's POSITION is
+  pinned, not just its absence of constraint), plus the atom table.
+Rejected: widening `push_slots` to an enum or `Option` slot. It would have
+touched every impl and both hash flavors' call sites to describe one
+argument type that carries no constraint anyway.
+
+*** The one name-column change (five lines)
+`xcall_with_payment::call_once`: `nonce_hi`, `nonce_lo`, `color_hi`,
+`color_lo`, `value` → `coin_nonce_hi`, `coin_nonce_lo`, `coin_color_hi`,
+`coin_color_lo`, `coin_value`. The Compact parameter is `coin:
+ShieldedCoinInfo`; the old labels were a hand abbreviation that dropped the
+parameter's own name, which the mechanical rule restores — and which the
+target's `notify`/`pay` were already using for the same five slots. Order
+and types untouched; the serialized ZKIR is byte-identical after renaming
+those five labels (checked). The frozen entry in interface_snapshot.rs was
+edited in place, with the reason in a comment above it; nothing else in the
+table moved.
+
+*** Left unported, and why: hashing's Bytes<len> family (16 rows)
+`control`/`persistent`/`keccak`/`transient` take their input WIDTH as a Rust
+parameter — the experiment SWEEPS 32/64/128/256/1024 in a loop
+(`tests/hashing_differential.rs`) — while a `CircuitArg` is a type and
+`CircuitArgs::SLOTS` is a `const`. The two ways out are both worse than the
+status quo: const-generic entry points (`control::<32>()`) that the sweeping
+loops cannot call, or a `match` over the sizes swept today, which turns a
+general experiment into a closed enumeration that panics on the next size
+someone measures. And the port would buy nothing HERE: the soundness the
+typed layer exists for is already present, because `BytesNDyn::
+constrain_input` derives the per-limb widths from the same `len` that
+declared the limbs — there is no hand-written parallel block to drift.
+Written up in hashing.rs's module docs, next to the code. (persistentVec8,
+whose shape is fixed, IS ported — so the file shows both.)
+
+*** Zero-movement evidence
+Beyond the standing gates, the phase was checked by dumping all 78 circuits'
+serialized ZKIR at HEAD (a git worktree) and after each batch, and diffing:
+- 68 of 78 byte-identical, including every label;
+- 9 (the settle circuits of each fork: completeWithdraw, completeSwap,
+  refund) have the SAME inputs and the SAME instruction MULTISET, differing
+  only in the order of three input-range constraints. The hand-written
+  `settle_args` constrained `serializedOutput` last, after `mintNonce`,
+  because the caller declared it; `#[circuit]` constrains in parameter
+  order. Rows are position-independent and the constraints are on distinct
+  argument wires, so row_snapshot and the differentials do not move — and
+  neither instruments the ORDER, which is why the dump was worth doing;
+- 1 (xcall_with_payment::callOnce) is the five-label rename above.
+`cargo test --workspace --release` green; interface_snapshot has exactly the
+five documented name lines changed; row_snapshot bit-identical.
+
+*** Gotchas for the next port
+- `#[circuit]` generates `pub fn name() -> Compiled3`, taking NOTHING. A
+  circuit family parameterized by a Rust value (events' `emits`, xcall's
+  `n`) therefore uses `entry(|c, args: SomeArgs|)` with a derived struct;
+  the typed-argument guarantee is identical, only the entry point's spelling
+  differs. Same for a body shared by two entry points (attest's hashes).
+- Renaming a PARAMETER renames its slots. The borsh fork's settle circuits
+  briefly became `output: VaultResponse` and moved four interface lines to
+  `output_kind`/`output_success`; the parameter is `serialized_output`, with
+  a `let output = serialized_output;` for the body. An unused parameter's
+  leading underscore does NOT move a label (`_recipient` → `recipient`),
+  which is what mint_tokens' declared-but-unused recipient and xcall's
+  `_data` rely on.
+- Unused STRUCT FIELDS do not warn, which is how the settle circuits keep
+  `respond.bigR.y` and `respond.recoveryId` (wire shape, read by nothing)
+  without ceremony.

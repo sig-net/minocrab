@@ -1089,12 +1089,19 @@ in  data_8: Scalar<BLS12-381>
     ),
     (
         "xcall_with_payment::call_once",
+        // NAME COLUMN, M9 phase 5 (five lines, this circuit only): the coin
+        // argument's slots were labelled with the hand-abbreviated
+        // `nonce_`/`color_`/`value`, and the mechanical rule labels them with
+        // the Compact parameter's own name, `coin_…` — which is what the
+        // target's `notify`/`pay` already called the same five slots. Order
+        // and types are untouched, and argument names are ours rather than
+        // compactc's (notes/ledger-abi.org §6).
         "\
-in  nonce_hi: Scalar<BLS12-381>
-in  nonce_lo: Scalar<BLS12-381>
-in  color_hi: Scalar<BLS12-381>
-in  color_lo: Scalar<BLS12-381>
-in  value: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>

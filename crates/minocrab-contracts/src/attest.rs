@@ -19,25 +19,17 @@
 //! amount: Uint<128>; recipient: Bytes<20> }`, 37 packed bytes,
 //! zero-padded), asserting `out.success`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
 use minocrab_std::v3::{
-    rebuild_limb, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
+    circuit, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature,
+    Secp256k1Point, Vis3, B32,
 };
 
 /// Ledger field indices, in declaration order.
 const CALL_COUNT: u8 = 0;
 const VERIFIED: u8 = 1;
-
-/// Declare a `Bytes<32>` circuit argument (two native slots). All
-/// arguments must be declared before any instruction, so the 8/248-bit
-/// input constraints are applied separately once declarations are done.
-fn bytes32_arg(c: &mut Circuit3, label: &str) -> B32<Private> {
-    let hi = c.arg::<FieldT>(&format!("{label}_hi"));
-    let lo = c.arg::<FieldT>(&format!("{label}_lo"));
-    B32 { hi, lo }
-}
 
 /// The shared tail: `verified.insert(disclose(requestId), true)` plus the
 /// call-count increment, emitted in source order (increment first).
@@ -54,25 +46,22 @@ fn ledger_writes(c: &mut Circuit3, request_id: &B32<Private>) {
 }
 
 /// `export circuit mapOnly(requestId: Bytes<32>): []`
-pub fn map_only() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = bytes32_arg(&mut c, "requestId");
-    request_id.constrain_input(&mut c);
+#[circuit]
+pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) {
     c.region("ledger writes", |c| ledger_writes(c, &request_id));
-    c.finish(true)
 }
 
 /// `export circuit verifyOnly(requestId, digest, r, s, pk): []`
-pub fn verify_only() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = bytes32_arg(&mut c, "requestId");
-    let digest = bytes32_arg(&mut c, "digest");
-    let r = bytes32_arg(&mut c, "r");
-    let s = bytes32_arg(&mut c, "s");
-    let pk = c.arg::<Secp256k1PointT>("pk");
-    for b in [&request_id, &digest, &r, &s] {
-        b.constrain_input(&mut c);
-    }
+#[circuit]
+pub fn verify_only(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    digest: B32<Private>,
+    r: B32<Private>,
+    s: B32<Private>,
+    pk: Secp256k1Point,
+) {
+    let pk = pk.point();
 
     let ok = c.region("signature verification", |c| {
         // `r as Secp256k1Scalar` / `s as ..`: Bytes<32> → typed bytes →
@@ -88,7 +77,6 @@ pub fn verify_only() -> Compiled3 {
     c.assert(ok); // "attestation signature invalid"
 
     c.region("ledger writes", |c| ledger_writes(c, &request_id));
-    c.finish(true)
 }
 
 /// `struct RespondOutput { success: Boolean; amount: Uint<128>;
@@ -117,24 +105,24 @@ fn deserialize_respond_output<V: Vis3>(
 }
 
 /// The shared body of `shaVerify` / `keccakVerify`, parameterized by the
-/// digest hash.
+/// digest hash. The two circuits differ in the hash builtin alone, so the
+/// entry points are two `#[circuit]` functions over one body — an attribute
+/// generates a nullary constructor, so a body shared by a Rust PARAMETER
+/// cannot itself be one.
 fn hash_verify(
+    c: &mut Circuit3,
     hash: impl FnOnce(
         &mut Circuit3,
         Alignment,
         &[minocrab::v3::AnyWire3<Private>],
     ) -> Wire3<minocrab::v3::Bytes32T, Private>,
-) -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = bytes32_arg(&mut c, "requestId");
-    let output = BytesN::<_, 128>::arg(&mut c, "output");
-    let r = bytes32_arg(&mut c, "r");
-    let s = bytes32_arg(&mut c, "s");
-    let pk = c.arg::<Secp256k1PointT>("pk");
-    request_id.constrain_input(&mut c);
-    output.constrain_input(&mut c);
-    r.constrain_input(&mut c);
-    s.constrain_input(&mut c);
+    request_id: B32<Private>,
+    output: BytesN<Private, 128>,
+    r: B32<Private>,
+    s: B32<Private>,
+    pk: Secp256k1Point,
+) {
+    let pk = pk.point();
 
     // digest = hash<[Bytes<32>, Bytes<128>]>([requestId, output])
     let digest = c.region("digest", |c| {
@@ -165,17 +153,34 @@ fn hash_verify(
     c.assert(out.success); // "respond reported failure"
 
     c.region("ledger writes", |c| ledger_writes(c, &request_id));
-    c.finish(true)
 }
 
 /// `export circuit shaVerify(requestId, output, r, s, pk): []`
-pub fn sha_verify() -> Compiled3 {
-    hash_verify(|c, alignment, inputs| c.persistent_hash(alignment, inputs))
+#[circuit]
+pub fn sha_verify(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    output: BytesN<Private, 128>,
+    r: B32<Private>,
+    s: B32<Private>,
+    pk: Secp256k1Point,
+) {
+    let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
+    hash_verify(c, hash, request_id, output, r, s, pk);
 }
 
 /// `export circuit keccakVerify(requestId, output, r, s, pk): []`
-pub fn keccak_verify() -> Compiled3 {
-    hash_verify(|c, alignment, inputs| c.keccak256(alignment, inputs))
+#[circuit]
+pub fn keccak_verify(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    output: BytesN<Private, 128>,
+    r: B32<Private>,
+    s: B32<Private>,
+    pk: Secp256k1Point,
+) {
+    let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
+    hash_verify(c, hash, request_id, output, r, s, pk);
 }
 
 /// The ledger field indices (callCount, verified), for reference

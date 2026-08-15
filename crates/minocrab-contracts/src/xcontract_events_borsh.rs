@@ -19,15 +19,15 @@
 //! it would be a byte-for-byte copy of a circuit this stage has no opinion
 //! about, and the harness would learn nothing from it.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT};
-use minocrab::Public;
+use minocrab::v3::Circuit3;
+use minocrab::{Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, set_insert, ImpactElem,
     LedgerValue,
 };
 // `CircuitBorsh` names both the trait and the derive macro.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{BytesN, Vis3, B32};
+use minocrab_std::v3::{circuit, BytesN, ContractAddress, Uint, Vis3, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
@@ -52,16 +52,14 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
 /// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
 /// Bytes<32>` — the token-side callee, with both serializations built from
 /// declared types.
-pub fn token_deposit() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let amount = c.arg::<FieldT>("amount");
-    let caller = B32 {
-        hi: c.arg::<FieldT>("caller_hi"),
-        lo: c.arg::<FieldT>("caller_lo"),
-    };
-    c.assert_bits(amount, 128);
-    caller.constrain_input(&mut c);
-    let a = c.disclose(amount, "amount");
+#[circuit(output = "event hash")]
+pub fn token_deposit(
+    c: &mut Circuit3,
+    amount: Uint<128>,
+    caller: ContractAddress<Private>,
+) -> B32<Public> {
+    let caller = caller.bytes();
+    let a = c.disclose(amount.field(), "amount");
     let cal = B32 {
         hi: c.disclose(caller.hi, "caller (hi)"),
         lo: c.disclose(caller.lo, "caller (lo)"),
@@ -69,10 +67,10 @@ pub fn token_deposit() -> Compiled3 {
     let one = c.constant(1u64);
 
     // const sequence = depositCount as Uint<64> — read before the increment.
-    let sequence = counter_read(&mut c, one, DEPOSIT_COUNT);
-    emit(&mut c, one, &counter_increment(DEPOSIT_COUNT, 1));
+    let sequence = counter_read(c, one, DEPOSIT_COUNT);
+    emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
-    emit(&mut c, one, &cell_write(LAST_AMOUNT, &amount_val));
+    emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
 
     // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
     // The leaves are canonical where they are produced (argument constraints,
@@ -84,17 +82,17 @@ pub fn token_deposit() -> Compiled3 {
         sequence: minocrab_std::v3::Uint::from_field(sequence),
         recipient: cal,
     };
-    let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(&mut c, &event);
+    let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);
 
     // eventHash = persistentHash<Bytes<256>>(payload) — over the WHOLE
     // envelope, Borsh bytes and zero pad alike, as deployed.
     let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
     let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
     let digest = c.persistent_hash(alignment, &limbs);
-    let event_hash = B32::from_typed(&mut c, digest);
+    let event_hash = B32::from_typed(c, digest);
 
     emit(
-        &mut c,
+        c,
         one,
         &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
     );
@@ -102,17 +100,15 @@ pub fn token_deposit() -> Compiled3 {
     // emit (Misc { name: pad(32, "deposit"), payload }) — LEN is exactly 288,
     // so this envelope has no pad: it is the plain Borsh encoding.
     let misc = Misc {
-        name: crate::events_borsh::event_name_literal(&mut c, EVENT_NAME),
+        name: crate::events_borsh::event_name_literal(c, EVENT_NAME),
         payload,
     };
-    let misc = borsh::to_bytes::<MISC_SIZE, Public, _>(&mut c, &misc);
+    let misc = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
     let misc_val = LedgerValue::bytes(
         MISC_SIZE as u32,
         misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
     );
-    emit(&mut c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+    emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
 
-    c.output(event_hash.hi, "event hash (hi)");
-    c.output(event_hash.lo, "event hash (lo)");
-    c.finish(true)
+    event_hash
 }

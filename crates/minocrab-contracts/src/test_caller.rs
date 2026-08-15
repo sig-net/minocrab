@@ -25,8 +25,9 @@
 //! with `deployerCommitment(sk) =
 //! persistentHash<Vector<2, Bytes<32>>>([pad(32, "signet-caller:deployer:"), sk])`.
 
-use minocrab::v3::{Circuit3, Compiled3, Secp256k1PointT};
+use minocrab::v3::Circuit3;
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
+use minocrab_std::v3::{circuit, Secp256k1Point};
 
 use crate::common;
 
@@ -41,9 +42,9 @@ pub const DEPLOYER_PAD: &str = "signet-caller:deployer:";
 pub use crate::common::secp256k1_point_atoms;
 
 /// `export circuit initialise(responseKey: Secp256k1Point): []`
-pub fn initialise() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let response_key = c.arg::<Secp256k1PointT>("responseKey");
+#[circuit]
+pub fn initialise(c: &mut Circuit3, response_key: Secp256k1Point) {
+    let response_key = response_key.point();
     let one = c.constant(1u64);
 
     // assert(initialised == 0, "Already initialised: …")
@@ -57,7 +58,7 @@ pub fn initialise() -> Compiled3 {
     });
 
     // initialised.increment(1)
-    emit(&mut c, one, &counter_increment(INITIALISED, 1));
+    emit(c, one, &counter_increment(INITIALISED, 1));
 
     // mpcResponseKey = disclose(responseKey)
     c.region("pin response key", |c| {
@@ -69,6 +70,4 @@ pub fn initialise() -> Compiled3 {
         );
         emit(c, one, &cell_write(MPC_RESPONSE_KEY, &value));
     });
-
-    c.finish(true)
 }

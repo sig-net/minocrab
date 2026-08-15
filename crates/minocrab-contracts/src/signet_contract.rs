@@ -19,11 +19,11 @@
 //! 256-byte event payload. `Misc` is the same tag-10 event as the events
 //! experiment (name(32) ‖ payload(256) = 288 serialized bytes).
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT};
+use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, Serializer, B32};
-use signet_signer_interface::SignBidirectionalEventNotification;
+use minocrab_std::v3::{circuit, Serializer, Uint, B32};
+use signet_signer_interface::{AffinePoint, RequestId, SignBidirectionalEventNotification};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -31,15 +31,6 @@ use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 pub const SIGN_BIDIRECTIONAL_EVENT: &str = "SignBidirectionalEvent";
 pub const SIGNATURE_RESPONDED_EVENT: &str = "SignatureRespondedEvent";
 pub const RESPOND_BIDIRECTIONAL_EVENT: &str = "RespondBidirectionalEvent";
-
-/// A `Bytes<32>` argument — constrain with [`B32::constrain_input`] once
-/// every argument is declared (inputs must precede instructions).
-fn arg_b32(c: &mut Circuit3, label: &str) -> B32<Private> {
-    B32 {
-        hi: c.arg::<FieldT>(&format!("{label}_hi")),
-        lo: c.arg::<FieldT>(&format!("{label}_lo")),
-    }
-}
 
 fn disclose_b32(c: &mut Circuit3, b: &B32<Private>, label: &str) -> B32<Public> {
     B32 {
@@ -103,33 +94,32 @@ pub fn sign_bidirectional(
 /// The shared body of `respond`/`respondBidirectional`: only the event
 /// name differs.
 ///
-/// DELIBERATELY STILL HAND-DECLARED, unlike [`sign_bidirectional`]. The
-/// interface crate's `SignatureRespondedEvent` nests three structs deep
-/// (`{ signature: { bigR: { x, y }, s, recoveryId } }`), so declaring the
-/// argument through it would rename every input to its full path
-/// (`event_signature_big_r_x_hi` …) and move `tests/interface_snapshot.rs`
-/// — a rename with no wire consequence, since input names are ours and not
-/// compactc's. What replaces the by-construction guarantee is a mechanical
-/// one: `tests/contract_matches_its_interface.rs` checks these hand-written
-/// declarations against `SignatureRespondedEvent`'s schema slot for slot,
-/// so the layout still cannot drift from the crate every caller imports.
-fn respond_like(name: &str) -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = arg_b32(&mut c, "requestId");
-    let big_r_x = arg_b32(&mut c, "bigR_x");
-    let big_r_y = arg_b32(&mut c, "bigR_y");
-    let s_scalar = arg_b32(&mut c, "s");
-    let recovery_id = c.arg::<FieldT>("recoveryId");
-    request_id.constrain_input(&mut c);
-    big_r_x.constrain_input(&mut c);
-    big_r_y.constrain_input(&mut c);
-    s_scalar.constrain_input(&mut c);
-    c.assert_bits(recovery_id, 8);
+/// The arguments are the interface crate's own types — `AffinePoint` for
+/// `bigR`, `RequestId` for the id — but ONE LEVEL FLATTER than the Compact
+/// signature, which wraps them in `{ signature: { bigR, s, recoveryId } }`.
+/// The wrapper carries no slot and no label of its own in the hand-written
+/// declarations the interface snapshot froze (`bigR_x_hi`, not
+/// `signatureRespondedEvent_signature_bigR_x_hi`), and `#[arg(name)]` can
+/// rename a path segment but not delete one — the same trade [`crate::erc20_vault::claim`]
+/// documents. So the port keeps the fields at the head of the parameter
+/// list: zero movement, and the types are still the crate's.
+/// `tests/contract_matches_its_interface.rs` checks the resulting IR against
+/// `SignatureRespondedEvent`'s schema slot for slot, as it did when these
+/// nine slots were raw `c.arg` calls.
+fn respond_like(
+    c: &mut Circuit3,
+    name: &str,
+    request_id: RequestId<Private>,
+    big_r: AffinePoint<Private>,
+    s_scalar: B32<Private>,
+    recovery_id: Uint<8>,
+) {
+    let recovery_id = recovery_id.field();
 
-    let rid = disclose_b32(&mut c, &request_id, "requestId");
-    let x = disclose_b32(&mut c, &big_r_x, "signature.bigR.x");
-    let y = disclose_b32(&mut c, &big_r_y, "signature.bigR.y");
-    let s_scalar = disclose_b32(&mut c, &s_scalar, "signature.s");
+    let rid = disclose_b32(c, &request_id, "requestId");
+    let x = disclose_b32(c, &big_r.x, "signature.bigR.x");
+    let y = disclose_b32(c, &big_r.y, "signature.bigR.y");
+    let s_scalar = disclose_b32(c, &s_scalar, "signature.s");
     let recovery_id = c.disclose(recovery_id, "signature.recoveryId");
 
     // payload: requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1) ‖ zeros(127)
@@ -142,16 +132,32 @@ fn respond_like(name: &str) -> Compiled3 {
         s.push_uint(recovery_id, 1);
         emit_misc(c, s);
     });
-
-    c.finish(true)
 }
 
-/// `export circuit respond(requestId, signatureRespondedEvent): []`
-pub fn respond() -> Compiled3 {
-    respond_like(SIGNATURE_RESPONDED_EVENT)
+/// `export circuit respond(requestId: RequestId, signatureRespondedEvent:
+/// SignatureRespondedEvent): []` — see [`respond_like`] for why the event's
+/// three fields are the parameter list.
+#[circuit]
+pub fn respond(
+    c: &mut Circuit3,
+    request_id: RequestId<Private>,
+    big_r: AffinePoint<Private>,
+    s: B32<Private>,
+    recovery_id: Uint<8>,
+) {
+    respond_like(c, SIGNATURE_RESPONDED_EVENT, request_id, big_r, s, recovery_id);
 }
 
-/// `export circuit respondBidirectional(requestId, respondBidirectionalEvent): []`
-pub fn respond_bidirectional() -> Compiled3 {
-    respond_like(RESPOND_BIDIRECTIONAL_EVENT)
+/// `export circuit respondBidirectional(requestId: RequestId,
+/// respondBidirectionalEvent: RespondBidirectionalEvent): []` — the same
+/// nine slots under a different event name.
+#[circuit]
+pub fn respond_bidirectional(
+    c: &mut Circuit3,
+    request_id: RequestId<Private>,
+    big_r: AffinePoint<Private>,
+    s: B32<Private>,
+    recovery_id: Uint<8>,
+) {
+    respond_like(c, RESPOND_BIDIRECTIONAL_EVENT, request_id, big_r, s, recovery_id);
 }

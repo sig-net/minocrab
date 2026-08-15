@@ -34,7 +34,7 @@
 //! artifact accepts.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::Public;
+use minocrab::{Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
     LedgerValue,
@@ -42,7 +42,7 @@ use minocrab_ledger::{
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{Uint, Vis3, B32};
+use minocrab_std::v3::{entry, CircuitArg, Uint, Vis3, B32};
 
 use crate::events::{
     event_name, BALANCES, CALL_COUNT, LAST_AMOUNT, MISC_SIZE, MISC_TAG, MISC_VERSION,
@@ -102,60 +102,68 @@ fn workload(
     emit(c, one, &ops);
 }
 
+/// `(recipient: Bytes<32>, amount: Uint<128>)` — the argument list every
+/// circuit in the family shares.
+#[derive(CircuitArg)]
+struct DepositArgs {
+    recipient: B32<Private>,
+    amount: Uint<128>,
+}
+
 /// The circuit family: the workload plus `emits` Misc events.
+///
+/// Built through [`entry`] rather than `#[circuit]`: the attribute makes a
+/// NULLARY constructor, and this family is parameterized by a Rust value
+/// (`emits`), which is not a circuit argument. The argument list is the
+/// derived struct either way, so the typed-argument guarantee is the same
+/// one — only the entry point's spelling differs.
 fn base_with_emits(emits: usize) -> Compiled3 {
-    let mut c = Circuit3::new();
-    let recipient = B32 {
-        hi: c.arg::<FieldT>("recipient_hi"),
-        lo: c.arg::<FieldT>("recipient_lo"),
-    };
-    let amount = c.arg::<FieldT>("amount");
-    recipient.constrain_input(&mut c);
-    c.assert_bits(amount, 128);
-    let one = c.constant(1u64);
+    entry(|c, args: DepositArgs| {
+        let recipient = args.recipient;
+        let amount = args.amount.field();
+        let one = c.constant(1u64);
 
-    let a = c.disclose(amount, "amount");
-    let r = B32 {
-        hi: c.disclose(recipient.hi, "recipient (hi)"),
-        lo: c.disclose(recipient.lo, "recipient (lo)"),
-    };
+        let a = c.disclose(amount, "amount");
+        let r = B32 {
+            hi: c.disclose(recipient.hi, "recipient (hi)"),
+            lo: c.disclose(recipient.lo, "recipient (lo)"),
+        };
 
-    // const sequence = callCount as Uint<64> — read before the increment,
-    // only when an emit needs it.
-    let sequence = (emits > 0).then(|| counter_read(&mut c, one, CALL_COUNT));
+        // const sequence = callCount as Uint<64> — read before the increment,
+        // only when an emit needs it.
+        let sequence = (emits > 0).then(|| counter_read(c, one, CALL_COUNT));
 
-    workload(&mut c, one, &r, a);
+        workload(c, one, &r, a);
 
-    for i in 0..emits {
-        c.region("emit Misc", |c| {
-            // THE WHOLE SERIALIZATION, as one declared value. The leaves are
-            // already canonical where they are produced — `amount` and
-            // `recipient` by their argument constraints, `sequence` by being
-            // a `Bytes<8>` cell read, the name by being a constant — so
-            // `constrain_canonical` is deliberately NOT re-emitted here; it
-            // would duplicate the very constraints above and move rows. The
-            // precondition `to_bytes` states (leaves in range) is met by
-            // those, and `tests/events_differential.rs` pins the resulting
-            // bytes against compactc's own artifact.
-            let misc = MiscDepositEvent {
-                name: event_name_literal(c, &event_name(i)),
-                payload: DepositEvent {
-                    amount: Uint::from_field(a),
-                    sequence: Uint::from_field(sequence.expect("sequence read exists")),
-                    recipient: r,
-                },
-            };
-            let serialized = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
+        for i in 0..emits {
+            c.region("emit Misc", |c| {
+                // THE WHOLE SERIALIZATION, as one declared value. The leaves are
+                // already canonical where they are produced — `amount` and
+                // `recipient` by their argument constraints, `sequence` by being
+                // a `Bytes<8>` cell read, the name by being a constant — so
+                // `constrain_canonical` is deliberately NOT re-emitted here; it
+                // would duplicate the very constraints above and move rows. The
+                // precondition `to_bytes` states (leaves in range) is met by
+                // those, and `tests/events_differential.rs` pins the resulting
+                // bytes against compactc's own artifact.
+                let misc = MiscDepositEvent {
+                    name: event_name_literal(c, &event_name(i)),
+                    payload: DepositEvent {
+                        amount: Uint::from_field(a),
+                        sequence: Uint::from_field(sequence.expect("sequence read exists")),
+                        recipient: r,
+                    },
+                };
+                let serialized = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
 
-            let payload = LedgerValue::bytes(
-                MISC_SIZE as u32,
-                serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-            );
-            emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
-        });
-    }
-
-    c.finish(true)
+                let payload = LedgerValue::bytes(
+                    MISC_SIZE as u32,
+                    serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
+                );
+                emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+            });
+        }
+    })
 }
 
 /// `export circuit base(recipient, amount): []` — the control.

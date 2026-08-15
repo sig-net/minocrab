@@ -8,20 +8,19 @@ use minocrab_ledger::{
     kernel_self_guarded, popeq, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    coin_commitment, coin_nullifier_contract, token_type, CoinRecipient, ShieldedCoinInfo3, B32,
+    coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
+    Secp256k1Point, ShieldedCoinInfo3, B32,
 };
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
 /// native field element (notes/ledger-abi.org §3) — 5 limbs, matching
 /// `encode`'s output.
+///
+/// The table itself lives on the ARGUMENT type (M9 phase 5), because a
+/// point's alignment is one fact: the same five atoms describe the value
+/// entering a circuit and the value written to a `Secp256k1Point` cell.
 pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
-    vec![
-        AlignmentAtom::Bytes { length: 24 },
-        AlignmentAtom::Bytes { length: 8 },
-        AlignmentAtom::Bytes { length: 24 },
-        AlignmentAtom::Bytes { length: 8 },
-        AlignmentAtom::Field,
-    ]
+    Secp256k1Point::<Public>::atoms()
 }
 
 /// The identity commitment both contracts derive:

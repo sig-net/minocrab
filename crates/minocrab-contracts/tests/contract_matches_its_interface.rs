@@ -15,9 +15,11 @@
 //! `minocrab-abi` runs against a corpus artifact, pointed at ourselves.
 //!
 //! It is at its most valuable for `respond` and `respondBidirectional`,
-//! whose arguments are still declared by hand (see `respond_like`'s note):
-//! there is no type-level link between those declarations and
-//! `SignatureRespondedEvent`, so this test IS the link.
+//! whose parameter list is the event's fields ONE LEVEL FLATTER than the
+//! interface's `{ signature: { … } }` (see `respond_like`'s note): the
+//! leaves are the crate's own `AffinePoint`/`RequestId`, but the nesting is
+//! not, so nothing at the type level says the flattening is faithful. This
+//! test is what says it.
 
 use minocrab::Public;
 use minocrab_abi::assert_ir_matches_interface;
@@ -41,8 +43,9 @@ fn sign_bidirectional_matches_its_interface() {
     );
 }
 
-/// The two whose arguments are hand-declared. Nothing but this test ties
-/// `respond_like`'s nine `c.arg` calls to `SignatureRespondedEvent`.
+/// The two whose parameter list flattens the interface's wrapper struct.
+/// Nothing but this test ties `respond_like`'s nine slots to
+/// `SignatureRespondedEvent`.
 #[test]
 fn the_respond_circuits_match_their_interface() {
     assert_ir_matches_interface::<Respond, ()>(&signet_contract::respond().ir, SignetSigner::RESPOND);

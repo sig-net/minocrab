@@ -18,14 +18,14 @@
 //! `cm = coinCommitment(ShieldedCoinInfo { nonce, color, value }, recipient)`;
 //! `kernel.claimZswapCoinSpend(cm)`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::{Fr, Public};
+use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::{Fr, Private, Public};
 use minocrab_ledger::{
     cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded, kernel_self,
     ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    coin_commitment, own_public_key, token_type, CoinRecipient, ShieldedCoinInfo3, B32,
+    circuit, coin_commitment, own_public_key, token_type, CoinRecipient, ShieldedCoinInfo3, B32,
 };
 
 /// Ledger field indices, in declaration order.
@@ -81,19 +81,14 @@ fn mint_shielded_token(
     emit(c, one, &kernel_claim_zswap_coin_spend(&cm_val));
 }
 
-/// `export circuit mintWithRecipientArgument(recipient, mintNonce): []`
-pub fn mint_with_recipient_argument() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let recipient = B32 {
-        hi: c.arg::<FieldT>("recipient_hi"),
-        lo: c.arg::<FieldT>("recipient_lo"),
-    };
-    let mint_nonce = B32 {
-        hi: c.arg::<FieldT>("mintNonce_hi"),
-        lo: c.arg::<FieldT>("mintNonce_lo"),
-    };
-    recipient.constrain_input(&mut c);
-    mint_nonce.constrain_input(&mut c);
+/// `export circuit mintWithRecipientArgument(recipient: ZswapCoinPublicKey,
+/// mintNonce: Bytes<32>): []`
+#[circuit]
+pub fn mint_with_recipient_argument(
+    c: &mut Circuit3,
+    recipient: B32<Private>,
+    mint_nonce: B32<Private>,
+) {
     let one = c.constant(1u64);
 
     let recipient = B32 {
@@ -104,36 +99,31 @@ pub fn mint_with_recipient_argument() -> Compiled3 {
         hi: c.disclose(mint_nonce.hi, "mint nonce (hi)"),
         lo: c.disclose(mint_nonce.lo, "mint nonce (lo)"),
     };
-    mint_shielded_token(&mut c, one, &nonce, &recipient);
-    c.finish(true)
+    mint_shielded_token(c, one, &nonce, &recipient);
 }
 
-/// `export circuit mintWithRecipientOwnPublicKey(recipient, mintNonce): []`
-/// — the `recipient` argument is declared but unused; the mint goes to
-/// `ownPublicKey()`, which is also written to `veryPublicValue`.
-pub fn mint_with_recipient_own_public_key() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let recipient = B32 {
-        hi: c.arg::<FieldT>("recipient_hi"),
-        lo: c.arg::<FieldT>("recipient_lo"),
-    };
-    let mint_nonce = B32 {
-        hi: c.arg::<FieldT>("mintNonce_hi"),
-        lo: c.arg::<FieldT>("mintNonce_lo"),
-    };
-    recipient.constrain_input(&mut c);
-    mint_nonce.constrain_input(&mut c);
+/// `export circuit mintWithRecipientOwnPublicKey(recipient: ZswapCoinPublicKey,
+/// mintNonce: Bytes<32>): []` — the `recipient` argument is declared but
+/// unused (a slot that exists for the wire shape alone, hence the leading
+/// underscore); the mint goes to `ownPublicKey()`, which is also written to
+/// `veryPublicValue`.
+#[circuit]
+pub fn mint_with_recipient_own_public_key(
+    c: &mut Circuit3,
+    _recipient: B32<Private>,
+    mint_nonce: B32<Private>,
+) {
     let one = c.constant(1u64);
 
     // const mintRecipient = ownPublicKey();
-    let mint_recipient = own_public_key(&mut c);
+    let mint_recipient = own_public_key(c);
     let mint_recipient = B32 {
         hi: c.disclose(mint_recipient.hi, "own public key as mint recipient (hi)"),
         lo: c.disclose(mint_recipient.lo, "own public key as mint recipient (lo)"),
     };
 
     // veryPublicValue = ownPublicKey();
-    let very_public = own_public_key(&mut c);
+    let very_public = own_public_key(c);
     let very_public = B32 {
         hi: c.disclose(very_public.hi, "own public key on the ledger (hi)"),
         lo: c.disclose(very_public.lo, "own public key on the ledger (lo)"),
@@ -145,12 +135,11 @@ pub fn mint_with_recipient_own_public_key() -> Compiled3 {
             ImpactElem::Wire(very_public.lo),
         ],
     );
-    emit(&mut c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
+    emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
 
     let nonce = B32 {
         hi: c.disclose(mint_nonce.hi, "mint nonce (hi)"),
         lo: c.disclose(mint_nonce.lo, "mint nonce (lo)"),
     };
-    mint_shielded_token(&mut c, one, &nonce, &mint_recipient);
-    c.finish(true)
+    mint_shielded_token(c, one, &nonce, &mint_recipient);
 }

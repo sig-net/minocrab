@@ -10,10 +10,10 @@
 
 use crate::common::{receive_shielded, write_coin_to_self};
 use crate::interfaces::PaymentTarget;
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::Public;
+use minocrab::v3::Circuit3;
+use minocrab::{Private, Public};
 use minocrab_ledger::{emit, set_insert, ImpactElem, LedgerValue};
-use minocrab_std::v3::{ShieldedCoinInfo3, B32};
+use minocrab_std::v3::{circuit, CircuitArg, ShieldedCoinInfo3, Uint, B32};
 
 /// Caller ledger: the sealed target reference.
 pub const TARGET: u8 = 0;
@@ -23,21 +23,23 @@ pub const TREASURY: u8 = 0;
 pub const REQUESTS: u8 = 1;
 pub const PAID_REQUESTS: u8 = 2;
 
-/// Constrain and disclose an already-declared `Bytes<32>` argument (all
-/// `arg` declarations must precede the first instruction).
-fn b32_arg(c: &mut Circuit3, arg: B32<minocrab::Private>, name: &str) -> B32<Public> {
-    arg.constrain_input(c);
+/// Disclose a `Bytes<32>` argument.
+fn disclose_b32(c: &mut Circuit3, arg: B32<Private>, name: &str) -> B32<Public> {
     B32 {
         hi: c.disclose(arg.hi, &format!("{name} (hi)")),
         lo: c.disclose(arg.lo, &format!("{name} (lo)")),
     }
 }
 
-fn declare_b32(c: &mut Circuit3, name: &str) -> B32<minocrab::Private> {
-    B32 {
-        hi: c.arg::<FieldT>(&format!("{name}_hi")),
-        lo: c.arg::<FieldT>(&format!("{name}_lo")),
-    }
+/// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>, value:
+/// Uint<128> }` as an argument — the typed twin of [`ShieldedCoinInfo3`],
+/// whose fields are raw wires because the body handles the coin after
+/// disclosing it (as `erc20_vault`'s `ShieldedCoinArg` is).
+#[derive(CircuitArg)]
+struct CoinArg {
+    nonce: B32<Private>,
+    color: B32<Private>,
+    value: Uint<128>,
 }
 
 /// The sealed target reference: each call site reads the cell fresh.
@@ -46,18 +48,21 @@ const TARGET_CONTRACT: PaymentTarget = PaymentTarget::at_field(TARGET);
 /// `export circuit callOnce(coin: ShieldedCoinInfo): []` —
 /// `target.notify(disclose(coin))`. ShieldedCoinInfo = { nonce: Bytes<32>,
 /// color: Bytes<32>, value: Uint<128> }, 5 FAB limbs.
-pub fn call_once() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let nonce = declare_b32(&mut c, "nonce");
-    let color = declare_b32(&mut c, "color");
-    let value = c.arg::<FieldT>("value");
-    let nonce = b32_arg(&mut c, nonce, "nonce");
-    let color = b32_arg(&mut c, color, "color");
-    c.assert_bits(value, 128);
-    let value = c.disclose(value, "value");
+///
+/// NAME-COLUMN CHANGE (M9 phase 5): the coin's five slots were declared
+/// `nonce_hi` … `value`, an abbreviation of the Compact parameter, and the
+/// mechanical rule gives them the parameter's own name — `coin_nonce_hi` …
+/// `coin_value`, which is what the target's `notify`/`pay` already called
+/// them. Types and order are untouched; argument names are ours, not
+/// compactc's (notes/ledger-abi.org §6).
+#[circuit]
+pub fn call_once(c: &mut Circuit3, coin: CoinArg) {
+    let nonce = disclose_b32(c, coin.nonce, "nonce");
+    let color = disclose_b32(c, coin.color, "color");
+    let value = c.disclose(coin.value.field(), "value");
     let one = c.constant(1u64);
     TARGET_CONTRACT.notify(
-        &mut c,
+        c,
         one,
         ShieldedCoinInfo3 {
             nonce,
@@ -65,88 +70,62 @@ pub fn call_once() -> Compiled3 {
             value,
         },
     );
-    c.finish(true)
 }
 
 /// `export circuit request(requestId: Bytes<32>): []` —
 /// `target.confirmRequest(disclose(requestId))`.
-pub fn request() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = declare_b32(&mut c, "requestId");
-    let request_id = b32_arg(&mut c, request_id, "requestId");
+#[circuit]
+pub fn request(c: &mut Circuit3, request_id: B32<Private>) {
+    let request_id = disclose_b32(c, request_id, "requestId");
     let one = c.constant(1u64);
-    TARGET_CONTRACT.confirm_request(&mut c, one, request_id);
-    c.finish(true)
+    TARGET_CONTRACT.confirm_request(c, one, request_id);
 }
 
-/// Declare a `ShieldedCoinInfo` argument's five limbs (nonce, color,
-/// value) — declarations only, so callers can declare all args first.
-fn declare_coin(
-    c: &mut Circuit3,
-) -> (B32<minocrab::Private>, B32<minocrab::Private>, Wire3<FieldT, minocrab::Private>) {
-    (
-        declare_b32(c, "coin_nonce"),
-        declare_b32(c, "coin_color"),
-        c.arg::<FieldT>("coin_value"),
-    )
-}
-
-/// Constrain and disclose a declared coin argument.
-fn coin_arg(
-    c: &mut Circuit3,
-    (nonce, color, value): (B32<minocrab::Private>, B32<minocrab::Private>, Wire3<FieldT, minocrab::Private>),
-) -> ShieldedCoinInfo3<Public> {
-    let nonce = b32_arg(c, nonce, "coin nonce");
-    let color = b32_arg(c, color, "coin color");
-    c.assert_bits(value, 128);
-    let value = c.disclose(value, "coin value");
+/// Disclose a coin argument.
+fn disclose_coin(c: &mut Circuit3, coin: CoinArg) -> ShieldedCoinInfo3<Public> {
+    let nonce = disclose_b32(c, coin.nonce, "coin nonce");
+    let color = disclose_b32(c, coin.color, "coin color");
+    let value = c.disclose(coin.value.field(), "coin value");
     ShieldedCoinInfo3 { nonce, color, value }
 }
 
 /// Target `export circuit notify(coin: ShieldedCoinInfo): []` —
 /// `receiveShielded(disclose(coin)); treasury.writeCoin(disclose(coin),
 /// right(kernel.self()))`. Root-call only (pinned limitation upstream).
-pub fn notify() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let coin = declare_coin(&mut c);
-    let coin = coin_arg(&mut c, coin);
+#[circuit]
+pub fn notify(c: &mut Circuit3, coin: CoinArg) {
+    let coin = disclose_coin(c, coin);
     let one = c.constant(1u64);
-    receive_shielded(&mut c, one, &coin);
-    write_coin_to_self(&mut c, one, TREASURY, &coin);
-    c.finish(true)
+    receive_shielded(c, one, &coin);
+    write_coin_to_self(c, one, TREASURY, &coin);
 }
 
 /// Target `export circuit pay(requestId: Bytes<32>, coin:
 /// ShieldedCoinInfo): []` — `notify`'s custody body, then the blind
 /// `paidRequests.insert(disclose(requestId))`.
-pub fn pay() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = declare_b32(&mut c, "requestId");
-    let coin = declare_coin(&mut c);
-    let request_id = b32_arg(&mut c, request_id, "requestId");
-    let coin = coin_arg(&mut c, coin);
+#[circuit]
+pub fn pay(c: &mut Circuit3, request_id: B32<Private>, coin: CoinArg) {
+    let request_id = disclose_b32(c, request_id, "requestId");
+    let coin = disclose_coin(c, coin);
     let one = c.constant(1u64);
-    receive_shielded(&mut c, one, &coin);
-    write_coin_to_self(&mut c, one, TREASURY, &coin);
+    receive_shielded(c, one, &coin);
+    write_coin_to_self(c, one, TREASURY, &coin);
     let elem = LedgerValue::bytes(
         32,
         vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
     );
-    emit(&mut c, one, &set_insert(PAID_REQUESTS, &elem));
-    c.finish(true)
+    emit(c, one, &set_insert(PAID_REQUESTS, &elem));
 }
 
 /// Target `export circuit confirmRequest(requestId: Bytes<32>): []` —
 /// `requests.insert(disclose(requestId))`.
-pub fn confirm_request() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let request_id = declare_b32(&mut c, "requestId");
-    let request_id = b32_arg(&mut c, request_id, "requestId");
+#[circuit]
+pub fn confirm_request(c: &mut Circuit3, request_id: B32<Private>) {
+    let request_id = disclose_b32(c, request_id, "requestId");
     let one = c.constant(1u64);
     let elem = LedgerValue::bytes(
         32,
         vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
     );
-    emit(&mut c, one, &set_insert(REQUESTS, &elem));
-    c.finish(true)
+    emit(c, one, &set_insert(REQUESTS, &elem));
 }

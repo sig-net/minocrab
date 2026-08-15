@@ -310,9 +310,35 @@ suites.
       withdraw + claim (Maybe<Either<..>> flattening).
 - [X] Phase 4: #[circuit] attribute (thinness rule: expansion contains
       no Circuit3 call); re-port the phase-2/3 circuits.
-- [ ] Phase 5: mechanical port of the remaining circuits (order/types
+- [X] Phase 5: mechanical port of the remaining circuits (order/types
       never move; name column only where mechanical naming lengthens
       hand-abbreviated labels).
+      (2026-08-15 — 62 of the 78 snapshot rows now build through the
+      typed API, up from 10: the vault's remaining six circuits in all
+      THREE forks (18, edited in lockstep because the borsh fork owes
+      the opt fork byte-identity on five of them), signet_contract's
+      respond pair through the interface crate's own types one level
+      flatter than its wrapper struct, and every experiment but one
+      family. One new core leaf, Secp256k1Point — the corpus's only
+      curve-point argument (7 circuits), one slot whose wire is NOT a
+      field element, so push_slots hands back nothing and the provided
+      constrain filters Prim::Point out before zipping; five FAB atoms,
+      pinned by a serialized-ZKIR test with the point mid-list. New
+      derives: SwapRequest ×3, DepositArgs (events/xcall), CoinArg.
+      Circuit FAMILIES parameterized by a Rust value (events' emitN,
+      xcall's callTwice) use entry() directly, since the attribute makes
+      a nullary constructor. LEFT UNPORTED, documented at the code:
+      hashing's 16 Bytes<len> circuits, whose width is a runtime sweep
+      parameter and whose constraints BytesNDyn already derives from the
+      same len — a closed match over today's sizes would buy nothing and
+      lose the sweep. Movement: exactly five name-column lines
+      (xcall_with_payment::callOnce's coin_ prefix, which its own target
+      already used). Zero-movement checked harder than the gates
+      require: all 78 circuits' serialized ZKIR dumped at HEAD and
+      compared — 68 byte-identical, 9 settle circuits identical up to
+      the ORDER of three input constraints (parameter order now, not the
+      declarer's), 1 the documented rename. row_snapshot bit-identical,
+      cargo test --workspace --release green.)
 - [ ] Phase 6: disclosure — v3 Disclosure carries the Identifier, v3
       report(), label!/disclose_as::<L>/Discloses<D, R> +
       Discloses::of, macro-generated set-equality tests with

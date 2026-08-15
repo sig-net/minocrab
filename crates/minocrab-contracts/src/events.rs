@@ -19,12 +19,12 @@
 //! (compiler/midnight-events.ss:71).
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::Public;
+use minocrab::{Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::{Serializer, B32};
+use minocrab_std::v3::{entry, CircuitArg, Serializer, Uint, B32};
 
 /// Ledger field indices, in declaration order.
 pub const CALL_COUNT: u8 = 0;
@@ -57,53 +57,61 @@ fn workload(
     emit(c, one, &ops);
 }
 
+/// `(recipient: Bytes<32>, amount: Uint<128>)` — the argument list every
+/// circuit in the family shares.
+#[derive(CircuitArg)]
+struct DepositArgs {
+    recipient: B32<Private>,
+    amount: Uint<128>,
+}
+
 /// The circuit family: the workload plus `emits` Misc events.
+///
+/// Built through [`entry`] rather than `#[circuit]`: the attribute makes a
+/// NULLARY constructor, and this family is parameterized by a Rust value
+/// (`emits`), which is not a circuit argument. The argument list is the
+/// derived struct either way, so the typed-argument guarantee is the same
+/// one — only the entry point's spelling differs.
 fn base_with_emits(emits: usize) -> Compiled3 {
-    let mut c = Circuit3::new();
-    let recipient = B32 {
-        hi: c.arg::<FieldT>("recipient_hi"),
-        lo: c.arg::<FieldT>("recipient_lo"),
-    };
-    let amount = c.arg::<FieldT>("amount");
-    recipient.constrain_input(&mut c);
-    c.assert_bits(amount, 128);
-    let one = c.constant(1u64);
+    entry(|c, args: DepositArgs| {
+        let recipient = args.recipient;
+        let amount = args.amount.field();
+        let one = c.constant(1u64);
 
-    let a = c.disclose(amount, "amount");
-    let r = B32 {
-        hi: c.disclose(recipient.hi, "recipient (hi)"),
-        lo: c.disclose(recipient.lo, "recipient (lo)"),
-    };
+        let a = c.disclose(amount, "amount");
+        let r = B32 {
+            hi: c.disclose(recipient.hi, "recipient (hi)"),
+            lo: c.disclose(recipient.lo, "recipient (lo)"),
+        };
 
-    // const sequence = callCount as Uint<64> — read before the increment,
-    // only when an emit needs it.
-    let sequence = (emits > 0).then(|| counter_read(&mut c, one, CALL_COUNT));
+        // const sequence = callCount as Uint<64> — read before the increment,
+        // only when an emit needs it.
+        let sequence = (emits > 0).then(|| counter_read(c, one, CALL_COUNT));
 
-    workload(&mut c, one, &r, a);
+        workload(c, one, &r, a);
 
-    for i in 0..emits {
-        c.region("emit Misc", |c| {
-            // serialize<Misc, 288> = name(32) ‖ serialize<DepositEvent, 256>.
-            let mut name = [0u8; 32];
-            let label = event_name(i);
-            name[..label.len()].copy_from_slice(label.as_bytes());
+        for i in 0..emits {
+            c.region("emit Misc", |c| {
+                // serialize<Misc, 288> = name(32) ‖ serialize<DepositEvent, 256>.
+                let mut name = [0u8; 32];
+                let label = event_name(i);
+                name[..label.len()].copy_from_slice(label.as_bytes());
 
-            let mut s = Serializer::<Public>::new();
-            s.push_literal(c, &name);
-            s.push_uint(a, 16); // amount: Uint<128>
-            s.push_uint(sequence.expect("sequence read exists"), 8); // sequence: Uint<64>
-            s.push_b32(&r); // recipient: Bytes<32>
-            let serialized = s.finish::<MISC_SIZE>(c);
+                let mut s = Serializer::<Public>::new();
+                s.push_literal(c, &name);
+                s.push_uint(a, 16); // amount: Uint<128>
+                s.push_uint(sequence.expect("sequence read exists"), 8); // sequence: Uint<64>
+                s.push_b32(&r); // recipient: Bytes<32>
+                let serialized = s.finish::<MISC_SIZE>(c);
 
-            let payload = LedgerValue::bytes(
-                MISC_SIZE as u32,
-                serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-            );
-            emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
-        });
-    }
-
-    c.finish(true)
+                let payload = LedgerValue::bytes(
+                    MISC_SIZE as u32,
+                    serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
+                );
+                emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+            });
+        }
+    })
 }
 
 /// `export circuit base(recipient, amount): []` — the control.

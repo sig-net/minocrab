@@ -28,11 +28,11 @@
 //! `DepositEvent`, same `deposit-0` event name) — see [`target_deposit`].
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::Public;
+use minocrab::{Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue,
 };
-use minocrab_std::v3::{BytesN, Uint, B32};
+use minocrab_std::v3::{circuit, entry, BytesN, CircuitArg, Uint, B32};
 
 use xcall_target_interface::XcallTarget;
 
@@ -47,21 +47,22 @@ pub const BALANCES: u8 = 3;
 /// Target ledger fields (= the `events` experiment's layout).
 pub const T_CALL_COUNT: u8 = 0;
 
-/// `(recipient: Bytes<32>, amount: Uint<128>)` argument pair, constrained
-/// and disclosed.
-fn recipient_amount_args(c: &mut Circuit3) -> (B32<Public>, Wire3<FieldT, Public>) {
-    let recipient = B32 {
-        hi: c.arg::<FieldT>("recipient_hi"),
-        lo: c.arg::<FieldT>("recipient_lo"),
-    };
-    let amount = c.arg::<FieldT>("amount");
-    recipient.constrain_input(c);
-    c.assert_bits(amount, 128);
+/// `(recipient: Bytes<32>, amount: Uint<128>)` — the argument list four of
+/// these circuits share.
+#[derive(CircuitArg)]
+struct DepositArgs {
+    recipient: B32<Private>,
+    amount: Uint<128>,
+}
+
+/// The shared disclosure of a [`DepositArgs`]: everything these circuits do
+/// with the pair is public (a ledger write, or a cross-contract call).
+fn disclose_args(c: &mut Circuit3, args: DepositArgs) -> (B32<Public>, Wire3<FieldT, Public>) {
     let r = B32 {
-        hi: c.disclose(recipient.hi, "recipient (hi)"),
-        lo: c.disclose(recipient.lo, "recipient (lo)"),
+        hi: c.disclose(args.recipient.hi, "recipient (hi)"),
+        lo: c.disclose(args.recipient.lo, "recipient (lo)"),
     };
-    let a = c.disclose(amount, "amount");
+    let a = c.disclose(args.amount.field(), "amount");
     (r, a)
 }
 
@@ -71,9 +72,9 @@ const TARGET_CONTRACT: XcallTarget = XcallTarget::at_field(TARGET);
 
 /// `export circuit localBase(recipient, amount): []` — the control: the
 /// shared workload performed locally against the caller's own ledger.
-pub fn local_base() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (r, a) = recipient_amount_args(&mut c);
+#[circuit]
+pub fn local_base(c: &mut Circuit3, recipient: B32<Private>, amount: Uint<128>) {
+    let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
     let one = c.constant(1u64);
 
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
@@ -81,9 +82,7 @@ pub fn local_base() -> Compiled3 {
     let mut ops = counter_increment(CALL_COUNT, 1);
     ops.extend(cell_write(LAST_AMOUNT, &amount_val));
     ops.extend(map_insert(BALANCES, &recipient_val, &amount_val));
-    emit(&mut c, one, &ops);
-
-    c.finish(true)
+    emit(c, one, &ops);
 }
 
 /// `export circuit callOnce/callEmit(recipient, amount): []` — one
@@ -99,13 +98,12 @@ pub fn call_once() -> Compiled3 {
 /// `export circuit callEmit(recipient, amount): []` — `target.depositEmit`.
 /// Structurally identical to [`call_once`]; the difference is which entry
 /// point the PROVER claims, and entry-point limbs are witnesses.
-pub fn call_emit() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (r, a) = recipient_amount_args(&mut c);
+#[circuit]
+pub fn call_emit(c: &mut Circuit3, recipient: B32<Private>, amount: Uint<128>) {
+    let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
     let one = c.constant(1u64);
-    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
-    TARGET_CONTRACT.deposit_emit(&mut c, one, r, Uint::from_field(a));
-    c.finish(true)
+    emit(c, one, &counter_increment(CALL_COUNT, 1));
+    TARGET_CONTRACT.deposit_emit(c, one, r, Uint::from_field(a));
 }
 
 /// `export circuit callTwice(recipient, amount): []` — two calls in one
@@ -115,32 +113,29 @@ pub fn call_twice() -> Compiled3 {
     call_n_times(2)
 }
 
+/// `callOnce`/`callTwice`, which differ by a Rust value and so are built
+/// through [`entry`] rather than the attribute (see `events`'s note).
 fn call_n_times(n: usize) -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (r, a) = recipient_amount_args(&mut c);
-    let one = c.constant(1u64);
+    entry(|c, args: DepositArgs| {
+        let (r, a) = disclose_args(c, args);
+        let one = c.constant(1u64);
 
-    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
-    for _ in 0..n {
-        TARGET_CONTRACT.deposit(&mut c, one, r, Uint::from_field(a));
-    }
-
-    c.finish(true)
+        emit(c, one, &counter_increment(CALL_COUNT, 1));
+        for _ in 0..n {
+            TARGET_CONTRACT.deposit(c, one, r, Uint::from_field(a));
+        }
+    })
 }
 
 /// `export circuit callBig(data: Bytes<256>): []` — one call carrying a
 /// 256-byte argument (9 FAB limbs).
-pub fn call_big() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let data = BytesN::<_, 256>::arg(&mut c, "data");
-    data.constrain_input(&mut c);
+#[circuit]
+pub fn call_big(c: &mut Circuit3, data: BytesN<Private, 256>) {
     let data: BytesN<Public, 256> = data.map_limbs(|_, w| c.disclose(w, "data"));
     let one = c.constant(1u64);
 
-    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
-    TARGET_CONTRACT.deposit_big(&mut c, one, data);
-
-    c.finish(true)
+    emit(c, one, &counter_increment(CALL_COUNT, 1));
+    TARGET_CONTRACT.deposit_big(c, one, data);
 }
 
 /// Target `deposit` — identical to the `events` experiment's `base`.
@@ -156,11 +151,8 @@ pub fn target_deposit_emit() -> Compiled3 {
 /// Target `export circuit depositBig(data: Bytes<256>): []` — just the
 /// counter increment; isolates the cost of moving a large argument across
 /// the contract boundary.
-pub fn target_deposit_big() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let data = BytesN::<_, 256>::arg(&mut c, "data");
-    data.constrain_input(&mut c);
+#[circuit]
+pub fn target_deposit_big(c: &mut Circuit3, _data: BytesN<Private, 256>) {
     let one = c.constant(1u64);
-    emit(&mut c, one, &counter_increment(T_CALL_COUNT, 1));
-    c.finish(true)
+    emit(c, one, &counter_increment(T_CALL_COUNT, 1));
 }

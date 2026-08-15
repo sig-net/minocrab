@@ -13,11 +13,26 @@
 //! transientN(data):      … fdigest = disclose(transientHash<Bytes<N>>(data))
 //! persistentVec8(data: Vector<8, Bytes<32>>): … digest = …persistentHash…
 //! ```
+//!
+//! # The one family that is NOT a `#[circuit]` (M9 phase 5)
+//!
+//! `control`/`persistent`/`keccak`/`transient` take their input WIDTH as a
+//! Rust parameter — the experiment sweeps 32/64/128/256/1024 bytes in a
+//! loop, and the sweep is the point — while a `CircuitArg` is a type and
+//! `CircuitArgs::SLOTS` is a `const`. Expressing these through the typed
+//! API would mean either const-generic entry points the sweeping loops
+//! cannot call, or a `match` over the sizes that happen to be swept today,
+//! turning a general experiment into a closed enumeration with a panic for
+//! any new size. Neither is worth it HERE, because the soundness the typed
+//! layer buys is already present: [`BytesNDyn::constrain_input`] derives the
+//! per-limb widths from the same `len` that declared the limbs, so there is
+//! no hand-written parallel constraint block to drift. [`persistent_vec8`],
+//! whose shape is fixed, IS ported.
 
 use minocrab::v3::{Circuit3, Compiled3, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{BytesNDyn, B32};
+use minocrab_std::v3::{circuit, BytesNDyn, B32};
 
 /// Ledger field indices (identical in both contracts; `fdigest` exists
 /// only in `hashing`).
@@ -104,20 +119,17 @@ pub fn transient(len: usize) -> Compiled3 {
 
 /// `persistentVec8(data: Vector<8, Bytes<32>>)`: the same 256 bytes as a
 /// data structure — 8 × `Bytes<32>` atoms, 16 limbs.
-pub fn persistent_vec8() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let parts: Vec<B32<Private>> = (0..8)
-        .map(|i| B32 {
-            hi: c.arg(&format!("data_{i}_hi")),
-            lo: c.arg(&format!("data_{i}_lo")),
-        })
-        .collect();
-    for p in &parts {
-        p.constrain_input(&mut c);
-    }
+///
+/// The one circuit of this experiment whose argument WIDTH is fixed, so the
+/// one that is a `#[circuit]`: `[B32; 8]` declares `data_0_hi` … `data_7_lo`
+/// and constrains all sixteen limbs from the type (see the module docs for
+/// why the `Bytes<len>` family stays hand-declared).
+#[circuit]
+pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) {
+    let parts = data;
     let one = c.constant(1u64);
 
-    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
+    emit(c, one, &counter_increment(CALL_COUNT, 1));
 
     let alignment = Alignment(
         (0..8)
@@ -130,10 +142,9 @@ pub fn persistent_vec8() -> Compiled3 {
         inputs.push(p.lo.erase());
     }
     let typed = c.persistent_hash(alignment, &inputs);
-    let digest = B32::from_typed(&mut c, typed);
+    let digest = B32::from_typed(c, typed);
     let hi = c.disclose(digest.hi, "the digest (hi)");
     let lo = c.disclose(digest.lo, "the digest (lo)");
     let value = LedgerValue::bytes(32, vec![ImpactElem::Wire(hi), ImpactElem::Wire(lo)]);
-    emit(&mut c, one, &cell_write(DIGEST, &value));
-    c.finish(true)
+    emit(c, one, &cell_write(DIGEST, &value));
 }
