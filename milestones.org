@@ -456,10 +456,23 @@ the compatibility reference; the optimized vault is its own artifact
       or the SHA hash-chip); row cuts there (−35%..−58% vs compactc) are
       cosmetic for prove time. All planned avenues landed or explicitly
       stopped, so TICKED; only the report bullet remains.))
-- [ ] The report: fresh single-session benchmark — super-optimized vault
+- [X] The report: fresh single-session benchmark — super-optimized vault
       vs compactc vs the direct port (three-way, so ergonomics-neutral
       lowering wins and freed-framing wins are attributed separately);
       RAM + prove + k/rows; honest about what could not move and why.
+      (DONE 2026-08-15 — BENCHMARK.md refreshed as the three-way capstone
+      from a single-session ./bench.sh run. Opt vs compactc: rows
+      −35..−58% on every vault circuit, prove −37..−59% and RAM
+      −42..−52% where k crosses. HONEST SPLIT: opt's only NEW prove-time
+      wins over the already-fast port are deposit (k15→14) and withdraw
+      (k16→15); the other seven cut rows but stay k-floored (ECDSA k16 /
+      SHA k13), their big compactc deltas inherited from the port's M7
+      k-crossings — opt does not claim the port's wins. swap missed k15
+      by 51 rows, left deliberately. opt proves its OWN preimage
+      (symbolic-effect equality, 9M-case harness) — weaker warrant than
+      the port's PI-equality, stated prominently. HTML at
+      target/bench/report.html (uncommitted, gitignored tree).)
 Exit criteria: report reproducible from a clean checkout; the property
 harness green at millions of cases per circuit; the optimized artifact's
 every deviation from compactc framing documented and spec-justified.
+MET — M10 complete.
