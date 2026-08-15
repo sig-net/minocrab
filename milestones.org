@@ -717,10 +717,13 @@ a test failure, not a runtime surprise.
 - [X] Versioning/publishing conventions doc: semver semantics for
       interface changes (argument reorder = major, by construction),
       address/verifier-key pinning story, workspace vs published use.
-- [ ] README showcase section: the interface-crate story described in
+- [X] README showcase section: the interface-crate story described in
       the README with a real snippet (dmd: "the readme is a showcase
       of our features") — same rule for other landed features as they
       finish (Borsh subset, predicates, maps).
+      (DONE 2026-08-15 — two new sections, both quoting code that is
+      really in the tree: "Cross-contract calls: the interface is a
+      crate" and "Serialization: a Borsh subset, not a format of ours".)
 Stages (notes/interface-crates.org §Phasing is the detail; standing
 gates every stage: both snapshots bit-identical, all suites green):
 - [X] 1. The ABI table: Prim + the ported emit-constraints-for +
@@ -752,7 +755,21 @@ gates every stage: both snapshots bit-identical, all suites green):
       for the callee and Public for callers) +
       contract_matches_its_interface (the built IrSource vs the trait
       schema, for all three circuits) + the conventions section.
-- [ ] 7. README showcase + tick M12.
+- [X] 7. README showcase + tick M12.
+      (DONE 2026-08-15 — notes/interface-crates.org §"As built — stage 7".
+      The cross-contract section shows the vault's REAL call site, the
+      cargo dependency, the bodyless trait, the generator invocation and
+      the honest limit; the drift-test output is the mutation suite's
+      ACTUAL text, captured by running it. A second section showcases the
+      M11 Borsh subset (subset-not-format, the deployed-protocol-is-
+      already-Borsh finding, the free hash path, the kind byte, and the
+      spec/ pointer). The M9-era honesty marker was refreshed and had to
+      be CORRECTED in both directions: #[circuit] and #[derive(CircuitArg)]
+      are landed and used by deposit/withdraw/claim (so the old "today's
+      numbers come from the explicit builder form" was wrong), while the
+      side-by-side snippet advertised label!/disclose_as/Discloses — an
+      API that does not exist (M9 phase 6). The snippet is now the real
+      deposit, abridged.)
 Approved by dmd 2026-08-15: the approach as designed, including that
 contract interfaces are STATIC (address is data, interface is
 compile-time) — not a limitation to work around.

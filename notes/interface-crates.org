@@ -755,3 +755,67 @@ slot, the communications commitment, and the returned slot count. The
 The test also proves the check bites, by running =respond='s circuit against
 =signBidirectional='s argument list and asserting the nine-vs-eight input
 mismatch is reported.
+
+* As built — stage 7 (2026-08-15)
+The README showcase. Two new sections, both quoting code that is really in the
+tree, and one honesty marker corrected in BOTH directions. No code touched;
+=cargo test --workspace --release= green, both snapshots bit-identical.
+
+** §"Cross-contract calls: the interface is a crate"
+The design's sketch, adapted to what landed:
+- THE CARGO STORY FIRST (a =[dependencies]= line), because that is the claim:
+  Compact has no package manager and this is the answer.
+- THE VAULT'S REAL CALL SITE, copied from =erc20_vault::notify_signet= —
+  =at_field(SIGNET_SIGNER).pin(c, one)=, the notification constructor imported
+  from the callee's own crate, and =signer.sign_bidirectional(c, one,
+  *request_id, notification)= as the whole desugar.
+- THE TRAIT as it is actually written (=#[interface]= over three bodyless
+  methods, every parameter =Public=), with the derived entry-point hash and
+  the no-address rule.
+- THE DRIFT OUTPUT IS REAL, not invented: the mutation suite was run with a
+  deliberately wrong =wanted= string so the harness printed the problems, and
+  the README carries that text (elided only in the middle of the two long slot
+  lists):
+  =`signBidirectional` argument slots: artifact […] != interface […]= /
+  =argument alignment: artifact [bytes 1, bytes 128, bytes 32] != interface
+  [bytes 32, bytes 1, bytes 128]= and
+  =signBidirectional.zkir slot 2: constraint bits:16 != the interface's bits:8=.
+  The second is called out as the one that matters: contract-info.json and the
+  pin are left CORRECT there, so only the compiled circuit is forged.
+- THE GENERATOR INVOCATION (=minocrab-interface-gen --crate
+  crates/xcall-target-interface=) with both acceptance results in one sentence
+  each.
+- HONEST LIMIT #1 in full, ending on the executable form: callOnce and callEmit
+  compile to byte-identical ZKIR under different entry points, asserted by a
+  test.
+
+** §"Serialization: a Borsh subset, not a format of ours" (M11's showcase)
+Subset-not-format in the first sentence; Maybe↦Flagged as the one visible
+consequence; THE FINDING ("the deployed protocol is already Borsh", with the
+compactc-artifact acceptance as the evidence and "zero divergences"); the
+=#[derive(CircuitBorsh)] #[borsh(spec = …)]= declaration and what one
+declaration buys; the FREE hash path with =hash::persistent_hash= named and
+=persistent_hash_compact= named as the interop spelling (M11 stage 9); the kind
+byte and the 0x02 hazard with the measured +6/+6/+9/−9; and the pointer to
+=spec/borsh-subset.md= + =spec/vectors/= with the it-cannot-drift claim.
+
+** THE HONESTY MARKER WAS WRONG IN BOTH DIRECTIONS, and both were fixed
+The M9-era paragraph said the =#[circuit]= / =#[derive(CircuitArg)]= syntax was
+"currently landing" and that "the circuits that produce today's numbers are
+written in the explicit builder form".
+1. TOO PESSIMISTIC: =deposit=, =withdraw= and =claim= of the BENCHMARKED vault
+   (and =signet_contract::sign_bidirectional=) carry =#[circuit]= today. The
+   numbers in the README come from circuits written in the shown syntax.
+2. TOO OPTIMISTIC, and worse: the side-by-side snippet showcased =label!=,
+   =disclose_as::<Depositor>= and a =Discloses<(…)>= return type — an API that
+   DOES NOT EXIST anywhere in the workspace (M9 phase 6 is still open). A
+   showcase whose headline example does not compile is the failure mode a
+   README like this one exists to avoid.
+The snippet is now the real =deposit=, abridged, and the prose describes the
+disclosure tracking that IS implemented (=c.disclose(w, label)= at the type
+level, reported by the simulator). The marker now says which circuits use the
+attribute, that porting the rest is mechanical, and that the manifest is
+designed and not built.
+Also refreshed: "55 circuits" in the frozen-instruments bullet is now 78 (the
+row snapshot's own count), and the layout block gained =minocrab-abi=,
+=minocrab-interface-gen=, the two interface crates and =spec/=.

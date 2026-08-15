@@ -90,6 +90,15 @@ reviewer should look at.
       minocrab-std `borsh-schema` optional feature — confirm with cargo
       tree that no shipping build enables it (checked in-session, worth
       a second look since it is a dependency-posture claim).
+- [ ] M12 stage 7 (README showcase): the README now makes CLAIMS about
+      landed features to a public audience — check each against the tree
+      (the cross-contract snippet is copied from erc20_vault::notify_signet;
+      the drift output is the mutation suite's real text with two long slot
+      lists elided; the Borsh section's row deltas and the "already Borsh"
+      finding come from notes/borsh-format.org). And re-read the corrected
+      honesty marker: the previous one advertised label!/disclose_as/
+      Discloses, which do not exist, so the same question is worth asking of
+      every remaining claim in the file.
 - [ ] M11 stage 8 (spec/borsh-subset.md + vectors): THE PROSE IS THE
       REVIEWABLE ARTIFACT — the tables and vectors are generated and
       self-checking, but §§1-8 and §11 are hand-written claims an external
