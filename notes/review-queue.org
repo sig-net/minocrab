@@ -7,6 +7,26 @@ would have warranted human-grade review is queued here instead; run a
 /code-review session over these when convenient. Items are appended as
 stages land; tick when reviewed.
 
+* Session of 2026-08-15 — what to review first (dmd asked for this)
+Everything below the "Standing instruction" heading dated today landed
+in ONE session, gate-checked and diff-unreviewed. Suggested order for a
+review session, highest risk first:
+1. M9 phase 7's LITERALS commit (ea1c46f) — the only change in the whole
+   session whose gate was a hand-review rather than an instrument, since
+   the row snapshot cannot see a removed Copy.
+2. M9 phase 6's thirty declarations + M9 closure's label strings — a
+   disclosure report is the only place either error would surface.
+3. M9 phase 8's widen soundness argument + the twin's PI-equality claim.
+4. M11 stage 10's hand-written TypeScript reject rules (the generated
+   half is self-checking; these are not).
+5. The README, as a public artifact, after four rewrites in one day.
+Landed and NOT in this queue because an instrument covers them fully:
+the 87-circuit byte-identical ZKIR dumps (phases 5-8 and the closure),
+both frozen snapshots, and the eleven differential suites.
+Two agents were still running when this was written (M8 churn
+resilience, M14 bounded integers); their entries append below as they
+land.
+
 * High value (protocol/soundness-adjacent)
 - [ ] f102ffe M10 burn restructure (erc20_vault_opt withdraw/swap):
       the single-claimed-spend lowering + the well-formedness test
@@ -217,6 +237,82 @@ reviewer should look at.
       paragraph saying the same sixteen circuits are the only ones in
       the corpus without a typed disclosure declaration; read the two
       together.)
+- [ ] M11 stage 10 (718ba87, spec/ts): the GENERATOR is self-checking
+      (committed files must be regenerator output, and the node suite is
+      mutation-checked), so what deserves eyes is what neither test can
+      see: primitives.ts's REJECT RULES are a second, hand-written
+      statement of rules the circuits enforce elsewhere — getBool's
+      0x00/0x01, the setters' range checks, unwrapMiscEnvelope's zero-pad
+      rule — and a wrong one there is a decoder that accepts what the
+      chain rejects. Also the DEVIATION: generated from the spec types'
+      borsh schema rather than CircuitBorsh::layout(), justified by stage
+      3's cross-check proving the two tables equal — confirm that
+      cross-check really covers every type spec/ts emits (several
+      published types have no circuit twin at all).
+- [ ] M13 (063f91f, README overhaul) + the terse rewrite (d121430) and
+      dmd's own edit (6efa903), then 2f0c209 pointing the snippet at the
+      twin: the README makes PUBLIC CLAIMS, and the M12-era failure mode
+      (advertising an API that did not exist) is the thing to re-check
+      after four rewrites in one day — every snippet against the tree,
+      every one of the ~47 links, and the numbers (78→87 circuits, "nine
+      of twelve circuits at least one k lower", the 9M-case figure).
+      Also the FAIRNESS SECTION is a public statement about what we
+      cannot do: the audit rejected two candidates on code evidence
+      (enum exhaustiveness — Compact has no match; ZKIR 3.x curve
+      breadth — our pinned IrType already carries Curve25519/Secp256r1),
+      and those rejections are the reviewable part, in
+      notes/readme-research.org §"As built — M13 fairness audit".
+- [ ] M9 phase 6 (e1b9954 core + 657d294 rollout, disclosure): the
+      generated set-equality test proves the DECLARED set matches the
+      DISCLOSED set — neither side is proven RIGHT, so read the 30
+      declarations against what each circuit actually leaks. The phase
+      found twelve circuits disclosing the xcall ep hash and comm
+      commitment undeclared; that class is exactly what a wrong
+      declaration would hide again. Also: Disclosure3 carries
+      Vec<Identifier> (one record = one logical value) — check the
+      disclose_all/disclose_slice groupings match that claim; the
+      signature flip to v.disclose_as::<L>(c) (E0107, documented); and
+      entry() widened to O: CircuitOut with assert_eq!(O::SLOTS, 0),
+      which is what makes a declaration cost no output slot.
+- [ ] M9 phase 7 (2b66be3 maps, ea1c46f literals, 860c3ea predicates):
+      THE LITERALS COMMIT IS THE ONE WITH NO SNAPSHOT BEHIND IT — the
+      row snapshot is blind to Copy removal, so its gate was a
+      hand-reviewed instruction delta (47 removed instructions, all
+      claimed to be `copy <immediate>`, streams claimed equal after
+      canonicalization). That review is the artifact to re-do. For maps:
+      LedgerRepr deliberately does NOT require CircuitAbi (a ledger read
+      is popeq-checked, never range-constrained) — weigh that, since it
+      means a record type's ledger shape and its argument shape are
+      stated separately. For predicates: the width inference (widths
+      come from the operand types) and check_literal_fits, the
+      value-dependent panic that stayed.
+- [ ] M9 phase 8 (0c6a88d stage 1, b6bccba the twin): widen::<WIDER>()
+      claims a retype needs NO second range constraint (a value < 2^BITS
+      is < 2^WIDER) — check that argument and that nothing else assumed
+      a constraint per type. The agent DECLINED the coordinator's
+      missing-impl form for width rejection (it broke ten sound call
+      sites; the condition is a property of the operand PAIR) and used
+      inline-const E0080 instead — worth confirming the rejection really
+      fires at every call site shape. For the twin: all nine circuits
+      claim PI-equality with the borsh artifact, so the SpecAnchored arm
+      of its divergence ledger is asserted unused — verify that is true
+      rather than vacuous, and check Art::is_borsh_format() really
+      closes the `== Art::Borsh` hazard a fourth artifact introduces
+      (the same class of bug the stage-4 fork test caught).
+- [ ] Cargo profile change (3790a85, [profile.dev.package."*"]
+      opt-level = 3) + CLAUDE.md's new Testing section (cabd8fa): the
+      routine loop is now plain `cargo test`, which means most gates
+      from here on run UNOPTIMIZED for our own crates. Timings measured
+      warm (1.9s vs 10.5s incremental; row_snapshot 89s vs 70s); what
+      deserves a check is whether any suite's runtime crossed a
+      practical threshold under dev, and whether "row_snapshot with
+      --release" is actually being honoured by later agents.
+- [ ] Milestones audit (94f5135): three bullets ticked from the tree
+      rather than from a session's work — M3's differential bullet
+      (eleven suites) and M4's corpus-rewrite bullet, plus the recorded
+      claim that M4's two remaining bullets are now pure pointers to M16
+      and M17. Check the pointer claim: that nothing in M4's original
+      scope fell between the two new milestones.
 - [ ] M9 closure (312c8ff, the 32 experiment declarations): the ZKIR is
       byte-identical for all 87, so what deserves eyes is the LABEL
       STRING mapping — every free-string `c.disclose(w, "x (hi)")` pair
