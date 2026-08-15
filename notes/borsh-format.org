@@ -225,9 +225,9 @@ Stages 0+8 have external value and no dependency on 1-7 — front-run
 them if the TS side is on the critical path.
 
 * As built — stage 0 (2026-08-15)
-"Today's protocol is already this layout", with a test behind it. NO
-circuit changes, nothing under src/ touched; row_snapshot and
-interface_snapshot untouched and green.
+"Today's protocol is already Borsh (the fixed-width subset)", with a
+test behind it. NO circuit changes, nothing under src/ touched;
+row_snapshot and interface_snapshot untouched and green.
 
 ** THE HEADLINE: every deployed payload is byte-identical, zero divergences
 | deployed payload            | shape                | verified against                          |
@@ -245,14 +245,20 @@ interface_snapshot untouched and green.
 For the records the equality is asserted TWICE per case, once against
 borsh::to_vec and once against bincode-fixint, and then closed with
 =keccak256(borsh(record)) == the reference model's request id= — i.e.
-the request id the deployed vault stores IS the keccak of the flat
-layout. For the singleton the bytes are not compared against a second
-Rust construction at all: the borsh envelope is handed to the pinned
+the request id the deployed vault stores IS keccak256 of the record's
+canonical Borsh encoding. For the singleton the bytes are not compared
+against a second Rust construction at all: the envelope is handed to the pinned
 compactc artifact as the logged transcript, which ACCEPTS it, and
 rejects it as soon as any one of the 288 bytes moves — including a
 byte of the zero pad, so the padding rule is already enforced
 in-circuit today. Nothing was papered over: no case, at any case
 count, produced a mismatch.
+BOTH ENDS OF THE WIRE NOW AGREE INDEPENDENTLY: §"ANSWERED from MPC
+source" reports that the MPC's own request_id.rs binary_repr is
+already the flat-LE subset (le_bytes ints, Maybe as bool +
+always-present payload, zero-filled slots hashed); stage 0 proves the
+same thing from the Midnight side, mechanically, against the pinned
+compactc artifacts. Finding #1 is confirmed from both directions.
 
 ** Files
 - =crates/minocrab-contracts/tests/serialization/spec_types.rs= — the
@@ -333,8 +339,11 @@ generation strategies and config, so one knob scales both). 15 tests,
 1.15 s at the default. Elevated gate: PROPTEST_CASES=20000 → 20,000
 cases per property (records ×3 shapes/case, attested outputs ×4
 circuits/case, singleton Misc ×288-position tamper sweep, both
-artifacts simulated per case) in 244 s. =cargo test --workspace
---release= fully green.
+artifacts simulated per case) in 479 s of test time / 8 m 06 s wall,
+exit 0, 15 passed. =cargo test --workspace --release= fully green (50
+test binaries, 0 failures). The two singleton properties dominate: at
+20,000 cases they simulate 20,000 × 4 (sign) and 20,000 × 8 (respond)
+circuit runs across both artifacts.
 
 ** Seed of stage 8
 =LAYOUT_SNAPSHOT= is 73 frozen (type, path, kind, offset, width) rows

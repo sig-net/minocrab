@@ -28,6 +28,12 @@ midnight-curves.workspace = true
 midnight-zswap.workspace = true
 midnight-ledger.workspace = true
 rand.workspace = true
+# The serialization-conformance suite's dual oracle (M11 stage 0): borsh and
+# serde+bincode-fixint, which agree byte-for-byte on the circuit-safe subset.
+# See the workspace manifest for why bincode 2.
+borsh.workspace = true
+bincode.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sha3.workspace = true

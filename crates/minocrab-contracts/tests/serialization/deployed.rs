@@ -1,0 +1,166 @@
+//! The DEPLOYED bytes: how today's protocol lays each payload out, built
+//! with the same code the circuits and the reference model use.
+//!
+//! Nothing in this module knows what Borsh is. Every function here produces
+//! the bytes the deployed protocol produces:
+//!
+//! - [`fab_bytes`] is `parse_field_repr` + `binary_repr`, the two calls the
+//!   off-circuit `persistentHash`/`keccak256` make on a FAB value — the
+//!   preimage `signet::calculate_request_id` and
+//!   `signet::calculate_attestation_digest` hash IN-circuit, since the ZKIR
+//!   hash chips do that packing in-chip;
+//! - [`misc_envelope`] is `serialize<Misc, 288>`: the event name, the
+//!   circuit's `Serializer` segments, zero-padded;
+//! - [`misc_preimage`] builds the singleton's public transcript so the
+//!   CORPUS ARTIFACT itself can be asked whether it accepts those bytes.
+
+use std::borrow::Cow;
+
+use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment};
+use midnight_base_crypto::repr::BinaryHashRepr;
+use midnight_onchain_state::state::StateValue;
+use midnight_onchain_vm::ops::Op;
+use midnight_onchain_vm::result_mode::ResultModeVerify;
+use midnight_storage::db::InMemoryDB;
+use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
+use midnight_transient_crypto::hash::transient_commit;
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
+use midnight_transient_crypto::repr::FieldRepr;
+use minocrab::Fr;
+use minocrab_contracts::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+use minocrab_zkir::v3::IrSource;
+
+use crate::vault::prims::{b32_slots, cell, bytesn_value};
+
+type VmOp = Op<ResultModeVerify, InMemoryDB>;
+
+/// The value-only FAB binary of `limbs` laid out against `atoms` — the byte
+/// string the deployed hash constructions consume.
+pub fn fab_bytes(atoms: &[AlignmentAtom], limbs: &[Fr]) -> Vec<u8> {
+    let alignment = Alignment(
+        atoms
+            .iter()
+            .cloned()
+            .map(AlignmentSegment::Atom)
+            .collect(),
+    );
+    let value: AlignedValue = alignment
+        .parse_field_repr(limbs)
+        .expect("limbs match the alignment");
+    let mut bytes = Vec::new();
+    ValueReprAlignedValue(value).binary_repr(&mut bytes);
+    bytes
+}
+
+/// The declared binary length of an atom sequence (`Alignment::bin_len`) —
+/// the deployed layout's own answer to "how wide is this record".
+pub fn fab_len(atoms: &[AlignmentAtom]) -> usize {
+    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect()).bin_len()
+}
+
+/// The attestation digest's preimage as the settle circuits build it:
+/// `calculateSignetAttestationDigest`'s alignment is `[Bytes<32>,
+/// Bytes<LEN_OUTPUT>]` over `[requestId.hi, requestId.lo, ..output limbs]`.
+pub fn attestation_preimage_bytes(
+    request_id: &[u8; 32],
+    output_len: u32,
+    output_limbs: &[Fr],
+) -> Vec<u8> {
+    let (hi, lo) = b32_slots(request_id);
+    let mut limbs = vec![hi, lo];
+    limbs.extend_from_slice(output_limbs);
+    fab_bytes(
+        &[
+            AlignmentAtom::Bytes { length: 32 },
+            AlignmentAtom::Bytes { length: output_len },
+        ],
+        &limbs,
+    )
+}
+
+// ---- the Signet singleton's Misc event ---------------------------------------
+
+/// The 32-byte event name, `pad(32, name)`.
+pub fn misc_name(name: &str) -> [u8; 32] {
+    let mut padded = [0u8; 32];
+    padded[..name.len()].copy_from_slice(name.as_bytes());
+    padded
+}
+
+/// `serialize<Misc, 288>`: `pad(32, name)` ‖ `payload` ‖ zeros.
+///
+/// The padding rule the spec states and the decoder must check: bytes
+/// `0..payload.len()` of the `Bytes<256>` are the payload's own layout,
+/// everything after them MUST be zero.
+pub fn misc_envelope(name: &str, payload: &[u8]) -> Vec<u8> {
+    assert!(
+        payload.len() + 32 <= MISC_SIZE,
+        "payload exceeds the {MISC_SIZE}-byte Misc"
+    );
+    let mut bytes = vec![0u8; MISC_SIZE];
+    bytes[..32].copy_from_slice(&misc_name(name));
+    bytes[32..32 + payload.len()].copy_from_slice(payload);
+    bytes
+}
+
+/// A `Bytes<128>`'s five FAB slots: 31-byte chunks from the front, limb 0
+/// the trailing leftover.
+pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
+    let mut chunks: Vec<&[u8]> = bytes.chunks(31).collect();
+    chunks.reverse();
+    chunks
+        .into_iter()
+        .map(|c| Fr::from_le_bytes(c).expect("31 bytes fit"))
+        .collect()
+}
+
+/// The singleton's Impact program: one Misc event, `Push` + `Log`.
+fn log_ops(misc_bytes: &[u8]) -> Vec<VmOp> {
+    vec![
+        Op::Push {
+            storage: false,
+            value: StateValue::Array(
+                vec![
+                    cell(bytesn_value(4, &MISC_VERSION.to_le_bytes())),
+                    cell(bytesn_value(1, &[MISC_TAG])),
+                    cell(bytesn_value(MISC_SIZE as u32, misc_bytes)),
+                ]
+                .into(),
+            ),
+        },
+        Op::Log,
+    ]
+}
+
+/// A singleton call's proof preimage: the circuit arguments, and the logged
+/// 288 Misc bytes as the public transcript. Identical in shape to
+/// `signet_contract_differential`'s, which is where these bytes are proven
+/// to be the deployed ones: the corpus artifact accepts this transcript and
+/// rejects any single-byte perturbation of it.
+pub fn misc_preimage(inputs: Vec<Fr>, misc_bytes: &[u8]) -> ProofPreimage {
+    let mut transcript = Vec::new();
+    for op in log_ops(misc_bytes) {
+        op.field_repr(&mut transcript);
+    }
+    let rand = Fr::from(0x516_e37u64);
+    let comm = transient_commit(&inputs[..], rand);
+    ProofPreimage {
+        inputs,
+        private_transcript: vec![],
+        public_transcript_inputs: transcript,
+        public_transcript_outputs: vec![],
+        binding_input: 0.into(),
+        communications_commitment: Some((comm, rand)),
+        key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
+    }
+}
+
+/// A pinned signet-contract corpus artifact (what compactc emitted for the
+/// deployed singleton).
+pub fn corpus_signet_zkir(name: &str) -> IrSource {
+    let path = format!(
+        "{}/../../corpus/zkir/signet-midnight-integration/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
+}

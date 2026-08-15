@@ -494,7 +494,7 @@ external value and no dependency on 1-7.
       both records, four attested outputs, digest preimages);
       byte-equality against the deployed bytes.
       (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 0".
-      VERDICT: every deployed payload IS the flat layout, byte for byte
+      VERDICT: every deployed payload IS canonical Borsh, byte for byte
       — both request records (and so the request ids: requestId ==
       keccak256(borsh(record))), all four attestation digest preimages,
       and all three singleton Misc payloads, the last verified by

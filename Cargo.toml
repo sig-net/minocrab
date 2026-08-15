@@ -70,6 +70,19 @@ proptest = "1"
 # rand 0.8 to match the pinned midnight-ledger's zswap constructors (they take
 # `impl Rng + CryptoRng` from rand ^0.8). Test-only.
 rand = "0.8"
+# The two CONFORMANCE ORACLES of the serialization format (M11 stage 0,
+# notes/borsh-format.org): the flat fixed little-endian layout is the one
+# borsh and serde/bincode-fixint agree on, so the spec types derive both and
+# the property asserts the two agree with each other and with the deployed
+# bytes. `unstable__schema` is what exports BorshSchemaContainer, the source
+# of the frozen offset tables. Dev-dependencies only — nothing shipping links
+# either, same posture as the midnight-ledger dev-deps.
+borsh = { version = "1.6", features = ["derive", "unstable__schema"] }
+# bincode 2, not 1.3: 2.0.1 is ALREADY in the lock (midnight-zk-stdlib pulls
+# it, with the serde feature), so the second oracle costs zero new lock
+# entries, where bincode 1.3 would add a whole second major version. Its
+# fixint + little-endian config is spelled out at the call site.
+bincode = { version = "2", features = ["serde"] }
 
 [patch.crates-io]
 # midnight-zkir depends on "transient-crypto-old" ^2.2.0 (back-compat v1
