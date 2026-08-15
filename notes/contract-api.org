@@ -920,3 +920,220 @@ surfaces disclosures a LIBRARY makes for you.
   record is not part of the circuit.)
 - interface_snapshot unchanged, row_snapshot bit-identical, all differential
   suites green, `cargo test --workspace --release` clean.
+** Phase 7 — maps, literals, predicates (2026-08-15)
+Three pieces, three commits, three separate gates, as dmd's phasing note
+requires. Rollout for all three is the same set the phase-6 declarations
+took: the vault, ALL THREE FORKS in lockstep (the opt fork owes the port
+nothing but the borsh fork owes the opt fork byte-identity on five
+circuits, so the three files are edited by one script). The three files
+lost 297 lines net across the phase.
+
+*** Piece 1 — rusty maps (crates/minocrab-std/src/v3/ledger.rs)
+The ledger block is a struct, and the field index is its declaration order:
+#+begin_src rust
+pub trait LedgerRepr: Sized {                     // key/value types
+    fn atoms() -> Vec<AlignmentAtom>;
+    fn push_limbs(&self, limbs: &mut Vec<Wire3<FieldT, Public>>);
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self;
+    fn limbs(&self) -> Vec<Wire3<FieldT, Public>>;            // provided
+    fn ledger_value(&self) -> LedgerValue;                    // provided
+}
+pub struct LedgerMap<K, V>;   // ::at(index) -> Self (const), .index() -> u8 (const)
+impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
+    fn member<G: Visibility + Copy>(&self, c: &mut Circuit3, guard: Wire3<FieldT, G>, key: &K) -> Bool<Public>;
+    fn member_guarded(..) -> Bool<Public>;      // the in-branch read
+    fn lookup(..) -> V;      fn lookup_guarded(..) -> V;
+    fn insert(&self, c, guard, key: &K, value: &V);   fn remove(&self, c, guard, key: &K);
+    fn size(..) -> Uint<64, Public>;                  fn is_empty(..) -> Bool<Public>;
+}
+pub struct LedgerCell<T>;    // read / read_guarded / write
+pub struct LedgerCounter;    // read / read_guarded / increment(amount: u32) / less_than(threshold: u64)
+pub struct LedgerField;      // index only — a field this layer does not model yet
+#[derive(Ledger)] struct Vault { .. }   // ::new() is `const fn`, body = <FieldTy>::at(i)
+#+end_src
+Two hand-written hazards die. The INDEX: `pub const REFUND_COMMITMENT: u8 =
+9;` became `= VAULT.refund_commitment.index()` — the consts stay (the ops
+this layer does not model yet take a raw index, and tests/vault's reference
+model keys its state by one) but they are now derived, so a call site and
+the declaration cannot drift. The ATOMS: `LedgerRepr::atoms` comes from the
+key/value TYPE, so `vec![AlignmentAtom::Bytes { length: 32 }]` and
+`VaultRecord::atoms()` are gone from every call site; `signet::EventRecord`
+has ONE `LedgerRepr` impl serving both the insert and the lookup, which is
+exactly where the old `value_atoms` drift hazard lived.
+Deviations from the design bullet, both deliberate:
+- LedgerRepr does NOT require `CircuitAbi`. A ledger read is checked by the
+  op's `popeq`, never range-constrained, so requiring `CircuitAbi::prims`
+  would make every record type declare per-slot constraints that nothing
+  emits. The leaf impls DELEGATE to CircuitAbi/CallArg/CallResult (a ledger
+  write and a cross-contract argument are the same crossing — a public,
+  FAB-aligned value leaving the circuit), so nothing is restated.
+- PLACEMENT is minocrab-std, not minocrab-ledger, and minocrab-std gains a
+  dependency on minocrab-ledger. Types sit above ops: the op layer stays the
+  pure emitter its module docs describe, and the leaf impls live beside the
+  leaves with no orphan gymnastics. (Phase 6 moved the disclosure vocabulary
+  DOWN for the mirror-image reason: minocrab-ledger had to name it.)
+- REJECTED as the design says: `map[k]`, `Deref`, `entry()`, iterators. Every
+  method takes `c` and the guard, because every one of them costs.
+Rollout: 28/29/29 map call sites in the three forks (`check_fresh_request`,
+`insert_request`, `record_and_notify` now take a `&LedgerMap<..>` instead of
+a `map_field: u8`; `request_id_val: &LedgerValue` disappeared from six
+signatures — the key is the `B32<Public>` itself). Cells and counters have
+typed methods and are gated, but their call sites still use the explicit
+`cell_read`/`counter_read` (the vault's cell reads are inside helpers shared
+with other contracts); porting them is phase 8's showcase business.
+Gate: crates/minocrab-std/tests/v3_ledger.rs builds every method twice —
+typed, and as the explicit `minocrab_ledger` call with a hand-written index
+and hand-written atoms — and compares serialized ZKIR byte for byte. Plus
+the derive's own unit tests (declaration-order indices; the thinness rule:
+no `c .`, no `Circuit3 ::`). Zero movement: all 78 circuits' serialized ZKIR
+dumped before and after, 78 of 78 byte-identical.
+
+*** Piece 2 — inline-immediate literals, and the delta review
+`Operand<T, V>` (crates/minocrab/src/v3.rs) is what every operand position
+now takes: `add`, `mul`, `neg`, `inv`, `not`, `test_eq`, `less_than`,
+`cond_select`, `assert_eq` are all `impl Into<Operand<T, V>>`. A wire
+converts; so do `u64` / `u32` / `u8` / `bool` / `Fr`, at `FieldT` and
+`Public` ONLY — so an immediate launders neither the value type
+(`c.test_eq(point, 1u64)` does not compile) nor the visibility (mixing
+follows `Meet`, and `Vis3` gained `Meet<Public, Out = Self>`, which is just
+the lattice fact that meeting with Public is the identity).
+`assert_eq_imm` and `less_than_imm` are GONE — the same idea spelled twice;
+their one caller, `LimbConstraint::emit` (compactc's constraint table), now
+writes `c.assert_eq(w, 0u64)` and `c.less_than(w, bound, bits)`.
+Rollout rule: inline a constant only where the NAME disappears entirely.
+Constants still needed as wires — an Impact guard (`one`), a hash preimage
+element, a tx-params record limb (`zero`) — stay named; inlining their
+operand uses would have changed operands without removing anything, and the
+review below would have had a delta that was not a removed Copy. Inlined:
+initialize's and assert_initialized's `zero`, the `u64::MAX` ceiling in
+deposit/withdraw/swap, refund's `0xdeadbeef01` sentinel, claim's `zero`, the
+borsh fork's kind check, the optimized `change_nonce`'s 255.
+THE DELTA REVIEW (the gate — the row snapshot is blind here, a Copy is zero
+rows). All 78 circuits' serialized ZKIR dumped before and after and compared
+mechanically, by canonicalizing both streams the same way — inline every
+`copy <immediate>`, then renumber identifiers by first appearance — so that
+anything else that moved (a reordered op, a changed width, a changed
+operand, an extra instruction) survives canonicalization and shows up:
+- 27 of 78 circuits changed (the vault's nine × three forks);
+- 47 instructions removed, and ALL 47 are `copy <immediate>`: ΔCopy equals
+  Δinstructions for every circuit, one to three per circuit (initialize 1,
+  deposit 2, withdraw 2, swap 2, approveRouter 1, claim 2-3, completeWithdraw
+  1-2, completeSwap 1-3, refund 2);
+- NO non-Copy deltas: the canonicalized streams are EQUAL for all 78.
+Movement: NONE. row_snapshot is bit-identical — and that table IS the
+`(k, rows)` of every circuit, so no circuit moved a row, let alone a k
+boundary. A `Copy` of an immediate is zero rows in Midnight's cost model
+(the const-generics note measured this), which is exactly why the row
+snapshot cannot see this piece and why there is nothing for the benchmark to
+report. `nix run .#bench` was therefore NOT re-run: dmd's standing note asks
+for a refresh when a piece moves MEASURED performance, and the measurement
+did not move by construction (0 rows × 47 instructions).
+Gate beyond the review: crates/minocrab-std/tests/v3_literals.rs — each
+operand-taking method costs one instruction with a literal and two with a
+named constant, the immediate is inline in the serialized stream with no
+`copy` beside it, and the visibility annotations compile.
+
+*** Piece 3 — assertion predicates (crates/minocrab-std/src/v3/predicate.rs)
+#+begin_src rust
+#[must_use] pub struct Check<V: Vis3>;            // an INERT descriptor
+pub fn less_than<A: CheckOperand, B: CheckOperand>(a: A, b: B) -> Check<Joined<A, B>>;
+pub fn greater_than(..); pub fn le(..); pub fn ge(..); pub fn eq(..); pub fn ne(..);
+pub fn not<V: Vis3>(p: Check<V>) -> Check<V>;
+impl<V: Vis3> Check<V> {
+    pub fn message(self, message: &'static str) -> Self;   // Compact's 2nd assert arg
+    pub fn and(self, other: Check<V>) -> Check<V>;         // one `mul`
+    pub fn or(self, other: Check<V>) -> Check<V>;          // De Morgan, written out
+    pub fn eval(self, c: &mut Circuit3) -> Bool<V>;        // the escape hatch
+}
+pub trait CheckOperand { type Vis: Vis3; const BITS: Option<u32>;
+                         fn literal(&self) -> Option<Fr>; fn operand(self) -> Operand<FieldT, Self::Vis>; }
+// impls: Wire3<FieldT, V> (no width), Uint<BITS, V>, Bytes<N, V>, Bool<V>, and
+// u64/u32/u8/bool/Fr (public, no width, RANGE-CHECKED against the comparison's)
+// methods on the leaves: amount.gt(0u64) / lt / le / ge / eq / ne  → the free fns
+// minocrab: pub trait Assertion { fn assert_in(self, c: &mut Circuit3); }
+//           Circuit3::assert(impl Assertion) / assert_with(cond, Option<&str>)
+#+end_src
+A predicate emits NOTHING until `c.assert(p)` or `p.eval(c)`; unasserted it
+costs nothing and warns, which is strictly safer than today's unasserted
+`c.less_than(..)` — that one emits cost, constrains nothing, and no lint
+says so.
+What it buys, both halves soundness:
+- the WIDTH comes from the operand types. Two typed operands must agree
+  ("comparing a 128-bit value with a 64-bit one…"), one typed operand
+  supplies it, and an ORDERING of two raw wires is a build-time panic naming
+  the fix (equality needs no width, so raw wires are fine there);
+- the constant side is a CHECKED immediate: a literal is range-checked
+  against the width the comparison runs at, so `less_than(byte, 300u64)` on
+  a `Bytes<1>` panics instead of comparing against an unrepresentable value.
+Lowering, stated once and tested byte-for-byte: `less_than` → `less_than a b
+bits`; `greater_than` → the same instruction with the operands swapped; `le`
+/ `ge` → that plus a `not`; `eq` → `test_eq`; `ne` → `test_eq` + `not`;
+`and` → `mul`; `or` → `!(!x && !y)`, written out rather than folded, because
+a combinator that quietly simplified would be hiding cost.
+MESSAGES are metadata, exactly like disclosure records: no instruction, no
+slot, no row. `Circuit3::assert_with` records `(instruction index, message)`
+on the circuit, `Compiled3::assert_messages` carries the list, and
+minocrab-sim spends it — a failed run says `instruction 41 (assert): failed
+assertion: Chain ID must be positive` instead of `failed direct assertion`.
+ZKIR has nowhere to put Compact's second `assert` argument, which is why it
+lives beside the stream.
+THE REAL BEFORE/AFTER, erc20_vault::initialize (Compact:
+`assert(chainId > 0 as Uint<64>, "Chain ID must be positive")`):
+#+begin_src rust
+// before
+let chain_id = chain_id.field();          // in the preamble, with the others
+...
+let positive = c.less_than(zero, chain_id, 64);   // the 64 is hand-typed
+c.assert(positive);
+let router_zero = c.test_eq(swap_router, zero);
+let router_nonzero = c.not(router_zero);
+c.assert(router_nonzero);
+
+// after
+c.assert(chain_id.gt(0u64).message("Chain ID must be positive"));
+c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
+let swap_router = swap_router.field();     // typed through the guards,
+let chain_id = chain_id.field();           // wires after — the design's
+                                           // predicted port-style change
+#+end_src
+and `assert_initialized`, which composes all three pieces:
+#+begin_src rust
+let init = VAULT.initialized.read(c, one);              // piece 1
+c.assert(init.gt(0u64).message("Not initialized"));     // pieces 2 + 3
+#+end_src
+Rollout: 17 predicate asserts per fork (51 in all) — initialize's two,
+assert_initialized, and the zero/positive/ceiling guards of deposit,
+withdraw, swap and approveRouter. Deviations, both deliberate:
+- swap's `tokenIn`/`tokenOut` use the FREE `ne(..)` rather than the method,
+  because the body discloses them immediately afterwards and they are
+  already wires — an equality needs no width, so nothing is lost. The two
+  surfaces sitting side by side in one guard block is the honest picture;
+- where a guard is a bare BOOLEAN rather than a comparison (a map `member`
+  result, the in-branch `assert_if`), the message rides on
+  `c.assert_with(cond, Some("Request already exists"))` and
+  `common::assert_if_with`. A `Check` leaf wrapping a boolean would have
+  widened the scope the design deliberately closed (comparisons +
+  combinators + eval, and nothing else), and it buys only the spelling.
+Messages attached are the ones the Compact source's own strings, as recorded
+in the port's comments: "Chain ID must be positive", "Router cannot be
+zero", "Not initialized", "Request already exists", "Withdrawal not found",
+"Swap not found", "Not the withdrawer". Guards whose Compact message the
+port never recorded (deposit's numeric bounds) carry none — inventing one
+would be putting words in the contract's mouth.
+Gate: crates/minocrab-std/tests/v3_predicates.rs — every comparison, every
+combinator, `eval`, and the literal operand each compared as serialized ZKIR
+against the hand-written form; the message costs nothing and is recorded;
+an unasserted predicate emits nothing; and the three soundness panics
+(mismatched widths, an ordering of raw wires, an oversized literal) with
+their messages. Zero movement: all 78 circuits' serialized ZKIR dumped
+before and after the port — 78 of 78 BYTE-IDENTICAL, so every predicate
+lowers to exactly the compare + assert it replaced.
+
+*** Phase-7 gates, all three pieces
+`cargo test --workspace --release` green after each piece (74 test binaries,
+0 failures at the end). row_snapshot bit-identical and interface_snapshot
+unchanged throughout — including piece 2, where they are blind to what
+changed, which is why that piece carries the instruction-delta review
+instead. All 78 circuits' serialized ZKIR dumped at four points (HEAD, after
+each piece): byte-identical for pieces 1 and 3, and the reviewed 47-Copy
+delta for piece 2.

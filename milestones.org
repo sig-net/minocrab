@@ -376,7 +376,7 @@ suites.
       unchanged, cargo test --workspace --release green. LEFT for a
       documented follow-up: the 30 experiment circuits, several of which
       are entry()-built families the attribute cannot cover.)
-- [ ] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
+- [X] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
       method names, no hidden Impact ops), inline-immediate literals
       (impl Into<Operand>; gated on hand-reviewed instruction deltas —
       row snapshot is blind to Copy removal), and assertion predicates
@@ -384,6 +384,34 @@ suites.
       amount)) — widths from the operand types, optional message,
       not/and/or + eval() only, no deferred arithmetic; shares the
       Into<Operand> machinery with literals; no macros).
+      (2026-08-15 — three commits, three gates, all three rolled out
+      across the vault's THREE forks in lockstep; the files lost 297
+      lines net. MAPS: #[derive(Ledger)] makes declaration order the
+      field index (the `pub const REFUND_COMMITMENT: u8 = 9;` table is
+      now read off VAULT.refund_commitment.index()), and LedgerMap<K,V>
+      /LedgerCell<T>/LedgerCounter take the value ATOMS from the type
+      through LedgerRepr — the hand-written value_atoms and index
+      hazards both gone, 28/29/29 map call sites ported, every method
+      one Impact op with c and the guard visible. Placement is
+      minocrab-std (which gains a minocrab-ledger dependency): types
+      above ops. LITERALS: every operand position takes impl
+      Into<Operand<T,V>>, so a native Rust value inlines as a v3
+      immediate and assert_eq_imm/less_than_imm disappear into it; the
+      GATE was the reviewed instruction diff, since the row snapshot
+      cannot see a Copy — 27 circuits changed, 47 instructions removed,
+      ALL 47 `copy <immediate>` (canonicalized streams equal for all
+      78), row_snapshot bit-identical so no k or row moved and the
+      benchmark had nothing to report. PREDICATES: c.assert(chain_id
+      .gt(0u64).message("Chain ID must be positive")) — inert #[must_use]
+      descriptors, widths read off the operand types (mismatch, raw-wire
+      ordering and an oversized literal are build-time panics), messages
+      as metadata that minocrab-sim spends on a failed run, not/and/or +
+      eval only, no macros; 51 guard asserts ported. Zero movement
+      checked harder than the gates require: all 78 circuits' serialized
+      ZKIR dumped at HEAD and after each piece — byte-identical for maps
+      and predicates, the reviewed 47-Copy delta for literals.
+      row_snapshot bit-identical, interface_snapshot unchanged, cargo
+      test --workspace --release green throughout.)
 - [ ] Phase 8: showcase twin — a "modern" erc20-vault rewrite using
       every M9 feature to fullest effect, kept BESIDE the zero-movement
       direct ports; corpus-verified by the same differential harness
