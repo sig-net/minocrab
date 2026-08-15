@@ -1023,3 +1023,13 @@ stdlib/ledger wrappers where the flavor is fixed and invisible, and
 are byte-shaped hence borsh-identical regardless. Flavor choice
 surfaces ONLY for user-level digests at Compact-interop boundaries.
 No part-Compact/part-MinoCrab contracts expected (dmd).
+
+* Protocol status (dmd 2026-08-15)
+NOTHING LIVE on Midnight (stagenet demo only, will be wiped) — the
+format flip and both work orders are unconditionally greenfield. MPC
+changes go via the handoff document ~/Documents/Midnight/
+MPC-work-order.md ONLY (Felipe mid-branch; do not touch ~/mpc). The
+contract is to be PRESENTED FOR DISCUSSION before integration into
+the rest of the stack — therefore M11 STAGE 7 (the record change) is
+HELD: designed + measured, not implemented, until after that
+discussion. Nothing else blocks on it.
