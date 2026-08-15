@@ -158,9 +158,10 @@ pub fn fork_status(circuit: Circuit) -> Fork {
             "separator encoded; userCommitment one-block",
         ),
         Circuit::CompleteWithdraw => diverged("M10 rung (iii), avenue 2", SEPARATOR),
-        Circuit::Refund => {
-            diverged("M10 rungs (i)+(iii), avenues 7+2", "kernel.self() threaded; separator encoded")
-        }
+        Circuit::Refund => diverged(
+            "M10 rungs (i)+(iii)+5(iv), avenues 7+2+4",
+            "kernel.self() threaded; separator encoded; branch re-mint merged (one commitment hash + one mint, cond_selected inputs)",
+        ),
         Circuit::Withdraw | Circuit::Swap => diverged(
             "M10 rungs (i)+(iii)+(vi), avenues 7+2+6",
             "kernel.self() threaded; separator encoded; burn = single claimed spend, no receive/nullifier",

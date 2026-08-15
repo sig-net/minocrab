@@ -1100,28 +1100,19 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
     request_id
 }
 
-/// Where a guarded re-mint's `kernel.self()` comes from (rung i).
-enum SelfAddr {
-    /// Read inside the mint, under the branch guard — compactc's shape, and
-    /// still the right one where the circuit reads `kernel.self()` exactly
-    /// once (completeWithdraw): there is nothing to share it with, and an
-    /// unguarded read would put an answer in the transcript on the success
-    /// path, which needs none.
-    Guarded,
-    /// An address the circuit already read UNGUARDED. `refund`'s two
-    /// branches are complementary, so one read dominates both mints.
-    Shared(B32<Public>),
-}
-
 /// `refundSurrenderedValue(disclosedRequestId, signatureRequest,
 /// mintNonce)` under the branch guard (completeWithdraw.zkir:286-512):
 /// the withdrawer gate (guarded sk witnesses vs the guarded
 /// refundCommitment.lookup), the calldata reads, and the guarded re-mint
-/// to `left(ownPublicKey())`.
+/// to `left(ownPublicKey())`, its `kernel.self()` read under the same
+/// guard. `completeWithdraw` is the sole caller (`refund` merged its
+/// withdrawal route into a shared mint at rung 5(iv), avenue 4), and it
+/// reads `kernel.self()` exactly once, so the guarded read is correct:
+/// nothing is available to share it with, and an unguarded read would put
+/// an answer in the transcript on the success path, which needs none.
 fn refund_surrendered_value(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
-    me: SelfAddr,
     request_id: &B32<Public>,
     request_id_val: &LedgerValue,
     ev: &VaultRecord,
@@ -1163,14 +1154,7 @@ fn refund_surrendered_value(
         hi: c.disclose(own_pk.hi, "own public key as refund recipient (hi)"),
         lo: c.disclose(own_pk.lo, "own public key as refund recipient (lo)"),
     };
-    match me {
-        SelfAddr::Guarded => common::mint_shielded_token_to_key_guarded(
-            c, guard, &domain_sep, amount, mint_nonce, &own_pk,
-        ),
-        SelfAddr::Shared(me) => common::mint_shielded_token_to_key_with(
-            c, guard, me, &domain_sep, amount, mint_nonce, &own_pk,
-        ),
-    }
+    common::mint_shielded_token_to_key_guarded(c, guard, &domain_sep, amount, mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1233,7 +1217,6 @@ pub fn complete_withdraw() -> Compiled3 {
     refund_surrendered_value(
         &mut c,
         refunding,
-        SelfAddr::Guarded,
         &request_id,
         &request_id_val,
         &ev,
@@ -1404,10 +1387,55 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 /// `export circuit refund(requestId, respondBidirectionalEvent,
 /// serializedOutput: Bytes<5>, mintNonce): []` — settles a withdrawal OR
 /// swap whose transaction NEVER EXECUTED (the MPC attested the fixed
-/// 5-byte failure output), routing on which pending marker holds the id:
-/// the withdrawal branch re-runs refundSurrenderedValue, the swap branch
-/// re-mints the surrendered amountInMaximum of tokenIn to the swapper
-/// (refund.zkir; both branches fully guarded, complementary guards).
+/// 5-byte failure output), routing on which pending marker holds the id.
+///
+/// # Rung 5(iv), avenue 4 — the branch merge
+///
+/// The port (and the pre-merge opt fork) ran the surrendered-value re-mint
+/// TWICE: `refundSurrenderedValue` for the withdrawal route and an inline
+/// re-mint for the swap route. Because guards gate only PI EMISSION and not
+/// in-circuit computation, BOTH copies cost their full rows — a duplicated
+/// `withdrawRefundCommitment(sk, requestId)` hash and a duplicated
+/// `domainSep → tokenType → coinCommitment → mint` block, ~9,430 rows of
+/// dead work (notes/vault-optimization.org §"(c) SPEC-DISCRETIONARY").
+///
+/// This body computes each ONCE. The branch-varying INPUTS — the token
+/// address and the refunded amount — are `cond_select`ed on the route, and
+/// the recipient key and refund commitment are route-independent, so a
+/// SINGLE mint block and a SINGLE commitment hash serve both routes. The
+/// ledger EFFECT ops stay guarded PER ROUTE (the two event-map lookups and
+/// all four map removes carry their branch guard), exactly as before; only
+/// the in-circuit arithmetic is shared. The single mint emits unguarded
+/// because an accepted refund ALWAYS mints exactly once (see below).
+///
+/// ## Why neither route's authorisation weakens (the deliverable)
+///
+/// Authorisation is `withdrawRefundCommitment(callerSecretKey(), requestId)
+/// == storedCommitment`, where `storedCommitment` is looked up from the map
+/// that HOLDS the pending marker. The merge keeps that map route-specific:
+/// `stored = cond_select(isWithdrawal, refundCommitment[id],
+/// swapRefundCommitment[id])`, then one `assert(rc == stored)`.
+/// - The route is decided by `refundCommitment.member(id)` ALONE (as in the
+///   port), and the swap route additionally asserts
+///   `swapRefundCommitment.member(id)`. An id lives in at most one of the
+///   two commitment maps (each was inserted by exactly one of withdraw/swap,
+///   under a keccak-derived id that pins the record's kind), so the routing
+///   is total and disjoint.
+/// - On the withdrawal route (`isWithdrawal = 1`) the guarded
+///   `swapRefundCommitment` lookup emits nothing and its garbage default is
+///   discarded by the `cond_select`; the gate compares against
+///   `refundCommitment[id]` — the value `withdraw` stored, openable only by
+///   the original withdrawer's `sk`. The swap route is symmetric against
+///   `swapRefundCommitment[id]`.
+/// - Therefore a WITHDRAWAL-route id can never be settled through the swap
+///   comparison (it routes `isWithdrawal = 1`, so `stored` is the
+///   refundCommitment value and the swap map/removes are guarded off), and a
+///   SWAP-route id can never be settled through the withdrawal comparison.
+///   This is bit-for-bit the port's authorisation, re-expressed with one
+///   shared hash; the cross-route traps in `gen`/`model` (id in both maps,
+///   id in neither, a swap id offered on the withdrawal route) stay green.
+///
+/// (refund.zkir; the port's two guarded branches, merged.)
 pub fn refund() -> Compiled3 {
     let mut c = Circuit3::new();
     let (args, output) = settle_args(&mut c, |c| {
@@ -1436,6 +1464,7 @@ pub fn refund() -> Compiled3 {
     // The member result is already Public; disclosure is the source's
     // explicit `disclose(...)` on the branch condition, a no-op here.
     let is_withdrawal = map_member(&mut c, one, REFUND_COMMITMENT, &request_id_val);
+    let swapping = c.not(is_withdrawal);
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
@@ -1446,7 +1475,8 @@ pub fn refund() -> Compiled3 {
         lo: c.disclose(args.mint_nonce.lo, "refund mint nonce (lo)"),
     };
 
-    // Withdrawal branch: completeWithdraw's failure path verbatim.
+    // Withdrawal-route record consume (guarded): the VaultRecord and its
+    // removal from the request map.
     let ev = c.region("event map consume", |c| {
         let ev = VaultRecord::from_lookup(minocrab_ledger::map_lookup_guarded(
             c,
@@ -1462,23 +1492,9 @@ pub fn refund() -> Compiled3 {
         );
         ev
     });
-    refund_surrendered_value(
-        &mut c,
-        is_withdrawal,
-        SelfAddr::Shared(me),
-        &request_id,
-        &request_id_val,
-        &ev,
-        &mint_nonce,
-    );
-    emit(
-        &mut c,
-        is_withdrawal,
-        &map_remove(REFUND_COMMITMENT, &request_id_val),
-    );
 
-    // Swap branch: re-mint the surrendered amountInMaximum of tokenIn.
-    let swapping = c.not(is_withdrawal);
+    // Swap-route record consume (guarded): the pending-swap marker assert,
+    // the SwapRecord, and its removal from the swap request map.
     let ev7 = c.region("event map consume", |c| {
         let swap_pending = minocrab_ledger::map_member_guarded(
             c,
@@ -1501,49 +1517,77 @@ pub fn refund() -> Compiled3 {
         );
         ev7
     });
-    c.region("swapper gate", |c| {
-        let sk = common::witness_sk_guarded(c, swapping);
+
+    // Unified claimant gate (avenue 4): the refund commitment is computed
+    // ONCE, and the expected value is `cond_select`ed from the route's own
+    // commitment map — see the circuit doc comment for why this is exactly
+    // the port's per-route authorisation.
+    c.region("claimant gate", |c| {
+        let sk = common::witness_sk(c);
         let rid_priv = B32 {
             hi: request_id.hi.private(),
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = minocrab_ledger::map_lookup_guarded(
+        let wd_stored = minocrab_ledger::map_lookup_guarded(
+            c,
+            is_withdrawal,
+            REFUND_COMMITMENT,
+            &request_id_val,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        let sw_stored = minocrab_ledger::map_lookup_guarded(
             c,
             swapping,
             SWAP_REFUND_COMMITMENT,
             &request_id_val,
             vec![AlignmentAtom::Bytes { length: 32 }],
         );
-        let eq_hi = c.test_eq(rc.hi, stored[0].private());
-        let eq_lo = c.test_eq(rc.lo, stored[1].private());
-        let is_swapper = c.mul(eq_hi, eq_lo);
-        common::assert_if(c, swapping.private(), is_swapper);
-        emit(
-            c,
-            swapping,
-            &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
-        );
+        let stored_hi = c.cond_select(is_withdrawal, wd_stored[0], sw_stored[0]);
+        let stored_lo = c.cond_select(is_withdrawal, wd_stored[1], sw_stored[1]);
+        let eq_hi = c.test_eq(rc.hi, stored_hi.private());
+        let eq_lo = c.test_eq(rc.lo, stored_lo.private());
+        let is_claimant = c.mul(eq_hi, eq_lo);
+        c.assert(is_claimant);
     });
-    common::assert_if(&mut c, swapping, ev7.calldata_is_some());
-    let word5 = ev7.word(5);
-    let amount_in_max = signet::abi_word_to_uint128_guarded(&mut c, swapping, &word5);
-    let word0 = ev7.word(0);
-    let token_in = signet::abi_word_low20(&mut c, &word0);
-    let ds_in = vault_token_domain_separator(&mut c, token_in);
-    let own_pk = minocrab_std::v3::own_public_key_guarded(&mut c, swapping);
-    let own_pk = B32 {
-        hi: c.disclose(own_pk.hi, "own public key as swap-refund recipient (hi)"),
-        lo: c.disclose(own_pk.lo, "own public key as swap-refund recipient (lo)"),
-    };
-    common::mint_shielded_token_to_key_with(
+
+    // The commitment-map removes, guarded per route (ledger EFFECT ops).
+    emit(
+        &mut c,
+        is_withdrawal,
+        &map_remove(REFUND_COMMITMENT, &request_id_val),
+    );
+    emit(
         &mut c,
         swapping,
-        me,
-        &ds_in,
-        amount_in_max,
-        &mint_nonce,
-        &own_pk,
+        &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
+    );
+
+    // Unified re-mint (avenue 4): cond_select the branch-varying token and
+    // amount, then run ONE domainSep → tokenType → coinCommitment → mint.
+    // The withdrawal route mints `abiWordToUint128(word1)` of the record's
+    // `to` token; the swap route mints `abiWordToUint128(word5)` (the
+    // surrendered amountInMaximum) of `word0`'s low-20 token. The unused
+    // decode is guarded off (no canonicity assert on the garbage record) or
+    // assert-free (`abi_word_low20`).
+    common::assert_if(&mut c, is_withdrawal, ev.calldata_is_some());
+    common::assert_if(&mut c, swapping, ev7.calldata_is_some());
+    let word1 = ev.word(1);
+    let amount_wd = signet::abi_word_to_uint128_guarded(&mut c, is_withdrawal, &word1);
+    let word5 = ev7.word(5);
+    let amount_sw = signet::abi_word_to_uint128_guarded(&mut c, swapping, &word5);
+    let amount = c.cond_select(is_withdrawal, amount_wd, amount_sw);
+    let word0 = ev7.word(0);
+    let token_sw = signet::abi_word_low20(&mut c, &word0);
+    let token = c.cond_select(is_withdrawal, ev.to(), token_sw);
+    let domain_sep = vault_token_domain_separator(&mut c, token);
+    let own_pk = minocrab_std::v3::own_public_key(&mut c);
+    let own_pk = B32 {
+        hi: c.disclose(own_pk.hi, "own public key as refund recipient (hi)"),
+        lo: c.disclose(own_pk.lo, "own public key as refund recipient (lo)"),
+    };
+    common::mint_shielded_token_to_key_with(
+        &mut c, one, me, &domain_sep, amount, &mint_nonce, &own_pk,
     );
 
     c.finish(true)

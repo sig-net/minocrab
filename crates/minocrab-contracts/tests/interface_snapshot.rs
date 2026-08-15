@@ -343,14 +343,10 @@ in  respond_recoveryId: Scalar<BLS12-381>
 in  serializedOutput: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
 ",
     ),
     (

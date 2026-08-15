@@ -3325,8 +3325,21 @@ impl RefundScenario {
                     true,
                     &self.own_pk,
                 );
-                ops.extend(mint(vault_domain_sep(self.art(), &w.erc20), w.amount_u64(), cm));
-                ops.extend(remove(erc20_vault::REFUND_COMMITMENT));
+                let mint_ops =
+                    mint(vault_domain_sep(self.art(), &w.erc20), w.amount_u64(), cm);
+                let remove_ops = remove(erc20_vault::REFUND_COMMITMENT);
+                if self.art() == Art::Opt {
+                    // Rung 5(iv), avenue 4: the merged re-mint runs after BOTH
+                    // routes' guarded commitment-map removes, so on the
+                    // withdrawal route the refundCommitment remove precedes the
+                    // single mint. The port keeps compactc's order (mint, then
+                    // remove).
+                    ops.extend(remove_ops);
+                    ops.extend(mint_ops);
+                } else {
+                    ops.extend(mint_ops);
+                    ops.extend(remove_ops);
+                }
             }
             RefundRoute::Swap(s) => {
                 ops.extend(member(erc20_vault::REFUND_COMMITMENT, 0));
