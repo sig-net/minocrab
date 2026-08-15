@@ -716,3 +716,23 @@ Exit criteria: the vault calls the Signet singleton through an
 imported interface crate with every gate green; a Compact-only
 artifact imports via the generator; the conventions doc exists; the
 README showcases it.
+
+* M13 — README overhaul (dmd 2026-08-15: "showcase as many features
+as possible... compare vs Compact... keep the vibe coding line")
+Structure agreed in session: header + vibe-coding line verbatim →
+MinoCrab-vs-Compact feature table (Rust-not-DSL / cargo package
+manager / Borsh subset vs FAB / measured perf / native execution in
+cargo test / drift-as-test-failure / typed-args-are-range-constraints /
+disclosure tracking / profiler / const generics), EVERY ROW LINKING TO
+THE TEST OR DOC THAT ENFORCES IT (the differentiator: claims are
+verified, not asserted) → side-by-side deposit (marker refreshed:
+#[circuit] is real) → PORTING KIT section (corpus 788 artifacts + the
+differential harness: you or your LLM port, the harness proves
+statement-identity against compactc's artifact) → trust bullets (9M
+cases) → benchmarks condensed → layout/deeper. EXCLUDE until landed:
+Discloses labels, maps/predicates (M9 6-7). Runs AFTER the closing
+agent's README sections land; keep its voice (show-not-tell, no
+adjectives, honest markers).
+- [ ] The overhaul per the structure above.
+Exit criteria: dmd recognizes the README as the feature showcase; every
+factual claim carries its enforcement link.
