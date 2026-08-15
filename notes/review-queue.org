@@ -1,0 +1,38 @@
+#+title: Deferred code-review queue
+
+Fable-usage economy (dmd 2026-08-15, at 94% usage): supervision runs
+light — gates (row/interface snapshots, 13 differential suites, spec
+harness) are trusted, diffs are NOT read in-session. Anything that
+would have warranted human-grade review is queued here instead; run a
+/code-review session over these when convenient. Items are appended as
+stages land; tick when reviewed.
+
+* High value (protocol/soundness-adjacent)
+- [ ] f102ffe M10 burn restructure (erc20_vault_opt withdraw/swap):
+      the single-claimed-spend lowering + the well-formedness test
+      (044a132). Gates were green; the ledger-semantics argument
+      deserves human eyes.
+- [ ] 66e5480 M10 refund branch merge: the cond_select authorization
+      argument ("routing total and disjoint") — verify the written
+      proof matches the code.
+- [ ] e6dd119 Poseidon refund commitments: durability comment +
+      concretization arms in tests/vault/prims.rs.
+- [ ] 144b9c0 M10 verification harness: the nine spec_* functions vs
+      the Compact source (the specs ARE the security definition; the
+      agent verified against source, un-reviewed by human).
+- [ ] 2857631 one-block userCommitment: the preimage layout change
+      (43-byte, single SHA block) at all three sites.
+
+* Medium (API/architecture)
+- [ ] b353e8f/43cc92d #[circuit] attribute expansion + the four
+      re-ports (thinness token test exists; macro hygiene worth a
+      skim).
+- [ ] a565cf5/1375c42 const-generic Signet event family + vault retype
+      (older, all gates green since).
+- [ ] M11 stage 0 conformance suite (when landed): spec-type widths vs
+      signet.rs atoms — transcription-error risk.
+
+* Standing instruction
+Future stage agents' commits land gate-checked but diff-unreviewed;
+append one line here per landed stage naming the commit + what a
+reviewer should look at.
