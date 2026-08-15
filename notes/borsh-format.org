@@ -1212,3 +1212,170 @@ so a wrong offset shows up as a wrong byte rather than as a plausible one.
   the explicit permission to use neither: "every offset in §9 is a constant,
   so a DataView at the published offset is a complete decoder — this format
   requires the offsets, not a library".
+
+* As built — stage 10 (2026-08-15)
+=spec/ts/= — the published decoder: a reader, a writer, an offset table and a
+codec for every type the spec's tables and vectors cover, GENERATED from the
+same Borsh schema walk stage 8 publishes §9 from. Dependency-free in the
+strong sense: no npm packages, no =node_modules=, no =package.json=; the
+committed tree is six files and =borsh-subset.ts= imports nothing but
+=./primitives.ts=, which imports nothing at all. NO code under src/ touched;
+row_snapshot and interface_snapshot bit-identical; =cargo test --workspace
+--release= green (68 test binaries).
+
+** THE CODE CANNOT DRIFT EITHER, and that is the same design
+Stage 8 made the DOCUMENT a test fixture; this makes the CODE one. Everything
+committed under =spec/ts/= is the output of one =--ignored= test — the same
+=spec_document::regenerate_spec= that writes the document and the vectors, now
+writing a third thing — and two new checks fail if it stops being:
+- =the_committed_typescript_is_generated= — every file byte for byte, AND the
+  directory holding exactly the generated names (stage 8's rule, verbatim);
+- =every_vector_type_has_a_typescript_codec= — every vector's type, with its
+  parenthetical annotation stripped, is a key of the generated =CODECS=
+  registry. THE LOOP-CLOSER between the two stages: a new vector for a type
+  the codegen does not cover fails in Rust, before anyone runs node.
+So the offsets in the TypeScript are not transcribed from §9's tables — they
+are the same rows, emitted twice. =getU64(view, 148)= and the table row
+=| 148 | 8 | tx_params.nonce | u64 |= come from one walk of one schema.
+
+** What is generated, and what the generator is
+=crates/minocrab-contracts/tests/serialization/ts_codegen.rs= (~560 lines,
+test-tree only). It re-NESTS the flat layout rows — the walker emits
+=tx_params.calldata.value.words[0]=, and the tree that path implies is the
+TypeScript type — then emits, per type:
+- =VAULT_EVENT_LEN= (the fixed width, the whole point of the subset);
+- =VAULT_EVENT_FIELDS: readonly FieldSpec[]= — §9's table AS DATA, keeping the
+  SPEC's snake_case paths beside the camelCase TS fields, so the two spellings
+  sit next to each other in the published file;
+- =interface VaultEvent= — nested object types, fixed-length TUPLES for arrays
+  (=readonly [Uint8Array, Uint8Array]=, never =T[]=: there is no length prefix
+  to read, so a variable-length type would be the wrong statement);
+- =readVaultEvent(bytes, offset = 0)= — one =checkedView= and then nothing but
+  literal offsets: =sender: getBytes(view, 0, 32)=, =requestNonce:
+  getU64(view, 32)=;
+- =writeVaultEvent(value, out = new Uint8Array(LEN), offset = 0)=;
+- =vaultEventLeaves(value)= — the leaves in declaration order, one per
+  =FIELDS= entry, which is what lets the vector suite check a DECODED value
+  leaf by leaf instead of just re-hashing bytes;
+- =vaultEventCodec=, and a =CODECS= registry keyed by the spec's own names
+  (=AttestationPreimage<SwapResponse>=, =[u8; 20]=, =Flagged<u32>=).
+28 types: the leaf table as types (bool, u8..u128, three byte arrays,
+=Flagged<u32>=) followed by every type =schema_containers()= lists, which IS
+§9's list.
+
+** DEVIATION: generated from the spec types' borsh schema, not from CircuitBorsh::layout()
+The brief says "from =CircuitBorsh::layout()=". The generator walks
+=borsh::schema_container_of::<SpecType>()= through
+=minocrab_std::v3::borsh::schema::layout_rows= instead — the same function
+stage 8's tables come from — for three reasons, and the substitution is
+checked, not assumed:
+1. stage 3's =#[borsh(spec = …)]= cross-check ALREADY proves
+   =CircuitBorsh::layout() == rows_of::<Spec>()= for the derived circuit
+   types, row for row (=assert_matches_schema=), so the two walks are the same
+   table by test, not by hope;
+2. the vectors and §9 are generated from the schema walk, and the TS has to
+   cover EXACTLY what the vectors cover — generating the code from a different
+   walk would have introduced the one seam this stage exists to remove;
+3. several published types (=AttestationPreimage<T>=, the deployed outputs,
+   =[u8; 20]=) have no circuit twin at all: they are spec types, and
+   =layout()= is a method on things a circuit builds.
+
+** DEVIATION: the hand-written files are copied, not hand-placed
+Gate: "the directory holds exactly the generated names". So =primitives.ts=,
+=vectors.test.ts=, =node-builtins.d.ts=, =tsconfig.json= and =README.md= are
+=include_str!=-ed from =tests/serialization/ts/= — WHERE THEY ARE EDITED — and
+written out by the same regenerator, with the README's type table substituted
+in. The published copy is therefore generator output like everything else, and
+editing =spec/ts/primitives.ts= directly fails the drift test with the
+regeneration command in the message. This is a real cost (two copies of five
+files in the tree) bought for a real property: =spec/ts/= is checkable by ONE
+rule, and there is no "except these files" clause for someone to widen later.
+The alternative considered — stage 8's prose-around-a-marked-region trick —
+does not transfer: a decoder has no prose half.
+
+** primitives.ts: where the reject rules live
+=DataView= plus the rules §4 states, on BOTH sides:
+- =getBool= throws on any byte but 0x00/0x01 — the 0x02 hazard, closed in the
+  decoder as stage 5 closed it in the circuit;
+- =checkedView= makes a short buffer a named failure rather than a NaN;
+- the SETTERS range-check too, because these types are erased and a JavaScript
+  caller has none of them (=writeSwapResponse({kind: 2, amountIn: 1n << 64n})=
+  throws);
+- =unwrapMiscEnvelope= enforces the §3 zero-pad rule on the 288-byte =Misc=
+  envelope: the pad is part of the preimage, so a non-zero pad is a rejection.
+=encodeLeaf(field, value)= encodes ONE leaf from its =FieldSpec= — the generic
+path the vector suite uses to check a decoded value against a vector's
+=fields=.
+
+** The vector suite: 39 node tests, green, and NOT vacuous
+=node --test spec/ts/vectors.test.ts= — 39 tests, 0 failures, ~140 ms. Per
+vector (all 29, across all five files): the generated codec's =byteLength= is
+the vector's =len=; =sha256(hex)= matches (node's own =node:crypto=; keccak256
+is not a node builtin, so the vectors' keccak is checked on the Rust side
+only); the codec's =fields= EQUAL the vector's field list (path, type, offset,
+width) one by one; each field's hex is the value's own slice; each DECODED
+leaf re-encodes to that hex; the decoded =number= matches (via =Number(...)=
+on both sides, because a u128's decimal is past what a JSON number holds
+exactly — the hex is the real check); =write(read(bytes))= is the same bytes;
+the same round trip at offset 3 of a bigger buffer, with the neighbouring
+bytes proven untouched; and, where the vector carries an envelope, the payload
+unwraps out of the 288-byte =Misc= with the pad rule enforced. Plus four
+hand-written reject tests (non-boolean bool, short buffer, out-of-range
+integer on the way out, =Flagged= fixed-width at both tags).
+MUTATION-CHECKED, twice, because a green suite over generated code can be a
+tautology: shifting one generated offset (=getU64(view, 148)= ↦ =149=) fails 2
+tests; flipping =getUint16= to big-endian fails 3. The vectors are the
+independent side — they come from Rust, and the TS never computes them.
+
+** Toolchain: nix supplies node, cargo still builds the crate
+=flake.nix='s devshell gained =pkgs.nodejs_22= (v22.23.2) and =pkgs.typescript=
+(tsc 5.9.3) — BINARIES ONLY, exactly as the hard rule says: nothing in the
+cargo build learned about node, and =spec/ts/= is not a package. Node runs the
+=.ts= files directly by stripping types (unflagged since node 22.18), so there
+is no build step and no emitted JavaScript to keep in sync;
+=tsconfig.json= sets =erasableSyntaxOnly= so tsc REFUSES syntax node could not
+strip, and =types: []= so nothing is silently resolved out of a
+=node_modules= that does not exist. =node-builtins.d.ts= declares the five
+node APIs the test file uses (=node:test=, =node:assert/strict=, =node:fs=,
+=node:path=, =node:crypto=), which is how the tree type-checks with no
+=@types/node=.
+
+** The three commands
+#+begin_src sh
+# regenerate spec/borsh-subset.md's tables, spec/vectors/*.json AND spec/ts/
+cargo test --release -p minocrab-contracts --test serialization_conformance -- \
+    --ignored --nocapture regenerate_spec
+# the TypeScript vector suite (inside `nix develop`)
+node --test spec/ts/vectors.test.ts
+tsc --noEmit -p spec/ts
+#+end_src
+=cargo test -p minocrab-contracts --test serialization_conformance -- --ignored
+the_typescript_vectors_pass= runs the node suite from cargo, for anyone who
+would rather have one runner; it is =--ignored= because a bare =cargo test=
+cannot assume node.
+
+** Gotchas worth keeping
+- =module: esnext= + =moduleResolution: bundler= in the tsconfig, NOT
+  =nodenext=: with no =package.json= tsc reads a =.ts= file as CommonJS and
+  rejects every =import= under =verbatimModuleSyntax=. Node itself needs no
+  such declaration (module detection), so adding a =package.json= to satisfy
+  the type-checker would have put a package manifest in a tree whose selling
+  point is not needing one.
+- Vector types carry parenthetical annotations (="VaultResponse (kind 0,
+  CLAIM, success)"=) — they are VALUES of a type, not types. The registry key
+  is the name with the annotation stripped, in the generator and in the suite.
+- =AttestationPreimage<CompleteWithdrawOutput>= and
+  =AttestationPreimage<RefundOutput>= have codecs and no vector: they are in
+  §9's tables, so they are in the decoder. The coverage test runs
+  vectors → codecs, deliberately, not the other way.
+
+** Not done, deliberately
+- No JavaScript build output, no =package.json=, no npm publish, no
+  =borsh-js= comparison test in the suite. The README and §8 say borsh-js is
+  an equally correct choice and why; wiring an npm dependency into this tree
+  to prove it would contradict the sentence it proves.
+- No keccak256 in the TS suite (not a node builtin, and a hand-rolled Keccak
+  in a spec artifact is exactly the kind of thing this stage exists to avoid).
+  The vectors' keccak fields are checked in Rust.
+- No generated MPC-side (Go/Python) decoder. Same generator would do it; no
+  consumer has asked, and the spec's offsets are what a Go implementer needs.

@@ -9,6 +9,10 @@ redefined, no framing is added, no field is reordered, and no length or tag is
 invented. If you already have a Borsh library, you already have a decoder: write
 the struct declarations in this document and call it.
 
+And if you would rather not: [`spec/ts/`](ts/) is a **generated**,
+dependency-free TypeScript reader and writer for every type below, walked out
+of the same layout these tables are (§8, §12).
+
 The subset exists for exactly one reason: **a circuit cannot have
 data-dependent layout.** A zero-knowledge circuit's instruction stream is fixed
 before any value exists, so every field offset has to be a compile-time
@@ -246,6 +250,14 @@ simpler: every offset in §9 is a constant, so a `DataView` (or a Go
 `encoding/binary` read, or a Rust `from_le_bytes` on a slice) at the published
 offset is a complete decoder. Nothing in this format requires a Borsh library —
 it requires the offsets, and they are constants.
+
+You do not have to write that reader either: [`spec/ts/`](ts/) is one, for
+every type in §9, **generated from the same layout** — `readVaultEvent`,
+`writeVaultEvent`, an offset table per type as data, and a codec registry keyed
+by the names §9 uses. It imports nothing, there is no `package.json`, and its
+tests decode every vector in §10 and re-encode it to byte equality
+(`node --test spec/ts/vectors.test.ts`). `borsh-js` remains an equally correct
+choice; the point is that the dependency is a choice.
 
 Whichever you choose, the rejection rules of §4 are part of the format, not
 optional hardening.
@@ -487,19 +499,22 @@ Read this before implementing.
 
 ## 12. Provenance
 
-Every offset and every byte in this document is generated from the same type
-declarations the circuits are built from and the conformance suite checks. To
-regenerate after an intentional change:
+Every offset and every byte in this document — and every line of the
+TypeScript in `spec/ts/` — is generated from the same type declarations the
+circuits are built from and the conformance suite checks. To regenerate after
+an intentional change:
 
 ```
 cargo test --release -p minocrab-contracts --test serialization_conformance -- \
     --ignored --nocapture regenerate_spec
 ```
 
-and commit the diff. Three tests fail if the committed artifact stops being the
-generator's output, so this document cannot drift from the format:
-`the_committed_offset_tables_are_generated`,
-`the_committed_vectors_are_generated`, `every_vector_is_tiled_by_its_fields`.
+and commit the diff. Five tests fail if the committed artifact stops being the
+generator's output, so neither this document nor the code that reads it can
+drift from the format: `the_committed_offset_tables_are_generated`,
+`the_committed_vectors_are_generated`, `every_vector_is_tiled_by_its_fields`,
+`the_committed_typescript_is_generated`,
+`every_vector_type_has_a_typescript_codec`.
 
 Design of record and the measurements behind these decisions:
 `notes/borsh-format.org`.

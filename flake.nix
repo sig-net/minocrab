@@ -73,6 +73,13 @@
             rustToolchain
             pkgs.cargo-nextest
             compactc
+            # M11 stage 10: the published TypeScript decoder in spec/ts/ and
+            # its vector-driven tests. BINARIES ONLY, as ever — node runs the
+            # tests (`node --test`, no test framework) and tsc type-checks
+            # them; neither the crate build nor the generated TS depends on
+            # them, and spec/ts/ has no npm dependencies at all.
+            pkgs.nodejs_22
+            pkgs.typescript
           ];
         };
       });

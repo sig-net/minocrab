@@ -1088,19 +1088,20 @@ fn print_layout_snapshot() {
     }
 }
 
-// ---- (f) THE PUBLISHED SPEC (M11 stage 8) --------------------------------------
+// ---- (f) THE PUBLISHED SPEC (M11 stages 8 and 10) ------------------------------
 //
-// `spec/borsh-subset.md` and `spec/vectors/*.json` are the artifact the TS and
-// MPC sides implement against. The prose is hand-written; every OFFSET and
-// every BYTE in them is generated from the same schema walk this suite
-// checks, and the two tests below fail if the committed files stop being that
-// generator's output. A spec that can drift from the format is worse than no
-// spec, so the document is a test fixture as much as a document.
+// `spec/borsh-subset.md`, `spec/vectors/*.json` and `spec/ts/` are the
+// artifact the TS and MPC sides implement against. The prose is hand-written;
+// every OFFSET, every BYTE and every line of the TypeScript DECODER is
+// generated from the same schema walk this suite checks, and the tests below
+// fail if the committed files stop being that generator's output. A spec that
+// can drift from the format is worse than no spec, so the document — and now
+// the code that reads it — is a test fixture as much as a deliverable.
 
 mod spec_document {
     use super::*;
 
-    use serialization::spec_doc;
+    use serialization::{spec_doc, ts_codegen};
 
     /// The generated region of `spec/borsh-subset.md` IS
     /// `spec_doc::offset_tables_markdown()` — same types, same order, same
@@ -1193,8 +1194,89 @@ mod spec_document {
         }
     }
 
+    /// Every committed file of `spec/ts/` IS the generator's output (M11
+    /// stage 10), and the directory holds exactly those files.
+    ///
+    /// `borsh-subset.ts` is walked out of the same Borsh schema the offset
+    /// tables are, so a format change that misses the TypeScript is a failing
+    /// test rather than a decoder that silently reads the wrong offsets; the
+    /// hand-written files beside it are copied verbatim from
+    /// `tests/serialization/ts/`, which is where they are edited.
+    #[test]
+    fn the_committed_typescript_is_generated() {
+        let dir = spec_doc::spec_dir().join("ts");
+        let files = ts_codegen::ts_files();
+        for (name, want) in &files {
+            let path = dir.join(name);
+            let got = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+            assert_eq!(
+                &got, want,
+                "{} is not the generated file — regenerate with the `regenerate_spec` test",
+                path.display()
+            );
+        }
+
+        let mut committed: Vec<String> = std::fs::read_dir(&dir)
+            .expect("spec/ts exists")
+            .map(|entry| entry.expect("readable").file_name().to_string_lossy().into_owned())
+            .collect();
+        committed.sort();
+        let mut expected: Vec<String> = files.iter().map(|(name, _)| name.to_string()).collect();
+        expected.sort();
+        assert_eq!(committed, expected, "spec/ts holds a file nobody generates");
+    }
+
+    /// Every vector has a generated TypeScript codec to decode it with —
+    /// keyed by the vector's own type name with its parenthetical annotation
+    /// stripped, which is the lookup `vectors.test.ts` performs.
+    ///
+    /// The loop-closer between stage 8 and stage 10: a new vector for a type
+    /// the codegen does not cover fails HERE, in Rust, rather than in the
+    /// node suite.
+    #[test]
+    fn every_vector_type_has_a_typescript_codec() {
+        let codecs: Vec<&str> = ts_codegen::ts_types().iter().map(|(name, _)| *name).collect();
+        let mut seen = 0usize;
+        for (file, text) in spec_doc::vector_files() {
+            let parsed: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("{file} is not JSON: {e}"));
+            for vector in parsed["vectors"].as_array().expect("vectors is an array") {
+                let ty = vector["type"].as_str().expect("type");
+                let base = ty.split(" (").next().expect("a non-empty type name");
+                assert!(
+                    codecs.contains(&base),
+                    "{file}/{ty}: no TypeScript codec for `{base}` — add it to \
+                     `ts_codegen::ts_types` and regenerate spec/ts"
+                );
+                seen += 1;
+            }
+        }
+        assert!(seen >= 29, "the vectors shrank to {seen} — that is a spec change, not a test fix");
+    }
+
+    /// The node side, from cargo: `node --test spec/ts/vectors.test.ts`.
+    ///
+    /// `#[ignore]`d because it needs a node toolchain, which the flake's
+    /// devshell supplies (`nix develop`) and a bare `cargo test` cannot
+    /// assume. The TypeScript suite decodes every vector with the generated
+    /// codec, checks it leaf by leaf and re-serializes it to byte equality;
+    /// this is only the shortcut for running it beside the Rust ones.
+    #[test]
+    #[ignore = "needs node (nix develop supplies it)"]
+    fn the_typescript_vectors_pass() {
+        let root = spec_doc::spec_dir().join("..");
+        let status = std::process::Command::new("node")
+            .current_dir(&root)
+            .args(["--test", "spec/ts/vectors.test.ts"])
+            .status()
+            .expect("node is on PATH — run inside `nix develop`");
+        assert!(status.success(), "the TypeScript vector suite failed");
+    }
+
     /// Regeneration helper: rewrites the generated region of
-    /// `spec/borsh-subset.md` and every `spec/vectors/*.json`.
+    /// `spec/borsh-subset.md`, every `spec/vectors/*.json` and every
+    /// `spec/ts/` file.
     #[test]
     #[ignore = "regeneration helper, not a check"]
     fn regenerate_spec() {
@@ -1216,6 +1298,14 @@ mod spec_document {
         for (name, contents) in spec_doc::vector_files() {
             let path = vectors.join(name);
             std::fs::write(&path, contents).expect("the vector file is writable");
+            println!("wrote {}", path.display());
+        }
+
+        let ts = dir.join("ts");
+        std::fs::create_dir_all(&ts).expect("spec/ts is creatable");
+        for (name, contents) in ts_codegen::ts_files() {
+            let path = ts.join(name);
+            std::fs::write(&path, contents).expect("the TypeScript file is writable");
             println!("wrote {}", path.display());
         }
     }

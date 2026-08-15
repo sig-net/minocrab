@@ -19,6 +19,9 @@
 //!   offset tables and `spec/vectors/*.json`, generated from the same schema
 //!   walk, so the document a TS or MPC implementer reads cannot drift from
 //!   the format the suite checks.
+//! - [`ts_codegen`] — the published DECODER (M11 stage 10): `spec/ts/`, the
+//!   dependency-free TypeScript reader/writer for those same types, generated
+//!   from the same walk so the code cannot drift from the document either.
 //!
 //! Not a test target (subdirectory of `tests/`). Requires `mod vault;` in
 //! the same binary: the deployed side reuses M10's reference model and
@@ -30,3 +33,4 @@ pub mod oracle;
 pub mod records;
 pub mod spec_doc;
 pub mod spec_types;
+pub mod ts_codegen;

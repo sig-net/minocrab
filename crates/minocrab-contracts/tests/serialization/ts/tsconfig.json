@@ -1,0 +1,19 @@
+{
+  "//": "GENERATED — do not edit; source: crates/minocrab-contracts/tests/serialization/ts/tsconfig.json",
+  "//module": "ESM, resolved the way an import that already names its file resolves: this tree has no package.json to put `type: module` in, because it has nothing to declare — no dependencies, nothing to install. `erasableSyntaxOnly` is the guarantee that node can run these files by stripping the types.",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["*.ts"]
+}

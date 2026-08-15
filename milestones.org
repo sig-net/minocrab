@@ -675,10 +675,52 @@ external value and no dependency on 1-7.
       LINE, no new package. Deliberately absent: a keccak256 flavor
       pair — the borsh keccak path already exists and is used, and no
       Compact-interop keccak digest exists to disambiguate against.)
+- [X] 10. TypeScript parser codegen (dmd 2026-08-15): generate TS
+      reader/writer code from CircuitBorsh::layout() (fixed offsets →
+      DataView accessors, dependency-free) into spec/ts/, validated
+      against spec/vectors/*.json (vector-driven tests; borsh-js
+      remains the library alternative). Then M13 may claim native
+      parser generation in BOTH languages.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 10".
+      spec/ts/: six files, 28 types, a reader + a writer + §9's offset
+      table AS DATA + a codec registry keyed by the spec's own names,
+      all walked out of the SAME schema walk that generates §9 and the
+      vectors — =getU64(view, 148)= and the table row for
+      tx_params.nonce are one walk emitted twice. Dependency-free in
+      the strong sense: no npm packages, no node_modules, no
+      package.json; borsh-subset.ts imports only primitives.ts and
+      primitives.ts imports nothing. THE CODE CANNOT DRIFT EITHER:
+      stage 8's regenerator now writes a third thing, and two new tests
+      fail if it stops being the committed one —
+      the_committed_typescript_is_generated (byte for byte, and the
+      directory holding exactly the generated names) and
+      every_vector_type_has_a_typescript_codec (the loop-closer: a new
+      vector for an uncovered type fails in Rust, before node runs).
+      39 node tests green: every vector decoded, its fields checked
+      against the codec's offset table one by one, every DECODED leaf
+      re-encoded to the vector's hex, byte-equal re-serialization at
+      offset 0 and at offset 3 of a bigger buffer, the 288-byte Misc
+      pad rule enforced, plus four reject tests (the 0x02 hazard, short
+      buffer, out-of-range write, Flagged fixed-width at both tags).
+      MUTATION-CHECKED so the suite cannot be a tautology: shifting one
+      generated offset fails 2 tests, flipping a getUint16 to
+      big-endian fails 3. Deviations: generated from the spec types'
+      BORSH SCHEMA rather than CircuitBorsh::layout() — stage 3's
+      cross-check already proves the two equal, the vectors come from
+      the schema walk, and several published types have no circuit twin
+      — and the hand-written files (primitives, tests, tsconfig,
+      README, node-builtins.d.ts) are include_str!-copied from
+      tests/serialization/ts/ so that "everything in spec/ts is
+      generator output" has no exceptions clause. Nix supplies nodejs_22
+      + typescript as BINARIES ONLY; node runs the .ts directly by type
+      stripping, so there is no build step and no emitted JS.)
 Exit criteria: the spec document and vectors exist and the TS/MPC side
 can implement against them; every in-circuit encoder is byte-equal to
 both oracles at millions of cases; the record change's k movement is
 measured and published.
+NOTE stage 7 is HELD by dmd (notes/borsh-format.org §"Protocol
+status"): designed + measured, not implemented, until the contract is
+presented for discussion. Nothing else blocks on it.
 
 * M12 — Interface crates: import a contract's crate to call it
 (dmd, 2026-08-15: "import someone else's crate and use it for your
