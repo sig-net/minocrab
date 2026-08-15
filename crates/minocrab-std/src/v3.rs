@@ -683,6 +683,35 @@ impl<V: Vis3> Default for Serializer<V> {
     }
 }
 
+/// Compact's `Secp256k1Point` as a circuit ARGUMENT: one slot, of ZKIR type
+/// `Point<Secp256k1>` rather than the native field.
+///
+/// It is the odd one out among the typed leaves in exactly one way, and the
+/// way matters: its slot is not a `Wire3<FieldT, _>`, so it carries no range
+/// constraint at all (`Prim::Point` → `LimbConstraint::None`, which is
+/// compactc's own `[(tpoint ,ctype) instr*]` line) and
+/// [`CircuitArg::push_slots`] hands back nothing for it. Everything else — a
+/// slot in the argument list, an entry in the FAB alignment — is as usual.
+///
+/// The FAB atoms are `encode()`'s five limbs (x as bytes 24+8, y as bytes
+/// 24+8, then the infinity flag as a field), notes/ledger-abi.org §3: one
+/// slot, five atoms, the same way a `Bytes<32>` is two slots and one atom.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Secp256k1Point<V: Vis3 = Private>(Wire3<Secp256k1PointT, V>);
+
+impl<V: Vis3> Secp256k1Point<V> {
+    /// Wrap a point wire (a circuit argument, or a ledger read's result).
+    pub fn from_point(w: Wire3<Secp256k1PointT, V>) -> Self {
+        Secp256k1Point(w)
+    }
+
+    /// The point wire — the same slot, no instructions.
+    pub fn point(self) -> Wire3<Secp256k1PointT, V> {
+        self.0
+    }
+}
+
 /// `struct Secp256k1EcdsaSignature { r: Secp256k1Scalar, s: Secp256k1Scalar }`
 #[derive(Clone, Copy)]
 pub struct Secp256k1EcdsaSignature<V: Vis3> {

@@ -19,7 +19,8 @@
 //!    FAB atoms of the Compact type the argument stands for), and
 //!    `push_prims` gives the flattened primitive type of each one.
 //! 3. `push_slots` hands back exactly those slots' wires, in the same
-//!    order.
+//!    order — every slot except the curve-point ones, whose wires are not
+//!    field elements (see [`CircuitArg::push_slots`]).
 //!
 //! Law 3 used to read "`constrain` emits exactly the input constraints
 //! compactc emits for that Compact type" — every impl carried its own copy
@@ -36,10 +37,12 @@
 //! and orders the two phases so law 3's "in slot order" is all an impl has
 //! to get right.
 
-use minocrab::v3::{Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 
-use super::{Bool, Bytes, BytesN, ContractAddress, Either, Maybe, Uint, Vis3, B32};
+use super::{
+    Bool, Bytes, BytesN, ContractAddress, Either, Maybe, Secp256k1Point, Uint, Vis3, B32,
+};
 
 // ---- argument paths ---------------------------------------------------------
 
@@ -115,8 +118,18 @@ pub trait CircuitArg: CircuitAbi + Sized {
     /// Declare the slots — `Circuit3::arg` calls and nothing else.
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
 
-    /// This value's slots, in slot order — exactly [`CircuitAbi::SLOTS`] of
-    /// them, matching [`CircuitAbi::push_prims`] one for one.
+    /// This value's NATIVE slots, in slot order — matching
+    /// [`CircuitAbi::push_prims`] one for one, skipping the slots whose
+    /// primitive type is [`Prim::Point`].
+    ///
+    /// The skip is not an exception to law 3, it is the only way to state
+    /// it: a curve-point slot holds a `Wire3<Secp256k1PointT, _>`, not a
+    /// field element, and compactc's constraint table has nothing to say
+    /// about it (`(tpoint …) → no constraint`). Everything a slot list is
+    /// used for — emitting constraints, hashing a value's FAB
+    /// representation — is native-field work, so a point contributes no
+    /// entry. `Prim::Point` marks exactly those positions, which is what
+    /// [`CircuitArg::constrain`] filters on.
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>);
 
     /// Emit compactc's input constraints for this type, in slot order.
@@ -129,11 +142,17 @@ pub trait CircuitArg: CircuitAbi + Sized {
     fn constrain(&self, c: &mut Circuit3) {
         let mut slots = Vec::with_capacity(Self::SLOTS);
         self.push_slots(&mut slots);
-        let prims = Self::prims();
+        // Point slots are not field wires and carry no constraint, so
+        // `push_slots` never hands one back (see its docs); the rest line up
+        // with the remaining primitive types one for one.
+        let prims: Vec<Prim> = Self::prims()
+            .into_iter()
+            .filter(|prim| !matches!(prim, Prim::Point))
+            .collect();
         assert_eq!(
             slots.len(),
             prims.len(),
-            "CircuitArg::push_slots gave {} slots for {} primitive types",
+            "CircuitArg::push_slots gave {} slots for {} native primitive types",
             slots.len(),
             prims.len()
         );
@@ -235,6 +254,35 @@ impl CircuitArg for B32<Private> {
         slots.push(self.hi);
         slots.push(self.lo);
     }
+}
+
+/// Compact's `Secp256k1Point`: ONE slot that is not a field element — see
+/// [`Secp256k1Point`] for why it has no constraint and no native slot, and
+/// notes/ledger-abi.org §3 for the five-atom alignment.
+impl<V: Vis3> CircuitAbi for Secp256k1Point<V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Bytes { length: 24 }); // x, low 24 bytes
+        atoms.push(AlignmentAtom::Bytes { length: 8 }); // x, high 8 bytes
+        atoms.push(AlignmentAtom::Bytes { length: 24 }); // y, low 24 bytes
+        atoms.push(AlignmentAtom::Bytes { length: 8 }); // y, high 8 bytes
+        atoms.push(AlignmentAtom::Field); // the infinity flag
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Point);
+    }
+}
+
+impl CircuitArg for Secp256k1Point<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        Secp256k1Point::from_point(c.arg::<Secp256k1PointT>(path.as_str()))
+    }
+
+    /// A point slot is not a native field wire: nothing to constrain, and
+    /// nothing a slot list could carry it as.
+    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }
 
 /// Compact's `ContractAddress`: a struct of one `Bytes<32>`, which flattens

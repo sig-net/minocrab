@@ -5,11 +5,11 @@
 //! `assert_bits` block. Serialized-ZKIR equality also pins the argument
 //! LABELS, which appear in the stream as `%name.index`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::{
     entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, CircuitArgs, Either,
-    Maybe, Uint, B32,
+    Maybe, Secp256k1Point, Uint, B32,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -260,6 +260,96 @@ fn a_tag_costs_a_slot_and_every_arm_costs_its_own() {
         ]
     );
     assert_eq!(<ShapeArgs as CircuitArgs>::SLOTS, 8);
+}
+
+// ---- the one slot that is not a field element -------------------------------
+
+/// `initialise(responseKey: Secp256k1Point)` shaped: a point slot in the
+/// middle of ordinary ones, so the test pins its POSITION as well as its
+/// (absent) constraint.
+struct PointArgs {
+    chain_id: Uint<64>,
+    response_key: Secp256k1Point,
+    tag: B32<Private>,
+}
+
+impl CircuitArgs for PointArgs {
+    const SLOTS: usize = <Uint<64> as CircuitAbi>::SLOTS
+        + <Secp256k1Point as CircuitAbi>::SLOTS
+        + <B32<Private> as CircuitAbi>::SLOTS;
+
+    fn declare(c: &mut Circuit3) -> Self {
+        PointArgs {
+            chain_id: CircuitArg::declare(c, &ArgPath::root("chainId")),
+            response_key: CircuitArg::declare(c, &ArgPath::root("responseKey")),
+            tag: CircuitArg::declare(c, &ArgPath::root("tag")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.chain_id.constrain(c);
+        self.response_key.constrain(c);
+        self.tag.constrain(c);
+    }
+
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        <Uint<64> as CircuitAbi>::push_atoms(&mut atoms);
+        <Secp256k1Point as CircuitAbi>::push_atoms(&mut atoms);
+        <B32<Private> as CircuitAbi>::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
+#[test]
+fn a_point_argument_takes_a_slot_and_no_constraint() {
+    let typed = entry(|c, a: PointArgs| {
+        let pk = c.disclose(a.response_key.point(), "the key");
+        let limbs = c.encode(pk);
+        let sum = c.add(a.chain_id.field(), a.tag.lo);
+        c.assert_bits(sum, 249);
+        c.output(limbs[0], "x");
+    });
+
+    let hand = {
+        let mut c = Circuit3::new();
+        let chain_id: Wire3<FieldT, Private> = c.arg("chainId");
+        let response_key = c.arg::<Secp256k1PointT>("responseKey");
+        let tag_hi: Wire3<FieldT, Private> = c.arg("tag_hi");
+        let tag_lo: Wire3<FieldT, Private> = c.arg("tag_lo");
+        c.assert_bits(chain_id, 64);
+        // nothing for the point: `(tpoint …)` carries no constraint
+        c.assert_bits(tag_hi, 8);
+        c.assert_bits(tag_lo, 248);
+
+        let pk = c.disclose(response_key, "the key");
+        let limbs = c.encode(pk);
+        let sum = c.add(chain_id, tag_lo);
+        c.assert_bits(sum, 249);
+        c.output(limbs[0], "x");
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(&hand), zkir(&typed));
+}
+
+#[test]
+fn a_point_is_one_slot_and_five_atoms() {
+    let bytes = |length| AlignmentAtom::Bytes { length };
+    assert_eq!(
+        PointArgs::atoms(),
+        vec![
+            bytes(8),              // chainId: Uint<64>
+            bytes(24),             // responseKey.x, low
+            bytes(8),              // responseKey.x, high
+            bytes(24),             // responseKey.y, low
+            bytes(8),              // responseKey.y, high
+            AlignmentAtom::Field,  // responseKey's infinity flag
+            bytes(32),             // tag: Bytes<32>
+        ]
+    );
+    assert_eq!(<PointArgs as CircuitArgs>::SLOTS, 4);
+    assert_eq!(<Secp256k1Point as CircuitAbi>::prims(), vec![Prim::Point]);
 }
 
 // ---- the laws entry() enforces ---------------------------------------------

@@ -52,15 +52,15 @@
 //!   well-formedness against the pinned ledger is proven in
 //!   tests/erc20_vault_opt_burn_wellformed.rs.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, map_insert,
     map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    circuit, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, Either, Maybe, Uint,
-    B32,
+    circuit, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, Either, Maybe,
+    Secp256k1Point, Uint, B32,
 };
 
 use signet_signer_interface::notification::construct_notification_v1;
@@ -78,24 +78,28 @@ use crate::erc20_vault::{
 };
 use crate::signet;
 
-/// `export circuit initialize(vaultEvm, swapRouter, chainId, chainCaip2Id,
-/// responseKey): []`
-pub fn initialize() -> Compiled3 {
-    let mut c = Circuit3::new();
-    // Arguments in source order, FAB-flattened: Bytes<20> = 1 limb
-    // (160 bits), Uint<64> = 1 limb, Bytes<32> = [hi, lo].
-    let vault_evm = c.arg::<FieldT>("vaultEvm");
-    let swap_router = c.arg::<FieldT>("swapRouter");
-    let chain_id = c.arg::<FieldT>("chainId");
-    let caip2 = B32 {
-        hi: c.arg::<FieldT>("chainCaip2Id_hi"),
-        lo: c.arg::<FieldT>("chainCaip2Id_lo"),
-    };
-    let response_key = c.arg::<Secp256k1PointT>("responseKey");
-    c.assert_bits(vault_evm, 160);
-    c.assert_bits(swap_router, 160);
-    c.assert_bits(chain_id, 64);
-    caip2.constrain_input(&mut c);
+/// `export circuit initialize(vaultEvm: Bytes<20>, swapRouter: Bytes<20>,
+/// chainId: Uint<64>, chainCaip2Id: Bytes<32>, responseKey:
+/// Secp256k1Point): []`
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract. `responseKey` is the corpus's only
+/// curve-point argument: one slot, no range constraint (see
+/// [`minocrab_std::v3::Secp256k1Point`]).
+#[circuit]
+pub fn initialize(
+    c: &mut Circuit3,
+    vault_evm: Bytes<20>,
+    swap_router: Bytes<20>,
+    chain_id: Uint<64>,
+    chain_caip2_id: B32<Private>,
+    response_key: Secp256k1Point,
+) {
+    let vault_evm = vault_evm.field();
+    let swap_router = swap_router.field();
+    let chain_id = chain_id.field();
+    let caip2 = chain_caip2_id;
+    let response_key = response_key.point();
 
     let one = c.constant(1u64);
     let zero = c.constant(0u64);
@@ -121,7 +125,7 @@ pub fn initialize() -> Compiled3 {
     c.assert(router_nonzero);
 
     // initialized.increment(1)
-    emit(&mut c, one, &counter_increment(INITIALIZED, 1));
+    emit(c, one, &counter_increment(INITIALIZED, 1));
 
     // The five configuration writes, in source order.
     c.region("configuration writes", |c| {
@@ -152,8 +156,6 @@ pub fn initialize() -> Compiled3 {
         );
         emit(c, one, &cell_write(MPC_RESPONSE_KEY, &pk_val));
     });
-
-    c.finish(true)
 }
 
 /// `assert(initialized >= 1, "Not initialized")` — a Counter read + `0 <
@@ -646,6 +648,18 @@ pub fn withdraw(
     notify_signet(c, one, me, &request_id, [0, 0, 0, 0]);
 }
 
+/// `struct SwapRequest { tokenIn: Bytes<20>, tokenOut: Bytes<20>, fee:
+/// Uint<24>, amountOut: Uint<128>, amountInMaximum: Uint<128> }` — the
+/// Uniswap `exactOutputSingle` parameters the vault will sign.
+#[derive(CircuitArg)]
+struct SwapRequest {
+    token_in: Bytes<20>,
+    token_out: Bytes<20>,
+    fee: Uint<24>,
+    amount_out: Uint<128>,
+    amount_in_maximum: Uint<128>,
+}
+
 /// `export circuit swap(evmNonce: Uint<64>, keyVersion: Uint<8>,
 /// swapRequest: SwapRequest, coin: ShieldedCoinInfo): []` — starts a swap
 /// optimistically: burn the surrendered tokenIn coin (amountInMaximum)
@@ -654,34 +668,27 @@ pub fn withdraw(
 /// vaultEvmAddress, evmChainId, uniswapRouter, signetRequestNonce,
 /// kernel.self, caip2Id, member(11), kernel.self ×2, signetSigner,
 /// kernel.self).
-pub fn swap() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let evm_nonce = c.arg::<FieldT>("evmNonce");
-    let key_version = c.arg::<FieldT>("keyVersion");
-    let token_in = c.arg::<FieldT>("swapRequest_tokenIn");
-    let token_out = c.arg::<FieldT>("swapRequest_tokenOut");
-    let fee = c.arg::<FieldT>("swapRequest_fee");
-    let amount_out = c.arg::<FieldT>("swapRequest_amountOut");
-    let amount_in_max = c.arg::<FieldT>("swapRequest_amountInMaximum");
-    let coin_nonce = B32 {
-        hi: c.arg::<FieldT>("coin_nonce_hi"),
-        lo: c.arg::<FieldT>("coin_nonce_lo"),
-    };
-    let coin_color = B32 {
-        hi: c.arg::<FieldT>("coin_color_hi"),
-        lo: c.arg::<FieldT>("coin_color_lo"),
-    };
-    let coin_value = c.arg::<FieldT>("coin_value");
-    c.assert_bits(evm_nonce, 64);
-    c.assert_bits(key_version, 8);
-    c.assert_bits(token_in, 160);
-    c.assert_bits(token_out, 160);
-    c.assert_bits(fee, 24);
-    c.assert_bits(amount_out, 128);
-    c.assert_bits(amount_in_max, 128);
-    coin_nonce.constrain_input(&mut c);
-    coin_color.constrain_input(&mut c);
-    c.assert_bits(coin_value, 128);
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract.
+#[circuit]
+pub fn swap(
+    c: &mut Circuit3,
+    evm_nonce: Uint<64>,
+    key_version: Uint<8>,
+    swap_request: SwapRequest,
+    coin: ShieldedCoinArg,
+) {
+    let evm_nonce = evm_nonce.field();
+    let key_version = key_version.field();
+    let token_in = swap_request.token_in.field();
+    let token_out = swap_request.token_out.field();
+    let fee = swap_request.fee.field();
+    let amount_out = swap_request.amount_out.field();
+    let amount_in_max = swap_request.amount_in_maximum.field();
+    let coin_nonce = coin.nonce;
+    let coin_color = coin.color;
+    let coin_value = coin.value.field();
 
     let one = c.constant(1u64);
     let zero = c.constant(0u64);
@@ -710,12 +717,12 @@ pub fn swap() -> Compiled3 {
     // The surrendered coin must be the vault token for tokenIn, of exactly
     // amountInMaximum.
     let token_in = c.disclose(token_in, "the sold ERC20");
-    let domain_sep = vault_token_domain_separator(&mut c, token_in);
+    let domain_sep = vault_token_domain_separator(c, token_in);
     // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
     // port read the same address five times.
-    let me = kernel_self(&mut c, one);
+    let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
-    let color = minocrab_std::v3::token_type(&mut c, &domain_sep, &me);
+    let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
@@ -726,18 +733,18 @@ pub fn swap() -> Compiled3 {
     // exactOutputSingle((tokenIn, tokenOut, fee, vault, amountOut,
     // amountInMaximum, 0)).
     let token_out = c.disclose(token_out, "the bought ERC20");
-    let word0 = signet::evm_address_abi_word(&mut c, token_in.private());
-    let word1 = signet::evm_address_abi_word(&mut c, token_out.private());
-    let word2 = signet::numeric_abi_word(&mut c, fee);
+    let word0 = signet::evm_address_abi_word(c, token_in.private());
+    let word1 = signet::evm_address_abi_word(c, token_out.private());
+    let word2 = signet::numeric_abi_word(c, fee);
     let vault_evm = cell_read(
-        &mut c,
+        c,
         one,
         VAULT_EVM_ADDRESS,
         vec![AlignmentAtom::Bytes { length: 20 }],
     )[0];
-    let word3 = signet::evm_address_abi_word(&mut c, vault_evm.private());
-    let word4 = signet::numeric_abi_word(&mut c, amount_out);
-    let word5 = signet::numeric_abi_word(&mut c, amount_in_max);
+    let word3 = signet::evm_address_abi_word(c, vault_evm.private());
+    let word4 = signet::numeric_abi_word(c, amount_out);
+    let word5 = signet::numeric_abi_word(c, amount_in_max);
     let word6 = B32::<Private> {
         hi: zero.private(),
         lo: zero.private(),
@@ -752,13 +759,13 @@ pub fn swap() -> Compiled3 {
 
     // Contract-FIXED gas envelope; to = the pinned router.
     let chain_id = cell_read(
-        &mut c,
+        c,
         one,
         EVM_CHAIN_ID,
         vec![AlignmentAtom::Bytes { length: 8 }],
     )[0];
     let router = cell_read(
-        &mut c,
+        c,
         one,
         UNISWAP_ROUTER,
         vec![AlignmentAtom::Bytes { length: 20 }],
@@ -779,13 +786,13 @@ pub fn swap() -> Compiled3 {
         access_list_entry_count: zero.private(),
     };
 
-    let request_nonce = counter_read(&mut c, one, SIGNET_REQUEST_NONCE);
+    let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     let sender = B32 {
         hi: me.hi.private(),
         lo: me.lo.private(),
     };
     let caip2 = cell_read(
-        &mut c,
+        c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
@@ -794,15 +801,15 @@ pub fn swap() -> Compiled3 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
     };
-    let path = B32::pad(&mut c, VAULT_PATH);
+    let path = B32::pad(c, VAULT_PATH);
     let path = B32::<Private> {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let output_schema = BytesN::<Private, SWAP_OUTPUT_LEN>::literal(&mut c, SWAP_OUTPUT_SCHEMA);
-    let respond_schema = BytesN::<Private, SWAP_RESPOND_LEN>::literal(&mut c, SWAP_RESPOND_SCHEMA);
+    let output_schema = BytesN::<Private, SWAP_OUTPUT_LEN>::literal(c, SWAP_OUTPUT_SCHEMA);
+    let respond_schema = BytesN::<Private, SWAP_RESPOND_LEN>::literal(c, SWAP_RESPOND_SCHEMA);
     let request: SwapEvent<Private> = signet::construct_sign_bidirectional_event(
-        &mut c,
+        c,
         sender,
         request_nonce.private(),
         key_version,
@@ -813,7 +820,7 @@ pub fn swap() -> Compiled3 {
         respond_schema,
     );
 
-    let (request_id, request_id_val) = check_fresh_request(&mut c, one, &request, SWAP_EVENT_MAP);
+    let (request_id, request_id_val) = check_fresh_request(c, one, &request, SWAP_EVENT_MAP);
 
     // Burn the surrendered amountInMaximum of tokenIn (rung vi, avenue 6): a
     // SINGLE claimed shielded spend of the burn-address output — no receive
@@ -829,31 +836,29 @@ pub fn swap() -> Compiled3 {
         },
         value: c.disclose(coin_value, "surrendered coin value"),
     };
-    common::burn_spend(&mut c, one, &coin);
+    common::burn_spend(c, one, &coin);
 
-    insert_request(&mut c, one, &request, SWAP_EVENT_MAP, &request_id_val);
+    insert_request(c, one, &request, SWAP_EVENT_MAP, &request_id_val);
 
     // swapRefundCommitment.insert(requestId, disclose(...))
-    let sk = common::witness_sk(&mut c);
+    let sk = common::witness_sk(c);
     let rid_priv = B32 {
         hi: request_id.hi.private(),
         lo: request_id.lo.private(),
     };
-    let rc = withdraw_refund_commitment(&mut c, &sk, &rid_priv);
+    let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = B32 {
         hi: c.disclose(rc.hi, "swapper refund commitment (hi)"),
         lo: c.disclose(rc.lo, "swapper refund commitment (lo)"),
     };
     let rc_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(rc.hi), ImpactElem::Wire(rc.lo)]);
     emit(
-        &mut c,
+        c,
         one,
         &map_insert(SWAP_REFUND_COMMITMENT, &request_id_val, &rc_val),
     );
 
-    notify_signet(&mut c, one, me, &request_id, [11, 0, 0, 0]);
-
-    c.finish(true)
+    notify_signet(c, one, me, &request_id, [11, 0, 0, 0]);
 }
 
 /// `export circuit approveRouter(erc20Address: Bytes<20>, evmNonce:
@@ -862,14 +867,19 @@ pub fn swap() -> Compiled3 {
 /// VAULT's account (path "vault"), contract-fixed gas envelope
 /// (approveRouter.zkir; reads: initialized, uniswapRouter, evmChainId,
 /// signetRequestNonce, kernel.self, caip2Id, member, signer, self).
-pub fn approve_router() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let erc20_address = c.arg::<FieldT>("erc20Address");
-    let evm_nonce = c.arg::<FieldT>("evmNonce");
-    let key_version = c.arg::<FieldT>("keyVersion");
-    c.assert_bits(erc20_address, 160);
-    c.assert_bits(evm_nonce, 64);
-    c.assert_bits(key_version, 8);
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract.
+#[circuit]
+pub fn approve_router(
+    c: &mut Circuit3,
+    erc20_address: Bytes<20>,
+    evm_nonce: Uint<64>,
+    key_version: Uint<8>,
+) {
+    let erc20_address = erc20_address.field();
+    let evm_nonce = evm_nonce.field();
+    let key_version = key_version.field();
 
     let one = c.constant(1u64);
     let zero = c.constant(0u64);
@@ -883,12 +893,12 @@ pub fn approve_router() -> Compiled3 {
 
     // approve(uniswapRouter, 2^128−1): the spender is the pinned router.
     let router = cell_read(
-        &mut c,
+        c,
         one,
         UNISWAP_ROUTER,
         vec![AlignmentAtom::Bytes { length: 20 }],
     )[0];
-    let word0 = signet::evm_address_abi_word(&mut c, router.private());
+    let word0 = signet::evm_address_abi_word(c, router.private());
     // numericAbiWord(2^128−1): 16 zero bytes then 16 0xff bytes.
     let mut max_word = [0u8; 32];
     max_word[16..].copy_from_slice(&[0xff; 16]);
@@ -908,7 +918,7 @@ pub fn approve_router() -> Compiled3 {
 
     // Contract-FIXED gas envelope; `to` is the (disclosed) ERC20 itself.
     let chain_id = cell_read(
-        &mut c,
+        c,
         one,
         EVM_CHAIN_ID,
         vec![AlignmentAtom::Bytes { length: 8 }],
@@ -931,16 +941,16 @@ pub fn approve_router() -> Compiled3 {
     };
 
     // Signed by the VAULT account: path = pad(32, "vault").
-    let request_nonce = counter_read(&mut c, one, SIGNET_REQUEST_NONCE);
+    let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
-    let me = kernel_self(&mut c, one);
+    let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
     let sender = B32 {
         hi: me.hi.private(),
         lo: me.lo.private(),
     };
     let caip2 = cell_read(
-        &mut c,
+        c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
@@ -949,14 +959,14 @@ pub fn approve_router() -> Compiled3 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
     };
-    let path = B32::pad(&mut c, VAULT_PATH);
+    let path = B32::pad(c, VAULT_PATH);
     let path = B32::<Private> {
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(&mut c, VAULT_RESPONSE_SCHEMA);
+    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
     let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
-        &mut c,
+        c,
         sender,
         request_nonce.private(),
         key_version,
@@ -967,9 +977,7 @@ pub fn approve_router() -> Compiled3 {
         schema,
     );
 
-    record_and_notify(&mut c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
-
-    c.finish(true)
+    record_and_notify(c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
 }
 
 /// `vaultTokenDomainSeparator(erc20Address)` (rung iii, avenue 2): the
@@ -1029,60 +1037,20 @@ fn vault_token_domain_separator(
 /// "the vault token of an EVM ERC-20".
 pub const VAULT_TOKEN_TAG: u8 = 0x01;
 
-/// The shared argument block of the settle circuits: requestId, the
-/// attestation event, and the mint nonce; `serializedOutput` is declared
-/// by the caller (its width differs per circuit).
+/// The settle circuits' shared argument block, as the three of them hand it
+/// to [`verify_attestation`]: the request id, the two signature limbs the
+/// verification reads, and the mint nonce.
+///
+/// It is no longer a DECLARER — each settle circuit declares the Compact
+/// parameter list itself, through `#[circuit]` — so what is left is the
+/// selection those parameters have in common (`respond.bigR.y` and
+/// `respond.recoveryId` are part of the wire shape and read by nothing, as
+/// in the Compact original).
 struct SettleArgs {
     request_id: B32<Private>,
     big_r_x: B32<Private>,
     sig_s: B32<Private>,
     mint_nonce: B32<Private>,
-}
-
-/// Declare + constrain the settle argument block around a caller-declared
-/// `serializedOutput`; `declare_output` runs between the event and
-/// mintNonce declarations to keep source argument order.
-fn settle_args<F>(c: &mut Circuit3, declare_output: F) -> (SettleArgs, Vec<Wire3<FieldT, Private>>)
-where
-    F: FnOnce(&mut Circuit3) -> Vec<Wire3<FieldT, Private>>,
-{
-    let request_id = B32 {
-        hi: c.arg::<FieldT>("requestId_hi"),
-        lo: c.arg::<FieldT>("requestId_lo"),
-    };
-    let big_r_x = B32 {
-        hi: c.arg::<FieldT>("respond_bigR_x_hi"),
-        lo: c.arg::<FieldT>("respond_bigR_x_lo"),
-    };
-    let big_r_y = B32 {
-        hi: c.arg::<FieldT>("respond_bigR_y_hi"),
-        lo: c.arg::<FieldT>("respond_bigR_y_lo"),
-    };
-    let sig_s = B32 {
-        hi: c.arg::<FieldT>("respond_s_hi"),
-        lo: c.arg::<FieldT>("respond_s_lo"),
-    };
-    let recovery_id = c.arg::<FieldT>("respond_recoveryId");
-    let output = declare_output(c);
-    let mint_nonce = B32 {
-        hi: c.arg::<FieldT>("mintNonce_hi"),
-        lo: c.arg::<FieldT>("mintNonce_lo"),
-    };
-    request_id.constrain_input(c);
-    big_r_x.constrain_input(c);
-    big_r_y.constrain_input(c);
-    sig_s.constrain_input(c);
-    c.assert_bits(recovery_id, 8);
-    mint_nonce.constrain_input(c);
-    (
-        SettleArgs {
-            request_id,
-            big_r_x,
-            sig_s,
-            mint_nonce,
-        },
-        output,
-    )
 }
 
 /// The settle circuits' shared preamble: disclose the request id, gate on
@@ -1180,17 +1148,29 @@ fn refund_surrendered_value(
 /// value to the withdrawer (completeWithdraw.zkir; reads: initialized,
 /// mpcResponseKey, refundCommitment member, event lookup, then the
 /// guarded branch's refundCommitment lookup + kernel.self).
-pub fn complete_withdraw() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 8);
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract, with `#[arg(name = "respond")]`
+/// keeping the abbreviation the interface snapshot froze (see [`claim`]).
+#[circuit]
+pub fn complete_withdraw(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
+    serialized_output: Bytes<1>,
+    mint_nonce: B32<Private>,
+) {
+    let args = SettleArgs {
+        request_id,
+        big_r_x: respond_bidirectional_event.big_r.x,
+        sig_s: respond_bidirectional_event.s,
+        mint_nonce,
+    };
+    let output = [serialized_output.field()];
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<1>(&mut c, one, &args, &output);
+    let request_id = verify_attestation::<1>(c, one, &args, &output);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1231,7 +1211,7 @@ pub fn complete_withdraw() -> Compiled3 {
         lo: c.disclose(args.mint_nonce.lo, "refund mint nonce (lo)"),
     };
     refund_surrendered_value(
-        &mut c,
+        c,
         refunding,
         &request_id,
         &request_id_val,
@@ -1240,9 +1220,7 @@ pub fn complete_withdraw() -> Compiled3 {
     );
 
     // refundCommitment.remove(requestId)
-    emit(&mut c, one, &map_remove(REFUND_COMMITMENT, &request_id_val));
-
-    c.finish(true)
+    emit(c, one, &map_remove(REFUND_COMMITMENT, &request_id_val));
 }
 
 /// `export circuit completeSwap(requestId, respondBidirectionalEvent,
@@ -1251,17 +1229,29 @@ pub fn complete_withdraw() -> Compiled3 {
 /// (swapper-only), mint the exact amountOut of tokenOut plus the unspent
 /// tokenIn as change (completeSwap.zkir; reads: initialized,
 /// mpcResponseKey, member(12), lookup(11), lookup(12), kernel.self ×2).
-pub fn complete_swap() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 64);
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract (see [`complete_withdraw`] for the
+/// `respond` abbreviation).
+#[circuit]
+pub fn complete_swap(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
+    serialized_output: Bytes<8>,
+    mint_nonce: B32<Private>,
+) {
+    let args = SettleArgs {
+        request_id,
+        big_r_x: respond_bidirectional_event.big_r.x,
+        sig_s: respond_bidirectional_event.s,
+        mint_nonce,
+    };
+    let output = [serialized_output.field()];
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<8>(&mut c, one, &args, &output);
+    let request_id = verify_attestation::<8>(c, one, &args, &output);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1311,9 +1301,9 @@ pub fn complete_swap() -> Compiled3 {
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
     // ONE kernel.self read for BOTH mints (rung i).
-    let me = kernel_self(&mut c, one);
+    let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
-    let recipient = minocrab_std::v3::own_public_key(&mut c);
+    let recipient = minocrab_std::v3::own_public_key(c);
     let recipient = B32 {
         hi: c.disclose(recipient.hi, "own public key as swap recipient (hi)"),
         lo: c.disclose(recipient.lo, "own public key as swap recipient (lo)"),
@@ -1321,37 +1311,35 @@ pub fn complete_swap() -> Compiled3 {
 
     // Mint the EXACT amountOut of tokenOut: word 4 of tokenOut (word 1).
     let word4 = ev.word(4);
-    let amount_out = signet::abi_word_to_uint128(&mut c, &word4);
+    let amount_out = signet::abi_word_to_uint128(c, &word4);
     let word1 = ev.word(1);
-    let token_out = signet::abi_word_low20(&mut c, &word1);
-    let ds_out = vault_token_domain_separator(&mut c, token_out);
+    let token_out = signet::abi_word_low20(c, &word1);
+    let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = B32 {
         hi: c.disclose(args.mint_nonce.hi, "swap mint nonce (hi)"),
         lo: c.disclose(args.mint_nonce.lo, "swap mint nonce (lo)"),
     };
     common::mint_shielded_token_to_key_with(
-        &mut c, one, me, &ds_out, amount_out, &mint_nonce, &recipient,
+        c, one, me, &ds_out, amount_out, &mint_nonce, &recipient,
     );
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
     let amount_in = c.disclose(output[0], "attested amountIn spent");
     let word5 = ev.word(5);
-    let amount_in_max = signet::abi_word_to_uint128(&mut c, &word5);
+    let amount_in_max = signet::abi_word_to_uint128(c, &word5);
     let overspent = c.less_than(amount_in_max, amount_in, 128);
     let ok = c.not(overspent);
     c.assert(ok);
     let neg_in = c.neg(amount_in);
     let change = c.add(amount_in_max, neg_in);
     let word0 = ev.word(0);
-    let token_in = signet::abi_word_low20(&mut c, &word0);
-    let ds_in = vault_token_domain_separator(&mut c, token_in);
-    let change_nonce = change_nonce(&mut c, &mint_nonce);
+    let token_in = signet::abi_word_low20(c, &word0);
+    let ds_in = vault_token_domain_separator(c, token_in);
+    let change_nonce = change_nonce(c, &mint_nonce);
     common::mint_shielded_token_to_key_with(
-        &mut c, one, me, &ds_in, change, &change_nonce, &recipient,
+        c, one, me, &ds_in, change, &change_nonce, &recipient,
     );
-
-    c.finish(true)
 }
 
 /// completeSwap's change-coin nonce (rung ii, avenue 5): the mint nonce
@@ -1452,17 +1440,29 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 ///   id in neither, a swap id offered on the withdrawal route) stay green.
 ///
 /// (refund.zkir; the port's two guarded branches, merged.)
-pub fn refund() -> Compiled3 {
-    let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 40);
+///
+/// The parameters after `c` are the Compact parameter list, in declaration
+/// order — which is the wire contract (see [`complete_withdraw`] for the
+/// `respond` abbreviation).
+#[circuit]
+pub fn refund(
+    c: &mut Circuit3,
+    request_id: B32<Private>,
+    #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
+    serialized_output: Bytes<5>,
+    mint_nonce: B32<Private>,
+) {
+    let args = SettleArgs {
+        request_id,
+        big_r_x: respond_bidirectional_event.big_r.x,
+        sig_s: respond_bidirectional_event.s,
+        mint_nonce,
+    };
+    let output = [serialized_output.field()];
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<5>(&mut c, one, &args, &output);
+    let request_id = verify_attestation::<5>(c, one, &args, &output);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1479,12 +1479,12 @@ pub fn refund() -> Compiled3 {
     // Route on which pending marker holds the id (public branch).
     // The member result is already Public; disclosure is the source's
     // explicit `disclose(...)` on the branch condition, a no-op here.
-    let is_withdrawal = map_member(&mut c, one, REFUND_COMMITMENT, &request_id_val);
+    let is_withdrawal = map_member(c, one, REFUND_COMMITMENT, &request_id_val);
     let swapping = c.not(is_withdrawal);
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
-    let me = kernel_self(&mut c, one);
+    let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
     let mint_nonce = B32 {
         hi: c.disclose(args.mint_nonce.hi, "refund mint nonce (hi)"),
@@ -1569,12 +1569,12 @@ pub fn refund() -> Compiled3 {
 
     // The commitment-map removes, guarded per route (ledger EFFECT ops).
     emit(
-        &mut c,
+        c,
         is_withdrawal,
         &map_remove(REFUND_COMMITMENT, &request_id_val),
     );
     emit(
-        &mut c,
+        c,
         swapping,
         &map_remove(SWAP_REFUND_COMMITMENT, &request_id_val),
     );
@@ -1586,27 +1586,25 @@ pub fn refund() -> Compiled3 {
     // surrendered amountInMaximum) of `word0`'s low-20 token. The unused
     // decode is guarded off (no canonicity assert on the garbage record) or
     // assert-free (`abi_word_low20`).
-    common::assert_if(&mut c, is_withdrawal, ev.calldata_is_some());
-    common::assert_if(&mut c, swapping, ev7.calldata_is_some());
+    common::assert_if(c, is_withdrawal, ev.calldata_is_some());
+    common::assert_if(c, swapping, ev7.calldata_is_some());
     let word1 = ev.word(1);
-    let amount_wd = signet::abi_word_to_uint128_guarded(&mut c, is_withdrawal, &word1);
+    let amount_wd = signet::abi_word_to_uint128_guarded(c, is_withdrawal, &word1);
     let word5 = ev7.word(5);
-    let amount_sw = signet::abi_word_to_uint128_guarded(&mut c, swapping, &word5);
+    let amount_sw = signet::abi_word_to_uint128_guarded(c, swapping, &word5);
     let amount = c.cond_select(is_withdrawal, amount_wd, amount_sw);
     let word0 = ev7.word(0);
-    let token_sw = signet::abi_word_low20(&mut c, &word0);
+    let token_sw = signet::abi_word_low20(c, &word0);
     let token = c.cond_select(is_withdrawal, ev.to(), token_sw);
-    let domain_sep = vault_token_domain_separator(&mut c, token);
-    let own_pk = minocrab_std::v3::own_public_key(&mut c);
+    let domain_sep = vault_token_domain_separator(c, token);
+    let own_pk = minocrab_std::v3::own_public_key(c);
     let own_pk = B32 {
         hi: c.disclose(own_pk.hi, "own public key as refund recipient (hi)"),
         lo: c.disclose(own_pk.lo, "own public key as refund recipient (lo)"),
     };
     common::mint_shielded_token_to_key_with(
-        &mut c, one, me, &domain_sep, amount, &mint_nonce, &own_pk,
+        c, one, me, &domain_sep, amount, &mint_nonce, &own_pk,
     );
-
-    c.finish(true)
 }
 
 /// `struct Secp256k1Point { x: Bytes<32>, y: Bytes<32> }` — the `bigR`
