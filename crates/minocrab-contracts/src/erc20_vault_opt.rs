@@ -70,7 +70,7 @@ use crate::erc20_vault::{
     REFUND_COMMITMENT, REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER,
     SIGN_BIDIRECTIONAL_EVENT_MAP, SWAP_EVENT_MAP, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
     SWAP_REFUND_COMMITMENT, SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS,
-    TRANSFER_SELECTOR, UNISWAP_ROUTER, USER_PAD, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA,
+    TRANSFER_SELECTOR, UNISWAP_ROUTER, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA,
     VAULT_SCHEMA_LEN, VAULT_WORDS,
 };
 use crate::signet;
@@ -103,8 +103,9 @@ pub fn initialize() -> Compiled3 {
     });
 
     // assert(userCommitment(callerSecretKey()) == deployer, "Not the deployer")
+    // — the SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("deployer gate", |c| {
-        common::assert_deployer(c, one, USER_PAD, DEPLOYER);
+        common::assert_deployer_short(c, one, DEPLOYER);
     });
 
     // assert(chainId > 0, "Chain ID must be positive")
@@ -227,9 +228,10 @@ pub fn deposit(
         c.assert(gas_positive);
     });
 
-    // const caller = disclose(userCommitment(callerSecretKey()))
+    // const caller = disclose(userCommitment(callerSecretKey())) — the SHORT
+    // one-block userCommitment (rung 5(i-userCommit), avenue 1).
     let sk = common::witness_sk(c);
-    let caller_priv = common::commitment(c, USER_PAD, &sk);
+    let caller_priv = common::commitment_short(c, &sk);
     let caller = B32 {
         hi: c.disclose(caller_priv.hi, "depositor identity commitment (hi)"),
         lo: c.disclose(caller_priv.lo, "depositor identity commitment (lo)"),
@@ -1664,10 +1666,11 @@ pub fn claim(
         ev
     });
 
-    // Depositor gate: userCommitment(callerSecretKey()) == request.path.
+    // Depositor gate: userCommitment(callerSecretKey()) == request.path — the
+    // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment(c, USER_PAD, &sk);
+        let caller = common::commitment_short(c, &sk);
         let path = ev.path();
         let eq_hi = c.test_eq(caller.hi, path.hi.private());
         let eq_lo = c.test_eq(caller.lo, path.lo.private());

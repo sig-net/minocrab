@@ -962,3 +962,51 @@ withdraw/swap to rungs (i)+(iii)+(vi). Gates green: differential 30
 (ports bit-identical), spec 9 + adversarial 19 (both arts), fork 4,
 row_snapshot. Elevated PROPTEST_CASES=20000: withdraw+completeWithdraw
 41.3s, swap+completeSwap 43.9s, all green (M4 Max, release).
+
+** Task C — userCommitment short-SHA (avenue 1, measured)
+=common::commitment_short= replaces the 64-byte =persistentHash([pad(32,
+"vault:user:"), sk])= (2 blocks) with =persistentHash([Bytes<11>
+"vault:user:", sk])= — 43 message bytes, ONE block. SAME domain tag, the
+zero padding dropped; stays SHA-256 (the commitment is the MPC key-
+derivation path, Q4). Applied in LOCKSTEP to the three circuits that must
+produce the identical value: opt initialize (deployer gate), deposit
+(request path), claim (recipient re-derivation), plus prims'
+=user_commitment(Art::Opt)=.
+| circuit | opt before | opt after | Δ | k |
+|---------+------------+-----------+---+---|
+| initialize | 4,272 | 2,412 | −1,860 | 13 → 13 |
+| deposit | 17,490 | 15,632 | −1,858 | 15 → 14 ✅ |
+| claim | 43,911 | 42,051 | −1,860 | 16 → 16 |
+DEPOSIT CROSSES TO k14 — the second prove-time win, and (as the resolution
+said) it does NOT depend on Poseidon: the short SHA alone clears 2^14
+(15,632 < 16,384).
+CORRECTION to the notes' k table: initialize does NOT reach k12. The
+=k arithmetic= table projected ~2,392 → k12 from ROW count alone, but every
+persistent_hash (SHA-256) circuit is FLOORED at k13 by the SHA chip's
+lookup table — measured directly: =hashing::persistent(32)= is (k13, 2,013
+rows), i.e. a single SHA block already sits at k13. So initialize stays k13
+(rows −1,860 are COSMETIC for prove time, like the settle circuits), and
+claim stays k16 (ECDSA floor). Only deposit's floor (keccak, k14) is BELOW
+its old k, so only deposit crosses. Per-use saving −1,860 measured vs the
+−1,880 projected (−1.1%: the tag went from 2 limbs to 1, so the non-hash
+framing saved marginally less).
+The full-Poseidon userCommitment stays REJECTED (Q4): it would strand funds
+at the old derived EVM account. This short-SHA variant has zero such
+exposure — the digest is a different value (separate deployment, its MPC
+config carries the one-block layout) but the sk→path map is still a stable,
+curve-independent SHA.
+Reference model + fork ledger updated in lockstep: =prims::user_commitment=
+gains its =Art::Opt= one-block arm; =fork_status= moves initialize to
+DIVERGED (rung 5(i-userCommit), avenue 1 — it was the last compat-covered
+circuit) and adds the userCommit rung to deposit and claim. Gates green:
+differential 30, spec 9 + adversarial 19, fork 4, row_snapshot. Elevated
+PROPTEST_CASES=20000: initialize 11.8s, deposit 23.2s, claim 30.2s.
+
+** M10 headline after step 5(vi): the first prove-time wins
+Two k crossings landed — withdraw 16→15 (avenue 6) and deposit 15→14
+(avenue 1). These are the FIRST prove-time/RAM reductions of the whole
+optimization ladder (rungs i-iii moved rows but no k boundary). Everything
+else remains floored: initialize + the request circuits at their hash-chip
+k, the settle circuits above 2^15 by ECDSA. "Maximally optimized = minimal
+k" — and minimal k is now reached for withdraw (k15) and deposit (k14),
+with swap one stage away (k16 at 36,379, needs avenues 3+2).

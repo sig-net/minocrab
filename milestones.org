@@ -417,7 +417,23 @@ the compatibility reference; the optimized vault is its own artifact
       merge (it moves the ledger declaration and the reference model's
       state layout). Still to come: refund's branch merge, the
       commitments, and the burn restructure — which needs its
-      well-formedness test first. Ladder continues, so NOT ticked.)
+      well-formedness test first. Ladder continues, so NOT ticked.
+      (step 5(vi) 2026-08-15 — the FIRST prove-time wins:
+      §"As built — step 5(vi)". Task A: the burn well-formedness gate
+      PASSES against the pinned ledger (a single claimed shielded spend
+      of a user-recipient output, empty receive/nullifier sets, no
+      contract-owned input, funded by a user input — new test
+      erc20_vault_opt_burn_wellformed.rs, dev-deps midnight-ledger +
+      midnight-zswap). Task B (avenue 6): withdraw + swap burn via one
+      claimed spend, −11,309 each; WITHDRAW 16→15. Task C (avenue 1):
+      one-block userCommitment at initialize/deposit/claim, −1,860 each;
+      DEPOSIT 15→14 (no Poseidon needed). Two k crossings — the first of
+      M10. Correction: initialize does NOT reach k12 (the SHA chip floors
+      it at k13, measured); its cut + claim's are cosmetic for prove
+      time. swap stays k16 (needs avenues 3+2). Elevated
+      PROPTEST_CASES=20000 green on all five touched circuits. Ladder
+      continues — refund merge, refund commitments → Poseidon, and swap's
+      remaining avenues are the next stage; NOT ticked.))
 - [ ] The report: fresh single-session benchmark — super-optimized vault
       vs compactc vs the direct port (three-way, so ergonomics-neutral
       lowering wins and freed-framing wins are attributed separately);

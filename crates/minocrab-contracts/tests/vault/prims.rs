@@ -85,14 +85,18 @@ pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
 
 /// DISCRETIONARY. Off-circuit `userCommitment(sk)`.
 ///
-/// Both artifacts: SHA-256 over the FAB bytes of `[pad(32, USER_PAD), sk]`.
-/// Avenue 1 (the short-SHA preimage) is a later rung; the full-Poseidon
-/// variant is REJECTED outright — the commitment is the MPC's key-derivation
-/// path, so a hash change strands funds at the old derived EVM account
-/// (notes/vault-optimization.org §"Q4 Poseidon durability").
+/// The commitment is the MPC's key-derivation PATH, so it stays SHA-256 in
+/// both artifacts (a Poseidon variant would strand funds at the old derived
+/// EVM account — notes/vault-optimization.org §"Q4"). Only the PREIMAGE
+/// LENGTH is discretionary:
+/// - Compat: SHA-256 over `[pad(32, "vault:user:"), sk]` — 64 bytes, 2 blocks.
+/// - Opt (rung 5(i-userCommit), avenue 1): SHA-256 over
+///   `[Bytes<11> "vault:user:", sk]` — 43 bytes, ONE block. Same domain tag,
+///   the zero padding dropped: −1,880 rows at each of initialize, deposit,
+///   claim. Layout tabulated in `common::commitment_short`.
 pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
     match art {
-        Art::Compat | Art::Opt => {
+        Art::Compat => {
             let mut pad = [0u8; 32];
             pad[..erc20_vault::USER_PAD.len()].copy_from_slice(erc20_vault::USER_PAD.as_bytes());
             let (pad_hi, pad_lo) = b32_slots(&pad);
@@ -104,6 +108,14 @@ pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
             let mut repr = Vec::new();
             ValueReprAlignedValue(value).binary_repr(&mut repr);
             Sha256::digest(&repr).into()
+        }
+        // The 11-byte tag "vault:user:" fits one field limb; the Bytes<11>
+        // atom emits exactly 11 bytes, so the preimage is 11 + 32 = 43 bytes
+        // = one SHA-256 block.
+        Art::Opt => {
+            let tag = Fr::from_le_bytes(erc20_vault::USER_PAD.as_bytes()).unwrap();
+            let (sk_hi, sk_lo) = b32_slots(sk);
+            fab_sha256(vec![atom(11), atom(32)], &[tag, sk_hi, sk_lo])
         }
     }
 }

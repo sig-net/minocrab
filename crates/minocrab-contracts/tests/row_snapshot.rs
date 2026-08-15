@@ -34,9 +34,9 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     // erc20-vault, OPTIMIZED (M10 step 4 onwards). Frozen identical to the
     // ports at the forking commit; each later rung moves ONLY these rows, and
     // its commit message states the before → after per circuit.
-    ("erc20_vault_opt::initialize", 13, 4272),
-    ("erc20_vault_opt::deposit", 15, 17490),
-    ("erc20_vault_opt::claim", 16, 43911),
+    ("erc20_vault_opt::initialize", 13, 2412),
+    ("erc20_vault_opt::deposit", 14, 15632),
+    ("erc20_vault_opt::claim", 16, 42051),
     ("erc20_vault_opt::approve_router", 14, 13332),
     ("erc20_vault_opt::withdraw", 15, 27267),
     ("erc20_vault_opt::complete_withdraw", 16, 43717),

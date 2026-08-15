@@ -139,16 +139,25 @@ pub fn fork_status(circuit: Circuit) -> Fork {
     const DEDUP: &str = "kernel.self() read once per circuit and threaded";
     /// Rung (iii): the token domain separator is encoded, not hashed.
     const SEPARATOR: &str = "vaultTokenDomainSeparator is an injective encoding, not a SHA-256";
+    /// Rung 5(i-userCommit): the identity commitment is a one-block SHA.
+    const USERCOMMIT: &str = "userCommitment is a one-block SHA (short preimage), not two";
     let diverged = |rung, why| Fork::Diverged { rung, why };
     match circuit {
-        // No kernel.self read, no domain separator, no change nonce: the
-        // one circuit these three rungs have nothing to say about, and so
-        // the one still covered by compactc's differential.
-        Circuit::Initialize => Fork::Identical,
-        Circuit::Deposit | Circuit::ApproveRouter => diverged("M10 rung (i), avenue 7", DEDUP),
-        Circuit::Claim | Circuit::CompleteWithdraw => {
-            diverged("M10 rung (iii), avenue 2", SEPARATOR)
+        // Rung 5(i-userCommit) alone: only the short identity commitment
+        // touches initialize.
+        Circuit::Initialize => {
+            diverged("M10 rung 5(i-userCommit), avenue 1", USERCOMMIT)
         }
+        Circuit::ApproveRouter => diverged("M10 rung (i), avenue 7", DEDUP),
+        Circuit::Deposit => diverged(
+            "M10 rungs (i)+5(i-userCommit), avenues 7+1",
+            "kernel.self() threaded; userCommitment one-block",
+        ),
+        Circuit::Claim => diverged(
+            "M10 rungs (iii)+5(i-userCommit), avenues 2+1",
+            "separator encoded; userCommitment one-block",
+        ),
+        Circuit::CompleteWithdraw => diverged("M10 rung (iii), avenue 2", SEPARATOR),
         Circuit::Refund => {
             diverged("M10 rungs (i)+(iii), avenues 7+2", "kernel.self() threaded; separator encoded")
         }

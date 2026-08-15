@@ -46,6 +46,67 @@ pub fn commitment(c: &mut Circuit3, prefix: &str, sk: &B32<Private>) -> B32<Priv
     })
 }
 
+/// The SHORT identity commitment (M10 rung 5(i-userCommit), avenue 1):
+/// `persistentHash<[Bytes<11>, Bytes<32>]>(["vault:user:", sk])`.
+///
+/// The port hashes `[pad(32, "vault:user:"), sk]` — 64 message bytes, which
+/// SHA-256 splits into TWO blocks (ceil((64+9)/64) = 2). Dropping the zero
+/// padding of the domain tag to its 11 significant bytes gives 43 message
+/// bytes (ceil((43+9)/64) = 1 block): −1,880 rows per use, at three uses
+/// (initialize's deployer gate, deposit's request path, claim's recipient
+/// re-derivation), which MUST all agree since they compare the same value.
+///
+/// The domain tag string is UNCHANGED ("vault:user:"), so the meaning is
+/// identical; only the second SHA block of zero padding is gone. This stays
+/// SHA-256 deliberately: the commitment is the MPC's key-derivation PATH
+/// (Signet.compact:78-85), so a curve-independent hash is required — a
+/// Poseidon variant would strand funds at the old derived EVM account
+/// (notes/vault-optimization.org §"Q4"). The optimized vault's identity
+/// commitments differ from the port's, which is correct: it is a separate
+/// deployment whose MPC config carries this one-block layout.
+///
+/// | byte(s) | 0..10          | 11..42 |
+/// |---------|----------------|--------|
+/// | content | "vault:user:"  | sk[32] |
+pub fn commitment_short(c: &mut Circuit3, sk: &B32<Private>) -> B32<Private> {
+    c.region("identity commitment", |c| {
+        let tag = c.constant(
+            minocrab::Fr::from_le_bytes(super::erc20_vault::USER_PAD.as_bytes())
+                .expect("the 11-byte domain tag fits one field limb"),
+        );
+        let alignment = Alignment(vec![
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 11 }),
+            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+        ]);
+        let digest = c.persistent_hash(
+            alignment,
+            &[tag.private().erase(), sk.hi.erase(), sk.lo.erase()],
+        );
+        B32::from_typed(c, digest)
+    })
+}
+
+/// [`assert_deployer`] against the SHORT identity commitment
+/// ([`commitment_short`]) — the optimized initialize's deployer gate.
+pub fn assert_deployer_short<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    deployer_field: u8,
+) {
+    let sk = witness_sk(c);
+    let digest = commitment_short(c, &sk);
+    let stored = cell_read(
+        c,
+        guard,
+        deployer_field,
+        vec![AlignmentAtom::Bytes { length: 32 }],
+    );
+    let eq_hi = c.test_eq(digest.hi, stored[0]);
+    let eq_lo = c.test_eq(digest.lo, stored[1]);
+    let both = c.mul(eq_hi, eq_lo);
+    c.assert(both);
+}
+
 /// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
 pub fn witness_sk(c: &mut Circuit3) -> B32<Private> {
     let sk = B32 {
