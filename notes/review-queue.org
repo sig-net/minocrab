@@ -144,3 +144,14 @@ reviewer should look at.
       reproduction of rustfmt's three case groups (cosmetic, but it is the
       reason `--check` stays green) and `names::snake_case`'s round-trip
       test, which decides when an explicit #[entry_point] is emitted.
+- [ ] M12 stage 6 (callee-side export): the DEVIATION is the thing to
+      weigh — respond/respondBidirectional keep hand-declared arguments
+      (converting them would rename inputs and move interface_snapshot),
+      so `tests/contract_matches_its_interface.rs` is the ONLY link between
+      those nine `c.arg` calls and SignatureRespondedEvent. Check that the
+      test really covers what the type would have: it compares input count,
+      constraint prefix and output count, but NOT the FAB alignment (a
+      circuit's IrSource does not carry one), so an argument split into the
+      same slots under a different atom shape would pass. Also check
+      `check_ir`'s reuse of `compare_zkir`, which was extracted from
+      `Artifact::check_zkir` in the same commit.

@@ -25,6 +25,9 @@ xcall-target-interface = { path = "../xcall-target-interface" }
 # that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.
 minocrab-std = { path = "../minocrab-std", features = ["borsh-schema"] }
 minocrab-sim = { path = "../minocrab-sim" }
+# The callee-side interface check (M12 stage 6): our own built IrSource
+# against the schema signet-signer-interface publishes.
+minocrab-abi = { path = "../minocrab-abi" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true

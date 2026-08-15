@@ -623,3 +623,135 @@ per circuit: where it does not close — a Compact circuit spelled
 explicit =#[entry_point(name = "…")]= rather than a name that would hash to
 a different entry point. None of the six corpus circuits generated here
 needs one, which is more evidence the mechanical rule is right.
+
+* Versioning and publishing conventions
+Written at stage 6; the generated crates' doc headers point here as
+§"Versioning and publishing".
+
+** THE MECHANICAL RULE
+=artifact/interface-schema.txt= CHANGED ⇒ MAJOR. Full stop, no judgement.
+The snapshot is derived from the declarations alone (=minocrab_abi::
+circuit_schema=) and lists, per circuit, the entry-point name and its
+32-byte hash, every argument slot's flattened primitive and constraint, and
+the FAB alignment. Every one of those feeds either the entry-point hash the
+ledger matches or the ORDER in which limbs are hashed into the
+communications commitment. So a changed line means a deployed caller's
+=claimContractCall= stops matching — the definition of a breaking change,
+arrived at by construction rather than by argument.
+This is the =comm= layout falling out of the type's declaration order, which
+is why an argument REORDER — invisible to a type-checker, since every limb
+is a field element — is a major version here.
+
+| change                                        | version | why                        |
+|-----------------------------------------------+---------+----------------------------|
+| reorder a circuit's arguments                 | MAJOR   | comm preimage order        |
+| reorder a shared struct's fields              | MAJOR   | same, one level down       |
+| retype/rewiden any argument or result         | MAJOR   | slots and constraints move |
+| add or remove an argument                     | MAJOR   | slot count                 |
+| rename a circuit (or its =#[entry_point]=)    | MAJOR   | different ep_hash          |
+| remove a circuit                              | MAJOR   | callers stop compiling     |
+| add a circuit                                 | MINOR   | new ep, nothing moves      |
+| add a type, alias or hand-written helper      | MINOR   | additive                   |
+| re-pin to a callee redeploy, schema unchanged | PATCH   | see below                  |
+| docs, tests, generator formatting             | PATCH   | no ABI surface             |
+
+The table is redundant with the rule, deliberately: every MAJOR row is a row
+that moves =interface-schema.txt=, and no MINOR/PATCH row does. If a
+proposed change does not obviously belong to a row, regenerate the snapshot
+and read the diff — that is the decision procedure.
+
+** RE-PINNING IS NOT A VERSION BUMP BY ITSELF
+A callee redeploy with the same signatures changes the =.zkir= digests and
+so =artifact/pin.json=, while =interface-schema.txt= does not move. That is
+correctly a PATCH: same-signature redeploys are INVISIBLE to callers (honest
+limit #3), because what the circuit binds is the ledger's (address, ep,
+comm) match and not the callee's implementation. Re-pin with
+=cargo test -p <crate> -- --ignored= and read the =pin.json= diff; if the
+schema snapshot moves too, it was never a redeploy — it was a new interface.
+
+** WHAT IS NEVER IN THE CRATE, AND SO NEVER IN ITS VERSION
+An ADDRESS. =at_field(index)= names a ledger cell and =at(address)= takes
+one at runtime, so a deployment, a redeployment, or a second instance of the
+same contract needs no new version of the interface crate. A verifier key
+likewise: binding an artifact to a deployed address needs keygen and is out
+of M12's scope (honest limit #3, sketched as =verify_deployment=).
+
+** CI: THREE TESTS, AND WHAT EACH ONE CATCHES
+1. =minocrab-interface-gen='s =tests/regenerate.rs= — every crate carrying
+   an =artifact/generator.json= is regenerated and diffed BYTE FOR BYTE.
+   Catches: a hand-edited generated file; a re-pinned artifact whose
+   =src/lib.rs= was not regenerated; a generator change that silently moves
+   output.
+2. each interface crate's =tests/artifact_agreement.rs= — the six checks
+   against the pinned artifact, the pin against its own distillation, and
+   the frozen schema. Catches: the crate disagreeing with the contract it
+   claims to describe, in either direction.
+3. =minocrab-contracts= =tests/contract_matches_its_interface.rs= — for
+   contracts we EXPORT, the built =IrSource= against the trait schema.
+   Catches: our own contract drifting from the interface we publish for it.
+Every one of them is an ordinary =cargo test=; none needs a network, a
+proof server or the compactc toolchain. The =.zkir= half of check (1)
+degrades gracefully: it runs whenever the artifact tree is reachable
+(=MINOCRAB_ARTIFACT_DIR=, or =pin.source= under the workspace root) and the
+distilled facts carry it otherwise.
+
+** WORKSPACE USE VS PUBLISHED USE
+In-workspace (what M12 does): =path= dependencies, one crate per callee
+under =crates/=, artifacts pinned against the in-tree corpus, so the full
+=.zkir= check always runs. Published (later): the same crate, unchanged, via
+=crates.io= or git — it depends only on =minocrab=, =minocrab-std= and
+=minocrab-ledger=, and its =minocrab-abi= dev-dependency means NOTHING
+SHIPPING links the checker. A consumer who wants the =.zkir= half points
+=MINOCRAB_ARTIFACT_DIR= at their own copy of the artifact; without it the
+committed =contract-info.json= plus the distilled pin still settle five of
+the six checks. Hash-pinned FETCHING was rejected: an interface crate must
+be checkable offline, from bytes a reviewer can read in the diff.
+
+** ONE CRATE PER CONTRACT, NAMED FOR THE CONTRACT
+=signet-signer-interface=, =xcall-target-interface=. Not one crate per
+project and not a =interfaces= grab-bag: versions are per-callee, and a
+callee that breaks its ABI must not force a version bump on an unrelated
+one. The handle type inside is named for the contract
+(=SignetSigner=, =XcallTarget=), which is what a call site reads.
+
+* As built — stage 6 (2026-08-15)
+The callee side. row_snapshot and interface_snapshot bit-identical, all
+differential suites green (including =signet_contract='s differential and
+tamper suites), workspace release suite clean (68 test binaries).
+
+** ONE DECLARATION OF THE RECORD, USED FROM BOTH SIDES
+=signet_contract::sign_bidirectional= now takes
+=SignBidirectionalEventNotification<Private>= — the interface crate's type,
+the one the vault passes at =Public=. The visibility-generic derive is what
+makes that possible: one =struct N<V: Vis3>= yields =CircuitArg= at
+=Private= (the callee witnesses its arguments) and =CallArg=/=CallResult= at
+=Public= (the caller discloses them). The private duplicate that used to
+live in =signet_contract.rs= is gone, and the ZKIR is unchanged — the field
+types were already identical, which is exactly why this was safe.
+
+** DEVIATION: =respond=/=respondBidirectional= KEEP THEIR HAND-DECLARED ARGS
+=SignatureRespondedEvent= nests three structs deep
+(={ signature: { bigR: { x, y }, s, recoveryId } }=), so declaring the
+argument through it would rename every input to its full path
+(=event_signature_big_r_x_hi= rather than =bigR_x_hi=) and MOVE
+=interface_snapshot=. Those names are ours, not compactc's — compactc names
+its inputs positionally (=%signatureRespondedEvent.2=) — so the rename would
+have had no wire consequence and no benefit, against a standing
+zero-movement gate.
+What replaces the by-construction guarantee is a mechanical one, and it is
+arguably the better artefact: =contract_matches_its_interface= compares the
+BUILT =IrSource= against the trait schema slot for slot, so the hand-written
+declarations cannot drift from the crate every caller imports. The test is
+at its most valuable precisely here, where no type-level link exists.
+
+** =minocrab_abi::check_ir=: THE MIRROR OF THE ARTIFACT CHECK
+=Artifact::check= asks "does this interface describe THAT deployed
+artifact?"; =check_ir::<A, R>(&ir, entry_point)= asks "does this circuit we
+BUILD keep the promise the interface makes?". Same comparison, same code
+(=compare_zkir=), pointed the other way: declared input count, the opening
+constraint prefix slot for slot with each constraint on the input of ITS
+slot, the communications commitment, and the returned slot count. The
+=IrSource= it reads is the bytes that become the deployed =.zkir=.
+The test also proves the check bites, by running =respond='s circuit against
+=signBidirectional='s argument list and asserting the nine-vs-eight input
+mismatch is reported.

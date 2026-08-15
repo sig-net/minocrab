@@ -2270,6 +2270,7 @@ dependencies = [
  "midnight-zkir-v3",
  "midnight-zswap",
  "minocrab",
+ "minocrab-abi",
  "minocrab-ledger",
  "minocrab-sim",
  "minocrab-std",

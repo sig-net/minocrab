@@ -650,7 +650,7 @@ engine; M9's typed args/derives are the interface language. What NEAR
 cannot do and we can: an interface crate is CHECKABLE against the
 deployed artifact (zkir v3 carries the typed I/O schema), so drift is
 a test failure, not a runtime surprise.
-- [ ] Design (notes/interface-crates.org): the #[interface] decorator —
+- [X] Design (notes/interface-crates.org): the #[interface] decorator —
       NEAR ext_contract-style trait declaring the callee's circuits with
       typed args/results; expands to typed call builders over the M5
       desugar (result-limb witnesses, cc-rand, in-circuit
@@ -666,11 +666,11 @@ a test failure, not a runtime surprise.
       compactc artifact (contract-info.json + .zkir) — ANY deployed
       Midnight contract becomes importable, Compact-authored or not.
       This is the package-manager answer for the existing ecosystem.
-- [ ] Port the proof cases: the hand-written signet interface module
+- [X] Port the proof cases: the hand-written signet interface module
       (the vault's calls to the Signet singleton) and the xcall
       experiments re-expressed through interface crates, zero movement
       on all snapshots/differentials.
-- [ ] Versioning/publishing conventions doc: semver semantics for
+- [X] Versioning/publishing conventions doc: semver semantics for
       interface changes (argument reorder = major, by construction),
       address/verifier-key pinning story, workspace vs published use.
 - [ ] README showcase section: the interface-crate story described in
@@ -703,7 +703,11 @@ gates every stage: both snapshots bit-identical, all suites green):
       wrapping moved; the xcall target, a Compact-only contract with no
       port, imported and its callers re-expressed at zero movement;
       --check wired as a test).
-- [ ] 6. Callee-side export + contract_matches_its_interface.
+- [X] 6. Callee-side export (signet_contract's signBidirectional takes
+      the interface crate's own record type — one declaration, Private
+      for the callee and Public for callers) +
+      contract_matches_its_interface (the built IrSource vs the trait
+      schema, for all three circuits) + the conventions section.
 - [ ] 7. README showcase + tick M12.
 Approved by dmd 2026-08-15: the approach as designed, including that
 contract interfaces are STATIC (address is data, interface is

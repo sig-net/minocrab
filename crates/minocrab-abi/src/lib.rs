@@ -43,7 +43,7 @@ pub mod pin;
 pub mod schema;
 pub mod zkir;
 
-pub use check::{Artifact, Error, Problems};
+pub use check::{assert_ir_matches_interface, check_ir, Artifact, Error, Problems};
 pub use info::{ContractInfo, CompactType, Flattened, TypeError};
 pub use pin::{Pin, PinnedCircuit};
 pub use schema::circuit_schema;

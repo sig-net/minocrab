@@ -204,65 +204,104 @@ impl Artifact {
         if let Some(facts) = self.zkir(name) {
             match facts {
                 Err(e) => problems.push(format!("`{name}`: {e}")),
-                Ok(facts) => self.check_zkir(&mut problems, name, &facts, &expected, A::SLOTS),
+                Ok(facts) => compare_zkir(&mut problems, name, &facts, &expected, A::SLOTS),
             }
         }
 
         problems.into_result()
     }
 
-    /// Check 6 against the compiled circuit itself: input count,
-    /// communications commitment, and the constraint prefix slot for slot
-    /// — each constraint on the declared input of ITS slot.
-    fn check_zkir(
-        &self,
-        problems: &mut Problems,
-        name: &str,
-        facts: &ZkirFacts,
-        expected: &[(usize, String)],
-        slots: usize,
-    ) {
-        if !facts.do_communications_commitment {
-            problems.push(format!("{name}.zkir does not compile a communications commitment"));
-        }
-        if facts.inputs.len() != slots {
-            problems.push(format!(
-                "{name}.zkir declares {} inputs, the interface's arguments occupy {slots}",
-                facts.inputs.len()
-            ));
-        }
-        if facts.prefix.len() != expected.len() {
-            problems.push(format!(
-                "{name}.zkir opens with {} constraints, the interface derives {}: {:?} vs {:?}",
-                facts.prefix.len(),
-                expected.len(),
-                facts.prefix.iter().map(|c| &c.key).collect::<Vec<_>>(),
-                expected.iter().map(|(_, k)| k).collect::<Vec<_>>(),
-            ));
-            return;
-        }
-        for (actual, (slot, key)) in facts.prefix.iter().zip(expected) {
-            if &actual.key != key {
-                problems.push(format!(
-                    "{name}.zkir slot {slot}: constraint {} != the interface's {key}",
-                    actual.key
-                ));
-            }
-            match facts.inputs.get(*slot) {
-                Some(input) if input == &actual.input => {}
-                Some(input) => problems.push(format!(
-                    "{name}.zkir slot {slot}: the constraint is on `{}`, not on input `{input}`",
-                    actual.input
-                )),
-                None => problems.push(format!("{name}.zkir has no input for slot {slot}")),
-            }
-        }
-    }
-
     /// [`Artifact::check`], as an assertion.
     pub fn assert_interface_matches<A: CallArgs, R: CallResult>(&self, entry_point: EntryPoint) {
         if let Err(problems) = self.check::<A, R>(entry_point) {
             panic!("{} does not match the pinned artifact:\n{problems}", entry_point.name());
+        }
+    }
+}
+
+/// THE CALLEE SIDE: our OWN built circuit against the interface it
+/// publishes.
+///
+/// The mirror of [`Artifact::check`]. There the interface is a claim about
+/// somebody else's artifact; here it is a promise about a circuit this
+/// workspace builds, so what is compared is the built `IrSource` — the same
+/// bytes that become the deployed `.zkir` — against the same trait schema
+/// every caller compiles against. A contract and the interface crate it
+/// exports cannot drift apart without this failing.
+///
+/// `A` is the circuit's argument list and `R` its result, exactly as in
+/// [`Artifact::check`].
+pub fn check_ir<A: CallArgs, R: CallResult>(
+    ir: &minocrab_zkir::v3::IrSource,
+    entry_point: EntryPoint,
+) -> Result<(), Problems> {
+    let name = entry_point.name();
+    let mut problems = Problems::default();
+    let facts = ZkirFacts::of(ir);
+    compare_zkir(&mut problems, name, &facts, &expected_prefix::<A>(), A::SLOTS);
+    if ir.outputs.len() != R::SLOTS {
+        problems.push(format!(
+            "`{name}` returns {} slots, the interface declares {}",
+            ir.outputs.len(),
+            R::SLOTS
+        ));
+    }
+    problems.into_result()
+}
+
+/// [`check_ir`], as an assertion.
+pub fn assert_ir_matches_interface<A: CallArgs, R: CallResult>(
+    ir: &minocrab_zkir::v3::IrSource,
+    entry_point: EntryPoint,
+) {
+    if let Err(problems) = check_ir::<A, R>(ir, entry_point) {
+        panic!("`{}` does not match its own interface:\n{problems}", entry_point.name());
+    }
+}
+
+/// A compiled circuit against a derived constraint prefix: input count,
+/// communications commitment, and the prefix slot for slot — each
+/// constraint on the declared input of ITS slot.
+fn compare_zkir(
+    problems: &mut Problems,
+    name: &str,
+    facts: &ZkirFacts,
+    expected: &[(usize, String)],
+    slots: usize,
+) {
+    if !facts.do_communications_commitment {
+        problems.push(format!("{name}.zkir does not compile a communications commitment"));
+    }
+    if facts.inputs.len() != slots {
+        problems.push(format!(
+            "{name}.zkir declares {} inputs, the interface's arguments occupy {slots}",
+            facts.inputs.len()
+        ));
+    }
+    if facts.prefix.len() != expected.len() {
+        problems.push(format!(
+            "{name}.zkir opens with {} constraints, the interface derives {}: {:?} vs {:?}",
+            facts.prefix.len(),
+            expected.len(),
+            facts.prefix.iter().map(|c| &c.key).collect::<Vec<_>>(),
+            expected.iter().map(|(_, k)| k).collect::<Vec<_>>(),
+        ));
+        return;
+    }
+    for (actual, (slot, key)) in facts.prefix.iter().zip(expected) {
+        if &actual.key != key {
+            problems.push(format!(
+                "{name}.zkir slot {slot}: constraint {} != the interface's {key}",
+                actual.key
+            ));
+        }
+        match facts.inputs.get(*slot) {
+            Some(input) if input == &actual.input => {}
+            Some(input) => problems.push(format!(
+                "{name}.zkir slot {slot}: the constraint is on `{}`, not on input `{input}`",
+                actual.input
+            )),
+            None => problems.push(format!("{name}.zkir has no input for slot {slot}")),
         }
     }
 }

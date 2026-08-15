@@ -22,7 +22,8 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, BytesN, CircuitArg, Serializer, Uint, B32};
+use minocrab_std::v3::{circuit, Serializer, B32};
+use signet_signer_interface::SignBidirectionalEventNotification;
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
@@ -67,21 +68,20 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
     s
 }
 
-/// `struct SignBidirectionalEventNotification { version: Uint<8>,
-/// payload: Bytes<128> }` — field order is the wire contract.
-#[derive(CircuitArg)]
-struct Notification {
-    version: Uint<8>,
-    payload: BytesN<Private, 128>,
-}
-
 /// `export circuit signBidirectional(requestId: RequestId,
 /// notification: SignBidirectionalEventNotification): []`
+///
+/// The notification's type comes from `signet-signer-interface` — THE
+/// CRATE THIS CONTRACT'S OWN CALLERS IMPORT. There is one declaration of
+/// the record, used at `Private` here (the callee witnesses its arguments)
+/// and at `Public` by every caller, so the two sides of the wire cannot
+/// disagree about its layout; `tests/contract_matches_its_interface.rs`
+/// checks the whole signature the same way.
 #[circuit]
 pub fn sign_bidirectional(
     c: &mut Circuit3,
     request_id: B32<Private>,
-    notification: Notification,
+    notification: SignBidirectionalEventNotification<Private>,
 ) {
     let version = notification.version.field();
     let payload = notification.payload;
@@ -102,6 +102,17 @@ pub fn sign_bidirectional(
 
 /// The shared body of `respond`/`respondBidirectional`: only the event
 /// name differs.
+///
+/// DELIBERATELY STILL HAND-DECLARED, unlike [`sign_bidirectional`]. The
+/// interface crate's `SignatureRespondedEvent` nests three structs deep
+/// (`{ signature: { bigR: { x, y }, s, recoveryId } }`), so declaring the
+/// argument through it would rename every input to its full path
+/// (`event_signature_big_r_x_hi` …) and move `tests/interface_snapshot.rs`
+/// — a rename with no wire consequence, since input names are ours and not
+/// compactc's. What replaces the by-construction guarantee is a mechanical
+/// one: `tests/contract_matches_its_interface.rs` checks these hand-written
+/// declarations against `SignatureRespondedEvent`'s schema slot for slot,
+/// so the layout still cannot drift from the crate every caller imports.
 fn respond_like(name: &str) -> Compiled3 {
     let mut c = Circuit3::new();
     let request_id = arg_b32(&mut c, "requestId");
