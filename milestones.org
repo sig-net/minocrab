@@ -397,6 +397,27 @@ the compatibility reference; the optimized vault is its own artifact
       crypto regions if headroom remains. Every change lands with the
       harness green at full scale. (instruments landed: cryptocost
       example, row-attributed profiles, bench third side)
+      (IN PROGRESS 2026-08-15 — the artifact is forked and the three
+      low-risk rungs have landed; see notes/vault-optimization.org
+      §"As built — steps 4 + 5(i-iii)". erc20_vault_opt is a
+      byte-identical fork of the nine ports (step 4), gated by a
+      DIVERGENCE LEDGER that says per circuit whether compactc's
+      PI-equality still covers it or the spec harness has taken over,
+      asserted in both directions. Rungs: (i) avenue 7's kernel.self
+      dedup, (ii) avenue 5's derived changeNonce, (iii) avenue 2's
+      injective domain separator. Measured, port → opt: initialize 0% ·
+      deposit −0.07% · approveRouter −0.09% · swap −7.4% · claim /
+      completeWithdraw −7.9% · withdraw −9.0% · refund −11.5% ·
+      completeSwap −17.3%; −33,883 rows overall (−9.6%). NO k MOVES, so
+      no prove-time or RAM change yet — as the analysis predicted for
+      the ECDSA/keccak-floored circuits. Two projections corrected:
+      avenue 7's kernel.self component is 12 rows per read (144 total),
+      an order of magnitude under the ranked table, and the domain
+      separator has 8 uses, not 9. Deferred: avenue 7's config→one-Cell
+      merge (it moves the ledger declaration and the reference model's
+      state layout). Still to come: refund's branch merge, the
+      commitments, and the burn restructure — which needs its
+      well-formedness test first. Ladder continues, so NOT ticked.)
 - [ ] The report: fresh single-session benchmark — super-optimized vault
       vs compactc vs the direct port (three-way, so ergonomics-neutral
       lowering wins and freed-framing wins are attributed separately);

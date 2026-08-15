@@ -706,3 +706,187 @@ final report and as the gate on the optimized artifact.
 - The attestation-signature guard is always satisfied under generation
   (scenarios build valid signatures); its failure modes live in the
   adversarial suite instead.
+
+* As built — steps 4 + 5(i-iii) (2026-08-15)
+The artifact is forked and the three low-risk rungs have landed. Rows are
+MEASURED (=minocrab_sim::v3::cost=, the frozen row snapshot), not modelled.
+
+** Step 4 — the byte-identical fork
+=crates/minocrab-contracts/src/erc20_vault_opt.rs=: the nine circuit
+functions and their private helpers, copied. The protocol constants, the
+record types and the shared helpers (=common=, =signet=) are IMPORTED, so
+the vault's wire contract and Compact's standard library cannot drift
+between the two artifacts. At the forking commit every opt row and every
+opt interface line is identical to its port's — asserted, not assumed.
+
+Harness wiring (all of it below the artifact boundary, so it is written
+once and run twice):
+- =tests/vault/artifact.rs= — =Art= selects the artifact, =Circuit= names
+  the nine circuits independently of it, and =fork_status= is the
+  DIVERGENCE LEDGER.
+- the four discretionary constructions in =tests/vault/prims.rs=
+  (userCommitment, refund commitment, domain separator, changeNonce) take
+  an =Art=; =Term::concretize= routes through them, so their =Art::Opt=
+  arms are the deviation log in executable form.
+- every scenario carries its =Art=; =with_art= rebuilds a generated case
+  for the other artifact. =Scenario= now stores the deployer's SECRET
+  rather than its digest, which is what makes that rebuild well defined.
+- =erc20_vault_spec.rs= and =erc20_vault_adversarial.rs= run every case
+  against both artifacts. The compat side keeps its corpus comparisons;
+  the opt side is swept for soundness only.
+- =tests/erc20_vault_opt_fork.rs= asserts the ledger in BOTH directions:
+  an =Identical= circuit really is byte-identical AND still PI-equal to
+  compactc on the reference model's preimage; a =Diverged= one really
+  differs. A rung that moves a circuit without moving its ledger entry
+  fails the build, so leaving compactc's coverage is always an explicit
+  edit. It also dumps the opt side's own preimages for the benchmark.
+- minocrab-bench's =Target::opt= is filled for the nine vault circuits
+  (Signet's singleton stays two-sided — a deployed compactc artifact is
+  not ours to optimize).
+
+** Measured rows: port → opt, cumulative over rungs (i)-(iii)
+| circuit | port | opt | Δ | % | k |
+|---------+------+-----+---+---+---|
+| initialize | 4,272 | 4,272 | 0 | 0% | 13 → 13 |
+| deposit | 17,502 | 17,490 | −12 | −0.07% | 15 → 15 |
+| approveRouter | 13,344 | 13,332 | −12 | −0.09% | 14 → 14 |
+| claim | 47,660 | 43,911 | −3,749 | −7.9% | 16 → 16 |
+| completeWithdraw | 47,466 | 43,717 | −3,749 | −7.9% | 16 → 16 |
+| swap | 51,485 | 47,688 | −3,797 | −7.4% | 16 → 16 |
+| withdraw | 42,373 | 38,576 | −3,797 | −9.0% | 16 → 16 |
+| refund | 65,231 | 57,721 | −7,510 | −11.5% | 16 → 16 |
+| completeSwap | 65,071 | 53,814 | −11,257 | −17.3% | 16 → 16 |
+| TOTAL | 354,404 | 320,521 | −33,883 | −9.6% | — |
+NO k BOUNDARY MOVES, so prove time and RAM are unchanged by all three
+rungs together. That is the §"k arithmetic" verdict holding exactly: the
+settle circuits are floored above 2^15 by ECDSA, and withdraw/swap need
+the burn restructure (avenue 6), not framing.
+
+** Per-rung deltas vs this file's projections
+| rung | avenue | projected | measured | verdict |
+|------+--------+-----------+----------+---------|
+| (i) | 7, kernel.self dedup | −200..−600/circuit | −12 per read, −144 total | ORDER OF MAGNITUDE OPTIMISTIC |
+| (ii) | 5, changeNonce | −3,760 | −3,747 | −0.3% |
+| (iii) | 2, domain separator | −3,760 × 9 = −33,840 | −3,749 × 8 = −29,992 | per-use good; USE COUNT WRONG |
+Two corrections to this file:
+1. Avenue 7's kernel.self component was priced with the analysis's 4-7
+   rows/instruction. Step 0 measured 1-2. A deduplicated read is 3 Impact
+   instructions plus 2 public_input gates = 12 rows, MEASURED, and there
+   are 12 removable reads in the whole vault (deposit 1, approveRouter 1,
+   withdraw 4, swap 4, refund 1, completeSwap 1) — 144 rows, not the
+   "−200..−600 each" the ranked table promised. Avenue 7's remaining
+   value is the state-layout item (deferred, below) and smaller
+   transactions, not rows.
+2. The domain separator has EIGHT uses, not nine: withdraw 1, swap 1,
+   claim 1, completeWithdraw 1, refund 2, completeSwap 2. (Six call sites
+   in the source; =refundSurrenderedValue= contributes to two circuits.)
+
+** Deviation log
+Each entry is a deliberate departure from compactc's framing or from the
+Compact source's constructions, with the argument that makes it safe. The
+executable form of this list is the set of =Art::Opt= arms in
+=tests/vault/prims.rs= plus the =fork_status= ledger.
+
+*** D1 (rung i) — one kernel.self() read per circuit
+compactc emits a fresh =kernel.self()= read at every stdlib call site that
+wants the contract's own address; the optimized vault reads it once and
+threads it. The value is the contract's own address, constant for the
+whole transaction, and every emitted read still reconciles against the
+ledger (=ResultModeVerify::process_read=) — so how many are emitted is
+framing, not protocol (§"(b) COMPACTC-FRAMING-ONLY"). In =refund= the two
+branches' GUARDED reads become one UNGUARDED read dominating both: the
+branches are complementary, so the transcript still carries exactly one
+kernel.self answer on either route while the circuit carries one read
+instead of two. =claim= and =completeWithdraw= were left alone — the only
+removable read in either is inside Compact's own =mintShieldedToken=
+auto-receive branch, worth 12 rows in an ECDSA-floored circuit against a
+forked copy of a stdlib lowering. The shared helpers gained
+"caller already read kernel.self" forms (=receive_shielded_with=,
+=burn_coin_with=, =mint_shielded_token_to_key_with=) rather than being
+copied; the ports keep the originals and their frozen rows prove the
+refactor was inert.
+
+*** D2 (rung ii) — completeSwap's changeNonce is derived, not hashed
+=changeNonce = [255 − mintNonce.hi, mintNonce.lo]= replaces
+=persistentHash([mintNonce, pad(32, "change")])=. Uniqueness argument:
+(a) WITHIN THE CALL the change coin must not collide with the out coin —
+both go to the same recipient, so when =tokenIn == tokenOut= and the
+change equals =amountOut= the nonce is the only separator, and a collision
+would be SILENT (the effects' spend claims are a map keyed by commitment,
+so two equal commitments collapse to one entry and a coin is lost).
+=255 − hi= has no fixed point over the integers and =mintNonce.hi= is
+range-constrained to 8 bits where it is declared, so the two nonces differ
+in their top byte for every caller-supplied nonce, unconditionally.
+(b) ACROSS CALLS =hi ↦ 255 − hi= is a bijection, so distinct mint nonces
+still give distinct change nonces: freshness stays where the port already
+put it (the caller's mint nonce), with zswap's global
+=CommitmentAlreadyPresent= the same backstop as before.
+(c) TOTALITY: =hi ∈ [0,255] ⟹ 255 − hi ∈ [0,255]=, always a canonical
+=Bytes<32>=. This file's other candidate, =mintNonce + 1=, is NOT total in
+that sense — it can carry the 248-bit low limb out of range.
+(d) DISCLOSURE is unchanged: =mintNonce= is a circuit argument both
+artifacts publish into the transcript, so the hashed change nonce was
+always computable by an observer. The SHA-256 was domain separation
+between two public values, not preimage resistance over a secret.
+
+*** D3 (rung iii) — the token domain separator is an encoding
+=vaultTokenDomainSeparator(erc20) = 0x01 ‖ 0x00 × 11 ‖ erc20[20]=, i.e.
+the slot pair =[hi = 0x01, lo = erc20]=, replacing
+=persistentHash([pad(32, "erc20:vault:"), erc20])=. The address limb is
+carried VERBATIM, so injectivity is by inspection rather than by
+collision resistance; byte 31 is a kind tag ("the vault token of an EVM
+ERC-20") that a future token family would change instead of changing the
+hash. Safe because the separator is a PRE-TOKEN, not a colour: the ledger
+derives the colour itself as
+=tokenType(sep, self) = SHA-256([pad(32, "midnight:derive_token"), sep, self])=
+(coin-structure/src/contract.rs:58-68, used verify.rs:856-865) and accepts
+an arbitrary 32-byte pre-token (§"(c) SPEC-DISCRETIONARY", re-checked at
+the pinned rev). Distinct ERC-20s therefore still get distinct colours,
+and the contract's own address inside =tokenType= keeps two contracts'
+tokens apart even under an identical separator. No new disclosure: the
+separator already travels in the clear in
+=kernel.mintShielded(domain_sep, value)= and the address is already public
+in the stored record. The optimized vault's token colour differs from the
+port's — correct, since it is a separate deployment with its own address
+and verifier key. A property test asserts the LAYOUT (address verbatim,
+zero span, tag byte, equality iff addresses are equal) so the table in the
+doc comment and the code cannot drift.
+
+** Considered and NOT taken at these rungs (measured, not assumed)
+- CACHED IDX OPCODES (avenue 7): =Op::Idx{cached}='s =field_repr= differs
+  in the opcode byte alone, so the instruction count and the transcript
+  element count are identical — ZERO rows. It is a gas / tx-size lever,
+  not a row lever. The ranked table's "cached idx" entry should be read
+  that way.
+- COMPACTC'S UNFOLDED cond_select PAIRS (avenue 7): the vault's
+  =cond_select=s are all semantically load-bearing (claim's
+  =Maybe<Either<..>>= recipient selection, =assert_if='s guarded
+  asserts). There is no redundant copy to fold.
+- INLINE-IMMEDIATE Copy REMOVAL: an IR-level lowering change (M9 phase 7)
+  that applies to both artifacts, not a contract change. Nothing to do
+  here.
+- CONFIG → ONE Cell (avenue 7's state-layout item): DEFERRED. It changes
+  the ledger declaration, so it moves the reference model's state layout,
+  the =PreState= shape, every affected circuit's read framing and the
+  notification path's meaning — a far bigger blast radius than the rest of
+  this rung, and it wants its own commit with its own harness diff. Worth
+  −200..−400/circuit plus a smaller PI vector; still on the table.
+- constrain_bits DEDUP: unchanged verdict — do not take (§"constrain_bits
+  dedup — analyzed, rejected").
+
+** What the harness caught
+Rung (i) landed the circuit change before the reference model, and the
+spec suite failed on exactly the five model builders that had not been
+updated, naming the transcript element that drifted ("public transcript
+input mismatch for input 161; expected Some(32), computed Some(40)") —
+the compat side staying green throughout. That is the "deviation log made
+executable" working as designed: an optimization that is not also written
+into the reference model cannot pass.
+
+** Next
+The ladder continues at §Sequencing step 5(iv): refund's branch merge
+(#4), then commitments → Poseidon (#3, and #1 as the short-SHA variant),
+then the burn restructure (#6) — which needs its well-formedness test
+against the pinned ledger FIRST, per §"Q1". Nothing in these three rungs
+touched arguments, so the interface snapshot is unchanged and the opt
+artifact remains call-compatible in shape with the port.
