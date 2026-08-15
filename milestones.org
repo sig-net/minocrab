@@ -1197,11 +1197,61 @@ Uint<0..k>, k the variant count — see the correction in the note below).
       (intlen(maxval)), FAB atom (ceil bytes). Borsh rule: serialize at
       the next BORSH primitive width up, since 3-byte integers are not
       Borsh.)
-- [ ] Implement + corpus differentials on contracts using Uint<0..10>,
+- [X] Implement + corpus differentials on contracts using Uint<0..10>,
       <0..300>, <0..1000>, <0..70000>.
+      (2026-08-15, notes/bounded-integers.org §6. `BoundedUint<BOUND>`
+      through the whole stack: CircuitAbi/CircuitArg, CallArg/CallResult,
+      LedgerRepr (one line — LedgerRepr is BUILT on those two, so a
+      bounded value is a cell/map value for free), Disclose, CheckOperand
+      + the six comparison methods, CircuitBorsh, and the interface
+      generator, whose `unsigned_type` now decides Uint-vs-BoundedUint
+      once for both `Uint` and `Enum`. The three derives needed NO change.
+      NO CORPUS CONTRACT WAS PORTABLE, and establishing that took a scan
+      worth recording: 788 compiled .zkir corpus-wide, 66 of them v3 (only
+      the three sig-net sources carry --feature-zkir-v3, and our IR is
+      v3), and NONE of the 66 has a non-power-of-two bound. The two corpus
+      contracts that use one are multiconst (whose test5.zkir really does
+      carry `less_than x 0x0a bits=4`, but is v2) and midnight-serde's
+      serde-fixtures (every circuit `pure`, and a pure export gets no
+      .zkir at all). So the established tiny.compact-style fallback:
+      crates/minocrab-contracts/tests/fixtures/bounded/bounded.compact,
+      compiled with the pinned compactc, eleven circuits covering the four
+      bounds the fairness bullet names plus every edge of the table
+      (0..1 → constrain_eq, 0..2 → boolean, 0..256 → constrain_bits,
+      0..255 → the bound that LOOKS sized, a 3-name enum, a derived struct
+      with a bounded field, and two bounded arguments compared).
+      THE RESULT IS STRONGER THAN THE CRITERION: the serialized ZKIR is
+      EQUAL to compactc's up to identifier renaming for all eleven — op,
+      immediate, width and operand position — the only differences being
+      our `%lt.N` temporaries and the derive's informative argument labels.
+      Plus the §6 criterion per circuit, the ABI round-trip against
+      contract-info.json slot for slot, and the pair that pins the bound's
+      POSITION: both artifacts REJECT the first illegal value and ACCEPT
+      the largest legal one, at every arm of the table. Four rejections are
+      E0080 at the call site (bound < 1 — in compactc's own words; a
+      narrowing `widen`; a `to_uint` too narrow; a mixed-width comparison);
+      one panic is added to the recorded list (a constant past the bound).
+      Zero movement: all 87 pre-existing circuits' serialized ZKIR dumped
+      before and after — 87 of 87 BYTE-IDENTICAL, which is what "the two
+      leaves coexist" buys. Both snapshots grew by the eleven new entries
+      and nothing else moved; `cargo test --workspace` 497 passed / 0
+      failed, --release row_snapshot green. Corrected in passing, all from
+      the same off-by-one: notes/builtin-lowering.org §1 and §8,
+      minocrab-abi's enum prose and `prim_name`, interface-gen's `render`,
+      notes/interface-crates.org's mapping table.)
 Exit criteria: a corpus contract with a non-power-of-two bound ports
 with the usual differential green; the README fairness bullet moves to
 the feature list.
+ASSESSMENT (2026-08-15): MET, with one substitution. The differential is
+green and the README bullet has moved to the feature list. The
+substitution is the first criterion's word "corpus": no corpus contract
+was portable (the scan above), so the differential runs against a
+tiny.compact-style fixture compiled by the same pinned compactc — the
+route M4 used for the same reason and the route M17's bullet already
+names. What that costs is corpus PROVENANCE; what it does not cost is
+the differential's strength, which is byte-equality against compactc's
+own output rather than the §6 criterion the corpus ports settle for.
+M14 CLOSED.
 
 * M15 — Opaque<'ts-type'> bridging
 Fairness-list gap: Compact contracts hold and thread TS-side values

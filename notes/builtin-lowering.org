@@ -43,11 +43,11 @@ Field parameters (=compiler/field.ss:36=, =compiler/langs.ss:60-68=):
 |-----------------------+-----------------------------------+----------------------------------+------------------------------------------|
 | =Boolean=             | 1                                 | 1                                | =(abytes 1)=                             |
 | =Field=               | 1                                 | — (full field)                   | =(afield)=                               |
-| =Uint<N>= / =Uint<0..n>= | 1                              | max value (2^N−1 resp. n)        | =(abytes ceil(bitlen(max)/8))=           |
+| =Uint<N>= / =Uint<0..n>= | 1                              | max value (2^N−1 resp. n−1 — the range end is EXCLUSIVE, notes/bounded-integers.org §0) | =(abytes ceil(bitlen(max)/8))=           |
 | =Bytes<N>=            | ceil(N/31)                        | high limb 2^(8·(N mod 31))−1, others 2^248−1 | one =(abytes N)=             |
 | =Vector<n,T>= / tuple | n × slots(T), element-major       | per element                      | element atoms repeated n×                |
 | struct                | fields in decl order, depth-first | per field                        | concat of field atoms                    |
-| enum                  | 1 (becomes =Uint<0..k-1>=)        | #variants−1                      | =(abytes 1)= (for ≤256 variants)         |
+| enum                  | 1 (becomes =Uint<0..k>=, k = #variants) | #variants−1                | =(abytes 1)= (for ≤256 variants)         |
 | opaque =Opaque<...>=  | 1                                 | — (hash)                         | =(acompress)=                            |
 | contract type         | like =Bytes<32>= (2 slots)        |                                  | =(abytes 32)=                            |
 | =JubjubPoint= (v2)    | 2 (x, y as native fields)         | —                                | =(afield) (afield)=                      |
@@ -329,13 +329,16 @@ export circuit odd(f: Field): Uint<0..1000>     { dummy.increment(1); return dis
 #+begin_example
 castUint:  { "op": "constrain_bits", "var": 0, "bits": 128 }   ; 2^128−1 is 2^k−1
            { "op": "output", "var": 0 }                        ; same slot, no copy
-odd:       { "op": "load_imm", "imm": "E803" }                 ; 1001, LE bytes → slot 6
+odd:       { "op": "load_imm", "imm": "E803" }                 ; 1000, LE bytes → slot 6
            { "op": "less_than", "a": 0, "b": 6, "bits": 10 }   ; → slot 7
            { "op": "assert", "cond": 7 }
            { "op": "output", "var": 0 }
 #+end_example
 
-(bits=10 = 2·⌈(intlen(1001)+1)/2⌉ = 2·5.)
+(bits=10 = 2·⌈(intlen(1000)+1)/2⌉ = 2·5. The bound is 1000, not 1001: the
+range end Compact writes is EXCLUSIVE, so =Uint<0..1000>= has maxval 999 and
+compactc's =(1+ nat)= is 1000. Corrected 2026-08-15 against the pinned
+compiler — notes/bounded-integers.org §0.)
 
 The =Bytes<32> as Vector<32,Uint<8>>= + reversal + =as Secp256k1Scalar=
 combo used by zkir-v3-library's =hashToSecp256k1Scalar= was verified

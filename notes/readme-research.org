@@ -88,6 +88,11 @@ rejections are recorded here so the next agent does not re-litigate.
   IMPORTED interface argument with such a bound is handled — but no
   leaf type produces =UintMax=, so you cannot declare one. The README
   says exactly that split.
+  CLOSED 2026-08-15 by M14 (=BoundedUint<BOUND>=,
+  notes/bounded-integers.org): the bullet moved to the README's feature
+  list. Note the survey's ONE error, corrected there — the range end is
+  EXCLUSIVE, so =Uint<0..10>= is maxval 9, and the enum row below is
+  =Uint<0..k>=, not =Uint<0..k-1>=.
 - =Opaque<'ts-type'>=. Real and used: =ledger ciphertexts:
   Opaque<"Uint8Array">=, =witness set_local_id(participant:
   Opaque<"string">)=, =Set<Opaque<"string">>=, =Maybe<Opaque<"string">>=
@@ -121,13 +126,14 @@ rejections are recorded here so the next agent does not re-litigate.
 ** REJECTED — with the evidence
 - Language-level enum exhaustiveness. Compact has NO =match=
   statement (grep of the corpus: zero matches); its =enum= is a set of
-  named fieldless constants compiled to =Uint<0..k-1>=
+  named fieldless constants compiled to =Uint<0..k>= (the range end
+  is exclusive; corrected 2026-08-15, notes/bounded-integers.org §0)
   (minocrab-abi/src/info.rs:269-272, corroborated there by
   advanced_casts/test17's compiled .zkir). There is no exhaustiveness
   feature to lack. A plain Rust =enum= gives the names and =Tag<K>=
   gives the byte + bound. What DOES remain is the non-power-of-two
-  variant count, which is the =Uint<0..n>= row above, so the honest
-  version of this candidate is already in the README.
+  variant count, which is the =Uint<0..n>= row above — CLOSED by M14, so
+  neither half of this candidate is a gap any more.
 - ZKIR 3.x curve/hash breadth. The pinned rev's =IrType= ALREADY
   carries Curve25519{Point,Base,Scalar} and Secp256r1{Point,Base,Scalar}
   alongside Jubjub and Secp256k1 (minocrab-ir/src/v3.rs:95-106), and
