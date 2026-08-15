@@ -1,0 +1,240 @@
+#+title: Serialization format: design of record (flat fixed LE; borsh + serde/bincode as oracles)
+
+REFRAMED after dmd's 2026-08-15 challenge ("why almost-Borsh? option
+blowup? want serde too"): the format's identity is OUR two-page spec of
+the flat fixed little-endian declaration-order layout — for the
+circuit-safe subset, Borsh, bincode-fixint(serde) and zerocopy/C-packed
+all emit IDENTICAL bytes, so we are not subsetting someone's format,
+we are speaking the layout their fixed modes agree on. Borsh becomes
+ONE of TWO conformance oracles: spec types derive borsh traits AND
+serde, the property asserts in_circuit == borsh::to_vec ==
+bincode-fixint::serialize (dual oracle, P1 strengthened). serde gives
+dmd the generated native ser/de they asked for; borsh-js remains
+available to the TS side; the generated offset tables make a 20-line
+DataView reader equally valid. Option blowup answer: always-max-size
+is CIRCUIT physics (both arms always cost rows — measured on refund);
+wire elision would only save off-chain bytes while making offsets
+data-dependent; Flagged<T> (1-byte tag, payload always present) is
+ordinary canonical Borsh AND ordinary serde of that struct — no
+dialect — and is what Compact's Maybe already compiles to. Formats
+with native fixed-offset optionals (Cap'n Proto, FIDL) pay word-
+alignment padding + pointer machinery = keccak rows; rejected.
+Everything below stands with "Borsh" read as "the flat layout, with
+borsh as an oracle".
+
+dmd directive 2026-08-15 (FAB concerns documented in
+~/Documents/Midnight/FAB{,-issues,-findings}.md, filed upstream as
+compact#709): move event payloads + attestation parsing to a terse
+format with minimal branching in ZKIR — Borsh — reusing the borsh
+ecosystem, serde-like derives. MPC update is in scope (Sig.Network owns
+it). Option MAY branch, minimally. Design surveyed by Opus agent
+2026-08-15; refinements from dmd folded in.
+
+* The three findings that reshape the plan
+1. FOR THE FIXED-WIDTH SUBSET, MIDNIGHT'S HASHED FAB *IS* BORSH,
+   byte-for-byte. persistentHash/keccak256 hash binary_repr, which for
+   bytes<n> atoms is raw bytes zero-padded to n — a sequence of
+   bytes<w_i> atoms hashes as the plain concatenation of fixed-width LE
+   fields = Borsh's struct rule. The vault record's atoms are ALL
+   bytes<n> (no field/compress/option segments; Compact Maybe is a
+   struct with an always-present payload). So keccak256(record) TODAY
+   already equals keccak256(borsh::to_vec(record)) for the matching
+   Rust struct; same for the attestation digest (= borsh of
+   {[u8;32], [u8;N]}) and the singleton's Misc payloads. The
+   deliverable is mostly A SPECIFICATION AND A TEST ORACLE — shippable
+   for the already-deployed pinned interfaces too.
+2. THE IN-CIRCUIT ENCODER IS FREE ON THE HASH PATH. ZKIR's
+   Keccak256/PersistentHash do the byte packing in-chip (~0.25
+   rows/byte), and their per-limb byte decomposition ENFORCES the
+   range constraints that make the encoding injective. Choosing atom
+   widths = Borsh widths gets Borsh encoding for zero extra rows, with
+   the soundness backbone free.
+3. THE STACK CANNOT BRANCH ANYWAY: in-circuit decoding of FAB option
+   segments is a hard unimplemented!() error in zkir-v3 (ir_vm.rs:
+   114-119). The circuit-safe subset is forced, not chosen.
+VERDICT on "small performance hit acceptable": there is no hit.
+Attested-output changes cost +2..+6 rows per settle circuit; the
+(future-work) record change is −4,218 rows and crosses swap to k15 —
+the boundary M10 missed by 51 rows.
+
+* The circuit-safe Borsh subset
+Included (every offset a compile-time constant; LEN an associated
+const; instruction stream value-independent — checkable via
+borsh::object_length(&v) == T::LEN ∀v):
+u8..u128 → Uint<8..128> (LE, assert_bits 8w) · bool → Bool
+(assert_boolean — NEW check vs today) · [u8;N≤31] → Bytes<N> ·
+[u8;32] → B32 · [u8;N>31] → BytesN · [T;K] element-wise · fieldless
+enum(K) → Tag<K> (1 byte, assert tag<K) · struct = declaration-order
+concatenation.
+Excluded, with replacements:
+- Vec/String/maps: u32 length prefix = value-dependent layout. Use
+  [T;K] + separate count field (the record already does: noWords).
+- Option<T>: Borsh omits the payload on None. Use
+  struct Flagged<T> { is_some: bool, value: T } — always-present
+  payload, which IS what Compact's Maybe compiles to. Maybe ↦ Flagged,
+  NOT Option — the single most important line in the spec for the TS
+  side. (dmd: minimal branching OK — Flagged is one constrained tag +
+  selects, offsets stay static, vanilla-borsh compatible.)
+- Data-carrying enums: distinct record types per kind (VaultEvent vs
+  SwapEvent already are), or {tag, widest-payload} if ever needed.
+- Uint<BITS> for BITS ∉ {8,16,32,64,128}: width must be a Borsh
+  primitive; narrower RANGE is a range constraint. Compile error via
+  inline const assert.
+- Trailing zero padding is NOT Borsh: where a fixed envelope demands
+  it (288-byte Misc), the spec states "bytes 0..LEN Borsh, LEN..N MUST
+  be zero" — checked in-circuit (test_eq per pad limb) and by the
+  decoder rule (slice to LEN, assert tail).
+Protocol additions recommended: a 1-byte response-kind discriminant at
+offset 0 of every attested output (makes cross-circuit attestation
+replay structurally impossible; today claim/completeWithdraw share a
+digest shape split only by which map holds the id); replace the two
+in-band ABI-JSON schema strings on the record (68/75 bytes) with that
+kind tag — this is what buys swap's k15.
+
+* Trait + derive (crates/minocrab-std/src/v3/borsh.rs + minocrab-macros)
+CircuitBorsh<V>: CircuitArg — strict extension; one derive yields
+circuit args, hash-preimage alignment, packed serialization,
+deserialization, range constraints, exported layout:
+  const LEN; push_limbs (→ alignment-aware hash instrs, the ZERO-COST
+  path); push_segments (→ Serializer, the packed path for logs);
+  constrain_canonical (booleanity, tag<K, pad==0 — the checks Borsh's
+  decoder makes that Compact's does not); read(c, &mut BorshReader);
+  layout(&mut LayoutPath, &mut Vec<FieldSpec>) — drives spec doc +
+  vectors + schema cross-check, never codegen.
+Free fns: alignment_of / limbs_of (0 rows) / to_bytes (packing cost).
+Derive #[derive(CircuitBorsh)] + #[borsh(spec = path)]: the spec type
+is a SECOND plain struct with borsh's own derives (the oracle must be
+independent of the circuit layout logic or it tests itself); the
+attribute only generates a test walking borsh's BorshSchemaContainer
+into FieldSpecs and asserting equality with layout(). M9 thinness
+gates apply verbatim.
+
+* The deserializer — designed, deliberately off the critical path
+BorshReader<V> two modes: Split (M7 pass-2 backwards, one div_mod
+(143 rows) per field boundary, fields stay Public) and WitnessCheck
+(witness each leaf + constrain_bits + re-pack + assert limb equality;
+~2w rows per leaf, 4-70× cheaper; leaves are Private → ledger use
+needs disclose). BUT the vault doesn't need either: the attested
+output arrives as typed circuit ARGUMENTS and the MPC signs
+keccak(requestId ‖ bytes) — declaring fields + running the SERIALIZER
+forwards is a complete sound deserialization. The four-line theorem:
+packing injective on range-constrained inputs (disjoint powers of
+256); MPC signed the digest; circuit constrains bytes = serialize
+(fields), fields in range; ∴ fields = what the MPC encoded. Range
+constraints enforced twice (constrain_input + the hash chip's own
+decomposition). Reader gets built as a tested library component
+(round-trip property; future packed state), not a vault dependency.
+Deferred: witnessed-straddle writer optimization (only pays for
+Private serializations; log payloads are Public).
+
+* Site classification
+(a) NOW — attested outputs (new erc20_vault_borsh artifact, forked
+byte-identically from erc20_vault_opt; compat ports stay FAB and
+differential-green; M10's measured ladder not reopened):
+claim/completeWithdraw: Bytes<1> → {kind: Tag<4>, success: bool}, +4
+rows each; refund: 5-byte sentinel → kind tag or constant compare, 0;
+completeSwap: its 8-byte output is ALREADY a Borsh u64 — add kind
+byte, +2. THE 0x02 HAZARD CLOSES: today any byte ≠ 1 routes
+completeWithdraw to the refund branch (re-mint on a SUCCESSFUL
+withdrawal — the M10 harness finding); Borsh bool is 0|1 and nothing
+else; assert_boolean is the same rule. Parsing correctness made
+concrete, 2 rows.
+(a) NOW — event payloads: ZERO circuit change. The ledger never parses
+a Misc payload (Log carries an opaque StateValue), and the deployed
+singleton's payloads are already subset-conformant. Deliverable = spec
++ golden vectors for the TS side, immediately.
+(b) PINNED, untouched: Impact/popeq framing, comm commitment,
+tokenType, coin commitments, the singleton's calldata FAB framing
+(payload bytes inside it are already conformant), all compat ports.
+(c) FUTURE WORK WITH A NUMBER: the request record. Drop the two
+in-band schema strings → kind tag: swap record 571→497 bytes, 5→4
+keccak blocks, −4,218 rows → swap (opt) 32,819 → ~28,601 = K15 with
+4,167 rows of margin. deposit/approveRouter/withdraw shrink but don't
+cross. RULE: state stays FAB (per-field alignment = free array reads
+in settle circuits — a packed state buffer would cost ~1,700
+rows/settle to read back); only the HASH PREIMAGE + log payload are
+Borsh (free, since hashed-FAB ≡ Borsh here). Better: emit the record
+as a Misc log payload = the same bytes as the requestId preimage; the
+MPC never parses FAB at all.
+
+* borsh ecosystem reuse
+borsh 1.6.1 (+derive, unstable__schema) as DEV-dependency of
+minocrab-std + minocrab-contracts only (same posture as
+midnight-ledger dev-deps; nothing shipping links it). Buys: P1 oracle
+(in-circuit bytes == borsh::to_vec, via simulate on per-type encode
+circuits — tests the CIRCUIT, not a Rust re-derivation); independence
+(spec types use borsh's own derives); BorshSchema drift alarm
+(generated test per type); object_length as the mechanical no-branching
+proof; golden vectors (spec/vectors/*.json) shared by borsh-js/go/
+Rust-MPC. borsh-derive does NOT drive our codegen (io::Write-shaped,
+can't see wires); two definitions + generated cross-check is the
+honest shape.
+
+* Correctness
+Art::Borsh third artifact; ARTS: [Art;3]; concretization arms in
+prims.rs are the executable deviation log; 9M-case gate becomes ~78
+min. Properties P1-P6 (oracle equality, fixed-length, schema match,
+bijectivity, reject-agreement, digest match). Malformed classes are
+FINITE: wrong length (off-chain reject; in-circuit it's a different
+preimage → signature fails — documented asymmetry), out-of-range leaf
+(assert_bits + hash chip), bool ∉ {0,1}, tag ≥ K, non-zero pad.
+Duplicate encodings: NONE EXIST in the subset (vs FAB-findings §4's
+live canonicity gaps). The port↔borsh injectivity sweep will FAIL on
+0x02 and force the deviation-log entry — the harness working as
+designed.
+
+* Alternatives (settled — do not re-litigate)
+postcard/bincode-default: varints = value-dependent layout, out.
+Protobuf: varints+tags, out. SSZ: close, but variable-size head/tail
+offset tables + merkleization baggage + consensus-flavoured Rust
+ecosystem. EVM ABI static: fixed offsets + native for the MPC, but
+~3× bytes and bytes are keccak rows. BORSH CONFIRMED: bijective by
+construction, subset byte-identical to what our Serializer emits AND
+what binary_repr hashes, clean Rust impl + schema, TS/JS/Go/Python
+parsers.
+
+* Phasing (one agent per stage; usual gates + notes as-built per stage)
+0. Instruments + oracle, NO circuit changes: borsh dev-dep; spec types
+   for the DEPLOYED payloads (singleton Misc ×3, both records, four
+   attested outputs, digest preimage); byte-equality tests vs corpus
+   artifacts. Deliverable: "today's protocol is already Borsh", with a
+   test behind it. Shippable to Sig.Network alone.
+1. v3::borsh core, hand impls (CircuitBorsh, leaves, alignment_of/
+   limbs_of/to_bytes, constrain_canonical, layout). ZKIR byte-equality
+   + P1-P4 per leaf.
+2. BorshReader both modes + cryptocost-style measured per-leaf costs.
+3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
+4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero movement
+   asserted.
+5. Attested outputs → Borsh (four settle circuits, +2..+6 rows,
+   deviation-log D6 for the 0x02 semantics + kind byte).
+6. Borsh event payload twins (events_borsh/xcontract_events_borsh)
+   beside the pinned originals.
+7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect swap
+   k16→k15; re-run 9M gate; refresh BENCHMARK.md (a k moves).
+8. spec/borsh-subset.md (grammar, leaf table, reject rules, padding
+   rule, Maybe↦Flagged, per-record offset tables GENERATED from
+   layout()) + spec/vectors/*.json via --ignored regenerator. The
+   artifact the TS/MPC side implements against.
+Stages 0+8 have external value and no dependency on 1-7 — front-run
+them if the TS side is on the critical path.
+
+* Open questions for dmd (gate stages 5/7)
+1. Does the MPC verify requestId == keccak256(record)? (M10 UNSURE Q2;
+   now decisive: yes → stage 7 needs a coordinated MPC release; no →
+   unilateral. Worth 4,218 rows + swap k15.)
+2. Rollout: confirm the MPC keys response format per target contract
+   (borsh vault is a separate deployment; old vault keeps old format).
+3. Can anything emit a response byte ∉ {0,1} today? After stage 5 it
+   makes the tx unprovable instead of silently refunding — intended,
+   but must not surprise a running service.
+4. Format-version byte? Recommend: yes in record/log payload (1 byte,
+   0 rows), no in attested outputs (kind tag suffices; signed digest).
+5. TS decoder MUST use fixed arrays ([[u8;32]; N] + noWords: u16),
+   never Vec (u32 prefix would break byte equality).
+6. Logs or state for the indexer? Recommend both: FAB in state for the
+   chain, Borsh in the log for the indexer, log bytes = requestId
+   preimage.
+7. Confirm the attestation digest (stage 5) and the requestId (stage
+   7) preimages can move independently in the MPC's code; if coupled,
+   re-cut the phasing.
