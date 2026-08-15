@@ -19,8 +19,14 @@
         "examples/bugs"
       ],
       "extra": [
-        { "path": "compiler", "glob": "*.ss" },
-        { "path": "runtime/src", "glob": "compact-types.ts" }
+        {
+          "path": "compiler",
+          "glob": "*.ss"
+        },
+        {
+          "path": "runtime/src",
+          "glob": "compact-types.ts"
+        }
       ]
     },
     {

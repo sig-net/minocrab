@@ -25,6 +25,11 @@ compactc-compiled ZKIR. This is the project's test bed: round-trip tests
 * Notes
 - The toolchain is pinned in flake.nix; bumping it means recompiling the
   corpus (=./compile.sh=) and re-running the workspace round-trip tests.
+  The whole procedure — which gate to run when, and what a failure in each
+  one MEANS — is =notes/version-bump.org=; =../bump.sh= runs it.
+- =compile-report.tsv= is a diff instrument, so its order is pinned with
+  =LC_ALL=C= and =sources.json= is stored in =jq='s own formatting: a bump's
+  diff should be the bump, not a re-sort.
 - sig-net repos carry no license files (internal); the OpenZeppelin and
   Midnight sources are MIT/Apache-2.0 (per-source in sources.json).
 - Compile failures are data, not bugs to fix here: older pragmas and

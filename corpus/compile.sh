@@ -62,7 +62,11 @@ while IFS= read -r f; do
     printf '%s\tfail\t%s\n' "$f" "$firstline" >> "$REPORT"
     rm -rf "$out"
   fi
-done < <(find "$root" -name '*.compact' -type f 2>/dev/null | sort)
+done < <(find "$root" -name '*.compact' -type f 2>/dev/null | LC_ALL=C sort)
 
-sort -o "$REPORT" "$REPORT"
+# LC_ALL=C, or the report's line ORDER depends on the caller's locale
+# (en_US.UTF-8 ignores `.` and `_` when collating, C does not) and a
+# recompile churns 26 unrelated lines. The report is a diff instrument for
+# toolchain bumps — see notes/version-bump.org — so its order is pinned.
+LC_ALL=C sort -o "$REPORT" "$REPORT"
 echo "compiled $ok/$total OK (report: corpus/$REPORT)"
