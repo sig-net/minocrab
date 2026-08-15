@@ -297,7 +297,10 @@ declarations with generated tests, then rusty maps + literals. Standing
 principle: real types over macro rewriting — macros only generate
 impls/shims writable by hand. Zero circuit overhead throughout; every
 phase gated on interface snapshot + row_snapshot + all differential
-suites.
+suites. LOOSENED (dmd 2026-08-15): where small overhead would buy a
+clear ergonomic win, ASK dmd with the concrete numbers (rows/k, what
+the API gains) instead of auto-rejecting — the tradeoff is his call;
+zero overhead stays the default and the gates stay in place.
 - [X] Phase 0: interface-snapshot test — ordered (label, type) of
       inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
 - [X] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
