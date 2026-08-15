@@ -39,7 +39,7 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// [`LedgerCell`], [`LedgerCounter`], [`LedgerField`]) over
 /// `minocrab_ledger`'s ops — one Impact operation per method, `c` and the
 /// guard visible at every call site.
-pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr};
+pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr, LedgerSet};
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
 /// `#[must_use]` descriptors whose widths come from the operand types (see
@@ -1039,6 +1039,37 @@ pub mod ts {
 /// struct field, and either side of a cross-contract call. The fixture
 /// `tests/fixtures/opaque/opaque.compact` in `minocrab-contracts` has one
 /// circuit per position.
+///
+/// # The ts-type is part of the type
+///
+/// Two opaques of different TS types have the same LAYOUT — one `compress`
+/// atom each — so nothing in the ABI keeps them apart. The Rust type parameter
+/// does, and it is a compile error rather than a lint:
+///
+/// ```compile_fail
+/// use minocrab::v3::Circuit3;
+/// use minocrab_std::v3::{ts, Opaque};
+///
+/// let mut c = Circuit3::new();
+/// let name: Opaque<ts::Str> = Opaque::from_field(c.witness());
+/// let blob: Opaque<ts::Uint8Array> = Opaque::from_field(c.witness());
+/// // ERROR: expected `Opaque<Str>`, found `Opaque<Uint8Array>`
+/// let _ = name.eq(&mut c, blob);
+/// ```
+///
+/// which is the rejection compactc makes for the same mistake: *"expected
+/// right-hand side of = to have type `Opaque<"string">` but received
+/// `Opaque<"Uint8Array">`"*. Two opaques of the SAME ts-type compare fine:
+///
+/// ```
+/// use minocrab::v3::Circuit3;
+/// use minocrab_std::v3::{ts, Opaque};
+///
+/// let mut c = Circuit3::new();
+/// let a: Opaque<ts::Str> = Opaque::from_field(c.witness());
+/// let b: Opaque<ts::Str> = Opaque::from_field(c.witness());
+/// let _same = a.eq(&mut c, b);
+/// ```
 #[repr(transparent)]
 pub struct Opaque<T: TsType, V: Vis3 = Private>(Wire3<FieldT, V>, std::marker::PhantomData<T>);
 

@@ -35,12 +35,13 @@ use minocrab::{AlignmentAtom, Public, Visibility};
 use minocrab_ledger::{
     cell_read_embedded, cell_write, counter_increment, counter_less_than, counter_read,
     counter_read_guarded, emit, map_insert, map_is_empty, map_lookup, map_lookup_guarded,
-    map_member, map_member_guarded, map_remove, map_size, mint_read_with, ImpactElem, LedgerValue,
+    map_member, map_member_guarded, map_remove, map_size, mint_read_with, set_insert,
+    ImpactElem, LedgerValue,
 };
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Opaque, Secp256k1Point, TsType,
-    Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Maybe, Opaque,
+    Secp256k1Point, TsType, Uint, B32,
 };
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
@@ -155,6 +156,12 @@ ledger_repr_via_abi! {
     /// shape it cannot take, because the commitment is a plain field limb
     /// that a read can hand straight back.
     [T: TsType] Opaque<T, Public>,
+    /// `export ledger m: Maybe<T>` — Compact's `Maybe` is an ordinary struct
+    /// (`{ is_some: Boolean, value: T }`), so a stored one is its tag's limb
+    /// followed by the payload's, which is what the ABI delegation already
+    /// says. The payload occupies its slots whether or not the tag is set;
+    /// that is the format, not a choice made here.
+    [T: CircuitAbi + CallArg + CallResult] Maybe<T, Public>,
 }
 
 /// `export ledger k: Secp256k1Point` — the one stored type whose limbs are
@@ -435,6 +442,77 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
 /// into the Impact instruction rather than named by a `Copy` (see
 /// [`LedgerMap`]).
 const STRAIGHT_LINE: u64 = 1;
+
+/// `export ledger s: Set<T>` — PARTIAL, and deliberately so.
+///
+/// Two methods, [`insert`](LedgerSet::insert) and
+/// [`member`](LedgerSet::member), because those are the two Impact lowerings
+/// that already exist: a Compact `Set` is a `Map` with `Null` values, so
+/// `set.insert(e)` is `map_insert` with a `Null` (landed with M6's vault work)
+/// and `set.member(e)` is the SAME `Op::Member` a map's is — verified against
+/// the M15 fixture's `opSet`, whose two Impact blocks are exactly those.
+///
+/// `remove` / `size` / `isEmpty` are NOT here. They are M16's, together with
+/// `List`, `MerkleTree` and `HistoricMerkleTree`, and this type exists early
+/// only because M15's fixture stores an [`Opaque`] in a `Set`, and inventing no
+/// lowering to do it seemed better than leaving the shape unported. When M16
+/// lands, this becomes its `Set` rather than a second one.
+pub struct LedgerSet<T> {
+    index: u8,
+    _t: PhantomData<fn() -> T>,
+}
+
+impl<T> LedgerSet<T> {
+    /// The set held in ledger field `index` (the derive supplies it).
+    pub const fn at(index: u8) -> Self {
+        LedgerSet {
+            index,
+            _t: PhantomData,
+        }
+    }
+
+    /// The ledger field index.
+    pub const fn index(&self) -> u8 {
+        self.index
+    }
+}
+
+impl<T: LedgerRepr> LedgerSet<T> {
+    /// `set.insert(elem)` — `idxp [field]; push elem; pushs null; ins 1; insc 1`.
+    pub fn insert(&self, c: &mut Circuit3, elem: &T) {
+        self.insert_under(c, STRAIGHT_LINE, elem)
+    }
+
+    /// [`LedgerSet::insert`] under a branch condition.
+    pub fn insert_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        elem: &T,
+    ) {
+        let elem = elem.ledger_value(c);
+        emit(c, guard.into(), &set_insert(self.index, &elem));
+    }
+
+    /// `set.member(elem)` — `dup 0; idx [field]; push elem; member; popeqc`.
+    ///
+    /// The same op a map's `member` is, which is why it delegates to
+    /// `map_member` rather than to a `set_member` that would be its duplicate.
+    pub fn member(&self, c: &mut Circuit3, elem: &T) -> Bool<Public> {
+        self.member_under(c, STRAIGHT_LINE, elem)
+    }
+
+    /// [`LedgerSet::member`] under a branch condition.
+    pub fn member_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        elem: &T,
+    ) -> Bool<Public> {
+        let elem = elem.ledger_value(c);
+        Bool::from_field(map_member(c, guard, self.index, &elem))
+    }
+}
 
 /// `export ledger x: T` — a Cell.
 pub struct LedgerCell<T> {

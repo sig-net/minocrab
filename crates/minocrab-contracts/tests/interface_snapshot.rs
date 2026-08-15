@@ -1449,6 +1449,96 @@ in  a: Scalar<BLS12-381>
 in  b: Scalar<BLS12-381>
 ",
     ),
+    (
+        "opaque::op_arg",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_ret",
+        "\
+in  x: Scalar<BLS12-381>
+out name: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_eq",
+        "\
+in  a: Scalar<BLS12-381>
+in  b: Scalar<BLS12-381>
+out equal: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_default",
+        "\
+",
+    ),
+    (
+        "opaque::op_cell",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_witness",
+        "\
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_map_value",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  v: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_map_key",
+        "\
+in  k: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_set",
+        "\
+in  k: Scalar<BLS12-381>
+out member: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_maybe",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_bytes",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_struct",
+        "\
+in  w_tag: Scalar<BLS12-381>
+in  w_name: Scalar<BLS12-381>
+",
+    ),
+    (
+        "opaque::op_point",
+        "\
+in  p: Point<Secp256k1>
+",
+    ),
+    (
+        "opaque::op_jubjub",
+        "\
+in  p: Point<Jubjub>
+",
+    ),
     // GENERATED END
 ];
 

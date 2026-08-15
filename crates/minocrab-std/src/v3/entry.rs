@@ -621,6 +621,18 @@ impl<const N: usize> CircuitOut for Bytes<N, Public> {
     }
 }
 
+/// Returning an `Opaque` hands the caller back the COMMITMENT it already had —
+/// which is what compactc's `outputs: ["Scalar<BLS12-381>"]` for an
+/// `Opaque`-returning circuit is (the fixture's `opRet`). There is nothing
+/// else to hand back, and the value never left the caller's side to begin with.
+impl<T: TsType> CircuitOut for Opaque<T, Public> {
+    const SLOTS: usize = 1;
+
+    fn emit(self, c: &mut Circuit3, label: &str) {
+        c.output(self.field(), label);
+    }
+}
+
 impl CircuitOut for B32<Public> {
     const SLOTS: usize = 2;
 

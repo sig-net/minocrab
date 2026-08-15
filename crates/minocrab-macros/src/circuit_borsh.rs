@@ -258,6 +258,21 @@ fn reject_variable_width(ty: &Type) -> syn::Result<()> {
             "maps and sets are not in the fixed-width subset: the length prefix \
              makes the layout value-dependent. Use [(K, V); N] plus a count"
         }
+        // M15. The only entry here that is not a std container, and the only
+        // one whose value-dependence is on the LEDGER's side rather than
+        // Borsh's: a `compress` atom accepts a value of any length
+        // (`AlignmentAtom::fits` is unconditionally true for it), so an opaque
+        // has no width to declare and no bytes to declare one over. It is also
+        // the one entry compactc itself rejects, in almost these words —
+        // "persistentHash cannot be applied to a first argument containing
+        // opaque JavaScript values".
+        "Opaque" => {
+            "Opaque is not in the fixed-width subset: it is a commitment to a \
+             TypeScript-side value of unbounded length, so it has no fixed \
+             width and no bytes to encode. There is no replacement — an opaque \
+             cannot be serialized, hashed or reconstructed in circuit; pass or \
+             store it as itself (notes/opaque-bridging.org §5)"
+        }
         _ => return Ok(()),
     };
     Err(syn::Error::new(ty.span(), replacement))
@@ -436,7 +451,7 @@ mod tests {
     /// The excluded shapes, each naming its replacement.
     #[test]
     fn variable_width_fields_are_rejected_by_name() {
-        let cases: [(DeriveInput, &str); 4] = [
+        let cases: [(DeriveInput, &str); 5] = [
             (
                 syn::parse_quote! { struct P { calldata: Option<Uint<32, Private>> } },
                 "Maybe ↦ Flagged, never Option",
@@ -452,6 +467,13 @@ mod tests {
             (
                 syn::parse_quote! { struct P { table: HashMap<u8, u8> } },
                 "maps and sets are not in the fixed-width subset",
+            ),
+            // M15: the one exclusion with NO replacement — an opaque cannot be
+            // serialized at all, so the message says so rather than offering a
+            // substitute.
+            (
+                syn::parse_quote! { struct P { owner: Opaque<ts::Str, Private> } },
+                "There is no replacement",
             ),
         ];
         for (input, expected) in cases {

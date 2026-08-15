@@ -10,7 +10,8 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
     attest, bounded, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt, events,
-    events_borsh, hashing, mint_tokens, serde_builtin, signet_contract, test_caller, xcall,
+    events_borsh, hashing, mint_tokens, opaque, serde_builtin, signet_contract, test_caller,
+    xcall,
     xcall_with_payment, xcontract_events, xcontract_events_borsh,
 };
 
@@ -203,6 +204,26 @@ pub fn circuits() -> Vec<Circuit> {
         c!("bounded::b_enum", || bounded::b_enum()),
         c!("bounded::b_struct", || bounded::b_struct()),
         c!("bounded::b_compare", || bounded::b_compare()),
+        // `opaque.compact` (M15): Compact's `Opaque<'ts-type'>` in every
+        // position it can occupy, plus the two CURVE POINT types, which
+        // compactc's ABI also spells `Opaque`. Ours rather than the corpus's
+        // for the same reason as `bounded` above: the corpus's 74 `Opaque`
+        // nodes are all in v2 artifacts except four `Secp256k1Point`s
+        // (tests/opaque_differential.rs has the scan).
+        c!("opaque::op_arg", || opaque::op_arg()),
+        c!("opaque::op_ret", || opaque::op_ret()),
+        c!("opaque::op_eq", || opaque::op_eq()),
+        c!("opaque::op_default", || opaque::op_default()),
+        c!("opaque::op_cell", || opaque::op_cell()),
+        c!("opaque::op_witness", || opaque::op_witness()),
+        c!("opaque::op_map_value", || opaque::op_map_value()),
+        c!("opaque::op_map_key", || opaque::op_map_key()),
+        c!("opaque::op_set", || opaque::op_set()),
+        c!("opaque::op_maybe", || opaque::op_maybe()),
+        c!("opaque::op_bytes", || opaque::op_bytes()),
+        c!("opaque::op_struct", || opaque::op_struct()),
+        c!("opaque::op_point", || opaque::op_point()),
+        c!("opaque::op_jubjub", || opaque::op_jubjub()),
     ]
 }
 

@@ -123,6 +123,20 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("bounded::b_enum", 6, 41),
     ("bounded::b_struct", 7, 120),
     ("bounded::b_compare", 7, 81),
+    ("opaque::op_arg", 6, 32),
+    ("opaque::op_ret", 6, 53),
+    ("opaque::op_eq", 6, 57),
+    ("opaque::op_default", 6, 35),
+    ("opaque::op_cell", 6, 36),
+    ("opaque::op_witness", 6, 36),
+    ("opaque::op_map_value", 8, 130),
+    ("opaque::op_map_key", 6, 41),
+    ("opaque::op_set", 7, 75),
+    ("opaque::op_maybe", 6, 38),
+    ("opaque::op_bytes", 6, 36),
+    ("opaque::op_struct", 7, 60),
+    ("opaque::op_point", 9, 135),
+    ("opaque::op_jubjub", 7, 63),
     // GENERATED END
 ];
 
