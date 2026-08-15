@@ -245,6 +245,23 @@ impl<T: IrTy, V: Visibility> Operand<T, V> {
     fn arg(self) -> Arg {
         self.arg
     }
+
+    /// This operand seen at the meet of its visibility with `W` — which is
+    /// either its own visibility or [`Private`], never the other way round.
+    ///
+    /// It is `Wire3::private` generalized to the lattice, and it exists so
+    /// that a MIXED comparison can be assembled: both sides of
+    /// `less_than(0u64, secret)` become operands at `Public ⊓ Private`
+    /// before the instruction is built.
+    pub fn meet<W: Visibility>(self) -> Operand<T, <V as Meet<W>>::Out>
+    where
+        V: Meet<W>,
+    {
+        Operand {
+            arg: self.arg,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T: IrTy, V: Visibility> From<Wire3<T, V>> for Operand<T, V> {
@@ -320,6 +337,36 @@ pub struct Disclosure3 {
 
 // --- circuit ---------------------------------------------------------------------
 
+/// What [`Circuit3::assert`] accepts.
+///
+/// A boolean wire is the base case. The other implementor is
+/// `minocrab_std::v3::Check`, the deferred predicate — an inert descriptor
+/// that emits its comparison HERE, at the assert, and nothing anywhere else
+/// (an unasserted predicate emits nothing at all, and warns, being
+/// `#[must_use]`).
+pub trait Assertion {
+    /// Emit this assertion into `c`.
+    fn assert_in(self, c: &mut Circuit3);
+}
+
+impl<V: Visibility> Assertion for Wire3<FieldT, V> {
+    fn assert_in(self, c: &mut Circuit3) {
+        c.assert_with(self, None);
+    }
+}
+
+/// Compact's `assert(cond, "message")` second argument, kept beside the
+/// instruction stream: the message and the position of the `Assert` it
+/// belongs to. Metadata only — ZKIR has no room for it, and a simulator
+/// uses it to name a failed check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssertMessage {
+    /// Index of the `Assert` instruction this message belongs to.
+    pub instruction: usize,
+    /// What the check means, in the contract author's words.
+    pub message: String,
+}
+
 /// A ZKIR v3 circuit under construction.
 pub struct Circuit3 {
     b: Builder3,
@@ -327,6 +374,7 @@ pub struct Circuit3 {
     witnesses: u32,
     regions: Vec<Region>,
     queued_outputs: Vec<(Val, IrType)>,
+    assert_messages: Vec<AssertMessage>,
 }
 
 /// A finished v3 circuit: the lowered ZKIR plus its disclosure record.
@@ -335,6 +383,18 @@ pub struct Compiled3 {
     pub disclosures: Vec<Disclosure3>,
     pub witnesses: u32,
     pub regions: Vec<Region>,
+    /// The messages of the asserts that carry one (see [`AssertMessage`]).
+    pub assert_messages: Vec<AssertMessage>,
+}
+
+impl Compiled3 {
+    /// The message of the assert at instruction `index`, if it has one.
+    pub fn assert_message(&self, index: usize) -> Option<&str> {
+        self.assert_messages
+            .iter()
+            .find(|m| m.instruction == index)
+            .map(|m| m.message.as_str())
+    }
 }
 
 impl Default for Circuit3 {
@@ -351,6 +411,7 @@ impl Circuit3 {
             witnesses: 0,
             regions: Vec::new(),
             queued_outputs: Vec::new(),
+            assert_messages: Vec::new(),
         }
     }
 
@@ -689,9 +750,33 @@ impl Circuit3 {
 
     // --- constraints -----------------------------------------------------------------
 
-    /// Constrain a boolean wire to be true (constraining private data is
-    /// the point of ZK — this discloses nothing).
-    pub fn assert<V: Visibility>(&mut self, cond: Wire3<FieldT, V>) {
+    /// Constrain a condition to be true (constraining private data is the
+    /// point of ZK — this discloses nothing).
+    ///
+    /// Takes anything [`Assertion`]: a boolean wire, or a deferred PREDICATE
+    /// that lowers itself here (`minocrab_std::v3::Check` —
+    /// `c.assert(less_than(0u64, amount))`). A predicate lowers to exactly
+    /// the comparison instruction the hand-written form emits, at this call
+    /// site.
+    pub fn assert(&mut self, cond: impl Assertion) {
+        cond.assert_in(self);
+    }
+
+    /// [`Circuit3::assert`] with Compact's second `assert(cond, "message")`
+    /// argument.
+    ///
+    /// The message is METADATA — no instruction, no slot, no row, exactly
+    /// like a disclosure record — recorded against the position of the
+    /// `Assert` about to be emitted, so a simulator can name the failed
+    /// check instead of printing an instruction index. ZKIR has nowhere to
+    /// put it, which is why it lives beside the stream rather than in it.
+    pub fn assert_with<V: Visibility>(&mut self, cond: Wire3<FieldT, V>, message: Option<&str>) {
+        if let Some(message) = message {
+            self.assert_messages.push(AssertMessage {
+                instruction: self.b.len(),
+                message: message.to_string(),
+            });
+        }
         self.b.assert(cond.val);
     }
 
@@ -845,6 +930,7 @@ impl Circuit3 {
             disclosures: self.disclosures,
             witnesses: self.witnesses,
             regions: self.regions,
+            assert_messages: self.assert_messages,
         }
     }
 }

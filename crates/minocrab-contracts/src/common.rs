@@ -429,9 +429,29 @@ pub fn assert_if<V: minocrab_std::v3::Vis3>(
     guard: Wire3<FieldT, V>,
     cond: Wire3<FieldT, V>,
 ) {
+    assert_if_message(c, guard, cond, None);
+}
+
+/// [`assert_if`] with Compact's second `assert` argument (metadata — no
+/// instruction; the simulator names the check when it fails).
+pub fn assert_if_with<V: minocrab_std::v3::Vis3>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    cond: Wire3<FieldT, V>,
+    message: &str,
+) {
+    assert_if_message(c, guard, cond, Some(message));
+}
+
+fn assert_if_message<V: minocrab_std::v3::Vis3>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    cond: Wire3<FieldT, V>,
+    message: Option<&str>,
+) {
     let one = V::from_public(c.constant(1u64));
     let gated = c.cond_select(guard, cond, one);
-    c.assert(gated);
+    c.assert_with(gated, message);
 }
 
 /// The shared body of the static-`left(pk)` mints: compactc folds the

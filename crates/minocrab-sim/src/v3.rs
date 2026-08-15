@@ -936,9 +936,34 @@ pub fn simulate_compiled(
     compiled: &minocrab::v3::Compiled3,
     preimage: &ProofPreimage,
 ) -> Result<(Run3, Report3), Sim3Error> {
-    let run = simulate(&compiled.ir, preimage)?;
+    let run = simulate(&compiled.ir, preimage).map_err(|e| name_the_failed_assert(compiled, e))?;
     let report = report(&run, &compiled.disclosures);
     Ok((run, report))
+}
+
+/// A failed `assert` that was written with a MESSAGE says what it meant.
+///
+/// ZKIR has nowhere to put Compact's `assert(cond, "message")` second
+/// argument, so the frontend keeps it beside the stream
+/// (`Compiled3::assert_messages`, one entry per assert that carries one) and
+/// this is where it is spent: "instruction 41 (assert): failed direct
+/// assertion" becomes "… : failed assertion: Chain ID must be positive".
+fn name_the_failed_assert(compiled: &minocrab::v3::Compiled3, error: Sim3Error) -> Sim3Error {
+    match error {
+        Sim3Error::Failed {
+            at,
+            op: op @ "assert",
+            message,
+        } => Sim3Error::Failed {
+            at,
+            op,
+            message: match compiled.assert_message(at) {
+                Some(named) => format!("failed assertion: {named}"),
+                None => message,
+            },
+        },
+        other => other,
+    }
 }
 
 // --- cost + profiling ------------------------------------------------------------

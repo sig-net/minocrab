@@ -16,6 +16,7 @@ mod call;
 mod disclose;
 mod entry;
 mod ledger;
+mod predicate;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
 /// — the serialization layer (M11, notes/borsh-format.org). Read its module
@@ -39,6 +40,12 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// `minocrab_ledger`'s ops — one Impact operation per method, `c` and the
 /// guard visible at every call site.
 pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr};
+
+/// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
+/// `#[must_use]` descriptors whose widths come from the operand types (see
+/// the module docs). The same comparisons are methods on the typed leaves
+/// (`amount.gt(0u64)`), delegating to these.
+pub use predicate::{eq, ge, greater_than, le, less_than, ne, not, Check, CheckOperand};
 
 /// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns. The vocabulary lives in the

@@ -46,7 +46,7 @@ use minocrab_ledger::{
     LedgerValue, XcallCommitment, XcallEntryPointHash,
 };
 use minocrab_std::v3::{
-    circuit, label, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
+    circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
     ContractAddress, Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerField,
     LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
 };
@@ -233,8 +233,8 @@ pub fn initialize(
     response_key: Secp256k1Point,
 ) -> Discloses<(VaultEvmAddress, UniswapRouter, EvmChainId, Caip2Id, MpcResponseKey)> {
     let vault_evm = vault_evm.field();
-    let swap_router = swap_router.field();
-    let chain_id = chain_id.field();
+    // `swapRouter` and `chainId` stay TYPED until the guards have run: the
+    // width a comparison runs at comes from the operand's type.
     let caip2 = chain_caip2_id;
     let response_key = response_key.point();
 
@@ -250,14 +250,14 @@ pub fn initialize(
         common::assert_deployer(c, one, USER_PAD, DEPLOYER);
     });
 
-    // assert(chainId > 0, "Chain ID must be positive")
-    let positive = c.less_than(0u64, chain_id, 64);
-    c.assert(positive);
+    // assert(chainId > 0 as Uint<64>, "Chain ID must be positive")
+    c.assert(chain_id.gt(0u64).message("Chain ID must be positive"));
 
-    // assert(swapRouter as Field != 0, "Router cannot be zero")
-    let router_zero = c.test_eq(swap_router, 0u64);
-    let router_nonzero = c.not(router_zero);
-    c.assert(router_nonzero);
+    // assert(swapRouter as Field != 0 as Field, "Router cannot be zero")
+    c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
+
+    let swap_router = swap_router.field();
+    let chain_id = chain_id.field();
 
     // initialized.increment(1)
     emit(c, one, &counter_increment(INITIALIZED, 1));
@@ -297,9 +297,8 @@ pub fn initialize(
 /// `assert(initialized >= 1, "Not initialized")` — a Counter read + `0 <
 /// initialized`.
 fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
-    let init = counter_read(c, one, INITIALIZED);
-    let positive = c.less_than(0u64, init, 64);
-    c.assert(positive);
+    let init = VAULT.initialized.read(c, one);
+    c.assert(init.gt(0u64).message("Not initialized"));
 }
 
 /// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`
@@ -340,12 +339,12 @@ pub fn deposit(
     XcallCommitment,
 )> {
     let evm_nonce = evm_nonce.field();
-    let gas_limit = gas_limit.field();
     let max_fee_per_gas = max_fee_per_gas.field();
     let max_priority_fee_per_gas = max_priority_fee_per_gas.field();
     let key_version = key_version.field();
-    let erc20_address = deposit_request.erc20_address.field();
-    let amount = deposit_request.amount.field();
+    // Typed through the guards (the widths are the types'), wires after.
+    let erc20_address = deposit_request.erc20_address;
+    let amount = deposit_request.amount;
 
     let one = c.constant(1u64);
     let zero = c.constant(0u64);
@@ -355,23 +354,21 @@ pub fn deposit(
         assert_initialized(c, one);
 
         // assert(erc20Address as Field != 0)
-        let erc20_zero = c.test_eq(erc20_address, zero.private());
-        let erc20_nonzero = c.not(erc20_zero);
-        c.assert(erc20_nonzero);
+        c.assert(erc20_address.ne(zero.private()));
 
         // assert(amount > 0)
-        let amount_positive = c.less_than(zero.private(), amount, 128);
-        c.assert(amount_positive);
+        c.assert(amount.gt(zero.private()));
 
         // assert(amount <= u64::MAX) — claims mint via a Uint<64> API.
-        let too_big = c.less_than(u64::MAX, amount, 128);
-        let fits = c.not(too_big);
-        c.assert(fits);
+        c.assert(le(amount, u64::MAX));
 
         // assert(gasLimit > 0)
-        let gas_positive = c.less_than(zero.private(), gas_limit, 64);
-        c.assert(gas_positive);
+        c.assert(gas_limit.gt(zero.private()));
     });
+
+    let gas_limit = gas_limit.field();
+    let erc20_address = erc20_address.field();
+    let amount = amount.field();
 
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
@@ -475,7 +472,7 @@ fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPO
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
         let exists = map.member(c, one, &request_id);
         let fresh = c.not(exists.field());
-        c.assert(fresh);
+        c.assert_with(fresh, Some("Request already exists"));
         request_id
     })
 }
@@ -619,8 +616,8 @@ pub fn withdraw(
 )> {
     let evm_nonce = evm_nonce.field();
     let key_version = key_version.field();
-    let erc20_address = withdraw_request.erc20_address.field();
-    let amount = withdraw_request.amount.field();
+    let erc20_address = withdraw_request.erc20_address;
+    let amount = withdraw_request.amount;
     let dest_evm_address = withdraw_request.dest_evm_address.field();
     let coin_nonce = coin.nonce;
     let coin_color = coin.color;
@@ -631,15 +628,13 @@ pub fn withdraw(
 
     c.region("guards", |c| {
         assert_initialized(c, one);
-        let erc20_zero = c.test_eq(erc20_address, zero.private());
-        let erc20_nonzero = c.not(erc20_zero);
-        c.assert(erc20_nonzero);
-        let amount_positive = c.less_than(zero.private(), amount, 128);
-        c.assert(amount_positive);
-        let too_big = c.less_than(u64::MAX, amount, 128);
-        let fits = c.not(too_big);
-        c.assert(fits);
+        c.assert(erc20_address.ne(zero.private()));
+        c.assert(amount.gt(zero.private()));
+        c.assert(le(amount, u64::MAX));
     });
+
+    let erc20_address = erc20_address.field();
+    let amount = amount.field();
 
     // The coin must be the vault token for THIS erc20, of exactly amount.
     let erc20_address = erc20_address.disclose_as::<WithdrawnErc20>(c);
@@ -806,8 +801,8 @@ pub fn swap(
     let token_in = swap_request.token_in.field();
     let token_out = swap_request.token_out.field();
     let fee = swap_request.fee.field();
-    let amount_out = swap_request.amount_out.field();
-    let amount_in_max = swap_request.amount_in_maximum.field();
+    let amount_out = swap_request.amount_out;
+    let amount_in_max = swap_request.amount_in_maximum;
     let coin_nonce = coin.nonce;
     let coin_color = coin.color;
     let coin_value = coin.value.field();
@@ -817,23 +812,19 @@ pub fn swap(
 
     c.region("guards", |c| {
         assert_initialized(c, one);
-        let in_zero = c.test_eq(token_in, zero.private());
-        let in_nonzero = c.not(in_zero);
-        c.assert(in_nonzero);
-        let out_zero = c.test_eq(token_out, zero.private());
-        let out_nonzero = c.not(out_zero);
-        c.assert(out_nonzero);
-        let out_positive = c.less_than(zero.private(), amount_out, 128);
-        c.assert(out_positive);
-        let in_positive = c.less_than(zero.private(), amount_in_max, 128);
-        c.assert(in_positive);
-        let out_big = c.less_than(u64::MAX, amount_out, 128);
-        let out_fits = c.not(out_big);
-        c.assert(out_fits);
-        let in_big = c.less_than(u64::MAX, amount_in_max, 128);
-        let in_fits = c.not(in_big);
-        c.assert(in_fits);
+        // `tokenIn`/`tokenOut` are already wires here (the body discloses
+        // them next), and an EQUALITY needs no width — so these two are the
+        // free-function surface rather than the method one.
+        c.assert(ne(token_in, zero.private()));
+        c.assert(ne(token_out, zero.private()));
+        c.assert(amount_out.gt(zero.private()));
+        c.assert(amount_in_max.gt(zero.private()));
+        c.assert(le(amount_out, u64::MAX));
+        c.assert(le(amount_in_max, u64::MAX));
     });
+
+    let amount_out = amount_out.field();
+    let amount_in_max = amount_in_max.field();
 
     // The surrendered coin must be the vault token for tokenIn, of exactly
     // amountInMaximum.
@@ -990,7 +981,6 @@ pub fn approve_router(
     XcallEntryPointHash,
     XcallCommitment,
 )> {
-    let erc20_address = erc20_address.field();
     let evm_nonce = evm_nonce.field();
     let key_version = key_version.field();
 
@@ -999,10 +989,10 @@ pub fn approve_router(
 
     c.region("guards", |c| {
         assert_initialized(c, one);
-        let erc20_zero = c.test_eq(erc20_address, zero.private());
-        let erc20_nonzero = c.not(erc20_zero);
-        c.assert(erc20_nonzero);
+        c.assert(erc20_address.ne(zero.private()));
     });
+
+    let erc20_address = erc20_address.field();
 
     // approve(uniswapRouter, 2^128−1): the spender is the pinned router.
     let router = cell_read(
@@ -1196,7 +1186,7 @@ fn refund_surrendered_value(
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
         let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_withdrawer = c.mul(eq_hi, eq_lo);
-        common::assert_if(c, guard.private(), is_withdrawer);
+        common::assert_if_with(c, guard.private(), is_withdrawer, "Not the withdrawer");
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
@@ -1248,7 +1238,7 @@ pub fn complete_withdraw(
     // signBidirectionalEventMap.remove(requestId)
     let ev = c.region("event map consume", |c| {
         let pending = VAULT.refund_commitment.member(c, one, &request_id);
-        c.assert(pending.field());
+        c.assert_with(pending.field(), Some("Withdrawal not found"));
         let ev = VAULT
             .sign_bidirectional_event_map
             .lookup(c, one, &request_id);
@@ -1306,7 +1296,7 @@ pub fn complete_swap(
     // const signatureRequest = swapEventMap.lookup(requestId); remove.
     let ev = c.region("event map consume", |c| {
         let pending = VAULT.swap_refund_commitment.member(c, one, &request_id);
-        c.assert(pending.field());
+        c.assert_with(pending.field(), Some("Swap not found"));
         let ev = VAULT.swap_event_map.lookup(c, one, &request_id);
         VAULT.swap_event_map.remove(c, one, &request_id);
         ev
