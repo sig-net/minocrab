@@ -6,11 +6,15 @@
 //! Everything else this file pins is the scope boundary: a predicate that is
 //! never asserted emits nothing, a message is metadata (no instruction), the
 //! combinators lower to exactly the ops they name, and the checks that make
-//! the width sound are build-time panics with a fix in the message.
+//! the width sound reject at BUILD time — two of them as compile errors (see
+//! `_COMPILE_ERRORS_NOT_PANICS`), the third as a panic, because the value of
+//! a runtime integer is not in the type system.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{eq, ge, greater_than, le, less_than, ne, not, Bool, Bytes, Uint};
+use minocrab_std::v3::{
+    eq, ge, greater_than, is_true, le, less_than, ne, not, Bool, Bytes, Uint,
+};
 use minocrab_zkir::v3::to_zkir_string;
 
 fn zkir(compiled: Compiled3) -> String {
@@ -211,26 +215,37 @@ fn the_method_surface_is_the_free_constructors() {
     );
 }
 
-/// Widths come from the types, so two typed operands must agree.
-#[test]
-#[should_panic(expected = "comparing a 128-bit value with a 64-bit one")]
-fn mismatched_widths_are_rejected() {
-    let mut c = Circuit3::new();
-    let a = Uint::<128, Private>::from_field(c.arg::<FieldT>("a"));
-    let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
-    c.assert(less_than(a, b));
-}
-
-/// An ordering of two untyped wires has no width to run at — the panic says
-/// what to do instead.
-#[test]
-#[should_panic(expected = "an ordering comparison needs a width")]
-fn an_ordering_of_raw_wires_is_rejected() {
-    let mut c = Circuit3::new();
-    let a = c.arg::<FieldT>("a");
-    let b = c.arg::<FieldT>("b");
-    c.assert(less_than(a, b));
-}
+/// Widths come from the types, so two typed operands must agree — and an
+/// ORDERING needs at least one width to run at. Neither is a test here,
+/// because neither is a runtime failure any more (M9 phase 8): both are
+/// inline-`const` asserts in the constructors, so
+///
+/// ```compile_fail
+/// # use minocrab::v3::{Circuit3, FieldT};
+/// # use minocrab::Private;
+/// # use minocrab_std::v3::{less_than, Uint};
+/// let mut c = Circuit3::new();
+/// let a = Uint::<128, Private>::from_field(c.arg::<FieldT>("a"));
+/// let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+/// c.assert(less_than(a, b));  // error[E0080]: … different widths …
+/// ```
+///
+/// and
+///
+/// ```compile_fail
+/// # use minocrab::v3::{Circuit3, FieldT};
+/// # use minocrab_std::v3::less_than;
+/// let mut c = Circuit3::new();
+/// let a = c.arg::<FieldT>("a");
+/// let b = c.arg::<FieldT>("b");
+/// c.assert(less_than(a, b));  // error[E0080]: … needs a width …
+/// ```
+///
+/// are BUILD errors at the call site, not panics when the circuit is built.
+/// (Both messages are checked by hand; there is no trybuild in the lock file,
+/// and `compile_fail` doc-tests do not run for a test target — this block is
+/// the record of the two spellings that must not compile.)
+const _COMPILE_ERRORS_NOT_PANICS: () = ();
 
 /// Equality needs no width, so raw wires are fine there.
 #[test]
@@ -261,4 +276,112 @@ fn visibility_follows_the_meet() {
     let _private: Bool<Private> = less_than(0u64, secret).eval(&mut c);
     let _public: Bool<Public> = less_than(0u64, public).eval(&mut c);
     let _mixed: Bool<Private> = less_than(secret, public).eval(&mut c);
+}
+
+/// The boolean LEAF (M9 phase 8, candidate 5) costs nothing: `is_true(b)` and
+/// the bare wire are the same stream, so `.message(..)` and the combinators
+/// reach a computed boolean (a map `member` result) for free.
+#[test]
+fn is_true_is_the_wire_itself() {
+    let build = |leaf: bool| {
+        let mut c = Circuit3::new();
+        let b = Bool::<Private>::from_field(c.arg::<FieldT>("b"));
+        if leaf {
+            c.assert(is_true(b).message("Request already exists"));
+        } else {
+            c.assert_with(b.field(), Some("Request already exists"));
+        }
+        c.finish(false)
+    };
+    let with = build(true);
+    let without = build(false);
+    assert_eq!(
+        to_zkir_string(&with.ir).unwrap(),
+        to_zkir_string(&without.ir).unwrap()
+    );
+    assert_eq!(with.assert_messages, without.assert_messages);
+}
+
+/// ...and it composes: a leaf inside the combinators is the hand-written
+/// boolean algebra.
+#[test]
+fn is_true_composes_with_the_combinators() {
+    let build = |predicates: bool| {
+        let mut c = Circuit3::new();
+        let b = Bool::<Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        if predicates {
+            c.assert(is_true(b).and(a.gt(0u64)));
+        } else {
+            let gt = c.less_than(0u64, a.field(), 64);
+            let both = c.mul(b.field(), gt);
+            c.assert(both);
+        }
+        zkir(c.finish(false))
+    };
+    assert_eq!(build(true), build(false));
+}
+
+/// `.when(guard)` (M9 phase 8, candidate 6) is the in-branch assert:
+/// `assert(select(guard, cond, 1))`, with the `1` inline.
+#[test]
+fn when_is_the_in_branch_assert() {
+    let build = |predicates: bool| {
+        let mut c = Circuit3::new();
+        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let guard = c.public_transcript_input::<FieldT>();
+        if predicates {
+            c.assert(less_than(a, b).when(guard).message("Not the withdrawer"));
+        } else {
+            let lt = c.less_than(a.field(), b.field(), 64);
+            let gated = c.cond_select(guard, lt, 1u64);
+            c.assert_with(gated, Some("Not the withdrawer"));
+        }
+        c.finish(false)
+    };
+    let with = build(true);
+    let without = build(false);
+    assert_eq!(
+        to_zkir_string(&with.ir).unwrap(),
+        to_zkir_string(&without.ir).unwrap()
+    );
+    assert_eq!(with.assert_messages.len(), 1);
+}
+
+/// A guard may be PUBLIC over a private check — the common case, a public
+/// branch condition gating a secret comparison.
+#[test]
+fn a_public_guard_gates_a_private_check() {
+    let mut c = Circuit3::new();
+    let secret = Uint::<64, Private>::from_field(c.arg::<FieldT>("secret"));
+    let guard = c.public_transcript_input::<FieldT>();
+    let _: Bool<Private> = less_than(0u64, secret).when(guard).eval(&mut c);
+}
+
+/// `.widen::<W>()` (dmd's decision A) is free: the same wire, no instruction,
+/// and no second range constraint — so a widened comparison is the
+/// hand-written comparison at the wider width.
+#[test]
+fn widen_is_free_and_compares_at_the_wider_width() {
+    let build = |widened: bool| {
+        let mut c = Circuit3::new();
+        let narrow = Uint::<64, Private>::from_field(c.arg::<FieldT>("narrow"));
+        let wide = Uint::<128, Private>::from_field(c.arg::<FieldT>("wide"));
+        if widened {
+            c.assert(less_than(narrow.widen::<128>(), wide));
+        } else {
+            let lt = c.less_than(narrow.field(), wide.field(), 128);
+            c.assert(lt);
+        }
+        zkir(c.finish(false))
+    };
+    assert_eq!(build(true), build(false));
+
+    // …and it really is zero instructions on its own.
+    let mut c = Circuit3::new();
+    let narrow = Uint::<64, Private>::from_field(c.arg::<FieldT>("narrow"));
+    let before = c.instruction_count();
+    let _wide: Uint<128, Private> = narrow.widen();
+    assert_eq!(c.instruction_count(), before);
 }

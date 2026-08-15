@@ -14,19 +14,25 @@
 //!   hand-written `assert_bits` blocks the typed leaves removed, and just as
 //!   invisible to PI equality on honest preimages. `less_than(a, amount)`
 //!   with `amount: Uint<128>` reads the 128 off the type. Two typed operands
-//!   must agree; a raw `Wire3` carries no width, so a comparison of two of
-//!   them is a build-time panic naming the fix, not a silently wrong range.
+//!   must agree, and an ordering needs at least one width to run at; both are
+//!   inline-`const` asserts, so both are COMPILE errors at the call site
+//!   naming the fix, not a silently wrong range and not a panic when the
+//!   circuit is built (see [`less_than`]'s neighbours below).
 //! - **the constant side is a CHECKED IMMEDIATE.** A literal operand becomes
 //!   a v3 inline immediate (`Operand`, phase 7's literals piece — no `Copy`),
 //!   and it is checked at build time against the width it is being compared
-//!   at: `less_than(amount_u8, 300u64)` panics rather than comparing against
-//!   a value the width cannot hold.
+//!   at: `less_than(byte, 300u64)` on a `Bytes<1>` panics rather than
+//!   comparing against a value the width cannot hold. THE ONE REMAINING
+//!   PANIC of this module, and it stays one because the magnitude of a
+//!   runtime integer is not in the type system: `300u64` is a value, not a
+//!   type, so nothing const-evaluable knows it.
 //!
 //! SCOPE, deliberately hard (notes/contract-api.org §The design): comparisons
 //! (`less_than`/`le`/`greater_than`/`ge`/`eq`/`ne`), the combinators
 //! [`not`]/[`Check::and`]/[`Check::or`], an optional message
-//! ([`Check::message`], Compact's second `assert` argument) and
-//! [`Check::eval`] for a circuit that wants the boolean wire. NO deferred
+//! ([`Check::message`], Compact's second `assert` argument), the boolean leaf
+//! [`is_true`], the in-branch form [`Check::when`], and [`Check::eval`] for a
+//! circuit that wants the boolean wire. NO deferred
 //! ARITHMETIC and no expression templates: `a + b` returning a descriptor
 //! would hide emission inside an operator, which is the no-hidden-cost rule
 //! this whole layer is built on. And no macros — these are ordinary functions
@@ -77,9 +83,13 @@ enum Node<V: Vis3> {
         /// The lowering ends in `not` (`ne`, `le`, `ge` are negated forms).
         negated: bool,
     },
+    /// A boolean that is already a wire ([`is_true`]) — zero instructions.
+    Leaf(Wire3<FieldT, V>),
     Not(Box<Node<V>>),
     And(Box<Node<V>>, Box<Node<V>>),
     Or(Box<Node<V>>, Box<Node<V>>),
+    /// [`Check::when`]: `select(guard, inner, 1)`.
+    When(Box<Node<V>>, Operand<FieldT, V>),
 }
 
 /// One side of a comparison: a typed leaf (which carries the WIDTH), a raw
@@ -89,6 +99,8 @@ enum Node<V: Vis3> {
 /// Implemented for the `Public` leaves at every visibility, because a public
 /// value may be compared against a private one — the result is then private,
 /// which is what [`Meet`] says.
+///
+/// An ORDERING needs a WIDTH on top of this — see the note below the impls.
 pub trait CheckOperand {
     /// The visibility this operand contributes.
     type Vis: Vis3;
@@ -176,8 +188,50 @@ impl CheckOperand for Fr {
     }
 }
 
+/// WHERE THE WIDTH COMES FROM, and what happens when it comes from nowhere
+/// (dmd 2026-08-15, decision B — M9 phase 8).
+///
+/// `less_than a b bits` is unsound if either operand exceeds `bits`, so an
+/// ORDERING needs a width: a typed leaf carries one in its type, a literal
+/// adopts the other side's and is range-checked against it, and a raw `Wire3`
+/// carries none. An ordering of TWO widthless operands is therefore rejected
+/// — and rejected at COMPILE time, by the inline-`const` assert in each
+/// ordering constructor (`error[E0080]`, with the fix in the message), not by
+/// a panic when the circuit is built.
+///
+/// It is not expressed as a missing `CheckOperand` impl for `Wire3`, which
+/// would have been the better error, for two reasons that are the same
+/// reason: the condition is a property of the PAIR, not of one operand. A
+/// raw wire on ONE side of a typed comparison (`amount.gt(zero_wire)`, where
+/// `amount: Uint<128>` supplies the 128) is accepted, as it always has been —
+/// the direct ports rely on it, since a constant they also need as a WIRE
+/// stays named rather than becoming an immediate — and "at least one of A, B
+/// carries a width" is not something a trait bound can say without
+/// overlapping impls.
+///
+/// What this layer will NOT do either way is emit the range constraint for
+/// you: that would be silent cost, and the author is the one who knows
+/// whether the wire is already constrained. The explicit forms are
+/// `Uint::<64>::from_field(w)` (plus `constrain_input` if nothing has
+/// constrained it yet) and `c.less_than(a, b, bits)`.
+///
 /// The visibility of a comparison of an `A` with a `B`: the meet.
 type Joined<A, B> = <<A as CheckOperand>::Vis as Meet<<B as CheckOperand>::Vis>>::Out;
+
+/// Do these two operand types agree on a width? (Either may carry none — a
+/// literal never does.) Evaluated in an inline `const`, so a mismatch is a
+/// BUILD ERROR at the call site, not a panic when the circuit is built.
+const fn widths_agree(a: Option<u32>, b: Option<u32>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a == b,
+        _ => true,
+    }
+}
+
+/// Does at least one operand type carry a width? An ordering needs one.
+const fn some_width(a: Option<u32>, b: Option<u32>) -> bool {
+    a.is_some() || b.is_some()
+}
 
 /// The comparison constructors. `Joined` is the meet of the two operands'
 /// visibilities; the `Meet` bounds are the lattice's commutativity, which
@@ -185,7 +239,7 @@ type Joined<A, B> = <<A as CheckOperand>::Vis as Meet<<B as CheckOperand>::Vis>>
 macro_rules! comparison {
     ($(
         $(#[$m:meta])*
-        $name:ident($a:ident, $b:ident) => $cmp:expr, negated: $neg:expr, order: ($first:ident, $second:ident)
+        $name:ident($a:ident, $b:ident): $kind:ident => $cmp:expr, negated: $neg:expr, order: ($first:ident, $second:ident)
     );* $(;)?) => {$(
         $(#[$m])*
         pub fn $name<A: CheckOperand, B: CheckOperand>($a: A, $b: B) -> Check<Joined<A, B>>
@@ -194,25 +248,48 @@ macro_rules! comparison {
             B::Vis: Meet<A::Vis, Out = Joined<A, B>>,
             Joined<A, B>: Vis3,
         {
+            const {
+                assert!(
+                    widths_agree(A::BITS, B::BITS),
+                    "the two operands of a comparison have different widths, and \
+                     the width a comparison runs at comes from the operand types: \
+                     give both sides the same type (a `Uint<BITS>`, a `Bytes<N>`), \
+                     or widen the narrow one explicitly with `.widen::<BITS>()` — \
+                     free for a leaf that is already range-constrained"
+                )
+            };
+            comparison!(@width $kind, A, B);
             compare($cmp, $neg, $first, $second)
         }
     )*};
+    (@width ordering, $A:ident, $B:ident) => {
+        const {
+            assert!(
+                some_width($A::BITS, $B::BITS),
+                "an ordering comparison needs a width and neither operand's type \
+                 carries one: compare TYPED values (a `Uint<BITS>`, a `Bytes<N>`), \
+                 which is where the width comes from"
+            )
+        };
+    };
+    (@width equality, $A:ident, $B:ident) => {};
 }
 
 comparison! {
     /// `a < b`. The width comes from the operand types.
-    less_than(a, b) => Cmp::Less, negated: false, order: (a, b);
+    less_than(a, b): ordering => Cmp::Less, negated: false, order: (a, b);
     /// `a > b` — `less_than(b, a)`, the same instruction with the operands
     /// the other way round.
-    greater_than(a, b) => Cmp::Less, negated: false, order: (b, a);
+    greater_than(a, b): ordering => Cmp::Less, negated: false, order: (b, a);
     /// `a <= b` — `!(b < a)`, which is a `less_than` and a `not`.
-    le(a, b) => Cmp::Less, negated: true, order: (b, a);
+    le(a, b): ordering => Cmp::Less, negated: true, order: (b, a);
     /// `a >= b` — `!(a < b)`.
-    ge(a, b) => Cmp::Less, negated: true, order: (a, b);
-    /// `a == b`. No width is needed: `test_eq` compares field elements.
-    eq(a, b) => Cmp::Equal, negated: false, order: (a, b);
+    ge(a, b): ordering => Cmp::Less, negated: true, order: (a, b);
+    /// `a == b`. No width is needed: `test_eq` compares field elements, so
+    /// raw wires are allowed here.
+    eq(a, b): equality => Cmp::Equal, negated: false, order: (a, b);
     /// `a != b` — `test_eq` and a `not`.
-    ne(a, b) => Cmp::Equal, negated: true, order: (a, b);
+    ne(a, b): equality => Cmp::Equal, negated: true, order: (a, b);
 }
 
 /// The shared body of the constructors: resolve the width from the types,
@@ -247,29 +324,22 @@ where
     }
 }
 
-/// The width a comparison runs at: the operands' types must agree, and for
-/// an ORDERING at least one of them has to carry a width at all.
+/// The width a comparison runs at, read off the operand types.
+///
+/// Both disagreement cases are impossible here — the constructors' inline
+/// `const` asserts reject them at COMPILE time, and an ordering over
+/// widthless operands cannot be spelled at all ([`OrderOperand`]) — so this
+/// is a total function over what can reach it, with `debug_assert`s standing
+/// where the diagnostics used to.
 fn width(cmp: Cmp, a: Option<u32>, b: Option<u32>) -> Option<u32> {
     match (a, b) {
         (Some(a), Some(b)) => {
-            assert_eq!(
-                a, b,
-                "comparing a {a}-bit value with a {b}-bit one: the widths a \
-                 comparison runs at come from the operand types, so give both \
-                 sides the same type (a `Uint<BITS>`, a `Bytes<N>`) or convert \
-                 explicitly"
-            );
+            debug_assert_eq!(a, b, "the const assert should have rejected this");
             Some(a)
         }
         (Some(bits), None) | (None, Some(bits)) => Some(bits),
         (None, None) => {
-            assert!(
-                cmp == Cmp::Equal,
-                "an ordering comparison needs a width, and neither operand's \
-                 type carries one: compare TYPED values (a `Uint<BITS>`, a \
-                 `Bytes<N>`) rather than raw wires — that is where the width \
-                 comes from"
-            );
+            debug_assert!(cmp == Cmp::Equal, "the const assert should have rejected this");
             None
         }
     }
@@ -293,6 +363,22 @@ fn check_literal_fits(literal: Option<Fr>, bits: u32) {
         "the literal {value:?} does not fit the {bits} bits the comparison \
          runs at — a constant compared against a Uint<{bits}> has to be one"
     );
+}
+
+/// A boolean that is ALREADY a wire, as a predicate leaf (M9 phase 8,
+/// candidate 5) — a map `member` result, an in-branch condition, anything a
+/// comparison did not produce.
+///
+/// Costs ZERO: the lowering is the wire itself, so `c.assert(is_true(b))` and
+/// `c.assert(b)` are the same instruction stream. What it buys is that the
+/// rest of the surface applies to such a value: `.message(..)`, `.and`/`.or`,
+/// [`not`], and `.when(guard)` — before this, those sites had to drop out of
+/// the predicate vocabulary into `c.assert_with(cond, Some(msg))`.
+pub fn is_true<V: Vis3>(b: Bool<V>) -> Check<V> {
+    Check {
+        node: Node::Leaf(b.field()),
+        message: None,
+    }
 }
 
 /// `!p`.
@@ -339,6 +425,35 @@ impl<V: Vis3> Check<V> {
     }
 }
 
+impl<V: Vis3> Check<V> {
+    /// The IN-BRANCH form (M9 phase 8, candidate 6): this check binds only
+    /// where `guard` holds.
+    ///
+    /// `c.assert(p.when(g))` lowers to `assert(select(g, p, 1))` — the
+    /// condition is replaced by the vacuous `1` on the branch that is not
+    /// taken (completeWithdraw.zkir:300-304). That is exactly what
+    /// `assert_if` emits by hand, minus its named `1`: the immediate is
+    /// inline, so the lowering is one `cond_select` and one `assert` with no
+    /// `Copy` in front (zero rows either way).
+    ///
+    /// The guard may be public while the check is private (the usual case: a
+    /// public branch condition over a secret comparison); the reverse would
+    /// narrow the result's visibility, which is what the [`Meet`] bounds say.
+    pub fn when<G: Vis3>(self, guard: Wire3<FieldT, G>) -> Check<V>
+    where
+        V: Meet<G, Out = V>,
+        G: Meet<V, Out = V>,
+    {
+        Check {
+            node: Node::When(
+                Box::new(self.node),
+                Operand::from(guard).meet::<V>(),
+            ),
+            message: self.message,
+        }
+    }
+}
+
 /// A predicate is what `Circuit3::assert` takes: it lowers HERE, at the
 /// assert, and the message rides along as metadata.
 impl<V: Vis3> Assertion for Check<V> {
@@ -377,6 +492,7 @@ fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {
                 value
             }
         }
+        Node::Leaf(w) => w,
         Node::Not(inner) => {
             let value = lower(c, *inner);
             c.not(value)
@@ -393,6 +509,10 @@ fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {
             let right = c.not(right);
             let both = c.mul(left, right);
             c.not(both)
+        }
+        Node::When(inner, guard) => {
+            let cond = lower(c, *inner);
+            c.cond_select(guard, cond, 1u64)
         }
     }
 }

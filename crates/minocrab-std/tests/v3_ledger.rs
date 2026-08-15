@@ -6,7 +6,7 @@
 //! serialized-ZKIR equality catches an extra op, a missing op, a reordered
 //! op, a different atom list and a different field index alike.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, emit, map_insert, map_is_empty,
@@ -14,8 +14,8 @@ use minocrab_ledger::{
     ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    Bytes, Ledger, LedgerCell, LedgerCounter, LedgerCounter as Counter, LedgerField, LedgerMap,
-    LedgerRepr, Uint, B32,
+    Bytes, CircuitAbi, Ledger, LedgerCell, LedgerCounter, LedgerCounter as Counter, LedgerField,
+    LedgerMap, LedgerRepr, Secp256k1Point, Uint, B32,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -34,6 +34,7 @@ struct Demo {
     evm_address: LedgerCell<Bytes<20, Public>>,
     chain_id: LedgerCell<Uint<64, Public>>,
     refund_commitment: LedgerMap<B32<Public>, B32<Public>>,
+    mpc_key: LedgerCell<Secp256k1Point<Public>>,
 }
 
 const DEMO: Demo = Demo::new();
@@ -57,7 +58,7 @@ impl LedgerRepr for Record {
         Record::atom_list()
     }
 
-    fn push_limbs(&self, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 
@@ -77,6 +78,7 @@ fn the_index_is_the_declaration_order() {
     assert_eq!(DEMO.evm_address.index(), 4);
     assert_eq!(DEMO.chain_id.index(), 5);
     assert_eq!(DEMO.refund_commitment.index(), 6);
+    assert_eq!(DEMO.mpc_key.index(), 7);
     // `const`, so the block costs nothing at run time and an index can be
     // used where a constant is required.
     const EVENT_MAP: u8 = DEMO.event_map.index();
@@ -117,14 +119,14 @@ fn the_map_methods_are_the_explicit_ops() {
         let mut c = Circuit3::new();
         let (key, record) = inputs(&mut c);
         let one = c.constant(1u64);
-        let exists = DEMO.event_map.member(&mut c, one, &key);
+        let exists = DEMO.event_map.member_under(&mut c, one, &key);
         c.assert(exists.field());
-        let record_back = DEMO.event_map.lookup(&mut c, one, &key);
-        DEMO.event_map.insert(&mut c, one, &key, &record);
-        DEMO.event_map.remove(&mut c, one, &key);
-        let size = DEMO.event_map.size(&mut c, one);
-        let empty = DEMO.event_map.is_empty(&mut c, one);
-        let stored = DEMO.refund_commitment.lookup(&mut c, one, &key);
+        let record_back = DEMO.event_map.lookup_under(&mut c, one, &key);
+        DEMO.event_map.insert_under(&mut c, one, &key, &record);
+        DEMO.event_map.remove_under(&mut c, one, &key);
+        let size = DEMO.event_map.size_under(&mut c, one);
+        let empty = DEMO.event_map.is_empty_under(&mut c, one);
+        let stored = DEMO.refund_commitment.lookup_under(&mut c, one, &key);
         c.assert_eq(record_back.0[0], stored.hi);
         c.assert_eq(size.field(), empty.field());
         c.finish(true)
@@ -155,6 +157,133 @@ fn the_map_methods_are_the_explicit_ops() {
         );
         c.assert_eq(record_back[0], stored[0]);
         c.assert_eq(size, empty);
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(typed), zkir(explicit));
+}
+
+/// The GUARD-FREE forms (M9 phase 8, candidate 1) are the same ops with the
+/// immediate `1` where the guard operand goes — one instruction fewer than
+/// the `_under` form, because nothing has to name the `1`, and identical
+/// otherwise.
+#[test]
+fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
+    let typed = {
+        let mut c = Circuit3::new();
+        let (key, record) = inputs(&mut c);
+        let exists = DEMO.event_map.member(&mut c, &key);
+        c.assert(exists.field());
+        let record_back = DEMO.event_map.lookup(&mut c, &key);
+        DEMO.event_map.insert(&mut c, &key, &record);
+        DEMO.event_map.remove(&mut c, &key);
+        let size = DEMO.event_map.size(&mut c);
+        let empty = DEMO.event_map.is_empty(&mut c);
+        let addr = DEMO.evm_address.read(&mut c);
+        DEMO.evm_address.write(&mut c, &addr);
+        let count = DEMO.initialized.read(&mut c);
+        DEMO.request_nonce.increment(&mut c, 1);
+        let under = DEMO.initialized.less_than(&mut c, 7);
+        c.assert_eq(record_back.0[0], size.field());
+        c.assert_eq(empty.field(), count.field());
+        c.assert_eq(under.field(), addr.field());
+        c.finish(true)
+    };
+
+    let explicit = {
+        let mut c = Circuit3::new();
+        let (key, record) = inputs(&mut c);
+        let key_val = key_value(&key);
+        let exists = map_member(&mut c, 1u64, 0, &key_val);
+        c.assert(exists);
+        let record_back = map_lookup(&mut c, 1u64, 0, &key_val, Record::atom_list());
+        emit(&mut c, 1u64, &map_insert(0, &key_val, &record_value(&record)));
+        emit(&mut c, 1u64, &map_remove(0, &key_val));
+        let size = map_size(&mut c, 1u64, 0);
+        let empty = map_is_empty(&mut c, 1u64, 0);
+        let addr = cell_read(&mut c, 1u64, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
+        emit(
+            &mut c,
+            1u64,
+            &cell_write(
+                4,
+                &LedgerValue::bytes(20, vec![ImpactElem::Wire(addr[0])]),
+            ),
+        );
+        let count = counter_read(&mut c, 1u64, 3);
+        emit(&mut c, 1u64, &counter_increment(2, 1));
+        let under = minocrab_ledger::counter_less_than(
+            &mut c,
+            1u64,
+            3,
+            &LedgerValue::bytes(8, vec![ImpactElem::Imm(minocrab::Fr::from(7u64))]),
+        );
+        c.assert_eq(record_back[0], size);
+        c.assert_eq(empty, count);
+        c.assert_eq(under, addr[0]);
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(typed), zkir(explicit));
+}
+
+/// ...and the whole difference between the two forms is the `Copy` that named
+/// the guard: the `_under(c, one, ..)` circuit is the guard-free one plus one
+/// instruction, and no rows (a `Copy` of an immediate is free).
+#[test]
+fn the_guard_free_form_is_one_copy_shorter() {
+    let count = |guard_free: bool| {
+        let mut c = Circuit3::new();
+        let (key, _) = inputs(&mut c);
+        if guard_free {
+            DEMO.event_map.remove(&mut c, &key);
+        } else {
+            let one = c.constant(1u64);
+            DEMO.event_map.remove_under(&mut c, one, &key);
+        }
+        c.instruction_count()
+    };
+    assert_eq!(count(false), count(true) + 1);
+}
+
+/// A `Secp256k1Point` CELL (M9 phase 8, candidate 2): the limbs are computed
+/// in both directions — `encode` on the way out, and a read that mints ONE
+/// TYPED gate and encodes it — so the typed cell must equal the hand-written
+/// mint/encode/popeq form that `common::cell_read_point` spells out.
+#[test]
+fn the_point_cell_is_the_hand_written_typed_gate() {
+    let atoms = <Secp256k1Point<Public> as CircuitAbi>::atoms();
+
+    let typed = {
+        let mut c = Circuit3::new();
+        let key = DEMO.mpc_key.read(&mut c);
+        DEMO.mpc_key.write(&mut c, &key);
+        c.finish(true)
+    };
+
+    let explicit = {
+        let mut c = Circuit3::new();
+        let point = c.public_transcript_input::<Secp256k1PointT>();
+        let limbs = c.encode(point);
+        let value = LedgerValue::new(
+            atoms.clone(),
+            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(
+            &mut c,
+            1u64,
+            &[
+                minocrab_ledger::dup(0),
+                minocrab_ledger::idx_field(7),
+                minocrab_ledger::popeq(false, &value),
+            ],
+        );
+        let limbs = c.encode(point);
+        let value = LedgerValue::new(
+            atoms,
+            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(&mut c, 1u64, &cell_write(7, &value));
         c.finish(true)
     };
 
@@ -204,13 +333,13 @@ fn the_cell_and_counter_methods_are_the_explicit_ops() {
     let typed = {
         let mut c = Circuit3::new();
         let one = c.constant(1u64);
-        let addr = DEMO.evm_address.read(&mut c, one);
-        DEMO.evm_address.write(&mut c, one, &addr);
-        let chain = DEMO.chain_id.read(&mut c, one);
-        DEMO.chain_id.write(&mut c, one, &chain);
-        let count = DEMO.initialized.read(&mut c, one);
-        DEMO.request_nonce.increment(&mut c, one, 1);
-        let under = DEMO.initialized.less_than(&mut c, one, 7);
+        let addr = DEMO.evm_address.read_under(&mut c, one);
+        DEMO.evm_address.write_under(&mut c, one, &addr);
+        let chain = DEMO.chain_id.read_under(&mut c, one);
+        DEMO.chain_id.write_under(&mut c, one, &chain);
+        let count = DEMO.initialized.read_under(&mut c, one);
+        DEMO.request_nonce.increment_under(&mut c, one, 1);
+        let under = DEMO.initialized.less_than_under(&mut c, one, 7);
         c.assert_eq(count.field(), under.field());
         c.finish(true)
     };

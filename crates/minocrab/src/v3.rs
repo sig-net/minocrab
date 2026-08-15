@@ -861,7 +861,7 @@ impl Circuit3 {
     /// instruction). The full ledger-op encoding layer sits above this.
     pub fn impact<V: Visibility>(
         &mut self,
-        guard: Wire3<FieldT, V>,
+        guard: impl Into<Operand<FieldT, V>>,
         inputs: &[Wire3<FieldT, Public>],
     ) {
         let elems: Vec<ImpactElem> = inputs.iter().map(|&w| ImpactElem::Wire(w)).collect();
@@ -871,7 +871,19 @@ impl Circuit3 {
     /// [`Circuit3::impact`] with mixed operands: constants go inline as
     /// immediates (as compactc emits opcode/alignment elements), computed
     /// values as wires.
-    pub fn impact_mixed<V: Visibility>(&mut self, guard: Wire3<FieldT, V>, elems: &[ImpactElem]) {
+    ///
+    /// The GUARD is an operand too (M9 phase 8): a wire for a branch
+    /// condition, or the native `true`/`1u64` for a straight-line operation,
+    /// which inlines as an immediate instead of naming a `Copy`. compactc
+    /// always names one (it threads a `1` wire through every op of a
+    /// straight-line circuit), so the immediate form is a deliberate
+    /// departure — zero rows, one fewer instruction, and no longer
+    /// byte-identical to compactc's stream.
+    pub fn impact_mixed<V: Visibility>(
+        &mut self,
+        guard: impl Into<Operand<FieldT, V>>,
+        elems: &[ImpactElem],
+    ) {
         let args: Vec<Arg> = elems
             .iter()
             .map(|e| match e {
@@ -886,7 +898,7 @@ impl Circuit3 {
                 }
             })
             .collect();
-        self.b.impact(Arg::Val(guard.val), &args);
+        self.b.impact(guard.into().arg(), &args);
     }
 
     /// Queue a wire as a circuit output (the single v3 Output terminator is

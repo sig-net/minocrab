@@ -298,7 +298,7 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize> LedgerR
         SignBidirectionalEvent::<Public, WORDS, LEN_OUT, LEN_RESPOND>::atoms()
     }
 
-    fn push_limbs(&self, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
         limbs.extend_from_slice(&self.0);
     }
 

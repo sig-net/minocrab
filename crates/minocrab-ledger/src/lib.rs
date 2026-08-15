@@ -25,7 +25,7 @@ use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::{
-    CallArgs, CallResult, Circuit3, Disclose, DisclosureLabel, FieldT, Prim, Wire3,
+    CallArgs, CallResult, Circuit3, Disclose, DisclosureLabel, FieldT, Operand, Prim, Wire3,
 };
 use minocrab::{Fr, Public, Visibility};
 
@@ -290,10 +290,16 @@ pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
 }
 
 /// Emit `ops` as Impact instructions (one per op) under `guard`.
-pub fn emit<V: Visibility>(c: &mut Circuit3, guard: Wire3<FieldT, V>, ops: &[ImpactOp])
-where
-    V: Visibility + Copy,
-{
+///
+/// The guard is an OPERAND (M9 phase 8): a branch condition's wire, or the
+/// native `1u64` for a straight-line operation, which inlines as an
+/// immediate rather than naming a `Copy` — see [`Circuit3::impact_mixed`].
+pub fn emit<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    ops: &[ImpactOp],
+) {
+    let guard = guard.into();
     for op in ops {
         c.impact_mixed(guard, &op.0);
     }
@@ -314,7 +320,7 @@ where
 /// branch condition for reads inside a conditional (compactc puts the SAME
 /// guard on the gates and the op's impact instructions — completeWithdraw
 /// .zkir:292-297); `None` for straight-line reads (guard printed as null).
-fn mint_read_with<V: Visibility + Copy>(
+pub fn mint_read_with<V: Visibility + Copy>(
     c: &mut Circuit3,
     guard: Option<Wire3<FieldT, V>>,
     atoms: Vec<AlignmentAtom>,
@@ -341,25 +347,46 @@ const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 /// (midnight-ledger.ss:547-551): `dup 0; idx [field]; popeq` — both the idx
 /// and the popeq uncached (`f-cached` = #f). `atoms` is the cell type's FAB
 /// alignment; returns one wire per limb, in slot order.
-pub fn cell_read<V: Visibility + Copy>(
+pub fn cell_read<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, atoms);
-    emit(c, guard, &[dup(0), idx_field(index), popeq(false, &value)]);
+    cell_read_embedded(c, guard, index, &value);
     wires
+}
+
+/// [`cell_read`] against gates the caller has already minted.
+///
+/// The read shape — `dup 0; idx [field]; popeq` with the witnessed value
+/// embedded in the `popeq` — is the same whatever minted the value; what
+/// differs is HOW the value was witnessed. A `Bytes<32>` cell mints one
+/// native gate per limb ([`mint_read_with`], which is what [`cell_read`]
+/// does). A `Secp256k1Point` cell mints ONE TYPED gate and derives its five
+/// limbs with an `encode` instruction (claim.zkir:29-33), so the limbs are
+/// computed rather than read and the caller has to build the value itself.
+/// Both end here.
+pub fn cell_read_embedded<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+    value: &LedgerValue,
+) {
+    emit(c, guard, &[dup(0), idx_field(index), popeq(false, value)]);
 }
 
 /// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
 /// `dup 0; idx [field]; popeqc` — the popeq is cached even on the first
 /// access (unlike Cell.read). Returns the u64 counter value.
-pub fn counter_read<V: Visibility + Copy>(
+pub fn counter_read<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(c, guard, &[dup(0), idx_field(index), popeq(true, &value)]);
     wires[0]
@@ -367,12 +394,13 @@ pub fn counter_read<V: Visibility + Copy>(
 
 /// `Counter.lessThan(threshold)` (midnight-ledger.ss:595-600):
 /// `dup 0; idx [field]; push threshold (u64 cell); lt; popeqc` → Boolean.
-pub fn counter_less_than<V: Visibility + Copy>(
+pub fn counter_less_than<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     threshold: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
@@ -390,12 +418,13 @@ pub fn counter_less_than<V: Visibility + Copy>(
 
 /// `Map.member(key)` on field `index` (midnight-ledger.ss:649-655):
 /// `dup 0; idx [field]; push key; member; popeqc` → Boolean.
-pub fn map_member<V: Visibility + Copy>(
+pub fn map_member<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     key: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
@@ -415,13 +444,14 @@ pub fn map_member<V: Visibility + Copy>(
 /// (midnight-ledger.ss:741-747): `dup 0; idx [field]; idx {key}; popeq` —
 /// the key descent and the popeq both uncached. `value_atoms` is the value
 /// type's FAB alignment.
-pub fn map_lookup<V: Visibility + Copy>(
+pub fn map_lookup<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, value_atoms);
     emit(
         c,
@@ -433,11 +463,12 @@ pub fn map_lookup<V: Visibility + Copy>(
 
 /// `Map.size()` on field `index` (midnight-ledger.ss:728-733):
 /// `dup 0; idx [field]; size; popeqc` → Uint64.
-pub fn map_size<V: Visibility + Copy>(
+pub fn map_size<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
         c,
@@ -454,11 +485,12 @@ pub fn map_size<V: Visibility + Copy>(
 
 /// `Map.isEmpty()` on field `index` (midnight-ledger.ss:720-727):
 /// `dup 0; idx [field]; size; push 0 (u64 cell); eq; popeqc` → Boolean.
-pub fn map_is_empty<V: Visibility + Copy>(
+pub fn map_is_empty<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
     let zero = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(0u64))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -479,10 +511,11 @@ pub fn map_is_empty<V: Visibility + Copy>(
 /// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
-pub fn kernel_self<V: Visibility + Copy>(
+pub fn kernel_self<V: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
+    guard: impl Into<Operand<FieldT, V>>,
 ) -> [Wire3<FieldT, Public>; 2] {
+    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![AlignmentAtom::Bytes { length: 32 }]);
     let idx_context = ImpactOp::constant(&Op::Idx {
         cached: true,

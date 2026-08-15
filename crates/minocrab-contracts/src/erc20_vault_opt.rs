@@ -197,7 +197,7 @@ pub fn initialize(
 /// `assert(initialized >= 1, "Not initialized")` — a Counter read + `0 <
 /// initialized`.
 fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
-    let init = VAULT.initialized.read(c, one);
+    let init = VAULT.initialized.read_under(c, one);
     c.assert(init.gt(0u64).message("Not initialized"));
 }
 
@@ -375,7 +375,7 @@ fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPO
     let request_id_priv = signet::calculate_request_id(c, request);
     c.region("record: freshness", |c| {
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
-        let exists = map.member(c, one, &request_id);
+        let exists = map.member_under(c, one, &request_id);
         let fresh = c.not(exists.field());
         c.assert_with(fresh, Some("Request already exists"));
         request_id
@@ -396,7 +396,7 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
         // The record's atoms come from its TYPE — there is no atom list here
         // to disagree with the one the settle circuits look it up with.
         let record = signet::EventRecord::from_limbs(request.limbs().disclose_as::<RequestRecord>(c));
-        map.insert(c, one, request_id, &record);
+        map.insert_under(c, one, request_id, &record);
     });
 }
 
@@ -669,7 +669,7 @@ pub fn withdraw(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<WithdrawerRefundCommitment>(c);
-    VAULT.refund_commitment.insert(c, one, &request_id, &rc);
+    VAULT.refund_commitment.insert_under(c, one, &request_id, &rc);
 
     notify_signet(c, one, me, &request_id, [0, 0, 0, 0]);
 
@@ -876,7 +876,7 @@ pub fn swap(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<SwapperRefundCommitment>(c);
-    VAULT.swap_refund_commitment.insert(c, one, &request_id, &rc);
+    VAULT.swap_refund_commitment.insert_under(c, one, &request_id, &rc);
 
     notify_signet(c, one, me, &request_id, [11, 0, 0, 0]);
 
@@ -1198,14 +1198,14 @@ pub fn complete_withdraw(
     // const signatureRequest = signBidirectionalEventMap.lookup(requestId);
     // signBidirectionalEventMap.remove(requestId)
     let ev = c.region("event map consume", |c| {
-        let pending = VAULT.refund_commitment.member(c, one, &request_id);
+        let pending = VAULT.refund_commitment.member_under(c, one, &request_id);
         c.assert_with(pending.field(), Some("Withdrawal not found"));
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup(c, one, &request_id);
+            .lookup_under(c, one, &request_id);
         VAULT
             .sign_bidirectional_event_map
-            .remove(c, one, &request_id);
+            .remove_under(c, one, &request_id);
         ev
     });
 
@@ -1219,7 +1219,7 @@ pub fn complete_withdraw(
     refund_surrendered_value(c, refunding, &request_id, &ev, &mint_nonce);
 
     // refundCommitment.remove(requestId)
-    VAULT.refund_commitment.remove(c, one, &request_id);
+    VAULT.refund_commitment.remove_under(c, one, &request_id);
 
     Discloses::of(())
 }
@@ -1256,10 +1256,10 @@ pub fn complete_swap(
     // assert(swapRefundCommitment.member(requestId), "Swap not found")
     // const signatureRequest = swapEventMap.lookup(requestId); remove.
     let ev = c.region("event map consume", |c| {
-        let pending = VAULT.swap_refund_commitment.member(c, one, &request_id);
+        let pending = VAULT.swap_refund_commitment.member_under(c, one, &request_id);
         c.assert_with(pending.field(), Some("Swap not found"));
-        let ev = VAULT.swap_event_map.lookup(c, one, &request_id);
-        VAULT.swap_event_map.remove(c, one, &request_id);
+        let ev = VAULT.swap_event_map.lookup_under(c, one, &request_id);
+        VAULT.swap_event_map.remove_under(c, one, &request_id);
         ev
     });
 
@@ -1271,12 +1271,12 @@ pub fn complete_swap(
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = VAULT.swap_refund_commitment.lookup(c, one, &request_id);
+        let stored = VAULT.swap_refund_commitment.lookup_under(c, one, &request_id);
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
         let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_swapper = c.mul(eq_hi, eq_lo);
         c.assert(is_swapper);
-        VAULT.swap_refund_commitment.remove(c, one, &request_id);
+        VAULT.swap_refund_commitment.remove_under(c, one, &request_id);
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
@@ -1451,7 +1451,7 @@ pub fn refund(
     // explicit `disclose(...)` on the branch condition, a no-op here.
     let is_withdrawal = VAULT
         .refund_commitment
-        .member(c, one, &request_id)
+        .member_under(c, one, &request_id)
         .field();
     let swapping = c.not(is_withdrawal);
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
@@ -1469,7 +1469,7 @@ pub fn refund(
             .lookup_guarded(c, is_withdrawal, &request_id);
         VAULT
             .sign_bidirectional_event_map
-            .remove(c, is_withdrawal, &request_id);
+            .remove_under(c, is_withdrawal, &request_id);
         ev
     });
 
@@ -1484,7 +1484,7 @@ pub fn refund(
         let ev7 = VAULT
             .swap_event_map
             .lookup_guarded(c, swapping, &request_id);
-        VAULT.swap_event_map.remove(c, swapping, &request_id);
+        VAULT.swap_event_map.remove_under(c, swapping, &request_id);
         ev7
     });
 
@@ -1516,10 +1516,10 @@ pub fn refund(
     // The commitment-map removes, guarded per route (ledger EFFECT ops).
     VAULT
         .refund_commitment
-        .remove(c, is_withdrawal, &request_id);
+        .remove_under(c, is_withdrawal, &request_id);
     VAULT
         .swap_refund_commitment
-        .remove(c, swapping, &request_id);
+        .remove_under(c, swapping, &request_id);
 
     // Unified re-mint (avenue 4): cond_select the branch-varying token and
     // amount, then run ONE domainSep → tokenType → coinCommitment → mint.
@@ -1647,14 +1647,14 @@ pub fn claim(
     let ev = c.region("event map consume", |c| {
         let found = VAULT
             .sign_bidirectional_event_map
-            .member(c, one, &request_id);
+            .member_under(c, one, &request_id);
         c.assert(found.field());
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup(c, one, &request_id);
+            .lookup_under(c, one, &request_id);
         VAULT
             .sign_bidirectional_event_map
-            .remove(c, one, &request_id);
+            .remove_under(c, one, &request_id);
         ev
     });
 

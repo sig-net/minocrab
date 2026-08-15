@@ -45,7 +45,9 @@ pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr};
 /// `#[must_use]` descriptors whose widths come from the operand types (see
 /// the module docs). The same comparisons are methods on the typed leaves
 /// (`amount.gt(0u64)`), delegating to these.
-pub use predicate::{eq, ge, greater_than, le, less_than, ne, not, Check, CheckOperand};
+pub use predicate::{
+    eq, ge, greater_than, is_true, le, less_than, ne, not, Check, CheckOperand,
+};
 
 /// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns. The vocabulary lives in the
@@ -181,6 +183,37 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     /// there, as it is in compactc.
     pub fn constrain_input(self, c: &mut Circuit3) {
         Prim::Uint { bits: BITS }.constraint().emit(c, self.0);
+    }
+
+    /// `x as Uint<WIDER>` — the LOSSLESS widening, and the explicit escape
+    /// from a mixed-width comparison (dmd 2026-08-15, decision A: no implicit
+    /// widening, Rust-style).
+    ///
+    /// FREE, in both senses. No instruction: it is the same wire, retyped.
+    /// And no new CONSTRAINT, which is the part worth arguing: a wire already
+    /// constrained to `BITS` bits holds a value `< 2^BITS ≤ 2^WIDER`, so it
+    /// satisfies the wider range by construction — `constrain_bits(WIDER)`
+    /// would be a tautology costing ~WIDER/4 rows. (The soundness of that
+    /// argument rests on the leaf's invariant, which is the type's whole
+    /// point: a `Uint<BITS>` is a wire something has constrained — an
+    /// argument by `CircuitArg::constrain`, a computed value by whoever
+    /// called `from_field`. Widening PROPAGATES that obligation, it does not
+    /// discharge one.)
+    ///
+    /// Narrowing is not offered and is not an oversight: it needs a real
+    /// range check, so it is `Uint::<N>::from_field` plus an explicit
+    /// `constrain_input` — visibly a cost.
+    pub fn widen<const WIDER: u32>(self) -> Uint<WIDER, V> {
+        const {
+            assert!(
+                WIDER >= BITS,
+                "`.widen::<W>()` only widens: W must be at least the source's \
+                 BITS. Narrowing needs a range check, so spell it out — \
+                 `Uint::<W>::from_field(x.field())` followed by \
+                 `constrain_input`, which is the cost made visible"
+            )
+        };
+        Uint::from_field(self.0)
     }
 }
 
