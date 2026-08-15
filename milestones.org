@@ -1118,9 +1118,26 @@ crates/minocrab/src/v3/abi.rs) — this milestone makes it DECLARABLE:
 a bounded leaf type whose constrain_input emits the same lowering,
 through the whole stack (CircuitArg, derives, interface crates,
 Borsh width rules). Covers non-power-of-two enums (Compact enums are
-Uint<0..k-1>).
-- [ ] Design note first (notes/): leaf shape (const-generic bound),
+Uint<0..k>, k the variant count — see the correction in the note below).
+- [X] Design note first (notes/): leaf shape (const-generic bound),
       lowering, Borsh/FAB width interaction, interface-gen round-trip.
+      (2026-08-15, notes/bounded-integers.org. THE FINDING that reframes
+      the milestone: Compact's `Uint<0..n>` range end is EXCLUSIVE —
+      compactc's own error says so ("the range end is exclusive"), and
+      the pinned compiler's contract-info/ZKIR agree (`Uint<0..10>` →
+      maxval 9 → `less_than x 10`). Three of our notes said otherwise;
+      nothing compiled was wrong (Prim::unsigned always took the
+      inclusive maxval, which is what contract-info publishes), the
+      error was prose and printed type names. Design: a SECOND leaf
+      `BoundedUint<const BOUND: u128, V>` carrying the exclusive bound
+      (the digits of the Compact type, so a port cannot go off by one),
+      coexisting with `Uint<BITS>` — generic_const_exprs is unavailable,
+      so neither can be an alias of the other, which is also what makes
+      zero movement free. Three widths a bounded int distinguishes and a
+      sized one never had to: constraint (even-rounded), comparison
+      (intlen(maxval)), FAB atom (ceil bytes). Borsh rule: serialize at
+      the next BORSH primitive width up, since 3-byte integers are not
+      Borsh.)
 - [ ] Implement + corpus differentials on contracts using Uint<0..10>,
       <0..300>, <0..1000>, <0..70000>.
 Exit criteria: a corpus contract with a non-power-of-two bound ports

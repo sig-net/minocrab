@@ -1,0 +1,343 @@
+#+title: Bounded integers — Compact's =Uint<0..n>= for arbitrary n (M14)
+
+Design of record for M14. Compact's =Uint<0..n>= takes ANY bound; our only
+unsigned leaf is =Uint<BITS>=, which can say =0..2^BITS= and nothing else.
+The interop side already models the general case (=Prim::UintMax= →
+=LimbConstraint::Bounded=, crates/minocrab/src/v3/abi.rs); this milestone
+makes it DECLARABLE — a leaf type whose =constrain_input= emits that same
+lowering, carried through =CircuitArg=, the derives, the predicates, Borsh,
+the interface crates and the interface generator.
+
+Toolchain constraint shaping every choice below (notes/const-generics.org):
+rustc 1.97.1, so min-const-generics only — =generic_const_exprs= is NOT
+available, and no const-generic parameter may be COMPUTED in a type
+position. Associated consts computed from const parameters ARE fine.
+
+* 0. THE FINDING: =Uint<0..n>= is EXCLUSIVE, and three of our notes said otherwise
+
+Compactc's own error message, from the pinned 0.33.0-rc.2, on
+=export circuit b0(x: Uint<0..0>): []=:
+
+: range end for Uint type is 0 but must be at least 1 (the range end is exclusive)
+
+Confirmed three further ways by probes compiled with the pinned compactc
+(=--feature-zkir-v3=, source and outputs at
+crates/minocrab-contracts/tests/fixtures/bounded/):
+
+| source              | contract-info =maxval= | ZKIR constraint                       |
+|---------------------+------------------------+---------------------------------------|
+| =Uint<0..1>=        |                      0 | =constrain_eq x 0x00=                 |
+| =Uint<0..2>=        |                      1 | =constrain_to_boolean x=              |
+| =Uint<0..10>=       |                      9 | =less_than x 0x0a bits=4= + =assert=  |
+| =Uint<0..255>=      |                    254 | =less_than x 0xff bits=8= + =assert=  |
+| =Uint<0..256>=      |                    255 | =constrain_bits x 8=                  |
+| =Uint<0..300>=      |                    299 | =less_than x 0x2c01 bits=10= + assert |
+| =Uint<0..1000>=     |                    999 | =less_than x 0xe803 bits=10= + assert |
+| =Uint<0..70000>=    |                  69999 | =less_than x 0x701101 bits=18= + assert |
+| =enum= of 3 names   |                      2 | =less_than x 0x03 bits=2= + =assert=  |
+
+(=0x0a= is 10, =0xe803= is 1000 little-endian, =0x701101= is 70000 — the
+=less_than= bound is =n= itself, i.e. =maxval + 1=.) And compactc's type
+PRINTER round-trips the same spelling: a =Uint<0..10>= argument returned
+where a =Boolean= is declared is reported as "actual return type
+Uint<0..10>", and a literal =0= prints as =Uint<0..1>=.
+
+So the two numbers are:
+- *n*, the SOURCE spelling's range end — exclusive, ≥ 1;
+- *maxval = n − 1*, compactc's internal =(tunsigned nat)= and the number
+  =contract-info.json= publishes. This is what =Prim::unsigned= takes.
+
+Three places in our own record had it the other way, all corrected by this
+milestone:
+1. notes/builtin-lowering.org §1 table: "=Uint<N>= / =Uint<0..n>= … max
+   value (2^N−1 resp. n)" — the bounded max is =n−1=.
+2. notes/builtin-lowering.org §8 worked example: the =load_imm "E803"= is
+   annotated "1001"; it is 1000 (the source is =Uint<0..1000>=, maxval
+   999, bound 1000).
+3. notes/builtin-lowering.org §1 and crates/minocrab-abi/src/info.rs: "enum
+   → =Uint<0..k-1>=" — an enum of =k= names is =Uint<0..k>= (maxval
+   =k−1=). The maxval both state is right; the SPELLING is off by one.
+   crates/minocrab-interface-gen renders the same off-by-one in the Compact
+   type names it puts in doc comments (=Uint<0..{maxval}>=), and
+   crates/minocrab-abi/src/check.rs in =prim_name=.
+
+Nothing COMPILED was wrong: =Prim::unsigned= has always taken the inclusive
+maxval, and =contract-info.json= hands it exactly that. The error was
+confined to prose and to type names printed for humans.
+
+The API consequence is the whole of §1's naming decision: an off-by-one
+that fooled three notes must not be re-introduced at every call site.
+
+* 1. The leaf: =BoundedUint<const BOUND: u128, V = Private>=
+
+#+begin_src rust
+/// Compact's `Uint<0..BOUND>`: one native slot holding a value `< BOUND`.
+#[repr(transparent)]
+pub struct BoundedUint<const BOUND: u128, V: Vis3 = Private>(Wire3<FieldT, V>);
+#+end_src
+
+** Why a second type and not a generalization of =Uint<BITS>=
+=Uint<BITS, V>= must keep lowering BYTE-IDENTICALLY — 87 circuits and two
+frozen snapshots depend on it — and a type cannot be generic over a =u32=
+bit count and a =u128= bound at once. The three ways to unify all fail on
+this toolchain or on that constraint:
+- =type Uint<const BITS: u32, V> = BoundedUint<{ 1u128 << BITS }, V>=
+  needs =generic_const_exprs=. Not available.
+- Making =Uint= the alias in the other direction (=BoundedUint= as the
+  primitive) has the same problem, plus =Uint<128>='s bound is 2^128,
+  which a =u128= const parameter cannot hold.
+- One type with both parameters (=Uint<BITS, BOUND>=) changes every
+  existing spelling.
+So they COEXIST, as distinct types over the same wire, and =Uint<BITS>= is
+untouched: not one line of its code path changes, which is what makes the
+zero-movement gate a formality rather than a hope.
+
+They are not disjoint in meaning — =BoundedUint<256>= and =Uint<8>= admit
+exactly the same values and emit exactly the same constraint
+(=constrain_bits 8=; that is the table's job, §2) — so the two free,
+instruction-free conversions exist and are const-asserted:
+- =b.to_uint::<BITS>()= where =2^BITS ≥ BOUND= — a value below BOUND is a
+  BITS-bit value. This is the bridge to everything written against
+  =Uint<BITS>=.
+- =b.widen::<BIGGER>()= where =BIGGER ≥ BOUND= — the bounded twin of
+  =Uint::widen=, and for the same reason (dmd's decision A: no implicit
+  widening, one explicit lossless escape).
+Neither emits an instruction and neither emits a second range constraint:
+the obligation is PROPAGATED, never discharged (=Uint::widen='s argument,
+verbatim).
+
+** Why the const is the EXCLUSIVE bound
+=BoundedUint<70000>= ↔ =Uint<0..70000>=: the digits in the Rust type are
+the digits in the Compact type, so a port cannot introduce an off-by-one
+and a reviewer reading side by side does not have to do arithmetic. The
+alternative — the inclusive maxval, matching =Prim::unsigned='s parameter —
+would put =BoundedUint<69999>= against =Uint<0..70000>= at every site, and
+§0 is the evidence for how well that goes. The conversion to =Prim= is done
+ONCE, inside the leaf.
+
+The name carries it too: the docs and the const parameter are =BOUND=, and
+every constructor's docs say "values =0..BOUND=, exclusive — i.e. =<
+BOUND=".
+
+** The one bound rejection, and it is compactc's own
+=BOUND ≥ 1=, as an inline-=const= assert in =from_field= (so every
+constructor inherits it, the =Bytes<N>= idiom), quoting compactc's message:
+"range end for Uint type is 0 but must be at least 1 (the range end is
+exclusive)". =error[E0080]= at the call site.
+
+There is NO upper assert and no "must not be a power of two" assert:
+=Uint<0..256>= is legal Compact (21 occurrences in the corpus) and lowers
+to =constrain_bits 8=. Refusing it would be our leaf editorializing about
+compactc's table, which is precisely what §2 forbids. The =u128= const
+parameter is its own ceiling (=BOUND ≤ 2^128 − 1=, so maxval ≤ 2^128 − 2);
+=Uint<128>= covers the top of the range and is the type for it.
+
+* 2. The lowering — the table decides, and the table is already ported
+
+=constrain_input= is one line:
+
+#+begin_src rust
+pub fn constrain_input(self, c: &mut Circuit3) {
+    Prim::unsigned(BOUND - 1).constraint().emit(c, self.0);
+}
+#+end_src
+
+=Prim::unsigned= (crates/minocrab/src/v3/abi.rs) is compactc's
+=emit-constraints-for= (reduce-to-zkir.ss:640-667) ported once; it
+normalizes the maxval into =Prim::Uint { bits }= or =Prim::UintMax {
+maxval }= and =constraint()= dispatches:
+
+: (tunsigned 0)          → constrain_eq  var 0
+: (tunsigned 1)          → constrain_to_boolean var
+: (tunsigned 2^k − 1)    → constrain_bits var k
+: (tunsigned nat)        → less_than tmp var (nat+1) bits ; assert tmp
+:                          bits = 2·⌈(intlen(nat+1))/2⌉   (even, Plonk)
+
+So the bounded leaf does not KNOW that a non-power-of-two bound is a
+=less_than=; it knows only its maxval. Every row of §0's probe table is
+this table applied, and the probe artifacts are what pins it (§5). The
+=Bounded= arm's bound is an INLINE IMMEDIATE, not a named constant, which
+is what compactc emits and why byte-identity is reachable.
+
+** THREE WIDTHS, and they are not the same number
+This is the part a bounded integer adds that a sized one never had to
+distinguish, because for =Uint<BITS>= all three coincide.
+
+| purpose                          | width                       | =Uint<0..70000>= |
+|----------------------------------+-----------------------------+------------------|
+| range CONSTRAINT (=less_than=)   | =2·⌈intlen(maxval+1)/2⌉=    |               18 |
+| COMPARISON (=a < b=)             | =max(1, intlen(maxval))=    |               17 |
+| FAB alignment atom               | =⌈intlen(maxval)/8⌉= bytes  |                3 |
+
+The constraint width is even because Plonk's range gadget requires it
+(reduce-to-zkir.ss:655-661). The comparison width is NOT rounded
+(infer-types.ss:753-771) — verified against the pinned compactc: two
+=Uint<0..70000>= arguments compared emit =less_than … bits=17= while their
+own input constraints are =bits=18= in the same artifact. The FAB width is
+=⌈bits/8⌉= of the MAXVAL, which is why =Uint<0..1>= is a ZERO-byte atom
+(maxval 0) and =Uint<0..1000>= a two-byte one.
+
+All three now live as =const fn=s on =Prim= — =constraint()=,
+=compare_bits()=, =atom_bytes()= — beside the constraint table rather than
+scattered: =minocrab_abi::info='s =uint_bytes= and the sized leaf's
+=BITS.div_ceil(8)= are the same rule written twice more, and both now
+delegate. (Identical values, so this is a de-duplication, not a change:
+=atom_bytes= of =Prim::Uint { bits }= is =⌈bits/8⌉=.)
+
+* 3. What the leaf touches
+
+** =CircuitAbi= / =CircuitArg= / the derives
+=CircuitAbi=: =SLOTS = 1=, =push_atoms= = one =Bytes { length:
+atom_bytes }=, =push_prims= = =[Prim::unsigned(BOUND - 1)]=.
+=CircuitArg= (at =Private=, like every other leaf): =declare= is one
+=c.arg::<FieldT>=, =push_slots= is the one wire. =constrain= is the
+PROVIDED method — never overridden, so the constraint comes from
+=push_prims= through the table and cannot disagree with =constrain_input=.
+=#[derive(CircuitArg)]= and =#[circuit]= need NO change: they are generic
+over the field types and only join label paths.
+
+=CallArg= / =CallResult= (crates/minocrab/src/v3/abi.rs, the caller's side
+of a cross-contract call) come the same way — one =push_call_slots= and one
+=from_call_slots= — so a bounded value passed to another contract is
+constrained on the callee's side by the same table entry that constrains
+its own arguments. That is already how =contract_call= witnesses results;
+the leaf just adds a type whose prim is =UintMax=, which that path has been
+able to emit since M12 and has never had a caller.
+
+** Predicates (=CheckOperand=)
+=const BITS: Option<u32> = Some(Prim::unsigned(BOUND - 1).compare_bits())=
+— the COMPARISON width of the table above, deliberately not the constraint
+width. Sound because every legal value is =≤ maxval < 2^intlen(maxval)=.
+The leaf gets the six comparison methods (=lt/gt/le/ge/eq/ne=) through the
+existing =leaf_comparisons!= macro, one line.
+
+Consequence, and it is the right one: =BoundedUint<1000>= (10) and
+=Uint<10>= (10) compare directly, while =BoundedUint<70000>= (17) and
+=Uint<32>= (32) do not — that is a compile error naming =.widen::<N>()=,
+exactly as decision A prescribes. compactc would silently compare at the
+wider operand's width; we make the author say so. (=to_uint= is the escape
+that costs nothing.)
+
+** Borsh / FAB — THE FIXED-WIDTH RULE
+The Borsh subset is fixed-width by construction (notes/borsh-format.org
+§"The circuit-safe Borsh subset"): every offset is a compile-time constant,
+so a leaf's serialized width is an associated =const LEN= and every byte
+must be valid canonical Borsh for the DECLARED type. A bounded integer's
+FAB width is =⌈intlen(maxval)/8⌉=, which is 3 bytes for =Uint<0..70000>= —
+and Borsh has no three-byte integer. So the FAB width CANNOT be the Borsh
+width.
+
+THE RULE, and it is already the module's stated one ("a narrower RANGE
+stays a range constraint on the next width up", notes/borsh-format.org
+stage-1 deviation 3): a =BoundedUint<BOUND>= serializes at the smallest
+BORSH PRIMITIVE width that holds =BOUND − 1= — 1, 2, 4, 8 or 16 bytes,
+declared =u8=/=u16=/=u32=/=u64=/=u128= in the layout table — and
+=constrain_canonical= adds the =< BOUND= range check on top. So:
+
+| type              | FAB atom | Borsh =LEN= | Borsh kind |
+|-------------------+----------+-------------+------------|
+| =Uint<0..1>=      | 0 bytes  |           1 | =u8=       |
+| =Uint<0..10>=     | 1        |           1 | =u8=       |
+| =Uint<0..300>=    | 2        |           2 | =u16=      |
+| =Uint<0..1000>=   | 2        |           2 | =u16=      |
+| =Uint<0..70000>=  | 3        |           4 | =u32=      |
+
+Two consequences stated plainly rather than discovered later:
+- our Borsh encoding of a 3-byte-FAB bounded int is NOT byte-compatible
+  with Compact's own =serialize<Uint<0..70000>, 3>= builtin, which packs 3
+  bytes (corpus fixture =serWide=). That is fine and is the subset's whole
+  posture: the Borsh subset is a Borsh-compatible format of ours, not a
+  re-implementation of Compact's packer. It is recorded here because the
+  corpus contains a contract that does the other thing.
+- =BOUND ≤ 2^128= is guaranteed by the const parameter's type, so the
+  width function is total.
+=constrain_canonical= is then EQUAL to =CircuitArg::constrain= whenever
+=BOUND= is exactly the declared width's capacity, and strictly stronger
+otherwise — unlike =Tag<K>=, which needs a =less_than= no Compact circuit
+emits, a =BoundedUint='s bound IS the Compact circuit's own constraint.
+That makes it the first leaf where the Borsh canonicity check and the
+compactc argument constraint are the same instructions by construction.
+
+RELATION TO =Tag<K>=: a =Tag<K>= is a Borsh 1-byte discriminant range
+checked =< K=; a =BoundedUint<K>= for =K ≤ 256= admits the same VALUES but
+emits compactc's argument constraint for them (=less_than v K
+even-bits=), not =constrain_bits 8= + =less_than v K 8=. They stay
+separate types because they answer different questions — "what does the
+Compact type constrain" vs "what does Borsh's decoder check" — and a
+Compact =enum= argument is the FORMER. Recorded so nobody merges them.
+
+** Interface crates and the generator
+- crates/minocrab-abi (the reader) already produces the right =Prim= for
+  both =Uint { maxval }= and =Enum { elements }=; only its prose is
+  corrected (§0.3), plus =prim_name='s printed spelling.
+- crates/minocrab-interface-gen: =power_of_two_bits= currently REJECTS a
+  non-power-of-two bound with "no leaf type carries a =less_than= bound"
+  — the sentence M14 falsifies. The mapping gains two rows:
+  =Uint<0..n>= (n not 2^k) → =BoundedUint<n, V>=, and =enum= over k names
+  (k not 2^m) → =BoundedUint<k, V>=. Round-trip is then closed: the
+  generated type's =CircuitAbi::prims()= equals the ABI's, which is what
+  =minocrab_abi::check= asserts.
+- =render= (the Compact type name in generated doc comments) prints
+  =Uint<0..{maxval + 1}>=, fixing §0's off-by-one.
+
+* 4. Compile errors over panics (the standing rule applied)
+
+As inline-=const= asserts, =error[E0080]= at the call site:
+- =BOUND ≥ 1= in =from_field= — compactc's own rule, its own message.
+- =widen::<BIGGER>=: =BIGGER ≥ BOUND=.
+- =to_uint::<BITS>=: =BITS < 128 && (1 << BITS) ≥ BOUND=.
+- the predicate width rules, unchanged and inherited: a mixed-width
+  comparison and a widthless ordering are already E0080.
+
+As a missing impl / trait bound:
+- =CircuitArg= only at =Private=, =CallArg=/=CallResult= only at =Public=
+  — unchanged, inherited, and the reason "passing a value cross-contract
+  discloses it" is a compile error.
+
+Staying a build-time PANIC, recorded for dmd (the list in
+notes/contract-api.org §"Panics that could NOT become compile errors"
+grows by one):
+5. =BoundedUint::<BOUND>::constant(c, v)= — "v is not below BOUND". Same
+   shape and same reason as =Uint::<BITS>::constant= (item 2) and
+   =check_literal_fits= (item 1): the magnitude of a runtime integer is not
+   a type. Note the INTERACTION with item 1 — a literal compared against a
+   bounded value is range-checked against the comparison width
+   (=intlen(maxval)=), NOT against BOUND, so =b.lt(500u64)= on a
+   =BoundedUint<300>= is accepted (500 fits 9 bits) and is a comparison
+   that is always true. Making that an error needs the literal as a const
+   generic, which is item 1's open question and dmd's call, not this
+   milestone's.
+
+* 5. The differential
+
+There is no corpus contract to port. Establishing that took a scan:
+- 788 compiled =.zkir= artifacts in the corpus, 66 of them v3 (only the
+  three sig-net sources carry =--feature-zkir-v3=; the other 722 are v2 and
+  our IR is v3);
+- NONE of the 66 contains a non-power-of-two bound;
+- the corpus contracts that DO use one are
+  =compact/examples/multiconst= (=Uint<0..10>=, and its =test5.zkir= is a
+  real artifact — but v2), and
+  =signet-midnight-integration/.../serde-fixtures.compact=
+  (=Uint<0..300>/<0..1000>/<0..70000>=, every circuit =pure=, and a pure
+  exported circuit gets NO =.zkir= in either version).
+So the established fallback applies: a tiny.compact-style fixture compiled
+with the pinned compactc, source and artifacts committed beside the test
+(crates/minocrab-contracts/tests/fixtures/bounded/), with the exact
+invocation in the file header. The fixture covers the fairness bullet's
+four bounds (10, 300, 1000, 70000), both power-of-two-bound edges
+(=0..1=, =0..2=, =0..256=), a =0..255= (the bound that LOOKS sized and is
+not), a non-power-of-two =enum=, and a derived struct mixing a bounded
+field with sized ones.
+
+What the harness proves, per circuit: the §6 call-compatibility criterion
+(identical typed input/output schemas, identical =pis= and =pi_skips= from
+the v3 simulator on one preimage, upstream =check()= agreeing with both) —
+plus, because these circuits are small enough for it, BYTE-IDENTICAL
+serialized ZKIR against compactc's own artifact, and REJECTION AGREEMENT:
+an out-of-range witness is refused by both artifacts, which is the only
+test that shows the bound is load-bearing rather than decorative.
+
+* 6. As built
+
+(Filled in by stage 2.)
