@@ -927,3 +927,38 @@ input" the resolution names). =well_formed().unwrap()= ACCEPTS.
   cannot be expressed on the single-circuit =simulate= path, so it lives
   here at the transaction level. Both tests green.
 Consequence: avenue 6 is CLEARED to land. Proceed to step 5(vi) Task B.
+
+** Task B — the burn restructure landed (measured)
+=common::burn_spend= replaces =receive_shielded_with= + =burn_coin_with= in
+opt =withdraw= and =swap=: a SINGLE claimed shielded spend of the
+burn-address output, no receive coinCommitment and no nullifier. The
+evolved-nonce output commitment is KEPT (default per Q1; ~165 rows), so the
+burn Output is byte-identical to the port's and the off-chain twin's — only
+the two SHA-256 pair hashes (receive-cc + nullifier) are dropped.
+| circuit | opt before | opt after | Δ | k |
+|---------+------------+-----------+---+---|
+| withdraw | 38,576 | 27,267 | −11,309 | 16 → 15 ✅ |
+| swap | 47,688 | 36,379 | −11,309 | 16 → 16 |
+WITHDRAW CROSSES TO k15 — the first prove-time win of M10 (2^16→2^15, half
+the keygen/prove work and RAM). Measured −11,309, matching the projected
+−11,280 (the extra 29 is the receive/burn kernel.self reads, gone too).
+SWAP stays k16 at 36,379: avenue 6 ALONE is not enough (the notes' table
+said swap needs 6 AND 3 AND 2; 36,379 > 32,768 by 3,611). Avenues 3 (refund
+commitment → Poseidon) and the rest are the next stage, out of THIS task's
+scope — so swap's k crossing is deferred, exactly as predicted. Refund is
+untouched (its burn is a re-mint, not a surrender), so its fork entry stays
+at rungs (i)+(iii).
+
+Reference model updated in lockstep: =model.rs= gates the receive+nullifier
+claims (and their kernel.self reads) on =Art::Compat=, keeping =claim(2,
+cm_burn)= for both; =spec.rs= gates =ClaimReceive=/=ClaimNullifier= on
+Compat. The four harness obligations: (1) exactly one ClaimSpend / empty
+receive+nullifier and (2) the constrained-colour/value burn commitment are
+enforced per generated case by =check_effects='s EXACT multiset comparison
+on the opt side; (3) a second contract claiming the same commitment is
+rejected and (4) the twin emits the burn Output with no createZswapInput —
+both in tests/erc20_vault_opt_burn_wellformed.rs. =fork_status= moves
+withdraw/swap to rungs (i)+(iii)+(vi). Gates green: differential 30
+(ports bit-identical), spec 9 + adversarial 19 (both arts), fork 4,
+row_snapshot. Elevated PROPTEST_CASES=20000: withdraw+completeWithdraw
+41.3s, swap+completeSwap 43.9s, all green (M4 Max, release).

@@ -296,6 +296,59 @@ fn burn_body(
     }
 }
 
+/// The OPTIMIZED burn (M10 rung vi, avenue 6): the surrendered coin is
+/// destroyed by a SINGLE claimed shielded spend of the burn-address output —
+/// no `receiveShielded` custody claim and no nullifier. The user funds the
+/// burn Output directly (`createZswapOutput(coin, shieldedBurnAddress())`, a
+/// Void witness — off-circuit — with NO `createZswapInput` preceding it), and
+/// the vault claims exactly that output's commitment as its spend. A claimed
+/// shielded spend needs only "the commitment exists in this segment's offer,
+/// unclaimed by another contract" (verify.rs:1559,1596-1608); the receive and
+/// nullifier equalities are satisfied vacuously because `shieldedBurnAddress()`
+/// is `left(default)` = `Recipient::User` (contract_address None), so the burn
+/// output/input are not contract-associated. Value destruction is enforced by
+/// the offer's Pedersen balance plus this circuit's colour/value constraints;
+/// replay is the global `CommitmentAlreadyPresent` (the same gate as before,
+/// now the only one). Well-formedness of exactly this shape against the pinned
+/// ledger is proven in tests/erc20_vault_opt_burn_wellformed.rs.
+///
+/// The burn Output keeps the port's EVOLVED nonce (the transientHash +
+/// div_mod, ~165 rows), so its commitment is byte-identical to the one the
+/// compat burn already builds and the off-chain twin already constructs; only
+/// the receive coinCommitment and the nullifier — two SHA-256 pair hashes,
+/// ~11,280 rows — are removed. `me` is no longer read (the burn recipient is
+/// `left(default)`, not `self`), so it is not a parameter.
+pub fn burn_spend(
+    c: &mut Circuit3,
+    one: Wire3<FieldT, Public>,
+    coin: &ShieldedCoinInfo3<Public>,
+) {
+    c.region("coin: burn", |c| {
+        // nonce' = upgradeFromTransient(transientHash([
+        //   "midnight:kernel:nonce_evolve" as Field, degradeToTransient(nonce)
+        // ])) — degrade takes the low limb; upgrade is [hi: 0, lo: mod 2^248].
+        let tag = c.constant(
+            minocrab::Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
+        );
+        let evolved = c.transient_hash(&[tag, coin.nonce.lo]);
+        let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
+        let zero = c.constant(0u64);
+        let output = ShieldedCoinInfo3 {
+            nonce: B32 { hi: zero, lo },
+            color: coin.color,
+            value: coin.value,
+        };
+        // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
+        let burn = CoinRecipient {
+            is_left: one,
+            left: B32 { hi: zero, lo: zero },
+            right: B32 { hi: zero, lo: zero },
+        };
+        let cm = coin_commitment(c, &output, &burn);
+        emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
+    });
+}
+
 /// [`witness_sk`] under a branch guard.
 pub fn witness_sk_guarded(
     c: &mut Circuit3,

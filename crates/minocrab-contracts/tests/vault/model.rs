@@ -1678,16 +1678,21 @@ impl WithdrawScenario {
                 result: bytesn_value(1, &[u8::from(self.request_exists)]),
             },
         ]);
-        // receiveShielded (its recipient is the same address again)
+        // The burn. The compat port receives the surrendered coin into
+        // custody (receiveShielded) then spends it to the burn address
+        // (sendImmediateShielded: nullifier + evolved-nonce output). The
+        // optimized artifact (rung vi, avenue 6) claims a SINGLE shielded
+        // spend of the burn-output commitment: the user funds the burn Output
+        // directly, so there is no receive claim and no nullifier — only the
+        // evolved-nonce output commitment survives, byte-identical.
         if self.art == Art::Compat {
+            // receiveShielded (its recipient is the same address again)
             ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        ops.extend(claim(1, cm_receive));
-        // burn: sendImmediateShielded to the burn address
-        if self.art == Art::Compat {
+            ops.extend(claim(1, cm_receive));
+            // burn: sendImmediateShielded — nullifier then output
             ops.extend(kernel_self_ops(&self.self_addr));
+            ops.extend(claim(0, nullifier));
         }
-        ops.extend(claim(0, nullifier));
         ops.extend(claim(2, cm_burn));
         // increment + event insert
         ops.extend([
@@ -2504,15 +2509,16 @@ impl SwapScenario {
                 result: bytesn_value(1, &[u8::from(self.request_exists)]),
             },
         ]);
-        // receiveShielded's recipient and the burn's contract address.
+        // The burn — as in withdraw. Compat: receiveShielded (custody) then
+        // sendImmediateShielded (nullifier + evolved-nonce output). Opt (rung
+        // vi, avenue 6): a SINGLE claimed shielded spend of the burn-output
+        // commitment, no receive claim and no nullifier.
         if self.art == Art::Compat {
             ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        ops.extend(claim(1, cm_receive));
-        if self.art == Art::Compat {
+            ops.extend(claim(1, cm_receive));
             ops.extend(kernel_self_ops(&self.self_addr));
+            ops.extend(claim(0, nullifier));
         }
-        ops.extend(claim(0, nullifier));
         ops.extend(claim(2, cm_burn));
         ops.extend([
             Op::Idx {

@@ -462,58 +462,68 @@ pub fn spec_withdraw(s: &WithdrawScenario) -> Outcome {
     let rid = Term::RequestId {
         record: s.event_av(),
     };
+    // The burn. The compat port takes custody (receiveShielded) then spends
+    // (sendImmediateShielded: nullifier + evolved-nonce output). The optimized
+    // artifact (rung vi, avenue 6) claims a SINGLE shielded spend of the
+    // burn-output commitment and NOTHING else — the receive and nullifier are
+    // gone (the user funds the burn Output directly). check_effects asserts
+    // this multiset EXACTLY, so on the opt side the empty receive/nullifier
+    // sets are obligation (1) and the constrained-colour/value burn commitment
+    // is obligation (2), both enforced per generated case.
+    let mut effects = Vec::new();
+    if s.art == Art::Compat {
+        effects.push(Effect::ClaimReceive(Term::CoinCm {
+            nonce: Box::new(nonce.clone()),
+            color: Box::new(color.clone()),
+            value,
+            is_left: false,
+            data: s.self_addr,
+        }));
+        effects.push(Effect::ClaimNullifier(Term::CoinNul {
+            nonce: Box::new(nonce.clone()),
+            color: Box::new(color.clone()),
+            value,
+            addr: s.self_addr,
+        }));
+    }
+    effects.push(Effect::ClaimSpend(Term::CoinCm {
+        nonce: Box::new(Term::EvolvedNonce {
+            nonce: Box::new(nonce),
+        }),
+        color: Box::new(color),
+        value,
+        is_left: true,
+        data: [0u8; 32],
+    }));
+    effects.extend([
+        Effect::CounterInc {
+            field: v::SIGNET_REQUEST_NONCE,
+            by: 1,
+        },
+        Effect::MapInsert {
+            field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
+            key: rid.clone(),
+            value: Val::Record(s.event_av()),
+        },
+        Effect::MapInsert {
+            field: v::REFUND_COMMITMENT,
+            key: rid.clone(),
+            value: Val::Term(Term::RefundCommit {
+                sk: s.sk,
+                request_id: Box::new(rid),
+            }),
+        },
+        Effect::ClaimContractCall {
+            addr: s.signer_addr,
+            ep: s.ep,
+            comm: midnight_transient_crypto::hash::transient_commit(
+                &s.call_args()[..],
+                s.cc_rand,
+            ),
+        },
+    ]);
     accept_d(
-        vec![
-            // receiveShielded(coin): custody of the surrendered coin.
-            Effect::ClaimReceive(Term::CoinCm {
-                nonce: Box::new(nonce.clone()),
-                color: Box::new(color.clone()),
-                value,
-                is_left: false,
-                data: s.self_addr,
-            }),
-            // sendImmediateShielded(coin, burnAddress, coin.value).
-            Effect::ClaimNullifier(Term::CoinNul {
-                nonce: Box::new(nonce.clone()),
-                color: Box::new(color.clone()),
-                value,
-                addr: s.self_addr,
-            }),
-            Effect::ClaimSpend(Term::CoinCm {
-                nonce: Box::new(Term::EvolvedNonce {
-                    nonce: Box::new(nonce),
-                }),
-                color: Box::new(color),
-                value,
-                is_left: true,
-                data: [0u8; 32],
-            }),
-            Effect::CounterInc {
-                field: v::SIGNET_REQUEST_NONCE,
-                by: 1,
-            },
-            Effect::MapInsert {
-                field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-                key: rid.clone(),
-                value: Val::Record(s.event_av()),
-            },
-            Effect::MapInsert {
-                field: v::REFUND_COMMITMENT,
-                key: rid.clone(),
-                value: Val::Term(Term::RefundCommit {
-                    sk: s.sk,
-                    request_id: Box::new(rid),
-                }),
-            },
-            Effect::ClaimContractCall {
-                addr: s.signer_addr,
-                ep: s.ep,
-                comm: midnight_transient_crypto::hash::transient_commit(
-                    &s.call_args()[..],
-                    s.cc_rand,
-                ),
-            },
-        ],
+        effects,
         vec![
             "the withdrawn ERC20",
             "surrendered coin",
@@ -563,56 +573,64 @@ pub fn spec_swap(s: &SwapScenario) -> Outcome {
     let rid = Term::RequestId {
         record: s.event_av(),
     };
+    // The burn — as in withdraw. Compat: receive + nullifier + evolved-nonce
+    // output spend. Opt (rung vi, avenue 6): a SINGLE claimed shielded spend
+    // of the burn-output commitment, obligations (1) and (2) enforced by
+    // check_effects' exact-multiset comparison.
+    let mut effects = Vec::new();
+    if s.art == Art::Compat {
+        effects.push(Effect::ClaimReceive(Term::CoinCm {
+            nonce: Box::new(nonce.clone()),
+            color: Box::new(color.clone()),
+            value,
+            is_left: false,
+            data: s.self_addr,
+        }));
+        effects.push(Effect::ClaimNullifier(Term::CoinNul {
+            nonce: Box::new(nonce.clone()),
+            color: Box::new(color.clone()),
+            value,
+            addr: s.self_addr,
+        }));
+    }
+    effects.push(Effect::ClaimSpend(Term::CoinCm {
+        nonce: Box::new(Term::EvolvedNonce {
+            nonce: Box::new(nonce),
+        }),
+        color: Box::new(color),
+        value,
+        is_left: true,
+        data: [0u8; 32],
+    }));
+    effects.extend([
+        Effect::CounterInc {
+            field: v::SIGNET_REQUEST_NONCE,
+            by: 1,
+        },
+        Effect::MapInsert {
+            field: v::SWAP_EVENT_MAP,
+            key: rid.clone(),
+            value: Val::Record(s.event_av()),
+        },
+        Effect::MapInsert {
+            field: v::SWAP_REFUND_COMMITMENT,
+            key: rid.clone(),
+            value: Val::Term(Term::RefundCommit {
+                sk: s.sk,
+                request_id: Box::new(rid),
+            }),
+        },
+        Effect::ClaimContractCall {
+            addr: s.signer_addr,
+            ep: s.ep,
+            comm: midnight_transient_crypto::hash::transient_commit(
+                &s.call_args()[..],
+                s.cc_rand,
+            ),
+        },
+    ]);
     accept_d(
-        vec![
-            Effect::ClaimReceive(Term::CoinCm {
-                nonce: Box::new(nonce.clone()),
-                color: Box::new(color.clone()),
-                value,
-                is_left: false,
-                data: s.self_addr,
-            }),
-            Effect::ClaimNullifier(Term::CoinNul {
-                nonce: Box::new(nonce.clone()),
-                color: Box::new(color.clone()),
-                value,
-                addr: s.self_addr,
-            }),
-            Effect::ClaimSpend(Term::CoinCm {
-                nonce: Box::new(Term::EvolvedNonce {
-                    nonce: Box::new(nonce),
-                }),
-                color: Box::new(color),
-                value,
-                is_left: true,
-                data: [0u8; 32],
-            }),
-            Effect::CounterInc {
-                field: v::SIGNET_REQUEST_NONCE,
-                by: 1,
-            },
-            Effect::MapInsert {
-                field: v::SWAP_EVENT_MAP,
-                key: rid.clone(),
-                value: Val::Record(s.event_av()),
-            },
-            Effect::MapInsert {
-                field: v::SWAP_REFUND_COMMITMENT,
-                key: rid.clone(),
-                value: Val::Term(Term::RefundCommit {
-                    sk: s.sk,
-                    request_id: Box::new(rid),
-                }),
-            },
-            Effect::ClaimContractCall {
-                addr: s.signer_addr,
-                ep: s.ep,
-                comm: midnight_transient_crypto::hash::transient_commit(
-                    &s.call_args()[..],
-                    s.cc_rand,
-                ),
-            },
-        ],
+        effects,
         vec![
             "the sold ERC20",
             "the bought ERC20",

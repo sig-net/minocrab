@@ -149,9 +149,13 @@ pub fn fork_status(circuit: Circuit) -> Fork {
         Circuit::Claim | Circuit::CompleteWithdraw => {
             diverged("M10 rung (iii), avenue 2", SEPARATOR)
         }
-        Circuit::Withdraw | Circuit::Swap | Circuit::Refund => {
+        Circuit::Refund => {
             diverged("M10 rungs (i)+(iii), avenues 7+2", "kernel.self() threaded; separator encoded")
         }
+        Circuit::Withdraw | Circuit::Swap => diverged(
+            "M10 rungs (i)+(iii)+(vi), avenues 7+2+6",
+            "kernel.self() threaded; separator encoded; burn = single claimed spend, no receive/nullifier",
+        ),
         Circuit::CompleteSwap => diverged(
             "M10 rungs (i)+(ii)+(iii), avenues 7+5+2",
             "kernel.self() threaded; changeNonce derived; separator encoded",

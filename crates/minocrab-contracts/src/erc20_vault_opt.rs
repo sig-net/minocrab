@@ -42,6 +42,15 @@
 //!   injective encoding `0x01 ‖ zeros ‖ erc20[20]` instead of
 //!   `persistentHash([pad(32, "erc20:vault:"), erc20])`, at all nine uses.
 //!   See [`vault_token_domain_separator`].
+//! - (rung vi, avenue 6) `withdraw` and `swap` BURN the surrendered coin with
+//!   a SINGLE claimed shielded spend of the burn-address output, instead of
+//!   `receiveShielded` (custody) + `sendImmediateShielded` (nullifier +
+//!   output). The user funds the burn Output directly, so the receive
+//!   coinCommitment and the nullifier — two SHA-256 pair hashes, ~11,280 rows
+//!   each in withdraw and swap — are removed; the evolved-nonce output
+//!   commitment is kept byte-identical. See [`common::burn_spend`]; its
+//!   well-formedness against the pinned ledger is proven in
+//!   tests/erc20_vault_opt_burn_wellformed.rs.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
@@ -579,8 +588,9 @@ pub fn withdraw(
     let (request_id, request_id_val) =
         check_fresh_request(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP);
 
-    // The surrendered value is BURNED: receiveShielded (custody) then
-    // sendImmediateShielded to the burn address.
+    // The surrendered value is BURNED (rung vi, avenue 6): a SINGLE claimed
+    // shielded spend of the burn-address output — no receive custody claim,
+    // no nullifier. See [`common::burn_spend`].
     let coin = minocrab_std::v3::ShieldedCoinInfo3 {
         nonce: B32 {
             hi: c.disclose(coin_nonce.hi, "surrendered coin nonce (hi)"),
@@ -592,8 +602,7 @@ pub fn withdraw(
         },
         value: c.disclose(coin_value, "surrendered coin value"),
     };
-    common::receive_shielded_with(c, one, me, &coin);
-    common::burn_coin_with(c, one, me, &coin);
+    common::burn_spend(c, one, &coin);
 
     insert_request(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
 
@@ -788,7 +797,9 @@ pub fn swap() -> Compiled3 {
 
     let (request_id, request_id_val) = check_fresh_request(&mut c, one, &request, SWAP_EVENT_MAP);
 
-    // Burn the surrendered amountInMaximum of tokenIn.
+    // Burn the surrendered amountInMaximum of tokenIn (rung vi, avenue 6): a
+    // SINGLE claimed shielded spend of the burn-address output — no receive
+    // custody claim, no nullifier. See [`common::burn_spend`].
     let coin = minocrab_std::v3::ShieldedCoinInfo3 {
         nonce: B32 {
             hi: c.disclose(coin_nonce.hi, "surrendered coin nonce (hi)"),
@@ -800,8 +811,7 @@ pub fn swap() -> Compiled3 {
         },
         value: c.disclose(coin_value, "surrendered coin value"),
     };
-    common::receive_shielded_with(&mut c, one, me, &coin);
-    common::burn_coin_with(&mut c, one, me, &coin);
+    common::burn_spend(&mut c, one, &coin);
 
     insert_request(&mut c, one, &request, SWAP_EVENT_MAP, &request_id_val);
 
