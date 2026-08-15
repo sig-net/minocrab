@@ -1,0 +1,150 @@
+#+title: M12 interface crates: design of record
+
+Opus design survey 2026-08-15 (full text in session transcript; this
+file carries every decision + enough detail to implement). NEAR-style
+interface crates over the M5 desugar; cargo as Compact's package
+manager; static interfaces (dmd-approved).
+
+* Ground truth the design rests on
+- contract_call (minocrab-ledger/src/lib.rs:701-753) IS the whole M5
+  desugar; M12 sits above it. Four call sites hand-flatten args +
+  hand-write result-bit lists — that's what M12 deletes.
+- ep_hash derivation FOUND: EntryPointBuf::ep_hash (onchain-state/src/
+  state.rs:668-675) = persistent_commit(name, "midnight:entry-point"
+  +12 zero bytes) = SHA256(opening ‖ name). Implement by CALLING
+  upstream, never re-deriving. Limb split hi=byte31, lo=LE(0..31).
+  Ledger acceptance: (addr, ep_hash, comm) match, structure.rs:2738.
+- Compact already has the trait (export contract SignetSigner,
+  Signet.compact:194) and compactc ships it as data: BOTH caller and
+  callee contract-info.json carry fully typed circuit signatures; the
+  .zkir carries input count + the constrain_* prefix (e.g.
+  signBidirectional: 8,248,8,32,248,248,248,248) = the derived list.
+- compactc's constraint table is ONE function (reduce-to-zkir.ss:
+  640-667 emit-constraints-for): opaque/field/point → none; u0 →
+  constrain_eq 0; u1 → constrain_to_boolean; 2^k−1 → constrain_bits k;
+  other → less_than+assert. make-witness runs the SAME table over
+  private inputs ⇒ argument constraints (CircuitArg::constrain) and
+  result constraints (contract_call bit list) are ONE table currently
+  duplicated by hand. Unifying = stage 1.
+- Corpus census: only 2 non-2^k−1 Uint maxvals corpus-wide (test
+  fixture, no zkir); Opaque 74 (reject in importer); structs dominated
+  by ContractAddress/Either/Maybe/ShieldedCoinInfo (all have v3 types).
+
+* Decisions
+- #[interface] on a bodyless trait (one fn per callee circuit, typed
+  with M9 leaves; no self; ALL params/results Public — passing
+  cross-contract discloses, so CallArg/CallResult exist only at
+  Public; private values must disclose() first, compiler-enforced).
+  Expands (replacing the trait, #[circuit] precedent) to a struct +
+  inherent impl: EntryPoint consts (name derived snake→lowerCamel,
+  #[entry_point(name)] escape), at_field(index)/at(address)
+  constructors (Callee::Field does a FRESH UNCACHED cell_read per
+  call — xcall::call_twice proves compactc re-reads per site; caching
+  would move rows), typed methods calling a new
+  minocrab_ledger::call<A: CallArgs, R: CallResult>() over
+  contract_call. Thinness rules hold: expansion contains no Circuit3
+  call; codegen shared with circuit_arg.rs's impl_arg_traits.
+- Visibility-generic derive mode: #[derive(CircuitArg)] on Ty<V: Vis3>
+  emits CircuitArg at Private AND CallArg/CallResult at Public — one
+  type serves callee (witness side) and caller.
+- Ledger generalization: result_limb_bits &[Option<u32>] →
+  &[LimbConstraint{Bits/Boolean/Zero/Bounded/None}] (Option<u32> can't
+  express constrain_to_boolean). EntryPoint/ep_hash/ep_limbs beside it.
+- comm layout falls out of the shared type's declaration order ⇒
+  argument reorder/retype changes the Poseidon comm ⇒ ledger rejects ⇒
+  SEMVER-MAJOR BY CONSTRUCTION. Mechanical rule: schema snapshot
+  changed = major.
+- ContractAddress<V> = newtype over B32<V> in minocrab-std (Compact's
+  own struct, 164 corpus occurrences). Interface crates NEVER contain
+  addresses; deployments pin via sealed ledger cell (at_field) or pass
+  as data (at()); optional deployments module = plain [u8;32] consts,
+  off-circuit only.
+- Artifact agreement: interface crate commits contract-info.json +
+  distilled hash-pinned pin.json (zkir sha256, input counts, constraint
+  prefixes, do_comm flag, compiler versions); full-.zkir check opt-in
+  via env/feature (offline-first; hash-pinned FETCH rejected). Checker
+  in new crate minocrab-abi: entry point exists + proof:true (real
+  check — whole Signet module is proof:false), typed tree ≡ derived
+  atoms/prims, result constraints ≡, do_comm true, zkir constraint
+  prefix slot-for-slot when available, digests match. Mutation test
+  proves the checker bites. Frozen interface-schema snapshot (ep name,
+  ep_hash hex, per-slot widths/constraints) = the published ABI; its
+  diff IS the semver decision.
+- Importer: CLI crate minocrab-interface-gen (NOT build.rs — generated
+  source must be readable/reviewable/docs.rs-able; --check regenerates
+  and diffs, the codegen snapshot guard). Type mapping table in the
+  full design; highlights: Bytes≤31→Bytes<n>, 32→B32, >32→BytesN,
+  Uint 2^k−1→Uint<k>, other maxval → error unless --allow-bounded
+  (no corpus zkir evidence), Boolean→Bool, Vector→[T;n],
+  Maybe/Either/ContractAddress matched by name+shape, other structs →
+  generated #[derive(CircuitArg)] (deduped by name; same name +
+  different shape = error), Alias → pub type, Enum → u8 + named
+  consts, Opaque → error, Tuple → () / Rust tuple. Can also read the
+  CALLER's contracts[] entry (--from-caller).
+- Export direction (own contracts): the interface crate is the LOWER
+  crate — the contract crate depends on it and uses its types in its
+  circuits (one definition of every shared type); a
+  contract_matches_its_interface test compares each circuit's built
+  IrSource against the trait schema. (Rejected: feature-gated subset
+  of the contract crate — heavy deps, semver coupled to impl churn.)
+- Session defaults on the design's open questions (dmd may override):
+  interface crates live under crates/ in-workspace; git/path
+  consumption suffices for M12 (crates.io publication later); pinning
+  form as above confirmed; signet-protocol crate split (record types /
+  request-id / ECDSA out of contracts/src/signet.rs) noted as
+  FOLLOW-ON, not M12 scope — stage 4 moves only Notification +
+  construct_notification_v1 into the interface crate.
+
+* Honest limits (README must carry #1)
+1. The CIRCUIT binds neither ep nor arg types (ep limbs are witnesses
+   — why callOnce/callEmit share a circuit; arg limbs are opaque field
+   elements in the comm). The typing protects the developer and tx
+   builder; the VERIFIER's protection is the ledger's (addr, ep, comm)
+   match. State this in the README section.
+2. Static interfaces; call_dynamic representable but deliberately not
+   built.
+3. Callee upgrades: VK is versioned per (address, ep); same-signature
+   redeploys are invisible (correct); signature changes under the same
+   name break at validation; agreement test catches on re-pin.
+   Binding artifact→deployed address needs the VK (keygen) — out of
+   scope, sketched as verify_deployment for later.
+4. No promises/callbacks/failure channel/gas control/value-on-call;
+   results are prover-supplied ⇒ tx builder runs the callee FIRST
+   (off-circuit orchestration = future work; schema() gives builders
+   the layout).
+5. Field/point result slots carry no constraint (compactc's own rule)
+   — bounded only by the comm; stated, not fixed.
+
+* Phasing (one agent/stage; standing gates: both snapshots
+bit-identical, all suites green, workspace release build clean;
+review-queue line per stage)
+1. The ABI table: Prim + ported emit-constraints-for +
+   CircuitAbi{SLOTS,push_atoms,push_prims}; CircuitArg::constrain
+   default body from the table (kills the hand-written parallel copy);
+   LimbConstraint; EntryPoint via upstream. Tests: table vs every
+   reduce-to-zkir.ss case; ep_hash vs upstream for all 312 corpus
+   artifact circuit names. Documented: Uint<1> now
+   constrain_to_boolean (no ported circuit uses it — zero movement).
+2. Call core, no macros: CallArg(s)/CallResult + leaves,
+   ContractAddress, Callee, call(); hand-written SignetSigner + Token
+   handles; re-express ALL FOUR call sites (incl. callTwice's two
+   reads + xcontract_events' return path); switch xcall scenarios to
+   derived ep values (stronger, zero movement — ep limbs are
+   witnesses, preimage-only change).
+3. #[interface] + visibility-generic derive; re-express stage-2
+   handles; diff = attribute only; thinness + byte-equal-ZKIR +
+   error-inventory gates.
+4. signet-signer-interface crate (hand-authored) + minocrab-abi +
+   pinned artifact + mutation test + schema snapshot; vault +
+   test_caller call through it; Notification moves in. Proof: vault's
+   signBidirectional through an imported crate, zero movement.
+5. minocrab-interface-gen: acceptance = (i) regenerating
+   signet-signer-interface reproduces stage 4's source BYTE FOR BYTE;
+   (ii) a Compact-only contract (xcall target + one more) imports and
+   xcall callers re-express through the GENERATED crate, zero
+   movement.
+6. Callee-side export (signet_contract uses the interface crate's
+   types) + contract_matches_its_interface + conventions section here.
+7. README showcase (sketch in the full design: the one-call desugar,
+   the drift-test output sample, the generator invocation, the honest
+   limit #1) + tick M12.
