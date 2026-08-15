@@ -36,3 +36,7 @@ stages land; tick when reviewed.
 Future stage agents' commits land gate-checked but diff-unreviewed;
 append one line here per landed stage naming the commit + what a
 reviewer should look at.
+- [ ] ca0ebe2 M11 stage 0 conformance suite: spec-type widths vs
+      signet.rs atoms (transcription risk); the two subset corrections
+      (Option caught by fixed-width not dual-oracle; Tag<K> → u8) and
+      the ByteArray<N> wrapper transparency bound.
