@@ -17,6 +17,54 @@ use minocrab_contracts::{
 /// A circuit under snapshot: its name and how to build it.
 pub type Circuit = (&'static str, fn() -> Compiled3);
 
+/// A file under `crates/minocrab-contracts/tests/`.
+pub fn test_source(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(name)
+}
+
+/// Replace a snapshot table's generated region, in place.
+///
+/// The snapshot regenerators WRITE their table back into their own source
+/// file instead of printing it for a human to paste. A toolchain bump moves
+/// several snapshots at once (M8, notes/version-bump.org), and `./bump.sh
+/// accept` runs every regenerator in one step — a step that has to end with
+/// a reviewable `git diff`, not with paste instructions.
+///
+/// `body` replaces every line strictly between the two marker lines, whose
+/// own indentation is preserved. Each marker must appear exactly once.
+pub fn rewrite_generated_region(path: &std::path::Path, body: &str) {
+    // Assembled rather than written literally, so that the markers occur
+    // exactly once in a file this function rewrites.
+    let begin = format!("// {} BEGIN", "GENERATED");
+    let end = format!("// {} END", "GENERATED");
+    let text = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+    let at = |marker: &str| {
+        let first = text
+            .find(marker)
+            .unwrap_or_else(|| panic!("{} has no `{marker}` marker", path.display()));
+        assert!(
+            text[first + marker.len()..].find(marker).is_none(),
+            "{} has more than one `{marker}` marker",
+            path.display()
+        );
+        first
+    };
+    let (begin_at, end_at) = (at(&begin), at(&end));
+    assert!(begin_at < end_at, "{}: the markers are the wrong way round", path.display());
+    // From just past the BEGIN marker's newline to the start of the line
+    // carrying the END marker.
+    let from = begin_at + text[begin_at..].find('\n').expect("the begin marker ends its line") + 1;
+    let to = text[..end_at].rfind('\n').expect("the end marker is not on line 1") + 1;
+
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..from]);
+    out.push_str(body);
+    out.push_str(&text[to..]);
+    std::fs::write(path, out).unwrap_or_else(|e| panic!("{} is not writable: {e}", path.display()));
+    println!("wrote {}", path.display());
+}
+
 /// Every circuit the workspace builds, in snapshot order. Shared by the
 /// snapshot guards (`row_snapshot`, `interface_snapshot`) so both cover
 /// exactly the same set; their frozen tables stay independent.

@@ -25,20 +25,24 @@
 //!     instruction stream (the count is cross-checked against
 //!     `Compiled3::witnesses`).
 //!
-//! To regenerate after an INTENTIONAL interface change:
+//! To regenerate after an INTENTIONAL interface change (a toolchain bump
+//! that moves a schema is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test interface_snapshot -- \
-//!      --ignored --nocapture print_interface_snapshot`
+//!      --ignored regenerate_interface_snapshot`, or `./bump.sh accept` to
+//! run every regenerator at once. It rewrites the table below in place, so
+//! the new baseline arrives as a reviewable diff.
 
 mod support;
 
 use minocrab::v3::Compiled3;
 use minocrab::DisclosureKind;
 use minocrab_zkir::v3::{Instruction, IrType};
-use support::circuits;
+use support::{circuits, rewrite_generated_region, test_source};
 
 /// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
 /// ordered interface in a snapshot guard test".
 const SNAPSHOT: &[(&str, &str)] = &[
+    // GENERATED BEGIN — rewritten by `regenerate_interface_snapshot`
     (
         "erc20_vault::initialize",
         "\
@@ -216,9 +220,6 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
-    // erc20-vault, OPTIMIZED (M10 step 4 onwards). These rungs do not
-    // touch arguments, so this block must stay identical to the port's
-    // above; a diff here means an optimization changed the wire contract.
     (
         "erc20_vault_opt::initialize",
         "\
@@ -392,14 +393,6 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
-    // erc20-vault, BORSH (M11 stage 4 onwards). Forked IDENTICAL to the
-    // optimized block above; a diff here that is not stated in an M11 stage's
-    // commit message is an unintended wire-contract change. Stage 5 split the
-    // opaque `serializedOutput` slot of the four settle circuits into the
-    // DECLARED fields of the attested output — `serializedOutput_kind` plus
-    // `_success` (claim, completeWithdraw), `_amountIn` (completeSwap), or
-    // nothing at all (refund, whose 5-byte sentinel became the kind byte).
-    // Nothing else about any argument list moved.
     (
         "erc20_vault_borsh::initialize",
         "\
@@ -576,13 +569,6 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
-    // erc20-vault, THE SHOWCASE TWIN (M9 phase 8). The rewrite is a change
-    // of SPELLING, so this block must match the borsh block above entry for
-    // entry — same arguments, same order, same types, same witness reads.
-    // That is half of the equivalence criterion the twin is gated on (the
-    // other half, PI equality on a shared preimage, is
-    // `tests/erc20_vault_modern_fork.rs`), and it is why a diff HERE would be
-    // the phase failing rather than the phase's deliverable.
     (
         "erc20_vault_modern::initialize",
         "\
@@ -887,8 +873,6 @@ in  recipient_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
 ",
     ),
-    // events, THROUGH THE BORSH API (M11 stage 6). Byte-identical ZKIR to the
-    // four above, so these entries must match them line for line.
     (
         "events_borsh::base",
         "\
@@ -1272,13 +1256,6 @@ in  data_8: Scalar<BLS12-381>
     ),
     (
         "xcall_with_payment::call_once",
-        // NAME COLUMN, M9 phase 5 (five lines, this circuit only): the coin
-        // argument's slots were labelled with the hand-abbreviated
-        // `nonce_`/`color_`/`value`, and the mechanical rule labels them with
-        // the Compact parameter's own name, `coin_…` — which is what the
-        // target's `notify`/`pay` already called the same five slots. Order
-        // and types are untouched, and argument names are ours rather than
-        // compactc's (notes/ledger-abi.org §6).
         "\
 in  coin_nonce_hi: Scalar<BLS12-381>
 in  coin_nonce_lo: Scalar<BLS12-381>
@@ -1352,7 +1329,6 @@ out event hash (hi): Scalar<BLS12-381>
 out event hash (lo): Scalar<BLS12-381>
 ",
     ),
-    // ...and its Borsh twin, likewise byte-identical.
     (
         "xcontract_events_borsh::token_deposit",
         "\
@@ -1403,6 +1379,7 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
+    // GENERATED END
 ];
 
 /// The serde name of an [`IrType`], i.e. the type column the differential
@@ -1567,20 +1544,23 @@ fn diff_shows_reorders_renames_and_insertions() {
     );
 }
 
-/// Regeneration helper: prints the SNAPSHOT table body.
+/// Regeneration helper: rewrites the SNAPSHOT table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
-fn print_interface_snapshot() {
+fn regenerate_interface_snapshot() {
+    let mut body = String::new();
     for (name, build) in circuits() {
         let lines = interface(&build());
         assert!(
             lines.iter().all(|l| !l.contains('"')),
             "{name}: a label contains a quote — it cannot go in the table verbatim"
         );
-        println!("    (\n        \"{name}\",\n        \"\\");
+        body.push_str(&format!("    (\n        \"{name}\",\n        \"\\\n"));
         for line in lines {
-            println!("{line}");
+            body.push_str(&line);
+            body.push('\n');
         }
-        println!("\",\n    ),");
+        body.push_str("\",\n    ),\n");
     }
+    rewrite_generated_region(&test_source("interface_snapshot.rs"), &body);
 }

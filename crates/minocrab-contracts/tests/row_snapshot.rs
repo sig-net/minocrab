@@ -10,17 +10,21 @@
 //! The twelve benchmark circuits agree with the published numbers in
 //! `BENCHMARK.md`.
 //!
-//! To regenerate after an INTENTIONAL cost change:
+//! To regenerate after an INTENTIONAL cost change (a toolchain bump that
+//! moves lowering is one — notes/version-bump.org):
 //! `cargo test --release -p minocrab-contracts --test row_snapshot -- \
-//!      --ignored --nocapture print_row_snapshot`
+//!      --ignored regenerate_row_snapshot`, or `./bump.sh accept` to run
+//! every regenerator at once. It rewrites the table below in place, so the
+//! new baseline arrives as a reviewable diff.
 
 mod support;
 
-use support::circuits;
+use support::{circuits, rewrite_generated_region, test_source};
 
 /// `(circuit, k, rows)` — frozen at "M7: freeze per-circuit (k, rows) in a
 /// row-snapshot guard test".
 const SNAPSHOT: &[(&str, u8, usize)] = &[
+    // GENERATED BEGIN — rewritten by `regenerate_row_snapshot`
     ("erc20_vault::initialize", 13, 4272),
     ("erc20_vault::deposit", 15, 17502),
     ("erc20_vault::claim", 16, 47660),
@@ -108,6 +112,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
     ("serde_builtin::check_roundtrip", 15, 18408),
     ("test_caller::initialise", 13, 3984),
+    // GENERATED END
 ];
 
 #[test]
@@ -117,7 +122,7 @@ fn every_circuit_matches_its_frozen_cost() {
         circuits.len(),
         SNAPSHOT.len(),
         "snapshot table covers {} circuits but {} are built — add the new \
-         circuit to SNAPSHOT (regenerate with the `print_row_snapshot` test)",
+         circuit to SNAPSHOT (regenerate with the `regenerate_row_snapshot` test)",
         SNAPSHOT.len(),
         circuits.len()
     );
@@ -141,12 +146,14 @@ fn every_circuit_matches_its_frozen_cost() {
     );
 }
 
-/// Regeneration helper: prints the SNAPSHOT table body.
+/// Regeneration helper: rewrites the SNAPSHOT table in this file.
 #[test]
 #[ignore = "regeneration helper, not a check"]
-fn print_row_snapshot() {
+fn regenerate_row_snapshot() {
+    let mut body = String::new();
     for (name, build) in circuits() {
         let (k, rows) = minocrab_sim::v3::cost(&build().ir);
-        println!("    (\"{name}\", {k}, {rows}),");
+        body.push_str(&format!("    (\"{name}\", {k}, {rows}),\n"));
     }
+    rewrite_generated_region(&test_source("row_snapshot.rs"), &body);
 }
