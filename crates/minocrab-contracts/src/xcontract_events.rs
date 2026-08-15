@@ -39,7 +39,7 @@ use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{
     cell_read, cell_write, contract_call, counter_increment, counter_read, emit, emit_event,
-    kernel_self, set_insert, ImpactElem, LedgerValue,
+    kernel_self, set_insert, ImpactElem, LedgerValue, LimbConstraint,
 };
 use minocrab_std::v3::{BytesN, Serializer, B32};
 
@@ -86,7 +86,7 @@ pub fn deposit_via_vault() -> Compiled3 {
         one,
         [token[0], token[1]],
         &[a, me[0], me[1]],
-        &[Some(8), Some(248)],
+        &[LimbConstraint::Bits(8), LimbConstraint::Bits(248)],
     );
     let event_hash = B32 {
         hi: results[0],

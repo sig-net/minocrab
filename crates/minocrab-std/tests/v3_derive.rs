@@ -5,9 +5,11 @@
 //! ZKIR pins the argument LABELS too (`%name.index`), so the camelCase rule
 //! and the `#[arg(name = "…")]` override are checked by the same equality.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private};
-use minocrab_std::v3::{entry, ArgPath, Bool, Bytes, BytesN, CircuitArg, CircuitArgs, Uint, B32};
+use minocrab_std::v3::{
+    entry, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, CircuitArgs, Uint, B32,
+};
 use minocrab_zkir::v3::to_zkir_string;
 
 fn zkir(compiled: &Compiled3) -> String {
@@ -39,14 +41,21 @@ struct HandRequest {
     amount: Uint<128>,
 }
 
-impl CircuitArg for HandRequest {
-    const SLOTS: usize = <Bytes<20> as CircuitArg>::SLOTS + <Uint<128> as CircuitArg>::SLOTS;
+impl CircuitAbi for HandRequest {
+    const SLOTS: usize = <Bytes<20> as CircuitAbi>::SLOTS + <Uint<128> as CircuitAbi>::SLOTS;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Bytes<20> as CircuitArg>::push_atoms(atoms);
-        <Uint<128> as CircuitArg>::push_atoms(atoms);
+        <Bytes<20> as CircuitAbi>::push_atoms(atoms);
+        <Uint<128> as CircuitAbi>::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Bytes<20> as CircuitAbi>::push_prims(prims);
+        <Uint<128> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for HandRequest {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         HandRequest {
             erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
@@ -54,9 +63,9 @@ impl CircuitArg for HandRequest {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.erc20_address.constrain(c);
-        self.amount.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.push_slots(slots);
+        self.amount.push_slots(slots);
     }
 }
 
@@ -69,11 +78,11 @@ struct HandArgs {
 }
 
 impl CircuitArgs for HandArgs {
-    const SLOTS: usize = <Uint<64> as CircuitArg>::SLOTS
-        + <Bool as CircuitArg>::SLOTS
+    const SLOTS: usize = <Uint<64> as CircuitAbi>::SLOTS
+        + <Bool as CircuitAbi>::SLOTS
         + HandRequest::SLOTS
-        + <B32<Private> as CircuitArg>::SLOTS
-        + <BytesN<Private, 128> as CircuitArg>::SLOTS;
+        + <B32<Private> as CircuitAbi>::SLOTS
+        + <BytesN<Private, 128> as CircuitAbi>::SLOTS;
 
     fn declare(c: &mut Circuit3) -> Self {
         HandArgs {
@@ -95,11 +104,11 @@ impl CircuitArgs for HandArgs {
 
     fn atoms() -> Vec<AlignmentAtom> {
         let mut atoms = Vec::new();
-        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
-        <Bool as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<64> as CircuitAbi>::push_atoms(&mut atoms);
+        <Bool as CircuitAbi>::push_atoms(&mut atoms);
         HandRequest::push_atoms(&mut atoms);
-        <B32<Private> as CircuitArg>::push_atoms(&mut atoms);
-        <BytesN<Private, 128> as CircuitArg>::push_atoms(&mut atoms);
+        <B32<Private> as CircuitAbi>::push_atoms(&mut atoms);
+        <BytesN<Private, 128> as CircuitAbi>::push_atoms(&mut atoms);
         atoms
     }
 }
@@ -199,5 +208,5 @@ fn a_derived_struct_is_also_an_argument_list() {
     };
 
     assert_eq!(zkir(&hand), zkir(&root));
-    assert_eq!(<DerivedRequest as CircuitArg>::SLOTS, 2);
+    assert_eq!(<DerivedRequest as CircuitAbi>::SLOTS, 2);
 }

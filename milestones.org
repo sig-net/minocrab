@@ -677,6 +677,25 @@ a test failure, not a runtime surprise.
       the README with a real snippet (dmd: "the readme is a showcase
       of our features") — same rule for other landed features as they
       finish (Borsh subset, predicates, maps).
+Stages (notes/interface-crates.org §Phasing is the detail; standing
+gates every stage: both snapshots bit-identical, all suites green):
+- [X] 1. The ABI table: Prim + the ported emit-constraints-for +
+      CircuitAbi; CircuitArg::constrain becomes a table-driven provided
+      method; LimbConstraint replaces contract_call's &[Option<u32>];
+      EntryPoint/ep_hash/ep_limbs via upstream, swept over all 312
+      corpus artifacts (618 distinct circuit names).
+- [ ] 2. The call core, no macros: CallArg(s)/CallResult,
+      ContractAddress, Callee, call(); hand-written SignetSigner/Token
+      handles; ALL call sites re-expressed; xcall scenarios switched to
+      derived ep values.
+- [ ] 3. #[interface] + the visibility-generic derive mode; the
+      stage-2 handles re-expressed through it (diff = attribute only).
+- [ ] 4. signet-signer-interface crate + minocrab-abi + pinned
+      artifact + mutation test + schema snapshot.
+- [ ] 5. minocrab-interface-gen (byte-for-byte regeneration of stage
+      4's crate; a Compact-only contract imported).
+- [ ] 6. Callee-side export + contract_matches_its_interface.
+- [ ] 7. README showcase + tick M12.
 Approved by dmd 2026-08-15: the approach as designed, including that
 contract interfaces are STATIC (address is data, interface is
 compile-time) — not a limitation to work around.

@@ -84,7 +84,7 @@
 //! to `LEN` ([`limbs_of`] asserts it), and the tests compare simulated
 //! in-circuit bytes against `borsh::to_vec`.
 
-use minocrab::v3::{AnyWire3, Bytes32T, Circuit3, FieldT, Wire3};
+use minocrab::v3::{AnyWire3, Bytes32T, Circuit3, FieldT, Prim, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
 
 /// Borsh's own schema of the SPEC type, walked into the same offset table
@@ -101,7 +101,9 @@ pub mod schema;
 #[cfg(feature = "macros")]
 pub use minocrab_macros::CircuitBorsh;
 
-use super::{ArgPath, Bool, Bytes, BytesN, CircuitArg, Maybe, Serializer, Uint, Vis3, B32};
+use super::{
+    ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Maybe, Serializer, Uint, Vis3, B32,
+};
 
 // ---- the trait ---------------------------------------------------------------
 
@@ -821,7 +823,7 @@ impl<const K: u32, V: Vis3> Tag<K, V> {
     /// canonicity check, emitted by
     /// [`CircuitBorsh::constrain_canonical`].
     pub fn constrain_input(self, c: &mut Circuit3) {
-        c.assert_bits(self.0, 8);
+        Prim::Uint { bits: 8 }.constraint().emit(c, self.0);
     }
 }
 
@@ -834,19 +836,27 @@ impl<const K: u32> Tag<K, Public> {
     }
 }
 
-impl<const K: u32> CircuitArg for Tag<K, Private> {
+impl<const K: u32, V: Vis3> CircuitAbi for Tag<K, V> {
     const SLOTS: usize = 1;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
         atoms.push(AlignmentAtom::Bytes { length: 1 });
     }
 
+    /// One byte. The `< K` bound is Borsh canonicity, not compactc's
+    /// argument constraint, so it is NOT part of the primitive type.
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Uint { bits: 8 });
+    }
+}
+
+impl<const K: u32> CircuitArg for Tag<K, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Tag::from_field(c.arg::<FieldT>(path.as_str()))
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
     }
 }
 

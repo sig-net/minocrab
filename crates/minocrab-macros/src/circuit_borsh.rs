@@ -64,27 +64,35 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // struct gets that as a where-clause rather than a substitution: the impl
     // is written once and rustc decides where it applies.
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
-    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, arg_where) = match &vis
-    {
-        Some(param) => (
-            quote!(<#param: #root::Vis3>),
-            quote!(#param),
-            quote!(#name<#param>),
-            quote!(#name<#root::__private::Private>),
-            quote!(<#param: #root::Vis3>),
-            quote!(where #( #types: #root::CircuitArg, )*),
-        ),
-        None => (
-            quote!(),
-            quote!(#root::__private::Private),
-            quote!(#name),
-            quote!(#name),
-            quote!(),
-            quote!(),
-        ),
-    };
+    #[allow(clippy::type_complexity)]
+    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, arg_where, abi_where) =
+        match &vis {
+            Some(param) => (
+                quote!(<#param: #root::Vis3>),
+                quote!(#param),
+                quote!(#name<#param>),
+                quote!(#name<#root::__private::Private>),
+                quote!(<#param: #root::Vis3>),
+                quote!(where #( #types: #root::CircuitArg, )*),
+                // The SCHEMA half is visibility-independent, so it gets the
+                // weaker bound and the impl holds at every visibility —
+                // which is what lets one visibility-generic type describe
+                // both the callee's arguments and a caller's cross-contract
+                // call.
+                quote!(where #( #types: #root::CircuitAbi, )*),
+            ),
+            None => (
+                quote!(),
+                quote!(#root::__private::Private),
+                quote!(#name),
+                quote!(#name),
+                quote!(),
+                quote!(),
+                quote!(),
+            ),
+        };
 
-    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &arg_where, &fields);
+    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &arg_where, &abi_where, &fields);
     let borsh_impl = impl_borsh(
         &root,
         &borsh_generics,

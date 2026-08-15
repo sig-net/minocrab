@@ -8,13 +8,15 @@
 //! proves the derive is those impls. Together they say the derive emits
 //! canonical Borsh.
 
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::borsh::{
     limbs_of, read_split, read_witness_checked, to_bytes, BorshReader, CircuitBorsh,
     CircuitBorshArg, FieldSpec, Flagged, LayoutPath, Limbs, Tag,
 };
-use minocrab_std::v3::{ArgPath, Bool, Bytes, BytesN, CircuitArg, Serializer, Uint, Vis3, B32};
+use minocrab_std::v3::{
+    ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Serializer, Uint, Vis3, B32,
+};
 use minocrab_zkir::v3::to_zkir_string;
 
 // ---- the same record, twice ------------------------------------------------------
@@ -46,21 +48,46 @@ struct Hand<V: Vis3> {
     calldata: Flagged<Uint<32, V>, V>,
 }
 
-impl CircuitArg for Hand<Private> {
+impl<V: Vis3> CircuitAbi for Hand<V>
+where
+    Uint<8, V>: CircuitAbi,
+    Bool<V>: CircuitAbi,
+    Tag<4, V>: CircuitAbi,
+    Uint<128, V>: CircuitAbi,
+    Bytes<20, V>: CircuitAbi,
+    B32<V>: CircuitAbi,
+    BytesN<V, 64>: CircuitAbi,
+    [B32<V>; 2]: CircuitAbi,
+    Flagged<Uint<32, V>, V>: CircuitAbi,
+{
     const SLOTS: usize = 1 + 1 + 1 + 1 + 1 + 2 + 3 + 4 + 2;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Uint<8, Private> as CircuitArg>::push_atoms(atoms);
-        <Bool<Private> as CircuitArg>::push_atoms(atoms);
-        <Tag<4, Private> as CircuitArg>::push_atoms(atoms);
-        <Uint<128, Private> as CircuitArg>::push_atoms(atoms);
-        <Bytes<20, Private> as CircuitArg>::push_atoms(atoms);
-        <B32<Private> as CircuitArg>::push_atoms(atoms);
-        <BytesN<Private, 64> as CircuitArg>::push_atoms(atoms);
-        <[B32<Private>; 2] as CircuitArg>::push_atoms(atoms);
-        <Flagged<Uint<32, Private>, Private> as CircuitArg>::push_atoms(atoms);
+        <Uint<8, V> as CircuitAbi>::push_atoms(atoms);
+        <Bool<V> as CircuitAbi>::push_atoms(atoms);
+        <Tag<4, V> as CircuitAbi>::push_atoms(atoms);
+        <Uint<128, V> as CircuitAbi>::push_atoms(atoms);
+        <Bytes<20, V> as CircuitAbi>::push_atoms(atoms);
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+        <BytesN<V, 64> as CircuitAbi>::push_atoms(atoms);
+        <[B32<V>; 2] as CircuitAbi>::push_atoms(atoms);
+        <Flagged<Uint<32, V>, V> as CircuitAbi>::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Uint<8, V> as CircuitAbi>::push_prims(prims);
+        <Bool<V> as CircuitAbi>::push_prims(prims);
+        <Tag<4, V> as CircuitAbi>::push_prims(prims);
+        <Uint<128, V> as CircuitAbi>::push_prims(prims);
+        <Bytes<20, V> as CircuitAbi>::push_prims(prims);
+        <B32<V> as CircuitAbi>::push_prims(prims);
+        <BytesN<V, 64> as CircuitAbi>::push_prims(prims);
+        <[B32<V>; 2] as CircuitAbi>::push_prims(prims);
+        <Flagged<Uint<32, V>, V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for Hand<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Hand {
             version: CircuitArg::declare(c, &path.field("version")),
@@ -75,16 +102,16 @@ impl CircuitArg for Hand<Private> {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.version.constrain(c);
-        self.flag.constrain(c);
-        self.kind.constrain(c);
-        self.amount.constrain(c);
-        self.addr.constrain(c);
-        self.id.constrain(c);
-        self.payload.constrain(c);
-        self.words.constrain(c);
-        self.calldata.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.version.push_slots(slots);
+        self.flag.push_slots(slots);
+        self.kind.push_slots(slots);
+        self.amount.push_slots(slots);
+        self.addr.push_slots(slots);
+        self.id.push_slots(slots);
+        self.payload.push_slots(slots);
+        self.words.push_slots(slots);
+        self.calldata.push_slots(slots);
     }
 }
 
@@ -267,12 +294,12 @@ fn the_derived_constants_and_layout_are_the_hand_written_ones() {
         <Hand<Private> as CircuitBorsh<Private>>::LEN
     );
     assert_eq!(
-        <Derived<Private> as CircuitArg>::SLOTS,
-        <Hand<Private> as CircuitArg>::SLOTS
+        <Derived<Private> as CircuitAbi>::SLOTS,
+        <Hand<Private> as CircuitAbi>::SLOTS
     );
     assert_eq!(
-        <Derived<Private> as CircuitArg>::atoms(),
-        <Hand<Private> as CircuitArg>::atoms()
+        <Derived<Private> as CircuitAbi>::atoms(),
+        <Hand<Private> as CircuitAbi>::atoms()
     );
     assert_eq!(
         <Derived<Private> as CircuitBorsh<Private>>::layout(),

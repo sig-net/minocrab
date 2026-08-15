@@ -12,23 +12,34 @@
 //!
 //! The three laws every [`CircuitArg`] impl must satisfy:
 //!
-//! 1. `declare` touches exactly [`CircuitArg::SLOTS`] argument slots and
+//! 1. `declare` touches exactly [`CircuitAbi::SLOTS`] argument slots and
 //!    calls nothing but [`Circuit3::arg`] — ZKIR requires every input to
 //!    precede every instruction, so declaration cannot compute.
 //! 2. `push_atoms` describes exactly those slots, in the same order (the
-//!    FAB atoms of the Compact type the argument stands for).
-//! 3. `constrain` emits exactly the input constraints compactc emits for
-//!    that Compact type, in slot order.
+//!    FAB atoms of the Compact type the argument stands for), and
+//!    `push_prims` gives the flattened primitive type of each one.
+//! 3. `push_slots` hands back exactly those slots' wires, in the same
+//!    order.
+//!
+//! Law 3 used to read "`constrain` emits exactly the input constraints
+//! compactc emits for that Compact type" — every impl carried its own copy
+//! of a rule that lives in one place in compactc (`emit-constraints-for`,
+//! reduce-to-zkir.ss:640-667). Since M12 stage 1 it does not:
+//! [`CircuitArg::constrain`] is a provided method that zips `push_prims`
+//! against `push_slots` and runs [`minocrab::v3::Prim::constraint`], so an
+//! impl only says WHAT its slots are, never how they are constrained. The
+//! same table is what `minocrab_ledger::contract_call` runs over a
+//! cross-contract call's result limbs.
 //!
 //! [`entry`] enforces the parts of law 1 that are checkable — the slot
 //! count and the emptiness of the instruction stream after declaration —
 //! and orders the two phases so law 3's "in slot order" is all an impl has
 //! to get right.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 
-use super::{Bool, Bytes, BytesN, Either, Maybe, Uint, B32};
+use super::{Bool, Bytes, BytesN, Either, Maybe, Uint, Vis3, B32};
 
 // ---- argument paths ---------------------------------------------------------
 
@@ -89,29 +100,33 @@ impl std::fmt::Display for ArgPath {
     }
 }
 
-// ---- CircuitArg -------------------------------------------------------------
+// ---- CircuitAbi -------------------------------------------------------------
 
-/// A type usable as (part of) a circuit argument: its slot count, its FAB
-/// atoms, how it is declared, and how it is constrained on entry — one
-/// trait, so a schema and its materialization cannot drift apart (the
-/// `CandidType` lesson, notes/contract-api.org §Survey).
+/// The ABI of a Compact type: how many native slots it occupies, the FAB
+/// atoms of those slots, and the flattened PRIMITIVE type of each one.
 ///
-/// Implemented for [`Private`] leaves only: circuit arguments are witness
-/// data, so [`Circuit3::arg`] can only hand back private wires.
+/// This is the visibility-INDEPENDENT half of an argument type — a schema
+/// says nothing about who may see the value — so it is implemented for
+/// every [`Vis3`](super::Vis3), and both directions of the wire build on
+/// it: [`CircuitArg`] (the callee's own arguments, [`Private`]) adds
+/// declaration and constraints, and M12's `CallArg`/`CallResult` (the
+/// caller's side of a cross-contract call, [`Public`]) add flattening. One
+/// type therefore describes both sides and cannot describe them
+/// differently.
 ///
-/// See the module docs for the three laws an impl must satisfy.
-pub trait CircuitArg: Sized {
-    /// Argument slots this type occupies.
+/// `SLOTS` counts NATIVE SLOTS, which is not the atom count: a
+/// `Bytes<32>` is one atom (`bytes 32`) across two slots (`hi`, `lo`).
+/// [`Self::prims`] is the per-slot list, so `prims().len() == SLOTS`.
+pub trait CircuitAbi {
+    /// Native slots this type occupies.
     const SLOTS: usize;
 
     /// The FAB atoms of these slots, in slot order.
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>);
 
-    /// Declare the slots — `Circuit3::arg` calls and nothing else.
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
-
-    /// Emit compactc's input constraints for this type, in slot order.
-    fn constrain(&self, c: &mut Circuit3);
+    /// The flattened primitive type of each slot, in slot order — what
+    /// compactc's constraint table dispatches on. Exactly [`Self::SLOTS`].
+    fn push_prims(prims: &mut Vec<Prim>);
 
     /// The FAB atoms of these slots, in slot order.
     fn atoms() -> Vec<AlignmentAtom> {
@@ -119,63 +134,144 @@ pub trait CircuitArg: Sized {
         Self::push_atoms(&mut atoms);
         atoms
     }
+
+    /// The primitive type of each slot, in slot order.
+    fn prims() -> Vec<Prim> {
+        let mut prims = Vec::with_capacity(Self::SLOTS);
+        Self::push_prims(&mut prims);
+        debug_assert_eq!(
+            prims.len(),
+            Self::SLOTS,
+            "CircuitAbi::push_prims must describe exactly SLOTS slots"
+        );
+        prims
+    }
 }
 
-impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
+// ---- CircuitArg -------------------------------------------------------------
+
+/// A type usable as (part of) a circuit argument: its ABI ([`CircuitAbi`]),
+/// how it is declared, and which wires its slots are — one trait, so a
+/// schema and its materialization cannot drift apart (the `CandidType`
+/// lesson, notes/contract-api.org §Survey).
+///
+/// Implemented for [`Private`] leaves only: circuit arguments are witness
+/// data, so [`Circuit3::arg`] can only hand back private wires.
+///
+/// See the module docs for the three laws an impl must satisfy.
+pub trait CircuitArg: CircuitAbi + Sized {
+    /// Declare the slots — `Circuit3::arg` calls and nothing else.
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
+
+    /// This value's slots, in slot order — exactly [`CircuitAbi::SLOTS`] of
+    /// them, matching [`CircuitAbi::push_prims`] one for one.
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>);
+
+    /// Emit compactc's input constraints for this type, in slot order.
+    ///
+    /// NEVER OVERRIDDEN: the body is the ABI table applied to this type's
+    /// own slots, so there is one statement of the rule in the whole
+    /// system (see the module docs). An impl that overrode it would be
+    /// re-introducing exactly the hand-written parallel copy M12 stage 1
+    /// deleted.
+    fn constrain(&self, c: &mut Circuit3) {
+        let mut slots = Vec::with_capacity(Self::SLOTS);
+        self.push_slots(&mut slots);
+        let prims = Self::prims();
+        assert_eq!(
+            slots.len(),
+            prims.len(),
+            "CircuitArg::push_slots gave {} slots for {} primitive types",
+            slots.len(),
+            prims.len()
+        );
+        for (&slot, prim) in slots.iter().zip(prims) {
+            prim.constraint().emit(c, slot);
+        }
+    }
+}
+
+impl<const BITS: u32, V: Vis3> CircuitAbi for Uint<BITS, V> {
     const SLOTS: usize = 1;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
         atoms.push(AlignmentAtom::Bytes { length: BITS.div_ceil(8) });
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Uint { bits: BITS });
+    }
+}
+
+impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Uint::from_field(c.arg::<FieldT>(path.as_str()))
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
     }
 }
 
-impl CircuitArg for Bool<Private> {
+impl<V: Vis3> CircuitAbi for Bool<V> {
     const SLOTS: usize = 1;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
         atoms.push(AlignmentAtom::Bytes { length: 1 });
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Uint { bits: 1 });
+    }
+}
+
+impl CircuitArg for Bool<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Bool::from_field(c.arg::<FieldT>(path.as_str()))
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
     }
 }
 
-impl<const N: usize> CircuitArg for Bytes<N, Private> {
+impl<const N: usize, V: Vis3> CircuitAbi for Bytes<N, V> {
     const SLOTS: usize = 1;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
         atoms.push(AlignmentAtom::Bytes { length: N as u32 });
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Uint { bits: 8 * N as u32 });
+    }
+}
+
+impl<const N: usize> CircuitArg for Bytes<N, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Bytes::from_field(c.arg::<FieldT>(path.as_str()))
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
     }
 }
 
-impl CircuitArg for B32<Private> {
+impl<V: Vis3> CircuitAbi for B32<V> {
     const SLOTS: usize = 2;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
         atoms.push(AlignmentAtom::Bytes { length: 32 });
     }
 
+    /// `hi` is byte 31 alone, `lo` the other 31 bytes little-endian.
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Uint { bits: 8 });
+        prims.push(Prim::Uint { bits: 248 });
+    }
+}
+
+impl CircuitArg for B32<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         B32 {
             hi: c.arg::<FieldT>(path.suffix("hi").as_str()),
@@ -183,34 +279,45 @@ impl CircuitArg for B32<Private> {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.hi);
+        slots.push(self.lo);
+    }
+}
+
+impl<const N: usize, V: Vis3> CircuitAbi for BytesN<V, N> {
+    const SLOTS: usize = Self::LIMBS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.extend(BytesN::<V, N>::atoms());
+    }
+
+    /// Limb 0 is the leftover (most significant) chunk, every other limb a
+    /// full 31 bytes.
+    fn push_prims(prims: &mut Vec<Prim>) {
+        for i in 0..Self::LIMBS {
+            prims.push(Prim::Uint { bits: 8 * Self::limb_len(i) as u32 });
+        }
     }
 }
 
 impl<const N: usize> CircuitArg for BytesN<Private, N> {
-    const SLOTS: usize = Self::LIMBS;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        atoms.extend(Self::atoms());
-    }
-
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         BytesN::from_limbs(
-            (0..Self::LIMBS)
+            (0..<Self as CircuitAbi>::SLOTS)
                 .map(|i| c.arg::<FieldT>(path.index(i).as_str()))
                 .collect(),
         )
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.constrain_input(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.extend_from_slice(self.limbs());
     }
 }
 
 /// Compact's `Vector<N, T>`: `N` copies of `T` back to back, each element
 /// labelled with its index (`words_0`, `words_1`, ...).
-impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
+impl<T: CircuitAbi, const N: usize> CircuitAbi for [T; N] {
     const SLOTS: usize = T::SLOTS * N;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
@@ -219,6 +326,14 @@ impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
         }
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        for _ in 0..N {
+            T::push_prims(prims);
+        }
+    }
+}
+
+impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         // Built through a Vec rather than `array::from_fn`, whose call order
         // is not part of its contract: here the order IS the wire layout.
@@ -232,9 +347,9 @@ impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
         for element in self {
-            element.constrain(c);
+            element.push_slots(slots);
         }
     }
 }
@@ -246,14 +361,21 @@ impl<T: CircuitArg, const N: usize> CircuitArg for [T; N] {
 /// path — a `Maybe` adds a slot, not a level (`recipient_is_some` then
 /// `recipient_...`), which is how the hand-written `claim` labels its
 /// `Maybe<Either<..>>` recipient.
-impl<T: CircuitArg> CircuitArg for Maybe<T, Private> {
-    const SLOTS: usize = <Bool<Private> as CircuitArg>::SLOTS + T::SLOTS;
+impl<T: CircuitAbi, V: Vis3> CircuitAbi for Maybe<T, V> {
+    const SLOTS: usize = <Bool<V> as CircuitAbi>::SLOTS + T::SLOTS;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Bool<Private> as CircuitArg>::push_atoms(atoms);
+        <Bool<V> as CircuitAbi>::push_atoms(atoms);
         T::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Bool<V> as CircuitAbi>::push_prims(prims);
+        T::push_prims(prims);
+    }
+}
+
+impl<T: CircuitArg> CircuitArg for Maybe<T, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Maybe {
             is_some: CircuitArg::declare(c, &path.suffix("is_some")),
@@ -261,24 +383,32 @@ impl<T: CircuitArg> CircuitArg for Maybe<T, Private> {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.is_some.constrain(c);
-        self.value.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.is_some.push_slots(slots);
+        self.value.push_slots(slots);
     }
 }
 
 /// Compact's `Either<A, B>`: the `is_left` tag followed by both arms, each
 /// of which occupies its slots whichever way the tag points
 /// (`recipient_is_left`, `recipient_left_...`, `recipient_right_...`).
-impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
-    const SLOTS: usize = <Bool<Private> as CircuitArg>::SLOTS + A::SLOTS + B::SLOTS;
+impl<A: CircuitAbi, B: CircuitAbi, V: Vis3> CircuitAbi for Either<A, B, V> {
+    const SLOTS: usize = <Bool<V> as CircuitAbi>::SLOTS + A::SLOTS + B::SLOTS;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Bool<Private> as CircuitArg>::push_atoms(atoms);
+        <Bool<V> as CircuitAbi>::push_atoms(atoms);
         A::push_atoms(atoms);
         B::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Bool<V> as CircuitAbi>::push_prims(prims);
+        A::push_prims(prims);
+        B::push_prims(prims);
+    }
+}
+
+impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Either {
             is_left: CircuitArg::declare(c, &path.suffix("is_left")),
@@ -287,10 +417,10 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.is_left.constrain(c);
-        self.left.constrain(c);
-        self.right.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.is_left.push_slots(slots);
+        self.left.push_slots(slots);
+        self.right.push_slots(slots);
     }
 }
 

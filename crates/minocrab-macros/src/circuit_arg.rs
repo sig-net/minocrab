@@ -4,20 +4,27 @@
 //! the expansion is
 //!
 //! ```ignore
-//! impl CircuitArg for DepositRequest {
+//! impl CircuitAbi for DepositRequest {
 //!     const SLOTS: usize = 0 + <Bytes<20>>::SLOTS + <Uint<128>>::SLOTS;
 //!     fn push_atoms(atoms) { <Bytes<20>>::push_atoms(atoms); <Uint<128>>::push_atoms(atoms); }
+//!     fn push_prims(prims) { <Bytes<20>>::push_prims(prims); <Uint<128>>::push_prims(prims); }
+//! }
+//! impl CircuitArg for DepositRequest {
 //!     fn declare(c, path) -> Self { Self {
 //!         erc20_address: <Bytes<20>>::declare(c, &path.field("erc20Address")),
 //!         amount:        <Uint<128>>::declare(c, &path.field("amount")),
 //!     } }
-//!     fn constrain(&self, c) { self.erc20_address.constrain(c); self.amount.constrain(c); }
+//!     fn push_slots(&self, slots) {
+//!         self.erc20_address.push_slots(slots); self.amount.push_slots(slots);
+//!     }
 //! }
 //! ```
 //!
 //! plus the same list as a `CircuitArgs` (fields at the root instead of
-//! under a path), delegating its constraints and atoms to the `CircuitArg`
-//! impl so the two cannot disagree.
+//! under a path), delegating its slots and atoms to the `CircuitArg` /
+//! `CircuitAbi` impls so the three cannot disagree. There is no generated
+//! `constrain`: it is `CircuitArg`'s provided body, which runs compactc's
+//! ONE constraint table over `push_prims` and `push_slots`.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -59,9 +66,13 @@ pub(crate) fn impl_arg_traits(
     fields: &[ArgField],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    // The struct's own where-clause governs both halves: it says nothing
+    // about `CircuitArg`, so the schema and the argument impls apply in
+    // exactly the same places.
     impl_arg_traits_for(
         &quote!(#impl_generics),
         &quote!(#name #ty_generics),
+        &quote!(#where_clause),
         &quote!(#where_clause),
         fields,
     )
@@ -71,10 +82,15 @@ pub(crate) fn impl_arg_traits(
 /// `#[derive(CircuitBorsh)]` needs, since a `struct Payload<V: Vis3>` is a
 /// circuit ARGUMENT only at `Payload<Private>` (arguments are witness data,
 /// so `CircuitArg` exists for private leaves alone).
+/// `abi_where` governs the visibility-INDEPENDENT [`CircuitAbi`] impl and
+/// `where_clause` the [`CircuitArg`]/[`CircuitArgs`] pair; they differ only
+/// for a visibility-generic struct, whose schema holds at every visibility
+/// while its argument impls hold only where the leaves' do (`Private`).
 pub(crate) fn impl_arg_traits_for(
     impl_generics: &TokenStream,
     self_ty: &TokenStream,
     where_clause: &TokenStream,
+    abi_where: &TokenStream,
     fields: &[ArgField],
 ) -> TokenStream {
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
@@ -91,13 +107,20 @@ pub(crate) fn impl_arg_traits_for(
 
     quote! {
         #[automatically_derived]
-        impl #impl_generics #root::CircuitArg for #self_ty #where_clause {
-            const SLOTS: usize = 0usize #( + <#types as #root::CircuitArg>::SLOTS )*;
+        impl #impl_generics #root::CircuitAbi for #self_ty #abi_where {
+            const SLOTS: usize = 0usize #( + <#types as #root::CircuitAbi>::SLOTS )*;
 
             fn push_atoms(atoms: &mut ::std::vec::Vec<#root::__private::AlignmentAtom>) {
-                #( <#types as #root::CircuitArg>::push_atoms(atoms); )*
+                #( <#types as #root::CircuitAbi>::push_atoms(atoms); )*
             }
 
+            fn push_prims(prims: &mut ::std::vec::Vec<#root::Prim>) {
+                #( <#types as #root::CircuitAbi>::push_prims(prims); )*
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics #root::CircuitArg for #self_ty #where_clause {
             fn declare(
                 c: &mut #root::__private::Circuit3,
                 path: &#root::ArgPath,
@@ -112,14 +135,22 @@ pub(crate) fn impl_arg_traits_for(
                 }
             }
 
-            fn constrain(&self, c: &mut #root::__private::Circuit3) {
-                #( <#types as #root::CircuitArg>::constrain(&self.#idents, c); )*
+            fn push_slots(
+                &self,
+                slots: &mut ::std::vec::Vec<
+                    #root::__private::Wire3<
+                        #root::__private::FieldT,
+                        #root::__private::Private,
+                    >,
+                >,
+            ) {
+                #( <#types as #root::CircuitArg>::push_slots(&self.#idents, slots); )*
             }
         }
 
         #[automatically_derived]
         impl #impl_generics #root::CircuitArgs for #self_ty #where_clause {
-            const SLOTS: usize = <Self as #root::CircuitArg>::SLOTS;
+            const SLOTS: usize = <Self as #root::CircuitAbi>::SLOTS;
 
             fn declare(c: &mut #root::__private::Circuit3) -> Self {
                 Self {
@@ -137,7 +168,7 @@ pub(crate) fn impl_arg_traits_for(
             }
 
             fn atoms() -> ::std::vec::Vec<#root::__private::AlignmentAtom> {
-                <Self as #root::CircuitArg>::atoms()
+                <Self as #root::CircuitAbi>::atoms()
             }
         }
     }

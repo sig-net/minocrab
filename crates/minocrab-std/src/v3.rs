@@ -20,7 +20,14 @@ mod entry;
 /// because a circuit cannot have data-dependent layout.
 pub mod borsh;
 
-pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
+pub use entry::{entry, entry_out, ArgPath, CircuitAbi, CircuitArg, CircuitArgs, CircuitOut};
+
+/// compactc's input-constraint table, which lives in the frontend
+/// (`minocrab::v3::abi`, the port of `emit-constraints-for`) and is
+/// re-exported here because this is where argument types are written: a
+/// [`CircuitAbi`] impl names [`Prim`]s, and `minocrab_ledger::contract_call`
+/// takes [`LimbConstraint`]s.
+pub use minocrab::v3::{LimbConstraint, Prim};
 
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire
@@ -43,7 +50,7 @@ pub use minocrab_macros::circuit;
 /// needs no dependency of ours. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
-    pub use minocrab::v3::{Circuit3, Compiled3};
+    pub use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
     pub use minocrab::{AlignmentAtom, Private};
 }
 
@@ -112,9 +119,12 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     }
 
     /// Range-constrain a `Uint<BITS>` entering the circuit, exactly as
-    /// compactc constrains its `Uint<BITS>` arguments.
+    /// compactc constrains its `Uint<BITS>` arguments — through the ONE
+    /// table (`Prim::constraint`), so this and `CircuitArg::constrain`
+    /// cannot say different things. Note `Uint<1>` is `constrain_to_boolean`
+    /// there, as it is in compactc.
     pub fn constrain_input(self, c: &mut Circuit3) {
-        c.assert_bits(self.0, BITS);
+        Prim::Uint { bits: BITS }.constraint().emit(c, self.0);
     }
 }
 
@@ -150,7 +160,7 @@ impl<V: Vis3> Bool<V> {
     /// Constrain a `Boolean` entering the circuit, as compactc does for
     /// every `tunsigned 1` slot.
     pub fn constrain_input(self, c: &mut Circuit3) {
-        c.assert_boolean(self.0);
+        Prim::Uint { bits: 1 }.constraint().emit(c, self.0);
     }
 }
 
@@ -189,7 +199,7 @@ impl<const N: usize, V: Vis3> Bytes<N, V> {
     /// Constrain a `Bytes<N>` entering the circuit (`8N` bits), as compactc
     /// constrains a short byte-string argument.
     pub fn constrain_input(self, c: &mut Circuit3) {
-        c.assert_bits(self.0, 8 * N as u32);
+        Prim::Uint { bits: 8 * N as u32 }.constraint().emit(c, self.0);
     }
 }
 
@@ -243,8 +253,8 @@ impl<V: Vis3> B32<V> {
 impl<V: Vis3> B32<V> {
     /// Constrain a `Bytes<32>` entering the circuit (8/248 bits).
     pub fn constrain_input(self, c: &mut Circuit3) {
-        c.assert_bits(self.hi, 8);
-        c.assert_bits(self.lo, 248);
+        Prim::Uint { bits: 8 }.constraint().emit(c, self.hi);
+        Prim::Uint { bits: 248 }.constraint().emit(c, self.lo);
     }
 
     /// To the typed `Bytes<32>` value (instruction-boundary form).
@@ -404,7 +414,7 @@ impl<V: Vis3, const N: usize> BytesN<V, N> {
     /// 248 per full limb).
     pub fn constrain_input(&self, c: &mut Circuit3) {
         for (limb, nbytes) in self.limbs.iter().zip(limb_lens(N)) {
-            c.assert_bits(*limb, 8 * nbytes as u32);
+            Prim::Uint { bits: 8 * nbytes as u32 }.constraint().emit(c, *limb);
         }
     }
 
@@ -481,7 +491,7 @@ impl<V: Vis3> BytesNDyn<V> {
     /// then 248 per full limb).
     pub fn constrain_input(&self, c: &mut Circuit3) {
         for (limb, nbytes) in self.limbs.iter().zip(limb_lens(self.len)) {
-            c.assert_bits(*limb, 8 * nbytes as u32);
+            Prim::Uint { bits: 8 * nbytes as u32 }.constraint().emit(c, *limb);
         }
     }
 }

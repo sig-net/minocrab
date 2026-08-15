@@ -20,14 +20,16 @@ use std::borrow::Cow;
 
 use borsh::BorshSerialize;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use minocrab::v3::{Circuit3, FieldT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Prim, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_sim::v3::simulate;
 use minocrab_std::v3::borsh::{
     alignment_of, limbs_of, read_split, read_witness_checked, to_bytes, BorshReader, CircuitBorsh,
     CircuitBorshArg, FieldSpec, Flagged, LayoutPath, Limbs, Split, Tag, WitnessCheck,
 };
-use minocrab_std::v3::{ArgPath, Bool, Bytes, BytesN, CircuitArg, Serializer, Uint, Vis3, B32};
+use minocrab_std::v3::{
+    ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Serializer, Uint, Vis3, B32,
+};
 use minocrab_zkir::v3::{to_zkir_string, IrValue};
 use sha3::{Digest, Keccak256};
 
@@ -69,21 +71,46 @@ struct Record<V: Vis3> {
     calldata: Flagged<Uint<32, V>, V>,
 }
 
-impl CircuitArg for Record<Private> {
+impl<V: Vis3> CircuitAbi for Record<V>
+where
+    Uint<8, V>: CircuitAbi,
+    Bool<V>: CircuitAbi,
+    Tag<4, V>: CircuitAbi,
+    Uint<128, V>: CircuitAbi,
+    Bytes<20, V>: CircuitAbi,
+    B32<V>: CircuitAbi,
+    BytesN<V, 64>: CircuitAbi,
+    [B32<V>; 2]: CircuitAbi,
+    Flagged<Uint<32, V>, V>: CircuitAbi,
+{
     const SLOTS: usize = 1 + 1 + 1 + 1 + 1 + 2 + 3 + 4 + 2;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Uint<8, Private> as CircuitArg>::push_atoms(atoms);
-        <Bool<Private> as CircuitArg>::push_atoms(atoms);
-        <Tag<4, Private> as CircuitArg>::push_atoms(atoms);
-        <Uint<128, Private> as CircuitArg>::push_atoms(atoms);
-        <Bytes<20, Private> as CircuitArg>::push_atoms(atoms);
-        <B32<Private> as CircuitArg>::push_atoms(atoms);
-        <BytesN<Private, 64> as CircuitArg>::push_atoms(atoms);
-        <[B32<Private>; 2] as CircuitArg>::push_atoms(atoms);
-        <Flagged<Uint<32, Private>, Private> as CircuitArg>::push_atoms(atoms);
+        <Uint<8, V> as CircuitAbi>::push_atoms(atoms);
+        <Bool<V> as CircuitAbi>::push_atoms(atoms);
+        <Tag<4, V> as CircuitAbi>::push_atoms(atoms);
+        <Uint<128, V> as CircuitAbi>::push_atoms(atoms);
+        <Bytes<20, V> as CircuitAbi>::push_atoms(atoms);
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+        <BytesN<V, 64> as CircuitAbi>::push_atoms(atoms);
+        <[B32<V>; 2] as CircuitAbi>::push_atoms(atoms);
+        <Flagged<Uint<32, V>, V> as CircuitAbi>::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Uint<8, V> as CircuitAbi>::push_prims(prims);
+        <Bool<V> as CircuitAbi>::push_prims(prims);
+        <Tag<4, V> as CircuitAbi>::push_prims(prims);
+        <Uint<128, V> as CircuitAbi>::push_prims(prims);
+        <Bytes<20, V> as CircuitAbi>::push_prims(prims);
+        <B32<V> as CircuitAbi>::push_prims(prims);
+        <BytesN<V, 64> as CircuitAbi>::push_prims(prims);
+        <[B32<V>; 2] as CircuitAbi>::push_prims(prims);
+        <Flagged<Uint<32, V>, V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for Record<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Record {
             version: CircuitArg::declare(c, &path.field("version")),
@@ -98,16 +125,16 @@ impl CircuitArg for Record<Private> {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.version.constrain(c);
-        self.flag.constrain(c);
-        self.kind.constrain(c);
-        self.amount.constrain(c);
-        self.addr.constrain(c);
-        self.id.constrain(c);
-        self.payload.constrain(c);
-        self.words.constrain(c);
-        self.calldata.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.version.push_slots(slots);
+        self.flag.push_slots(slots);
+        self.kind.push_slots(slots);
+        self.amount.push_slots(slots);
+        self.addr.push_slots(slots);
+        self.id.push_slots(slots);
+        self.payload.push_slots(slots);
+        self.words.push_slots(slots);
+        self.calldata.push_slots(slots);
     }
 }
 
@@ -509,7 +536,7 @@ fn describing_the_preimage_is_free() {
     assert_eq!(c.instruction_count(), before);
     assert_eq!(limbs.len(), <Record<Private> as CircuitBorsh<Private>>::LEN);
     assert_eq!(limbs.atoms().len(), 11);
-    assert_eq!(limbs.wires().len(), <Record<Private> as CircuitArg>::SLOTS);
+    assert_eq!(limbs.wires().len(), <Record<Private> as CircuitAbi>::SLOTS);
 }
 
 // ---- (3) canonicity constraints -------------------------------------------------------------

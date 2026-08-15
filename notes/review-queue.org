@@ -90,3 +90,13 @@ reviewer should look at.
       minocrab-std `borsh-schema` optional feature — confirm with cargo
       tree that no shipping build enables it (checked in-session, worth
       a second look since it is a dependency-posture claim).
+- [ ] M12 stage 1 (the ABI table): the port of =emit-constraints-for=
+      itself (crates/minocrab/src/v3/abi.rs) — the Bounded branch's
+      even-width formula and the =Prim::unsigned= normalization are read
+      off Scheme and exercised only by unit tests, since no corpus
+      artifact reaches them; the two new =Circuit3= immediate methods
+      (=assert_eq_imm= / =less_than_imm=, which bypass the =Wire3=
+      visibility algebra by construction — the comment claims
+      =V ⊓ Public = V=); and the claim that =CircuitArg::constrain='s
+      new provided body reproduces all nine deleted hand-written bodies
+      slot for slot (both snapshots say it does).

@@ -18,6 +18,10 @@ use minocrab_ir::Fr;
 
 use crate::{Disclosure, DisclosureKind, Meet, Private, Public, Region, Visibility};
 
+mod abi;
+
+pub use abi::{LimbConstraint, Prim};
+
 // --- value-type markers -------------------------------------------------------
 
 /// Type-level tag for a ZKIR v3 [`IrType`].
@@ -575,6 +579,27 @@ impl Circuit3 {
 
     pub fn assert_boolean<V: Visibility>(&mut self, w: Wire3<FieldT, V>) {
         self.b.constrain_to_boolean(w.val);
+    }
+
+    /// `constrain_eq w imm` with the bound as an INLINE operand — compactc's
+    /// `(constrain_eq ,var-name ,0)`, which names no constant and so emits no
+    /// `Copy` (unlike `assert_eq(w, c.constant(0))`).
+    pub fn assert_eq_imm<V: Visibility>(&mut self, w: Wire3<FieldT, V>, imm: impl Into<Fr>) {
+        self.b.constrain_eq(w.val, imm.into());
+    }
+
+    /// `w < bound` over `bits`-bit values with the bound as an INLINE
+    /// operand — compactc's `(less_than ,tmp ,var-name ,(1+ nat) ,bits)`.
+    ///
+    /// The result keeps `w`'s visibility: an immediate is public, and
+    /// `V ⊓ Public = V` for both visibilities.
+    pub fn less_than_imm<V: Visibility>(
+        &mut self,
+        w: Wire3<FieldT, V>,
+        bound: impl Into<Fr>,
+        bits: u32,
+    ) -> Wire3<FieldT, V> {
+        Wire3::new(self.b.less_than(w.val, bound.into(), bits))
     }
 
     // --- disclosure: the only Private → Public gate --------------------------------------

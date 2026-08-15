@@ -19,12 +19,15 @@
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
+use midnight_onchain_state::state::EntryPointBuf;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Public, Visibility};
+
+pub use minocrab::v3::LimbConstraint;
 
 pub use minocrab::v3::ImpactElem;
 
@@ -689,11 +692,17 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
 /// `addr` is the callee's address (`Bytes<32>` `[hi, lo]`, from a
 /// [`cell_read`] of the target field — one fresh uncached read per call
 /// site — or [`kernel_self`]). `args` are the call arguments' FAB limbs in
-/// order, already disclosed. `result_limb_bits` has one entry per FAB limb
-/// of the callee's declared return type: `Some(bits)` emits the
-/// `constrain_bits` compactc places right after that limb's witness
-/// (`Bytes<32>` → `[Some(8), Some(248)]`, `Uint<128>` → `[Some(128)]`),
-/// `None` (a Field limb) leaves it unconstrained.
+/// order, already disclosed. `results` has one entry per FAB limb of the
+/// callee's declared return type: the constraint compactc places right
+/// after that limb's witness (`Bytes<32>` →
+/// `[Bits(8), Bits(248)]`, `Uint<128>` → `[Bits(128)]`, a `Field` limb →
+/// `None`).
+///
+/// The result constraints and a circuit's own ARGUMENT constraints are the
+/// same table — compactc runs `emit-constraints-for` over both — so a
+/// caller derives this list from the callee's return type via
+/// `CircuitAbi::prims`, and [`LimbConstraint`] is that table's output type
+/// rather than anything local to this function.
 ///
 /// Returns the callee's result wires. They are disclosed: the claim binds
 /// them publicly (under cc-rand hiding) via `comm`, and Compact treats
@@ -703,15 +712,13 @@ pub fn contract_call<V: Visibility + Copy>(
     guard: Wire3<FieldT, V>,
     addr: [Wire3<FieldT, Public>; 2],
     args: &[Wire3<FieldT, Public>],
-    result_limb_bits: &[Option<u32>],
+    results: &[LimbConstraint],
 ) -> Vec<Wire3<FieldT, Public>> {
-    let results: Vec<_> = result_limb_bits
+    let results: Vec<_> = results
         .iter()
-        .map(|&bits| {
+        .map(|&constraint| {
             let w = c.witness::<FieldT>();
-            if let Some(bits) = bits {
-                c.assert_bits(w, bits);
-            }
+            constraint.emit(c, w);
             w
         })
         .collect();
@@ -750,6 +757,64 @@ pub fn contract_call<V: Visibility + Copy>(
         .into_iter()
         .map(|w| c.disclose(w, "xcall result"))
         .collect()
+}
+
+/// A callee circuit's ENTRY POINT: its Compact name, and the `Bytes<32>`
+/// hash the ledger matches a `claimContractCall` against.
+///
+/// The hash is not ours to define. `EntryPointBuf::ep_hash`
+/// (midnight-onchain-state `state.rs`) is the definition —
+/// `persistent_commit(name, "midnight:entry-point" ‖ 12 zero bytes)` — and
+/// [`EntryPoint::hash`] CALLS it. Nothing here re-derives a SHA: a
+/// reimplementation that agreed today would be a silent chain-split the
+/// day upstream changed the domain separator.
+///
+/// This is what "derive keys, don't type them" means for M12: an interface
+/// declares circuit NAMES, and the 32-byte keys the claim carries fall out
+/// of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EntryPoint(&'static str);
+
+impl EntryPoint {
+    /// The entry point of the circuit called `name` (the Compact circuit
+    /// name, e.g. `"signBidirectional"`).
+    pub const fn new(name: &'static str) -> EntryPoint {
+        EntryPoint(name)
+    }
+
+    /// The Compact circuit name.
+    pub const fn name(self) -> &'static str {
+        self.0
+    }
+
+    /// The 32-byte entry-point hash.
+    pub fn hash(self) -> [u8; 32] {
+        ep_hash(self.0)
+    }
+
+    /// The hash's two FAB limbs, `[hi, lo]` — the witness values a
+    /// [`contract_call`] site's prover supplies.
+    pub fn limbs(self) -> [Fr; 2] {
+        ep_limbs(self.0)
+    }
+}
+
+/// [`EntryPoint::hash`] for a name known only at run time (an artifact
+/// walker, a generator): upstream's own `EntryPointBuf::ep_hash`.
+pub fn ep_hash(name: &str) -> [u8; 32] {
+    EntryPointBuf::from(name.as_bytes()).ep_hash().0
+}
+
+/// [`EntryPoint::limbs`] for a name known only at run time.
+///
+/// The split is the standard `Bytes<32>` one (notes/builtin-lowering.org
+/// §1): `hi` is byte 31 alone, `lo` bytes 0..30 little-endian.
+pub fn ep_limbs(name: &str) -> [Fr; 2] {
+    let hash = ep_hash(name);
+    [
+        Fr::from(u64::from(hash[31])),
+        Fr::from_le_bytes(&hash[..31]).expect("31 bytes fit the native field"),
+    ]
 }
 
 // --- events -----------------------------------------------------------------

@@ -5,11 +5,11 @@
 //! `assert_bits` block. Serialized-ZKIR equality also pins the argument
 //! LABELS, which appear in the stream as `%name.index`.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, Prim, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_std::v3::{
-    entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitArg, CircuitArgs, Either, Maybe, Uint,
-    B32,
+    entry, entry_out, ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, CircuitArgs, Either,
+    Maybe, Uint, B32,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -25,15 +25,21 @@ struct Request {
     amount: Uint<128>,
 }
 
-impl CircuitArg for Request {
-    const SLOTS: usize =
-        <Bytes<20> as CircuitArg>::SLOTS + <Uint<128> as CircuitArg>::SLOTS;
+impl CircuitAbi for Request {
+    const SLOTS: usize = <Bytes<20> as CircuitAbi>::SLOTS + <Uint<128> as CircuitAbi>::SLOTS;
 
     fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Bytes<20> as CircuitArg>::push_atoms(atoms);
-        <Uint<128> as CircuitArg>::push_atoms(atoms);
+        <Bytes<20> as CircuitAbi>::push_atoms(atoms);
+        <Uint<128> as CircuitAbi>::push_atoms(atoms);
     }
 
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Bytes<20> as CircuitAbi>::push_prims(prims);
+        <Uint<128> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for Request {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Request {
             erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
@@ -41,9 +47,9 @@ impl CircuitArg for Request {
         }
     }
 
-    fn constrain(&self, c: &mut Circuit3) {
-        self.erc20_address.constrain(c);
-        self.amount.constrain(c);
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.push_slots(slots);
+        self.amount.push_slots(slots);
     }
 }
 
@@ -56,11 +62,11 @@ struct DemoArgs {
 }
 
 impl CircuitArgs for DemoArgs {
-    const SLOTS: usize = <Uint<64> as CircuitArg>::SLOTS
-        + <Bool as CircuitArg>::SLOTS
+    const SLOTS: usize = <Uint<64> as CircuitAbi>::SLOTS
+        + <Bool as CircuitAbi>::SLOTS
         + Request::SLOTS
-        + <B32<Private> as CircuitArg>::SLOTS
-        + <BytesN<Private, 128> as CircuitArg>::SLOTS;
+        + <B32<Private> as CircuitAbi>::SLOTS
+        + <BytesN<Private, 128> as CircuitAbi>::SLOTS;
 
     fn declare(c: &mut Circuit3) -> Self {
         DemoArgs {
@@ -82,11 +88,11 @@ impl CircuitArgs for DemoArgs {
 
     fn atoms() -> Vec<AlignmentAtom> {
         let mut atoms = Vec::new();
-        <Uint<64> as CircuitArg>::push_atoms(&mut atoms);
-        <Bool as CircuitArg>::push_atoms(&mut atoms);
+        <Uint<64> as CircuitAbi>::push_atoms(&mut atoms);
+        <Bool as CircuitAbi>::push_atoms(&mut atoms);
         Request::push_atoms(&mut atoms);
-        <B32<Private> as CircuitArg>::push_atoms(&mut atoms);
-        <BytesN<Private, 128> as CircuitArg>::push_atoms(&mut atoms);
+        <B32<Private> as CircuitAbi>::push_atoms(&mut atoms);
+        <BytesN<Private, 128> as CircuitAbi>::push_atoms(&mut atoms);
         atoms
     }
 }
@@ -175,7 +181,7 @@ struct ShapeArgs {
 type Recipient = Maybe<Either<B32<Private>, Bytes<20>>>;
 
 impl CircuitArgs for ShapeArgs {
-    const SLOTS: usize = <[Uint<64>; 3] as CircuitArg>::SLOTS + <Recipient as CircuitArg>::SLOTS;
+    const SLOTS: usize = <[Uint<64>; 3] as CircuitAbi>::SLOTS + <Recipient as CircuitAbi>::SLOTS;
 
     fn declare(c: &mut Circuit3) -> Self {
         ShapeArgs {
@@ -191,8 +197,8 @@ impl CircuitArgs for ShapeArgs {
 
     fn atoms() -> Vec<AlignmentAtom> {
         let mut atoms = Vec::new();
-        <[Uint<64>; 3] as CircuitArg>::push_atoms(&mut atoms);
-        <Recipient as CircuitArg>::push_atoms(&mut atoms);
+        <[Uint<64>; 3] as CircuitAbi>::push_atoms(&mut atoms);
+        <Recipient as CircuitAbi>::push_atoms(&mut atoms);
         atoms
     }
 }
@@ -272,7 +278,7 @@ impl CircuitArgs for WrongSlots {
     }
 
     fn atoms() -> Vec<AlignmentAtom> {
-        <Uint<64> as CircuitArg>::atoms()
+        <Uint<64> as CircuitAbi>::atoms()
     }
 }
 
@@ -298,7 +304,7 @@ impl CircuitArgs for DeclaresAnInstruction {
     }
 
     fn atoms() -> Vec<AlignmentAtom> {
-        <Uint<64> as CircuitArg>::atoms()
+        <Uint<64> as CircuitAbi>::atoms()
     }
 }
 

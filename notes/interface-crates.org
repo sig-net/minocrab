@@ -148,3 +148,90 @@ review-queue line per stage)
 7. README showcase (sketch in the full design: the one-call desugar,
    the drift-test output sample, the generator invocation, the honest
    limit #1) + tick M12.
+
+* As built — stage 1 (2026-08-15)
+The ABI table, =EntryPoint=, and the split of =CircuitArg= into a schema
+half and a materialization half. NO circuit touched: row_snapshot and
+interface_snapshot bit-identical, all differential suites green,
+=cargo test --workspace --release= clean (54 test binaries).
+
+** WHERE THE TABLE LIVES, and why not minocrab-std
+=minocrab::v3::abi= (crates/minocrab/src/v3/abi.rs), not minocrab-std.
+=LimbConstraint= is =contract_call='s parameter type and minocrab-ledger
+is L2.5 — BELOW L3 (notes/architecture.org) — so a table in minocrab-std
+would have inverted the layer map to save a file. minocrab (L2) owns
+=Circuit3=, which is what the table lowers into, so it is the right home
+and both L2.5 and L3 can name it. minocrab-std re-exports =Prim= /
+=LimbConstraint= from =v3=, since that is where argument types are
+written.
+
+** =Prim= splits the unsigned case by REPRESENTATION
+compactc dispatches on a raw =maxval=; a =Uint<248>='s maxval does not
+fit a =u128=, so =Prim::Uint{bits}= carries the exponent of a
+=2^bits − 1= bound (every typed leaf, every zkir-backed corpus artifact)
+and =Prim::UintMax{maxval}= a literal bound that is not one less than a
+power of two. =Prim::unsigned(maxval)= normalizes between them using
+compactc's own predicate (=maxval & (maxval+1) == 0=), and a property
+test over 4096 bounds asserts the partition is exactly compactc's. The
+four branches of =emit-constraints-for= are then a total match:
+opaque/field/point → None, bits 0 → Zero, bits 1 → Boolean, bits k →
+Bits(k), else → Bounded{bound = maxval+1, bits = 2⌈log₄ bound⌉}. Six
+unit tests, one per Scheme case plus the partition and the u128→Fr
+conversion.
+
+** TWO NEW =Circuit3= METHODS, for faithfulness not ergonomics
+=assert_eq_imm= / =less_than_imm=: compactc writes =(constrain_eq
+,var-name ,0)= and =(less_than ,tmp ,var-name ,(1+ nat) ,bits)= with the
+bound as an INLINE operand, and =c.constant()= emits a =Copy= just to
+name an immediate. Lowering Zero/Bounded through =c.constant= would have
+made our stream differ from compactc's by an instruction per slot — in
+the two cases M12 stage 4's slot-for-slot constraint-prefix check will
+compare. The IR builder already took =impl Into<Arg>=; these just expose
+it. Neither case is reachable from a typed leaf today, so nothing moved.
+
+** =CircuitAbi= / =CircuitArg=: the schema is VISIBILITY-INDEPENDENT
+=CircuitAbi{SLOTS, push_atoms, push_prims}= is implemented for every
+=Vis3=; =CircuitArg: CircuitAbi= adds =declare= + =push_slots= at
+=Private= only. This is the load-bearing shape for stages 2-3: the
+caller's =CallArg=/=CallResult= (Public) will sit on the SAME
+=CircuitAbi=, so one type describes both sides of a cross-contract call
+and cannot describe them differently. =SLOTS= counts NATIVE SLOTS, which
+is not the atom count (a =Bytes<32>= is one atom across two slots), so
+=prims().len() == SLOTS= while =atoms()= is shorter.
+
+** =constrain= IS NOW A PROVIDED METHOD — the parallel copy is gone
+Every =CircuitArg= impl used to carry its own =constrain=. The trait now
+provides it: zip =push_prims= against =push_slots=, run
+=Prim::constraint().emit()=. An impl says WHAT its slots are and never
+how they are constrained. The leaves' own =constrain_input= methods route
+through the same table, so the two spellings cannot diverge either. Nine
+hand-written impls across src and tests shed their =constrain= bodies.
+
+*** THE ONE SEMANTIC CHANGE: =Uint<1>=
+Under the old hand-written rule =Uint<1>= was =constrain_bits(1)=; under
+compactc's table it is =constrain_to_boolean=. Verified zero-movement by
+grep: no =Uint<1, ...>= exists anywhere in the workspace. Documented on
+=Uint::constrain_input=. (=Bytes<N>= cannot reach it — =8N ≥ 8= — and
+=Uint<0>= is rejected by the leaf's const assert.)
+
+** =EntryPoint= CALLS upstream; the test sweeps the whole corpus
+=minocrab_ledger::{EntryPoint, ep_hash, ep_limbs}=. =ep_hash= is
+=EntryPointBuf::ep_hash= (midnight-onchain-state) and nothing else — a
+reimplementation that agreed today would be a silent chain-split the day
+upstream changed the domain separator. =EntryPoint= is a =&'static str=
+newtype with a =const fn new=, because stage 3 puts these in generated
+=const=s.
+=crates/minocrab-ledger/tests/entry_point.rs= walks corpus/zkir, finds
+312 =contract-info.json= artifacts carrying 618 DISTINCT circuit names,
+and for each asserts (a) our hash == a freshly built =EntryPointBuf='s,
+and (b) our hash == =persistent_commit(name, "midnight:entry-point" ‖
+12 zero bytes)= with the separator spelled out by hand — so an upstream
+change to the derivation fails loudly here rather than silently re-keying
+every call. The =[hi, lo]= limb split is checked against the ledger's own
+=field_repr= of the hash as a =Bytes<32>= =AlignedValue=.
+
+** =contract_call= now takes =&[LimbConstraint]=
+=&[Option<u32>]= could not express =constrain_to_boolean= or
+=constrain_eq 0=. The one call site with a non-empty list
+(xcontract_events =depositViaVault=, =Bytes<32>= return) became
+=[Bits(8), Bits(248)]= — same instructions, same rows.
