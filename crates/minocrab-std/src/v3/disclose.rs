@@ -12,13 +12,23 @@ use minocrab::v3::{Circuit3, Disclose, DisclosureLabel, Discloses};
 use minocrab::{Private, Public};
 
 use super::entry::CircuitOut;
-use super::{Bool, Bytes, BytesN, ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32};
+use super::{
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32,
+};
 
 impl<const BITS: u32> Disclose for Uint<BITS, Private> {
     type Public = Uint<BITS, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Uint<BITS, Public> {
         Uint::from_field(self.field().disclose_as::<L>(c))
+    }
+}
+
+impl<const BOUND: u128> Disclose for BoundedUint<BOUND, Private> {
+    type Public = BoundedUint<BOUND, Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> BoundedUint<BOUND, Public> {
+        BoundedUint::from_field(self.field().disclose_as::<L>(c))
     }
 }
 

@@ -598,9 +598,11 @@ be imported by anyone who has any caller's artifact, not only the callee's.
 
 ** THE TYPE-MAPPING TABLE, and what it REFUSES
 =Bytes<n≤31>= → =Bytes<n, V>=; =Bytes<32>= → =B32<V>=; =Bytes<n>32>= →
-=BytesN<V, n>=; =Uint<0..2^k−1>= → =Uint<k, V>=; =Boolean= → =Bool<V>=;
-=Vector<n, T>= → =[T; n]=; =Alias= → a =pub type=; =Enum= over 2^k names →
-=Uint<k, V>=; other structs → a generated =#[derive(Clone, CircuitArg)]=
+=BytesN<V, n>=; =Uint<0..2^k>= → =Uint<k, V>= and any other =Uint<0..n>=
+→ =BoundedUint<n, V>= (M14; the range end is EXCLUSIVE —
+notes/bounded-integers.org §0); =Boolean= → =Bool<V>=;
+=Vector<n, T>= → =[T; n]=; =Alias= → a =pub type=; =Enum= over k names →
+whichever unsigned row =Uint<0..k>= lands on; other structs → a generated =#[derive(Clone, CircuitArg)]=
 struct, deduplicated by name, with the SAME NAME AND A DIFFERENT SHAPE an
 error rather than a silent pick.
 =ContractAddress=, =Maybe= and =Either= are matched by NAME AND SHAPE

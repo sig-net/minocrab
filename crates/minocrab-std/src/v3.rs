@@ -229,6 +229,132 @@ impl<const BITS: u32> Uint<BITS, Public> {
     }
 }
 
+/// Compact's `Uint<0..BOUND>` for an ARBITRARY bound: one native slot
+/// holding a value strictly BELOW `BOUND`.
+///
+/// **`BOUND` IS EXCLUSIVE**, exactly as the Compact spelling is —
+/// `BoundedUint<70000>` is `Uint<0..70000>`, the digits unchanged, so a port
+/// cannot introduce an off-by-one and a reviewer reading side by side does
+/// not have to do arithmetic. compactc says the same thing in its own words
+/// when the bound is zero: "range end for Uint type is 0 but must be at
+/// least 1 (the range end is exclusive)". The largest legal value is
+/// therefore `BOUND - 1`, which is the `maxval` `contract-info.json`
+/// publishes and the number [`Prim::unsigned`] takes
+/// (notes/bounded-integers.org §0).
+///
+/// Why this is a SECOND leaf rather than a generalization of [`Uint`]:
+/// `generic_const_exprs` is not available on this toolchain, so neither can
+/// be an alias of the other, and `Uint<128>`'s bound (2^128) does not fit a
+/// `u128` const parameter anyway. They coexist over the same wire, and the
+/// two free conversions ([`BoundedUint::to_uint`], [`BoundedUint::widen`])
+/// bridge them. Nothing in `Uint`'s code path changed to make room.
+///
+/// The lowering is NOT this type's opinion — [`Self::constrain_input`] hands
+/// the maxval to compactc's own table, which answers `constrain_eq 0` /
+/// `constrain_to_boolean` / `constrain_bits k` / `less_than + assert`
+/// depending on the bound. `BoundedUint<256>` is therefore exactly
+/// `constrain_bits 8`, the same as `Uint<8>`, because that is what compactc
+/// emits for `Uint<0..256>`.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct BoundedUint<const BOUND: u128, V: Vis3 = Private>(Wire3<FieldT, V>);
+
+impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
+    /// The largest legal value: `BOUND - 1`, compactc's `maxval`.
+    pub const MAX: u128 = BOUND - 1;
+
+    /// Wrap a wire already known to hold a value below `BOUND` (a circuit
+    /// argument about to be constrained, or the result of a checked
+    /// operation).
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        const {
+            assert!(
+                BOUND >= 1,
+                "range end for Uint type is 0 but must be at least 1 (the range end is \
+                 exclusive) — compactc's own rule: `BoundedUint<BOUND>` is Compact's \
+                 `Uint<0..BOUND>`, whose largest legal value is BOUND - 1"
+            )
+        };
+        BoundedUint(w)
+    }
+
+    /// `x as Field` — the same slot, no instructions.
+    pub fn field(self) -> Wire3<FieldT, V> {
+        self.0
+    }
+
+    /// Range-constrain a `Uint<0..BOUND>` entering the circuit, exactly as
+    /// compactc constrains its own — through the ONE table
+    /// ([`Prim::constraint`]), so this and `CircuitArg::constrain` cannot
+    /// say different things.
+    ///
+    /// What comes out depends on the bound, and every case is compactc's:
+    /// `BOUND = 1` is `constrain_eq 0`, `BOUND = 2` is
+    /// `constrain_to_boolean`, a `BOUND` of `2^k` is `constrain_bits k`,
+    /// and anything else is `less_than v BOUND bits` + `assert` with
+    /// compactc's even-rounded `bits`.
+    pub fn constrain_input(self, c: &mut Circuit3) {
+        Prim::unsigned(Self::MAX).constraint().emit(c, self.0);
+    }
+
+    /// `x as Uint<0..BIGGER>` — the LOSSLESS widening, free in both senses
+    /// ([`Uint::widen`]'s argument verbatim: a value below `BOUND` is below
+    /// any larger bound by construction, so no instruction and no second
+    /// range constraint).
+    pub fn widen<const BIGGER: u128>(self) -> BoundedUint<BIGGER, V> {
+        const {
+            assert!(
+                BIGGER >= BOUND,
+                "`.widen::<B>()` only widens: B must be at least the source's BOUND. \
+                 Narrowing needs a range check, so spell it out — \
+                 `BoundedUint::<B>::from_field(x.field())` followed by `constrain_input`, \
+                 which is the cost made visible"
+            )
+        };
+        BoundedUint::from_field(self.0)
+    }
+
+    /// `x as Uint<BITS>` — the free bridge to the sized leaf, and with it to
+    /// everything written against [`Uint`] (Borsh at a Borsh width, a
+    /// comparison at `BITS`, a `LedgerCell<Uint<BITS>>`).
+    ///
+    /// Free for the same reason [`Self::widen`] is: a value below `BOUND` is
+    /// below `2^BITS` when `2^BITS >= BOUND`, so the wider range is
+    /// satisfied by construction and `constrain_bits(BITS)` would be a
+    /// tautology costing ~BITS/4 rows.
+    pub fn to_uint<const BITS: u32>(self) -> Uint<BITS, V> {
+        const {
+            assert!(
+                BITS < 128 && (1u128 << BITS) >= BOUND,
+                "`.to_uint::<BITS>()` needs 2^BITS >= BOUND, so that every value the \
+                 bound allows is a BITS-bit value. A narrower BITS needs a real range \
+                 check: `Uint::<BITS>::from_field(x.field())` plus `constrain_input`"
+            )
+        };
+        Uint::from_field(self.0)
+    }
+}
+
+impl<const BOUND: u128> BoundedUint<BOUND, Public> {
+    /// A `Uint<0..BOUND>` constant from a native Rust value; panics at
+    /// circuit-build time if `v` is not below `BOUND`.
+    ///
+    /// A PANIC and not a compile error, for the reason recorded in
+    /// notes/contract-api.org §"Panics that could NOT become compile
+    /// errors": the magnitude of a runtime integer is not in the type
+    /// system.
+    pub fn constant(c: &mut Circuit3, v: u128) -> Self {
+        assert!(
+            v < BOUND,
+            "{v} is not a value of Uint<0..{BOUND}> (the range end is exclusive, so the \
+             largest legal value is {})",
+            BOUND - 1
+        );
+        let fr = Fr::from_le_bytes(&v.to_le_bytes()).expect("16 bytes fit the native field");
+        BoundedUint::from_field(c.constant(fr))
+    }
+}
+
 /// Compact's `Boolean`: one native slot holding 0 or 1, `assert_boolean` on
 /// entry, alignment atom `bytes 1`.
 #[repr(transparent)]

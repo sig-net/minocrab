@@ -45,11 +45,20 @@ pub enum Prim {
     Field,
     /// `(tpoint …)` — a curve point.
     Point,
-    /// `(tunsigned nat)` with `nat = 2^bits − 1`. `bits = 0` is `Uint<0..0>`
-    /// and `bits = 1` is `Boolean`; the table treats both specially.
+    /// `(tunsigned nat)` with `nat = 2^bits − 1`. `bits = 0` is Compact's
+    /// `Uint<0..1>` (the type holding only zero) and `bits = 1` is
+    /// `Boolean` / `Uint<0..2>`; the table treats both specially.
+    ///
+    /// Compact's `Uint<0..n>` range end is EXCLUSIVE — compactc rejects
+    /// `Uint<0..0>` with "range end for Uint type is 0 but must be at least
+    /// 1 (the range end is exclusive)" — so the `nat` here is `n − 1`, and
+    /// `n` is what `LimbConstraint::Bounded` compares against
+    /// (notes/bounded-integers.org §0).
     Uint { bits: u32 },
     /// `(tunsigned nat)` for a `nat` that is NOT one less than a power of
-    /// two — two fixtures corpus-wide, neither with a compiled `.zkir`.
+    /// two — Compact's `Uint<0..nat + 1>`, and every `enum` whose variant
+    /// count is not a power of two. Declarable since M14 as
+    /// `minocrab_std::v3::BoundedUint<{nat + 1}>`.
     UintMax { maxval: u128 },
 }
 
@@ -151,6 +160,38 @@ const fn integer_length(n: u128) -> u32 {
 /// multiple of two" (reduce-to-zkir.ss:655-661).
 const fn bounded_bits(maxval: u128) -> u32 {
     2 * ((integer_length(maxval + 1) + 1) / 2)
+}
+
+/// The FAB alignment width of a `(tunsigned maxval)` slot: `⌈bits/8⌉` bytes
+/// of the MAXVAL, `(abytes ceil(bitlen(max)/8))`
+/// (flatten-datatypes.ss:80-124, notes/builtin-lowering.org §1).
+///
+/// Zero for `maxval = 0` — Compact's `Uint<0..1>` occupies no bytes, which
+/// is what the corpus's own serde fixtures say about it.
+///
+/// One of THREE widths a bounded unsigned type carries, and they differ:
+/// this one, [`uint_compare_bits`], and the even-rounded range-constraint
+/// width in [`LimbConstraint::Bounded`] (notes/bounded-integers.org §2).
+pub const fn uint_atom_bytes(maxval: u128) -> u32 {
+    integer_length(maxval).div_ceil(8)
+}
+
+/// The width an ORDERING comparison of a `(tunsigned maxval)` runs at:
+/// `max(1, integer-length maxval)`, NOT rounded up to even
+/// (infer-types.ss:753-771 — "note: *not* rounded up to even here",
+/// notes/builtin-lowering.org §9).
+///
+/// Sound because every legal value is `≤ maxval < 2^integer-length(maxval)`.
+/// Verified against the pinned compactc: two `Uint<0..70000>` arguments
+/// compared emit `less_than … bits=17` while their own input constraints in
+/// the same artifact are `bits=18`.
+pub const fn uint_compare_bits(maxval: u128) -> u32 {
+    let bits = integer_length(maxval);
+    if bits == 0 {
+        1
+    } else {
+        bits
+    }
 }
 
 /// A `u128` as a field element (`Fr: From<u64>` only). Sixteen
@@ -465,6 +506,52 @@ mod tests {
                 }
                 other => panic!("unsigned bound became {other:?}"),
             }
+        }
+    }
+
+    /// The three widths of a bounded unsigned type, against the pinned
+    /// compactc's own output (notes/bounded-integers.org §0 and §2 — the
+    /// probe artifacts are
+    /// crates/minocrab-contracts/tests/fixtures/bounded/).
+    #[test]
+    fn the_three_widths_of_a_bound_are_three_different_numbers() {
+        // `Uint<0..70000>`: constraint 18, comparison 17, atom 3 bytes.
+        assert_eq!(
+            Prim::unsigned(69_999).constraint(),
+            LimbConstraint::Bounded {
+                bound: 70_000,
+                bits: 18
+            }
+        );
+        assert_eq!(uint_compare_bits(69_999), 17);
+        assert_eq!(uint_atom_bytes(69_999), 3);
+        // `Uint<0..1000>`: constraint 10, comparison 10, atom 2 bytes.
+        assert_eq!(uint_compare_bits(999), 10);
+        assert_eq!(uint_atom_bytes(999), 2);
+        // `Uint<0..10>`: constraint 4, comparison 4, atom 1 byte.
+        assert_eq!(uint_compare_bits(9), 4);
+        assert_eq!(uint_atom_bytes(9), 1);
+        // `Uint<0..1>` holds only zero: no bytes at all, and a comparison
+        // still needs a width, so it is 1 (compactc's `max(1, …)`).
+        assert_eq!(uint_compare_bits(0), 1);
+        assert_eq!(uint_atom_bytes(0), 0);
+        // A `Bytes<n>` limb and a `Uint<BITS>` agree with the sized rule.
+        assert_eq!(uint_atom_bytes(255), 1);
+        assert_eq!(uint_atom_bytes(u64::MAX as u128), 8);
+        assert_eq!(uint_compare_bits(u64::MAX as u128), 64);
+    }
+
+    /// Every legal value of a bound fits the comparison width — the
+    /// soundness statement `CheckOperand for BoundedUint` rests on.
+    #[test]
+    fn the_comparison_width_holds_every_legal_value() {
+        for maxval in 0..4096u128 {
+            let bits = uint_compare_bits(maxval);
+            assert!(
+                maxval < 1u128 << bits,
+                "maxval {maxval} does not fit {bits} bits"
+            );
+            assert!(u128::from(uint_atom_bytes(maxval)) * 8 >= u128::from(integer_length(maxval)));
         }
     }
 

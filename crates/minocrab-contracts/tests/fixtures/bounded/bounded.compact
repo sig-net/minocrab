@@ -1,0 +1,70 @@
+pragma language_version >= 0.25;
+
+// M14 fixture — Compact's `Uint<0..n>` at every shape the bound can take.
+//
+// NOT a corpus contract: no compiled corpus artifact carries a
+// non-power-of-two bound. 788 `.zkir` files, 66 of them v3 (only the three
+// sig-net sources are compiled with `--feature-zkir-v3`, and our IR is v3);
+// none of the 66 has one. The two corpus contracts that DO use such a bound
+// are `compact/examples/multiconst` (v2 output) and midnight-serde's
+// `serde-fixtures.compact` (every circuit `pure`, and a pure exported
+// circuit gets no `.zkir` at all). So this is the tiny.compact-style
+// fallback, compiled with the PINNED compactc and committed beside the test:
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/bounded/bounded.compact \
+//       crates/minocrab-contracts/tests/fixtures/bounded/out
+//
+// Every circuit is one bounded argument plus `dummy.increment(1)` — the
+// increment only because a PURE exported circuit produces no `.zkir`. The
+// argument constraint is therefore the whole circuit, which is the point:
+// the differential compares the lowering of the bound and nothing else.
+//
+// THE RANGE END IS EXCLUSIVE (compactc: "range end for Uint type is 0 but
+// must be at least 1 (the range end is exclusive)"), so `Uint<0..10>` holds
+// 0..=9 and `contract-info.json` publishes `maxval: 9`.
+
+import CompactStandardLibrary;
+
+export ledger dummy: Counter;
+
+// The four bounds the README's fairness bullet names.
+export circuit b10(x: Uint<0..10>): [] { dummy.increment(1); }
+export circuit b300(x: Uint<0..300>): [] { dummy.increment(1); }
+export circuit b1000(x: Uint<0..1000>): [] { dummy.increment(1); }
+export circuit b70000(x: Uint<0..70000>): [] { dummy.increment(1); }
+
+// The three edges of the table: a bound of 1 holds only zero
+// (`constrain_eq`), a bound of 2 is Boolean (`constrain_to_boolean`), and a
+// bound that IS a power of two is a bit width (`constrain_bits`), not a
+// `less_than`.
+export circuit b1(x: Uint<0..1>): [] { dummy.increment(1); }
+export circuit b2(x: Uint<0..2>): [] { dummy.increment(1); }
+export circuit b256(x: Uint<0..256>): [] { dummy.increment(1); }
+
+// The bound that LOOKS sized and is not: 255 admits 0..=254, so it is a
+// `less_than 255` and not `constrain_bits 8`.
+export circuit b255(x: Uint<0..255>): [] { dummy.increment(1); }
+
+// A fieldless enum of k names is `Uint<0..k>`. Three names, so `less_than 3`.
+enum Status { pending, live, closed }
+export circuit bEnum(x: Status): [] { dummy.increment(1); }
+
+// A struct mixing a bounded field with sized ones, so the port exercises
+// `#[derive(CircuitArg)]` over the new leaf and the slot order it implies.
+struct Order {
+  kind: Status;
+  quantity: Uint<0..1000>;
+  price: Uint<64>;
+  tag: Bytes<4>;
+}
+export circuit bStruct(order: Order): [] { dummy.increment(1); }
+
+// Two bounded arguments compared: the ORDERING runs at
+// `intlen(maxval)` = 17, while each argument's own range constraint runs at
+// the even-rounded 18 — the two widths in one artifact.
+export ledger flag: Boolean;
+export circuit bCompare(a: Uint<0..70000>, b: Uint<0..70000>): [] {
+  flag = disclose(a) < disclose(b);
+}

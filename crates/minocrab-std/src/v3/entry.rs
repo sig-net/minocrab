@@ -37,11 +37,14 @@
 //! and orders the two phases so law 3's "in slot order" is all an impl has
 //! to get right.
 
-use minocrab::v3::{Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3};
+use minocrab::v3::{
+    uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, FieldT, Prim, Secp256k1PointT, Wire3,
+};
 use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
-    Bool, Bytes, BytesN, ContractAddress, Either, Maybe, Secp256k1Point, Uint, Vis3, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, Secp256k1Point, Uint, Vis3,
+    B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -177,6 +180,39 @@ impl<const BITS: u32, V: Vis3> CircuitAbi for Uint<BITS, V> {
 impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Uint::from_field(c.arg::<FieldT>(path.as_str()))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
+    }
+}
+
+/// Compact's `Uint<0..BOUND>`: one slot, whose primitive type is the bound
+/// itself run through [`Prim::unsigned`] — so which of the four constraints
+/// it gets is the TABLE's decision, not this impl's (a `BoundedUint<256>`
+/// lands on `constrain_bits 8`, a `BoundedUint<70000>` on `less_than`).
+///
+/// The FAB atom is `⌈bitlen(BOUND − 1)/8⌉` bytes, which is NOT the width the
+/// constraint runs at and NOT the width a comparison runs at — the three
+/// differ for a bounded type and coincide for a sized one
+/// (notes/bounded-integers.org §2).
+impl<const BOUND: u128, V: Vis3> CircuitAbi for BoundedUint<BOUND, V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Bytes {
+            length: uint_atom_bytes(BOUND - 1),
+        });
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::unsigned(BOUND - 1));
+    }
+}
+
+impl<const BOUND: u128> CircuitArg for BoundedUint<BOUND, Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        BoundedUint::from_field(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {

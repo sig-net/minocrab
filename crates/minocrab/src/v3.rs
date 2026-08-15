@@ -21,7 +21,10 @@ use crate::{DisclosureKind, Meet, Private, Public, Region, Visibility};
 mod abi;
 mod disclose;
 
-pub use abi::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
+pub use abi::{
+    uint_atom_bytes, uint_compare_bits, CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint,
+    Prim,
+};
 
 /// Typed disclosure declarations — `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns (see the module docs).

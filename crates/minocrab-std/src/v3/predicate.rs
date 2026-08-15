@@ -46,10 +46,10 @@
 //! so `amount > 0` can never be a circuit expression. Named constructors are
 //! the ceiling, and they are what this module provides.
 
-use minocrab::v3::{Assertion, Circuit3, FieldT, Operand, Wire3};
+use minocrab::v3::{uint_compare_bits, Assertion, Circuit3, FieldT, Operand, Wire3};
 use minocrab::{Fr, Meet, Public};
 
-use super::{Bool, Bytes, Uint, Vis3};
+use super::{Bool, BoundedUint, Bytes, Uint, Vis3};
 
 /// The comparison a [`Check`] leaf describes, and how it lowers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,6 +130,23 @@ impl<V: Vis3> CheckOperand for Wire3<FieldT, V> {
 impl<const BITS: u32, V: Vis3> CheckOperand for Uint<BITS, V> {
     type Vis = V;
     const BITS: Option<u32> = Some(BITS);
+
+    fn operand(self) -> Operand<FieldT, V> {
+        self.field().into()
+    }
+}
+
+/// A bounded value's comparison width is the bit length of its LARGEST
+/// LEGAL VALUE (`max(1, intlen(BOUND − 1))`), which is compactc's own rule
+/// for an ordering (infer-types.ss:753-771) and NOT the even-rounded width
+/// its range constraint runs at: a `Uint<0..70000>` is constrained at 18
+/// bits and compared at 17, in the same compactc artifact
+/// (notes/bounded-integers.org §2).
+///
+/// Sound because every legal value is `≤ BOUND − 1 < 2^intlen(BOUND − 1)`.
+impl<const BOUND: u128, V: Vis3> CheckOperand for BoundedUint<BOUND, V> {
+    type Vis = V;
+    const BITS: Option<u32> = Some(uint_compare_bits(BOUND - 1));
 
     fn operand(self) -> Operand<FieldT, V> {
         self.field().into()
@@ -555,5 +572,6 @@ macro_rules! leaf_comparisons {
 }
 
 leaf_comparisons!(Uint<BITS, V>, [const BITS: u32, V: Vis3], V);
+leaf_comparisons!(BoundedUint<BOUND, V>, [const BOUND: u128, V: Vis3], V);
 leaf_comparisons!(Bytes<N, V>, [const N: usize, V: Vis3], V);
 leaf_comparisons!(Bool<V>, [V: Vis3], V);

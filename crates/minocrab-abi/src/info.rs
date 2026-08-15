@@ -108,7 +108,9 @@ pub struct DeclaredCircuit {
 pub enum CompactType {
     /// `Bytes<length>`.
     Bytes { length: usize },
-    /// `Uint<0..maxval>`.
+    /// Compact's `Uint<0..maxval + 1>`: `maxval` is the INCLUSIVE largest
+    /// legal value (compactc's `(tunsigned nat)`), while the range end the
+    /// source writes is exclusive (notes/bounded-integers.org §0).
     Uint { maxval: u128 },
     Boolean,
     Field,
@@ -256,8 +258,11 @@ impl CompactType {
     ///   holding the leftover `n mod 31` bytes and the rest 31 each
     ///   (`minocrab_std::v3::BytesN`; `Bytes<32>` is the familiar
     ///   `[8, 248]`).
-    /// - `Uint<0..maxval>` → one slot, [`Prim::unsigned`] — compactc's own
-    ///   partition of the bound — over a `bytes ⌈bits/8⌉` atom.
+    /// - `Uint<0..maxval + 1>` → one slot, [`Prim::unsigned`] — compactc's
+    ///   own partition of the bound — over a `bytes ⌈bits/8⌉` atom. The
+    ///   `maxval` this ABI publishes is INCLUSIVE, while the range end
+    ///   Compact writes is exclusive (notes/bounded-integers.org §0), so
+    ///   the source spelling of `maxval: 69999` is `Uint<0..70000>`.
     /// - `Boolean` → one slot, `Uint { bits: 1 }`, `bytes 1`.
     /// - `Field` → one slot, no constraint, the `field` atom.
     /// - `Struct` / `Tuple` / `Vector` → their members back to back, in
@@ -265,7 +270,7 @@ impl CompactType {
     ///   their own, which is why `ContractAddress` and its inner
     ///   `Bytes<32>` have the same layout.
     /// - `Alias` → the aliased type, unchanged.
-    /// - `Enum` with `k` variants → `Uint<0..k-1>`, i.e. `Prim::unsigned(k
+    /// - `Enum` with `k` variants → `Uint<0..k>`, i.e. `Prim::unsigned(k
     ///   - 1)`. NOT assumed: `compact/examples/casts/advanced_casts`'s
     ///   `test17` takes two `enum TestEnum { A, B, C }` arguments and its
     ///   compiled `.zkir` opens with `less_than tmp arg 3 bits=2; assert`
@@ -370,10 +375,13 @@ pub fn bytes_limb_lens(len: usize) -> Vec<usize> {
         .collect()
 }
 
-/// The FAB byte width of a `Uint<0..maxval>` — `⌈bits/8⌉`, matching
-/// `minocrab_std::v3::Uint<BITS>`'s atom.
+/// The FAB byte width of a `(tunsigned maxval)` slot — `⌈bits/8⌉`, matching
+/// `minocrab_std::v3::Uint<BITS>`'s and `BoundedUint<BOUND>`'s atoms.
+///
+/// One statement of the rule, in the frontend beside the constraint table
+/// it belongs with (notes/bounded-integers.org §2).
 fn uint_bytes(maxval: u128) -> u32 {
-    (u128::BITS - maxval.leading_zeros()).div_ceil(8)
+    minocrab::v3::uint_atom_bytes(maxval)
 }
 
 #[cfg(test)]

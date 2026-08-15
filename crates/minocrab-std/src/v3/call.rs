@@ -21,7 +21,9 @@
 use minocrab::v3::{CallArg, CallResult, FieldT, Wire3};
 use minocrab::Public;
 
-use super::{Bool, Bytes, BytesN, ContractAddress, Either, Maybe, ShieldedCoinInfo3, Uint, B32};
+use super::{
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, ShieldedCoinInfo3, Uint, B32,
+};
 
 impl<const BITS: u32> CallArg for Uint<BITS, Public> {
     fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
@@ -32,6 +34,18 @@ impl<const BITS: u32> CallArg for Uint<BITS, Public> {
 impl<const BITS: u32> CallResult for Uint<BITS, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
         Uint::from_field(slots[0])
+    }
+}
+
+impl<const BOUND: u128> CallArg for BoundedUint<BOUND, Public> {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        slots.push(self.field());
+    }
+}
+
+impl<const BOUND: u128> CallResult for BoundedUint<BOUND, Public> {
+    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
+        BoundedUint::from_field(slots[0])
     }
 }
 

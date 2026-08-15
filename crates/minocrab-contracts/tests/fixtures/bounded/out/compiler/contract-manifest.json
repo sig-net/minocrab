@@ -1,0 +1,90 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 5275,
+      "hash": "d9704ceb28f982839cc6688f502ef5262cb1ea5d9057608147cee16bfcb91c42"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 5472,
+      "hash": "e00a5268a17abb20312632b39d85af15844d5d99a4fb297fea156ab8e8473f0b"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 46656,
+      "hash": "028d62b7076e8133177d97cd56a83de17673951611d0f77ea80fe5d412074772"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 2466,
+      "hash": "2e784be7b39e1301ca8e0186677f2e89d4be6e845cfcd02e2c879565100c8855"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "b1.zkir": {
+      "type": "file",
+      "size": 470,
+      "hash": "af727b9ac7d9fc12f0c9826479540b2be9efb1a1a0715d95cccbe2c3fe8ba97c"
+    },
+    "b10.zkir": {
+      "type": "file",
+      "size": 540,
+      "hash": "395f3d884a8bc6467bc34dc92934402b91b06afbe1af23814539f8c87887c18c"
+    },
+    "b1000.zkir": {
+      "type": "file",
+      "size": 543,
+      "hash": "5172a14bc1929b3935fe52bc5021b1c143636d022e04a75692732f3baf61943d"
+    },
+    "b2.zkir": {
+      "type": "file",
+      "size": 467,
+      "hash": "3b9c7565cee021d0c1233728890a281b71fb72498a3cc40d2da2af9e248a80fc"
+    },
+    "b255.zkir": {
+      "type": "file",
+      "size": 540,
+      "hash": "f9b421696243e40e2100d73df2d63b60d7a61fd92da44a9f413167ce78ed3ab2"
+    },
+    "b256.zkir": {
+      "type": "file",
+      "size": 472,
+      "hash": "b8b6310234413ddab3fcfc9862406be9cb13754e0b241bc34a3e71816a2d30a0"
+    },
+    "b300.zkir": {
+      "type": "file",
+      "size": 543,
+      "hash": "09fb4ad3c241ee7e4d8e9f70a6d55215160bcfb20d27e550db9519fb8b358f5d"
+    },
+    "b70000.zkir": {
+      "type": "file",
+      "size": 545,
+      "hash": "1d4bcac976305ec9a1c1f39e31ed4887c1029c2f2549624f7b8c8135eacaf2e7"
+    },
+    "bCompare.zkir": {
+      "type": "file",
+      "size": 848,
+      "hash": "d7eeee3faa699531fb0b28743e47264b95c15fd8d56d5c7c8357fe225826f64c"
+    },
+    "bEnum.zkir": {
+      "type": "file",
+      "size": 540,
+      "hash": "03cc5a06289bc3f866421db8977094488c07e342ceee2325b9475753760bd69a"
+    },
+    "bStruct.zkir": {
+      "type": "file",
+      "size": 978,
+      "hash": "9b9e51d39f3ef9ccc8baebf8f6c07c36b4461a4e74482aa8eecfd033439858e6"
+    }
+  }
+}

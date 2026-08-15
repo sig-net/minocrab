@@ -102,7 +102,8 @@ pub mod schema;
 pub use minocrab_macros::CircuitBorsh;
 
 use super::{
-    ArgPath, Bool, Bytes, BytesN, CircuitAbi, CircuitArg, Maybe, Serializer, Uint, Vis3, B32,
+    ArgPath, Bool, BoundedUint, Bytes, BytesN, CircuitAbi, CircuitArg, Maybe, Serializer, Uint,
+    Vis3, B32,
 };
 
 // ---- the trait ---------------------------------------------------------------
@@ -663,6 +664,77 @@ borsh_uint!(
     64 => (8, "u64"),
     128 => (16, "u128"),
 );
+
+// ---- leaves: the bounded unsigned integer ------------------------------------------
+//
+// The subset is FIXED-WIDTH and every width has to be a Borsh primitive, so a
+// `Uint<0..70000>` — whose FAB atom is THREE bytes — cannot serialize at its
+// FAB width: Borsh has no `u24`. The rule is the one the table above already
+// states for an off-width `Uint<BITS>`, applied to a bound: SERIALIZE AT THE
+// NEXT BORSH WIDTH UP, and keep the tighter range as a range constraint.
+//
+// Stated as a table (notes/bounded-integers.org §3):
+//
+//   Uint<0..1>      FAB 0 bytes   Borsh 1 (u8)
+//   Uint<0..10>     FAB 1         Borsh 1 (u8)
+//   Uint<0..300>    FAB 2         Borsh 2 (u16)
+//   Uint<0..1000>   FAB 2         Borsh 2 (u16)
+//   Uint<0..70000>  FAB 3         Borsh 4 (u32)
+//
+// So our Borsh encoding of a 3-byte-FAB bounded int is NOT byte-compatible
+// with Compact's own `serialize<Uint<0..70000>, 3>` builtin, which packs
+// three. That is the subset's posture, not an oversight: this is Borsh, and
+// Compact's packer is Compact's.
+
+/// The smallest Borsh primitive width holding `maxval`, in bytes.
+///
+/// Total: `maxval` is at most `u128::MAX`, whose 16 bytes ARE a Borsh width.
+const fn borsh_width(maxval: u128) -> usize {
+    match minocrab::v3::uint_atom_bytes(maxval) {
+        0 | 1 => 1,
+        2 => 2,
+        3 | 4 => 4,
+        5..=8 => 8,
+        _ => 16,
+    }
+}
+
+/// Borsh's declaration for an unsigned integer of `width` bytes.
+fn uint_kind(width: usize) -> String {
+    format!("u{}", width * 8)
+}
+
+/// Compact's `Uint<0..BOUND>` as the next Borsh integer up, range-checked.
+///
+/// [`CircuitBorsh::constrain_canonical`] is `constrain_input` and NOTHING
+/// ELSE, which makes this the one bounded leaf where Borsh's canonicity
+/// check and compactc's argument constraint are the SAME instructions by
+/// construction — unlike [`Tag`], whose `< K` bound no Compact circuit
+/// emits. The bound implies the width (`BOUND - 1 < 2^(8·LEN)`), so a value
+/// that satisfies the range fits the declared integer.
+impl<const BOUND: u128, V: Vis3> CircuitBorsh<V> for BoundedUint<BOUND, V> {
+    const LEN: usize = borsh_width(BOUND - 1);
+
+    fn push_limbs(&self, limbs: &mut Limbs<V>) {
+        limbs.push_atom(Self::LEN, &[self.field()]);
+    }
+
+    fn push_segments(&self, out: &mut Serializer<V>) {
+        out.push_uint(self.field(), Self::LEN);
+    }
+
+    fn constrain_canonical(&self, c: &mut Circuit3) {
+        self.constrain_input(c);
+    }
+
+    fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
+        BoundedUint::from_field(r.take(c, Self::LEN))
+    }
+
+    fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
+        push_leaf(path, uint_kind(Self::LEN), Self::LEN, offset, out);
+    }
+}
 
 // ---- leaves: bool ------------------------------------------------------------------
 

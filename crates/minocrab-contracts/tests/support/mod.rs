@@ -9,7 +9,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    attest, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt, events,
+    attest, bounded, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt, events,
     events_borsh, hashing, mint_tokens, serde_builtin, signet_contract, test_caller, xcall,
     xcall_with_payment, xcontract_events, xcontract_events_borsh,
 };
@@ -187,6 +187,22 @@ pub fn circuits() -> Vec<Circuit> {
         }),
         c!("serde_builtin::check_roundtrip", || serde_builtin::check_roundtrip()),
         c!("test_caller::initialise", || test_caller::initialise()),
+        // `bounded.compact` (M14): Compact's `Uint<0..n>` at every shape the
+        // bound can take, one circuit each. The only block here whose Compact
+        // source is OURS rather than the corpus's — no compiled corpus
+        // artifact carries a non-power-of-two bound
+        // (tests/bounded_differential.rs has the scan).
+        c!("bounded::b10", || bounded::b10()),
+        c!("bounded::b300", || bounded::b300()),
+        c!("bounded::b1000", || bounded::b1000()),
+        c!("bounded::b70000", || bounded::b70000()),
+        c!("bounded::b1", || bounded::b1()),
+        c!("bounded::b2", || bounded::b2()),
+        c!("bounded::b256", || bounded::b256()),
+        c!("bounded::b255", || bounded::b255()),
+        c!("bounded::b_enum", || bounded::b_enum()),
+        c!("bounded::b_struct", || bounded::b_struct()),
+        c!("bounded::b_compare", || bounded::b_compare()),
     ]
 }
 

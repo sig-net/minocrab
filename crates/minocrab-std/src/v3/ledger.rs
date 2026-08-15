@@ -37,7 +37,7 @@ use minocrab_ledger::{
     map_member, map_member_guarded, map_remove, map_size, mint_read_with, ImpactElem, LedgerValue,
 };
 
-use super::{Bool, Bytes, BytesN, ContractAddress, Secp256k1Point, Uint, B32};
+use super::{Bool, BoundedUint, Bytes, BytesN, ContractAddress, Secp256k1Point, Uint, B32};
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
 /// atoms, hand over its limbs, and be rebuilt from the limbs a read witnesses.
@@ -138,6 +138,7 @@ macro_rules! ledger_repr_via_abi {
 
 ledger_repr_via_abi! {
     [const BITS: u32] Uint<BITS, Public>,
+    [const BOUND: u128] BoundedUint<BOUND, Public>,
     [] Bool<Public>,
     [const N: usize] Bytes<N, Public>,
     [] B32<Public>,

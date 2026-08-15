@@ -338,6 +338,137 @@ serialized ZKIR against compactc's own artifact, and REJECTION AGREEMENT:
 an out-of-range witness is refused by both artifacts, which is the only
 test that shows the bound is load-bearing rather than decorative.
 
-* 6. As built
+* 6. As built (2026-08-15)
 
-(Filled in by stage 2.)
+The design above survived implementation unchanged — no §1-§4 decision was
+reversed. What follows is what landed, plus the four things the design did
+not say.
+
+** The code
+| file | what |
+|------+------|
+| crates/minocrab/src/v3/abi.rs | =uint_atom_bytes= / =uint_compare_bits= as =const fn=s beside the constraint table, with the three-widths test; the =Prim= doc-comments corrected |
+| crates/minocrab-std/src/v3.rs | =BoundedUint<const BOUND: u128, V = Private>= — =MAX=, =from_field=, =field=, =constrain_input=, =widen=, =to_uint=, =constant= |
+| .../v3/entry.rs | =CircuitAbi= (1 slot, =Bytes { uint_atom_bytes(BOUND-1) }=, =Prim::unsigned(BOUND-1)=) + =CircuitArg= at =Private= |
+| .../v3/call.rs | =CallArg= / =CallResult= at =Public= |
+| .../v3/ledger.rs | one line in =ledger_repr_via_abi!= — so a bounded value is a =LedgerCell=/=LedgerMap= value |
+| .../v3/disclose.rs | =Disclose= |
+| .../v3/predicate.rs | =CheckOperand= (=BITS = uint_compare_bits(BOUND-1)=) + the six methods via =leaf_comparisons!= |
+| .../v3/borsh.rs | =CircuitBorsh= at the next Borsh width up, with =borsh_width= / =uint_kind= |
+| crates/minocrab-abi/src/{info,check}.rs | =uint_bytes= delegates to the frontend; the enum/=maxval= prose and =prim_name='s spelling corrected |
+| crates/minocrab-interface-gen/src/lib.rs | =unsigned_type= — one decision for =Uint= and =Enum=; =render= off-by-one fixed |
+| crates/minocrab-contracts/src/bounded.rs | the port: eleven =#[circuit]=s, a =#[derive(Ledger)]= block, a =#[derive(CircuitArg)]= struct |
+| crates/minocrab-contracts/tests/fixtures/bounded/ | the Compact source + the pinned compactc's artifacts |
+| crates/minocrab-std/tests/v3_bounded.rs (8) | the leaf's own gates |
+| crates/minocrab-contracts/tests/bounded_differential.rs (6) | the differential, plus the ABI round-trip |
+
+`#[derive(CircuitArg)]`, `#[circuit]` and `#[derive(Ledger)]` needed NO
+change, which is the design's claim that they are generic over the field
+types, checked.
+
+** THE DIFFERENTIAL RESULT, and it is stronger than the criterion asked
+Our circuits are compactc's circuits — the SERIALIZED ZKIR IS EQUAL up to
+identifier renaming, for all eleven, op for op, immediate for immediate,
+width for width, operand position for operand position. The only names that
+differ are our temporaries (=%lt.N= where compactc writes =%tmp.N=) and the
+derived struct's argument labels (=%order_kind.0= where compactc repeats
+=%order.0=, the documented improvement of notes/contract-api.org §ArgPath).
+Nothing else survives canonicalization, so nothing else differs. Worth
+stating flatly: nobody wrote a =less_than= in this milestone. The leaf hands
+its maxval to the table and the table emits.
+
+On top of that, the §6 criterion per circuit (identical typed schemas,
+identical =pis= / =pi_skips= under the simulator, upstream =check()=
+agreeing with both), including the comparing circuit in three directions
+(a<b, a>b, a=b) where the comparison's RESULT is in the transcript — so a
+comparison at the wrong width would show as a differing =pis=, not merely a
+differing stream.
+
+THE ABI ROUND-TRIP closes the generator's loop from the other side:
+compactc's own =contract-info.json= for the fixture, flattened by
+=minocrab_abi::info=, agrees SLOT FOR SLOT — atoms and primitive types —
+with the =CircuitAbi= of the Rust types the generator emits for it, for all
+nine argument shapes and for the struct field by field. Those two lists
+agreeing IS the agreement check every interface crate rests on. It also pins
+the exclusive range end from the ARTIFACT side: compactc publishes
+=maxval: 69999= and the type that agrees is =BoundedUint<70000>=.
+
+And the pair that pins the bound's POSITION: both artifacts REJECT the first
+illegal value and both ACCEPT the largest legal one, at every arm of the
+table (=less_than=, =constrain_bits=, =constrain_to_boolean=,
+=constrain_eq 0=). An off-by-one in either direction fails one of the two —
+which is the test the corrected §0 finding deserves.
+
+** Four things the design did not say
+1. =BoundedUint= needed =CallArg=/=CallResult= not only for cross-contract
+   calls but to be a LEDGER value at all: =LedgerRepr= is implemented via
+   those two traits (=ledger_repr_via_abi!=), so one line there is what makes
+   `LedgerCell<BoundedUint<..>>` exist. Free, and it fell out.
+2. =Uint<BITS>='s atom did NOT move to =uint_atom_bytes=. It cannot:
+   =Uint<248>='s maxval is 2^248−1, which is not a =u128=. The sized leaf
+   keeps `BITS.div_ceil(8)`, which is the same rule where both are defined.
+   `minocrab_abi::info::uint_bytes` DID move (it already took a maxval).
+3. The interface generator's =Enum= arm lost its own error message and became
+   the =Uint= arm: an enum of k names is `Uint<0..k>`, so the two arms are one
+   function (=unsigned_type=). The type's NAME is now unused there, because a
+   fieldless enum's value IS its variant index and Rust has nothing else to
+   put.
+4. =render= and =prim_name= both printed `Uint<0..{maxval}>` — the §0
+   off-by-one, in two places that produce text humans read (doc comments,
+   schema-mismatch messages). Fixed with the rest.
+
+** Gates
+- `cargo test --workspace`: 497 passed, 0 failed. `--release` row_snapshot
+  green.
+- ZERO MOVEMENT, checked harder than the gate: all 87 pre-existing circuits'
+  serialized ZKIR dumped before and after — 87 of 87 BYTE-IDENTICAL. Which
+  is what §1's "they coexist" buys: not one line of `Uint<BITS>`'s path
+  changed, so there was nothing for the diff to find.
+- Both snapshots grew by the eleven new entries AND NOTHING ELSE MOVED
+  (`git diff` on the two tables is eleven added lines and seventy added
+  lines respectively).
+- The four E0080 spellings of §4 compiled and their messages read back
+  verbatim, one at a time, before being recorded as `compile_fail` blocks in
+  `v3_bounded.rs`'s `_COMPILE_ERRORS_NOT_PANICS`.
+
+** Rows, for the record
+The new circuits' `(k, rows)`: b10/b300/b1000/bEnum (6, 41), b70000 (7, 41),
+b255 (9, 41), b1 (6, 32), b2 (6, 33), b256 (6, 34), b_struct (7, 120),
+b_compare (7, 81). Nothing to compare them against — they are the fixture's
+own first entries — but they are the cost of a bound, measured: a
+`less_than`+`assert` is ~9 rows over the `constrain_eq` floor, and the
+`constrain_bits` arm (b256) is 2.
+
+** Overhead-for-ergonomics candidates for dmd (M14)
+NO OVERHEAD WAS TAKEN — every circuit is byte-identical to compactc's. What
+follows is where the rules shaped the API, with what relaxing them would
+cost. (Reference: `less_than` is 8 rows at ≤32 bits, 11 at 64, 17 at 128;
+`constrain_bits` is ~bits/4.)
+
+1. MIXED-WIDTH COMPARISONS INVOLVING A BOUND. `BoundedUint<70000>` compares
+   at 17 bits and `Uint<32>` at 32, so comparing them is an E0080 naming
+   `.widen`/`.to_uint`. compactc itself compares at the LARGER operand's
+   width silently. Following compactc here would cost +0 rows in this
+   direction (17→32 is the same `less_than` gadget bucket at ≤32 bits, so
+   literally zero) and up to +6 for a 64→128 pairing.
+   This is decision A (2026-08-15) applied to a new type, so it is NOT
+   re-litigated here — recorded because a bounded type makes odd widths
+   COMMON, where `Uint<BITS>` made them rare: every `Uint<0..n>` has its own
+   width, and two DIFFERENT bounds (`Uint<0..300>` at 9 bits and
+   `Uint<0..1000>` at 10) do not compare. Compact code that mixes bounds
+   freely will hit this a lot. `.widen::<1000>()` is the free fix and the
+   error names it.
+2. A LITERAL COMPARED AGAINST A BOUNDED VALUE is range-checked against the
+   COMPARISON WIDTH, not against the bound: `b.lt(500u64)` on a
+   `BoundedUint<300>` compiles (500 fits 9 bits) and is a comparison that is
+   always true. Catching it needs the literal as a const generic
+   (`lit::<500>()`) — the same open question as `check_literal_fits`
+   (notes/contract-api.org §"Panics", item 1), still dmd's call, still not
+   this milestone's.
+   COST: zero rows either way; it is an API shape question.
+3. `BoundedUint<256>` AND `Uint<8>` ARE DIFFERENT RUST TYPES that emit the
+   same instruction. `to_uint`/`widen` bridge them explicitly. A `From` impl
+   would make the bridge implicit.
+   COST: zero rows (it is the same wire). Declined for the same reason
+   implicit widening was: a conversion that costs nothing should still be
+   visible, because the one that costs something looks identical.

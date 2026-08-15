@@ -153,7 +153,8 @@ impl Registry {
     /// | `Bytes<n>`, n ≤ 31      | `Bytes<n, V>`           |
     /// | `Bytes<32>`             | `B32<V>`                |
     /// | `Bytes<n>`, n > 32      | `BytesN<V, n>`          |
-    /// | `Uint<0..2^k − 1>`      | `Uint<k, V>`            |
+    /// | `Uint<0..2^k>`          | `Uint<k, V>`            |
+    /// | `Uint<0..n>`, other n   | `BoundedUint<n, V>`     |
     /// | `Boolean`               | `Bool<V>`               |
     /// | `Vector<n, T>`          | `[T; n]`                |
     /// | `ContractAddress`       | `ContractAddress<V>`    |
@@ -161,14 +162,18 @@ impl Registry {
     /// | `Either<A, B>`          | `Either<A, B, V>`       |
     /// | other `struct`          | a generated struct      |
     /// | `Alias`                 | a generated `pub type`  |
-    /// | `Enum` over 2^k names   | `Uint<k, V>`            |
+    /// | `Enum` over k names     | the `Uint<0..k>` row    |
     ///
-    /// and everything else is an error with a reason: a `Uint` bound that
-    /// is not one less than a power of two (no leaf type carries a
-    /// `less_than` bound), a bare `Field` (likewise — every MinoCrab leaf
-    /// is range-constrained), an `Opaque` (no in-circuit representation at
-    /// all), a `Contract` handle passed as data, or a `Tuple` other than
-    /// Compact's empty `[]`.
+    /// The two unsigned rows are one decision (`unsigned_type`), and the
+    /// range end is EXCLUSIVE: compactc's `maxval` is `n − 1`, so a
+    /// `maxval` of 69999 generates `BoundedUint<70000, V>`
+    /// (notes/bounded-integers.org §0). An `enum` of k names is
+    /// `Uint<0..k>`, so it takes whichever unsigned row k lands on.
+    ///
+    /// What remains an error, with a reason: a bare `Field` (every MinoCrab
+    /// leaf is range-constrained and a `Field` carries no range), an
+    /// `Opaque` (no in-circuit representation at all), a `Contract` handle
+    /// passed as data, or a `Tuple` other than Compact's empty `[]`.
     fn rust_type(&mut self, ty: &CompactType) -> Result<String, Unsupported> {
         Ok(match ty {
             CompactType::Bytes { length } => match length {
@@ -185,10 +190,7 @@ impl Registry {
                     format!("BytesN<V, {length}>")
                 }
             },
-            CompactType::Uint { maxval } => {
-                self.std_imports.insert("Uint");
-                format!("Uint<{}, V>", power_of_two_bits(*maxval)?)
-            }
+            CompactType::Uint { maxval } => unsigned_type(*maxval, &mut self.std_imports),
             CompactType::Boolean => {
                 self.std_imports.insert("Bool");
                 "Bool<V>".to_string()
@@ -207,18 +209,14 @@ impl Registry {
                 })?;
                 format!("{name}<V>")
             }
-            CompactType::Enum { name, elements } => {
-                self.std_imports.insert("Uint");
-                let bits = power_of_two_bits(elements.len().saturating_sub(1) as u128)
-                    .map_err(|_| {
-                        Unsupported(format!(
-                            "`enum {name}` has {} variants, so compactc bounds it with a \
-                             `less_than` rather than a bit width, and no MinoCrab leaf type \
-                             carries that constraint",
-                            elements.len()
-                        ))
-                    })?;
-                format!("Uint<{bits}, V>")
+            // A fieldless `enum` of k names is Compact's `Uint<0..k>`
+            // (maxval k − 1, the range end exclusive), so it is the same
+            // two-way choice an unsigned type is: a bit width where k is a
+            // power of two, a bounded leaf otherwise. `_name` is the
+            // Compact type's name, which has no Rust representation — the
+            // variant INDEX is the whole value.
+            CompactType::Enum { name: _name, elements } => {
+                unsigned_type(elements.len().saturating_sub(1) as u128, &mut self.std_imports)
             }
             CompactType::Field => {
                 return Err(Unsupported(
@@ -325,15 +323,40 @@ impl Registry {
     }
 }
 
-/// `2^k − 1` → `k`; anything else is a bound no leaf type carries.
+/// `2^k − 1` → `k`; anything else is a bound no SIZED leaf type carries, and
+/// becomes a [`minocrab_std::v3::BoundedUint`] instead (M14).
+///
+/// `Err` here is not a rejection any more, it is the fork in
+/// [`Gen::rust_type`]: the error text survives only as the reason a bound
+/// cannot be a `Uint<BITS>`.
 fn power_of_two_bits(maxval: u128) -> Result<u32, Unsupported> {
     if maxval == 0 || maxval & maxval.wrapping_add(1) != 0 {
         return Err(Unsupported(format!(
-            "`Uint<0..{maxval}>` is bounded by a `less_than`, not by a bit width, and no \
-             MinoCrab leaf type carries that constraint"
+            "`Uint<0..{}>` is bounded by a `less_than`, not by a bit width",
+            maxval.wrapping_add(1)
         )));
     }
     Ok(u128::BITS - maxval.leading_zeros())
+}
+
+/// The Rust spelling of an unsigned Compact type with inclusive `maxval`:
+/// the sized leaf where the bound is a bit width, the bounded leaf
+/// otherwise.
+///
+/// The BOUND in the generated type is `maxval + 1`, because Compact's range
+/// end is EXCLUSIVE (notes/bounded-integers.org §0) — `maxval = 69999` is
+/// `Uint<0..70000>` is `BoundedUint<70000, V>`.
+fn unsigned_type(maxval: u128, std_imports: &mut BTreeSet<&'static str>) -> String {
+    match power_of_two_bits(maxval) {
+        Ok(bits) => {
+            std_imports.insert("Uint");
+            format!("Uint<{bits}, V>")
+        }
+        Err(_) => {
+            std_imports.insert("BoundedUint");
+            format!("BoundedUint<{}, V>", maxval + 1)
+        }
+    }
 }
 
 /// The trait's signatures are the item types at `Public`. The
@@ -364,9 +387,11 @@ fn render(ty: &CompactType) -> String {
         // Compact source writes the bit width where there is one
         // (`Uint<128>`), and the range otherwise — 2^128 − 1 spelled out is
         // 39 digits of noise.
+        // The range end Compact writes is EXCLUSIVE, so it is `maxval + 1`
+        // (notes/bounded-integers.org §0).
         CompactType::Uint { maxval } => match power_of_two_bits(*maxval) {
             Ok(bits) => format!("Uint<{bits}>"),
-            Err(_) => format!("Uint<0..{maxval}>"),
+            Err(_) => format!("Uint<0..{}>", maxval + 1),
         },
         CompactType::Boolean => "Boolean".into(),
         CompactType::Field => "Field".into(),
@@ -826,11 +851,6 @@ mod tests {
         for (json, wanted) in [
             (r#"{"type-name":"Opaque","tsType":"JubjubPoint"}"#, "no in-circuit representation"),
             (r#"{"type-name":"Field"}"#, "no range constraint"),
-            (r#"{"type-name":"Uint","maxval":999}"#, "bounded by a `less_than`"),
-            (
-                r#"{"type-name":"Enum","name":"E","elements":["A","B","C"]}"#,
-                "bounds it with a `less_than`",
-            ),
             (r#"{"type-name":"Contract","name":"Inner","circuits":[]}"#, "names circuits, not handles"),
             (
                 r#"{"type-name":"Tuple","types":[{"type-name":"Boolean"},{"type-name":"Boolean"}]}"#,
@@ -840,6 +860,39 @@ mod tests {
             let err = rust(json).expect_err(json);
             assert!(err.0.contains(wanted), "for {json}: {err}");
         }
+    }
+
+    /// A bound that is not a bit width is no longer a refusal: it is the
+    /// bounded leaf, carrying the EXCLUSIVE range end compactc's source
+    /// spelling uses (M14, notes/bounded-integers.org §0 — `maxval: 999` is
+    /// `Uint<0..1000>`). An `enum` of k names is `Uint<0..k>`, so it takes
+    /// whichever unsigned row k lands on.
+    #[test]
+    fn a_bound_that_is_not_a_bit_width_is_the_bounded_leaf() {
+        for (json, wanted) in [
+            (r#"{"type-name":"Uint","maxval":999}"#, "BoundedUint<1000, V>"),
+            (r#"{"type-name":"Uint","maxval":69999}"#, "BoundedUint<70000, V>"),
+            (r#"{"type-name":"Uint","maxval":9}"#, "BoundedUint<10, V>"),
+            // 254 is one BELOW a power of two minus one: `Uint<0..255>`.
+            (r#"{"type-name":"Uint","maxval":254}"#, "BoundedUint<255, V>"),
+            // …and 255 IS one less than a power of two, so it stays sized.
+            (r#"{"type-name":"Uint","maxval":255}"#, "Uint<8, V>"),
+            // A 3-name enum is `Uint<0..3>`; a 4-name one is `Uint<2>`.
+            (
+                r#"{"type-name":"Enum","name":"E","elements":["A","B","C"]}"#,
+                "BoundedUint<3, V>",
+            ),
+            (
+                r#"{"type-name":"Enum","name":"E","elements":["A","B","C","D"]}"#,
+                "Uint<2, V>",
+            ),
+        ] {
+            assert_eq!(rust(json).unwrap(), wanted, "for {json}");
+        }
+        // The doc-comment rendering of a Compact type uses the same
+        // exclusive spelling.
+        assert_eq!(render(&ty(r#"{"type-name":"Uint","maxval":69999}"#)), "Uint<0..70000>");
+        assert_eq!(render(&ty(r#"{"type-name":"Uint","maxval":255}"#)), "Uint<8>");
     }
 
     /// One name, two shapes, is an error rather than a silent pick.

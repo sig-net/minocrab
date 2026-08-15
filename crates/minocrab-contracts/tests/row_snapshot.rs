@@ -112,6 +112,17 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
     ("serde_builtin::check_roundtrip", 15, 18408),
     ("test_caller::initialise", 13, 3984),
+    ("bounded::b10", 6, 41),
+    ("bounded::b300", 6, 41),
+    ("bounded::b1000", 6, 41),
+    ("bounded::b70000", 7, 41),
+    ("bounded::b1", 6, 32),
+    ("bounded::b2", 6, 33),
+    ("bounded::b256", 6, 34),
+    ("bounded::b255", 9, 41),
+    ("bounded::b_enum", 6, 41),
+    ("bounded::b_struct", 7, 120),
+    ("bounded::b_compare", 7, 81),
     // GENERATED END
 ];
 

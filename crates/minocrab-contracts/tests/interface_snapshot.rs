@@ -1379,6 +1379,76 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
+    (
+        "bounded::b10",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b300",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b1000",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b70000",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b1",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b2",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b256",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b255",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b_enum",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b_struct",
+        "\
+in  order_kind: Scalar<BLS12-381>
+in  order_quantity: Scalar<BLS12-381>
+in  order_price: Scalar<BLS12-381>
+in  order_tag: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded::b_compare",
+        "\
+in  a: Scalar<BLS12-381>
+in  b: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

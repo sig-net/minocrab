@@ -350,7 +350,10 @@ pub fn prim_name(prim: Prim) -> String {
         Prim::Field => "field".to_string(),
         Prim::Point => "point".to_string(),
         Prim::Uint { bits } => format!("uint<{bits}>"),
-        Prim::UintMax { maxval } => format!("uint<0..{maxval}>"),
+        // The range end Compact writes is exclusive, so it is one more
+        // than the inclusive `maxval` this variant carries
+        // (notes/bounded-integers.org §0).
+        Prim::UintMax { maxval } => format!("uint<0..{}>", maxval + 1),
     }
 }
 
