@@ -612,6 +612,25 @@ external value and no dependency on 1-7.
       padding rule, Maybe↦Flagged, per-record offset tables GENERATED
       from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
       implements against.
+- [ ] 9. Hash-flavor API (dmd 2026-08-15): expose persistent_hash
+      (BORSH flavor, the default — hashes the subset bytes) and
+      persistent_hash_compact (FAB binary_repr semantics: field atoms
+      reduced mod p, compress atoms via transient_commit, option
+      segments — ONLY for digest-agreement with a Compact contract or
+      Compact-produced off-chain digests); same split for
+      transient_hash (borsh = straightforward LE limbing;
+      _compact = FAB field_repr limbing with its reversed-chunk rule).
+      NOT REQUIRED elsewhere (dmd asked): ledger maps/state do no
+      in-circuit hashing (keys/values travel as typed limbs +
+      alignment; storage-level keying is the ledger's own, off
+      circuit), and every ledger-protocol preimage that IS pinned
+      (tokenType, coin commitment/nullifier, entry-point hash,
+      cross-contract comm, merkle interiors) is already encapsulated
+      inside its stdlib/ledger function — users never pick a flavor
+      for those, and their byte-shaped preimages are borsh-identical
+      anyway. Since contracts are never part-Compact/part-MinoCrab,
+      the _compact flavors exist solely at interop boundaries; the
+      compat-port artifacts keep FAB by definition.
 Exit criteria: the spec document and vectors exist and the TS/MPC side
 can implement against them; every in-circuit encoder is byte-equal to
 both oracles at millions of cases; the record change's k movement is

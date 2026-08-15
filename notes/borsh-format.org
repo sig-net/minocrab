@@ -1007,3 +1007,19 @@ interface_snapshot green with ONLY the five new twin entries, each carrying
 its original's numbers and its original's interface verbatim. All
 differential suites green, including the two the twins were added to — the
 originals' own tests are untouched and still pass.
+
+* Stage 9 (added by dmd 2026-08-15): hash-flavor API
+persistent_hash = borsh flavor DEFAULT (subset bytes; for all-bytes
+alignments identical to FAB — stage 0's headline); persistent_hash_
+compact = FAB binary_repr (field atoms mod-p, compress via
+transient_commit, option segments) for digest agreement with Compact
+contracts only. transient_hash likewise: borsh = plain LE 31-byte
+limbing in order; _compact = FAB field_repr (reversed-chunk rule).
+Analysis for dmd's "needed for maps/keys?": NO — ledger maps/state
+never hash in-circuit (typed limbs + alignment; the ledger keys
+storage itself); all pinned protocol preimages (tokenType, coin
+cm/nullifier, ep hash, comm, merkle interiors) live inside their
+stdlib/ledger wrappers where the flavor is fixed and invisible, and
+are byte-shaped hence borsh-identical regardless. Flavor choice
+surfaces ONLY for user-level digests at Compact-interop boundaries.
+No part-Compact/part-MinoCrab contracts expected (dmd).
