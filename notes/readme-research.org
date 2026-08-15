@@ -1,0 +1,72 @@
+#+title: M13 input: Compact roadmap research (sourced, corrected)
+
+Web research 2026-08-15 for the README overhaul. TONE RULES APPLY
+(milestones M13): no point-scoring — advantages stated neutrally;
+roadmap items are background context only. Every claim below carries
+its source; do not invent roadmap items.
+
+* Where their roadmap lives (citable)
+CoIPs: github.com/LFDT-Minokawa/compact/tree/main/coips
+MPS: github.com/midnightntwrk/midnight-improvement-proposals/tree/main/mps
+TSC minutes: github.com/LFDT-Minokawa/compact/tree/main/meetings
+No ROADMAP.md exists.
+
+* Findings usable as neutral advantage statements (with sources)
+- Language-agnostic contract representation for non-JS SDKs: MPS-0022
+  ("every non-JS SDK must carry and maintain its own fork of the
+  compiler"), compact#700; TSC discussed 2026-08-12, format undecided.
+  MinoCrab: the generator imports any compactc artifact today.
+- Specified/versioned/stability-guaranteed serialization: TSC agreed
+  direction on compact#709 (dmd's own issue — phrase as "the TSC
+  agreed to pursue", never "they promised us"), no CoIP yet; FAB
+  stabilization explicitly DECLINED ("reluctant to provide any
+  compatibility guarantee"). MinoCrab: Borsh fixed-width subset with
+  spec + golden vectors; Borsh itself is a STABLE, WIDELY-SUPPORTED
+  format (canonical/bijective by design, mature parsers in
+  TS/JS/Go/Python/Rust/others); FAB also supported (_compact flavors +
+  differential-green compat ports).
+- ZKIR-level circuit-size work (native bytes support, sequence
+  simplification): 2026-07-15 minutes brainstorm; compact#586 umbrella.
+  MinoCrab: M7 shipped native byte plumbing + segment serializer,
+  measured.
+- Semantic editing/LSP: compact#478 open (VSCode ext is grammar-only).
+  MinoCrab: rust-analyzer, real macro spans.
+- Visibility modifiers: compact#476 (export overloaded; manual
+  re-export lists "silently wrong"). MinoCrab: pub/pub(crate).
+- Package management: NO roadmap item found (searched issues/CoIPs/
+  MPS/minutes). Today: npm + relative node_modules imports
+  (OpenZeppelin), transitive ledger-state dedup bug compact#270. A
+  README may say "no package manager, none found on the public
+  roadmap as of Aug 2026" — must NOT claim they plan one. MinoCrab:
+  cargo + interface crates + the artifact importer.
+- Export descriptors (compact#638), sizeof/event descriptors
+  (2026-08-05 minutes): MinoCrab's typed layouts/generator cover the
+  fixed-width cases.
+
+* Fair concessions — CORRECTED against our actual code
+The research agent's raw list contained two errors about OUR side;
+corrected here. Per dmd's rule, only TRUE capability gaps (possible in
+Compact, not possible here) go in the README, verified against code
+by the M13 agent:
+- VALID: machine-checked formal language spec (Compact has an Agda
+  spec in-tree + CI, compact#512; our property/differential testing
+  is NOT the same thing — do not claim formal-verification parity).
+- VALID: newer ZKIR 3.x curve/hash breadth in flight upstream
+  (Curve25519, secp256r1, SHA-512, RSA compact#440) — we bind the
+  pinned rev's set (secp256k1/jubjub/SHA-256/keccak/Poseidon).
+- VALID (candidates, verify): arbitrary-bound Uint<0..n> for
+  non-power-of-two n; Opaque<'ts-type'> bridging; language-level enum
+  exhaustiveness; unported kernel.* built-ins (blockTime*,
+  unshieldedBalance*, kernel mint/send/receive); ledger MerkleTree
+  ops if still unported; multi-environment/hardfork targeting
+  (compact#568 — they're designing, we have nothing; arguably
+  tooling not language — judgement call).
+- WRONG in the raw research, do NOT concede: "events absent for us"
+  (our emit/log layer + Serializer are differential-green — events
+  experiment, xcontract-events, the vault notification, the borsh
+  event twins); "on-chain cross-contract calls not claimed" (M5
+  landed the full desugar, xcall suites differential-green — the
+  interface crates sit ON TOP of working on-chain calls).
+- EXCLUDED per dmd: maturity/official support, toolchain-as-product
+  polish, TS runtime (planned later via wasm), "not our own language"
+  items.
