@@ -390,7 +390,7 @@ the compatibility reference; the optimized vault is its own artifact
       (soundness surface; comm doesn't imply canonicity — verified).
       Three UNSUREs to resolve before the risky avenues. Sequencing:
       M10 starts from the direct ports NOW, in parallel with M9 5-8.)
-- [ ] Optimize everything the analysis frees, re-measured per change:
+- [X] Optimize everything the analysis frees, re-measured per change:
       k-boundary attacks first (deposit 17,502 is ~1.1k rows over k=14;
       protect nothing — this artifact has no compactc row parity to
       keep), constrain-bits dedup, framing/serialization, then the
@@ -434,6 +434,28 @@ the compatibility reference; the optimized vault is its own artifact
       PROPTEST_CASES=20000 green on all five touched circuits. Ladder
       continues — refund merge, refund commitments → Poseidon, and swap's
       remaining avenues are the next stage; NOT ticked.))
+      (step 5(iv)+5(v) 2026-08-15 — LOWERING LADDER COMPLETE; see
+      notes/vault-optimization.org §"As built — steps 5(iv refund
+      merge)+5(v Poseidon)". 5(iv) avenue 4: refund's two branches merged
+      into ONE commitment hash + ONE cond_selected mint (guards still gate
+      the per-route ledger effects; the authorisation is bit-for-bit the
+      port's), opt refund 57,721→44,366 (−13,355), k16. 5(v) avenue 3:
+      refund commitments → transientHash (Poseidon), internal/short-lived
+      so curve-mutability is harmless (Q3/Q4), all five sites in lockstep,
+      −3,560 each. THE SWAP MEASUREMENT: 32,819 rows, 51 ABOVE the 32,768
+      k15 boundary — the notes' ~348-row projected margin was measurement
+      noise, and the "if it lands 32,8xx, say so and stop" branch fired:
+      swap STAYS k16, not chased. Map<_,Field> value-typing (Q5) would
+      cross it (drops ~143/site) but was DEFERRED (its differential needs
+      new shipping-crate ledger builders + a 292-op corpus twin —
+      disproportionate for 51 rows on the final rung; the map value stays
+      Bytes<32>, no symbolic-layer change). Final k picture: opt beats
+      compactc by ≥1 k on eight of nine circuits (only initialize ties);
+      the ladder's own crossings over the port are deposit 15→14 and
+      withdraw 16→15. Everything else is protocol/crypto-floored (ECDSA
+      or the SHA hash-chip); row cuts there (−35%..−58% vs compactc) are
+      cosmetic for prove time. All planned avenues landed or explicitly
+      stopped, so TICKED; only the report bullet remains.))
 - [ ] The report: fresh single-session benchmark — super-optimized vault
       vs compactc vs the direct port (three-way, so ergonomics-neutral
       lowering wins and freed-framing wins are attributed separately);

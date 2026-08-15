@@ -1010,3 +1010,172 @@ else remains floored: initialize + the request circuits at their hash-chip
 k, the settle circuits above 2^15 by ECDSA. "Maximally optimized = minimal
 k" — and minimal k is now reached for withdraw (k15) and deposit (k14),
 with swap one stage away (k16 at 36,379, needs avenues 3+2).
+
+* As built — steps 5(iv refund merge)+5(v Poseidon) (2026-08-15)
+The last two lowering rungs landed; the optimization ladder is COMPLETE
+(every planned avenue landed or explicitly stopped). Rows are MEASURED
+(=minocrab_sim::v3::cost=), not modelled.
+
+** Step 5(iv), avenue 4 — refund branch merge
+=refund= ran the surrendered-value re-mint TWICE (withdrawal route via
+=refundSurrenderedValue=, swap route inline). Guards gate PI EMISSION, not
+in-circuit computation, so both copies cost full rows: a duplicated
+=withdrawRefundCommitment(sk, requestId)= hash AND a duplicated
+=domainSep→tokenType→coinCommitment→mint= block. The merge computes each
+ONCE: the branch-varying INPUTS (token address, refunded amount) are
+=cond_select=ed on the route, and the recipient key + commitment are
+route-independent, so ONE mint block and ONE commitment hash serve both
+routes. Ledger EFFECT ops stay guarded per route (both event-map lookups,
+all four map removes); only the arithmetic is shared. The single mint emits
+UNGUARDED because an accepted refund always mints exactly once (routing is
+total and disjoint — see the authorisation argument below).
+| circuit | opt before | opt after | Δ | k |
+|---------+------------+-----------+---+---|
+| refund | 57,721 | 44,366 | −13,355 | 16 → 16 |
+Measured −13,355, MORE than the projected −9,430: the projection counted
+the duplicated refund-commitment hash and the second mint's =tokenType=, but
+the second mint's =coinCommitment= (a 3-block SHA, ~5,640 rows) dedups too.
+Stays k16 (ECDSA-floored) — cosmetic for prove time, real for the row
+column. The port refund stays bit-identical (65,231); the model gates the
+withdrawal route's mint/remove order on =Art::Opt= so the Compat side keeps
+compactc's order.
+
+*** Authorisation argument (the deliverable)
+Authorisation is =withdrawRefundCommitment(callerSecretKey(), requestId) ==
+storedCommitment=, where =storedCommitment= is looked up from the map that
+HOLDS the pending marker. The merge keeps that map route-specific:
+=stored = cond_select(isWithdrawal, refundCommitment[id],
+swapRefundCommitment[id])=, then one =assert(rc == stored)=.
+- The route is decided by =refundCommitment.member(id)= ALONE (as in the
+  port), and the swap route additionally asserts
+  =swapRefundCommitment.member(id)=. An id lives in at most one of the two
+  commitment maps (each inserted by exactly one of withdraw/swap, under a
+  keccak-derived id that pins the record's kind), so routing is total and
+  disjoint.
+- On the withdrawal route (=isWithdrawal = 1=) the guarded
+  =swapRefundCommitment= lookup emits nothing and its garbage default is
+  discarded by the =cond_select=; the gate compares against
+  =refundCommitment[id]=, openable only by the original withdrawer's =sk=.
+  The swap route is symmetric against =swapRefundCommitment[id]=.
+- A WITHDRAWAL-route id can therefore NEVER be settled through the swap
+  comparison (it routes =isWithdrawal = 1=, so =stored= is the
+  refundCommitment value and the swap map/removes are guarded off), and a
+  SWAP-route id can never be settled through the withdrawal comparison. This
+  is bit-for-bit the port's authorisation, re-expressed with one shared
+  hash. The cross-route traps (=also_other_marker= — id in both maps; id in
+  neither; a swap id offered on the withdrawal route) stay green.
+Injectivity/witnesses: the merged gate witnesses =sk= UNGUARDED (once) and
+=own_public_key= UNGUARDED (once). Both consume the same private-transcript
+=[sk, pk]= the port's per-branch guarded witnesses did (=witness_guarded=
+skips the transcript on the dead branch), so the private transcript is
+unchanged.
+
+** Step 5(v), avenue 3 — refund commitments → Poseidon
+=withdrawRefundCommitment= / =swapRefundCommitment= become =transientHash=
+(Poseidon over the six field limbs) instead of =persistentHash= (SHA-256
+over 96 bytes), at every site together: the write in withdraw/swap and the
+recompute+compare in completeWithdraw/refund/completeSwap, reference model
+(=prims::refund_commitment= =Art::Opt= arm) in lockstep.
+| circuit | opt before | opt after | Δ | k |
+|---------+------------+-----------+---+---|
+| withdraw | 27,267 | 23,707 | −3,560 | 15 → 15 |
+| swap | 36,379 | 32,819 | −3,560 | 16 → 16 |
+| completeWithdraw | 40,157* | 40,157 | −3,560 | 16 → 16 |
+| refund | 44,366 | 40,806 | −3,560 | 16 → 16 |
+| completeSwap | 53,814 | 50,254 | −3,560 | 16 → 16 |
+(*completeWithdraw before = 43,717.) Uniform −3,560 = the SHA 2-block cost
+minus the Poseidon permutation cost. Each site calls the commitment helper
+exactly once, so each drops one hash.
+
+*** Durability (notes Q3/Q4, CLEARED)
+=transientHash= is curve-stable-EXEMPT — Midnight may change it on a hard
+fork (transient-crypto/src/hash.rs:75-81) — whereas =persistentHash= is SHA,
+"guaranteed for long-term support" (base-crypto/src/hash.rs:92-95). Harmless
+here: the commitment is vault-INTERNAL and SHORT-LIVED — withdraw/swap write
+it, exactly one settle circuit recomputes it from the same =(sk, requestId)=
+and compares one transaction later, and it never leaves the contract or
+spans a hash fork. Contrast =userCommitment=, kept SHA (rung 5(i-userCommit))
+because it is the MPC key-derivation path and a hash change would strand
+funds at the old derived EVM account.
+
+*** SWAP'S k15 — MEASURED, and the verdict: k16, "say so and stop"
+Swap now carries avenues 6(burn)+2(domain sep)+3(Poseidon). Measured:
+=32,819 rows= — 51 rows ABOVE the 32,768 k15 boundary. The notes projected
+~32,420 with a ~348-row margin "inside measurement noise" and instructed:
+"if it lands 32,8xx, say so and stop." It landed 32,8xx. SWAP STAYS k16. Not
+chased with the discretionary-headroom levers (verbatim-nonce burn, avenue 7
+upper band): they weaken guards or touch another rung's committed work, and
+"obviously correct > performance" governs the final rung.
+
+*** Map<_, Field> value-typing (Q5) — DEFERRED, documented
+Making the commitment map value Field-typed (=Map<_, Field>=, one afield
+limb vs two for =Bytes<32>=) would drop the =div_mod(f, 248)= split at all
+five sites (~143 rows each) and WOULD cross swap to k15
+(32,819 − ~143 < 32,768). NOT taken. The map value stays =Bytes<32>=: the
+Poseidon =Field= digest is split into the stored =[hi, lo]= slot pair
+exactly as =b32_slots= reconstructs it off-circuit (=lo = f mod 2^248=,
+=hi = f >> 248=, =< 2^7= for a BLS12-381 scalar), so NO symbolic-layer
+change was needed and the win is localized to two files. Why deferred: the
+Q5 prerequisite — one =Map<_, Field>= insert/lookup differential vs compactc
+=map_bytes_field= — needs a 292-op corpus twin AND new SHIPPING-crate ledger
+builders (=map_insert_default=, =map_reset_to_default=, absent today), a
+disproportionate blast radius for a 51-row gap on the final rung. The
+=map_bytes_field= corpus artifact exists and the fdigest =Cell<Field>=
+differential is already green, so Q5 is FEASIBLE and this is a clean
+follow-up, not a dead end — it simply was not worth destabilising the
+finished ladder for one k crossing that the conservative default already
+said to forgo.
+
+** Deviation log — D4, D5
+*** D4 (rung 5(iv)) — refund's two branches are one mint
+See the authorisation argument above. Executable form: =spec_refund= is
+unchanged (effect-level: same MapRemoves, one MintShielded, one ClaimSpend,
+same disclosures per route), and the merge is verified by PI-equality
+re-anchored to the =Art::Opt= model plus the cross-route adversarial traps.
+The =model.rs= reorder (withdrawal route: remove(refundCommitment) before
+the mint) is gated on =Art::Opt=; the port keeps compactc's order.
+*** D5 (rung 5(v)) — refund commitment is Poseidon
+=transientHash= replaces =persistentHash=; durability argument above. The
+value stays =Bytes<32>= (Q5 Field-typing deferred). =prims::refund_commitment=
+splits Compat (SHA) / Opt (Poseidon); the split-to-[hi,lo] matches
+=div_mod(f, 248)= exactly, so the reference model needed no op-shape change.
+
+** CONSOLIDATED opt-vs-port-vs-compactc row+k table (the report's backbone)
+compactc (=cc=, byte-identical framing), the direct PORT (=mc=,
+PI-equal to compactc, the compatibility reference), and the OPTIMIZED
+artifact, with the avenues that touched each opt circuit. compactc/port
+numbers from BENCHMARK.md; opt from the frozen row snapshot at this commit.
+| circuit | cc k / rows | port k / rows | opt k / rows | opt vs cc rows | avenues (opt) |
+|---------+-------------+---------------+--------------+----------------+---------------|
+| initialize | 13 / 4,272 | 13 / 4,272 | 13 / 2,412 | −43.5% | 1 |
+| deposit | 15 / 27,002 | 15 / 17,502 | 14 / 15,632 | −42.1% | 7+1 |
+| approveRouter | 15 / 20,619 | 14 / 13,344 | 14 / 13,332 | −35.3% | 7 |
+| claim | 17 / 64,549 | 16 / 47,660 | 16 / 42,051 | −34.9% | 2+1 |
+| withdraw | 16 / 52,009 | 16 / 42,373 | 15 / 23,707 | −54.4% | 7+2+6+3 |
+| completeWithdraw | 17 / 64,498 | 16 / 47,466 | 16 / 40,157 | −37.7% | 2+3 |
+| refund | 17 / 97,026 | 16 / 65,231 | 16 / 40,806 | −57.9% | 7+2+4+3 |
+| swap | 17 / 71,104 | 16 / 51,485 | 16 / 32,819 | −53.8% | 7+2+6+3 |
+| completeSwap | 17 / 104,615 | 16 / 65,071 | 16 / 50,254 | −52.0% | 7+5+2+3 |
+Avenue legend: 1 userCommitment short-SHA · 2 domain-sep encoded · 3 refund
+commitment Poseidon · 4 refund branch merge · 5 changeNonce derived · 6 burn
+single-spend · 7 kernel.self dedup.
+
+k CROSSINGS (the prove-time wins; 2^k, not rows, sets prove/RAM):
+- opt vs PORT (this ladder's own wins): deposit 15→14 (avenue 1), withdraw
+  16→15 (avenue 6). Two k crossings. Everything else holds k: initialize +
+  claim + the request circuits at their hash-chip floor, the settle circuits
+  above 2^15 by ECDSA. swap missed k15 by 51 rows (see above).
+- opt vs COMPACTC: EIGHT of nine circuits are ≥1 k below compactc (only
+  initialize ties). deposit/approveRouter/claim/withdraw/completeWithdraw/
+  refund/swap/completeSwap each keygen+prove at half compactc's 2^k work or
+  better; withdraw is TWO k below compactc (16 vs... no — 15 vs 16, one k).
+  The port already bought most of these (instruction selection, M6/M7); the
+  optimized artifact adds deposit's and withdraw's crossings on top.
+
+Framing for the report: the ladder is HASH-BOUND, not framing-bound (the
+premise correction stands). Row cuts are large everywhere (−35% to −58% vs
+compactc) but prove time moves ONLY at the two k crossings; the settle
+circuits' −34% to −58% row cuts are cosmetic for prove time (ECDSA floor).
+"Maximally optimized = minimal k", and minimal k is reached: deposit k14,
+withdraw k15, everything else at its protocol/crypto floor. swap is the one
+documented near-miss (k16 at 51 rows over, Field-typing deferred).
