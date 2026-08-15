@@ -24,6 +24,16 @@
 //! steps 4+5(i-iii)"):
 //!
 //! - (step 4) none — byte-identical fork.
+//! - (rung i, avenue 7) `kernel.self()` is read ONCE per circuit and
+//!   threaded, instead of once per stdlib call site. The value is the
+//!   contract's own address, constant for the whole transaction, and each
+//!   emitted read still reconciles against the ledger — so how many are
+//!   emitted is compactc's framing, not the protocol's
+//!   (notes/vault-optimization.org §"(b) COMPACTC-FRAMING-ONLY"). In
+//!   `refund` the two branches' guarded reads become one UNGUARDED read
+//!   dominating both: exactly one branch runs, so the transcript still
+//!   carries exactly one kernel.self answer, and the circuit carries one
+//!   read instead of two.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
@@ -249,10 +259,13 @@ pub fn deposit(
     // keyVersion, caller, ecdsa, unused, pad(64, ""), evmType2, txParams,
     // caip2Id, schema, schema)
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
+    // ONE kernel.self read: the event's sender and the notification's
+    // callerAddress are the same address (rung i).
+    let me = kernel_self(c, one);
+    let me = B32 { hi: me[0], lo: me[1] };
     let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
+        hi: me.hi.private(),
+        lo: me.lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -280,7 +293,7 @@ pub fn deposit(
         schema,
     );
 
-    record_and_notify(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    record_and_notify(c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
 }
 
 /// `requestId = disclose(calculateRequestId(request))` +
@@ -342,6 +355,7 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
 fn notify_signet(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
+    me: B32<Public>,
     request_id: &B32<Public>,
     notify_path: [u8; 4],
 ) {
@@ -352,8 +366,6 @@ fn notify_signet(
             SIGNET_SIGNER,
             vec![AlignmentAtom::Bytes { length: 32 }],
         );
-        let me = kernel_self(c, one);
-        let me = B32 { hi: me[0], lo: me[1] };
         let (version, payload) = signet::construct_notification_v1::<Public>(c, &me, 1, notify_path);
         let mut args = vec![request_id.hi, request_id.lo, version];
         args.extend(payload.limbs().iter().copied());
@@ -366,13 +378,14 @@ fn notify_signet(
 fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
+    me: B32<Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
     map_field: u8,
     notify_path: [u8; 4],
 ) -> B32<Public> {
     let (request_id, request_id_val) = check_fresh_request(c, one, request, map_field);
     insert_request(c, one, request, map_field, &request_id_val);
-    notify_signet(c, one, &request_id, notify_path);
+    notify_signet(c, one, me, &request_id, notify_path);
     request_id
 }
 
@@ -474,6 +487,9 @@ pub fn withdraw(
     // The coin must be the vault token for THIS erc20, of exactly amount.
     let erc20_address = c.disclose(erc20_address, "the withdrawn ERC20");
     let domain_sep = vault_token_domain_separator(c, erc20_address);
+    // THE kernel.self read of this circuit (rung i): the colour derivation,
+    // the event's sender, the receive, the burn and the notification all
+    // want the same address, and the port read it five times.
     let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
@@ -520,10 +536,9 @@ pub fn withdraw(
 
     // The event, keyed under the vault's OWN derivation path.
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
     let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
+        hi: me.hi.private(),
+        lo: me.lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -569,8 +584,8 @@ pub fn withdraw(
         },
         value: c.disclose(coin_value, "surrendered coin value"),
     };
-    common::receive_shielded(c, one, &coin);
-    common::burn_coin(c, one, &coin);
+    common::receive_shielded_with(c, one, me, &coin);
+    common::burn_coin_with(c, one, me, &coin);
 
     insert_request(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, &request_id_val);
 
@@ -593,7 +608,7 @@ pub fn withdraw(
         &map_insert(REFUND_COMMITMENT, &request_id_val, &rc_val),
     );
 
-    notify_signet(c, one, &request_id, [0, 0, 0, 0]);
+    notify_signet(c, one, me, &request_id, [0, 0, 0, 0]);
 }
 
 /// `export circuit swap(evmNonce: Uint<64>, keyVersion: Uint<8>,
@@ -661,6 +676,8 @@ pub fn swap() -> Compiled3 {
     // amountInMaximum.
     let token_in = c.disclose(token_in, "the sold ERC20");
     let domain_sep = vault_token_domain_separator(&mut c, token_in);
+    // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
+    // port read the same address five times.
     let me = kernel_self(&mut c, one);
     let me = B32 { hi: me[0], lo: me[1] };
     let color = minocrab_std::v3::token_type(&mut c, &domain_sep, &me);
@@ -728,10 +745,9 @@ pub fn swap() -> Compiled3 {
     };
 
     let request_nonce = counter_read(&mut c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(&mut c, one);
     let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
+        hi: me.hi.private(),
+        lo: me.lo.private(),
     };
     let caip2 = cell_read(
         &mut c,
@@ -776,8 +792,8 @@ pub fn swap() -> Compiled3 {
         },
         value: c.disclose(coin_value, "surrendered coin value"),
     };
-    common::receive_shielded(&mut c, one, &coin);
-    common::burn_coin(&mut c, one, &coin);
+    common::receive_shielded_with(&mut c, one, me, &coin);
+    common::burn_coin_with(&mut c, one, me, &coin);
 
     insert_request(&mut c, one, &request, SWAP_EVENT_MAP, &request_id_val);
 
@@ -799,7 +815,7 @@ pub fn swap() -> Compiled3 {
         &map_insert(SWAP_REFUND_COMMITMENT, &request_id_val, &rc_val),
     );
 
-    notify_signet(&mut c, one, &request_id, [11, 0, 0, 0]);
+    notify_signet(&mut c, one, me, &request_id, [11, 0, 0, 0]);
 
     c.finish(true)
 }
@@ -880,10 +896,12 @@ pub fn approve_router() -> Compiled3 {
 
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = counter_read(&mut c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(&mut c, one);
+    // ONE kernel.self read (rung i): sender and callerAddress coincide.
+    let me = kernel_self(&mut c, one);
+    let me = B32 { hi: me[0], lo: me[1] };
     let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
+        hi: me.hi.private(),
+        lo: me.lo.private(),
     };
     let caip2 = cell_read(
         &mut c,
@@ -913,7 +931,7 @@ pub fn approve_router() -> Compiled3 {
         schema,
     );
 
-    record_and_notify(&mut c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    record_and_notify(&mut c, one, me, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
 
     c.finish(true)
 }
@@ -1033,6 +1051,19 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
     request_id
 }
 
+/// Where a guarded re-mint's `kernel.self()` comes from (rung i).
+enum SelfAddr {
+    /// Read inside the mint, under the branch guard — compactc's shape, and
+    /// still the right one where the circuit reads `kernel.self()` exactly
+    /// once (completeWithdraw): there is nothing to share it with, and an
+    /// unguarded read would put an answer in the transcript on the success
+    /// path, which needs none.
+    Guarded,
+    /// An address the circuit already read UNGUARDED. `refund`'s two
+    /// branches are complementary, so one read dominates both mints.
+    Shared(B32<Public>),
+}
+
 /// `refundSurrenderedValue(disclosedRequestId, signatureRequest,
 /// mintNonce)` under the branch guard (completeWithdraw.zkir:286-512):
 /// the withdrawer gate (guarded sk witnesses vs the guarded
@@ -1041,6 +1072,7 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
 fn refund_surrendered_value(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
+    me: SelfAddr,
     request_id: &B32<Public>,
     request_id_val: &LedgerValue,
     ev: &VaultRecord,
@@ -1082,7 +1114,14 @@ fn refund_surrendered_value(
         hi: c.disclose(own_pk.hi, "own public key as refund recipient (hi)"),
         lo: c.disclose(own_pk.lo, "own public key as refund recipient (lo)"),
     };
-    common::mint_shielded_token_to_key_guarded(c, guard, &domain_sep, amount, mint_nonce, &own_pk);
+    match me {
+        SelfAddr::Guarded => common::mint_shielded_token_to_key_guarded(
+            c, guard, &domain_sep, amount, mint_nonce, &own_pk,
+        ),
+        SelfAddr::Shared(me) => common::mint_shielded_token_to_key_with(
+            c, guard, me, &domain_sep, amount, mint_nonce, &own_pk,
+        ),
+    }
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1145,6 +1184,7 @@ pub fn complete_withdraw() -> Compiled3 {
     refund_surrendered_value(
         &mut c,
         refunding,
+        SelfAddr::Guarded,
         &request_id,
         &request_id_val,
         &ev,
@@ -1222,6 +1262,9 @@ pub fn complete_swap() -> Compiled3 {
 
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
+    // ONE kernel.self read for BOTH mints (rung i).
+    let me = kernel_self(&mut c, one);
+    let me = B32 { hi: me[0], lo: me[1] };
     let recipient = minocrab_std::v3::own_public_key(&mut c);
     let recipient = B32 {
         hi: c.disclose(recipient.hi, "own public key as swap recipient (hi)"),
@@ -1238,7 +1281,9 @@ pub fn complete_swap() -> Compiled3 {
         hi: c.disclose(args.mint_nonce.hi, "swap mint nonce (hi)"),
         lo: c.disclose(args.mint_nonce.lo, "swap mint nonce (lo)"),
     };
-    common::mint_shielded_token_to_key(&mut c, one, &ds_out, amount_out, &mint_nonce, &recipient);
+    common::mint_shielded_token_to_key_with(
+        &mut c, one, me, &ds_out, amount_out, &mint_nonce, &recipient,
+    );
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
@@ -1269,7 +1314,9 @@ pub fn complete_swap() -> Compiled3 {
         ],
     );
     let change_nonce = B32::from_typed(&mut c, change_nonce);
-    common::mint_shielded_token_to_key(&mut c, one, &ds_in, change, &change_nonce, &recipient);
+    common::mint_shielded_token_to_key_with(
+        &mut c, one, me, &ds_in, change, &change_nonce, &recipient,
+    );
 
     c.finish(true)
 }
@@ -1309,6 +1356,11 @@ pub fn refund() -> Compiled3 {
     // The member result is already Public; disclosure is the source's
     // explicit `disclose(...)` on the branch condition, a no-op here.
     let is_withdrawal = map_member(&mut c, one, REFUND_COMMITMENT, &request_id_val);
+    // ONE UNGUARDED kernel.self read dominating both branches (rung i).
+    // Exactly one branch runs, so the transcript still carries exactly one
+    // kernel.self answer — but the circuit now carries one read, not two.
+    let me = kernel_self(&mut c, one);
+    let me = B32 { hi: me[0], lo: me[1] };
     let mint_nonce = B32 {
         hi: c.disclose(args.mint_nonce.hi, "refund mint nonce (hi)"),
         lo: c.disclose(args.mint_nonce.lo, "refund mint nonce (lo)"),
@@ -1333,6 +1385,7 @@ pub fn refund() -> Compiled3 {
     refund_surrendered_value(
         &mut c,
         is_withdrawal,
+        SelfAddr::Shared(me),
         &request_id,
         &request_id_val,
         &ev,
@@ -1403,9 +1456,10 @@ pub fn refund() -> Compiled3 {
         hi: c.disclose(own_pk.hi, "own public key as swap-refund recipient (hi)"),
         lo: c.disclose(own_pk.lo, "own public key as swap-refund recipient (lo)"),
     };
-    common::mint_shielded_token_to_key_guarded(
+    common::mint_shielded_token_to_key_with(
         &mut c,
         swapping,
+        me,
         &ds_in,
         amount_in_max,
         &mint_nonce,

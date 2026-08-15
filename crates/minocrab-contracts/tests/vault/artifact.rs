@@ -134,15 +134,23 @@ pub enum Fork {
 /// reviewed with the rung that causes it, and the fork test asserts the
 /// ledger against the built artifacts in both directions.
 pub fn fork_status(circuit: Circuit) -> Fork {
+    /// Rung (i): one `kernel.self()` read per circuit instead of one per
+    /// stdlib call site.
+    const DEDUP: Fork = Fork::Diverged {
+        rung: "M10 rung (i), avenue 7",
+        why: "kernel.self() read once per circuit and threaded",
+    };
     match circuit {
-        Circuit::Initialize
-        | Circuit::Deposit
-        | Circuit::Claim
+        // No kernel.self read at all (initialize), or exactly one, which
+        // there is nothing to share it with (claim's second read is inside
+        // Compact's own mintShieldedToken auto-receive branch;
+        // completeWithdraw's is the refund branch's only one).
+        Circuit::Initialize | Circuit::Claim | Circuit::CompleteWithdraw => Fork::Identical,
+        Circuit::Deposit
         | Circuit::ApproveRouter
         | Circuit::Withdraw
-        | Circuit::CompleteWithdraw
-        | Circuit::Refund
         | Circuit::Swap
-        | Circuit::CompleteSwap => Fork::Identical,
+        | Circuit::Refund
+        | Circuit::CompleteSwap => DEDUP,
     }
 }

@@ -566,8 +566,12 @@ impl DepositScenario {
             false,
             bytesn_value(32, &self.signer_addr),
         ));
-        // kernel.self() again — the notification's callerAddress.
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // kernel.self() again — the notification's callerAddress. The
+        // optimized artifact threads this circuit's first read instead
+        // (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         // kernel.claimContractCall(signer, ep, comm)
         let comm = transient_commit(&self.call_args()[..], self.cc_rand);
         let mut comm_bytes = comm.as_le_bytes();
@@ -616,8 +620,7 @@ impl DepositScenario {
 
     /// The popeq results in read order, value-only.
     pub fn outputs(&self) -> Vec<Fr> {
-        let mut out = Vec::new();
-        for av in [
+        let mut avs = vec![
             bytesn_value(8, &self.initialized.to_le_bytes()),
             bytesn_value(20, &self.vault_evm),
             bytesn_value(8, &self.chain_id.to_le_bytes()),
@@ -626,8 +629,12 @@ impl DepositScenario {
             bytesn_value(32, &self.caip2),
             bytesn_value(1, &[u8::from(self.request_exists)]),
             bytesn_value(32, &self.signer_addr),
-            bytesn_value(32, &self.self_addr),
-        ] {
+        ];
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        let mut out = Vec::new();
+        for av in avs {
             ValueReprAlignedValue(av).field_repr(&mut out);
         }
         out
@@ -1315,7 +1322,11 @@ impl ApproveScenario {
             false,
             bytesn_value(32, &self.signer_addr),
         ));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // The notification's callerAddress — threaded from this circuit's
+        // first read in the optimized artifact (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         let comm = transient_commit(&self.call_args()[..], self.cc_rand);
         let mut comm_bytes = comm.as_le_bytes();
         while comm_bytes.last() == Some(&0) {
@@ -1375,8 +1386,7 @@ impl ApproveScenario {
         for op in ops {
             op.field_repr(&mut transcript);
         }
-        let mut outputs = Vec::new();
-        for av in [
+        let mut avs = vec![
             bytesn_value(8, &self.initialized.to_le_bytes()),
             bytesn_value(20, &self.router),
             bytesn_value(8, &self.chain_id.to_le_bytes()),
@@ -1385,8 +1395,12 @@ impl ApproveScenario {
             bytesn_value(32, &self.caip2),
             bytesn_value(1, &[u8::from(self.request_exists)]),
             bytesn_value(32, &self.signer_addr),
-            bytesn_value(32, &self.self_addr),
-        ] {
+        ];
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        let mut outputs = Vec::new();
+        for av in avs {
             ValueReprAlignedValue(av).field_repr(&mut outputs);
         }
         let (ep_hi, ep_lo) = b32_slots(&self.ep);
@@ -1636,7 +1650,11 @@ impl WithdrawScenario {
             true,
             bytesn_value(8, &self.request_nonce.to_le_bytes()),
         ));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // The event's sender — threaded from the colour derivation's read
+        // in the optimized artifact (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(read(
             erc20_vault::CAIP2_ID,
             false,
@@ -1660,11 +1678,15 @@ impl WithdrawScenario {
                 result: bytesn_value(1, &[u8::from(self.request_exists)]),
             },
         ]);
-        // receiveShielded
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // receiveShielded (its recipient is the same address again)
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(claim(1, cm_receive));
         // burn: sendImmediateShielded to the burn address
-        ops.extend(kernel_self_ops(&self.self_addr));
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(claim(0, nullifier));
         ops.extend(claim(2, cm_burn));
         // increment + event insert
@@ -1720,7 +1742,11 @@ impl WithdrawScenario {
             false,
             bytesn_value(32, &self.signer_addr),
         ));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // The notification's callerAddress — threaded from this circuit's
+        // first read in the optimized artifact (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         let comm = transient_commit(&self.call_args()[..], self.cc_rand);
         let mut comm_bytes = comm.as_le_bytes();
         while comm_bytes.last() == Some(&0) {
@@ -1791,20 +1817,28 @@ impl WithdrawScenario {
         for op in ops {
             op.field_repr(&mut transcript);
         }
-        let mut outputs = Vec::new();
-        for av in [
+        let mut avs = vec![
             bytesn_value(8, &self.initialized.to_le_bytes()),
             bytesn_value(32, &self.self_addr),
             bytesn_value(8, &self.chain_id.to_le_bytes()),
             bytesn_value(8, &self.request_nonce.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.caip2),
-            bytesn_value(1, &[u8::from(self.request_exists)]),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.signer_addr),
-            bytesn_value(32, &self.self_addr),
-        ] {
+        ];
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        avs.push(bytesn_value(32, &self.caip2));
+        avs.push(bytesn_value(1, &[u8::from(self.request_exists)]));
+        if self.art == Art::Compat {
+            // receiveShielded's and the burn's re-reads.
+            avs.push(bytesn_value(32, &self.self_addr));
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        avs.push(bytesn_value(32, &self.signer_addr));
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        let mut outputs = Vec::new();
+        for av in avs {
             ValueReprAlignedValue(av).field_repr(&mut outputs);
         }
         let (sk_hi, sk_lo) = b32_slots(&self.sk);
@@ -2443,7 +2477,11 @@ impl SwapScenario {
             true,
             bytesn_value(8, &self.request_nonce.to_le_bytes()),
         ));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // The event's sender — threaded from the colour derivation's read
+        // in the optimized artifact (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(read(
             erc20_vault::CAIP2_ID,
             false,
@@ -2466,9 +2504,14 @@ impl SwapScenario {
                 result: bytesn_value(1, &[u8::from(self.request_exists)]),
             },
         ]);
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // receiveShielded's recipient and the burn's contract address.
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(claim(1, cm_receive));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         ops.extend(claim(0, nullifier));
         ops.extend(claim(2, cm_burn));
         ops.extend([
@@ -2521,7 +2564,11 @@ impl SwapScenario {
             false,
             bytesn_value(32, &self.signer_addr),
         ));
-        ops.extend(kernel_self_ops(&self.self_addr));
+        // The notification's callerAddress — threaded from this circuit's
+        // first read in the optimized artifact (rung i, avenue 7).
+        if self.art == Art::Compat {
+            ops.extend(kernel_self_ops(&self.self_addr));
+        }
         let comm = transient_commit(&self.call_args()[..], self.cc_rand);
         let mut comm_bytes = comm.as_le_bytes();
         while comm_bytes.last() == Some(&0) {
@@ -2593,22 +2640,29 @@ impl SwapScenario {
         for op in ops {
             op.field_repr(&mut transcript);
         }
-        let mut outputs = Vec::new();
-        for av in [
+        let mut avs = vec![
             bytesn_value(8, &self.initialized.to_le_bytes()),
             bytesn_value(32, &self.self_addr),
             bytesn_value(20, &self.vault_evm),
             bytesn_value(8, &self.chain_id.to_le_bytes()),
             bytesn_value(20, &self.router),
             bytesn_value(8, &self.request_nonce.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.caip2),
-            bytesn_value(1, &[u8::from(self.request_exists)]),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.signer_addr),
-            bytesn_value(32, &self.self_addr),
-        ] {
+        ];
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        avs.push(bytesn_value(32, &self.caip2));
+        avs.push(bytesn_value(1, &[u8::from(self.request_exists)]));
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        avs.push(bytesn_value(32, &self.signer_addr));
+        if self.art == Art::Compat {
+            avs.push(bytesn_value(32, &self.self_addr));
+        }
+        let mut outputs = Vec::new();
+        for av in avs {
             ValueReprAlignedValue(av).field_repr(&mut outputs);
         }
         let (sk_hi, sk_lo) = b32_slots(&self.sk);
@@ -2892,7 +2946,11 @@ impl CompleteSwapScenario {
             self.s.amount_out_u64(),
             cm_out,
         ));
-        ops.extend(kernel_self_ops(&self.s.self_addr));
+        // The change mint's own kernel.self read — one read serves both
+        // mints in the optimized artifact (rung i, avenue 7).
+        if self.art() == Art::Compat {
+            ops.extend(kernel_self_ops(&self.s.self_addr));
+        }
         ops.extend(mint(vault_domain_sep(self.art(), &self.s.token_in), change, cm_change));
         ops
     }
@@ -2926,16 +2984,19 @@ impl CompleteSwapScenario {
         for op in ops {
             op.field_repr(&mut transcript);
         }
-        let mut outputs = Vec::new();
-        for av in [
+        let mut avs = vec![
             bytesn_value(8, &self.s.initialized.to_le_bytes()),
             self.mpc_key_av(),
             bytesn_value(1, &[u8::from(self.pending)]),
             self.s.event_av(),
             bytesn_value(32, &self.s.refund_commitment()),
             bytesn_value(32, &self.s.self_addr),
-            bytesn_value(32, &self.s.self_addr),
-        ] {
+        ];
+        if self.art() == Art::Compat {
+            avs.push(bytesn_value(32, &self.s.self_addr));
+        }
+        let mut outputs = Vec::new();
+        for av in avs {
             ValueReprAlignedValue(av).field_repr(&mut outputs);
         }
         let (sk_hi, sk_lo) = b32_slots(&self.claimant_sk());
@@ -3224,10 +3285,20 @@ impl RefundScenario {
             bytesn_value(8, &initialized.to_le_bytes()),
             self.mpc_key_av(),
         ];
+        // The optimized artifact reads kernel.self ONCE, unguarded, right
+        // after the routing member test, and both branches' mints use it
+        // (rung i, avenue 7). The port instead reads it inside whichever
+        // branch runs, so its read lands later — and in a different place
+        // per route. Either way the transcript carries exactly one answer.
+        let shared_self = self.art() == Art::Opt;
         match &self.route {
             RefundRoute::Withdrawal(w) => {
                 ops.extend(member(erc20_vault::REFUND_COMMITMENT, 1));
                 avs.push(bytesn_value(1, &[1]));
+                if shared_self {
+                    ops.extend(kernel_self_ops(&w.self_addr));
+                    avs.push(bytesn_value(32, &w.self_addr));
+                }
                 ops.extend(lookup(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP, w.event_av()));
                 avs.push(w.event_av());
                 ops.extend(remove(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP));
@@ -3236,8 +3307,10 @@ impl RefundScenario {
                     bytesn_value(32, &w.refund_commitment()),
                 ));
                 avs.push(bytesn_value(32, &w.refund_commitment()));
-                ops.extend(kernel_self_ops(&w.self_addr));
-                avs.push(bytesn_value(32, &w.self_addr));
+                if !shared_self {
+                    ops.extend(kernel_self_ops(&w.self_addr));
+                    avs.push(bytesn_value(32, &w.self_addr));
+                }
                 let color = vault_color(self.art(), &w.erc20, &w.self_addr);
                 let cm = coin_commitment_of(
                     &b32_slots(&self.mint_nonce),
@@ -3252,6 +3325,10 @@ impl RefundScenario {
             RefundRoute::Swap(s) => {
                 ops.extend(member(erc20_vault::REFUND_COMMITMENT, 0));
                 avs.push(bytesn_value(1, &[0]));
+                if shared_self {
+                    ops.extend(kernel_self_ops(&s.self_addr));
+                    avs.push(bytesn_value(32, &s.self_addr));
+                }
                 ops.extend(member(erc20_vault::SWAP_REFUND_COMMITMENT, 1));
                 avs.push(bytesn_value(1, &[1]));
                 ops.extend(lookup(erc20_vault::SWAP_EVENT_MAP, s.event_av()));
@@ -3263,8 +3340,10 @@ impl RefundScenario {
                 ));
                 avs.push(bytesn_value(32, &s.refund_commitment()));
                 ops.extend(remove(erc20_vault::SWAP_REFUND_COMMITMENT));
-                ops.extend(kernel_self_ops(&s.self_addr));
-                avs.push(bytesn_value(32, &s.self_addr));
+                if !shared_self {
+                    ops.extend(kernel_self_ops(&s.self_addr));
+                    avs.push(bytesn_value(32, &s.self_addr));
+                }
                 let color = vault_color(self.art(), &s.token_in, &s.self_addr);
                 let cm = coin_commitment_of(
                     &b32_slots(&self.mint_nonce),

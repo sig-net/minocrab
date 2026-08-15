@@ -61,11 +61,16 @@ pub fn witness_sk(c: &mut Circuit3) -> B32<Private> {
 /// unused left arm `default<ZswapCoinPublicKey>`).
 fn self_recipient(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> CoinRecipient<Public> {
     let me = kernel_self(c, guard);
+    contract_recipient(c, B32 { hi: me[0], lo: me[1] })
+}
+
+/// [`self_recipient`] against an address the caller already read.
+fn contract_recipient(c: &mut Circuit3, me: B32<Public>) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
         left: B32 { hi: zero, lo: zero },
-        right: B32 { hi: me[0], lo: me[1] },
+        right: me,
     }
 }
 
@@ -84,9 +89,38 @@ pub fn receive_shielded(
 ) {
     c.region("coin: receive", |c| {
         let recipient = self_recipient(c, guard);
-        let cm = coin_commitment(c, coin, &recipient);
-        emit(c, guard, &kernel_claim_zswap_coin_receive(&b32_value(&cm)));
+        claim_receive(c, guard, coin, &recipient);
     });
+}
+
+/// [`receive_shielded`] against a `kernel.self()` the caller already read.
+///
+/// compactc emits a fresh read per stdlib call; how many times the read is
+/// EMITTED is framing, not protocol (notes/vault-optimization.org §"(b)
+/// COMPACTC-FRAMING-ONLY"), and the value is invariant within a
+/// transaction. The M10 artifact reads it once per circuit and threads it;
+/// the direct ports keep [`receive_shielded`] and their frozen rows.
+pub fn receive_shielded_with(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, Public>,
+    me: B32<Public>,
+    coin: &ShieldedCoinInfo3<Public>,
+) {
+    c.region("coin: receive", |c| {
+        let recipient = contract_recipient(c, me);
+        claim_receive(c, guard, coin, &recipient);
+    });
+}
+
+/// `kernel.claimZswapCoinReceive(coinCommitment(coin, recipient))`.
+fn claim_receive(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, Public>,
+    coin: &ShieldedCoinInfo3<Public>,
+    recipient: &CoinRecipient<Public>,
+) {
+    let cm = coin_commitment(c, coin, recipient);
+    emit(c, guard, &kernel_claim_zswap_coin_receive(&b32_value(&cm)));
 }
 
 /// `<field>.writeCoin(coin, right(kernel.self()))` on a top-level
@@ -210,7 +244,29 @@ pub fn burn_coin(
     c.region("coin: burn", |c| {
         // const selfAddr = kernel.self(); claimZswapNullifier(coinNullifier(...))
         let me = kernel_self(c, one);
-        let me = B32 { hi: me[0], lo: me[1] };
+        burn_body(c, one, B32 { hi: me[0], lo: me[1] }, coin);
+    });
+}
+
+/// [`burn_coin`] against a `kernel.self()` the caller already read — see
+/// [`receive_shielded_with`] for why the M10 artifact wants that.
+pub fn burn_coin_with(
+    c: &mut Circuit3,
+    one: Wire3<FieldT, Public>,
+    me: B32<Public>,
+    coin: &ShieldedCoinInfo3<Public>,
+) {
+    c.region("coin: burn", |c| burn_body(c, one, me, coin));
+}
+
+/// Everything [`burn_coin`] does after reading `kernel.self()`.
+fn burn_body(
+    c: &mut Circuit3,
+    one: Wire3<FieldT, Public>,
+    me: B32<Public>,
+    coin: &ShieldedCoinInfo3<Public>,
+) {
+    {
         let nul = coin_nullifier_contract(c, coin, &me);
         emit(c, one, &kernel_claim_zswap_nullifier(&b32_value(&nul)));
 
@@ -237,7 +293,7 @@ pub fn burn_coin(
         };
         let cm = coin_commitment(c, &output, &burn);
         emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
-    });
+    }
 }
 
 /// [`witness_sk`] under a branch guard.
@@ -268,7 +324,12 @@ pub fn assert_if<V: minocrab_std::v3::Vis3>(
 /// The shared body of the static-`left(pk)` mints: compactc folds the
 /// recipient selects and the auto-receive branch; every effects op carries
 /// `guard`.
-fn mint_to_key_body(
+///
+/// Public as the "caller already read `kernel.self()`" form of
+/// [`mint_shielded_token_to_key`] — see [`receive_shielded_with`]. A
+/// circuit that mints twice (completeSwap) or mints on either of two
+/// branches (refund) needs one read, not one per mint.
+pub fn mint_shielded_token_to_key_with(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
     me: B32<Public>,
@@ -313,7 +374,7 @@ pub fn mint_shielded_token_to_key(
 ) {
     let me = kernel_self(c, one);
     let me = B32 { hi: me[0], lo: me[1] };
-    mint_to_key_body(c, one, me, domain_sep, value, nonce, pk);
+    mint_shielded_token_to_key_with(c, one, me, domain_sep, value, nonce, pk);
 }
 
 /// `mintShieldedToken(domain_sep, value, nonce, left(pk))` under a branch
@@ -329,7 +390,7 @@ pub fn mint_shielded_token_to_key_guarded(
 ) {
     let me = kernel_self_guarded(c, guard);
     let me = B32 { hi: me[0], lo: me[1] };
-    mint_to_key_body(c, guard, me, domain_sep, value, nonce, pk);
+    mint_shielded_token_to_key_with(c, guard, me, domain_sep, value, nonce, pk);
 }
 
 /// The one-shot gate: `assert(<counter at field> == 0)`.
