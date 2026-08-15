@@ -7,6 +7,11 @@ description = "L3 — MinoCrab standard library: ports of Compact's standard-lib
 
 [dependencies]
 minocrab = { path = "../minocrab" }
+# The Borsh SCHEMA walk (v3::borsh::schema) only, behind the off-by-default
+# `borsh-schema` feature: nothing shipping links borsh, and a test build turns
+# the feature on from its own [dev-dependencies] entry (see
+# minocrab-contracts).
+borsh = { workspace = true, optional = true }
 # `#[derive(CircuitArg)]`, re-exported next to the trait it implements
 # (v3::CircuitArg names both, as serde's does).
 minocrab-macros = { path = "../minocrab-macros", optional = true }
@@ -14,6 +19,7 @@ minocrab-macros = { path = "../minocrab-macros", optional = true }
 [features]
 default = ["macros"]
 macros = ["dep:minocrab-macros"]
+borsh-schema = ["dep:borsh"]
 
 [dev-dependencies]
 minocrab-sim = { path = "../minocrab-sim" }

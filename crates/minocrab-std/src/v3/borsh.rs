@@ -87,6 +87,20 @@
 use minocrab::v3::{AnyWire3, Bytes32T, Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
 
+/// Borsh's own schema of the SPEC type, walked into the same offset table
+/// [`CircuitBorsh::layout`] produces — the cross-check
+/// `#[borsh(spec = …)]` generates. Behind the off-by-default `borsh-schema`
+/// feature, since it is the only thing here that links borsh.
+#[cfg(feature = "borsh-schema")]
+pub mod schema;
+
+/// `#[derive(CircuitBorsh)]` — the [`CircuitBorsh`] impl AND the
+/// [`CircuitArg`] family, generated from one struct's fields (field order is
+/// the wire contract, and it is the BORSH order). Named the same as the trait
+/// it implements, the way `serde::Serialize` is.
+#[cfg(feature = "macros")]
+pub use minocrab_macros::CircuitBorsh;
+
 use super::{ArgPath, Bool, Bytes, BytesN, CircuitArg, Maybe, Serializer, Uint, Vis3, B32};
 
 // ---- the trait ---------------------------------------------------------------

@@ -538,7 +538,22 @@ external value and no dependency on 1-7.
       2w+1 rows per leaf (w bytes) plus a div_mod per straddled limb
       boundary — per-leaf 2.0× to 73× cheaper, 1.9× over a whole 204-byte
       record. Used by no circuit, deliberately.)
-- [ ] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
+- [X] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 3".
+      One derive emits the CircuitBorsh impl AND the CircuitArg family,
+      the latter through the same impl_arg_traits code path the existing
+      derive uses (so a type carries one derive, not both). A struct
+      generic in a single Vis3 parameter serializes at every visibility —
+      log payloads are Public — with the argument impls carrying a
+      where-clause instead of a substitution. Two label namespaces:
+      camelCase argument labels, verbatim layout paths. Option/Vec/
+      String/maps/enums are span errors naming Flagged, [T; K] + count,
+      Bytes<N>, Tag<K>. #[borsh(spec = …)] generates the cross-check
+      against borsh's own schema; the stage-0 walker was EXTRACTED into
+      minocrab_std::v3::borsh::schema behind an off-by-default feature
+      (oracle.rs now re-exports it) rather than duplicated. Gate: the
+      same record declared derived and by hand, five circuits each,
+      byte-identical ZKIR.)
 - [ ] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
       movement asserted.
 - [ ] 5. Attested outputs → the flat layout (four settle circuits,

@@ -59,7 +59,24 @@ pub(crate) fn impl_arg_traits(
     fields: &[ArgField],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    impl_arg_traits_for(
+        &quote!(#impl_generics),
+        &quote!(#name #ty_generics),
+        &quote!(#where_clause),
+        fields,
+    )
+}
 
+/// [`impl_arg_traits`] for a self type the caller spells itself — what
+/// `#[derive(CircuitBorsh)]` needs, since a `struct Payload<V: Vis3>` is a
+/// circuit ARGUMENT only at `Payload<Private>` (arguments are witness data,
+/// so `CircuitArg` exists for private leaves alone).
+pub(crate) fn impl_arg_traits_for(
+    impl_generics: &TokenStream,
+    self_ty: &TokenStream,
+    where_clause: &TokenStream,
+    fields: &[ArgField],
+) -> TokenStream {
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
     let labels: Vec<LitStr> = fields
@@ -74,7 +91,7 @@ pub(crate) fn impl_arg_traits(
 
     quote! {
         #[automatically_derived]
-        impl #impl_generics #root::CircuitArg for #name #ty_generics #where_clause {
+        impl #impl_generics #root::CircuitArg for #self_ty #where_clause {
             const SLOTS: usize = 0usize #( + <#types as #root::CircuitArg>::SLOTS )*;
 
             fn push_atoms(atoms: &mut ::std::vec::Vec<#root::__private::AlignmentAtom>) {
@@ -101,7 +118,7 @@ pub(crate) fn impl_arg_traits(
         }
 
         #[automatically_derived]
-        impl #impl_generics #root::CircuitArgs for #name #ty_generics #where_clause {
+        impl #impl_generics #root::CircuitArgs for #self_ty #where_clause {
             const SLOTS: usize = <Self as #root::CircuitArg>::SLOTS;
 
             fn declare(c: &mut #root::__private::Circuit3) -> Self {
@@ -127,7 +144,7 @@ pub(crate) fn impl_arg_traits(
 }
 
 /// The fields, in declaration order — which IS the wire order.
-fn arg_fields(input: &DeriveInput) -> syn::Result<Vec<ArgField>> {
+pub(crate) fn arg_fields(input: &DeriveInput) -> syn::Result<Vec<ArgField>> {
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(named) => &named.named,

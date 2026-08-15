@@ -10,6 +10,7 @@ use proc_macro::TokenStream;
 
 mod circuit;
 mod circuit_arg;
+mod circuit_borsh;
 
 /// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
 /// argument list) for a struct with named fields.
@@ -39,6 +40,55 @@ mod circuit_arg;
 pub fn derive_circuit_arg(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     circuit_arg::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive `CircuitBorsh` — canonical Borsh, the fixed-width subset — for a
+/// struct with named fields, together with the `CircuitArg` family.
+///
+/// **Field order is the wire contract, and it is the BORSH order.** The
+/// fields are serialized, hashed, read and laid out in declaration order, so
+/// reordering the struct changes the format.
+///
+/// ONE DERIVE, BOTH FAMILIES: the argument impls come from the same code path
+/// as [`macro@CircuitArg`], so a type never has both derives — deriving both
+/// is a conflicting-implementation error, and `#[derive(CircuitBorsh)]` is
+/// the one to keep.
+///
+/// ```ignore
+/// #[derive(CircuitBorsh)]
+/// #[borsh(spec = spec_types::RespondMisc)]   // generates the schema cross-check test
+/// struct RespondPayload<V: Vis3> {
+///     request_id: B32<V>,                    // layout path "request_id"
+///     #[borsh(name = "big_r_x")]             // where the spec type names it differently
+///     bigr_x: B32<V>,
+///     recovery_id: Uint<8, V>,
+/// }
+/// ```
+///
+/// A plain struct serializes at `Private`; a struct generic in a single
+/// visibility parameter (`<V: Vis3>`) serializes at every visibility, and is
+/// a circuit argument at `Private` — arguments are witness data.
+///
+/// Two label namespaces: the ARGUMENT label is `lowerCamelCase` of the field
+/// name (`#[arg(name = "…")]` overrides it), while the LAYOUT path is the
+/// field name verbatim, because it is compared against borsh's own schema of
+/// the spec type (`#[borsh(name = "…")]` overrides that one).
+///
+/// `#[borsh(spec = …)]` generates a `#[test]` asserting the layout table is
+/// `borsh::schema_container_of::<Spec>()` walked into rows; it needs
+/// minocrab-std's `borsh-schema` feature, which a test build enables from its
+/// own `[dev-dependencies]`.
+///
+/// Fields whose Borsh encoding is value-dependent are rejected with the
+/// subset's replacement named: `Option` ↦ `Flagged`, `Vec`/`String`/maps ↦
+/// `[T; K]` plus a count, a data-carrying enum ↦ one record type per kind, a
+/// fieldless enum ↦ `Tag<K>`.
+#[proc_macro_derive(CircuitBorsh, attributes(arg, borsh))]
+pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    circuit_borsh::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

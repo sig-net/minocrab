@@ -822,99 +822,31 @@ fn layout_matches_its_frozen_table() {
 mod in_circuit {
     use super::*;
 
-    use minocrab_std::v3::borsh::{to_bytes, CircuitBorsh, FieldSpec, LayoutPath, Limbs};
-    use minocrab_std::v3::{ArgPath, CircuitArg, Serializer, Uint, Vis3, B32};
+    use minocrab_std::v3::borsh::{to_bytes, CircuitBorsh};
+    use minocrab_std::v3::{ArgPath, CircuitArg, Uint, Vis3, B32};
 
     use minocrab::v3::Circuit3;
     use minocrab::Private;
     use minocrab_zkir::v3::IrValue;
 
-    /// [`RespondMisc`] over wires. Hand-written, as stage 1's impls are — the
-    /// derive is stage 3.
+    /// [`RespondMisc`] over wires — ONE DERIVE for the circuit-argument
+    /// family and the serialization, and `#[borsh(spec = …)]` for the
+    /// generated cross-check against borsh's own schema of the spec type
+    /// (`__minocrab_borsh_spec_RespondMiscCircuit` in this binary's test
+    /// list).
+    ///
+    /// The field names are the SPEC type's, so the layout paths need no
+    /// override; the argument labels are the mechanical camelCase ones, which
+    /// nothing here is pinned to (this circuit is a test fixture, not a
+    /// deployed interface).
+    #[derive(CircuitBorsh)]
+    #[borsh(spec = RespondMisc)]
     struct RespondMiscCircuit<V: Vis3> {
         request_id: B32<V>,
         big_r_x: B32<V>,
         big_r_y: B32<V>,
         s: B32<V>,
         recovery_id: Uint<8, V>,
-    }
-
-    impl<V: Vis3> CircuitBorsh<V> for RespondMiscCircuit<V> {
-        const LEN: usize = 4 * 32 + 1;
-
-        fn push_limbs(&self, limbs: &mut Limbs<V>) {
-            self.request_id.push_limbs(limbs);
-            self.big_r_x.push_limbs(limbs);
-            self.big_r_y.push_limbs(limbs);
-            self.s.push_limbs(limbs);
-            self.recovery_id.push_limbs(limbs);
-        }
-
-        fn push_segments(&self, out: &mut Serializer<V>) {
-            self.request_id.push_segments(out);
-            self.big_r_x.push_segments(out);
-            self.big_r_y.push_segments(out);
-            self.s.push_segments(out);
-            self.recovery_id.push_segments(out);
-        }
-
-        fn constrain_canonical(&self, c: &mut Circuit3) {
-            self.request_id.constrain_canonical(c);
-            self.big_r_x.constrain_canonical(c);
-            self.big_r_y.constrain_canonical(c);
-            self.s.constrain_canonical(c);
-            self.recovery_id.constrain_canonical(c);
-        }
-
-        fn read<R: minocrab_std::v3::borsh::BorshReader<V>>(
-            c: &mut Circuit3,
-            r: &mut R,
-        ) -> Self {
-            RespondMiscCircuit {
-                request_id: CircuitBorsh::read(c, r),
-                big_r_x: CircuitBorsh::read(c, r),
-                big_r_y: CircuitBorsh::read(c, r),
-                s: CircuitBorsh::read(c, r),
-                recovery_id: CircuitBorsh::read(c, r),
-            }
-        }
-
-        fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
-            <B32<V>>::push_layout(&path.field("request_id"), offset, out);
-            <B32<V>>::push_layout(&path.field("big_r_x"), offset, out);
-            <B32<V>>::push_layout(&path.field("big_r_y"), offset, out);
-            <B32<V>>::push_layout(&path.field("s"), offset, out);
-            <Uint<8, V>>::push_layout(&path.field("recovery_id"), offset, out);
-        }
-    }
-
-    impl CircuitArg for RespondMiscCircuit<Private> {
-        const SLOTS: usize = 2 + 2 + 2 + 2 + 1;
-
-        fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
-            for _ in 0..4 {
-                <B32<Private> as CircuitArg>::push_atoms(atoms);
-            }
-            <Uint<8, Private> as CircuitArg>::push_atoms(atoms);
-        }
-
-        fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-            RespondMiscCircuit {
-                request_id: CircuitArg::declare(c, &path.field("requestId")),
-                big_r_x: CircuitArg::declare(c, &path.field("bigR_x")),
-                big_r_y: CircuitArg::declare(c, &path.field("bigR_y")),
-                s: CircuitArg::declare(c, &path.field("s")),
-                recovery_id: CircuitArg::declare(c, &path.field("recoveryId")),
-            }
-        }
-
-        fn constrain(&self, c: &mut Circuit3) {
-            self.request_id.constrain(c);
-            self.big_r_x.constrain(c);
-            self.big_r_y.constrain(c);
-            self.s.constrain(c);
-            self.recovery_id.constrain(c);
-        }
     }
 
     /// A preimage for a circuit that is nothing but its arguments: no
@@ -984,6 +916,19 @@ mod in_circuit {
                 Ok(())
             })
             .expect("the in-circuit encoder emits canonical Borsh");
+    }
+
+    /// The generated cross-check is not vacuous: move one offset and it
+    /// fires, naming the row.
+    #[test]
+    #[should_panic(expected = "is not its spec type's Borsh schema")]
+    fn the_schema_cross_check_catches_a_moved_offset() {
+        let mut ours = <RespondMiscCircuit<Private> as CircuitBorsh<Private>>::layout();
+        ours[1].offset += 1;
+        minocrab_std::v3::borsh::schema::assert_matches_schema::<RespondMisc>(
+            "RespondMiscCircuit",
+            &ours,
+        );
     }
 
     /// The circuit type's layout table IS borsh's own schema walk of the spec

@@ -55,3 +55,11 @@ reviewer should look at.
       constrain_canonical for every leaf (a leaf whose canonical
       constraint were weaker than its width would break injectivity).
       Also Split's assumption that div_mod bounds the high rest.
+- [ ] M11 stage 3 (#[derive(CircuitBorsh)]): the impl_arg_traits
+      refactor (existing derive/attribute output must be unchanged — the
+      thinness tests and every differential suite say it is, but it is a
+      shared code path); the where-clause trick that makes the argument
+      impls apply only at Private for a Vis3-generic struct; and the
+      minocrab-std `borsh-schema` optional feature — confirm with cargo
+      tree that no shipping build enables it (checked in-session, worth
+      a second look since it is a dependency-posture claim).

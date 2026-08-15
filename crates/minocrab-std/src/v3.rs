@@ -44,7 +44,7 @@ pub use minocrab_macros::circuit;
 #[doc(hidden)]
 pub mod __private {
     pub use minocrab::v3::{Circuit3, Compiled3};
-    pub use minocrab::AlignmentAtom;
+    pub use minocrab::{AlignmentAtom, Private};
 }
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable

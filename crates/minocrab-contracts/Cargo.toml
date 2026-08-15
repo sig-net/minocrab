@@ -11,6 +11,10 @@ minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
 
 [dev-dependencies]
+# The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated
+# cross-check calls minocrab-std's schema module, which is feature-gated so
+# that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.
+minocrab-std = { path = "../minocrab-std", features = ["borsh-schema"] }
 minocrab-sim = { path = "../minocrab-sim" }
 minocrab-zkir = { path = "../minocrab-zkir" }
 midnight-onchain-vm.workspace = true

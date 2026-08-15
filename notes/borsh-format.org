@@ -543,6 +543,92 @@ byte arrays dominate and they are where the two modes converge.
   a test, which is why =read_witness_checked= exists.
 - The pad tests above; =Split::remaining()= after a read == N - LEN.
 
+* As built — stage 3 (2026-08-15)
+=#[derive(CircuitBorsh)]= (crates/minocrab-macros/src/circuit_borsh.rs) +
+=#[borsh(spec = …)]='s generated schema cross-check. NO circuit touched;
+row_snapshot and interface_snapshot bit-identical; workspace release
+suite green (52 test binaries).
+
+** ONE DERIVE, BOTH FAMILIES — and the argument half is the SAME CODE PATH
+The derive emits the =CircuitBorsh= impl AND =CircuitArg= + =CircuitArgs=,
+the latter through =circuit_arg::impl_arg_traits_for= — the function
+=#[derive(CircuitArg)]= and =#[circuit]= already use, refactored to take
+the self type as tokens rather than an Ident (the existing callers
+delegate, so their output is unchanged and their thinness tests still
+pass). CONSEQUENCE, documented on the macro: a type never carries both
+derives; deriving both is a conflicting-impl error and CircuitBorsh is
+the one to keep.
+
+** Visibility generics: a where-clause, not a substitution
+A serialized record is usually written =struct Payload<V: Vis3>= (log
+payloads serialize at =Public= — =Serializer::<Public>= is what
+events.rs/xcontract_events.rs use — while arguments are =Private=). The
+derive detects a single type parameter bounded by =Vis3= and emits
+=impl<V: Vis3> CircuitBorsh<V> for Payload<V>=; the ARGUMENT impls are
+emitted for the same =Payload<V>= but =where Uint<8, V>: CircuitArg, …=,
+so rustc decides where they apply (they hold exactly at =Private=,
+because that is where the leaf CircuitArg impls exist). Cleaner than
+substituting the parameter, and it is an impl a reader could have
+written. A plain struct with no generics serializes at =Private=.
+
+** Two label namespaces, on purpose
+- ARGUMENT labels stay Compact's: =lowerCamelCase= of the field name,
+  =#[arg(name = "…")]= to override (the existing rule, unchanged).
+- LAYOUT paths are the field name VERBATIM, dot-joined, =[i]= for array
+  elements — because they are compared against borsh's own schema of the
+  SPEC type, whose paths are the spec struct's Rust field names.
+  =#[borsh(name = "…")]= overrides one where the two structs disagree.
+Both are pinned by tests (=layout_paths_are_the_field_names_verbatim=,
+and =a_plain_struct_derives_and_nests= which checks the camelCase
+argument labels through byte-identical ZKIR).
+
+** The rejections name their replacements
+Syntactic, on the field type's last path segment, each with the field's
+own span: =Option= ⇒ "Maybe ↦ Flagged, never Option" (with WHY: borsh
+omits the payload on None, so every following offset would depend on the
+value); =Vec=/=VecDeque= ⇒ "[T; K] plus a separate count field, as the
+deployed record does with noWords"; =String=/=str=/=CString=/=OsString= ⇒
+Bytes<N>/BytesN; maps and sets ⇒ [(K, V); N] plus a count. An =enum= is
+rejected at the type name with BOTH replacements ("one record type per
+kind" for data-carrying, =Tag<K>= for fieldless). Unit-tested one by one.
+
+** The schema cross-check, and where the walker now lives
+=#[borsh(spec = path)]= generates
+=#[cfg(test)] #[test] fn __minocrab_borsh_spec_<Name>()= calling
+=minocrab_std::v3::borsh::schema::assert_matches_schema::<Spec>(name,
+&<Name as CircuitBorsh<Private>>::layout())=. The STAGE-0 WALKER WAS
+EXTRACTED, not duplicated: =layout_rows=/=schema_len=/=Row= moved from
+=minocrab-contracts/tests/serialization/oracle.rs= into
+=minocrab-std/src/v3/borsh/schema.rs=, and oracle.rs is now a two-line
+=pub use= so stage 0's fifteen tests run against the same code.
+FEATURE POSTURE PRESERVED: the schema module is behind minocrab-std's
+off-by-default =borsh-schema= feature (optional dep), which
+minocrab-contracts enables from its own =[dev-dependencies]= entry —
+verified with =cargo tree=: the normal build of minocrab-std has features
+=[default, macros]= and no borsh edge; the only path to borsh is marked
+[dev-dependencies].
+
+** Gates
+- THE REAL ONE, =crates/minocrab-std/tests/v3_borsh_derive.rs=: the same
+  9-field record declared TWICE — derived, and with stage 1's hand-written
+  impls — and every circuit either can build compared as SERIALIZED ZKIR:
+  the keccak preimage, =to_bytes::<204>=, =constrain_canonical=, a Split
+  read and a WitnessCheck read. Byte-identical in all five, which pins the
+  argument labels too. Plus the =Public= serialization path (a record of
+  constants, as a log payload would be), LEN/SLOTS/atoms/layout equality,
+  the =CircuitBorshArg= bound, and a nested plain struct whose camelCase
+  labels are checked against a raw =c.arg= block.
+- The derive is exercised on a DEPLOYED shape: the conformance suite's
+  =RespondMiscCircuit= is now =#[derive(CircuitBorsh)] #[borsh(spec =
+  RespondMisc)]= — its hand-written impls deleted — so the generated
+  cross-check runs in that binary against stage 0's spec type, alongside
+  the packed-bytes property. A =#[should_panic]= negative control moves
+  one offset and shows the alarm fires.
+- Macro unit tests: thinness (no =c .=, no =Circuit3 ::= in the
+  expansion), both families emitted, the visibility parameter carried
+  into the impl, other generics rejected, both label namespaces, the spec
+  attribute, and every rejection message. 26 tests in minocrab-macros.
+
 * ANSWERED from MPC source (2026-08-15, ~/mpc; supersedes the open
 questions below — kept for history)
 Ingest path: chain-signatures/chain-midnight/ (PR #1059) — full
