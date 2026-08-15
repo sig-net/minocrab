@@ -224,6 +224,188 @@ parsers.
 Stages 0+8 have external value and no dependency on 1-7 — front-run
 them if the TS side is on the critical path.
 
+* As built — stage 0 (2026-08-15)
+"Today's protocol is already this layout", with a test behind it. NO
+circuit changes, nothing under src/ touched; row_snapshot and
+interface_snapshot untouched and green.
+
+** THE HEADLINE: every deployed payload is byte-identical, zero divergences
+| deployed payload            | shape                | verified against                          |
+|-----------------------------+----------------------+-------------------------------------------|
+| vault record <2,34,34>      | 404 B                | FAB binary_repr under the SHIPPING atoms  |
+| swap record <7,38,37>       | 571 B                | ditto (571 = the number stage 7 assumes)  |
+| requestId (both records)    | keccak of the above  | model's request_id(), M10-differential-pinned |
+| claim digest preimage       | 32+1 B               | calculateSignetAttestationDigest's alignment |
+| completeWithdraw preimage   | 32+1 B               | ditto                                     |
+| refund preimage             | 32+5 B               | ditto                                     |
+| completeSwap preimage       | 32+8 B (a borsh u64) | ditto                                     |
+| signBidirectional Misc      | 1+32+128 B ‖ pad     | THE CORPUS ARTIFACT accepts/rejects       |
+| respond Misc                | 4×32+1 B ‖ pad       | ditto                                     |
+| respondBidirectional Misc   | ditto                | ditto                                     |
+For the records the equality is asserted TWICE per case, once against
+borsh::to_vec and once against bincode-fixint, and then closed with
+=keccak256(borsh(record)) == the reference model's request id= — i.e.
+the request id the deployed vault stores IS the keccak of the flat
+layout. For the singleton the bytes are not compared against a second
+Rust construction at all: the borsh envelope is handed to the pinned
+compactc artifact as the logged transcript, which ACCEPTS it, and
+rejects it as soon as any one of the 288 bytes moves — including a
+byte of the zero pad, so the padding rule is already enforced
+in-circuit today. Nothing was papered over: no case, at any case
+count, produced a mismatch.
+
+** Files
+- =crates/minocrab-contracts/tests/serialization/spec_types.rs= — the
+  declarations (deriving borsh's traits AND serde's), the leaf table as
+  code (=FixedLen=), =Flagged=, =ByteArray<N>=.
+- =.../serialization/oracle.rs= — the two encoders, and the
+  BorshSchemaContainer walk into (path, kind, offset, width) rows.
+- =.../serialization/deployed.rs= — the deployed bytes, built with the
+  protocol's own code (parse_field_repr + binary_repr, the Misc
+  envelope, the singleton's proof preimage).
+- =.../serialization/records.rs= — model scenario ↦ spec value, field
+  by field. Deliberately a SECOND statement of each record: neither
+  side is computed from the other.
+- =crates/minocrab-contracts/tests/serialization_conformance.rs= — the
+  15 tests + the frozen 73-row layout table and its
+  =print_layout_snapshot= regenerator.
+
+** Dependencies: dev-only, 8 new lock entries, none shipping
+borsh 1.6.1 (+derive, +unstable__schema) and bincode 2 are
+dev-dependencies of minocrab-contracts only. =cargo tree -i borsh=
+reports exactly one path, marked [dev-dependencies] → minocrab-contracts.
+Lock diff (8 packages, all NEW, all reachable only from borsh):
+borsh 1.6.1, borsh-derive 1.6.1, and borsh-derive's proc-macro chain
+proc-macro-crate 3.5.0 → toml_edit 0.25.13 → toml_datetime, toml_parser,
+winnow 1.0.4, indexmap 2.14.0. Only =borsh= itself is linked into the
+test binary; the other seven are build-time.
+BINCODE 2, NOT 1.3: bincode 2.0.1 is ALREADY in the lock — the pinned
+midnight-zk-stdlib depends on it, with the =serde= feature already
+enabled — so the second oracle costs ZERO new lock entries and enables
+no new feature, where bincode 1.3 would have added a whole second major
+version of the crate. (Honest note: this means bincode is already
+linked by shipping code, via Midnight's own stack; our dev-dep adds no
+linkage that was not there before. borsh is the one that is strictly
+dev-only.) The fixint mode is spelled out at the call site rather than
+taken from =config::legacy()=:
+=standard().with_fixed_int_encoding().with_little_endian().with_no_limit()=.
+
+** Two corrections to the design of record
+1. THE DUAL ORACLE IS NOT, BY ITSELF, THE SUBSET CHECKER. It catches a
+   fieldless enum (borsh: 1-byte discriminant; bincode-fixint: 4-byte
+   u32 variant index) and Vec/String (borsh: u32 length prefix;
+   bincode-fixint: u64). It does NOT catch Option: both encoders write
+   a 1-byte tag and then the payload, so they AGREE byte for byte on
+   =Some(9u8)= and on =None=. Option is caught by the FIXED-WIDTH
+   property (object_length 2 vs 1) instead. Both properties are
+   therefore load-bearing; the three shapes are pinned as negative
+   controls in =mod subset_boundary= so the suite can never be vacuous.
+2. THE LEAF TABLE'S "fieldless enum(K) → Tag<K>" DOES NOT SURVIVE INTO
+   THE SPEC TYPES. A Rust enum is outside the dual-oracle subset by (1),
+   so every deployed tag (algo, dest, txParamType) is declared =u8=,
+   which is what Compact's Tag already is on the wire. The circuit side
+   may still call it Tag<K> and range-check tag < K; the SPEC type says
+   u8.
+
+** Smaller findings
+- serde's blanket =[T; N]= impls stop at N = 32, and borsh's derived
+  BorshSchema drops const-generic parameters from the declaration (two
+  =ByteArray<N>= of different N in one container would collide on the
+  name and trip borsh's own redefinition assert). Hence
+  =ByteArray<N>=: BorshSerialize/Deserialize derived, Serialize written
+  as serde's own array impl verbatim (serialize_tuple(N) + N elements),
+  BorshSchema delegated to =[u8; N]=. Transparency is pinned by
+  =byte_array_wrapper_is_transparent= at N ∈ {1,2,5,20,31,32}, where
+  the native impls exist to compare against.
+- The deployed claim/completeWithdraw attested output is a =u8=, not a
+  bool — any byte is accepted today (the 0x02 hazard). The spec type
+  says u8 deliberately; stage 5 is what makes it a bool.
+- =Alignment::bin_len= of the shipping atom lists equals each spec
+  type's LEN, so the constants are the deployed shapes' own widths, not
+  our arithmetic: vault 404, swap 571.
+- Each record's FAB limb count is asserted against the shipping
+  =SignBidirectionalEvent::LIMBS= (33 and 43) per case, so a shape
+  change cannot slip past by moving both sides.
+
+** Case counts and timing
+Default =PROPTEST_CASES= is vault::gen's 48 (the suite reuses M10's
+generation strategies and config, so one knob scales both). 15 tests,
+1.15 s at the default. Elevated gate: PROPTEST_CASES=20000 → 20,000
+cases per property (records ×3 shapes/case, attested outputs ×4
+circuits/case, singleton Misc ×288-position tamper sweep, both
+artifacts simulated per case) in 244 s. =cargo test --workspace
+--release= fully green.
+
+** Seed of stage 8
+=LAYOUT_SNAPSHOT= is 73 frozen (type, path, kind, offset, width) rows
+walked out of =borsh::schema_container_of=, covering all twelve spec
+types — the generated offset tables stage 8 publishes, already
+machine-readable. Notable offsets for the TS side: vault record
+tx_params.to at 196, calldata.is_some at 232, words[0] at 239,
+caip2_id at 304, schemas at 336/370; swap record words[0..7] at
+239..463, schemas at 496/534.
+
+* ANSWERED from MPC source (2026-08-15, ~/mpc; supersedes the open
+questions below — kept for history)
+Ingest path: chain-signatures/chain-midnight/ (PR #1059) — full
+read-only Midnight integration; hand-written FAB atom cursor over
+midnight_contractState RPC via the real ledger crates. NO publish
+path: MidnightPublisher::publish_signature bails (cli/mod.rs:537-542)
+— nothing has ever settled on Midnight end-to-end.
+- Q1 MPC VERIFIES requestId == keccak256(record): YES —
+  resolve_verified_record (reader.rs:177-211) recomputes and DROPS on
+  mismatch ("rid-mismatch"). Stage 7 = coordinated MPC release. Their
+  binary_repr (request_id.rs:16-33) is ALREADY the flat-LE subset
+  (le_bytes ints, Maybe as bool+always-present payload, zero-filled
+  slots hashed) — independent confirmation of finding #1.
+- Q2 rollout: response FORMAT is keyed per source Chain, NOT per
+  contract (primitives/src/chain.rs:66-74: Midnight => Abi, with a
+  TODO saying it may move). But the response KEY is already
+  per-caller-address (sender_string = hex(caller addr) → epsilon), so
+  per-deployment format follows the same seam if ever needed. LIKELY
+  MOOT: since the publisher bails, no old vault ever settled — stage 5
+  is GREENFIELD, flip Midnight => Borsh unconditionally (confirm with
+  dmd that no Midnight deployment is live-settling).
+- Q3 0x02 emission: closed for "bool" schemas (every path launders
+  through a Rust bool; borsh bool writes 0|1; ABI writes canonical
+  word). Would reopen if a schema said bytes1. assert_boolean is
+  defence-in-depth. THREE LIVE HAZARDS FOUND INSTEAD:
+  (a) Chain::Midnight => Abi contradicts the vault's Bytes<1>/<5>/<8>
+  outputs — ABI bool = 32-byte word; nothing would settle. Latent
+  only because the publisher doesn't exist.
+  (b) Failure sentinel: Borsh mode emits 0xdeadbeef01 (matches
+  refund's Bytes<5>); ABI mode emits 36 bytes (never verifies).
+  (c) serialize_dynsol WIDTH BUG (respond_bidirectional.rs:215-252):
+  width taken from the DECODED value not the respond schema, and
+  alloy's size is BITS treated as bytes — uint256-decoded swap amount
+  → 32 bytes where the circuit demands 8 LE; in today's ABI mode the
+  type-check fails outright → every successful swap resolves as
+  failure/refund. write_u256/write_i256 have ZERO test coverage. A
+  real bug in their tree regardless of minocrab.
+- Q7 digest vs requestId paths: fully independent (different crates,
+  no shared code) — stages 5 and 7 ship in either order.
+- Q4 (version byte): their decoder fails closed on unknown shapes
+  (rejects leftover atoms) but silently ("record-undecodable") — a
+  format_version byte turns that into a named drop. Recommend yes.
+- Key derivation: path = hex::encode(record.path), full-width, never
+  trimmed; requester = the READ address (asserted == record.sender).
+  Confirms the Q4-userCommitment stranding hazard and the M10
+  structural argument. Replay: indexer = parent-block key diff, no
+  request-id dedup (SignetMapKey.count makes re-notify a fresh key) —
+  request-id uniqueness is protocol-load-bearing.
+- Security TODO in their tree: notification caller_address is
+  producer-supplied and unchecked vs the actual xcall initiator
+  (indexer.rs:344-353) — third-party triggering, not forgery.
+MPC-side work orders (documented per dmd's "change anything, document
+it"): STAGE 5 = implement MidnightPublisher (blocking, needed
+regardless of format) → flip Midnight=>Borsh (1 line) → fix
+serialize_dynsol width from the RESPOND schema (+tests) → add the
+kind byte. STAGE 7 = records.rs kind field; reader.rs constants
+22→21/3→2 + uint<u8> read; request_id.rs tail; convert.rs kind→
+(ABI types, response shape) lookup table (keeps chain-ethereum
+untouched); recapture fixtures per their fixtures/README.md
+discipline; format_version byte recommended.
+
 * Open questions for dmd (gate stages 5/7)
 1. Does the MPC verify requestId == keccak256(record)? (M10 UNSURE Q2;
    now decisive: yes → stage 7 needs a coordinated MPC release; no →
