@@ -704,6 +704,40 @@ in  recipient_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
 ",
     ),
+    // events, THROUGH THE BORSH API (M11 stage 6). Byte-identical ZKIR to the
+    // four above, so these entries must match them line for line.
+    (
+        "events_borsh::base",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events_borsh::emit_n(1)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events_borsh::emit_n(2)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "events_borsh::emit_n(4)",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
     (
         "hashing::control(32)",
         "\
@@ -1120,6 +1154,17 @@ wit Scalar<BLS12-381>
     ),
     (
         "xcontract_events::token_deposit",
+        "\
+in  amount: Scalar<BLS12-381>
+in  caller_hi: Scalar<BLS12-381>
+in  caller_lo: Scalar<BLS12-381>
+out event hash (hi): Scalar<BLS12-381>
+out event hash (lo): Scalar<BLS12-381>
+",
+    ),
+    // ...and its Borsh twin, likewise byte-identical.
+    (
+        "xcontract_events_borsh::token_deposit",
         "\
 in  amount: Scalar<BLS12-381>
 in  caller_hi: Scalar<BLS12-381>

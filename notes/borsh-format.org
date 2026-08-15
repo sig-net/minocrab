@@ -934,3 +934,76 @@ divergence ledger moved exactly the four settle entries to =Diverged=.
 ELEVATED GATE: =PROPTEST_CASES=20000= on the four settle properties = 20,000
 cases each × THREE artifacts × their own reference models and preimages —
 90.15 s of test time, 1 m 30.6 s wall (342% CPU), exit 0, 4 passed.
+
+* As built — stage 6 (2026-08-15)
+=events_borsh= and =xcontract_events_borsh=: twins of the two event
+contracts, BESIDE the pinned originals, which are untouched and still
+differential-green. The twins build the deployed payloads out of DECLARED
+=CircuitBorsh= types instead of hand-rolled =Serializer= pushes.
+
+** THE RESULT IS STRONGER THAN THE BRIEF ASKED FOR: byte-identical ZKIR
+The stage's target was byte-identity of the EMITTED PAYLOADS at simulator
+level, with zero row movement expected. What landed is byte-identical
+SERIALIZED ZKIR — instruction for instruction, all five circuits — so the
+twins are the same circuits: same rows (=events_borsh= 180/368/544/898,
+=xcontract_events_borsh::token_deposit= 10,940, equal to their originals'
+line for line in the row snapshot), same interface, same PI vector, same
+288-byte =Misc= transcript, and compactc's own differential covers them
+verbatim. Stage 0 proved the deployed payload IS canonical Borsh; stage 6
+proves THE API PRODUCES IT, on real event shapes, for nothing.
+Both statements are gated: =borsh_twins_are_byte_identical_to_the_originals=
+(ZKIR) and =borsh_twins_match_the_corpus= (the twins run against the CORPUS
+ARTIFACT on the preimage whose transcript carries the exact 288 bytes). The
+second is redundant while the first holds and is kept deliberately: the day a
+twin diverges, it is the one that still says whether the BYTES agree with the
+deployed artifact, which is what stage 6 is actually about.
+
+** ONE CONTORTION, and why it was worth it
+=B32::pad= emits the name literal's two constants HI FIRST (a struct literal
+evaluates =hi= before =lo=), while =Serializer::push_literal= chunks 32 bytes
+into =[0..31]= then =[31]= and so declares the LOW limb first. That one
+difference — two =copy= instructions in the other order, same count, same
+rows — was the only thing between "equivalent" and "identical". A local
+=event_name_literal= declares them low-first. Documented at the site: two
+constants in the other order would have cost nothing and proven less.
+
+** The declarations, and the padding rule at both settings
+- =DepositEvent { amount: u128, sequence: u64, recipient: [u8; 32] }= — 56
+  bytes, the payload both contracts log (shared: =xcontract_events_borsh=
+  imports it rather than re-declaring).
+- =events_borsh::MiscDepositEvent { name: [u8; 32], payload: DepositEvent }= —
+  88 bytes, written into the 288-byte envelope with a zero tail. THE SAME 288
+  BYTES as Compact's ={name, payload: Bytes<256>}=, because both pads are
+  contiguous: =32+56+200+0= and =32+56+232= lay the same bytes at the same
+  offsets. The nested form is the one a circuit can build in ONE packing pass;
+  the two-level form would materialise the intermediate =Bytes<256>= and
+  re-pack it, which costs rows for no byte.
+- =xcontract_events_borsh::Misc { name: [u8; 32], payload: [u8; 256] }= — LEN
+  EXACTLY 288, so that envelope has no pad at all: it is plain Borsh. This is
+  the two-level form, and it is right there because the payload IS
+  materialised — the token =persistentHash=es the whole 256 bytes (Borsh
+  bytes AND zero pad, as deployed) and returns the digest across a
+  cross-contract call. So the two halves of the padding rule are exercised on
+  one shape: =to_bytes::<256>= writes the pad, and the hash covers it.
+
+** constrain_canonical is NOT re-emitted, deliberately
+Every leaf in these payloads is already canonical where it is produced —
+=amount= and =recipient= by their argument constraints, =sequence= by being a
+=Bytes<8>= cell read, the name by being a constant. Calling
+=constrain_canonical= on the assembled value would emit those same
+constraints a second time and move rows, which is exactly what a "zero
+movement" stage must not do. =to_bytes='s stated precondition (leaves in
+range) is met by the constraints above, and the resulting bytes are pinned
+against compactc's own artifact. Written at the call site in both twins.
+
+** Not twinned: =depositViaVault=
+It serializes nothing. A twin would be a byte-for-byte copy of a circuit this
+stage has no opinion about and the harness would learn nothing from it. Said
+out loud in the module docs rather than left as an omission.
+
+** Gates
+=cargo test --workspace --release= green (53 test binaries). row_snapshot and
+interface_snapshot green with ONLY the five new twin entries, each carrying
+its original's numbers and its original's interface verbatim. All
+differential suites green, including the two the twins were added to — the
+originals' own tests are untouched and still pass.

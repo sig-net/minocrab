@@ -9,8 +9,9 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    attest, erc20_vault, erc20_vault_borsh, erc20_vault_opt, events, hashing, mint_tokens,
-    serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
+    attest, erc20_vault, erc20_vault_borsh, erc20_vault_opt, events, events_borsh, hashing,
+    mint_tokens, serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment,
+    xcontract_events, xcontract_events_borsh,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -75,6 +76,12 @@ pub fn circuits() -> Vec<Circuit> {
         c!("events::emit_n(1)", || events::emit_n(1)),
         c!("events::emit_n(2)", || events::emit_n(2)),
         c!("events::emit_n(4)", || events::emit_n(4)),
+        // events, THROUGH THE BORSH API (M11 stage 6): byte-identical ZKIR to
+        // the four above, so these rows must match them line for line.
+        c!("events_borsh::base", || events_borsh::base()),
+        c!("events_borsh::emit_n(1)", || events_borsh::emit_n(1)),
+        c!("events_borsh::emit_n(2)", || events_borsh::emit_n(2)),
+        c!("events_borsh::emit_n(4)", || events_borsh::emit_n(4)),
         c!("hashing::control(32)", || hashing::control(32)),
         c!("hashing::control(64)", || hashing::control(64)),
         c!("hashing::control(128)", || hashing::control(128)),
@@ -106,6 +113,9 @@ pub fn circuits() -> Vec<Circuit> {
         c!("xcall_with_payment::confirm_request", || xcall_with_payment::confirm_request()),
         c!("xcontract_events::deposit_via_vault", || xcontract_events::deposit_via_vault()),
         c!("xcontract_events::token_deposit", || xcontract_events::token_deposit()),
+        c!("xcontract_events_borsh::token_deposit", || {
+            xcontract_events_borsh::token_deposit()
+        }),
         c!("mint_tokens::mint_with_recipient_argument", || {
             mint_tokens::mint_with_recipient_argument()
         }),

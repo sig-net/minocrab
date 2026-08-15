@@ -417,3 +417,34 @@ fn deposit_via_vault_rejects_tampering() {
     }
     assert_eq!(disagreements, 0, "acceptance disagreement on tampering");
 }
+
+// ---- M11 stage 6: the Borsh twin ---------------------------------------------
+
+/// `xcontract_events_borsh::token_deposit` emits the same bytes as the
+/// original — as BYTE-IDENTICAL ZKIR — with both serializations built from
+/// declared types: the 256-byte payload (56 Borsh bytes then the zero pad,
+/// hashed whole) and the 288-byte `Misc` envelope (`LEN` exactly 288, so no
+/// pad at all). See `tests/events_differential.rs` for why identical ZKIR is
+/// the strongest form of the claim.
+#[test]
+fn borsh_twin_is_byte_identical_to_the_original() {
+    use minocrab_zkir::v3::to_zkir_string;
+    assert_eq!(
+        to_zkir_string(&xce::token_deposit().ir).expect("the original serializes"),
+        to_zkir_string(&minocrab_contracts::xcontract_events_borsh::token_deposit().ir)
+            .expect("the twin serializes"),
+        "the Borsh twin of token_deposit is not byte-identical to the pinned original"
+    );
+}
+
+/// ...and the twin against compactc's golden itself, on the preimage whose
+/// transcript carries the exact 288-byte `Misc` and the payload's
+/// `persistentHash`. Redundant while the ZKIR is identical, and kept for the
+/// day it is not.
+#[test]
+fn borsh_twin_matches_the_corpus() {
+    let theirs = corpus_zkir("token", "deposit");
+    let ours = minocrab_contracts::xcontract_events_borsh::token_deposit().ir;
+    let s = Scenario::new();
+    assert_call_compatible(&ours, &theirs, &s.preimage_token());
+}

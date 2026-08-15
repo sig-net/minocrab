@@ -63,6 +63,14 @@ reviewer should look at.
       `art == Art::Opt` to `!= Art::Compat` — that is a claim about which
       op stream the borsh artifact expects, and getting it backwards would
       have made the harness agree with a wrong model.
+- [ ] M11 stage 6 (event-payload twins): the twins are byte-identical ZKIR,
+      which is self-checking — what deserves eyes is the ARGUMENT that
+      `MiscDepositEvent { name, payload: DepositEvent }` padded to 288 is
+      the same byte string as Compact's `{name, payload: Bytes<256>}`
+      (both pads contiguous), and the decision NOT to re-emit
+      constrain_canonical on values whose leaves are already constrained —
+      check that every leaf really is (amount, recipient: argument
+      constraints; sequence: a Bytes<8> cell read; name: a constant).
 - [ ] M11 stage 5 (attested outputs → Borsh): THE FORMAT DECISIONS ARE NOW
       THE SPEC — check the kind assignments and the digest layouts in
       notes/borsh-format.org §"As built — stage 5" against the circuit

@@ -589,8 +589,23 @@ external value and no dependency on 1-7.
       +9, refund −9 (the shorter preimage pays). One documented departure:
       `tag < K` is not emitted, because each circuit asserts equality with
       its own kind, which is strictly stronger.)
-- [ ] 6. Event payload twins (events_borsh/xcontract_events_borsh)
+- [X] 6. Event payload twins (events_borsh/xcontract_events_borsh)
       beside the pinned originals.
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 6".
+      STRONGER THAN THE TARGET: the twins are byte-identical SERIALIZED
+      ZKIR to the originals, instruction for instruction, not merely equal
+      payloads — so same rows, same interface, same PI vector, and
+      compactc's differential covers them verbatim (asserted both ways:
+      ZKIR equality, and the twins run against the corpus artifact on the
+      preimage carrying the exact 288-byte Misc). Stage 0 proved the
+      deployed payload IS canonical Borsh; this proves the API PRODUCES
+      it, on real event shapes, for zero rows. Both settings of the
+      padding rule are exercised on one shape: a 56-byte DepositEvent
+      padded into Bytes<256> and hashed whole, and a Misc envelope whose
+      LEN is exactly 288 and so has no pad at all. constrain_canonical is
+      deliberately not re-emitted — every leaf is canonical where it is
+      produced, and re-emitting would move rows. depositViaVault is not
+      twinned: it serializes nothing.)
 - [ ] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
       swap k16→k15; re-run the 9M gate; refresh BENCHMARK.md.
 - [ ] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,

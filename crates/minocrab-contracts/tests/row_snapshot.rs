@@ -75,6 +75,15 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("events::emit_n(1)", 9, 368),
     ("events::emit_n(2)", 10, 544),
     ("events::emit_n(4)", 10, 898),
+    // events, THROUGH THE BORSH API (M11 stage 6). Byte-identical ZKIR to the
+    // four above — the twins build the same payload out of declared
+    // CircuitBorsh types instead of hand-rolled Serializer pushes — so these
+    // rows are the SAME NUMBERS, line for line, and a difference here means
+    // the API stopped being free. Asserted as ZKIR in events_differential.rs.
+    ("events_borsh::base", 8, 180),
+    ("events_borsh::emit_n(1)", 9, 368),
+    ("events_borsh::emit_n(2)", 10, 544),
+    ("events_borsh::emit_n(4)", 10, 898),
     // hashing / keccak experiments
     ("hashing::control(32)", 7, 118),
     ("hashing::control(64)", 8, 184),
@@ -110,6 +119,8 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     // xcontract-events
     ("xcontract_events::deposit_via_vault", 9, 345),
     ("xcontract_events::token_deposit", 14, 10940),
+    // ...and its Borsh twin, likewise byte-identical.
+    ("xcontract_events_borsh::token_deposit", 14, 10940),
     // mint-tokens
     ("mint_tokens::mint_with_recipient_argument", 14, 9663),
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
