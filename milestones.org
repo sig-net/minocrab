@@ -82,13 +82,20 @@ mock-compile accepts it, reference VM agrees with the simulator
       (crates/minocrab-sim/tests/property.rs; every accepted case re-validated
       by the reference VM. PROPTEST_CASES env scales to millions in CI.
       Disclosure typing proven by compile_fail doctest in minocrab.)
-- [ ] Differential testing against compactc: same contract in Compact and in
-      the eDSL, same inputs, same results. (Needs the first eDSL ports —
-      starts with M4; compactc's ledger-state ABI must be modeled first.)
+- [X] Differential testing against compactc: same contract in Compact and in
+      the eDSL, same inputs, same results.
       (ABI modeled: notes/ledger-abi.org — state layout, Impact/PI framing,
       FAB, v3 schema, worked example, and the equivalence criterion: same
       typed inputs/outputs + identical Preprocessed::pis/pi_skips on a
-      shared ProofPreimage; instruction streams free to differ.)
+      shared ProofPreimage; instruction streams free to differ.
+      TICKED 2026-08-15 (audit): the harness this bullet asked for has
+      existed and been green since M4-M6 — ELEVEN differential suites in
+      crates/minocrab-contracts/tests/*_differential.rs (attest, erc20_vault,
+      events, hashing, mint_tokens, serde_builtin, signet_contract,
+      test_caller, xcall, xcall_with_payment, xcontract_events), each
+      running our circuit against compactc's own artifact with
+      reject-agreement and tamper sweeps. It was simply never ticked as
+      later milestones consumed it.)
 - [X] User-friendly cost profiler (constraint/RAM/proving-cost proxies, broken
       down by code region).
       (Circuit::region() spans; minocrab_sim::profile() → per-region
@@ -109,6 +116,9 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       tiny.compact public_key vs corpus set.zkir, digests equal.
       REMAINING: the kernel.* circuits (mint/send/receive, blockTime*,
       unshieldedBalance*) — blocked on the ledger-op layer below.)
+      (AUDIT 2026-08-15: the remainder is now OWNED BY M17, which lists it
+      exhaustively against the pinned stdlib. This bullet stays open only
+      as M17's pointer; everything the corpus rewrites needed is done.)
 - [X] Prerequisite: ZKIR v3 emission + execution (sig-net contracts are v3).
       (minocrab-ir::v3::Builder3 — typed, zkir-v3 mock-compile accepts;
       minocrab::v3::Circuit3 — Wire3<T, Vis>, capability-trait ops, the
@@ -130,7 +140,15 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       all 4 circuits). REMAINING: Map rem, MerkleTree ops,
       guarded/conditional reads, and the ledger-declaration DSL on top.
       Priority per notes/signet-corpus.org (erc20-vault inventory).
-- [ ] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
+      (AUDIT 2026-08-15: three of those four are DONE — map_remove and
+      set_insert landed with M6's vault work (crates/minocrab-ledger/
+      src/lib.rs), guarded/conditional reads likewise (every _guarded op),
+      and the ledger-declaration DSL landed as M9 phase 7's
+      #[derive(Ledger)] + LedgerMap/LedgerCell/LedgerCounter. The ONLY
+      remainder is MerkleTree ops, now owned by M16 together with List,
+      HistoricMerkleTree and the rest of Set. This bullet stays open as
+      M16's pointer.)
+- [X] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
       a differential + property test. (ABI modeled: notes/ledger-abi.org.
       Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
       on a shared ProofPreimage; instruction shape free to differ.
@@ -170,7 +188,14 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       (minocrab-contracts::signet_contract). See notes/signet-corpus.org.
       With that, every M6-scope circuit is ported: REMAINING here is
       nothing — the benchmark harness is M6's own bullet.)
+      (TICKED 2026-08-15 (audit): the bullet's own text said REMAINING is
+      nothing as of the M6 session; it was never ticked. Since then the
+      artifact count went 1 → 4 (port, opt, borsh, modern) and every one
+      is differential- or spec-verified.)
 Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
+AUDIT 2026-08-15: two of three bullets tick; the two that stay open are
+pure pointers — the stdlib remainder is M17, the ledger-ADT remainder is
+M16. Nothing in M4's own scope is unaccounted for.
 
 * M5 — Cross-contract calling
 Pulled ahead of the benchmark (dmd, 2026-08-14): the erc20-vault runtime
