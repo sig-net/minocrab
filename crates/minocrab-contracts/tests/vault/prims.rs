@@ -120,7 +120,7 @@ pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
         // The 11-byte tag "vault:user:" fits one field limb; the Bytes<11>
         // atom emits exactly 11 bytes, so the preimage is 11 + 32 = 43 bytes
         // = one SHA-256 block.
-        Art::Opt | Art::Borsh => {
+        Art::Opt | Art::Borsh | Art::Modern => {
             let tag = Fr::from_le_bytes(erc20_vault::USER_PAD.as_bytes()).unwrap();
             let (sk_hi, sk_lo) = b32_slots(sk);
             fab_sha256(vec![atom(11), atom(32)], &[tag, sk_hi, sk_lo])
@@ -149,7 +149,7 @@ pub fn refund_commitment(art: Art, sk: &[u8; 32], request_id: &[u8; 32]) -> [u8;
             vec![atom(32), atom(32), atom(32)],
             &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
         ),
-        Art::Opt | Art::Borsh => {
+        Art::Opt | Art::Borsh | Art::Modern => {
             use midnight_transient_crypto::hash::transient_hash;
             let f = transient_hash(&[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo]);
             let mut le = f.as_le_bytes();
@@ -171,7 +171,7 @@ pub fn change_nonce(art: Art, mint_nonce: &[u8; 32]) -> [u8; 32] {
         // Rung (ii), avenue 5: the mint nonce with its top byte
         // complemented. Injective, fixed-point-free and total — the
         // uniqueness argument is in `erc20_vault_opt::change_nonce`.
-        Art::Opt | Art::Borsh => {
+        Art::Opt | Art::Borsh | Art::Modern => {
             let mut out = *mint_nonce;
             out[31] = 255 - out[31];
             out
@@ -257,7 +257,7 @@ pub fn vault_domain_sep(art: Art, erc20: &[u8; 20]) -> [u8; 32] {
         // `0x01 ‖ zeros ‖ erc20`, i.e. the slot pair [hi = 0x01, lo =
         // erc20]. Layout and safety argument in
         // `erc20_vault_opt::vault_token_domain_separator`.
-        Art::Opt | Art::Borsh => {
+        Art::Opt | Art::Borsh | Art::Modern => {
             let mut out = [0u8; 32];
             out[..20].copy_from_slice(erc20);
             out[31] = erc20_vault_opt::VAULT_TOKEN_TAG;

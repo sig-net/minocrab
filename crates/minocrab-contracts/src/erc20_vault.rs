@@ -105,10 +105,13 @@ label! {
 /// `LedgerMap<B32<Public>, VaultRecord>` knows the key's and the record's
 /// FAB atoms, so no call site writes an atom list, and a lookup hands back a
 /// `VaultRecord` rather than a `Vec` of limbs the caller must interpret.
-/// [`LedgerField`] is the honest spelling for the three fields this layer
-/// does not model yet — the two sealed `Bytes<32>` cells and the
-/// curve-point cell, whose operations stay explicit `minocrab_ledger` calls
-/// (`common::cell_read_point`, `SignetSigner::at_field`).
+/// [`LedgerField`] is the honest spelling for the one field this layer does
+/// not model — `signetSigner`, a sealed handle read through the interface
+/// crate's own `SignetSigner::at_field` rather than as a value. (The
+/// curve-point cell and the sealed `deployer` were `LedgerField`s until M9
+/// phase 8 gave `LedgerRepr` a `&mut Circuit3`; the direct ports still call
+/// `common::cell_read_point` and `common::assert_deployer_short`, which take
+/// a raw index, so the derived index constants below stay.)
 ///
 /// All three forks share this block: the vault's state layout is its wire
 /// contract, so `erc20_vault_opt` and `erc20_vault_borsh` IMPORT [`VAULT`]
@@ -121,15 +124,19 @@ pub struct Vault {
     pub signet_signer: LedgerField,
     /// `export ledger mpcResponseKey: Secp256k1Point` — a curve-point cell,
     /// whose limbs are produced by an `encode` INSTRUCTION rather than read
-    /// off the value (see [`common::cell_read_point`]).
-    pub mpc_response_key: LedgerField,
+    /// off the value. Typed since M9 phase 8: `LedgerRepr for Secp256k1Point`
+    /// owns both directions of that crossing, so the cell is an ordinary
+    /// [`LedgerCell`] and only the direct ports still spell the ops out
+    /// (`common::cell_read_point`).
+    pub mpc_response_key: LedgerCell<Secp256k1Point<Public>>,
     pub signet_request_nonce: LedgerCounter,
     pub initialized: LedgerCounter,
     pub vault_evm_address: LedgerCell<Bytes<20, Public>>,
     pub evm_chain_id: LedgerCell<Uint<64, Public>>,
     pub caip2_id: LedgerCell<B32<Public>>,
-    /// `sealed ledger deployer: Bytes<32>`.
-    pub deployer: LedgerField,
+    /// `sealed ledger deployer: Bytes<32>`. Sealed means write-once at
+    /// deployment; the READ is an ordinary cell read, so the slot is typed.
+    pub deployer: LedgerCell<B32<Public>>,
     pub refund_commitment: LedgerMap<B32<Public>, B32<Public>>,
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
     pub swap_event_map: LedgerMap<B32<Public>, SwapRecord>,

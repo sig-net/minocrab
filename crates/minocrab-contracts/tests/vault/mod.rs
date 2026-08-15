@@ -3,10 +3,12 @@
 //! Layering, outermost first:
 //!
 //! - [`artifact`] — WHICH vault is under test: the compat ports, the M10
-//!   optimized fork or the M11 Borsh fork (`Art`), the nine circuits by name,
-//!   and the two divergence ledgers saying which forked circuits are still
-//!   byte-identical to the artifact they were forked from (and so still
-//!   covered by what covers it).
+//!   optimized fork, the M11 Borsh fork or the M9 phase-8 showcase twin
+//!   (`Art`), the nine circuits by name, and the three divergence ledgers
+//!   saying what each forked circuit still inherits from the artifact it was
+//!   forked from. The first two ledgers are about byte-identity; the twin's
+//!   is about PI-equality, because the twin rewrites every circuit on
+//!   purpose and byte-identity is not what it claims.
 //! - [`spec`] — the symbolic effect algebra and the nine per-circuit total
 //!   functions `spec_initialize` .. `spec_complete_swap`. Artifact-agnostic:
 //!   it says WHICH commitment a circuit writes, never how that commitment is

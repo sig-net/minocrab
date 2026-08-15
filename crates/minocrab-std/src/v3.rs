@@ -340,6 +340,17 @@ impl<V: Vis3> B32<V> {
 }
 
 impl<V: Vis3> B32<V> {
+    /// Forget that both limbs are public — [`Wire3::private`] for the pair,
+    /// so a `Bytes<32>` crossing INTO a private computation (a hash preimage,
+    /// a comparison against a witnessed value) need not be taken apart and
+    /// rebuilt limb by limb at the call site. Zero instructions.
+    pub fn private(self) -> B32<Private> {
+        B32 {
+            hi: self.hi.private(),
+            lo: self.lo.private(),
+        }
+    }
+
     /// Constrain a `Bytes<32>` entering the circuit (8/248 bits).
     pub fn constrain_input(self, c: &mut Circuit3) {
         Prim::Uint { bits: 8 }.constraint().emit(c, self.hi);

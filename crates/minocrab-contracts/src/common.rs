@@ -1,6 +1,6 @@
 //! Shapes shared across the sig-net contracts.
 
-use minocrab::v3::{Circuit3, FieldT, Secp256k1PointT, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Operand, Secp256k1PointT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public, Visibility};
 use minocrab_ledger::{
     cell_read, cell_write_coin, counter_read, dup, emit, idx_field, kernel_claim_zswap_coin_receive,
@@ -462,15 +462,16 @@ fn assert_if_message<V: minocrab_std::v3::Vis3>(
 /// [`mint_shielded_token_to_key`] — see [`receive_shielded_with`]. A
 /// circuit that mints twice (completeSwap) or mints on either of two
 /// branches (refund) needs one read, not one per mint.
-pub fn mint_shielded_token_to_key_with(
+pub fn mint_shielded_token_to_key_with<G: Visibility>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
+    guard: impl Into<Operand<FieldT, G>>,
     me: B32<Public>,
     domain_sep: &B32<Public>,
     value: Wire3<FieldT, Public>,
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
+    let guard = guard.into();
     c.region("coin: mint", |c| {
         let color = token_type(c, domain_sep, &me);
 

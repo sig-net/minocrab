@@ -158,7 +158,7 @@ fn unread_argument_slots_are_exactly_the_declared_ones() {
     // 10 success) rather than one opaque byte, so every slot from mintNonce
     // on shifts by one — the only interface movement M11 stage 5 makes, and
     // the interface snapshot carries it too.
-    let slot = |art: Art, i: usize| if art == Art::Borsh && i >= 10 { i + 1 } else { i };
+    let slot = |art: Art, i: usize| if art.is_borsh_format() && i >= 10 { i + 1 } else { i };
     let mut other = [0u8; 32];
     other[..8].copy_from_slice(b"other-ct");
     let base = ClaimScenario::new();
@@ -894,7 +894,7 @@ fn a_non_boolean_success_byte_refunds_on_the_port_and_is_unprovable_in_borsh() {
                      true, the M10 finding has been fixed somewhere it should \
                      not have been"
                 ),
-                Art::Borsh => assert!(
+                Art::Borsh | Art::Modern => assert!(
                     !accepted,
                     "{art:?}: a non-boolean success byte {outcome:#04x} must be \
                      unprovable — that is what declaring the field a Borsh bool buys"

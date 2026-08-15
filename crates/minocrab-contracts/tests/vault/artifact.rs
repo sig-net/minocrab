@@ -1,4 +1,4 @@
-//! The three artifacts the harness gates, and where each forked circuit
+//! The four artifacts the harness gates, and where each forked circuit
 //! stands relative to the artifact it was forked from.
 //!
 //! M10 forks the vault (§Sequencing step 4): `erc20_vault` stays the
@@ -12,8 +12,8 @@
 //! is likewise selected by [`Art`] (see [`super::prims`]), so the set of
 //! non-`Compat` arms IS the deviation log.
 //!
-//! [`Fork`] is the other half, and there are now two ledgers because there
-//! are two forks:
+//! [`Fork`] is the other half, and there are now three ledgers because there
+//! are three forks:
 //!
 //! - [`fork_status`] — opt vs the direct port. An opt circuit that is still
 //!   byte-identical inherits the port's compactc PI-equality differential;
@@ -22,13 +22,19 @@
 //! - [`borsh_fork_status`] — borsh vs opt. Same discipline one link further
 //!   along the chain `compactc ≡ port ≡ opt ≡ borsh`, asserted both ways in
 //!   `tests/erc20_vault_borsh_fork.rs`.
+//! - [`modern_fork_status`] — the twin vs borsh, and the one ledger whose
+//!   entries are NOT about byte-identity ([`Twin`]): a rewritten circuit
+//!   inherits the borsh fork's coverage because it proves the same statement
+//!   (same typed I/O schema, same `pis`/`pi_skips` on the same preimage), and
+//!   `tests/erc20_vault_modern_fork.rs` asserts exactly that, in both
+//!   directions.
 //!
 //! Recording that per circuit — and asserting BOTH directions — is what makes
 //! the moment a circuit leaves its predecessor's coverage an explicit,
 //! reviewed edit rather than a silent one.
 
 use minocrab::v3::Compiled3;
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh, erc20_vault_opt};
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt};
 use minocrab_zkir::v3::IrSource;
 
 /// Which artifact a case runs against.
@@ -40,10 +46,14 @@ pub enum Art {
     Opt,
     /// `erc20_vault_borsh` — the M11 Borsh fork of the optimized vault.
     Borsh,
+    /// `erc20_vault_modern` — the M9 phase 8 SHOWCASE TWIN: the borsh fork's
+    /// contract, written through the whole M9 API. Same semantics, same wire
+    /// format, different instruction stream.
+    Modern,
 }
 
 /// Every artifact, for the suites that run every case once per artifact.
-pub const ARTS: [Art; 3] = [Art::Compat, Art::Opt, Art::Borsh];
+pub const ARTS: [Art; 4] = [Art::Compat, Art::Opt, Art::Borsh, Art::Modern];
 
 impl Art {
     pub fn name(self) -> &'static str {
@@ -51,7 +61,19 @@ impl Art {
             Art::Compat => "erc20_vault",
             Art::Opt => "erc20_vault_opt",
             Art::Borsh => "erc20_vault_borsh",
+            Art::Modern => "erc20_vault_modern",
         }
+    }
+
+    /// Does this artifact carry M11's Borsh wire format?
+    ///
+    /// The twin IMPORTS the borsh fork's response types rather than restating
+    /// them, so every place the harness asks "is this the Borsh format?" has
+    /// to ask THIS and not `== Art::Borsh` — the one hazard of adding a
+    /// fourth artifact that the compiler cannot point at (an `==` still
+    /// compiles; a non-exhaustive `match` does not).
+    pub fn is_borsh_format(self) -> bool {
+        matches!(self, Art::Borsh | Art::Modern)
     }
 }
 
@@ -127,6 +149,15 @@ impl Circuit {
             (Art::Borsh, Circuit::Refund) => erc20_vault_borsh::refund(),
             (Art::Borsh, Circuit::Swap) => erc20_vault_borsh::swap(),
             (Art::Borsh, Circuit::CompleteSwap) => erc20_vault_borsh::complete_swap(),
+            (Art::Modern, Circuit::Initialize) => erc20_vault_modern::initialize(),
+            (Art::Modern, Circuit::Deposit) => erc20_vault_modern::deposit(),
+            (Art::Modern, Circuit::Claim) => erc20_vault_modern::claim(),
+            (Art::Modern, Circuit::ApproveRouter) => erc20_vault_modern::approve_router(),
+            (Art::Modern, Circuit::Withdraw) => erc20_vault_modern::withdraw(),
+            (Art::Modern, Circuit::CompleteWithdraw) => erc20_vault_modern::complete_withdraw(),
+            (Art::Modern, Circuit::Refund) => erc20_vault_modern::refund(),
+            (Art::Modern, Circuit::Swap) => erc20_vault_modern::swap(),
+            (Art::Modern, Circuit::CompleteSwap) => erc20_vault_modern::complete_swap(),
         }
     }
 
@@ -199,6 +230,46 @@ pub fn fork_status(circuit: Circuit) -> Fork {
             "kernel.self() threaded; changeNonce derived; separator encoded; refund commitment Poseidon",
         ),
     }
+}
+
+/// THE TWIN'S LEDGER — `erc20_vault_modern` against `erc20_vault_borsh`, and
+/// the third link that has to be declared rather than discovered.
+///
+/// It records something the two earlier ledgers never had to: a circuit that
+/// is NOT byte-identical to its predecessor and still inherits everything the
+/// predecessor has. That is the phase-8 claim, and [`Twin::PiEqual`] is where
+/// it is written down per circuit — asserted in BOTH directions in
+/// `tests/erc20_vault_modern_fork.rs`, which is stricter than the earlier
+/// fork tests: a `PiEqual` entry must really differ in bytes AND really agree
+/// on `pis`/`pi_skips` for the SAME `ProofPreimage`.
+pub fn modern_fork_status(circuit: Circuit) -> Twin {
+    /// Every circuit is rewritten the same way, so the reason is one string.
+    const MODERN: &str = "the M9 API's spelling: guard-free ledger methods (the Impact guard is \
+                          the immediate 1, not a named wire), typed cells and a typed \
+                          Secp256k1Point cell, predicates for the boolean and in-branch checks, \
+                          literal operands where a constant was named only to be compared";
+    let _ = circuit;
+    Twin::PiEqual { why: MODERN }
+}
+
+/// Where a rewritten circuit stands relative to the artifact it was rewritten
+/// from, for a fork whose point is NOT byte-identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Twin {
+    /// Byte-identical: the rewrite did not reach this circuit.
+    Identical,
+    /// The stream differs, and the STATEMENT does not: same typed I/O schema,
+    /// and the same `pis`/`pi_skips` on the same preimage. That is the M3/M4
+    /// equivalence criterion (notes/ledger-abi.org §6), which is exactly what
+    /// leaves the instruction stream free — so the predecessor's coverage
+    /// (the spec harness, the sweeps, and transitively whatever covers IT)
+    /// applies unchanged.
+    PiEqual { why: &'static str },
+    /// The PIs differ too, so nothing transfers: only the spec harness run
+    /// against this artifact's own reference model covers the circuit.
+    /// Unused today, and the fork test asserts that it is unused rather than
+    /// assumed — a rewrite that moved a PI would have to say so here.
+    SpecAnchored { why: &'static str },
 }
 
 /// THE BORSH DIVERGENCE LEDGER — `erc20_vault_borsh` against

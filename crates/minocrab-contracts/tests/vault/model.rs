@@ -773,7 +773,7 @@ impl ClaimScenario {
     pub fn attested_output_bytes(&self) -> Vec<u8> {
         match self.art() {
             Art::Compat | Art::Opt => vec![self.serialized_output],
-            Art::Borsh => vec![self.response_kind, self.serialized_output],
+            Art::Borsh | Art::Modern => vec![self.response_kind, self.serialized_output],
         }
     }
 
@@ -2004,7 +2004,7 @@ impl CompleteWithdrawScenario {
     pub fn attested_output_bytes(&self) -> Vec<u8> {
         match self.art() {
             Art::Compat | Art::Opt => vec![self.outcome],
-            Art::Borsh => vec![self.response_kind, self.outcome],
+            Art::Borsh | Art::Modern => vec![self.response_kind, self.outcome],
         }
     }
 
@@ -2835,7 +2835,7 @@ impl CompleteSwapScenario {
     pub fn attested_output_bytes(&self) -> Vec<u8> {
         let mut bytes = match self.art() {
             Art::Compat | Art::Opt => vec![],
-            Art::Borsh => vec![self.response_kind],
+            Art::Borsh | Art::Modern => vec![self.response_kind],
         };
         bytes.extend(self.amount_in.to_le_bytes());
         bytes
@@ -2846,7 +2846,7 @@ impl CompleteSwapScenario {
     pub fn attested_output_slots(&self) -> Vec<Fr> {
         let mut slots = match self.art() {
             Art::Compat | Art::Opt => vec![],
-            Art::Borsh => vec![Fr::from(u64::from(self.response_kind))],
+            Art::Borsh | Art::Modern => vec![Fr::from(u64::from(self.response_kind))],
         };
         slots.push(Fr::from(self.amount_in));
         slots
@@ -3240,7 +3240,7 @@ impl RefundScenario {
     pub fn attested_output_bytes(&self) -> Vec<u8> {
         match self.art() {
             Art::Compat | Art::Opt => self.serialized_output.to_vec(),
-            Art::Borsh => vec![self.response_kind],
+            Art::Borsh | Art::Modern => vec![self.response_kind],
         }
     }
 
@@ -3251,7 +3251,7 @@ impl RefundScenario {
             Art::Compat | Art::Opt => {
                 vec![Fr::from_le_bytes(&self.serialized_output).unwrap()]
             }
-            Art::Borsh => vec![Fr::from(u64::from(self.response_kind))],
+            Art::Borsh | Art::Modern => vec![Fr::from(u64::from(self.response_kind))],
         }
     }
 

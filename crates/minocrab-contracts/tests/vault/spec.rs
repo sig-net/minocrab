@@ -665,7 +665,7 @@ pub fn spec_claim(s: &ClaimScenario) -> Outcome {
     }
     // M11 stage 5 (Art::Borsh): the response carries its kind, and an
     // attestation for another settle circuit does not settle a claim.
-    if s.art() == Art::Borsh
+    if s.art().is_borsh_format()
         && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_CLAIM)
     {
         return Outcome::Reject(GuardId::WrongResponseKind);
@@ -740,7 +740,7 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     // minting the surrendered value on a withdrawal that succeeded. Both
     // checks precede the pending-marker gate because both are argument
     // constraints, which a circuit emits before it reads any state.
-    if s.art() == Art::Borsh {
+    if s.art().is_borsh_format() {
         if s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_WITHDRAW) {
             return Outcome::Reject(GuardId::WrongResponseKind);
         }
@@ -800,7 +800,7 @@ pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
     // M11 stage 5 (Art::Borsh): the attested amountIn is a Borsh `u64` in
     // both worlds (stage 0 proved the deployed 8 bytes already are one); what
     // is added is the kind byte in front of it.
-    if s.art() == Art::Borsh && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_SWAP) {
+    if s.art().is_borsh_format() && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_SWAP) {
         return Outcome::Reject(GuardId::WrongResponseKind);
     }
     if !s.pending {
@@ -899,12 +899,12 @@ pub fn spec_refund(s: &RefundScenario) -> Outcome {
     // response type.
     let is_failure_response = match s.art() {
         Art::Compat | Art::Opt => s.serialized_output == v::MPC_FAILURE_OUTPUT,
-        Art::Borsh => s.response_kind == kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
+        Art::Borsh | Art::Modern => s.response_kind == kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
     };
     if !is_failure_response {
         return Outcome::Reject(match s.art() {
             Art::Compat | Art::Opt => GuardId::NotTheMpcFailureOutput,
-            Art::Borsh => GuardId::WrongResponseKind,
+            Art::Borsh | Art::Modern => GuardId::WrongResponseKind,
         });
     }
     let rid = s.request_id();

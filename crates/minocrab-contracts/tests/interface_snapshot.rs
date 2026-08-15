@@ -576,6 +576,189 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
+    // erc20-vault, THE SHOWCASE TWIN (M9 phase 8). The rewrite is a change
+    // of SPELLING, so this block must match the borsh block above entry for
+    // entry — same arguments, same order, same types, same witness reads.
+    // That is half of the equivalence criterion the twin is gated on (the
+    // other half, PI equality on a shared preimage, is
+    // `tests/erc20_vault_modern_fork.rs`), and it is why a diff HERE would be
+    // the phase failing rather than the phase's deliverable.
+    (
+        "erc20_vault_modern::initialize",
+        "\
+in  vaultEvm: Scalar<BLS12-381>
+in  swapRouter: Scalar<BLS12-381>
+in  chainId: Scalar<BLS12-381>
+in  chainCaip2Id_hi: Scalar<BLS12-381>
+in  chainCaip2Id_lo: Scalar<BLS12-381>
+in  responseKey: Point<Secp256k1>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::deposit",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  gasLimit: Scalar<BLS12-381>
+in  maxFeePerGas: Scalar<BLS12-381>
+in  maxPriorityFeePerGas: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  depositRequest_erc20Address: Scalar<BLS12-381>
+in  depositRequest_amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::claim",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_success: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+in  recipient_is_some: Scalar<BLS12-381>
+in  recipient_is_left: Scalar<BLS12-381>
+in  recipient_left_hi: Scalar<BLS12-381>
+in  recipient_left_lo: Scalar<BLS12-381>
+in  recipient_right_hi: Scalar<BLS12-381>
+in  recipient_right_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+",
+    ),
+    (
+        "erc20_vault_modern::approve_router",
+        "\
+in  erc20Address: Scalar<BLS12-381>
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::withdraw",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  withdrawRequest_erc20Address: Scalar<BLS12-381>
+in  withdrawRequest_amount: Scalar<BLS12-381>
+in  withdrawRequest_destEvmAddress: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::complete_withdraw",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_success: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381> (guarded)
+",
+    ),
+    (
+        "erc20_vault_modern::refund",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::swap",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  swapRequest_tokenIn: Scalar<BLS12-381>
+in  swapRequest_tokenOut: Scalar<BLS12-381>
+in  swapRequest_fee: Scalar<BLS12-381>
+in  swapRequest_amountOut: Scalar<BLS12-381>
+in  swapRequest_amountInMaximum: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault_modern::complete_swap",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_amountIn: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
     (
         "signet_contract::sign_bidirectional",
         "\

@@ -21,7 +21,6 @@ use support::circuits;
 /// `(circuit, k, rows)` — frozen at "M7: freeze per-circuit (k, rows) in a
 /// row-snapshot guard test".
 const SNAPSHOT: &[(&str, u8, usize)] = &[
-    // erc20-vault (the nine benchmark circuits of BENCHMARK.md)
     ("erc20_vault::initialize", 13, 4272),
     ("erc20_vault::deposit", 15, 17502),
     ("erc20_vault::claim", 16, 47660),
@@ -31,9 +30,6 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault::refund", 16, 65231),
     ("erc20_vault::swap", 16, 51485),
     ("erc20_vault::complete_swap", 16, 65071),
-    // erc20-vault, OPTIMIZED (M10 step 4 onwards). Frozen identical to the
-    // ports at the forking commit; each later rung moves ONLY these rows, and
-    // its commit message states the before → after per circuit.
     ("erc20_vault_opt::initialize", 13, 2412),
     ("erc20_vault_opt::deposit", 14, 15632),
     ("erc20_vault_opt::claim", 16, 42051),
@@ -43,15 +39,6 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault_opt::refund", 16, 40806),
     ("erc20_vault_opt::swap", 16, 32819),
     ("erc20_vault_opt::complete_swap", 16, 50254),
-    // erc20-vault, BORSH (M11 stage 4 onwards). Forked byte-identical to the
-    // optimized block above; each M11 stage moves ONLY these rows, and its
-    // commit message states the before → after per circuit. Stage 5 (attested
-    // outputs → the kind-tagged Borsh subset) moved the four settle circuits:
-    // claim 42,051 → 42,057 (+6), completeWithdraw 40,157 → 40,163 (+6),
-    // refund 40,806 → 40,797 (-9, the 5-byte sentinel became a 1-byte kind),
-    // completeSwap 50,254 → 50,263 (+9). No k boundary moves. The other five
-    // are still identical to their optimized twins, which
-    // `tests/erc20_vault_borsh_fork.rs` asserts as ZKIR.
     ("erc20_vault_borsh::initialize", 13, 2412),
     ("erc20_vault_borsh::deposit", 14, 15632),
     ("erc20_vault_borsh::claim", 16, 42057),
@@ -61,30 +48,30 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault_borsh::refund", 16, 40797),
     ("erc20_vault_borsh::swap", 16, 32819),
     ("erc20_vault_borsh::complete_swap", 16, 50263),
-    // signet-contract singletons (the other three benchmark circuits)
+    ("erc20_vault_modern::initialize", 13, 2412),
+    ("erc20_vault_modern::deposit", 14, 15632),
+    ("erc20_vault_modern::claim", 16, 42057),
+    ("erc20_vault_modern::approve_router", 14, 13332),
+    ("erc20_vault_modern::withdraw", 15, 23707),
+    ("erc20_vault_modern::complete_withdraw", 16, 40163),
+    ("erc20_vault_modern::refund", 16, 40797),
+    ("erc20_vault_modern::swap", 16, 32819),
+    ("erc20_vault_modern::complete_swap", 16, 50263),
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),
     ("signet_contract::respond_bidirectional", 10, 1004),
-    // attest
     ("attest::map_only", 8, 135),
     ("attest::verify_only", 15, 25276),
     ("attest::sha_verify", 16, 48988),
     ("attest::keccak_verify", 16, 51766),
-    // events
     ("events::base", 8, 180),
     ("events::emit_n(1)", 9, 368),
     ("events::emit_n(2)", 10, 544),
     ("events::emit_n(4)", 10, 898),
-    // events, THROUGH THE BORSH API (M11 stage 6). Byte-identical ZKIR to the
-    // four above — the twins build the same payload out of declared
-    // CircuitBorsh types instead of hand-rolled Serializer pushes — so these
-    // rows are the SAME NUMBERS, line for line, and a difference here means
-    // the API stopped being free. Asserted as ZKIR in events_differential.rs.
     ("events_borsh::base", 8, 180),
     ("events_borsh::emit_n(1)", 9, 368),
     ("events_borsh::emit_n(2)", 10, 544),
     ("events_borsh::emit_n(4)", 10, 898),
-    // hashing / keccak experiments
     ("hashing::control(32)", 7, 118),
     ("hashing::control(64)", 8, 184),
     ("hashing::control(128)", 9, 336),
@@ -102,7 +89,6 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("hashing::transient(256)", 10, 758),
     ("hashing::transient(1024)", 12, 2869),
     ("hashing::persistent_vec8", 14, 10147),
-    // xcall
     ("xcall::local_base", 8, 180),
     ("xcall::call_once", 9, 297),
     ("xcall::call_twice", 9, 442),
@@ -110,23 +96,17 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("xcall::target_deposit", 8, 180),
     ("xcall::target_deposit_emit", 9, 368),
     ("xcall::target_deposit_big", 10, 640),
-    // xcall-with-payment
     ("xcall_with_payment::call_once", 9, 400),
     ("xcall_with_payment::request", 9, 255),
     ("xcall_with_payment::notify", 14, 11585),
     ("xcall_with_payment::pay", 14, 11687),
     ("xcall_with_payment::confirm_request", 8, 125),
-    // xcontract-events
     ("xcontract_events::deposit_via_vault", 9, 345),
     ("xcontract_events::token_deposit", 14, 10940),
-    // ...and its Borsh twin, likewise byte-identical.
     ("xcontract_events_borsh::token_deposit", 14, 10940),
-    // mint-tokens
     ("mint_tokens::mint_with_recipient_argument", 14, 9663),
     ("mint_tokens::mint_with_recipient_own_public_key", 14, 9807),
-    // serde-builtin
     ("serde_builtin::check_roundtrip", 15, 18408),
-    // test-caller
     ("test_caller::initialise", 13, 3984),
 ];
 
