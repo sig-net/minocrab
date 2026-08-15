@@ -721,8 +721,9 @@ changed nothing else.
 ** What was copied and what was imported
 Copied: the nine circuit functions and the private helpers they call —
 INCLUDING M10's (=vault_token_domain_separator=, =change_nonce=,
-=withdraw_refund_commitment=, =settle_args=, =verify_attestation=,
-=refund_surrendered_value=), which is what makes this a fork of the OPTIMIZED
+=withdraw_refund_commitment=, =settle_args= (retired at M9 phase 5),
+=verify_attestation=, =refund_surrendered_value=), which is what makes this a
+fork of the OPTIMIZED
 vault rather than of the port. Imported, exactly as at M10's fork:
 =crate::common=, =crate::signet=, and the protocol constants + record types
 from =crate::erc20_vault= — the vault's wire contract and Compact's standard
@@ -828,6 +829,11 @@ needed and is not agreed out of band any more.
 =settle_args::<T: CircuitBorshArg>= declares the output through the derived
 =CircuitArg= impl at =ArgPath::root("serializedOutput")= and constrains it
 LAST, exactly where the port's =assert_bits= on the opaque output sat.
+(M9 phase 5 retired the =settle_args= declarer in all three vault artifacts:
+each settle circuit is now a =#[circuit]= whose parameters ARE the Compact
+list, so the same derived impl declares the output — under the same
+=serializedOutput= root — and the constraint moves from last to parameter
+order. Same slots, same labels, same instructions, three of them reordered.)
 =verify_attestation::<T: CircuitBorsh<Private>>= hands the value to the new
 =signet::verify_respond_bidirectional_event_borsh=, whose digest is built by
 =Limbs= — =request_id.push_limbs= then =output.push_limbs= — so the preimage

@@ -179,10 +179,32 @@ reviewer should look at.
       weigh — respond/respondBidirectional keep hand-declared arguments
       (converting them would rename inputs and move interface_snapshot),
       so `tests/contract_matches_its_interface.rs` is the ONLY link between
-      those nine `c.arg` calls and SignatureRespondedEvent. Check that the
+      those nine `c.arg` calls and SignatureRespondedEvent. (M9 phase 5
+      narrowed this: the nine slots are now the interface crate's own
+      AffinePoint/RequestId/B32/Uint<8>, one level flatter than its
+      `{ signature: { .. } }` wrapper — so what the test alone still
+      carries is the FLATTENING, not the leaves.) Check that the
       test really covers what the type would have: it compares input count,
       constraint prefix and output count, but NOT the FAB alignment (a
       circuit's IrSource does not carry one), so an argument split into the
       same slots under a different atom shape would pass. Also check
       `check_ir`'s reuse of `compare_zkir`, which was extracted from
       `Artifact::check_zkir` in the same commit.
+- [ ] M9 phase 5 (6ad46e4 + b77f178, the remaining 52 circuits): two
+      things to weigh. (1) The NEW CORE LEAF, minocrab_std::v3::
+      Secp256k1Point: its slot is not a field wire, so CircuitArg::
+      push_slots hands back nothing and the provided constrain filters
+      Prim::Point out before zipping prims against slots — check that
+      the filter cannot silently swallow a MISSING native slot (today
+      an impl that forgot one would still trip the length assert, since
+      only Point positions are removed), and check the five-atom
+      alignment against notes/ledger-abi.org §3 now that
+      common::secp256k1_point_atoms delegates to it. (2) The SETTLE
+      CIRCUITS' constraint order moved (serializedOutput now constrained
+      in parameter order, not last) in all three vault artifacts —
+      argued harmless because the instruction multiset and the inputs
+      are identical (checked by a full 78-circuit ZKIR dump) and the
+      constraints are on distinct argument wires; worth a second pair
+      of eyes on the "rows are position-independent" half of that. Also
+      skim the ONE name-column change (xcall_with_payment::callOnce's
+      coin_ prefix) and the unported-family argument in hashing.rs.
