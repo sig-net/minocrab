@@ -105,7 +105,7 @@ pub mod __private {
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
 /// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
-pub trait Vis3: Visibility + Meet<Self, Out = Self> + Sized + Copy {
+pub trait Vis3: Visibility + Meet<Self, Out = Self> + Meet<Public, Out = Self> + Sized + Copy {
     fn from_public<T: IrTy>(w: Wire3<T, Public>) -> Wire3<T, Self>;
 }
 

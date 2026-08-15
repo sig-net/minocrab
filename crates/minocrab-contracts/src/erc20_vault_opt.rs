@@ -138,7 +138,6 @@ pub fn initialize(
     let response_key = response_key.point();
 
     let one = c.constant(1u64);
-    let zero = c.constant(0u64);
 
     // assert(initialized == 0, "Already initialized")
     c.region("initialized gate", |c| {
@@ -152,11 +151,11 @@ pub fn initialize(
     });
 
     // assert(chainId > 0, "Chain ID must be positive")
-    let positive = c.less_than(zero, chain_id, 64);
+    let positive = c.less_than(0u64, chain_id, 64);
     c.assert(positive);
 
     // assert(swapRouter as Field != 0, "Router cannot be zero")
-    let router_zero = c.test_eq(swap_router, zero);
+    let router_zero = c.test_eq(swap_router, 0u64);
     let router_nonzero = c.not(router_zero);
     c.assert(router_nonzero);
 
@@ -199,8 +198,7 @@ pub fn initialize(
 /// initialized`.
 fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
     let init = counter_read(c, one, INITIALIZED);
-    let zero = c.constant(0u64);
-    let positive = c.less_than(zero, init, 64);
+    let positive = c.less_than(0u64, init, 64);
     c.assert(positive);
 }
 
@@ -266,8 +264,7 @@ pub fn deposit(
         c.assert(amount_positive);
 
         // assert(amount <= u64::MAX) — claims mint via a Uint<64> API.
-        let u64_max = c.constant(u64::MAX);
-        let too_big = c.less_than(u64_max.private(), amount, 128);
+        let too_big = c.less_than(u64::MAX, amount, 128);
         let fits = c.not(too_big);
         c.assert(fits);
 
@@ -559,8 +556,7 @@ pub fn withdraw(
         c.assert(erc20_nonzero);
         let amount_positive = c.less_than(zero.private(), amount, 128);
         c.assert(amount_positive);
-        let u64_max = c.constant(u64::MAX);
-        let too_big = c.less_than(u64_max.private(), amount, 128);
+        let too_big = c.less_than(u64::MAX, amount, 128);
         let fits = c.not(too_big);
         c.assert(fits);
     });
@@ -753,11 +749,10 @@ pub fn swap(
         c.assert(out_positive);
         let in_positive = c.less_than(zero.private(), amount_in_max, 128);
         c.assert(in_positive);
-        let u64_max = c.constant(u64::MAX);
-        let out_big = c.less_than(u64_max.private(), amount_out, 128);
+        let out_big = c.less_than(u64::MAX, amount_out, 128);
         let out_fits = c.not(out_big);
         c.assert(out_fits);
-        let in_big = c.less_than(u64_max.private(), amount_in_max, 128);
+        let in_big = c.less_than(u64::MAX, amount_in_max, 128);
         let in_fits = c.not(in_big);
         c.assert(in_fits);
     });
@@ -1371,10 +1366,9 @@ pub fn complete_swap(
 ///    fixed-point-free map provides just as well.
 fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
     c.region("change nonce", |c| {
-        let max_byte = c.constant(255u64);
         let neg_hi = c.neg(mint_nonce.hi);
         B32 {
-            hi: c.add(max_byte, neg_hi),
+            hi: c.add(255u64, neg_hi),
             lo: mint_nonce.lo,
         }
     })
@@ -1456,8 +1450,10 @@ pub fn refund(
 
     let request_id = verify_attestation::<5>(c, one, &args, &output);
     // assert(serializedOutput == 0xdeadbeef01, "Not the MPC failure output")
-    let failure = c.constant(minocrab::Fr::from_le_bytes(&MPC_FAILURE_OUTPUT).unwrap());
-    let is_failure = c.test_eq(output[0], failure.private());
+    let is_failure = c.test_eq(
+        output[0],
+        minocrab::Fr::from_le_bytes(&MPC_FAILURE_OUTPUT).unwrap(),
+    );
     c.assert(is_failure);
 
     // Route on which pending marker holds the id (public branch).
@@ -1628,7 +1624,6 @@ pub fn claim(
     let rec_right = recipient.value.right;
 
     let one = c.constant(1u64);
-    let zero = c.constant(0u64);
 
     // const disclosedRequestId = disclose(requestId)
     let request_id = request_id.disclose_as::<ClaimRequestId>(c);
@@ -1711,8 +1706,8 @@ pub fn claim(
             lo: c.cond_select(rec_is_some, rec_left.lo, own_pk.lo),
         };
         let right = B32 {
-            hi: c.cond_select(rec_is_some, rec_right.hi, zero),
-            lo: c.cond_select(rec_is_some, rec_right.lo, zero),
+            hi: c.cond_select(rec_is_some, rec_right.hi, 0u64),
+            lo: c.cond_select(rec_is_some, rec_right.lo, 0u64),
         };
         CoinRecipient { is_left, left, right }
     });

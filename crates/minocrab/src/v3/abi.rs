@@ -24,7 +24,7 @@
 //! itself, and [`LimbConstraint::emit`] the lowering. Nothing above this
 //! module decides what a slot's constraint is.
 
-use crate::{AlignmentAtom, Fr, Public, Visibility};
+use crate::{AlignmentAtom, Fr, Meet, Public, Visibility};
 
 use super::{Circuit3, FieldT, Wire3};
 
@@ -119,17 +119,20 @@ pub enum LimbConstraint {
 impl LimbConstraint {
     /// Emit this constraint on `w`, in the shape compactc emits it.
     ///
-    /// The immediates are inline operands ([`Circuit3::assert_eq_imm`] /
-    /// [`Circuit3::less_than_imm`]), not named constants, so the
-    /// instruction stream matches compactc's slot for slot.
-    pub fn emit<V: Visibility>(self, c: &mut Circuit3, w: Wire3<FieldT, V>) {
+    /// The bounds are INLINE IMMEDIATES ([`Operand`]), not named constants,
+    /// so the instruction stream matches compactc's slot for slot.
+    pub fn emit<V: Visibility + Meet<Public, Out = V>>(
+        self,
+        c: &mut Circuit3,
+        w: Wire3<FieldT, V>,
+    ) {
         match self {
             LimbConstraint::None => {}
-            LimbConstraint::Zero => c.assert_eq_imm(w, 0u64),
+            LimbConstraint::Zero => c.assert_eq(w, 0u64),
             LimbConstraint::Boolean => c.assert_boolean(w),
             LimbConstraint::Bits(bits) => c.assert_bits(w, bits),
             LimbConstraint::Bounded { bound, bits } => {
-                let in_range = c.less_than_imm(w, fr_from_u128(bound), bits);
+                let in_range = c.less_than(w, fr_from_u128(bound), bits);
                 c.assert(in_range);
             }
         }

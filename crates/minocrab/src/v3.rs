@@ -207,6 +207,78 @@ pub enum ImpactElem {
     Wire(Wire3<FieldT, Public>),
 }
 
+// --- operands -------------------------------------------------------------------
+
+/// What an instruction takes: a wire, or an INLINE IMMEDIATE.
+///
+/// v3 has no `LoadImm` — an immediate is an operand of the instruction that
+/// uses it (`{"op": "less_than", "a": {"immediate": "0"}, …}`), so a native
+/// Rust value in an operand position costs NOTHING. Naming one first
+/// (`let zero = c.constant(0u64); c.less_than(zero, x, 64)`) emits a `Copy`
+/// whose only purpose is the name.
+///
+/// The type parameters are the ones a wire carries, so an operand cannot
+/// launder either of them:
+/// - `T` is the ZKIR value type. An immediate is a native field element, so
+///   only `Operand<FieldT, _>` has literal conversions — `c.test_eq(point,
+///   1u64)` does not compile, and never reaches [`Builder3`]'s type check.
+/// - `V` is the visibility, and immediates are [`Public`] because a
+///   constant is part of the circuit. Mixing follows the usual [`Meet`]: a
+///   comparison of a private wire against a literal is private, since
+///   `Private ⊓ Public = Private`.
+///
+/// Construction is `From`, so call sites write the value itself: a wire, a
+/// `u64`, a `bool`, or an [`Fr`] for a wider constant.
+pub struct Operand<T: IrTy, V: Visibility> {
+    arg: Arg,
+    _marker: PhantomData<(T, V)>,
+}
+
+impl<T: IrTy, V: Visibility> Clone for Operand<T, V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T: IrTy, V: Visibility> Copy for Operand<T, V> {}
+
+impl<T: IrTy, V: Visibility> Operand<T, V> {
+    fn arg(self) -> Arg {
+        self.arg
+    }
+}
+
+impl<T: IrTy, V: Visibility> From<Wire3<T, V>> for Operand<T, V> {
+    fn from(w: Wire3<T, V>) -> Self {
+        Operand {
+            arg: Arg::Val(w.val),
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// Immediates: native only, and [`Public`] — the visibility an inline
+/// constant has.
+macro_rules! immediate_operand {
+    ($($ty:ty => |$v:ident| $conv:expr),* $(,)?) => {$(
+        impl From<$ty> for Operand<FieldT, Public> {
+            fn from($v: $ty) -> Self {
+                Operand {
+                    arg: Arg::Imm($conv),
+                    _marker: PhantomData,
+                }
+            }
+        }
+    )*};
+}
+
+immediate_operand! {
+    Fr => |v| v,
+    u64 => |v| Fr::from(v),
+    u32 => |v| Fr::from(u64::from(v)),
+    u8 => |v| Fr::from(u64::from(v)),
+    bool => |v| Fr::from(u64::from(v)),
+}
+
 impl<V: Visibility> Clone for AnyWire3<V> {
     fn clone(&self) -> Self {
         *self
@@ -335,78 +407,93 @@ impl Circuit3 {
         Wire3::new(self.b.public_input(T::ir_type(), Some(Arg::Val(guard.val))))
     }
 
-    /// A native-field constant (constants are part of the circuit, hence
-    /// public). v3 immediates are inline operands; this names one via a
-    /// free `Copy`.
+    /// A native-field constant, NAMED: `Copy imm` into a reusable wire.
+    ///
+    /// Only worth it when the value is used as a wire — a hash preimage
+    /// element, a record limb, an Impact guard. In an operand position, pass
+    /// the native Rust value itself ([`Operand`]): `c.less_than(0u64, x, 64)`
+    /// inlines the immediate and emits no instruction at all, while
+    /// `c.less_than(c.constant(0u64), x, 64)` emits this `Copy` first.
     pub fn constant(&mut self, imm: impl Into<Fr>) -> Wire3<FieldT, Public> {
         Wire3::new(self.b.imm(imm))
     }
 
     // --- arithmetic and logic (visibility joins via Meet) --------------------------
+    //
+    // Every operand position takes an `impl Into<Operand<T, V>>`: a wire, or
+    // a native Rust value that becomes an inline immediate (see `Operand`).
 
-    pub fn add<T: EqAddTy, A, B>(&mut self, a: Wire3<T, A>, b: Wire3<T, B>) -> Wire3<T, A::Out>
+    pub fn add<T: EqAddTy, A, B>(
+        &mut self,
+        a: impl Into<Operand<T, A>>,
+        b: impl Into<Operand<T, B>>,
+    ) -> Wire3<T, A::Out>
     where
         A: Visibility + Meet<B>,
         B: Visibility,
     {
-        Wire3::new(self.b.add(a.val, b.val))
+        Wire3::new(self.b.add(a.into().arg(), b.into().arg()))
     }
 
-    pub fn mul<T: MulTy, A, B>(&mut self, a: Wire3<T, A>, b: Wire3<T, B>) -> Wire3<T, A::Out>
+    pub fn mul<T: MulTy, A, B>(
+        &mut self,
+        a: impl Into<Operand<T, A>>,
+        b: impl Into<Operand<T, B>>,
+    ) -> Wire3<T, A::Out>
     where
         A: Visibility + Meet<B>,
         B: Visibility,
     {
-        Wire3::new(self.b.mul(a.val, b.val))
+        Wire3::new(self.b.mul(a.into().arg(), b.into().arg()))
     }
 
-    pub fn neg<T: EqAddTy, V: Visibility>(&mut self, a: Wire3<T, V>) -> Wire3<T, V> {
-        Wire3::new(self.b.neg(a.val))
+    pub fn neg<T: EqAddTy, V: Visibility>(&mut self, a: impl Into<Operand<T, V>>) -> Wire3<T, V> {
+        Wire3::new(self.b.neg(a.into().arg()))
     }
 
     /// `a^(-1)`; unsatisfiable at proving time if `a` is zero.
-    pub fn inv<T: MulTy, V: Visibility>(&mut self, a: Wire3<T, V>) -> Wire3<T, V> {
-        Wire3::new(self.b.inv(a.val))
+    pub fn inv<T: MulTy, V: Visibility>(&mut self, a: impl Into<Operand<T, V>>) -> Wire3<T, V> {
+        Wire3::new(self.b.inv(a.into().arg()))
     }
 
     /// Boolean not; the operand must hold 0 or 1.
-    pub fn not<V: Visibility>(&mut self, a: Wire3<FieldT, V>) -> Wire3<FieldT, V> {
-        Wire3::new(self.b.not(a.val))
+    pub fn not<V: Visibility>(&mut self, a: impl Into<Operand<FieldT, V>>) -> Wire3<FieldT, V> {
+        Wire3::new(self.b.not(a.into().arg()))
     }
 
     /// Boolean (native) `a == b`.
     pub fn test_eq<T: EqAddTy, A, B>(
         &mut self,
-        a: Wire3<T, A>,
-        b: Wire3<T, B>,
+        a: impl Into<Operand<T, A>>,
+        b: impl Into<Operand<T, B>>,
     ) -> Wire3<FieldT, A::Out>
     where
         A: Visibility + Meet<B>,
         B: Visibility,
     {
-        Wire3::new(self.b.test_eq(a.val, b.val))
+        Wire3::new(self.b.test_eq(a.into().arg(), b.into().arg()))
     }
 
     /// `a < b` over `bits`-bit native values.
     pub fn less_than<A, B>(
         &mut self,
-        a: Wire3<FieldT, A>,
-        b: Wire3<FieldT, B>,
+        a: impl Into<Operand<FieldT, A>>,
+        b: impl Into<Operand<FieldT, B>>,
         bits: u32,
     ) -> Wire3<FieldT, A::Out>
     where
         A: Visibility + Meet<B>,
         B: Visibility,
     {
-        Wire3::new(self.b.less_than(a.val, b.val, bits))
+        Wire3::new(self.b.less_than(a.into().arg(), b.into().arg(), bits))
     }
 
     /// `bit ? a : b`.
     pub fn cond_select<T: EqAddTy, C, A, B>(
         &mut self,
-        bit: Wire3<FieldT, C>,
-        a: Wire3<T, A>,
-        b: Wire3<T, B>,
+        bit: impl Into<Operand<FieldT, C>>,
+        a: impl Into<Operand<T, A>>,
+        b: impl Into<Operand<T, B>>,
     ) -> Wire3<T, <C::Out as Meet<B>>::Out>
     where
         C: Visibility + Meet<A>,
@@ -414,7 +501,10 @@ impl Circuit3 {
         B: Visibility,
         C::Out: Meet<B>,
     {
-        Wire3::new(self.b.cond_select(bit.val, a.val, b.val))
+        Wire3::new(
+            self.b
+                .cond_select(bit.into().arg(), a.into().arg(), b.into().arg()),
+        )
     }
 
     /// Split into `(w >> bits, w mod 2^bits)`.
@@ -605,12 +695,15 @@ impl Circuit3 {
         self.b.assert(cond.val);
     }
 
+    /// `constrain_eq a b` — either side may be an inline immediate, which is
+    /// compactc's own `(constrain_eq ,var-name ,0)` shape: `c.assert_eq(w,
+    /// 0u64)` names no constant and so emits no `Copy`.
     pub fn assert_eq<T: EqAddTy, A: Visibility, B: Visibility>(
         &mut self,
-        a: Wire3<T, A>,
-        b: Wire3<T, B>,
+        a: impl Into<Operand<T, A>>,
+        b: impl Into<Operand<T, B>>,
     ) {
-        self.b.constrain_eq(a.val, b.val);
+        self.b.constrain_eq(a.into().arg(), b.into().arg());
     }
 
     pub fn assert_bits<V: Visibility>(&mut self, w: Wire3<FieldT, V>, bits: u32) {
@@ -619,27 +712,6 @@ impl Circuit3 {
 
     pub fn assert_boolean<V: Visibility>(&mut self, w: Wire3<FieldT, V>) {
         self.b.constrain_to_boolean(w.val);
-    }
-
-    /// `constrain_eq w imm` with the bound as an INLINE operand — compactc's
-    /// `(constrain_eq ,var-name ,0)`, which names no constant and so emits no
-    /// `Copy` (unlike `assert_eq(w, c.constant(0))`).
-    pub fn assert_eq_imm<V: Visibility>(&mut self, w: Wire3<FieldT, V>, imm: impl Into<Fr>) {
-        self.b.constrain_eq(w.val, imm.into());
-    }
-
-    /// `w < bound` over `bits`-bit values with the bound as an INLINE
-    /// operand — compactc's `(less_than ,tmp ,var-name ,(1+ nat) ,bits)`.
-    ///
-    /// The result keeps `w`'s visibility: an immediate is public, and
-    /// `V ⊓ Public = V` for both visibilities.
-    pub fn less_than_imm<V: Visibility>(
-        &mut self,
-        w: Wire3<FieldT, V>,
-        bound: impl Into<Fr>,
-        bits: u32,
-    ) -> Wire3<FieldT, V> {
-        Wire3::new(self.b.less_than(w.val, bound.into(), bits))
     }
 
     // --- disclosure: the only Private → Public gate --------------------------------------
