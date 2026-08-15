@@ -747,3 +747,13 @@ flavors + FAB compat ports — we speak both); NATIVE PARSER GENERATION
 in Rust (serde+borsh derives from the same types) and TypeScript (see
 M11 stage 10); check the COMPACT ROADMAP and emphasize anything big we
 already have (research task feeding the M13 agent).
+
+M13 tone rules (dmd): Borsh is presented as a STABLE, WIDELY-SUPPORTED
+format (spec'd, canonical, mature parsers across languages) — that IS
+the advantage; NO "they plan it, we shipped it" point-scoring — state
+our advantages neutrally, roadmap research is background input only,
+not a scoreboard; FAIRNESS section: honestly list major Compact
+features MinoCrab lacks (e.g. compactc's maturity/official support,
+the TS runtime + dapp tooling integration, language-level docs/
+tutorials/ecosystem, anything the roadmap research surfaces —
+excluding trivial "we're not our own language" items).
