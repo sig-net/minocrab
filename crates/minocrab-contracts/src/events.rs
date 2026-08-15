@@ -19,12 +19,12 @@
 //! (compiler/midnight-events.ss:71).
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::{Private, Public};
+use minocrab::{label, Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, map_insert, ImpactElem,
     LedgerValue,
 };
-use minocrab_std::v3::{entry, CircuitArg, Serializer, Uint, B32};
+use minocrab_std::v3::{entry, CircuitArg, Disclose, Discloses, Serializer, Uint, B32};
 
 /// Ledger field indices, in declaration order.
 pub const CALL_COUNT: u8 = 0;
@@ -40,6 +40,24 @@ pub const MISC_SIZE: usize = 288;
 pub fn event_name(i: usize) -> String {
     format!("deposit-{i}")
 }
+
+label! {
+    /// The deposited amount. Shared with the Borsh twin, which is the same
+    /// circuit built through a different serializer.
+    pub(crate) Amount = "amount";
+    /// The recipient key — one label for both limbs.
+    pub(crate) Recipient = "recipient";
+}
+
+/// What EVERY circuit in this family discloses, whatever `emits` is: the two
+/// arguments, and nothing the emit loop adds (a log is a public statement, not
+/// a disclosure).
+///
+/// Named once, because the family is built through [`entry`] rather than
+/// `#[circuit]`: the entry point's return type and the set-equality test below
+/// must be the SAME declaration, and an alias is the only spelling that makes
+/// that a compiler fact rather than a convention.
+pub(crate) type DepositDisclosures = Discloses<(Amount, Recipient)>;
 
 /// The shared workload: `callCount.increment(1); lastAmount = a;
 /// balances.insert(r, a)`.
@@ -71,18 +89,17 @@ struct DepositArgs {
 /// NULLARY constructor, and this family is parameterized by a Rust value
 /// (`emits`), which is not a circuit argument. The argument list is the
 /// derived struct either way, so the typed-argument guarantee is the same
-/// one — only the entry point's spelling differs.
+/// one — only the entry point's spelling differs. The DECLARATION is the
+/// same one too: `entry` takes any `CircuitOut` of zero slots, and
+/// [`DepositDisclosures`] is one (see [`Discloses`]).
 fn base_with_emits(emits: usize) -> Compiled3 {
-    entry(|c, args: DepositArgs| {
+    entry(|c, args: DepositArgs| -> DepositDisclosures {
         let recipient = args.recipient;
-        let amount = args.amount.field();
+        let amount = args.amount;
         let one = c.constant(1u64);
 
-        let a = c.disclose(amount, "amount");
-        let r = B32 {
-            hi: c.disclose(recipient.hi, "recipient (hi)"),
-            lo: c.disclose(recipient.lo, "recipient (lo)"),
-        };
+        let a = amount.disclose_as::<Amount>(c).field();
+        let r = recipient.disclose_as::<Recipient>(c);
 
         // const sequence = callCount as Uint<64> — read before the increment,
         // only when an emit needs it.
@@ -111,6 +128,8 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
             });
         }
+
+        Discloses::of(())
     })
 }
 
@@ -123,4 +142,27 @@ pub fn base() -> Compiled3 {
 pub fn emit_n(n: usize) -> Compiled3 {
     assert!(n >= 1);
     base_with_emits(n)
+}
+
+/// The set-equality test `#[circuit]` would have generated, hand-written
+/// because this family has no attribute to generate it from — one assertion
+/// per INSTANTIATION, over the same [`DepositDisclosures`] the entry point
+/// returns and through the same public
+/// [`assert_declared_disclosures`](minocrab_std::v3::assert_declared_disclosures)
+/// the expansion calls. Nothing about the machinery is macro-only; the
+/// attribute's version of this is these four lines with the loop unrolled.
+#[cfg(test)]
+mod discloses {
+    use super::*;
+    use minocrab_std::v3::assert_declared_disclosures;
+
+    #[test]
+    fn the_declared_disclosures_are_the_ones_the_family_makes() {
+        for emits in [0, 1, 2, 4] {
+            assert_declared_disclosures::<DepositDisclosures>(
+                &format!("base_with_emits({emits})"),
+                &base_with_emits(emits),
+            );
+        }
+    }
 }

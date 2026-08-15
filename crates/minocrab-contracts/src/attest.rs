@@ -20,25 +20,33 @@
 //! zero-padded), asserting `out.success`.
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
+use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
 use minocrab_std::v3::{
-    circuit, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature,
-    Secp256k1Point, Vis3, B32,
+    circuit, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Disclose, Discloses,
+    Secp256k1EcdsaSignature, Secp256k1Point, Vis3, B32,
 };
 
 /// Ledger field indices, in declaration order.
 const CALL_COUNT: u8 = 0;
 const VERIFIED: u8 = 1;
 
+label! {
+    /// The map key every circuit here makes public — one label for the whole
+    /// `Bytes<32>`, where the hand-written calls said `"… (hi)"` / `"… (lo)"`.
+    AttestedRequestId = "attested request id";
+}
+
 /// The shared tail: `verified.insert(disclose(requestId), true)` plus the
 /// call-count increment, emitted in source order (increment first).
-fn ledger_writes(c: &mut Circuit3, request_id: &B32<Private>) {
-    let r_hi = c.disclose(request_id.hi, "attested request id (hi)");
-    let r_lo = c.disclose(request_id.lo, "attested request id (lo)");
+fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
+    let request_id = request_id.disclose_as::<AttestedRequestId>(c);
     let one = c.constant(1u64);
 
-    let key = LedgerValue::bytes(32, vec![ImpactElem::Wire(r_hi), ImpactElem::Wire(r_lo)]);
+    let key = LedgerValue::bytes(
+        32,
+        vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
+    );
     let true_val = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(1u64))]);
     let mut ops = counter_increment(CALL_COUNT, 1);
     ops.extend(map_insert(VERIFIED, &key, &true_val));
@@ -47,8 +55,9 @@ fn ledger_writes(c: &mut Circuit3, request_id: &B32<Private>) {
 
 /// `export circuit mapOnly(requestId: Bytes<32>): []`
 #[circuit]
-pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) {
-    c.region("ledger writes", |c| ledger_writes(c, &request_id));
+pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
+    c.region("ledger writes", |c| ledger_writes(c, request_id));
+    Discloses::of(())
 }
 
 /// `export circuit verifyOnly(requestId, digest, r, s, pk): []`
@@ -60,7 +69,7 @@ pub fn verify_only(
     r: B32<Private>,
     s: B32<Private>,
     pk: Secp256k1Point,
-) {
+) -> Discloses<(AttestedRequestId,)> {
     let pk = pk.point();
 
     let ok = c.region("signature verification", |c| {
@@ -76,7 +85,8 @@ pub fn verify_only(
     });
     c.assert(ok); // "attestation signature invalid"
 
-    c.region("ledger writes", |c| ledger_writes(c, &request_id));
+    c.region("ledger writes", |c| ledger_writes(c, request_id));
+    Discloses::of(())
 }
 
 /// `struct RespondOutput { success: Boolean; amount: Uint<128>;
@@ -152,7 +162,7 @@ fn hash_verify(
     });
     c.assert(out.success); // "respond reported failure"
 
-    c.region("ledger writes", |c| ledger_writes(c, &request_id));
+    c.region("ledger writes", |c| ledger_writes(c, request_id));
 }
 
 /// `export circuit shaVerify(requestId, output, r, s, pk): []`
@@ -164,9 +174,10 @@ pub fn sha_verify(
     r: B32<Private>,
     s: B32<Private>,
     pk: Secp256k1Point,
-) {
+) -> Discloses<(AttestedRequestId,)> {
     let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
     hash_verify(c, hash, request_id, output, r, s, pk);
+    Discloses::of(())
 }
 
 /// `export circuit keccakVerify(requestId, output, r, s, pk): []`
@@ -178,9 +189,10 @@ pub fn keccak_verify(
     r: B32<Private>,
     s: B32<Private>,
     pk: Secp256k1Point,
-) {
+) -> Discloses<(AttestedRequestId,)> {
     let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
     hash_verify(c, hash, request_id, output, r, s, pk);
+    Discloses::of(())
 }
 
 /// The ledger field indices (callCount, verified), for reference

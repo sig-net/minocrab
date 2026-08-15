@@ -19,17 +19,25 @@
 //! `kernel.claimZswapCoinSpend(cm)`.
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab::{Fr, Private, Public};
+use minocrab::{label, Fr, Private, Public};
 use minocrab_ledger::{
     cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded, kernel_self,
     ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
-    circuit, coin_commitment, own_public_key, token_type, CoinRecipient, ShieldedCoinInfo3, B32,
+    circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
+    ShieldedCoinInfo3, B32,
 };
 
 /// Ledger field indices, in declaration order.
 pub const VERY_PUBLIC_VALUE: u8 = 0;
+
+label! {
+    MintRecipient = "mint recipient";
+    MintNonce = "mint nonce";
+    OwnKeyAsMintRecipient = "own public key as mint recipient";
+    OwnKeyOnLedger = "own public key on the ledger";
+}
 
 /// The mint's domain separator.
 pub const DOMAIN_SEP: &str = "testy-test";
@@ -88,18 +96,13 @@ pub fn mint_with_recipient_argument(
     c: &mut Circuit3,
     recipient: B32<Private>,
     mint_nonce: B32<Private>,
-) {
+) -> Discloses<(MintRecipient, MintNonce)> {
     let one = c.constant(1u64);
 
-    let recipient = B32 {
-        hi: c.disclose(recipient.hi, "mint recipient (hi)"),
-        lo: c.disclose(recipient.lo, "mint recipient (lo)"),
-    };
-    let nonce = B32 {
-        hi: c.disclose(mint_nonce.hi, "mint nonce (hi)"),
-        lo: c.disclose(mint_nonce.lo, "mint nonce (lo)"),
-    };
+    let recipient = recipient.disclose_as::<MintRecipient>(c);
+    let nonce = mint_nonce.disclose_as::<MintNonce>(c);
     mint_shielded_token(c, one, &nonce, &recipient);
+    Discloses::of(())
 }
 
 /// `export circuit mintWithRecipientOwnPublicKey(recipient: ZswapCoinPublicKey,
@@ -112,22 +115,14 @@ pub fn mint_with_recipient_own_public_key(
     c: &mut Circuit3,
     _recipient: B32<Private>,
     mint_nonce: B32<Private>,
-) {
+) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {
     let one = c.constant(1u64);
 
     // const mintRecipient = ownPublicKey();
-    let mint_recipient = own_public_key(c);
-    let mint_recipient = B32 {
-        hi: c.disclose(mint_recipient.hi, "own public key as mint recipient (hi)"),
-        lo: c.disclose(mint_recipient.lo, "own public key as mint recipient (lo)"),
-    };
+    let mint_recipient = own_public_key(c).disclose_as::<OwnKeyAsMintRecipient>(c);
 
     // veryPublicValue = ownPublicKey();
-    let very_public = own_public_key(c);
-    let very_public = B32 {
-        hi: c.disclose(very_public.hi, "own public key on the ledger (hi)"),
-        lo: c.disclose(very_public.lo, "own public key on the ledger (lo)"),
-    };
+    let very_public = own_public_key(c).disclose_as::<OwnKeyOnLedger>(c);
     let value = LedgerValue::bytes(
         32,
         vec![
@@ -137,9 +132,7 @@ pub fn mint_with_recipient_own_public_key(
     );
     emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
 
-    let nonce = B32 {
-        hi: c.disclose(mint_nonce.hi, "mint nonce (hi)"),
-        lo: c.disclose(mint_nonce.lo, "mint nonce (lo)"),
-    };
+    let nonce = mint_nonce.disclose_as::<MintNonce>(c);
     mint_shielded_token(c, one, &nonce, &mint_recipient);
+    Discloses::of(())
 }

@@ -27,12 +27,13 @@ use minocrab_ledger::{
 };
 // `CircuitBorsh` names both the trait and the derive macro.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{circuit, BytesN, ContractAddress, Uint, Vis3, B32};
+use minocrab_std::v3::{circuit, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
+// The labels are the ORIGINAL's: same callee, same two disclosed values.
 use crate::xcontract_events::{
-    DEPOSIT_COUNT, EMITTED_DEPOSITS, EVENT_NAME, LAST_AMOUNT, PAYLOAD_SIZE,
+    Amount, Caller, DEPOSIT_COUNT, EMITTED_DEPOSITS, EVENT_NAME, LAST_AMOUNT, PAYLOAD_SIZE,
 };
 
 /// `Misc { name: Bytes<32>, payload: Bytes<256> }` — 288 Borsh bytes, the
@@ -57,13 +58,10 @@ pub fn token_deposit(
     c: &mut Circuit3,
     amount: Uint<128>,
     caller: ContractAddress<Private>,
-) -> B32<Public> {
+) -> Discloses<(Amount, Caller), B32<Public>> {
     let caller = caller.bytes();
-    let a = c.disclose(amount.field(), "amount");
-    let cal = B32 {
-        hi: c.disclose(caller.hi, "caller (hi)"),
-        lo: c.disclose(caller.lo, "caller (lo)"),
-    };
+    let a = amount.disclose_as::<Amount>(c).field();
+    let cal = caller.disclose_as::<Caller>(c);
     let one = c.constant(1u64);
 
     // const sequence = depositCount as Uint<64> — read before the increment.
@@ -110,5 +108,5 @@ pub fn token_deposit(
     );
     emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
 
-    event_hash
+    Discloses::of(event_hash)
 }

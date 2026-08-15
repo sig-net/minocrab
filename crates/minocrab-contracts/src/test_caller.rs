@@ -25,11 +25,16 @@
 //! with `deployerCommitment(sk) =
 //! persistentHash<Vector<2, Bytes<32>>>([pad(32, "signet-caller:deployer:"), sk])`.
 
+use minocrab::label;
 use minocrab::v3::Circuit3;
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, Secp256k1Point};
+use minocrab_std::v3::{circuit, Disclose, Discloses, Secp256k1Point};
 
 use crate::common;
+
+label! {
+    MpcResponseKey = "the MPC response key";
+}
 
 /// Ledger field indices, in declaration order.
 pub const MPC_RESPONSE_KEY: u8 = 2;
@@ -43,7 +48,10 @@ pub use crate::common::secp256k1_point_atoms;
 
 /// `export circuit initialise(responseKey: Secp256k1Point): []`
 #[circuit]
-pub fn initialise(c: &mut Circuit3, response_key: Secp256k1Point) {
+pub fn initialise(
+    c: &mut Circuit3,
+    response_key: Secp256k1Point,
+) -> Discloses<(MpcResponseKey,)> {
     let response_key = response_key.point();
     let one = c.constant(1u64);
 
@@ -62,7 +70,7 @@ pub fn initialise(c: &mut Circuit3, response_key: Secp256k1Point) {
 
     // mpcResponseKey = disclose(responseKey)
     c.region("pin response key", |c| {
-        let pk = c.disclose(response_key, "the MPC response key");
+        let pk = response_key.disclose_as::<MpcResponseKey>(c);
         let limbs = c.encode(pk);
         let value = LedgerValue::new(
             common::secp256k1_point_atoms(),
@@ -70,4 +78,5 @@ pub fn initialise(c: &mut Circuit3, response_key: Secp256k1Point) {
         );
         emit(c, one, &cell_write(MPC_RESPONSE_KEY, &value));
     });
+    Discloses::of(())
 }

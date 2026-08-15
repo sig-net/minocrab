@@ -33,6 +33,35 @@
 //!   baroque; a plain test failure that names the label and the edit is
 //!   worth more than a type error nobody can read.
 //!
+//! A circuit FAMILY parameterized by a Rust value has no attribute to
+//! generate that test from — `#[circuit]` makes a nullary constructor, so
+//! such a family is built through `entry()` by hand. It declares exactly the
+//! same way (the closure's return type is the declaration; `entry` takes any
+//! zero-slot [`CircuitOut`](../../../minocrab_std/v3/trait.CircuitOut.html)),
+//! and its test is the expansion's own body written out once per
+//! instantiation:
+//!
+//! ```ignore
+//! type DepositDisclosures = Discloses<(Amount, Recipient)>;
+//!
+//! fn base_with_emits(emits: usize) -> Compiled3 {
+//!     entry(|c, args: DepositArgs| -> DepositDisclosures { ..; Discloses::of(()) })
+//! }
+//!
+//! #[test]
+//! fn the_declared_disclosures_are_the_ones_the_family_makes() {
+//!     for emits in [0, 1, 2, 4] {
+//!         assert_declared_disclosures::<DepositDisclosures>(
+//!             &format!("base_with_emits({emits})"), &base_with_emits(emits));
+//!     }
+//! }
+//! ```
+//!
+//! The alias is what makes the entry point and the test the SAME declaration
+//! — the attribute gets that for free by copying the return type's tokens.
+//! (An alias is deliberately NOT accepted in a `#[circuit]` signature, where
+//! the declaration has to be legible where the arguments are.)
+//!
 //! Labels are per LOGICAL VALUE, not per wire: `b32.disclose_as::<L>(c)`
 //! discloses both limbs under the single symbol `L`, where the hand-written
 //! circuits wrote `"… (hi)"` and `"… (lo)"`. One record, one label, one
@@ -254,7 +283,10 @@ pub fn disclosed_labels(compiled: &Compiled3) -> BTreeSet<&str> {
 }
 
 /// Assert that a circuit disclosed exactly what its `Discloses<..>`
-/// declaration says — the body of the test `#[circuit]` generates.
+/// declaration says — the body of the test `#[circuit]` generates, and the
+/// one an `entry()`-built family calls by hand, once per instantiation (see
+/// the module docs). It is public for that second reason: the attribute
+/// generates nothing here that could not be typed out.
 ///
 /// The failure message is part of the design (notes/contract-api.org): it
 /// names the circuit, both differences, and the edit that fixes each one. A

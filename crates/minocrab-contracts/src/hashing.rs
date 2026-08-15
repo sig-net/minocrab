@@ -28,11 +28,29 @@
 //! per-limb widths from the same `len` that declared the limbs, so there is
 //! no hand-written parallel constraint block to drift. [`persistent_vec8`],
 //! whose shape is fixed, IS ported.
+//!
+//! The same sixteen circuits are therefore the ONLY ones in the corpus
+//! without a typed disclosure declaration (M9 closure): a `Discloses<..>` is
+//! a return type, and these have no typed entry point to return from —
+//! `hash_circuit` calls `Circuit3::finish` itself. Nothing is hidden by that.
+//! Each discloses exactly one value, the digest it writes to the ledger, and
+//! the write is right there in `hash_circuit`; the declaration would restate
+//! one line of a measurement rig. Porting the family is what would close it,
+//! and the paragraph above is why nobody should.
 
 use minocrab::v3::{Circuit3, Compiled3, Wire3};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private};
+use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, BytesNDyn, B32};
+use minocrab_std::v3::{circuit, BytesNDyn, Disclose, Discloses, B32};
+
+label! {
+    /// [`persistent_vec8`]'s digest. The `Bytes<len>` sweep below discloses
+    /// the same value under the same string, but through the free-string
+    /// `c.disclose` — those circuits are not `#[circuit]`s (their width is a
+    /// runtime parameter, see the module docs), so there is no signature to
+    /// declare in and no attribute to generate the test from.
+    TheDigest = "the digest";
+}
 
 /// Ledger field indices (identical in both contracts; `fdigest` exists
 /// only in `hashing`).
@@ -125,7 +143,7 @@ pub fn transient(len: usize) -> Compiled3 {
 /// and constrains all sixteen limbs from the type (see the module docs for
 /// why the `Bytes<len>` family stays hand-declared).
 #[circuit]
-pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) {
+pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
     let parts = data;
     let one = c.constant(1u64);
 
@@ -142,9 +160,11 @@ pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) {
         inputs.push(p.lo.erase());
     }
     let typed = c.persistent_hash(alignment, &inputs);
-    let digest = B32::from_typed(c, typed);
-    let hi = c.disclose(digest.hi, "the digest (hi)");
-    let lo = c.disclose(digest.lo, "the digest (lo)");
-    let value = LedgerValue::bytes(32, vec![ImpactElem::Wire(hi), ImpactElem::Wire(lo)]);
+    let digest = B32::from_typed(c, typed).disclose_as::<TheDigest>(c);
+    let value = LedgerValue::bytes(
+        32,
+        vec![ImpactElem::Wire(digest.hi), ImpactElem::Wire(digest.lo)],
+    );
     emit(c, one, &cell_write(DIGEST, &value));
+    Discloses::of(())
 }

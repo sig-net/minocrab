@@ -42,10 +42,14 @@ use minocrab_ledger::{
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{entry, CircuitArg, Uint, Vis3, B32};
+use minocrab_std::v3::{entry, CircuitArg, Disclose, Discloses, Uint, Vis3, B32};
 
+// The labels and the declaration are the ORIGINAL's: the twin discloses the
+// same two values under the same two names, which is part of what "same
+// circuit, different serializer" means.
 use crate::events::{
-    event_name, BALANCES, CALL_COUNT, LAST_AMOUNT, MISC_SIZE, MISC_TAG, MISC_VERSION,
+    event_name, Amount, DepositDisclosures, Recipient, BALANCES, CALL_COUNT, LAST_AMOUNT,
+    MISC_SIZE, MISC_TAG, MISC_VERSION,
 };
 
 /// `struct DepositEvent { amount: Uint<128>, sequence: Uint<64>, recipient:
@@ -118,16 +122,13 @@ struct DepositArgs {
 /// derived struct either way, so the typed-argument guarantee is the same
 /// one — only the entry point's spelling differs.
 fn base_with_emits(emits: usize) -> Compiled3 {
-    entry(|c, args: DepositArgs| {
+    entry(|c, args: DepositArgs| -> DepositDisclosures {
         let recipient = args.recipient;
-        let amount = args.amount.field();
+        let amount = args.amount;
         let one = c.constant(1u64);
 
-        let a = c.disclose(amount, "amount");
-        let r = B32 {
-            hi: c.disclose(recipient.hi, "recipient (hi)"),
-            lo: c.disclose(recipient.lo, "recipient (lo)"),
-        };
+        let a = amount.disclose_as::<Amount>(c).field();
+        let r = recipient.disclose_as::<Recipient>(c);
 
         // const sequence = callCount as Uint<64> — read before the increment,
         // only when an emit needs it.
@@ -163,6 +164,8 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
             });
         }
+
+        Discloses::of(())
     })
 }
 
@@ -175,4 +178,22 @@ pub fn base() -> Compiled3 {
 pub fn emit_n(n: usize) -> Compiled3 {
     assert!(n >= 1);
     base_with_emits(n)
+}
+
+/// The hand-written set-equality test, per instantiation — see
+/// [`crate::events`]'s twin of this module.
+#[cfg(test)]
+mod discloses {
+    use super::*;
+    use minocrab_std::v3::assert_declared_disclosures;
+
+    #[test]
+    fn the_declared_disclosures_are_the_ones_the_family_makes() {
+        for emits in [0, 1, 2, 4] {
+            assert_declared_disclosures::<DepositDisclosures>(
+                &format!("events_borsh::base_with_emits({emits})"),
+                &base_with_emits(emits),
+            );
+        }
+    }
 }

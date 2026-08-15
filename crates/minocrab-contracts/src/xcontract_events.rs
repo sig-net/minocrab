@@ -36,12 +36,14 @@
 //! ```
 
 use minocrab::v3::Circuit3;
-use minocrab::{Private, Public};
+use minocrab::{label, Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, kernel_self, set_insert,
-    ImpactElem, LedgerValue,
+    ImpactElem, LedgerValue, XcallCommitment, XcallEntryPointHash, XcallResult,
 };
-use minocrab_std::v3::{circuit, BytesN, ContractAddress, Serializer, Uint, B32};
+use minocrab_std::v3::{
+    circuit, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
+};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::interfaces::Token;
@@ -62,6 +64,13 @@ pub const EMITTED_DEPOSITS: u8 = 2;
 pub const EVENT_NAME: &str = "deposit";
 pub const PAYLOAD_SIZE: usize = 256;
 
+label! {
+    /// Shared with the Borsh twin, which is the same callee circuit built
+    /// through a different serializer.
+    pub(crate) Amount = "amount";
+    pub(crate) Caller = "caller";
+}
+
 fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
     LedgerValue::bytes(32, vec![ImpactElem::Wire(b.hi), ImpactElem::Wire(b.lo)])
 }
@@ -73,8 +82,11 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
 /// `CircuitOut for B32<Public>` suffixes the two limbs `(hi)`/`(lo)` — the
 /// hand-written labels, unchanged.
 #[circuit(output = "event hash")]
-pub fn deposit_via_vault(c: &mut Circuit3, amount: Uint<128>) -> B32<Public> {
-    let a = c.disclose(amount.field(), "amount");
+pub fn deposit_via_vault(
+    c: &mut Circuit3,
+    amount: Uint<128>,
+) -> Discloses<(Amount, XcallEntryPointHash, XcallCommitment, XcallResult), B32<Public>> {
+    let a = amount.disclose_as::<Amount>(c).field();
     let one = c.constant(1u64);
 
     emit(c, one, &counter_increment(VAULT_CALL_COUNT, 1));
@@ -89,7 +101,7 @@ pub fn deposit_via_vault(c: &mut Circuit3, amount: Uint<128>) -> B32<Public> {
         one,
         &set_insert(VAULT_DEPOSITS, &b32_ledger_value(&event_hash)),
     );
-    event_hash
+    Discloses::of(event_hash)
 }
 
 /// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
@@ -100,13 +112,10 @@ pub fn token_deposit(
     c: &mut Circuit3,
     amount: Uint<128>,
     caller: ContractAddress<Private>,
-) -> B32<Public> {
+) -> Discloses<(Amount, Caller), B32<Public>> {
     let caller = caller.bytes();
-    let a = c.disclose(amount.field(), "amount");
-    let cal = B32 {
-        hi: c.disclose(caller.hi, "caller (hi)"),
-        lo: c.disclose(caller.lo, "caller (lo)"),
-    };
+    let a = amount.disclose_as::<Amount>(c).field();
+    let cal = caller.disclose_as::<Caller>(c);
     let one = c.constant(1u64);
 
     // const sequence = depositCount as Uint<64> — read before the increment.
@@ -147,5 +156,5 @@ pub fn token_deposit(
     );
     emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
 
-    event_hash
+    Discloses::of(event_hash)
 }

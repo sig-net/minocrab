@@ -17,14 +17,18 @@
 use minocrab::v3::Circuit3;
 use minocrab::Private;
 use minocrab_ledger::{counter_increment, emit};
-use minocrab_std::v3::{bytes_to_b32, circuit, rebuild_limb, BytesN, Serializer};
+use minocrab_std::v3::{bytes_to_b32, circuit, rebuild_limb, BytesN, Discloses, Serializer};
 
 /// Ledger field indices.
 pub const CHECKS: u8 = 0;
 
 /// `export circuit checkRoundtrip(bytes: Bytes<128>): []`
+///
+/// `Discloses<()>` is the positive statement that this circuit reveals
+/// NOTHING: the roundtrip is checked entirely inside the private domain, and
+/// only the counter increment is public. The generated test says so.
 #[circuit]
-pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) {
+pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
     let data = bytes;
     let one = c.constant(1u64);
 
@@ -53,4 +57,5 @@ pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) {
     c.assert(all); // "serialize/deserialize roundtrip mismatch"
 
     emit(c, one, &counter_increment(CHECKS, 1));
+    Discloses::of(())
 }
