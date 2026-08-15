@@ -1259,14 +1259,122 @@ with no in-circuit representation (ledger cells, witness args,
 Set<Opaque<…>>); our ABI reader and interface generator reject Opaque
 by design (crates/minocrab-abi/src/info.rs,
 crates/minocrab-interface-gen/src/lib.rs).
-- [ ] Design note first: what Opaque means at the ZKIR/ledger level in
+- [X] Design note first: what Opaque means at the ZKIR/ledger level in
       compactc's artifacts (survey the corpus uses), and what the Rust
       shape should be (likely an opaque handle type carrying the
       ts-type string, never entering circuits).
-- [ ] Implement through ABI reader + interface-gen + ledger layer;
+      (2026-08-16, notes/opaque-bridging.org. FOUR FINDINGS, and the first
+      two reframe the milestone — this bullet's own parenthesis was wrong
+      in both directions. (a) An Opaque DOES enter circuits: one
+      unconstrained `Scalar<BLS12-381>` slot under a FAB `compress` atom,
+      reachable as argument, result, witness result, every ledger
+      position, and across a cross-contract call in both directions
+      (result limb unconstrained, both limbs bound by the comm
+      commitment). So `Prim::Opaque`, which has existed since M12 stage 1,
+      becomes reachable from a typed leaf for the first time. (b) compactc
+      publishes the two CURVE POINT types AS Opaque —
+      `Alias { name, Opaque { tsType: name } }` — so 12 of the corpus's 74
+      Opaque nodes are points, and our `TypeError::Opaque`'s message ("no
+      in-circuit representation") was false about both halves. THE
+      CONCRETE COST: `CompactType::flatten` could not flatten the
+      erc20-vault's OWN `initialize`, so the benchmark contract was not
+      importable through our own interface machinery. It is not a handle:
+      the field element is `transient_commit(bytes, len)` — zero for the
+      empty value, which is why `default<Opaque<..>>` lowers to `0x00` —
+      so in-circuit equality decides equality of the TS VALUES; a compress
+      atom accepts any length, which is why an opaque is outside the Borsh
+      subset; and it is one-way, since `parse_field_repr` returns None for
+      Compress. (c) `CompactType`'s claim to model every corpus type-name
+      was too strong: four are unmodelled, all ledger-only today, but
+      JubjubScalar is reachable as a circuit ARGUMENT. (d) A witness's
+      result type is spelled "result type" with a SPACE where every
+      circuit uses "result-type" — 66 of 66, found by reconciling a regex
+      count of Opaque nodes against a structural one. Sixteen probe
+      circuits under the pinned compactc back every claim.)
+- [X] Implement through ABI reader + interface-gen + ledger layer;
       corpus differential on a contract using Opaque.
+      (2026-08-16, notes/opaque-bridging.org §"As built". `Opaque<T: TsType,
+      V>` through the whole stack — CircuitAbi/CircuitArg, CallArg/
+      CallResult, LedgerRepr, Disclose, CircuitOut — plus `JubjubPoint`,
+      the five-line twin of `Secp256k1Point` over two `field` atoms. The
+      ts-type is a MARKER TYPE, not a const string (`adt_const_params` is
+      unstable), which is the better shape anyway: `Opaque<ts::Str>` and
+      `Opaque<ts::Uint8Array>` do not unify, proven by a compile_fail
+      DOCTEST beside a passing twin, and it is compactc's own rule checked
+      against the pinned compiler. Two operations, `eq` and
+      `default_value`, and every rejection is at MISSING IMPL — no
+      CircuitBorsh, so `persistent_hash` on an opaque is E0277, the same
+      refusal compactc makes in almost the same words. THE READER:
+      `TypeError::Opaque` DELETED, not reworded; the curve spelling
+      recognized before the generic Alias arm, with a test per shape
+      because a bare `Opaque<"Secp256k1Point">` must stay a user's opaque.
+      THE GENERATOR: `Opaque<Marker, V>` plus one generated `ts_type!` per
+      distinct ts-type ("string" → `Str`, since `pascal`'s `String` would
+      shadow std's in someone else's crate); the curve rows precede the
+      Alias row because that arm would emit
+      `pub type Secp256k1Point<V> = Secp256k1Point<V>`, E0391.
+      NO CORPUS CONTRACT WAS PORTABLE, as in M14 and for a recorded
+      reason: 74 Opaque nodes across 23 of the 312 artifacts — real
+      production code, not fixtures — and NONE in a v3 artifact, since
+      only the three sig-net sources carry --feature-zkir-v3 and their
+      four are all Secp256k1Point. So the tiny.compact-style fallback:
+      tests/fixtures/opaque/opaque.compact, fourteen circuits covering
+      every position an opaque can occupy plus both curve spellings.
+      THE RESULT IS AS STRONG AS M14's: serialized ZKIR EQUAL to
+      compactc's up to identifier renaming for ELEVEN of fourteen, and
+      equal for the other three after dropping one `copy <immediate>`
+      each — the three that write a LITERAL ledger value, a known gap
+      (M9 phase 7 gave every OPERAND position `impl Into<Operand>`, but a
+      ledger VALUE still goes through `push_limbs`, which hands back
+      wires) that phase 7 measured at ZERO ROWS. Stated in two tests
+      rather than hidden, including an `assert_ne!` so a circuit that
+      stops needing the substitution fails, and a count pinned at one per
+      circuit and zero on compactc's side. FOR DMD: closing it means
+      letting a ledger value carry an immediate, an API change to a trait
+      all four vault forks use, for a cosmetic gain — recommendation is
+      to leave it.
+      Plus THE test that is not about compactc at all: a preimage whose
+      ledger write carries the raw BYTES and whose circuit input carries
+      `transient_commit(bytes, len)` is accepted by both artifacts and by
+      upstream's `check()`, for three byte strings including the empty
+      one — and its negative twin, a mismatched commitment REJECTED by
+      both, which is what makes `eq` an equality on values rather than on
+      interchangeable handles. Plus the ABI round-trip for all twelve
+      argument-carrying circuits, and the erc20-vault's OWN `initialize`
+      flattening from the CORPUS artifact, which is claim 0b closed.
+      TWO DEVIATIONS from the note, both recorded: the three curve
+      scalar/base names are PARSED but not flattened (flattening needs a
+      `Prim`, and the only honest one for a non-field slot is a new
+      variant with a leaf behind it — `TypeError::NoLeaf` says so); and
+      `LedgerSet<T>` landed three milestones early with `insert` +
+      `member` ONLY, because those are the two Impact lowerings that
+      already existed and the fixture stores an opaque in a Set — the
+      rest of Set stays M16's, and no lowering was invented.
+      Zero movement, checked harder than the gates require: all 98
+      pre-existing circuits' serialized ZKIR dumped before and after —
+      98 of 98 BYTE-IDENTICAL, with exactly the 14 new files added. That
+      dump is now a committed instrument, tests/zkir_dump.rs, so the next
+      session does not reinvent it. Both snapshots grew by exactly 14
+      entries and nothing else moved; `cargo test --workspace` 528 passed
+      / 0 failed, --release row_snapshot green, interface-gen's --check
+      over every generated crate green.)
 Exit criteria: an Opaque-using corpus contract imports and ports;
 fairness bullet retired.
+ASSESSMENT (2026-08-16): MET, with M14's substitution and one addition.
+The fairness bullet has moved to the README's feature list. The
+substitution is the word "corpus": no corpus contract was portable (the
+scan above), so the differential runs against a fixture compiled by the
+same pinned compactc — and what that costs, corpus PROVENANCE, is
+recovered where the corpus does have coverage, because
+`the_vaults_own_initialize_now_flattens` reads the erc20-vault's own
+artifact. The addition is that this milestone closed a BUG as well as a
+gap: the benchmark contract was not importable through our own interface
+machinery, and nothing before M15 would have noticed, because the test
+that compares five atoms against five did not exist. M15 CLOSED.
+FOLLOW-UP, small and documented: no fixture circuit sends an opaque
+across a real cross-contract boundary. The machinery is implemented and
+the facts are established from a probe (notes/opaque-bridging.org §0a),
+but the assertion is a probe's, not a suite's.
 
 * M16 — Ledger ADTs: List, MerkleTree, HistoricMerkleTree, full Set
 Fairness-list gap. crates/minocrab-ledger has Cell/Counter/Map +
@@ -1275,6 +1383,15 @@ HistoricMerkleTree, 41 Set. Merkle PATH circuits are ported
 (minocrab-std/src/merkle.rs); the ledger-state ops on trees are not.
 Subsumes M4's "Map rem, MerkleTree ops" remainder at the ledger-op
 layer.
+HEAD START from M15 (2026-08-16): =LedgerSet<T>= exists with =insert=
+and =member= only — those are the two Impact lowerings that already
+existed (a Compact Set is a Map with Null values, so insert is
+map_insert with a Null and member is the SAME Op::Member a map's is,
+confirmed against the M15 fixture's opSet). What M16 owes it is
+=remove= / =size= / =isEmpty=, and it should BECOME M16's Set rather
+than sit beside a second one. Also inherited: =LedgerRepr= for
+=Opaque<T, Public>= and for =Maybe<T, Public>=, so an ADT with opaque
+or optional elements needs no element-type work.
 - [ ] Per-ADT: Impact-op lowering via the real Op types (M4's
       ledger-op method), differential per corpus contract that uses it.
 - [ ] Rusty API per M9 phase 7's #[derive(Ledger)] conventions.

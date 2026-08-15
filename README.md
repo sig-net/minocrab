@@ -8,7 +8,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 
 - Leaking a `Wire<Private>` is a compile error until `c.disclose(w, label)` ([compile_fail doctest](crates/minocrab/src/lib.rs))
 - Argument types are the range constraints — `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own `emit-constraints-for` table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs), [v3_entry.rs](crates/minocrab-std/tests/v3_entry.rs))
-- Drift is a test failure: `(k, rows)` and the ordered interface of all 98 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
+- Drift is a test failure: `(k, rows)` and the ordered interface of all 112 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
 - 9,000,000 property cases against a Rust spec of every vault circuit, accepted runs replayed through the reference VM and the pinned ledger's `run_program` ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs))
 - Adversarial sweeps: `2^128 − 1`, zero addresses, malformed witnesses, witness malleability, injectivity ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs))
 - Bijective serialization — Borsh `bool` is `0|1`, so the `0x02` attestation hazard is unprovable, not refunded ([erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs))
@@ -27,6 +27,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 - Native compilation of circuits for testing — `cargo test`, fast, no proving, no keys ([minocrab-sim](crates/minocrab-sim/src/lib.rs))
 - Per-region cost profiler attributing rows, with calibrated primitive costs ([profile()](crates/minocrab-sim/src/lib.rs), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs), [opcost.rs](crates/minocrab-sim/examples/opcost.rs))
 - Bounded integers at any bound — `BoundedUint<70000>` *is* Compact's `Uint<0..70000>`, range end exclusive, lowered by compactc's own table; non-power-of-two `enum`s are the same leaf ([v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs))
+- TypeScript-side values bridge in: `Opaque<ts::Str>` is Compact's `Opaque<"string">` — argument, result, witness, any ledger slot, either side of a cross-contract call. The ts-type is part of the Rust type, so mixing two is a compile error ([compile_fail doctest](crates/minocrab-std/src/v3.rs)), and the slot is a *binding commitment* to the value, not a handle ([opaque_differential.rs](crates/minocrab-contracts/tests/opaque_differential.rs))
 - Circuit families as const generics, allowing you to encode invariants using the rust type system, monomorphized and unrolled by rustc ([notes/const-generics.org](notes/const-generics.org))
 - Macros are thin decorators — `#[circuit]` moves your body, it does not rewrite it; the expansion calls no `Circuit3` method ([circuit.rs](crates/minocrab-macros/src/circuit.rs)), and every derive has a hand-written twin that must lower to byte-identical ZKIR ([v3_derive.rs](crates/minocrab-std/tests/v3_derive.rs), [interface_macro.rs](crates/minocrab-contracts/tests/interface_macro.rs))
 - Rust: modules, generics, `pub(crate)`, cargo, rust-analyzer, `#[test]`, crates.io
@@ -102,7 +103,7 @@ pub fn deposit(
 ```
 
 - The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
-- `#[circuit]` and `#[derive(CircuitArg)]` build 82 of the 98 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
+- `#[circuit]` and `#[derive(CircuitArg)]` build 96 of the 112 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
 - This is the *showcase twin*: the same contract as the three zero-movement ports, written through the whole API. It is not prettier prose — it is gated on proving the identical statement (same typed schema, same PI vector on the ports' own preimage) at identical rows and identical `k` ([erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs))
 
 ## Cross-contract calls
@@ -206,8 +207,7 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- `Opaque<'ts-type'>`. No such type; the ABI reader and the interface generator reject it ([info.rs](crates/minocrab-abi/src/info.rs), [interface-gen](crates/minocrab-interface-gen/src/lib.rs)).
-- Ledger ADTs beyond Cell / Counter / Map / `Set::insert` ([ledger](crates/minocrab-ledger/src/lib.rs)). No `List`, `MerkleTree`, `HistoricMerkleTree`; the Merkle *path* circuits are ported ([merkle.rs](crates/minocrab-std/src/merkle.rs)), the ledger ops on those trees are not.
+- Ledger ADTs beyond Cell / Counter / Map / `Set::{insert, member}` ([ledger](crates/minocrab-ledger/src/lib.rs)). No `List`, `MerkleTree`, `HistoricMerkleTree`; the Merkle *path* circuits are ported ([merkle.rs](crates/minocrab-std/src/merkle.rs)), the ledger ops on those trees are not.
 - Part of the kernel and token stdlib. Missing: `kernel.checkpoint`, the block-time family, all unshielded tokens, `kernel.balance*`, `sendShielded`, `mergeCoin*`. Tracked in [milestones.org](milestones.org).
 - A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing. Not formal-verification parity.
 

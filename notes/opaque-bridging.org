@@ -429,6 +429,170 @@ obviously a value you want silently duplicated — but nothing about an
 opaque is spendable or consumed, so there is no resource discipline to
 protect. DEFAULT: =Copy=, like =Uint= and =Bytes=.
 
+* As built — 2026-08-16
+
+Everything in §§0-7 landed. Three deviations from the plan and one new
+finding, all below; the questions in §8 were implemented on their marked
+defaults.
+
+** The two leaves, and what an Opaque cannot do
+
+=minocrab_std::v3::Opaque<T: TsType, V>= plus =JubjubPoint=, exactly as §3
+describes. =TsType= is a marker trait with a =ts_type!= declaration macro and
+=v3::ts::{Str, Uint8Array}= predeclared. =Prim::Opaque= is reachable from a
+typed leaf for the first time since M12 stage 1.
+
+The distinctness claim is no longer prose: a =compile_fail= DOCTEST on the
+type comparing an =Opaque<ts::Str>= with an =Opaque<ts::Uint8Array>=, beside a
+passing one comparing two of the same, in the style of =minocrab='s disclosure
+doctest. Both run under =cargo test=.
+
+Two operations, =eq= and =default_value=, and the rejections are all at
+=missing impl=: no =CircuitBorsh= (so =persistent_hash= is E0277, which is
+compactc's own rule in almost the same words), no arithmetic, no ordering, no
+=widen=, no =to_uint=, no byte view.
+
+=Copy= is HAND-WRITTEN, which §3 did not anticipate: =#[derive(Copy)]= on a
+struct with a =PhantomData<T>= field adds an implicit =T: Copy= bound, and =T=
+here is an uninhabited marker with no reason to carry one. The derive made
+=self.field()= fail to compile behind a =&self=.
+
+** DEVIATION 1: the curve scalar/base types are parsed but NOT flattened
+
+§6 item 4 said to model =JubjubScalar= / =Secp256k1Base= / =Secp256k1Scalar=
+with their atoms. Writing it revealed the plan was half a rule: flattening a
+type means giving it a =Prim=, and the only honest =Prim= for a slot whose
+wire is not a field element is a new variant with a leaf behind it.
+=Prim::Field= would be wrong — =CircuitArg::constrain= filters only
+=Prim::Point= out of its slot/prim zip, so a =Prim::Field= for a native
+=Scalar<Jubjub>= slot would mis-align every leaf that had one.
+
+So they are PARSED (a =JubjubScalar= circuit argument compiles, so meeting one
+should say what it is rather than "compactc grew a type this crate does not
+model") and REFUSED, through a new =TypeError::NoLeaf=. No corpus artifact
+takes one as an argument, and atoms without a prim is half a row — which is
+how a wrong one gets in.
+
+** DEVIATION 2: =LedgerSet=, three milestones early and deliberately partial
+
+The fixture stores an =Opaque= in a =Set=, and there was no typed =Set= slot.
+=LedgerSet<T>= now exists with =insert= and =member= ONLY, because those are
+the two Impact lowerings that already existed: a Compact =Set= is a =Map= with
+=Null= values, so =set.insert= is =map_insert= with a =Null= (M6) and
+=set.member= is the SAME =Op::Member= a map's is — confirmed by the fixture's
+=opSet=, whose two Impact blocks are exactly those. =remove= / =size= /
+=isEmpty= are M16's. No lowering was invented; when M16 lands, this becomes
+its =Set= rather than a second one.
+
+=LedgerRepr for Maybe<T, Public>= was also added (the fixture's
+=Maybe<Opaque<…>>= cell), which is pure ABI delegation.
+
+** DEVIATION 3: three circuits differ from compactc by one =copy= each
+
+The headline claim was "serialized ZKIR equal to compactc's up to identifier
+renaming, for all fourteen". ELEVEN are equal outright. The three that write a
+LITERAL ledger value — =opDefault='s zero, =opMapKey='s =1=, =opMaybe='s
+=is_some= tag — name it with a =copy= where compactc inlines it into the
+Impact instruction.
+
+The cause is a known gap, not a lowering difference. M9 phase 7 made every
+OPERAND position take =impl Into<Operand>= so a native Rust value inlines, but
+a ledger VALUE position still goes through =LedgerRepr::push_limbs=, which
+hands back wires; a constant therefore has to be a wire first. Phase 7
+measured this exact class — it removed 47 such =copy=s across 27 circuits and
+=row_snapshot= was BIT-IDENTICAL, because a =copy= of an immediate is zero
+rows.
+
+It is stated rather than hidden behind a weaker criterion. Two tests:
+=identical_instruction_streams= applies =without_named_immediates= (drop each
+=copy <immediate>=, substitute the immediate for its name) to BOTH sides for
+those three and requires EQUALITY, and asserts the other eleven are equal
+without it — plus an =assert_ne!= on the three, so a circuit that stops
+needing the substitution fails and gets removed from the list. And
+=each_literal_costs_exactly_one_named_immediate= pins the count at one per
+circuit and at ZERO on compactc's side, so "differs by more than a named
+immediate" cannot grow quietly.
+
+FOR DMD, an overhead-for-ergonomics call in M9's sense: closing this means
+letting a ledger value carry an =ImpactElem::Imm=, which is an API change to
+=LedgerRepr= — a trait all four vault forks use. The cost of NOT closing it is
+zero rows and one instruction per literal ledger write. The cost of closing it
+is touching the ledger value crossing in all four forks for a cosmetic gain.
+Recommendation: leave it, and revisit if a future artifact needs
+byte-identity to compactc on a literal-writing circuit.
+
+** NEW FINDING: a witness's result type is spelled with a SPACE
+
+Recorded in §0d as it was found. Worth repeating here because the fixture
+CONFIRMED it against a freshly compiled artifact: =opaque.compact='s
+=witness w_name(): Opaque<"string">= publishes as
+={"name": "w_name", "arguments": [], "result type": {…}}=. 66 of 66 witness
+entries corpus-wide use the spaced form; 0 use the hyphenated one every
+circuit uses.
+
+** The instrument, committed
+
+=tests/zkir_dump.rs= — an =--ignored= test writing one =.zkir= per circuit
+into =$MINOCRAB_ZKIR_DUMP=. Several sessions have dumped all N circuits and
+diffed by hand (M9 phases 5-8, the M9 closure, M14); this is that procedure
+committed, so the next one does not reinvent it. The docs carry the
+three-command recipe.
+
+** Gates
+
+- =identical_instruction_streams=: 11 of 14 equal to compactc up to renaming,
+  3 equal after the immediate substitution above.
+- =the_compress_atom_is_a_transient_commitment=: THE test that is not about
+  compactc at all. A preimage whose ledger write carries the raw BYTES and
+  whose circuit input carries =transient_commit(bytes, len)= is accepted by
+  both artifacts and by upstream's own =check()=, for three byte strings
+  including the empty one. Nothing else pins §2's reading of upstream, and
+  every sentence in the type's docs rests on it. Its negative twin,
+  =a_mismatched_commitment_is_rejected_by_both=, is what makes =eq= an
+  equality on VALUES rather than on interchangeable handles — it would pass
+  vacuously if the slot were merely an index.
+- =compactc_s_abi_agrees_with_the_leafs=: the artifact's own
+  =contract-info.json=, flattened, against each leaf's =CircuitAbi=, atoms
+  AND prims, for all twelve circuits with arguments. This is the test whose
+  ABSENCE let the curve-point bug survive.
+- =the_vaults_own_initialize_now_flattens=: the corpus provenance the fixture
+  route costs, recovered where the corpus has coverage — the erc20-vault's
+  own =initialize=, from the CORPUS artifact, five arguments flattening slot
+  for slot with =Prim::Point= last.
+- =an_opaque_argument_is_unconstrained=: asserted directly, not only via
+  stream equality, and paired with =opStruct='s single =constrain_bits= so
+  the absence is a property of the type rather than of the test.
+- ZERO MOVEMENT, checked harder than the gates require: all 98 pre-existing
+  circuits' serialized ZKIR dumped at the pre-code commit and after, and
+  compared — 98 of 98 BYTE-IDENTICAL, with exactly the 14 new files added and
+  none missing. Both snapshots grew by exactly 14 entries and nothing else
+  moved (=git diff --stat=: 90 insertions, 0 deletions on the interface
+  snapshot; 14 insertions, 0 deletions on the row snapshot).
+- =cargo test --workspace=: 528 passed, 0 failed. =row_snapshot --release=
+  green. =minocrab-interface-gen='s =--check= over every generated crate
+  green, so no existing interface crate's output moved.
+
+** Not done, and why
+
+- The CROSS-CONTRACT circuit. §7 listed =call_it= among the fixture circuits.
+  It is not in the committed fixture: a cross-contract fixture needs a second
+  contract and a sealed handle, and the shape is already covered — probe3
+  established the facts recorded in §0a (result limb unconstrained, both limbs
+  bound by the comm commitment), =CallArg=/=CallResult= for =Opaque= are
+  implemented, and the four existing xcall differential suites cover the
+  machinery itself. What is untested is specifically an OPAQUE crossing a real
+  boundary. Worth a follow-up; not worth blocking M15.
+- =spec/borsh-subset.md='s exclusion list does not yet name =Opaque= (§5).
+  The DERIVE does: =reject_variable_width= gained an =Opaque= arm, and it is
+  the only entry in that table with NO REPLACEMENT — the other four offer
+  =Flagged<T>=, =[T; K]= + count, =Bytes<N>= + length, =[(K, V); N]= + count,
+  whereas an opaque simply cannot be serialized, so the message says so. It is
+  also the only entry whose value-dependence is the LEDGER's rather than
+  Borsh's. Unit-tested with the other four. The spec DOCUMENT is left for the
+  next Borsh-touching session, since it has its own generated regions and
+  regenerator, and no external team can meet an opaque field before then (no
+  deployed payload has one).
+
 * 9. What this milestone does NOT cover
 
 - *=List<Opaque<…>>= and =HistoricMerkleTree<Opaque<…>>=* (zerocash's

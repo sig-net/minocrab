@@ -44,6 +44,30 @@ building optimized deps. 4.8G of incremental cache was cleared at the
 end of this session; the underlying growth is structural, so a future
 session on a tight volume should expect to clear it again.
 
+* Session of 2026-08-16 — M15 only
+One milestone, three commits, gate-checked and diff-unreviewed like the
+rest. Its entry is under the standing instruction below; read item (1),
+the curve-point recognition, first — it is the only line in the session
+where a mistake would produce a WRONG ALIGNMENT rather than a failing
+test, and it is a positive/negative pair rather than a check.
+
+Two things a reviewer should know before reading the diff. First, M15
+closed a BUG as well as the fairness gap: `CompactType::flatten` could
+not flatten the erc20-vault's own `initialize`, so our benchmark
+contract was not importable through our own interface machinery, and
+nothing would have noticed because the test comparing five FAB atoms
+against five did not exist. Second, the milestone's own text guessed the
+Rust shape wrong in both directions (an opaque DOES enter circuits; half
+the corpus's `Opaque` nodes are curve points), so the design note's §0
+is a correction to `milestones.org` rather than a summary of it.
+
+Housekeeping: target/ was at 24G with 5.2G free at the start of this
+session, and 1.2G of `target/debug/incremental` plus `target/flycheck0`
+were cleared to make room for the --release row_snapshot gate. This is
+the third session to do it; the growth is structural, as the 2026-08-15
+note says. Commits again carry david@sig.network, matching M14's four
+and not the repo default — cosmetic, both are dmd, no trailers anywhere.
+
 * High value (protocol/soundness-adjacent)
 - [ ] f102ffe M10 burn restructure (erc20_vault_opt withdraw/swap):
       the single-claimed-spend lowering + the well-formedness test
@@ -379,6 +403,75 @@ reviewer should look at.
       real footgun rather than an ergonomics wish: a literal is
       range-checked against the COMPARISON width, not the bound, so
       b.lt(500u64) on a BoundedUint<300> compiles and is always true.
+- [ ] M15 (a96874b design, f32473b leaf+reader+generator, 0e3775b
+      fixture+port+differential): FOUR THINGS, roughly in order of
+      how badly a mistake would hurt.
+      (1) THE CURVE-POINT RECOGNITION is the highest-risk line in the
+      milestone, and it is a positive/negative pair rather than a check.
+      `CompactType::curve_point` says an `Alias { name, Opaque { tsType } }`
+      is a curve point when `name == tsType` and the name is one of two.
+      Getting it too WIDE silently hands a user's own
+      `Opaque<"Secp256k1Point">` five FAB atoms and a `Prim::Point` — a
+      wrong alignment, which is a wrong PI stream, on a type nothing else
+      in the system would question. Getting it too NARROW restores the bug
+      it fixes. There is a test per shape
+      (`only_the_exact_curve_spelling_is_a_point`: right ts-type under a
+      different alias, bare with no alias, an alias matching a non-curve
+      name), but the tests are the agent's own reading of compactc's
+      output — check the reading, i.e. that compactc really cannot emit a
+      curve point any other way, and that no OTHER curve type is spelled
+      `Opaque` (the agent verified `JubjubScalar`/`Secp256k1Base`/
+      `Secp256k1Scalar` publish under their own `type-name`, from a
+      compiled probe; that is the load-bearing negative).
+      (2) THE `compress` SEMANTICS, which every sentence in
+      `minocrab_std::v3::Opaque`'s docs rests on: the slot is
+      `transient_commit(bytes, len)`, zero for empty, one-way. It is read
+      off upstream's `ValueAtom::field_repr_unchecked` and it is TESTED
+      (`the_compress_atom_is_a_transient_commitment` plus its rejecting
+      twin), so this is the best-warranted claim in the milestone — but
+      the CONSEQUENCE stated in the docs is a soundness statement a
+      contract author will rely on ("`eq` decides equality of the TS-side
+      values, up to Poseidon collision resistance"), so it deserves a
+      second reading as a claim rather than as a test.
+      (3) THE THREE `copy`s. `identical_instruction_streams` does not
+      compare eleven of fourteen circuits to compactc directly — it
+      applies `without_named_immediates` to BOTH sides for `opDefault` /
+      `opMapKey` / `opMaybe` and requires equality after. The
+      justification is M9 phase 7's measurement (a `copy` of an immediate
+      is zero rows, 47 of them removed with `row_snapshot` bit-identical),
+      and the substitution is guarded by an `assert_ne!` and a count test.
+      What deserves eyes is whether the substitution can hide anything
+      ELSE: it drops every `copy` whose `val` starts `0x` and substitutes
+      textually on the serialized JSON, so check it cannot coalesce two
+      distinct wires or mask a reordering. Also weigh the recommendation
+      in notes/opaque-bridging.org §"As built" (leave it) — that is a
+      dmd-facing overhead-for-ergonomics call, not the agent's.
+      (4) `LedgerSet<T>`, three milestones early. Two methods composed
+      from existing ops, so there is no new lowering to audit; what to
+      check is the CLAIM that `Set.member` is the same `Op::Member` a
+      map's is (read off the fixture's `opSet`, and the reason `member`
+      delegates to `map_member` rather than getting a `set_member` twin),
+      and that M16 inheriting a half-Set is recorded where M16 will see it
+      (it is, in the milestone).
+      Lower priority, self-checking: the leaf's trait impls (byte-identical
+      ZKIR for all 98 pre-existing circuits, dumped before and after), both
+      frozen snapshots (+14 entries, 0 deletions), and the generator rows
+      (--check green over every generated crate). Also NEW AND USEFUL
+      rather than reviewable: tests/zkir_dump.rs commits the
+      dump-and-diff procedure four previous sessions did by hand.
+      Two corrections the milestone made to earlier records, both worth
+      confirming: `CompactType`'s doc claimed to model every corpus
+      type-name and did not (four are unmodelled, all ledger-only, and
+      `ContractInfo` never parses `ledger` — verify that last part, since
+      it is what makes the gap harmless); and a witness's result type is
+      spelled "result type" WITH A SPACE in all 66 witness entries, which
+      is a landmine for anyone adding witness parsing with a copied
+      `#[serde(rename = "result-type")]`.
+      NOT DONE, documented: no fixture circuit sends an opaque across a
+      real cross-contract boundary. `CallArg`/`CallResult` are implemented
+      and the facts come from a probe, but nothing in the suite asserts
+      them — so that pair is the one part of the leaf with no test behind
+      it.
 - [ ] M9 closure (312c8ff, the 32 experiment declarations): the ZKIR is
       byte-identical for all 87, so what deserves eyes is the LABEL
       STRING mapping — every free-string `c.disclose(w, "x (hi)")` pair
