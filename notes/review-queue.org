@@ -24,8 +24,11 @@ Landed and NOT in this queue because an instrument covers them fully:
 the 87-circuit byte-identical ZKIR dumps (phases 5-8 and the closure),
 both frozen snapshots, and the eleven differential suites.
 Two agents were still running when this was written (M8 churn
-resilience, M14 bounded integers); their entries append below as they
-land.
+resilience, M14 bounded integers). M8 has since landed and its entry is
+below — read its DRIFT TAXONOMY early, since it is the document a future
+session will follow without re-deriving it, and the in-place snapshot
+regenerators it introduces are a new way to lose a baseline. M14's entry
+appends when it lands.
 
 * High value (protocol/soundness-adjacent)
 - [ ] f102ffe M10 burn restructure (erc20_vault_opt withdraw/swap):
@@ -313,6 +316,29 @@ reviewer should look at.
       claim that M4's two remaining bullets are now pure pointers to M16
       and M17. Check the pointer claim: that nothing in M4's original
       scope fell between the two new milestones.
+- [ ] M8 (bf9ddfa corpus fixes, b4f9486 in-place regenerators, ad226d3
+      the workflow + bump.sh): THE TAXONOMY IS THE ARTIFACT — twelve
+      instruments each mapped to what a post-bump failure MEANS and which
+      of four responses is right, and a wrong row there sends a future
+      session to accept a baseline it should have investigated. Read it
+      against what each instrument actually asserts, especially the rows
+      claiming a bump CANNOT move an instrument (those turn a firing into
+      a surprise, so a false "cannot" is the expensive direction). Second:
+      b4f9486 changed the regenerators from PRINTING tables to REWRITING
+      files in place between GENERATED BEGIN/END markers — the frozen
+      snapshots are our primary drift instrument, and a regenerator that
+      can silently rewrite them is a new way to lose a baseline; check the
+      marker handling and that `accept` cannot run without leaving the
+      diff visible. Third, bump.sh's `pins` reads the pinned compactc
+      release tag's OWN flake.lock to derive the ledger revs — that is the
+      mechanical closure of M1's version-string-vs-rev trap, so verify it
+      reads the right lock and the right field. The dry run is recorded as
+      real (ledger main has DIVERGED from our rev, not advanced: the bump
+      was attempted, hit ReverseBytes and the secp256r1/Curve25519 IrTypes
+      being gone, and was REJECTED) — the useful follow-up is not review
+      but the recorded remainder: nobody has yet read a corpus diff
+      produced by a different compiler, because upstream has not shipped
+      one.
 - [ ] M9 closure (312c8ff, the 32 experiment declarations): the ZKIR is
       byte-identical for all 87, so what deserves eyes is the LABEL
       STRING mapping — every free-string `c.disclose(w, "x (hi)")` pair
