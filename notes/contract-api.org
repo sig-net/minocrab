@@ -688,3 +688,235 @@ five documented name lines changed; row_snapshot bit-identical.
 - Unused STRUCT FIELDS do not warn, which is how the settle circuits keep
   `respond.bigR.y` and `respond.recoveryId` (wire shape, read by nothing)
   without ceremony.
+** Phase 6 — disclosure declarations (2026-08-15)
+Every circuit in the vault (all three forks) and in signet_contract now
+DECLARES what it discloses, in its signature, and a generated test proves the
+declaration is exactly what the circuit does. 30 declarations, 30 generated
+tests, zero movement (all 78 circuits' serialized ZKIR byte-identical).
+
+*** The record: v3 Disclosure carries the Identifier
+`minocrab::v3::Disclosure3 { label: String, kind: DisclosureKind, values:
+Vec<Identifier> }` — v3's own record, replacing the shared v2 `Disclosure` in
+`Circuit3`/`Compiled3`. Two changes in one:
+- the Identifier fix the design named: v2 points at a ZKIR memory INDEX,
+  which v3 does not have, so the v3 record used to store `index: 0` and every
+  value in a v3 report would have read `<not computed>`. It now carries the
+  `%label.N` identifiers — what the instruction stream refers to and what the
+  simulator keys its memory by. New non-circuit-affecting accessor
+  `Builder3::identifier(Val) -> Identifier` (`name` was private).
+- `values` is a LIST, because one record is one LOGICAL value: a `Bytes<32>`
+  disclosed under one label contributes both limbs to one record instead of
+  two records called `"… (hi)"` / `"… (lo)"`. That is what makes a declared
+  set comparable to a disclosed one — labels are per value, not per wire.
+Rejected: an `Option<Identifier>` bolted onto the v2 `Disclosure` (always
+`None` on the v2 side, and v2's `index` would have to become an enum), and a
+generic `Disclosure<R>`. A v3-only twin beside the v2 one says the true
+thing: the two frontends name values differently.
+Primitives on Circuit3 (the only places a `Disclosed` record is made):
+#+begin_src rust
+pub fn disclose<T: IrTy>(&mut self, w: Wire3<T, Private>, label: &str) -> Wire3<T, Public>;
+pub fn disclose_all<T: IrTy, const N: usize>(
+    &mut self, label: &str, wires: [Wire3<T, Private>; N]) -> [Wire3<T, Public>; N];
+pub fn disclose_slice<T: IrTy>(
+    &mut self, label: &str, wires: &[Wire3<T, Private>]) -> Vec<Wire3<T, Public>>;
+#+end_src
+`disclose` is `disclose_all` at N = 1, so the free-string form still works and
+still records one wire. A disclosure of ZERO wires records NOTHING (see the
+gotchas).
+
+*** The vocabulary (crates/minocrab/src/v3/disclose.rs)
+#+begin_src rust
+pub trait DisclosureLabel: 'static { const LABEL: &'static str; }
+label!(RequestId = "request id");            // macro_rules!, #[macro_export]
+label! { /// docs and a visibility are accepted
+         pub RequestRecord = "request record"; pub Caip2Id = "the CAIP-2 chain id"; }
+pub trait LabelSet { fn push_labels(labels: &mut Vec<&'static str>);
+                     fn labels() -> BTreeSet<&'static str> { .. } }
+pub trait Disclose: Sized {
+    type Public;
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Self::Public;
+}
+pub struct Discloses<D, R = ()> { value: R, _labels: PhantomData<fn() -> D> }
+impl<D, R> Discloses<D, R> { pub fn of(value: R) -> Self; pub fn into_inner(self) -> R }
+pub trait Declared { fn declared() -> BTreeSet<&'static str>; }
+impl<D: LabelSet, R> Declared for Discloses<D, R> { .. }
+pub fn disclosed_labels(compiled: &Compiled3) -> BTreeSet<&str>;
+pub fn assert_declared_disclosures<T: Declared>(circuit: &str, compiled: &Compiled3);
+#+end_src
+PLACEMENT deviates from the design's "minocrab-std": the vocabulary is in
+minocrab (the frontend), because `minocrab_ledger::contract_call` DISCLOSES —
+a cross-contract call publishes the callee's entry-point hash, the
+communications commitment and the result limbs — and minocrab-ledger does not
+depend on minocrab-std. Those labels have to be nameable in the CALLER's
+declaration, so they are now `minocrab_ledger::{XcallEntryPointHash,
+XcallCommitment, XcallResult}`, written with the same `label!`.
+minocrab-std keeps the half that needs its types
+(crates/minocrab-std/src/v3/disclose.rs): `Disclose` impls for `Uint<BITS>`,
+`Bool`, `Bytes<N>`, `B32`, `ContractAddress`, `Secp256k1Point`, `BytesN<N>`
+and `ShieldedCoinInfo3` (the whole coin under one label), plus
+`impl<D, R: CircuitOut> CircuitOut for Discloses<D, R>` — `CircuitOut` is
+minocrab-std's trait, so the impl must live there. Everything is re-exported
+from `minocrab_std::v3`, so contracts still write one `use`.
+No blanket `impl<L: DisclosureLabel> LabelSet for L`: it would overlap the
+tuple impls (a downstream crate may implement `DisclosureLabel` for a tuple of
+its own types), so `label!` emits the `LabelSet` impl per label and the
+tuples are written out to arity 16.
+
+*** disclose_as is a method on the VALUE, not on the circuit
+The design sketched `c.disclose_as::<RequestId>(rid_b32)`. That spelling is
+unreachable: such a method needs TWO type parameters (the label and the
+value), and a turbofish must supply all of a function's type arguments or
+none — `error[E0107]: method takes 2 generic arguments but 1 generic argument
+was supplied`, checked. The options were `c.disclose_as::<RequestId, _>(v)`
+and `v.disclose_as::<RequestId>(c)`; the second keeps the design's
+`disclose_as::<L>` spelling exactly and reads well next to the Compact source
+(`const requestId = disclose(calculateRequestId(request))` becomes
+`let request_id = request_id.disclose_as::<RequestId>(c);`). The trait is
+`Disclose`, so `.disclose_as` needs it in scope (it is in the crate's usual
+`use minocrab_std::v3::{..}` line).
+
+*** The declaration must not move the interface
+`Discloses<D, R = ()>` is a real zero-sized wrapper; its `CircuitOut` impl is
+`R`'s, so `Discloses<D, ()>` occupies NO output slot. `#[circuit]` routes it
+to `entry` (the label-less form) exactly as a `-> ()` circuit, and only
+`Discloses<D, R>` with a non-unit `R` demands `#[circuit(output = "…")]`.
+That is the answer to "a declaration is not a return value": the vault's nine
+`[]` circuits gained a return TYPE and no output. `entry` was widened from
+`impl FnOnce(&mut Circuit3, A)` to `impl FnOnce(&mut Circuit3, A) -> O` with
+`O: CircuitOut` and a plain `assert_eq!(O::SLOTS, 0)`, which is also what
+lets a hand-written `entry(|c, args| { ..; Discloses::of(()) })` declare.
+The macro reads the return type SYNTACTICALLY (last path segment is
+`Discloses`; whether a second, non-`()` type argument is present) — the same
+shallow reading `is_circuit_ref` already does on the first parameter. An
+aliased spelling is not recognised, deliberately: the declaration is meant to
+be legible in the signature.
+
+*** The generated test
+For a circuit whose return type is a `Discloses<..>`, `#[circuit]` emits, next
+to the entry point:
+#+begin_src rust
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod __deposit_discloses {
+    #[allow(unused_imports)] use super::*;
+    #[test]
+    fn the_declared_disclosures_are_the_ones_the_circuit_makes() {
+        ::minocrab_std::v3::__private::assert_declared_disclosures::<
+            Discloses<(DepositorCommitment, RequestId, ..)>>("deposit", &super::deposit());
+    }
+}
+#+end_src
+The declaration is named by COPYING the return type's tokens — the macro
+parses nothing about `D`, and rustc resolves the label types exactly as it
+does in the signature. A module rather than an item inside the entry point,
+because rustc does not collect `#[test]` from inside a function body.
+The set is the `DisclosureKind::Disclosed` labels only: `Output` records are
+the return value (already compiler-enforced — `CircuitOut` exists only for
+public values) and `Statement` records are the ledger writes an
+already-public value feeds. Neither is a private value crossing the gate.
+dmd's proviso — the failure must not be confusing — is
+`assert_declared_disclosures`, unit-tested on its own message:
+#+begin_example
+swap: the `Discloses<..>` declaration does not match what the circuit disclosed.
+
+  DISCLOSED BUT NOT DECLARED (1):
+    "xcall communications commitment"
+      fix: add its label type to `swap`'s `-> Discloses<(..)>`. If the disclosure is
+      still a bare `c.disclose(w, "xcall communications commitment")`, give it a label
+      type first — `label!(SomeName = "xcall communications commitment");` — and call
+      `w.disclose_as::<SomeName>(c)`.
+
+  declared (8): {"request id", "request record", …}
+  disclosed (9): {"request id", "request record", …, "xcall communications commitment"}
+
+The declaration is this circuit's audit surface: every private value it makes public
+belongs in it.
+#+end_example
+(The DECLARED-BUT-NEVER-DISCLOSED half is symmetrical: "disclose that value
+with `.disclose_as::<L>(c)`, where L is the label type whose LABEL is …, or
+drop L from the declaration".)
+
+*** v3 report() (crates/minocrab-sim/src/v3.rs)
+`Report3` / `DisclosedValue3 { label, kind, values: Vec<String> }`, plus
+`report(&Run3, &[Disclosure3])` and `simulate_compiled(&Compiled3,
+&ProofPreimage)` — the v3 twins of v2's, serde-serializable like them. A
+disclosed value resolves through `Run3::memory` by the record's Identifier,
+which is the whole point of the record change; v3's `public_statement` is
+`pis` (v3 verifies a preimage rather than generating a transcript).
+The valued-report GOLDEN is one hand-written test,
+crates/minocrab-contracts/tests/disclosure_report.rs, on `deposit` with the
+vault harness's own preimage — not macro-generated per circuit, because a
+golden needs a preimage and a macro cannot invent one (the design already
+said "feature-gated, needs preimage"). It asserts the whole report and that
+NOTHING reads `<not computed>`. It reads:
+#+begin_example
+depositor identity commitment | disclosed | 48, 933f9decb46ed5…
+request id                    | disclosed | 7e, 7734d026c9645…
+request record                | disclosed | 31, 7661756c742d61646472, 04, … (34 limbs)
+xcall communications commitment | disclosed | 24a606d7ade6a0bd…
+xcall entry-point hash        | disclosed | f3, 8f2c97ee5f46d2…
+impact public input           | statement | 01
+#+end_example
+
+*** Rollout breadth: the vault (×3) + signet_contract, 30 circuits
+The design is silent on phase 6's breadth (the phasing bullet says only
+"Identifier fix + v3 report + label!/disclose_as/Discloses + generated
+tests"), and M9's exit criterion — "disclosure declarations are part of every
+circuit's signature" — is the milestone's, not this phase's. So: the two REAL
+contracts, all three vault forks in lockstep (27 circuits) and
+signet_contract (3). The vault's forks were edited by one script, as phase 5
+did, because the borsh fork owes the opt fork byte-identity.
+The 30 remaining EXPERIMENT circuits (attest, events, hashing, xcall,
+xcall_with_payment, xcontract_events, mint_tokens, serde_builtin,
+test_caller) keep their free-string `c.disclose` calls: they are measurement
+rigs, several are circuit FAMILIES built through `entry()` (which the
+attribute — and so the generated test — does not cover), and the hashing
+family is not ported at all. Declaring them is a follow-up, best done with
+phase 8's showcase twin, and nothing about it is unknown.
+Labels per contract, in a `label!` block at the top of the file: 32 in the
+base vault fork, 31 in each of _opt/_borsh, 7 in signet_contract. The strings
+are the ones the hand-written calls carried, minus the `(hi)`/`(lo)`
+suffixes; `signet_contract`'s `EmittedRequestId` is named around the
+interface crate's `RequestId` TYPE, which is what it discloses.
+
+*** What the declarations found
+A cross-contract call discloses, and no one had said so. The four vault
+circuits that notify the Signet singleton (deposit, withdraw, swap,
+approveRouter, ×3 forks) failed their generated tests on
+`"xcall entry-point hash (hi)"`, `"(lo)"` and
+`"xcall communications commitment"` — disclosures made by
+`minocrab_ledger::contract_call` on the caller's behalf. They are real
+(the entry point and the commitment go into the public claim), so they are
+now typed labels exported by minocrab-ledger and named in those twelve
+signatures. That is the feature working on its first day: the declaration
+surfaces disclosures a LIBRARY makes for you.
+
+*** Gotchas
+- A disclosure of ZERO wires records nothing. `contract_call`'s result list
+  is empty for a `[]`-returning callee, and `results.disclose_as::<XcallResult>(c)`
+  would otherwise have put a label in the disclosed set that no value backs.
+  The guard is in `Circuit3::record_disclosure`, stated once.
+- The generated test only exists in the crate that DEFINES the circuit
+  (`#[cfg(test)]`), and only for `#[circuit]` entry points. A circuit family
+  built through `entry()` gets the declaration but no generated test.
+- A label type is a plain private struct, so an unused one warns
+  (`dead_code`). Each fork's `label!` block therefore lists exactly the
+  labels that fork uses: the base fork's refund has
+  `SwapRefundRecipient = "own public key as swap-refund recipient"`, which
+  the opt/borsh forks do not (their deduplicated refund branch reuses
+  `"own public key as refund recipient"`) — so those three declarations
+  legitimately differ, and the generated tests are what says so.
+- Disclosure records are METADATA: no instruction, no slot, no row. Merging
+  a `(hi)`/`(lo)` pair into one record changes the report and nothing else.
+  The interface snapshot zips `DisclosureKind::Output` records against
+  `ir.outputs`, and outputs are untouched by any of this.
+- `Discloses::of(())` as the last expression of a `[]` circuit is the whole
+  body change. It emits nothing; `CircuitOut for ()` has `SLOTS = 0`.
+
+*** Zero-movement evidence
+- All 78 circuits' serialized ZKIR dumped at HEAD (a git worktree) and after
+  the phase, diffed: BYTE-IDENTICAL, all 78, including every label. (Phase 5
+  needed nine explanations here; phase 6 needs none, because a disclosure
+  record is not part of the circuit.)
+- interface_snapshot unchanged, row_snapshot bit-identical, all differential
+  suites green, `cargo test --workspace --release` clean.

@@ -339,10 +339,43 @@ suites.
       the ORDER of three input constraints (parameter order now, not the
       declarer's), 1 the documented rename. row_snapshot bit-identical,
       cargo test --workspace --release green.)
-- [ ] Phase 6: disclosure — v3 Disclosure carries the Identifier, v3
+- [X] Phase 6: disclosure — v3 Disclosure carries the Identifier, v3
       report(), label!/disclose_as::<L>/Discloses<D, R> +
       Discloses::of, macro-generated set-equality tests with
       prescriptive failure messages + valued-report golden.
+      (2026-08-15 — 30 circuits DECLARE what they disclose in their
+      signature: the vault's nine in all three forks and
+      signet_contract's three. The v3 record is now its own type,
+      Disclosure3, carrying Identifiers (v3 has no memory index — the
+      old `index: 0` made every value in a v3 report read "<not
+      computed>") and a LIST of them, because one record is one logical
+      value: a Bytes<32> is one label, not a "(hi)"/"(lo)" pair. The
+      vocabulary (label!, DisclosureLabel, LabelSet, Disclose,
+      Discloses<D, R = ()>, Declared) lives in minocrab, not
+      minocrab-std as the design said — because minocrab-ledger
+      discloses too, and a cross-contract call's disclosures must be
+      nameable in the CALLER's declaration. Which is exactly what the
+      generated tests FOUND on day one: the four notify-Signet circuits
+      (×3 forks) were disclosing the xcall entry-point hash and
+      communications commitment through contract_call, undeclared;
+      those are now minocrab_ledger::{XcallEntryPointHash,
+      XcallCommitment, XcallResult} and named in twelve signatures.
+      Two deviations, both forced: `v.disclose_as::<L>(c)` rather than
+      the design's `c.disclose_as::<L>(v)` (a circuit method needs two
+      type parameters and a turbofish is all-or-nothing, E0107); and
+      the valued-report golden is one hand-written test on deposit, not
+      per-circuit codegen, because a golden needs a preimage. Zero
+      movement is the reason `Discloses<D, ()>` routes through the
+      label-less entry(): a declaration occupies no output slot. 30
+      generated set-equality tests with prescriptive messages ("fix:
+      add its label type to `swap`'s -> Discloses<(..)>…"), the
+      valued-report golden, minocrab-sim's v3 report()/simulate_compiled
+      twins. Zero movement checked harder than the gates require: all 78
+      circuits' serialized ZKIR dumped at HEAD and compared — 78 of 78
+      BYTE-IDENTICAL. row_snapshot bit-identical, interface_snapshot
+      unchanged, cargo test --workspace --release green. LEFT for a
+      documented follow-up: the 30 experiment circuits, several of which
+      are entry()-built families the attribute cannot cover.)
 - [ ] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
       method names, no hidden Impact ops), inline-immediate literals
       (impl Into<Operand>; gated on hand-reviewed instruction deltas —

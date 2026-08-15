@@ -22,7 +22,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, Serializer, Uint, B32};
+use minocrab_std::v3::{circuit, label, Disclose, Discloses, Serializer, Uint, B32};
 use signet_signer_interface::{AffinePoint, RequestId, SignBidirectionalEventNotification};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -32,11 +32,19 @@ pub const SIGN_BIDIRECTIONAL_EVENT: &str = "SignBidirectionalEvent";
 pub const SIGNATURE_RESPONDED_EVENT: &str = "SignatureRespondedEvent";
 pub const RESPOND_BIDIRECTIONAL_EVENT: &str = "RespondBidirectionalEvent";
 
-fn disclose_b32(c: &mut Circuit3, b: &B32<Private>, label: &str) -> B32<Public> {
-    B32 {
-        hi: c.disclose(b.hi, &format!("{label} (hi)")),
-        lo: c.disclose(b.lo, &format!("{label} (lo)")),
-    }
+// Every argument of these three circuits goes into the event payload, so
+// the declarations below ARE the parameter lists — which is exactly what a
+// disclosure declaration is for. `EmittedRequestId` rather than
+// `RequestId`: that name is already the interface crate's type for the
+// value being disclosed.
+label! {
+    EmittedRequestId = "requestId";
+    NotificationVersion = "notification.version";
+    NotificationPayload = "notification.payload";
+    SignatureBigRx = "signature.bigR.x";
+    SignatureBigRy = "signature.bigR.y";
+    SignatureS = "signature.s";
+    SignatureRecoveryId = "signature.recoveryId";
 }
 
 /// `emit (Misc { name: pad(32, name), payload })` — the serializer holds
@@ -73,13 +81,13 @@ pub fn sign_bidirectional(
     c: &mut Circuit3,
     request_id: B32<Private>,
     notification: SignBidirectionalEventNotification<Private>,
-) {
+) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
     let version = notification.version.field();
     let payload = notification.payload;
 
-    let rid = disclose_b32(c, &request_id, "requestId");
-    let version = c.disclose(version, "notification.version");
-    let payload = payload.map_limbs(|i, w| c.disclose(w, &format!("notification.payload ({i})")));
+    let rid = request_id.disclose_as::<EmittedRequestId>(c);
+    let version = version.disclose_as::<NotificationVersion>(c);
+    let payload = payload.disclose_as::<NotificationPayload>(c);
 
     // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
     c.region("event serialize + emit", |c| {
@@ -89,6 +97,7 @@ pub fn sign_bidirectional(
         s.push_bytes_n(&payload);
         emit_misc(c, s);
     });
+    Discloses::of(())
 }
 
 /// The shared body of `respond`/`respondBidirectional`: only the event
@@ -116,11 +125,11 @@ fn respond_like(
 ) {
     let recovery_id = recovery_id.field();
 
-    let rid = disclose_b32(c, &request_id, "requestId");
-    let x = disclose_b32(c, &big_r.x, "signature.bigR.x");
-    let y = disclose_b32(c, &big_r.y, "signature.bigR.y");
-    let s_scalar = disclose_b32(c, &s_scalar, "signature.s");
-    let recovery_id = c.disclose(recovery_id, "signature.recoveryId");
+    let rid = request_id.disclose_as::<EmittedRequestId>(c);
+    let x = big_r.x.disclose_as::<SignatureBigRx>(c);
+    let y = big_r.y.disclose_as::<SignatureBigRy>(c);
+    let s_scalar = s_scalar.disclose_as::<SignatureS>(c);
+    let recovery_id = recovery_id.disclose_as::<SignatureRecoveryId>(c);
 
     // payload: requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1) ‖ zeros(127)
     c.region("event serialize + emit", |c| {
@@ -144,8 +153,15 @@ pub fn respond(
     big_r: AffinePoint<Private>,
     s: B32<Private>,
     recovery_id: Uint<8>,
-) {
+) -> Discloses<(
+    EmittedRequestId,
+    SignatureBigRx,
+    SignatureBigRy,
+    SignatureS,
+    SignatureRecoveryId,
+)> {
     respond_like(c, SIGNATURE_RESPONDED_EVENT, request_id, big_r, s, recovery_id);
+    Discloses::of(())
 }
 
 /// `export circuit respondBidirectional(requestId: RequestId,
@@ -158,6 +174,13 @@ pub fn respond_bidirectional(
     big_r: AffinePoint<Private>,
     s: B32<Private>,
     recovery_id: Uint<8>,
-) {
+) -> Discloses<(
+    EmittedRequestId,
+    SignatureBigRx,
+    SignatureBigRy,
+    SignatureS,
+    SignatureRecoveryId,
+)> {
     respond_like(c, RESPOND_BIDIRECTIONAL_EVENT, request_id, big_r, s, recovery_id);
+    Discloses::of(())
 }
