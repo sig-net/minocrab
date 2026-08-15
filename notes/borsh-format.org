@@ -1,26 +1,31 @@
-#+title: Serialization format: design of record (flat fixed LE; borsh + serde/bincode as oracles)
+#+title: Borsh (fixed-width subset): serialization design of record
 
-REFRAMED after dmd's 2026-08-15 challenge ("why almost-Borsh? option
-blowup? want serde too"): the format's identity is OUR two-page spec of
-the flat fixed little-endian declaration-order layout — for the
-circuit-safe subset, Borsh, bincode-fixint(serde) and zerocopy/C-packed
-all emit IDENTICAL bytes, so we are not subsetting someone's format,
-we are speaking the layout their fixed modes agree on. Borsh becomes
-ONE of TWO conformance oracles: spec types derive borsh traits AND
-serde, the property asserts in_circuit == borsh::to_vec ==
-bincode-fixint::serialize (dual oracle, P1 strengthened). serde gives
-dmd the generated native ser/de they asked for; borsh-js remains
-available to the TS side; the generated offset tables make a 20-line
-DataView reader equally valid. Option blowup answer: always-max-size
-is CIRCUIT physics (both arms always cost rows — measured on refund);
-wire elision would only save off-chain bytes while making offsets
-data-dependent; Flagged<T> (1-byte tag, payload always present) is
-ordinary canonical Borsh AND ordinary serde of that struct — no
-dialect — and is what Compact's Maybe already compiles to. Formats
-with native fixed-offset optionals (Cap'n Proto, FIDL) pay word-
-alignment padding + pointer machinery = keccak rows; rejected.
-Everything below stands with "Borsh" read as "the flat layout, with
-borsh as an oracle".
+FRAMING SETTLED by dmd 2026-08-15: this IS BORSH — restricted to the
+fixed-width subset — and must be documented as A SUBSET, NOT A
+SEPARATE FORMAT, in the code and the spec. Every byte emitted is
+valid canonical Borsh for the declared types; any Borsh
+implementation (borsh-js on the TS side included) parses it with the
+same type declarations; nothing is redefined. The subset rule:
+every circuit-visible type has a fixed width (fixed-width ints,
+[u8;N], structs, Tag<K> fieldless enums; Flagged<T> — a bool tag +
+always-present payload, an ordinary Borsh struct — where optionality
+is needed; no Vec/String/Option/data-enums in circuit-visible
+positions). Rationale kept from the discussion: the always-max-size
+cost of Flagged is CIRCUIT physics (both arms always cost rows —
+measured on refund), so wire elision (native Option) would only save
+off-chain bytes while making offsets data-dependent; formats with
+native fixed-offset optionals (Cap'n Proto, FIDL) pay word-alignment
+padding + pointer machinery = keccak rows. For this subset,
+serde+bincode-fixint emits byte-identical output, so spec types
+derive BOTH borsh and serde: dmd gets serde-generated native ser/de,
+and the conformance property is a DUAL oracle (in_circuit ==
+borsh::to_vec == bincode-fixint). The generated offset tables also
+permit a dependency-free DataView reader.
+MPC status: source now available at ~/mpc (cloned 2026-08-15); dmd:
+"we can change anything if we want, we just need to document it" —
+the open questions below are being answered from source rather than
+treated as external unknowns; MPC-side changes are in scope with
+documentation as the requirement.
 
 dmd directive 2026-08-15 (FAB concerns documented in
 ~/Documents/Midnight/FAB{,-issues,-findings}.md, filed upstream as
