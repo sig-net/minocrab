@@ -53,7 +53,7 @@
 //!   tests/erc20_vault_opt_burn_wellformed.rs.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
+use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, contract_call, emit, kernel_self,
     map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
@@ -408,9 +408,31 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
     request_id
 }
 
-/// `withdrawRefundCommitment(sk, requestId)` —
-/// `persistentHash<Vector<3, Bytes<32>>>([pad(32, "vault:refund:"), sk,
-/// requestId])`.
+/// `withdrawRefundCommitment(sk, requestId)` — rung 5(v), avenue 3:
+/// `transientHash<Vector<3, Bytes<32>>>([pad(32, "vault:refund:"), sk,
+/// requestId])`, POSEIDON over the six field limbs, replacing the port's
+/// `persistentHash` (SHA-256 over 96 bytes, ~3,760 measured rows) — the
+/// same construction `swapRefundCommitment` uses.
+///
+/// DURABILITY (notes/vault-optimization.org §"Q3"/§"Q4", CLEARED): Poseidon
+/// (`transientHash`) is curve-stable-EXEMPT — Midnight may change it on a
+/// hard fork (transient-crypto/src/hash.rs:75-81) whereas `persistentHash`
+/// is SHA and "guaranteed for long-term support" (base-crypto/src/hash.rs
+/// :92-95). That mutability is HARMLESS here because this commitment is
+/// vault-INTERNAL and SHORT-LIVED: `withdraw`/`swap` write it, exactly one
+/// settle circuit (`completeWithdraw`/`refund`/`completeSwap`) recomputes it
+/// from the same `(sk, requestId)` and compares one transaction later, and
+/// it never leaves the contract or spans a fork of the hash — the whole
+/// round trip is inside one deployment's lifetime with no recompute-later
+/// exposure. (Contrast `userCommitment`, which stays SHA because it is the
+/// MPC's key-derivation path and a hash change would strand funds — §"Q4".)
+///
+/// The Poseidon digest is a `Field`; the map value is kept `Bytes<32>` (the
+/// `Map<_, Field>` value-typing of §"Q5" is deferred — see the deviation
+/// log), so the field is split into the stored `[hi, lo]` slot pair exactly
+/// as `b32_slots` reconstructs it off-circuit: `lo = f mod 2^248` (the low
+/// 31 bytes) and `hi = f >> 248` (byte 31, `< 2^7` since a BLS12-381 scalar
+/// is `< 2^255`).
 fn withdraw_refund_commitment(
     c: &mut Circuit3,
     sk: &B32<Private>,
@@ -418,23 +440,16 @@ fn withdraw_refund_commitment(
 ) -> B32<Private> {
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
-        let alignment = Alignment(vec![
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
+        let f = c.transient_hash(&[
+            pad.hi.private(),
+            pad.lo.private(),
+            sk.hi,
+            sk.lo,
+            request_id.hi,
+            request_id.lo,
         ]);
-        let digest = c.persistent_hash(
-            alignment,
-            &[
-                pad.hi.private().erase(),
-                pad.lo.private().erase(),
-                sk.hi.erase(),
-                sk.lo.erase(),
-                request_id.hi.erase(),
-                request_id.lo.erase(),
-            ],
-        );
-        B32::from_typed(c, digest)
+        let (hi, lo) = c.div_mod_power_of_two(f, 248);
+        B32 { hi, lo }
     })
 }
 

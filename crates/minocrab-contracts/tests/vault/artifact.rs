@@ -157,18 +157,21 @@ pub fn fork_status(circuit: Circuit) -> Fork {
             "M10 rungs (iii)+5(i-userCommit), avenues 2+1",
             "separator encoded; userCommitment one-block",
         ),
-        Circuit::CompleteWithdraw => diverged("M10 rung (iii), avenue 2", SEPARATOR),
+        Circuit::CompleteWithdraw => diverged(
+            "M10 rungs (iii)+5(v), avenues 2+3",
+            "separator encoded; refund commitment Poseidon",
+        ),
         Circuit::Refund => diverged(
-            "M10 rungs (i)+(iii)+5(iv), avenues 7+2+4",
-            "kernel.self() threaded; separator encoded; branch re-mint merged (one commitment hash + one mint, cond_selected inputs)",
+            "M10 rungs (i)+(iii)+5(iv)+5(v), avenues 7+2+4+3",
+            "kernel.self() threaded; separator encoded; branch re-mint merged (one commitment hash + one mint, cond_selected inputs); refund commitment Poseidon",
         ),
         Circuit::Withdraw | Circuit::Swap => diverged(
-            "M10 rungs (i)+(iii)+(vi), avenues 7+2+6",
-            "kernel.self() threaded; separator encoded; burn = single claimed spend, no receive/nullifier",
+            "M10 rungs (i)+(iii)+(vi)+5(v), avenues 7+2+6+3",
+            "kernel.self() threaded; separator encoded; burn = single claimed spend, no receive/nullifier; refund commitment Poseidon",
         ),
         Circuit::CompleteSwap => diverged(
-            "M10 rungs (i)+(ii)+(iii), avenues 7+5+2",
-            "kernel.self() threaded; changeNonce derived; separator encoded",
+            "M10 rungs (i)+(ii)+(iii)+5(v), avenues 7+5+2+3",
+            "kernel.self() threaded; changeNonce derived; separator encoded; refund commitment Poseidon",
         ),
     }
 }

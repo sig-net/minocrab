@@ -122,18 +122,31 @@ pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
 
 /// DISCRETIONARY. Off-circuit `withdrawRefundCommitment(sk, requestId)`.
 ///
-/// Both artifacts: SHA-256 over `[pad(32, REFUND_PAD), sk, requestId]`.
-/// (Avenue 3 — Poseidon — is a later rung.)
+/// - Compat: SHA-256 (`persistentHash`) over `[pad(32, REFUND_PAD), sk,
+///   requestId]` — 96 bytes, 2 blocks.
+/// - Opt (rung 5(v), avenue 3): POSEIDON (`transientHash`) over the same six
+///   field limbs. The digest is a `Field`; its canonical little-endian
+///   bytes are the stored `Bytes<32>` value, and `b32_slots` splits it into
+///   the `[hi, lo]` slot pair the circuit's `div_mod(f, 248)` produces.
+///   Poseidon is safe here because the commitment is internal and
+///   short-lived — see `erc20_vault_opt::withdraw_refund_commitment` for the
+///   durability argument. The `Map<_, Field>` value-typing of §"Q5" is
+///   deferred, so the value stays `Bytes<32>`.
 pub fn refund_commitment(art: Art, sk: &[u8; 32], request_id: &[u8; 32]) -> [u8; 32] {
+    let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::REFUND_PAD));
+    let (sk_hi, sk_lo) = b32_slots(sk);
+    let (r_hi, r_lo) = b32_slots(request_id);
     match art {
-        Art::Compat | Art::Opt => {
-            let (p_hi, p_lo) = b32_slots(&pad32(erc20_vault::REFUND_PAD));
-            let (sk_hi, sk_lo) = b32_slots(sk);
-            let (r_hi, r_lo) = b32_slots(request_id);
-            fab_sha256(
-                vec![atom(32), atom(32), atom(32)],
-                &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
-            )
+        Art::Compat => fab_sha256(
+            vec![atom(32), atom(32), atom(32)],
+            &[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo],
+        ),
+        Art::Opt => {
+            use midnight_transient_crypto::hash::transient_hash;
+            let f = transient_hash(&[p_hi, p_lo, sk_hi, sk_lo, r_hi, r_lo]);
+            let mut le = f.as_le_bytes();
+            le.resize(32, 0);
+            le.try_into().expect("32-byte field repr")
         }
     }
 }
