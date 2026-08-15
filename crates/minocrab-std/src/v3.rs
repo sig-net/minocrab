@@ -46,6 +46,13 @@ pub use minocrab_macros::CircuitArg;
 #[cfg(feature = "macros")]
 pub use minocrab_macros::circuit;
 
+/// `#[interface]` — a bodyless trait declaring another contract's circuits
+/// becomes a typed calling handle over `minocrab_ledger::call`. The
+/// expansion names `::minocrab_ledger` paths, so a crate using it depends on
+/// minocrab-ledger as well as minocrab-std.
+#[cfg(feature = "macros")]
+pub use minocrab_macros::interface;
+
 /// Implementation detail of `#[derive(CircuitArg)]` and `#[circuit]`: the
 /// upstream types their expansions have to name, re-exported so the
 /// generated code needs only `minocrab_std` in scope and the macro crate
@@ -53,7 +60,7 @@ pub use minocrab_macros::circuit;
 #[doc(hidden)]
 pub mod __private {
     pub use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-    pub use minocrab::{AlignmentAtom, Private};
+    pub use minocrab::{AlignmentAtom, Private, Public, Visibility};
 }
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable

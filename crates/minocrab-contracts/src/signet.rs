@@ -19,8 +19,8 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, BytesN, CallArg, CircuitAbi, Prim,
-    Secp256k1EcdsaSignature, Uint, Vis3, B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, CircuitArg, Secp256k1EcdsaSignature, Uint, Vis3,
+    B32,
 };
 
 fn atom(n: u32) -> AlignmentSegment {
@@ -383,31 +383,10 @@ pub fn calculate_request_id<
 /// M12 stage 4 moves this type and [`construct_notification_v1`] into the
 /// signet-signer interface crate — they are the callee's vocabulary, not
 /// the vault's.
-#[derive(Clone)]
+#[derive(Clone, CircuitArg)]
 pub struct Notification<V: Vis3> {
     pub version: Uint<8, V>,
     pub payload: BytesN<V, 128>,
-}
-
-impl<V: Vis3> CircuitAbi for Notification<V> {
-    const SLOTS: usize = <Uint<8, V> as CircuitAbi>::SLOTS + <BytesN<V, 128> as CircuitAbi>::SLOTS;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <Uint<8, V> as CircuitAbi>::push_atoms(atoms);
-        <BytesN<V, 128> as CircuitAbi>::push_atoms(atoms);
-    }
-
-    fn push_prims(prims: &mut Vec<Prim>) {
-        <Uint<8, V> as CircuitAbi>::push_prims(prims);
-        <BytesN<V, 128> as CircuitAbi>::push_prims(prims);
-    }
-}
-
-impl CallArg for Notification<Public> {
-    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
-        self.version.push_call_slots(slots);
-        self.payload.push_call_slots(slots);
-    }
 }
 
 /// `constructSignBidirectionalEventNotificationV1(callerAddress, depth,

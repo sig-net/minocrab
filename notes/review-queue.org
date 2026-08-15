@@ -112,3 +112,13 @@ reviewer should look at.
       `value` field is a bare wire, so the `Uint<128>` width is stated
       in the impl rather than carried by the field's type, which is
       exactly the kind of hand-typed width M9 set out to delete.
+- [ ] M12 stage 3 (#[interface] + visibility-generic derive): the
+      SYNTACTIC visibility check (`reject_undisclosed` decides
+      Public/Private by looking for those words in the written type — it
+      cannot see through a type alias, and a `pub type Addr =
+      ContractAddress<Public>` would be rejected with a misleading
+      message); the `ArgBounds` refactor, which now decides where FIVE
+      impls apply for three macros; and the claim that emitting
+      CallArg/CallResult only in visibility-generic mode is a
+      restriction rather than a gap (an all-Public plain struct gets no
+      call impls today).

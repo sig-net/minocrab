@@ -11,6 +11,7 @@ use proc_macro::TokenStream;
 mod circuit;
 mod circuit_arg;
 mod circuit_borsh;
+mod interface;
 
 /// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
 /// argument list) for a struct with named fields.
@@ -127,6 +128,57 @@ pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(attr as circuit::CircuitAttr);
     let item = syn::parse_macro_input!(item as syn::ItemFn);
     circuit::expand(attr, item)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Declare another contract's circuits and get a typed calling handle.
+///
+/// ```ignore
+/// #[interface]
+/// pub trait Token {
+///     /// `circuit deposit(amount: Uint<128>, caller: ContractAddress): Bytes<32>`
+///     fn deposit(amount: Uint<128, Public>, caller: ContractAddress<Public>) -> B32<Public>;
+///     #[entry_point(name = "depositEmit")]
+///     fn deposit_emit(recipient: B32<Public>, amount: Uint<128, Public>);
+/// }
+///
+/// let hash = Token::at_field(TOKEN).deposit(c, guard, amount, me);
+/// ```
+///
+/// The trait is REPLACED by a handle struct with an inherent impl: an
+/// `EntryPoint` const per circuit, `at_field(index)` / `at(address)`
+/// constructors, and one typed method per circuit over
+/// `minocrab_ledger::call`.
+///
+/// **The entry-point keys are derived, never typed.** A circuit's 32-byte
+/// key is `EntryPoint::hash` of its Compact name, which is the method name
+/// mapped `snake_case` → `lowerCamelCase`; `#[entry_point(name = "…")]`
+/// overrides one where the Compact name is not the mechanical form.
+///
+/// **Arguments and results are `Public`.** Passing a value to another
+/// contract discloses it — it enters the communications commitment the
+/// ledger matches in the clear — so a private value must `disclose()`
+/// first, and a parameter written at `Private`, or left to default to it,
+/// is a compile error that says so.
+///
+/// **No address appears in the expansion.** `at_field` names a ledger field
+/// and `at` takes an address at runtime, so an interface crate is publishable
+/// without knowing where its contract is deployed.
+///
+/// The generated methods take `c: &mut Circuit3` and a guard wire before the
+/// callee's own parameters. The expansion needs `minocrab_ledger` and
+/// `minocrab_std` in the using crate's dependencies.
+#[proc_macro_attribute]
+pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        let attr: proc_macro2::TokenStream = attr.into();
+        return syn::Error::new_spanned(attr, "#[interface] takes no arguments")
+            .into_compile_error()
+            .into();
+    }
+    let item = syn::parse_macro_input!(item as syn::ItemTrait);
+    interface::expand(item)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

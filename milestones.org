@@ -689,8 +689,11 @@ gates every stage: both snapshots bit-identical, all suites green):
       XcallTarget/PaymentTarget handles; ALL call sites re-expressed
       (both vault forks identically); four differential suites switched
       from invented ep bytes to derived name hashes.
-- [ ] 3. #[interface] + the visibility-generic derive mode; the
-      stage-2 handles re-expressed through it (diff = attribute only).
+- [X] 3. #[interface] + the visibility-generic derive mode (one
+      declaration → CircuitAbi everywhere, CircuitArg at Private,
+      CallArg/CallResult at Public); the stage-2 handles re-expressed
+      through it with NO call site touched; byte-equal-ZKIR gate against
+      hand-written twins; 14-item error inventory, unit-tested.
 - [ ] 4. signet-signer-interface crate + minocrab-abi + pinned
       artifact + mutation test + schema snapshot.
 - [ ] 5. minocrab-interface-gen (byte-for-byte regeneration of stage

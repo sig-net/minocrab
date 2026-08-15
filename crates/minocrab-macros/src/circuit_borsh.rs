@@ -35,7 +35,7 @@ use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Fields, GenericParam, Ident, LitStr, Path, Type};
 
-use crate::circuit_arg::{arg_fields, impl_arg_traits_for, ArgField};
+use crate::circuit_arg::{arg_fields, bounded_by_vis3, impl_arg_traits_for, ArgBounds, ArgField};
 
 pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     if let Data::Enum(_) = &input.data {
@@ -64,35 +64,31 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // struct gets that as a where-clause rather than a substitution: the impl
     // is written once and rustc decides where it applies.
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
+    // The ARGUMENT half — including its visibility-generic where-clauses —
+    // is `#[derive(CircuitArg)]`'s own code path, so the two derives cannot
+    // drift and a `CircuitBorsh` record is usable in both directions of a
+    // cross-contract call for free.
     #[allow(clippy::type_complexity)]
-    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, arg_where, abi_where) =
-        match &vis {
-            Some(param) => (
-                quote!(<#param: #root::Vis3>),
-                quote!(#param),
-                quote!(#name<#param>),
-                quote!(#name<#root::__private::Private>),
-                quote!(<#param: #root::Vis3>),
-                quote!(where #( #types: #root::CircuitArg, )*),
-                // The SCHEMA half is visibility-independent, so it gets the
-                // weaker bound and the impl holds at every visibility —
-                // which is what lets one visibility-generic type describe
-                // both the callee's arguments and a caller's cross-contract
-                // call.
-                quote!(where #( #types: #root::CircuitAbi, )*),
-            ),
-            None => (
-                quote!(),
-                quote!(#root::__private::Private),
-                quote!(#name),
-                quote!(#name),
-                quote!(),
-                quote!(),
-                quote!(),
-            ),
-        };
+    let (borsh_generics, borsh_vis, self_ty, private_self_ty, arg_generics, bounds) = match &vis {
+        Some(param) => (
+            quote!(<#param: #root::Vis3>),
+            quote!(#param),
+            quote!(#name<#param>),
+            quote!(#name<#root::__private::Private>),
+            quote!(<#param: #root::Vis3>),
+            ArgBounds::visibility_generic(&input.generics, &types),
+        ),
+        None => (
+            quote!(),
+            quote!(#root::__private::Private),
+            quote!(#name),
+            quote!(#name),
+            quote!(),
+            ArgBounds::plain(&quote!()),
+        ),
+    };
 
-    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &arg_where, &abi_where, &fields);
+    let arg_impls = impl_arg_traits_for(&arg_generics, &self_ty, &bounds, &fields);
     let borsh_impl = impl_borsh(
         &root,
         &borsh_generics,
@@ -211,7 +207,10 @@ fn spec_check(
 }
 
 /// The struct's visibility parameter, if it has one: `struct Payload<V: Vis3>`
-/// serializes at every visibility, a plain struct at `Private`.
+/// serializes at every visibility, a plain struct at `Private`. Unlike
+/// `#[derive(CircuitArg)]`, which simply declines visibility-generic mode
+/// for a shape it does not recognize, a serialized record has nothing else
+/// to be generic IN — so anything else is an error here.
 fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
     let params: Vec<&GenericParam> = input.generics.params.iter().collect();
     match params.as_slice() {
@@ -225,17 +224,6 @@ fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
              serialized record to be generic in",
         )),
     }
-}
-
-fn bounded_by_vis3(param: &syn::TypeParam) -> bool {
-    param.bounds.iter().any(|bound| match bound {
-        syn::TypeParamBound::Trait(t) => t
-            .path
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "Vis3"),
-        _ => false,
-    })
 }
 
 /// Field types whose Borsh encoding is value-dependent, each with the subset's

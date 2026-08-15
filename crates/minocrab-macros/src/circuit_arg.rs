@@ -54,10 +54,122 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     }
 
     let fields = arg_fields(&input)?;
-    Ok(impl_arg_traits(&input.ident, &input.generics, &fields))
+    let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
+    let name = &input.ident;
+    let root = quote!(::minocrab_std::v3);
+
+    // VISIBILITY-GENERIC MODE. `struct Notification<V: Vis3>` is one
+    // declaration of a type that serves BOTH directions of the wire: the
+    // callee's arguments at `Private`, a caller's cross-contract call at
+    // `Public`. rustc decides which impls apply, from where-clauses over the
+    // FIELD types — the M11 stage-3 trick, extended to the call side — so
+    // the impls are written once and hold exactly where the leaves' do.
+    let (impl_generics, self_ty, bounds) = match visibility_param(&input)? {
+        Some(param) => (
+            quote!(<#param: #root::Vis3>),
+            quote!(#name<#param>),
+            ArgBounds::visibility_generic(&input.generics, &types),
+        ),
+        None => {
+            let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+            (
+                quote!(#impl_generics),
+                quote!(#name #ty_generics),
+                ArgBounds::plain(&quote!(#where_clause)),
+            )
+        }
+    };
+    Ok(impl_arg_traits_for(&impl_generics, &self_ty, &bounds, &fields))
 }
 
-/// The two impls, from a struct's name and its fields in wire order — the
+/// Where each impl of the family applies: one where-clause per trait,
+/// bounding every FIELD type by that trait.
+///
+/// This is the M11 stage-3 trick generalized. A struct written
+/// `Notification<V: Vis3>` is ONE declaration serving both directions of
+/// the wire — the callee's arguments and a caller's cross-contract call —
+/// and rather than substituting the parameter, the impls are written once
+/// for every `V` and rustc decides where each applies: `CircuitArg` holds
+/// exactly where the leaves' `CircuitArg` impls do (`Private`), `CallArg` /
+/// `CallResult` exactly where theirs do (`Public`), and `CircuitAbi`
+/// everywhere, because a schema is visibility-independent.
+///
+/// A struct with no visibility parameter gets the same clauses; they are
+/// simply always satisfied (a `Private` struct's call impls are never
+/// applicable, which is correct — its fields cannot cross a contract
+/// boundary undisclosed).
+pub(crate) struct ArgBounds {
+    pub(crate) abi: TokenStream,
+    pub(crate) arg: TokenStream,
+    /// `(CallArg clause, CallResult clause)`, or `None` for a struct with
+    /// no visibility parameter.
+    ///
+    /// A plain struct's fields have ONE visibility each, and for a concrete
+    /// impl rustc checks the where-clause at the definition — so an
+    /// all-`Private` struct would not merely fail to be a `CallArg`, it
+    /// would fail to COMPILE. The call side is therefore emitted only where
+    /// it can be conditional, which is the visibility-generic mode, and
+    /// that is where it belongs: a type meant to cross a contract boundary
+    /// is written `Ty<V: Vis3>` precisely because it serves both sides.
+    pub(crate) call: Option<(TokenStream, TokenStream)>,
+}
+
+impl ArgBounds {
+    /// The struct's own where-clause for the schema and argument impls, and
+    /// no call impls.
+    pub(crate) fn plain(where_clause: &TokenStream) -> ArgBounds {
+        ArgBounds {
+            abi: where_clause.clone(),
+            arg: where_clause.clone(),
+            call: None,
+        }
+    }
+
+    /// One clause per trait, bounding every FIELD type by that trait, so
+    /// rustc decides where each impl applies.
+    pub(crate) fn visibility_generic(generics: &Generics, types: &[&Type]) -> ArgBounds {
+        let user: Vec<&syn::WherePredicate> = generics
+            .where_clause
+            .iter()
+            .flat_map(|w| w.predicates.iter())
+            .collect();
+        let root = quote!(::minocrab_std::v3);
+        let clause = |trait_path: TokenStream| quote!(where #( #types: #trait_path, )* #( #user, )*);
+        ArgBounds {
+            abi: clause(quote!(#root::CircuitAbi)),
+            arg: clause(quote!(#root::CircuitArg)),
+            call: Some((
+                clause(quote!(#root::CallArg)),
+                clause(quote!(#root::CallResult)),
+            )),
+        }
+    }
+}
+
+/// The struct's visibility parameter, if it has one — the marker that puts
+/// the derive in visibility-generic mode. Shared with
+/// `#[derive(CircuitBorsh)]`, which needs exactly the same judgement.
+pub(crate) fn visibility_param(input: &DeriveInput) -> syn::Result<Option<Ident>> {
+    let params: Vec<&syn::GenericParam> = input.generics.params.iter().collect();
+    match params.as_slice() {
+        [] => Ok(None),
+        [syn::GenericParam::Type(param)] if bounded_by_vis3(param) => Ok(Some(param.ident.clone())),
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn bounded_by_vis3(param: &syn::TypeParam) -> bool {
+    param.bounds.iter().any(|bound| match bound {
+        syn::TypeParamBound::Trait(t) => t
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "Vis3"),
+        _ => false,
+    })
+}
+
+/// The family, from a struct's name and its fields in wire order — the
 /// whole of `#[derive(CircuitArg)]`, and the half of `#[circuit]` that
 /// describes its hidden argument struct.
 pub(crate) fn impl_arg_traits(
@@ -66,14 +178,10 @@ pub(crate) fn impl_arg_traits(
     fields: &[ArgField],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    // The struct's own where-clause governs both halves: it says nothing
-    // about `CircuitArg`, so the schema and the argument impls apply in
-    // exactly the same places.
     impl_arg_traits_for(
         &quote!(#impl_generics),
         &quote!(#name #ty_generics),
-        &quote!(#where_clause),
-        &quote!(#where_clause),
+        &ArgBounds::plain(&quote!(#where_clause)),
         fields,
     )
 }
@@ -82,17 +190,18 @@ pub(crate) fn impl_arg_traits(
 /// `#[derive(CircuitBorsh)]` needs, since a `struct Payload<V: Vis3>` is a
 /// circuit ARGUMENT only at `Payload<Private>` (arguments are witness data,
 /// so `CircuitArg` exists for private leaves alone).
-/// `abi_where` governs the visibility-INDEPENDENT [`CircuitAbi`] impl and
-/// `where_clause` the [`CircuitArg`]/[`CircuitArgs`] pair; they differ only
-/// for a visibility-generic struct, whose schema holds at every visibility
-/// while its argument impls hold only where the leaves' do (`Private`).
+/// See [`ArgBounds`] for where each of the emitted impls applies.
 pub(crate) fn impl_arg_traits_for(
     impl_generics: &TokenStream,
     self_ty: &TokenStream,
-    where_clause: &TokenStream,
-    abi_where: &TokenStream,
+    bounds: &ArgBounds,
     fields: &[ArgField],
 ) -> TokenStream {
+    let ArgBounds {
+        abi: abi_where,
+        arg: where_clause,
+        call,
+    } = bounds;
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
     let labels: Vec<LitStr> = fields
@@ -104,6 +213,17 @@ pub(crate) fn impl_arg_traits_for(
     // a `Circuit3` method: `c` is only ever passed along (THINNESS RULE,
     // notes/contract-api.org §macros).
     let root = quote!(::minocrab_std::v3);
+
+    let call_impls = call.as_ref().map(|(call_arg_where, call_result_where)| {
+        impl_call_traits(
+            impl_generics,
+            self_ty,
+            call_arg_where,
+            call_result_where,
+            &idents,
+            &types,
+        )
+    });
 
     quote! {
         #[automatically_derived]
@@ -169,6 +289,67 @@ pub(crate) fn impl_arg_traits_for(
 
             fn atoms() -> ::std::vec::Vec<#root::__private::AlignmentAtom> {
                 <Self as #root::CircuitAbi>::atoms()
+            }
+        }
+
+        #call_impls
+    }
+}
+
+
+/// The caller's half of the family, emitted only in visibility-generic
+/// mode (see [`ArgBounds::call`]).
+fn impl_call_traits(
+    impl_generics: &TokenStream,
+    self_ty: &TokenStream,
+    call_arg_where: &TokenStream,
+    call_result_where: &TokenStream,
+    idents: &[&Ident],
+    types: &[&Type],
+) -> TokenStream {
+    let root = quote!(::minocrab_std::v3);
+    quote! {
+        #[automatically_derived]
+        impl #impl_generics #root::CallArg for #self_ty #call_arg_where {
+            fn push_call_slots(
+                &self,
+                slots: &mut ::std::vec::Vec<
+                    #root::__private::Wire3<
+                        #root::__private::FieldT,
+                        #root::__private::Public,
+                    >,
+                >,
+            ) {
+                #( <#types as #root::CallArg>::push_call_slots(&self.#idents, slots); )*
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics #root::CallResult for #self_ty #call_result_where {
+            fn from_call_slots(
+                slots: &[
+                    #root::__private::Wire3<
+                        #root::__private::FieldT,
+                        #root::__private::Public,
+                    >
+                ],
+            ) -> Self {
+                // Struct-literal fields are evaluated in written order, which
+                // is the slot order, so the running offset is the layout.
+                #[allow(unused_mut, unused_variables)]
+                let mut __offset = 0usize;
+                Self {
+                    #(
+                        #idents: {
+                            let __n = <#types as #root::CircuitAbi>::SLOTS;
+                            let __value = <#types as #root::CallResult>::from_call_slots(
+                                &slots[__offset..__offset + __n],
+                            );
+                            __offset += __n;
+                            __value
+                        },
+                    )*
+                }
             }
         }
     }
@@ -242,7 +423,7 @@ fn arg_name(attrs: &[Attribute]) -> syn::Result<Option<String>> {
 /// `snake_case` → `lowerCamelCase`: the mechanical Rust-name-to-Compact-name
 /// rule (`max_fee_per_gas` → `maxFeePerGas`), which reproduces the corpus's
 /// existing labels. Raw identifiers lose their `r#`.
-fn lower_camel_case(name: &str) -> String {
+pub(crate) fn lower_camel_case(name: &str) -> String {
     let name = name.strip_prefix("r#").unwrap_or(name);
     let mut out = String::with_capacity(name.len());
     for (i, segment) in name.split('_').filter(|s| !s.is_empty()).enumerate() {

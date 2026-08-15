@@ -333,3 +333,89 @@ now derive them: =ep_hash("deposit")=, =("depositEmit")=, =("notify")=,
 Preimage-only, as predicted: the ZKIR is unchanged and every suite stayed
 green without any other edit. Nothing in any suite compares a preimage
 against a corpus artifact's ep, so there was nothing to investigate.
+
+* As built — stage 3 (2026-08-15)
+=#[interface]= and the visibility-generic derive mode. row_snapshot and
+interface_snapshot bit-identical, all differential suites green, workspace
+release suite clean (55 test binaries — one new).
+
+** THE DIFF IS STRONGER THAN "ATTRIBUTE-ONLY"
+Not one call SITE changed. =erc20_vault{,_opt,_borsh}.rs=, =xcall.rs=,
+=xcall_with_payment.rs= and =xcontract_events.rs= are byte-identical to
+stage 2; only =interfaces.rs= changed, from four hand-written handle structs
+(320 lines) to four bodyless traits carrying =#[interface]= (89 lines). The
+handles the macro emits are the handles that were there, which
+=tests/interface_macro.rs= asserts as SERIALIZED ZKIR: four shapes — a
+result-carrying call, a =pin=ned call with a struct argument, a nine-limb
+=Bytes<256>= argument and a five-limb =ShieldedCoinInfo= — each built twice,
+once through the attribute and once through a hand-written twin of stage
+2's committed shape, compared byte for byte.
+
+** THE TRAIT IS THE COMPACT DECLARATION
+#+begin_src rust
+#[interface]
+pub trait Token {
+    fn deposit(amount: Uint<128, Public>, caller: ContractAddress<Public>) -> B32<Public>;
+}
+#+end_src
+reads next to =contract Token { circuit deposit(amount: Uint<128>, caller:
+ContractAddress): Bytes<32>; }=, which is the point of using a trait rather
+than a macro over a struct: one bodyless item per circuit, typed, nothing to
+get wrong. It is REPLACED (the =#[circuit]= precedent) by a handle struct
+with =EntryPoint= consts, =at_field= / =at= / =pin= / =callee=, and one
+typed method per circuit over =minocrab_ledger::call=.
+Thinness holds: the expansion contains no =Circuit3= method call — =c= is
+threaded to =call= and nothing else — and the unit test greps the expansion
+for =c .= and =Circuit3 ::= exactly as the other three macros' do.
+
+** THE ERROR THAT MATTERS MOST IS THE ONE ABOUT DEFAULTS
+=reject_undisclosed= fires on TWO shapes, and the second is the one that
+would have bitten: =fn f(amount: Uint<128>)= — because the leaf types
+default their visibility to =Private=, so a parameter that merely omits
+=Public= is private, and the natural spelling is the wrong one. Both
+messages name =disclose()= and say why (a value passed cross-contract enters
+the commitment the ledger matches in the clear). The check is SYNTACTIC —
+does the written type mention =Private=, does it mention =Public= — because
+the alternative is a trait-bound error pointing at generated code. Fourteen
+rejections in all, each with its own span, each unit-tested: trait generics /
+where-clause / supertraits / unsafe / auto / non-fn items; method bodies /
+=self= / generics / where-clause / async / unsafe / const / extern /
+variadic / pattern parameters; private-or-defaulted parameter and result
+types; and both malformed spellings of =#[entry_point]=.
+
+** VISIBILITY-GENERIC DERIVE: reconciled with M11 by GENERALIZING it
+M11 stage 3 taught =#[derive(CircuitBorsh)]= to emit the argument family for
+a =struct P<V: Vis3>= through a where-clause rather than a substitution —
+=impl<V: Vis3> CircuitArg for P<V> where Uint<8, V>: CircuitArg, …= holds
+exactly at =Private=, because that is where the leaf impls exist. Stage 3
+moves that judgement into =circuit_arg::ArgBounds= and adds two more clauses,
+so ONE declaration now yields: =CircuitAbi= everywhere (a schema is
+visibility-independent), =CircuitArg=/=CircuitArgs= at =Private=, and
+=CallArg=/=CallResult= at =Public=. =#[derive(CircuitArg)]= gained the same
+mode (it previously had none, so =Notification<V: Vis3>= could not have been
+derived at all), and =#[derive(CircuitBorsh)]= now calls
+=ArgBounds::visibility_generic= instead of building its clauses inline —
+still one code path, one more thing shared.
+
+*** WHY THE CALL IMPLS ARE EMITTED ONLY IN VISIBILITY-GENERIC MODE
+First attempt emitted them always, with field bounds. It does not compile: a
+plain struct's impl has no generic parameters, and rustc checks a concrete
+impl's where-clause at the definition — so an all-=Private= struct would not
+merely fail to be a =CallArg=, it would fail to BUILD. Emitting them only
+where the bound can be conditional is both the fix and what the design said.
+Consequence, documented on =ArgBounds::call=: a type meant to cross a
+contract boundary is written =Ty<V: Vis3>=, which is how the corpus's shared
+records are written anyway.
+
+*** The proof it works: =Notification=
+=signet::Notification<V>= was stage 2's hand-written =CircuitAbi= +
+=CallArg= (27 lines). It is now =#[derive(Clone, CircuitArg)]= on the struct
+and nothing else, and the vault's three artifacts are unchanged.
+
+** =EntryPoint= consts, derived
+=sign_bidirectional= → const =SIGN_BIDIRECTIONAL= = =EntryPoint::new(
+"signBidirectional")=, i.e. SCREAMING_SNAKE for the const and the M9
+=snake_case → lowerCamelCase= rule (shared with =#[derive(CircuitArg)]=) for
+the Compact name. =#[entry_point(name = "…")]= overrides the name where the
+two disagree; none of the four corpus interfaces needs it, which is itself
+evidence the mechanical rule is right.
