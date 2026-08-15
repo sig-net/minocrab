@@ -8,7 +8,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 
 - Leaking a `Wire<Private>` is a compile error until `c.disclose(w, label)` ([compile_fail doctest](crates/minocrab/src/lib.rs))
 - Argument types are the range constraints — `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own `emit-constraints-for` table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs), [v3_entry.rs](crates/minocrab-std/tests/v3_entry.rs))
-- Drift is a test failure: `(k, rows)` and the ordered interface of all 78 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
+- Drift is a test failure: `(k, rows)` and the ordered interface of all 87 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
 - 9,000,000 property cases against a Rust spec of every vault circuit, accepted runs replayed through the reference VM and the pinned ledger's `run_program` ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs))
 - Adversarial sweeps: `2^128 − 1`, zero addresses, malformed witnesses, witness malleability, injectivity ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs))
 - Bijective serialization — Borsh `bool` is `0|1`, so the `0x02` attestation hazard is unprovable, not refunded ([erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs))
@@ -57,7 +57,7 @@ export circuit deposit(
 }
 ```
 
-The same circuit, abridged from `crates/minocrab-contracts/src/erc20_vault.rs`:
+The same circuit, abridged from `crates/minocrab-contracts/src/erc20_vault_modern.rs`:
 
 ```rust
 /// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`
@@ -76,30 +76,33 @@ pub fn deposit(
     max_priority_fee_per_gas: Uint<128>,
     key_version: Uint<8>,
     deposit_request: DepositRequest,
-) {
-    let amount = deposit_request.amount.field();
-    let one = c.constant(1u64);
-    let zero = c.constant(0u64);
-
-    // assert(amount > 0)
-    let amount_positive = c.less_than(zero.private(), amount, 128);
-    c.assert(amount_positive);
+) -> Discloses<(
+    DepositorCommitment,
+    RequestId,
+    RequestRecord,
+    XcallEntryPointHash,
+    XcallCommitment,
+)> {
+    // assert(amount > 0) — the width is the argument type's, not typed here
+    c.assert(deposit_request.amount.gt(0u64));
 
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
-    let caller_priv = common::commitment(c, USER_PAD, &sk);
-    let caller = B32 {
-        hi: c.disclose(caller_priv.hi, "depositor identity commitment (hi)"),
-        lo: c.disclose(caller_priv.lo, "depositor identity commitment (lo)"),
-    };
+    let caller = common::commitment_short(c, &sk).disclose_as::<DepositorCommitment>(c);
+
+    // a Bytes<20> cell: the FAB atoms come from the slot's type
+    let vault_evm = VAULT.vault_evm_address.read(c);
     // ... compose calldata, tx params, request ...
 
     // requestId, freshness check, map insert, and the call to the signer
-    record_and_notify(c, one, &request, SIGN_BIDIRECTIONAL_EVENT_MAP, [0, 0, 0, 0]);
+    record_and_notify(c, one, me, &request, &VAULT.sign_bidirectional_event_map, [0, 0, 0, 0]);
+    Discloses::of(())
 }
 ```
 
-`#[circuit]` and `#[derive(CircuitArg)]` are used by 62 of the 78 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps. The typed disclosure manifest (`label!` / `Discloses<…>`) is designed ([notes/contract-api.org](notes/contract-api.org)), not built.
+- The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
+- `#[circuit]` and `#[derive(CircuitArg)]` build 71 of the 87 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
+- This is the *showcase twin*: the same contract as the three zero-movement ports, written through the whole API. It is not prettier prose — it is gated on proving the identical statement (same typed schema, same PI vector on the ports' own preimage) at identical rows and identical `k` ([erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs))
 
 ## Cross-contract calls
 
