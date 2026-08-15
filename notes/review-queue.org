@@ -63,6 +63,17 @@ reviewer should look at.
       `art == Art::Opt` to `!= Art::Compat` — that is a claim about which
       op stream the borsh artifact expects, and getting it backwards would
       have made the harness agree with a wrong model.
+- [ ] M11 stage 5 (attested outputs → Borsh): THE FORMAT DECISIONS ARE NOW
+      THE SPEC — check the kind assignments and the digest layouts in
+      notes/borsh-format.org §"As built — stage 5" against the circuit
+      constants, since the MPC will implement them. Two arguments deserve
+      eyes: (a) `assert_kind`'s claim that equality with one variant
+      subsumes `constrain_canonical`'s `tag < K`, so the bound is not
+      emitted; (b) the `verify_attestation_signature` extraction in
+      signet.rs, a shared file all three artifacts import (snapshots say the
+      ZKIR is unchanged). Also the spec-side acceptance predicates: the
+      borsh arms of spec_claim/spec_complete_withdraw/spec_complete_swap/
+      spec_refund are the definition the 20k-case gate checks against.
 - [ ] M11 stage 3 (#[derive(CircuitBorsh)]): the impl_arg_traits
       refactor (existing derive/attribute output must be unchanged — the
       thinness tests and every differential suite say it is, but it is a

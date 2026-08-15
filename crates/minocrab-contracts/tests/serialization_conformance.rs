@@ -46,6 +46,7 @@ use serialization::oracle::{bincode_fixint_bytes, borsh_bytes, layout_rows, sche
 use serialization::records;
 use serialization::spec_types;
 use serialization::spec_types::*;
+use vault::artifact::Art;
 use vault::gen;
 use vault::prims::b32_slots;
 
@@ -329,6 +330,17 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(AttestationPreimage::<ClaimOutput>::LEN, 33);
     assert_eq!(AttestationPreimage::<CompleteSwapOutput>::LEN, 40);
 
+    // M11 stage 5's shapes, and the digest preimages they define. These are
+    // THE SPEC — the MPC has never settled on Midnight, so there is nothing
+    // deployed to compare them against; what pins them is borsh's own
+    // encoder, borsh's own schema, and the circuit that hashes them.
+    assert_eq!(VaultResponse::LEN, 2);
+    assert_eq!(SwapResponse::LEN, 9);
+    assert_eq!(FailureResponse::LEN, 1);
+    assert_eq!(AttestationPreimage::<VaultResponse>::LEN, 34);
+    assert_eq!(AttestationPreimage::<SwapResponse>::LEN, 41);
+    assert_eq!(AttestationPreimage::<FailureResponse>::LEN, 33);
+
     // The Misc payloads sit inside `Bytes<256>` after the 32-byte name.
     assert_eq!(SignBidirectionalMisc::LEN, 161);
     assert_eq!(RespondMisc::LEN, 129);
@@ -356,6 +368,21 @@ fn schema_widths_match_the_lens() {
         (
             "AttestationPreimage<CompleteSwapOutput>",
             AttestationPreimage::<CompleteSwapOutput>::LEN,
+        ),
+        ("VaultResponse", VaultResponse::LEN),
+        ("SwapResponse", SwapResponse::LEN),
+        ("FailureResponse", FailureResponse::LEN),
+        (
+            "AttestationPreimage<VaultResponse>",
+            AttestationPreimage::<VaultResponse>::LEN,
+        ),
+        (
+            "AttestationPreimage<SwapResponse>",
+            AttestationPreimage::<SwapResponse>::LEN,
+        ),
+        (
+            "AttestationPreimage<FailureResponse>",
+            AttestationPreimage::<FailureResponse>::LEN,
         ),
         ("SignBidirectionalMisc", SignBidirectionalMisc::LEN),
         ("RespondMisc", RespondMisc::LEN),
@@ -479,6 +506,87 @@ proptest! {
             &rid, 8, &[Fr::from(complete_swap.amount_in)],
         );
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+    }
+
+    /// M11 STAGE 5: the BORSH artifact's attestation digest preimages.
+    ///
+    /// Nothing deployed to compare against — this is the format the MPC will
+    /// implement — so the pin is the other way round: LEFT is what the
+    /// reference model hands the signer for `Art::Borsh`, and RIGHT is
+    /// `borsh::to_vec` of the spec twin. That matters because the borsh
+    /// circuits verify an ECDSA signature over `keccak256(LEFT)` and reject
+    /// unless their OWN keccak preimage — built by `CircuitBorsh::push_limbs`
+    /// out of the declared fields — reproduces it exactly. So this equality
+    /// plus the spec harness's acceptance agreement says the circuits hash
+    /// canonical Borsh of the declared types, at every generated case.
+    #[test]
+    fn borsh_attestation_preimages_are_canonical_borsh(
+        claim in gen::claim(),
+        complete_withdraw in gen::complete_withdraw(),
+        refund in gen::refund(),
+        complete_swap in gen::complete_swap(),
+    ) {
+        let claim = claim.with_art(Art::Borsh);
+        let complete_withdraw = complete_withdraw.with_art(Art::Borsh);
+        let refund = refund.with_art(Art::Borsh);
+        let complete_swap = complete_swap.with_art(Art::Borsh);
+
+        // claim / completeWithdraw: {kind: u8, success: bool}. A generated
+        // success byte above 1 has NO canonical Borsh value — that is the
+        // 0x02 hazard, and the borsh circuit rejects it — so the equality is
+        // stated where the type exists.
+        if claim.serialized_output <= 1 {
+            let rid = claim.d.request_id();
+            let spec = AttestationPreimage {
+                request_id: rid,
+                output: VaultResponse {
+                    kind: claim.response_kind,
+                    success: claim.serialized_output == 1,
+                },
+            };
+            let mut model = rid.to_vec();
+            model.extend(claim.attested_output_bytes());
+            prop_assert_eq!(&model, &borsh_bytes(&spec));
+            // …and the digest the MPC signs is keccak256 of exactly that.
+            let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&spec)).into();
+            prop_assert_eq!(digest, claim.attestation_digest());
+        }
+        if complete_withdraw.outcome <= 1 {
+            let rid = complete_withdraw.w.request_id();
+            let spec = AttestationPreimage {
+                request_id: rid,
+                output: VaultResponse {
+                    kind: complete_withdraw.response_kind,
+                    success: complete_withdraw.outcome == 1,
+                },
+            };
+            let mut model = rid.to_vec();
+            model.extend(complete_withdraw.attested_output_bytes());
+            prop_assert_eq!(&model, &borsh_bytes(&spec));
+        }
+
+        // refund: {kind: u8} — one byte, whatever the kind.
+        let rid = refund.request_id();
+        let spec = AttestationPreimage {
+            request_id: rid,
+            output: FailureResponse { kind: refund.response_kind },
+        };
+        let mut model = rid.to_vec();
+        model.extend(refund.attested_output_bytes());
+        prop_assert_eq!(&model, &borsh_bytes(&spec));
+
+        // completeSwap: {kind: u8, amount_in: u64}.
+        let rid = complete_swap.s.request_id();
+        let spec = AttestationPreimage {
+            request_id: rid,
+            output: SwapResponse {
+                kind: complete_swap.response_kind,
+                amount_in: complete_swap.amount_in,
+            },
+        };
+        let mut model = rid.to_vec();
+        model.extend(complete_swap.attested_output_bytes());
+        prop_assert_eq!(&model, &borsh_bytes(&spec));
     }
 }
 
@@ -752,6 +860,19 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("AttestationPreimage<RefundOutput>", "output.failure", "[u8; 5]", 32, 5),
     ("AttestationPreimage<CompleteSwapOutput>", "request_id", "[u8; 32]", 0, 32),
     ("AttestationPreimage<CompleteSwapOutput>", "output.amount_in", "u64", 32, 8),
+    ("VaultResponse", "kind", "u8", 0, 1),
+    ("VaultResponse", "success", "bool", 1, 1),
+    ("SwapResponse", "kind", "u8", 0, 1),
+    ("SwapResponse", "amount_in", "u64", 1, 8),
+    ("FailureResponse", "kind", "u8", 0, 1),
+    ("AttestationPreimage<VaultResponse>", "request_id", "[u8; 32]", 0, 32),
+    ("AttestationPreimage<VaultResponse>", "output.kind", "u8", 32, 1),
+    ("AttestationPreimage<VaultResponse>", "output.success", "bool", 33, 1),
+    ("AttestationPreimage<SwapResponse>", "request_id", "[u8; 32]", 0, 32),
+    ("AttestationPreimage<SwapResponse>", "output.kind", "u8", 32, 1),
+    ("AttestationPreimage<SwapResponse>", "output.amount_in", "u64", 33, 8),
+    ("AttestationPreimage<FailureResponse>", "request_id", "[u8; 32]", 0, 32),
+    ("AttestationPreimage<FailureResponse>", "output.kind", "u8", 32, 1),
     ("SignBidirectionalMisc", "version", "u8", 0, 1),
     ("SignBidirectionalMisc", "request_id", "[u8; 32]", 1, 32),
     ("SignBidirectionalMisc", "payload", "[u8; 128]", 33, 128),

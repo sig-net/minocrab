@@ -205,22 +205,25 @@ pub fn fork_status(circuit: Circuit) -> Fork {
 /// `erc20_vault_opt`, the second fork and the second link that has to be
 /// declared rather than discovered.
 ///
-/// At M11 stage 4 every entry is `Identical`: the borsh artifact is a
-/// byte-identical fork, so it inherits the whole chain (`compactc ≡ port ≡
-/// opt`) transitively, and `tests/erc20_vault_borsh_fork.rs` proves both
-/// halves of that inheritance rather than assuming it. M11's later stages
-/// move entries here — never in [`fork_status`], which is M10's ledger and
-/// is closed.
+/// At M11 stage 4 every entry was `Identical`: the borsh artifact was a
+/// byte-identical fork, so it inherited the whole chain (`compactc ≡ port ≡
+/// opt`) transitively. M11's later stages move entries here — never in
+/// [`fork_status`], which is M10's ledger and is closed.
 pub fn borsh_fork_status(circuit: Circuit) -> Fork {
+    /// Stage 5: the attested output is a kind-tagged Borsh subset type.
+    const ATTESTED: &str = "attested output is {kind, …} in Borsh, not an opaque byte string: \
+                            the digest preimage carries the response kind, and completeWithdraw's \
+                            success is a Borsh bool (0x02 is unprovable, not a refund)";
+    let diverged = |rung, why| Fork::Diverged { rung, why };
     match circuit {
+        // The five non-settle circuits are untouched by the response format.
         Circuit::Initialize
         | Circuit::Deposit
-        | Circuit::Claim
         | Circuit::ApproveRouter
         | Circuit::Withdraw
-        | Circuit::CompleteWithdraw
-        | Circuit::Refund
-        | Circuit::Swap
-        | Circuit::CompleteSwap => Fork::Identical,
+        | Circuit::Swap => Fork::Identical,
+        Circuit::Claim | Circuit::CompleteWithdraw | Circuit::CompleteSwap | Circuit::Refund => {
+            diverged("M11 stage 5, attested outputs", ATTESTED)
+        }
     }
 }

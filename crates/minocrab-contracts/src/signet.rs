@@ -17,6 +17,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
+use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
     pow2_const, secp256k1_ecdsa_verify, BytesN, Secp256k1EcdsaSignature, Vis3, B32,
 };
@@ -444,6 +445,26 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     let digest = calculate_attestation_digest::<V, LEN_OUTPUT>(c, request_id, output_limbs);
+    verify_attestation_signature(c, &digest, big_r_x, s, mpc_response_key)
+}
+
+/// The signature half of [`verify_respond_bidirectional_event`], over an
+/// already-computed digest: only `bigR.x` and `s` enter verification
+/// (big-endian stored, reversed into scalars).
+///
+/// Extracted so the two digest constructions — the deployed
+/// `[Bytes<32>, Bytes<len>]` concatenation and the Borsh-typed
+/// [`calculate_attestation_digest_borsh`] — share one verifier rather than
+/// two copies of the ECDSA plumbing. The extraction is instruction-for-
+/// instruction identical to the inlined original (row and interface
+/// snapshots, and every vault differential suite, say so).
+fn verify_attestation_signature<V: Vis3>(
+    c: &mut Circuit3,
+    digest: &B32<V>,
+    big_r_x: &B32<V>,
+    s: &B32<V>,
+    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
+) -> Wire3<FieldT, V> {
     c.region("signet: attestation verify (ecdsa)", |c| {
         let r_le = reverse_bytes32(c, big_r_x);
         let s_le = reverse_bytes32(c, s);
@@ -455,6 +476,56 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
         };
         secp256k1_ecdsa_verify(c, &digest, &sig, mpc_response_key)
     })
+}
+
+/// `calculateSignetAttestationDigest(requestId, output)` where the output is
+/// a TYPED Borsh value — M11 stage 5's form of the digest.
+///
+/// The preimage is `borsh({ request_id: [u8; 32], output: T })`: a Borsh
+/// struct is the concatenation of its fields, so this is the request id's 32
+/// bytes followed by `borsh(output)`, and the alignment is the two values'
+/// atoms back to back. That is exactly the shape
+/// [`calculate_attestation_digest`] hashes today (stage 0 proved the deployed
+/// preimage IS canonical Borsh for `{[u8; 32], [u8; N]}`); what changes is
+/// that the second field is now a DECLARED type — a kind byte and its
+/// payload — instead of an opaque byte string.
+///
+/// FREE: describing the preimage emits no instruction ([`limbs_of`] is
+/// bookkeeping over wires that already exist), and the keccak chip does the
+/// byte packing in-chip. The atom widths ARE the Borsh widths, so the digest
+/// is `keccak256(borsh(v))` for zero extra rows.
+pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
+    c: &mut Circuit3,
+    request_id: &B32<V>,
+    output: &T,
+) -> B32<V> {
+    c.region("signet: attestation digest (keccak)", |c| {
+        let mut limbs = Limbs::<V>::new();
+        request_id.push_limbs(&mut limbs);
+        output.push_limbs(&mut limbs);
+        assert_eq!(
+            limbs.len(),
+            <B32<V> as CircuitBorsh<V>>::LEN + T::LEN,
+            "the attestation preimage is the request id followed by the output"
+        );
+        let digest = limbs.keccak256(c);
+        B32::from_typed(c, digest)
+    })
+}
+
+/// [`verify_respond_bidirectional_event`] over a TYPED Borsh output — M11
+/// stage 5. Same signature check, same MPC key, a digest whose preimage
+/// carries the response kind.
+pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
+    c: &mut Circuit3,
+    request_id: &B32<V>,
+    output: &T,
+    big_r_x: &B32<V>,
+    s: &B32<V>,
+    mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
+) -> Wire3<FieldT, V> {
+    let digest = calculate_attestation_digest_borsh(c, request_id, output);
+    verify_attestation_signature(c, &digest, big_r_x, s, mpc_response_key)
 }
 
 // ---- ABI calldata word utilities --------------------------------------------

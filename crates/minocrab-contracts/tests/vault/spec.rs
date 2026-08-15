@@ -43,6 +43,7 @@ use midnight_base_crypto::hash::HashOutput;
 use midnight_onchain_state::state::StateValue;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault as v;
+use minocrab_contracts::erc20_vault_borsh;
 
 use super::exec::{self, Executed, PreState};
 use super::model::*;
@@ -97,6 +98,20 @@ pub enum GuardId {
     /// an explicit `!(amountInMaximum < amountIn)` (erc20_vault.rs:1323).
     /// The most dangerous arithmetic in the contract.
     ChangeUnderflow,
+    // --- M11 stage 5, Art::Borsh only ---------------------------------
+    /// The attested output's kind byte is not this circuit's kind — an
+    /// attestation issued for another settle circuit, or for none.
+    /// `erc20_vault_borsh::assert_kind`. Under `Art::Borsh`, `refund`'s
+    /// "not the MPC failure output" IS this guard.
+    WrongResponseKind,
+    /// The attested `success` byte is not a Borsh `bool`. The deployed
+    /// contract has no such guard: it reads the byte as `== 1`, so `0x02`
+    /// routes `completeWithdraw` to the REFUND branch (the M10 harness
+    /// finding). Borsh's `bool` is 0 or 1 and nothing else, so under
+    /// `Art::Borsh` the same attestation is unprovable. THE DELIBERATE
+    /// DIVERGENCE: the artifacts genuinely disagree on this input, and this
+    /// guard is where the harness pins the disagreement.
+    NonBooleanSuccess,
 }
 
 /// A value the contract derives, named by WHAT it is.
@@ -648,7 +663,20 @@ pub fn spec_claim(s: &ClaimScenario) -> Outcome {
     if s.d.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
     }
+    // M11 stage 5 (Art::Borsh): the response carries its kind, and an
+    // attestation for another settle circuit does not settle a claim.
+    if s.art() == Art::Borsh
+        && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+    {
+        return Outcome::Reject(GuardId::WrongResponseKind);
+    }
     // deserialize<VaultResponse, 1>(output).success is `byte == 1`.
+    //
+    // NO DIVERGENCE HERE, unlike completeWithdraw: `claim` asserts success,
+    // so every artifact rejects every byte but `0x01` — the port because the
+    // `== 1` test fails, the borsh artifact because `assert_boolean` rejects
+    // 0x02 first and `assert(success)` rejects 0x00. Same predicate, two
+    // reasons.
     if s.serialized_output != 1 {
         return Outcome::Reject(GuardId::Erc20TransferReturnedFalse);
     }
@@ -705,6 +733,21 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     if s.w.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
     }
+    // M11 stage 5 (Art::Borsh), and THE ONE DELIBERATE SEMANTIC DIVERGENCE OF
+    // THE MILESTONE: the kind byte separates this settle from `claim`'s, and
+    // the success byte is a Borsh `bool`, so `0x02` is unprovable here while
+    // the port and the optimized fork read it as "not 1" and REFUND — re-
+    // minting the surrendered value on a withdrawal that succeeded. Both
+    // checks precede the pending-marker gate because both are argument
+    // constraints, which a circuit emits before it reads any state.
+    if s.art() == Art::Borsh {
+        if s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_WITHDRAW) {
+            return Outcome::Reject(GuardId::WrongResponseKind);
+        }
+        if s.outcome > 1 {
+            return Outcome::Reject(GuardId::NonBooleanSuccess);
+        }
+    }
     if !s.pending {
         return Outcome::Reject(GuardId::WithdrawalNotFound);
     }
@@ -753,6 +796,12 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
 pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
     if s.s.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
+    }
+    // M11 stage 5 (Art::Borsh): the attested amountIn is a Borsh `u64` in
+    // both worlds (stage 0 proved the deployed 8 bytes already are one); what
+    // is added is the kind byte in front of it.
+    if s.art() == Art::Borsh && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_SWAP) {
+        return Outcome::Reject(GuardId::WrongResponseKind);
     }
     if !s.pending {
         return Outcome::Reject(GuardId::SwapNotFound);
@@ -844,8 +893,19 @@ pub fn spec_refund(s: &RefundScenario) -> Outcome {
     if s.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
     }
-    if s.serialized_output != v::MPC_FAILURE_OUTPUT {
-        return Outcome::Reject(GuardId::NotTheMpcFailureOutput);
+    // "The MPC attested that the transaction never executed" — the deployed
+    // 5-byte `0xdeadbeef01` sentinel, or (M11 stage 5) the failure KIND,
+    // which says the same thing in the same byte position as every other
+    // response type.
+    let is_failure_response = match s.art() {
+        Art::Compat | Art::Opt => s.serialized_output == v::MPC_FAILURE_OUTPUT,
+        Art::Borsh => s.response_kind == kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
+    };
+    if !is_failure_response {
+        return Outcome::Reject(match s.art() {
+            Art::Compat | Art::Opt => GuardId::NotTheMpcFailureOutput,
+            Art::Borsh => GuardId::WrongResponseKind,
+        });
     }
     let rid = s.request_id();
     let want = Term::RefundCommit {

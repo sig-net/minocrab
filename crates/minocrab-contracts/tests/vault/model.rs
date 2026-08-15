@@ -35,11 +35,21 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
-use minocrab_contracts::erc20_vault;
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
 use minocrab_zkir::v3::IrValue;
 use sha2::Digest;
 
 use super::prims::*;
+
+/// A response-kind constant as the wire carries it.
+///
+/// The circuit declares kinds as `u32` (the const-generic parameter of
+/// `Tag<K>` and the constants beside it); a Borsh fieldless-enum discriminant
+/// is ONE byte, which is what the model puts in the digest preimage and in
+/// the argument slot.
+pub fn kind(k: u32) -> u8 {
+    u8::try_from(k).expect("a Borsh tag is one byte")
+}
 
 /// The concrete initialize() call every test shares.
 #[derive(Clone, Debug)]
@@ -686,8 +696,15 @@ pub struct ClaimScenario {
     pub mint_nonce: [u8; 32],
     pub recipient: ClaimRecipient,
     /// The attested EVM result byte. `deserialize<VaultResponse, 1>` reads
-    /// it as `byte == 1`, so only `0x01` is a success.
+    /// it as `byte == 1`, so only `0x01` is a success. Under `Art::Borsh` it
+    /// is the `success` field of a Borsh `VaultResponse`, where anything
+    /// outside {0, 1} is REJECTED rather than read as `false`.
     pub serialized_output: u8,
+    /// The response KIND byte at offset 0 of the attested output — M11 stage
+    /// 5, `Art::Borsh` only. The default is this circuit's own kind; a
+    /// different one is an attestation issued for another settle circuit, and
+    /// must not settle here.
+    pub response_kind: u8,
     /// The secret the CALLER witnesses. `None` = the depositor's own (the
     /// gate passes); `Some(other)` drives the "Not the depositor" guard.
     pub claimant_sk: Option<[u8; 32]>,
@@ -722,6 +739,7 @@ impl ClaimScenario {
             mint_nonce,
             recipient: ClaimRecipient::Key(key),
             serialized_output: 1,
+            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_CLAIM),
             claimant_sk: None,
             key_seed: 0xf00d_face,
             nonce_seed: 0x0dd_b17,
@@ -746,11 +764,32 @@ impl ClaimScenario {
             .expect("point limbs match the alignment")
     }
 
-    /// attestationDigest = keccak256(requestId ‖ serializedOutput), with
-    /// serializedOutput the packed success byte 0x01.
+    /// The attested output's BYTES — what the digest preimage carries after
+    /// the request id.
+    ///
+    /// Compat/Opt: the deployed `Bytes<1>`, one packed success byte. Borsh
+    /// (M11 stage 5): `borsh(VaultResponse { kind, success })` — the kind byte
+    /// then the bool byte, which is that struct's canonical Borsh encoding.
+    pub fn attested_output_bytes(&self) -> Vec<u8> {
+        match self.art() {
+            Art::Compat | Art::Opt => vec![self.serialized_output],
+            Art::Borsh => vec![self.response_kind, self.serialized_output],
+        }
+    }
+
+    /// The attested output's ARGUMENT SLOTS, in declaration order — one per
+    /// declared field.
+    pub fn attested_output_slots(&self) -> Vec<Fr> {
+        self.attested_output_bytes()
+            .into_iter()
+            .map(|b| Fr::from(u64::from(b)))
+            .collect()
+    }
+
+    /// attestationDigest = keccak256(requestId ‖ attested output bytes).
     pub fn attestation_digest(&self) -> [u8; 32] {
         let mut bytes = self.d.request_id().to_vec();
-        bytes.push(self.serialized_output);
+        bytes.extend(self.attested_output_bytes());
         sha3::Keccak256::digest(&bytes).into()
     }
 
@@ -831,7 +870,7 @@ impl ClaimScenario {
         };
         let (l_hi, l_lo) = b32_slots(&left);
         let (r_hi, r_lo) = b32_slots(&right);
-        vec![
+        let mut inputs = vec![
             rid_hi,
             rid_lo,
             rx_hi,
@@ -841,7 +880,9 @@ impl ClaimScenario {
             s_hi,
             s_lo,
             Fr::from(0u64), // recoveryId (unused)
-            Fr::from(u64::from(self.serialized_output)), // serializedOutput
+        ];
+        inputs.extend(self.attested_output_slots()); // serializedOutput
+        inputs.extend([
             n_hi,
             n_lo,
             Fr::from(is_some),
@@ -850,7 +891,8 @@ impl ClaimScenario {
             l_lo,
             r_hi,
             r_lo,
-        ]
+        ]);
+        inputs
     }
 
     /// The secret key the caller presents.
@@ -1875,8 +1917,13 @@ pub struct CompleteWithdrawScenario {
     /// Does `refundCommitment` hold the id? (The pending-withdrawal
     /// marker, and the double-settle gate.)
     pub pending: bool,
-    /// The attested EVM outcome byte (0x01 success / 0x00 refund).
+    /// The attested EVM outcome byte (0x01 success / 0x00 refund). Under
+    /// `Art::Borsh` it is a Borsh `bool`, so a byte outside {0, 1} is
+    /// REJECTED where the port and the optimized fork refund-route on it.
     pub outcome: u8,
+    /// The response KIND byte — M11 stage 5, `Art::Borsh` only. Defaults to
+    /// `RESPONSE_KIND_WITHDRAW`.
+    pub response_kind: u8,
     pub mint_nonce: [u8; 32],
     pub own_pk: [u8; 32],
     pub key_seed: u64,
@@ -1909,6 +1956,7 @@ impl CompleteWithdrawScenario {
             w: WithdrawScenario::new(),
             pending: true,
             outcome,
+            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_WITHDRAW),
             mint_nonce,
             own_pk,
             key_seed: 0xf00d_face,
@@ -1950,9 +1998,27 @@ impl CompleteWithdrawScenario {
             .expect("point limbs match the alignment")
     }
 
+    /// The attested output's BYTES — see
+    /// [`ClaimScenario::attested_output_bytes`]; `completeWithdraw` carries
+    /// the same `VaultResponse` shape under kind 1.
+    pub fn attested_output_bytes(&self) -> Vec<u8> {
+        match self.art() {
+            Art::Compat | Art::Opt => vec![self.outcome],
+            Art::Borsh => vec![self.response_kind, self.outcome],
+        }
+    }
+
+    /// The attested output's ARGUMENT SLOTS, in declaration order.
+    pub fn attested_output_slots(&self) -> Vec<Fr> {
+        self.attested_output_bytes()
+            .into_iter()
+            .map(|b| Fr::from(u64::from(b)))
+            .collect()
+    }
+
     pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
         let mut bytes = self.w.request_id().to_vec();
-        bytes.push(self.outcome);
+        bytes.extend(self.attested_output_bytes());
         let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
         let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
         r_le.reverse();
@@ -1966,7 +2032,7 @@ impl CompleteWithdrawScenario {
         let (rx_hi, rx_lo) = b32_slots(&rx);
         let (s_hi, s_lo) = b32_slots(&sx);
         let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        vec![
+        let mut inputs = vec![
             rid_hi,
             rid_lo,
             rx_hi,
@@ -1976,10 +2042,10 @@ impl CompleteWithdrawScenario {
             s_hi,
             s_lo,
             Fr::from(0u64),
-            Fr::from(u64::from(self.outcome)),
-            n_hi,
-            n_lo,
-        ]
+        ];
+        inputs.extend(self.attested_output_slots());
+        inputs.extend([n_hi, n_lo]);
+        inputs
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
@@ -2700,6 +2766,9 @@ pub struct CompleteSwapScenario {
     pub pending: bool,
     /// The attested amountIn actually spent (≤ amountInMaximum).
     pub amount_in: u64,
+    /// The response KIND byte — M11 stage 5, `Art::Borsh` only. Defaults to
+    /// `RESPONSE_KIND_SWAP`.
+    pub response_kind: u8,
     pub mint_nonce: [u8; 32],
     pub own_pk: [u8; 32],
     pub key_seed: u64,
@@ -2731,6 +2800,7 @@ impl CompleteSwapScenario {
             s: SwapScenario::new(),
             pending: true,
             amount_in: 88_888,
+            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_SWAP),
             mint_nonce,
             own_pk,
             key_seed: 0xf00d_face,
@@ -2758,9 +2828,33 @@ impl CompleteSwapScenario {
             .expect("point limbs match the alignment")
     }
 
+    /// The attested output's BYTES: the deployed 8-byte little-endian
+    /// `amountIn` (which stage 0 proved is already a canonical Borsh `u64`),
+    /// with the kind byte in front under `Art::Borsh` —
+    /// `borsh(SwapResponse { kind, amount_in })`.
+    pub fn attested_output_bytes(&self) -> Vec<u8> {
+        let mut bytes = match self.art() {
+            Art::Compat | Art::Opt => vec![],
+            Art::Borsh => vec![self.response_kind],
+        };
+        bytes.extend(self.amount_in.to_le_bytes());
+        bytes
+    }
+
+    /// The attested output's ARGUMENT SLOTS: `amountIn` is ONE slot (a
+    /// `Uint<64>`), not eight bytes, so this is not the byte list.
+    pub fn attested_output_slots(&self) -> Vec<Fr> {
+        let mut slots = match self.art() {
+            Art::Compat | Art::Opt => vec![],
+            Art::Borsh => vec![Fr::from(u64::from(self.response_kind))],
+        };
+        slots.push(Fr::from(self.amount_in));
+        slots
+    }
+
     pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
         let mut bytes = self.s.request_id().to_vec();
-        bytes.extend(self.amount_in.to_le_bytes());
+        bytes.extend(self.attested_output_bytes());
         let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
         let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
         r_le.reverse();
@@ -2975,7 +3069,7 @@ impl CompleteSwapScenario {
         let (rx_hi, rx_lo) = b32_slots(&rx);
         let (s_hi, s_lo) = b32_slots(&sx);
         let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let inputs = vec![
+        let mut inputs = vec![
             rid_hi,
             rid_lo,
             rx_hi,
@@ -2985,10 +3079,9 @@ impl CompleteSwapScenario {
             s_hi,
             s_lo,
             Fr::from(0u64),
-            Fr::from(self.amount_in),
-            n_hi,
-            n_lo,
         ];
+        inputs.extend(self.attested_output_slots());
+        inputs.extend([n_hi, n_lo]);
         let mut transcript = Vec::new();
         for op in ops {
             op.field_repr(&mut transcript);
@@ -3042,8 +3135,14 @@ pub struct RefundScenario {
     pub key_seed: u64,
     pub nonce_seed: u64,
     /// The attested 5-byte output. Only the protocol's fixed failure
-    /// sentinel refunds.
+    /// sentinel refunds. `Art::Compat`/`Art::Opt` only — the Borsh artifact
+    /// replaced the sentinel with the response kind.
     pub serialized_output: [u8; 5],
+    /// The response KIND byte — M11 stage 5, `Art::Borsh` only, where it is
+    /// the WHOLE attested output. Defaults to `RESPONSE_KIND_FAILURE`; the
+    /// generator moves the two in lockstep, so one generated case says "a
+    /// failure response" or "not a failure response" to all three artifacts.
+    pub response_kind: u8,
     /// `initialized` at call time.
     pub initialized: u64,
     /// The secret the CALLER witnesses; `None` = the withdrawer's/swapper's
@@ -3087,6 +3186,7 @@ impl RefundScenario {
             key_seed: 0xf00d_face,
             nonce_seed: 0x0dd_b17,
             serialized_output: erc20_vault::MPC_FAILURE_OUTPUT,
+            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
             initialized: 1,
             claimant_sk: None,
             also_other_marker: false,
@@ -3134,9 +3234,30 @@ impl RefundScenario {
             .expect("point limbs match the alignment")
     }
 
+    /// The attested output's BYTES: the deployed 5-byte `0xdeadbeef01`
+    /// sentinel, or — under `Art::Borsh` — the single kind byte that replaced
+    /// it, `borsh(FailureResponse { kind })`.
+    pub fn attested_output_bytes(&self) -> Vec<u8> {
+        match self.art() {
+            Art::Compat | Art::Opt => self.serialized_output.to_vec(),
+            Art::Borsh => vec![self.response_kind],
+        }
+    }
+
+    /// The attested output's ARGUMENT SLOTS: one either way — five packed
+    /// little-endian bytes, or the kind byte.
+    pub fn attested_output_slots(&self) -> Vec<Fr> {
+        match self.art() {
+            Art::Compat | Art::Opt => {
+                vec![Fr::from_le_bytes(&self.serialized_output).unwrap()]
+            }
+            Art::Borsh => vec![Fr::from(u64::from(self.response_kind))],
+        }
+    }
+
     pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
         let mut bytes = self.request_id().to_vec();
-        bytes.extend(self.serialized_output);
+        bytes.extend(self.attested_output_bytes());
         let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
         let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
         r_le.reverse();
@@ -3402,7 +3523,7 @@ impl RefundScenario {
         let (rx_hi, rx_lo) = b32_slots(&rx);
         let (s_hi, s_lo) = b32_slots(&sx);
         let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let inputs = vec![
+        let mut inputs = vec![
             rid_hi,
             rid_lo,
             rx_hi,
@@ -3412,10 +3533,9 @@ impl RefundScenario {
             s_hi,
             s_lo,
             Fr::from(0u64),
-            Fr::from_le_bytes(&self.serialized_output).unwrap(),
-            n_hi,
-            n_lo,
         ];
+        inputs.extend(self.attested_output_slots());
+        inputs.extend([n_hi, n_lo]);
         let mut transcript = Vec::new();
         for op in ops {
             op.field_repr(&mut transcript);

@@ -571,8 +571,24 @@ external value and no dependency on 1-7.
       "not the port". BENCH DECISION: the borsh artifact is NOT benched
       until stage 7 — at stage 4 a fourth column would repeat the opt one,
       and stage 5 moves no k.)
-- [ ] 5. Attested outputs → the flat layout (four settle circuits,
+- [X] 5. Attested outputs → the flat layout (four settle circuits,
       +2..+6 rows, deviation-log D6 for the 0x02 semantics + kind byte).
+      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 5",
+      whose §"THE FORMAT" table IS the spec: kinds 0 claim / 1
+      completeWithdraw / 2 completeSwap / 3 refund at byte 0, outputs
+      {kind, success: bool} (2 B), {kind, amount_in: u64} (9 B) and
+      {kind} (1 B), digest = keccak256(borsh({request_id, output})) at
+      34/41/33 bytes. The 5-byte 0xdeadbeef01 sentinel is GONE — a
+      response kind says the same thing in the same byte position. The
+      0x02 HAZARD IS CLOSED: completeWithdraw's success is a Borsh bool,
+      so a non-boolean attestation is unprovable where the port and the
+      optimized fork REFUND on it, and the harness pins that intentional
+      three-way divergence in both directions. Cross-circuit replay is
+      structurally impossible and has its own adversarial property.
+      MEASURED, no k moves: claim +6, completeWithdraw +6, completeSwap
+      +9, refund −9 (the shorter preimage pays). One documented departure:
+      `tag < K` is not emitted, because each circuit asserts equality with
+      its own kind, which is strictly stronger.)
 - [ ] 6. Event payload twins (events_borsh/xcontract_events_borsh)
       beside the pinned originals.
 - [ ] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect

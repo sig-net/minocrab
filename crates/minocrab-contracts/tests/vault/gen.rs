@@ -303,6 +303,21 @@ fn settled_deposit() -> impl Strategy<Value = DepositScenario> {
         })
 }
 
+/// The attested output's KIND byte (M11 stage 5): mostly this circuit's own,
+/// sometimes another declared kind (a cross-circuit attestation, which must
+/// not settle), sometimes a byte that is no kind at all.
+///
+/// Read by the `Art::Borsh` artifact only — the port and the optimized fork
+/// have no kind field — so a generated case says "an attestation for kind k"
+/// to the borsh artifact and nothing at all to the other two.
+fn response_kind(own: u32) -> impl Strategy<Value = u8> {
+    prop_oneof![
+        6 => Just(kind(own)),
+        2 => (0u32..minocrab_contracts::erc20_vault_borsh::RESPONSE_KINDS).prop_map(kind),
+        1 => any::<u8>(),
+    ]
+}
+
 /// `claim` — ALL FOUR recipient shapes at equal weight, per the analysis:
 /// `none`, `some(left(pk))`, `some(right(self))` (the auto-receive branch
 /// FIRES), `some(right(other))`.
@@ -316,9 +331,10 @@ pub fn claim() -> impl Strategy<Value = ClaimScenario> {
         any::<bool>(),
         b32(),
         initialized(),
+        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_CLAIM),
     )
         .prop_map(
-            |(d, mint_nonce, shape, found, output, wrong_sk, other, init)| {
+            |(d, mint_nonce, shape, found, output, wrong_sk, other, init, rkind)| {
                 let mut c = ClaimScenario::new();
                 let self_addr = d.self_addr;
                 c.d = d;
@@ -326,6 +342,7 @@ pub fn claim() -> impl Strategy<Value = ClaimScenario> {
                 c.mint_nonce = mint_nonce;
                 c.found = found;
                 c.serialized_output = output;
+                c.response_kind = rkind;
                 c.recipient = match shape {
                     0 => ClaimRecipient::None(other),
                     1 => ClaimRecipient::Key(other),
@@ -376,11 +393,13 @@ pub fn complete_withdraw() -> impl Strategy<Value = CompleteWithdrawScenario> {
         any::<bool>(),
         any::<bool>(),
         initialized(),
+        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_WITHDRAW),
     )
-        .prop_map(|(w, mint_nonce, own_pk, outcome, pending, wrong_sk, init)| {
+        .prop_map(|(w, mint_nonce, own_pk, outcome, pending, wrong_sk, init, rkind)| {
             let mut c = CompleteWithdrawScenario::new(outcome);
             c.w = w;
             c.w.initialized = init;
+            c.response_kind = rkind;
             c.mint_nonce = mint_nonce;
             c.own_pk = own_pk;
             c.pending = pending;
@@ -431,13 +450,15 @@ pub fn complete_swap() -> impl Strategy<Value = CompleteSwapScenario> {
         any::<bool>(),
         initialized(),
         any::<u64>(),
+        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_SWAP),
     )
         .prop_map(
-            |(s, mint_nonce, own_pk, band, pending, wrong_sk, init, rand)| {
+            |(s, mint_nonce, own_pk, band, pending, wrong_sk, init, rand, rkind)| {
                 let mut c = CompleteSwapScenario::new();
                 let max = s.amount_in_max_u64();
                 c.s = s;
                 c.s.initialized = init;
+                c.response_kind = rkind;
                 c.mint_nonce = mint_nonce;
                 c.own_pk = own_pk;
                 c.pending = pending;
@@ -478,9 +499,17 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
             Just([0xde, 0xad, 0xbe, 0xef, 0x00]),
             any::<[u8; 5]>(),
         ],
+        // The borsh artifact's form of "not the failure response": a kind
+        // that is not the failure kind. Applied only when the 5-byte output
+        // is not the sentinel, so ONE generated case says the same thing to
+        // all three artifacts.
+        prop_oneof![
+            (0u32..minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE).prop_map(kind),
+            any::<u8>(),
+        ],
     )
         .prop_map(
-            |(w, sw, is_withdrawal, mint_nonce, own_pk, wrong_sk, both, init, output)| {
+            |(w, sw, is_withdrawal, mint_nonce, own_pk, wrong_sk, both, init, output, not_failure)| {
                 let route = if is_withdrawal {
                     RefundRoute::Withdrawal(w)
                 } else {
@@ -491,6 +520,18 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
                 r.own_pk = own_pk;
                 r.initialized = init;
                 r.serialized_output = output;
+                r.response_kind = if output == minocrab_contracts::erc20_vault::MPC_FAILURE_OUTPUT
+                {
+                    kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE)
+                } else if not_failure
+                    == kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE)
+                {
+                    // `any::<u8>()` can land on the failure kind; nudge it off,
+                    // so "not the failure response" stays true in both encodings.
+                    kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+                } else {
+                    not_failure
+                };
                 r.also_other_marker = both;
                 if wrong_sk {
                     let mut sk = r.sk();

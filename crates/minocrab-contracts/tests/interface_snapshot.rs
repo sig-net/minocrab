@@ -392,11 +392,14 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
-    // erc20-vault, BORSH (M11 stage 4 onwards). Frozen IDENTICAL to the
-    // optimized block above at the forking commit: a byte-identical fork
-    // cannot have a different interface, and the ZKIR equality is asserted
-    // in `tests/erc20_vault_borsh_fork.rs`. A diff here that is not stated
-    // in an M11 stage's commit message is an unintended wire-contract change.
+    // erc20-vault, BORSH (M11 stage 4 onwards). Forked IDENTICAL to the
+    // optimized block above; a diff here that is not stated in an M11 stage's
+    // commit message is an unintended wire-contract change. Stage 5 split the
+    // opaque `serializedOutput` slot of the four settle circuits into the
+    // DECLARED fields of the attested output — `serializedOutput_kind` plus
+    // `_success` (claim, completeWithdraw), `_amountIn` (completeSwap), or
+    // nothing at all (refund, whose 5-byte sentinel became the kind byte).
+    // Nothing else about any argument list moved.
     (
         "erc20_vault_borsh::initialize",
         "\
@@ -439,7 +442,8 @@ in  respond_bigR_y_lo: Scalar<BLS12-381>
 in  respond_s_hi: Scalar<BLS12-381>
 in  respond_s_lo: Scalar<BLS12-381>
 in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_success: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 in  recipient_is_some: Scalar<BLS12-381>
@@ -497,7 +501,8 @@ in  respond_bigR_y_lo: Scalar<BLS12-381>
 in  respond_s_hi: Scalar<BLS12-381>
 in  respond_s_lo: Scalar<BLS12-381>
 in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_success: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381> (guarded)
@@ -518,7 +523,7 @@ in  respond_bigR_y_lo: Scalar<BLS12-381>
 in  respond_s_hi: Scalar<BLS12-381>
 in  respond_s_lo: Scalar<BLS12-381>
 in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -561,7 +566,8 @@ in  respond_bigR_y_lo: Scalar<BLS12-381>
 in  respond_s_hi: Scalar<BLS12-381>
 in  respond_s_lo: Scalar<BLS12-381>
 in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_kind: Scalar<BLS12-381>
+in  serializedOutput_amountIn: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>

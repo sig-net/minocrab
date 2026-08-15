@@ -42,15 +42,20 @@ use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, contract_call, emit, kernel_self,
     map_insert, map_lookup, map_member, map_remove, ImpactElem, LedgerValue,
 };
+// `CircuitBorsh` names both the trait and the derive macro (different
+// namespaces, one path), as `serde::Serialize` does.
+use minocrab_std::v3::borsh::{CircuitBorsh, CircuitBorshArg, Tag};
 use minocrab_std::v3::{
-    circuit, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient, Either, Maybe, Uint,
-    B32,
+    circuit, own_public_key_guarded, ArgPath, Bool, Bytes, BytesN, CircuitArg, CoinRecipient,
+    Either, Maybe, Uint, B32,
 };
 
 use crate::common;
 use crate::erc20_vault::{
     SwapEvent, SwapRecord, VaultEvent, VaultRecord, APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
-    EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_FAILURE_OUTPUT, MPC_RESPONSE_KEY,
+    // (`MPC_FAILURE_OUTPUT`, the 5-byte `0xdeadbeef01` sentinel, is
+    // deliberately NOT imported: stage 5 replaced it with the failure KIND.)
+    EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_RESPONSE_KEY,
     REFUND_COMMITMENT, REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER,
     SIGN_BIDIRECTIONAL_EVENT_MAP, SWAP_EVENT_MAP, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
     SWAP_REFUND_COMMITMENT, SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS,
@@ -1012,9 +1017,99 @@ fn vault_token_domain_separator(
 /// "the vault token of an EVM ERC-20".
 pub const VAULT_TOKEN_TAG: u8 = 0x01;
 
+// ---- the attested outputs, as Borsh (M11 stage 5) ---------------------------
+//
+// THE FORMAT THIS DEFINES IS THE SPEC. The MPC has never settled anything on
+// Midnight — `MidnightPublisher::publish_signature` bails — so there is no
+// deployed response format to stay compatible with (notes/borsh-format.org
+// §"ANSWERED from MPC source", Q2). What the four types below declare is what
+// the MPC will implement, and what the TS side will parse with borsh-js from
+// the same declarations.
+
+/// The number of response kinds — `Tag<RESPONSE_KINDS>` is one Borsh byte.
+pub const RESPONSE_KINDS: u32 = 4;
+
+/// Response kinds, at BYTE 0 of every attested output.
+///
+/// The discriminant is what makes cross-circuit attestation replay
+/// STRUCTURALLY impossible. Before it, `claim` and `completeWithdraw` shared a
+/// digest shape — `keccak256(requestId ‖ successByte)` — and were separated
+/// only by which map happened to hold the id; an MPC signature valid for one
+/// was a valid signature for the other, and only the ledger state stopped it
+/// from being used. Now the kind is inside the signed preimage, so the two
+/// digests differ for the same request id and the same outcome, and each
+/// circuit asserts its own kind.
+pub const RESPONSE_KIND_CLAIM: u32 = 0;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_SWAP: u32 = 2;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_FAILURE: u32 = 3;
+
+/// `struct VaultResponse { kind: u8, success: bool }` — 2 bytes, the attested
+/// output of `claim` (kind 0) and `completeWithdraw` (kind 1).
+///
+/// **THE 0x02 HAZARD CLOSES HERE.** The deployed output is a `Bytes<1>` that
+/// nothing range-checks beyond its width, and the Compact source reads it as
+/// `byte == 1` — so under the deployed contract EVERY byte other than `0x01`
+/// routes `completeWithdraw` to the refund branch, re-minting the surrendered
+/// value on a withdrawal that SUCCEEDED (the M10 harness finding). Borsh's
+/// `bool` is `0` or `1` AND NOTHING ELSE, and `assert_boolean` is that rule
+/// in circuit: a `0x02` attestation is now unprovable rather than silently
+/// refunding. The divergence is deliberate and is pinned by the spec harness,
+/// which asserts that the borsh artifact REJECTS exactly where the port and
+/// the optimized fork refund-route.
+#[derive(CircuitBorsh)]
+pub struct VaultResponse {
+    pub kind: Tag<RESPONSE_KINDS>,
+    pub success: Bool,
+}
+
+/// `struct SwapResponse { kind: u8, amount_in: u64 }` — 9 bytes, the attested
+/// output of `completeSwap` (kind 2).
+///
+/// The deployed output is already a canonical Borsh `u64` (stage 0 proved the
+/// 8 bytes byte-for-byte); all that is added is the kind byte in front.
+#[derive(CircuitBorsh)]
+pub struct SwapResponse {
+    pub kind: Tag<RESPONSE_KINDS>,
+    pub amount_in: Uint<64>,
+}
+
+/// `struct FailureResponse { kind: u8 }` — ONE byte, the attested output of
+/// `refund` (kind 3).
+///
+/// This replaces the deployed 5-byte `0xdeadbeef01` sentinel. The sentinel
+/// was a magic constant doing exactly one job — saying "this response means
+/// the transaction never executed" — which is what a response KIND says, and
+/// the kind says it in the same place for every circuit. Four bytes off the
+/// signed preimage, and the failure response stops being a value that has to
+/// be agreed out of band.
+#[derive(CircuitBorsh)]
+pub struct FailureResponse {
+    pub kind: Tag<RESPONSE_KINDS>,
+}
+
+/// `assert(response.kind == expected)` — the anti-replay check, once per
+/// settle circuit.
+///
+/// This is also what discharges the tag's Borsh canonicity bound: equality
+/// with a specific variant is strictly stronger than `tag < K`, so
+/// `CircuitBorsh::constrain_canonical`'s `less_than` is NOT emitted on top of
+/// it (the byte-width constraint that the digest's injectivity needs is
+/// emitted by `CircuitArg::constrain`, with every other argument). Every
+/// settle circuit accepts exactly one kind, so there is no site where the
+/// weaker bound would be the right one.
+fn assert_kind(c: &mut Circuit3, kind: Tag<RESPONSE_KINDS>, expected: u32) {
+    let want = c.constant(u64::from(expected));
+    let is_expected = c.test_eq(kind.field(), want.private());
+    c.assert(is_expected);
+}
+
 /// The shared argument block of the settle circuits: requestId, the
 /// attestation event, and the mint nonce; `serializedOutput` is declared
-/// by the caller (its width differs per circuit).
+/// by the caller (its type differs per circuit).
 struct SettleArgs {
     request_id: B32<Private>,
     big_r_x: B32<Private>,
@@ -1022,13 +1117,16 @@ struct SettleArgs {
     mint_nonce: B32<Private>,
 }
 
-/// Declare + constrain the settle argument block around a caller-declared
-/// `serializedOutput`; `declare_output` runs between the event and
-/// mintNonce declarations to keep source argument order.
-fn settle_args<F>(c: &mut Circuit3, declare_output: F) -> (SettleArgs, Vec<Wire3<FieldT, Private>>)
-where
-    F: FnOnce(&mut Circuit3) -> Vec<Wire3<FieldT, Private>>,
-{
+/// Declare + constrain the settle argument block around the typed
+/// `serializedOutput`, which is declared between the event and mintNonce to
+/// keep source argument order and constrained last, where the port's
+/// `assert_bits` on the opaque output byte string used to sit.
+///
+/// `T::constrain` is the argument constraint and nothing more: the byte
+/// widths of the tag and the payload, and `assert_boolean` for a `bool`.
+/// `constrain_canonical`'s extra `tag < K` is deliberately not emitted — see
+/// [`assert_kind`], which pins the tag to one variant instead.
+fn settle_args<T: CircuitBorshArg>(c: &mut Circuit3) -> (SettleArgs, T) {
     let request_id = B32 {
         hi: c.arg::<FieldT>("requestId_hi"),
         lo: c.arg::<FieldT>("requestId_lo"),
@@ -1046,7 +1144,7 @@ where
         lo: c.arg::<FieldT>("respond_s_lo"),
     };
     let recovery_id = c.arg::<FieldT>("respond_recoveryId");
-    let output = declare_output(c);
+    let output = T::declare(c, &ArgPath::root("serializedOutput"));
     let mint_nonce = B32 {
         hi: c.arg::<FieldT>("mintNonce_hi"),
         lo: c.arg::<FieldT>("mintNonce_lo"),
@@ -1057,6 +1155,7 @@ where
     sig_s.constrain_input(c);
     c.assert_bits(recovery_id, 8);
     mint_nonce.constrain_input(c);
+    output.constrain(c);
     (
         SettleArgs {
             request_id,
@@ -1069,13 +1168,23 @@ where
 }
 
 /// The settle circuits' shared preamble: disclose the request id, gate on
-/// initialization, and verify the MPC attestation over the presented
+/// initialization, and verify the MPC attestation over the presented typed
 /// output. Returns the disclosed id.
-fn verify_attestation<const LEN_OUTPUT: usize>(
+///
+/// SOUNDNESS, in four lines (notes/borsh-format.org §"The deserializer"): the
+/// Borsh packing is injective on range-constrained inputs (disjoint powers of
+/// 256); the MPC signed the digest of the packed bytes; this circuit
+/// constrains the bytes to BE the serialization of the declared fields, with
+/// the fields in range (`settle_args` emits the argument constraints, and the
+/// keccak chip's own per-limb byte decomposition enforces the widths a second
+/// time); therefore the fields ARE what the MPC encoded. Declaring the fields
+/// and running the serializer forwards is the whole deserialization — which is
+/// why no vault circuit uses `BorshReader`.
+fn verify_attestation<T: CircuitBorsh<Private>>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     args: &SettleArgs,
-    output_limbs: &[Wire3<FieldT, Private>],
+    output: &T,
 ) -> B32<Public> {
     let request_id = B32 {
         hi: c.disclose(args.request_id.hi, "settle request id (hi)"),
@@ -1087,10 +1196,10 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
         hi: request_id.hi.private(),
         lo: request_id.lo.private(),
     };
-    let valid = signet::verify_respond_bidirectional_event::<Private, LEN_OUTPUT>(
+    let valid = signet::verify_respond_bidirectional_event_borsh(
         c,
         &rid_priv,
-        output_limbs,
+        output,
         &args.big_r_x,
         &args.sig_s,
         mpc_key.private(),
@@ -1157,7 +1266,7 @@ fn refund_surrendered_value(
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
-/// serializedOutput: Bytes<1>, mintNonce): []` — Runtime step 5 of a
+/// serializedOutput: VaultResponse, mintNonce): []` — Runtime step 5 of a
 /// withdrawal that EXECUTED: verify the attestation, consume the pending
 /// withdrawal, and on an attested `false` return re-mint the surrendered
 /// value to the withdrawer (completeWithdraw.zkir; reads: initialized,
@@ -1165,15 +1274,12 @@ fn refund_surrendered_value(
 /// guarded branch's refundCommitment lookup + kernel.self).
 pub fn complete_withdraw() -> Compiled3 {
     let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 8);
+    let (args, output) = settle_args::<VaultResponse>(&mut c);
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<1>(&mut c, one, &args, &output);
+    let request_id = verify_attestation(&mut c, one, &args, &output);
+    assert_kind(&mut c, output.kind, RESPONSE_KIND_WITHDRAW);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1203,9 +1309,12 @@ pub fn complete_withdraw() -> Compiled3 {
         ev
     });
 
-    // const succeeded = disclose(deserialize<VaultResponse, 1>(output).success)
-    let succeeded = c.test_eq(output[0], one.private());
-    let succeeded = c.disclose(succeeded, "withdrawal EVM outcome");
+    // const succeeded = disclose(output.success) — a Borsh `bool` IS the
+    // branch condition, so there is no `== 1` test to get wrong: the wire is
+    // 0 or 1 by `assert_boolean` (emitted with the argument constraints), and
+    // anything else makes the transaction unprovable instead of routing it to
+    // the refund branch. THIS is the 0x02 hazard closing.
+    let succeeded = c.disclose(output.success.field(), "withdrawal EVM outcome");
 
     // if (!succeeded) { refundSurrenderedValue(...) }
     let refunding = c.not(succeeded);
@@ -1229,22 +1338,19 @@ pub fn complete_withdraw() -> Compiled3 {
 }
 
 /// `export circuit completeSwap(requestId, respondBidirectionalEvent,
-/// serializedOutput: Bytes<8>, mintNonce): []` — settles a SUCCESSFUL
+/// serializedOutput: SwapResponse, mintNonce): []` — settles a SUCCESSFUL
 /// swap: verify the attested amountIn, consume the pending swap
 /// (swapper-only), mint the exact amountOut of tokenOut plus the unspent
 /// tokenIn as change (completeSwap.zkir; reads: initialized,
 /// mpcResponseKey, member(12), lookup(11), lookup(12), kernel.self ×2).
 pub fn complete_swap() -> Compiled3 {
     let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 64);
+    let (args, output) = settle_args::<SwapResponse>(&mut c);
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<8>(&mut c, one, &args, &output);
+    let request_id = verify_attestation(&mut c, one, &args, &output);
+    assert_kind(&mut c, output.kind, RESPONSE_KIND_SWAP);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1318,7 +1424,7 @@ pub fn complete_swap() -> Compiled3 {
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
-    let amount_in = c.disclose(output[0], "attested amountIn spent");
+    let amount_in = c.disclose(output.amount_in.field(), "attested amountIn spent");
     let word5 = ev.word(5);
     let amount_in_max = signet::abi_word_to_uint128(&mut c, &word5);
     let overspent = c.less_than(amount_in_max, amount_in, 128);
@@ -1384,9 +1490,9 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 }
 
 /// `export circuit refund(requestId, respondBidirectionalEvent,
-/// serializedOutput: Bytes<5>, mintNonce): []` — settles a withdrawal OR
-/// swap whose transaction NEVER EXECUTED (the MPC attested the fixed
-/// 5-byte failure output), routing on which pending marker holds the id.
+/// serializedOutput: FailureResponse, mintNonce): []` — settles a withdrawal
+/// OR swap whose transaction NEVER EXECUTED (the MPC attested the FAILURE
+/// KIND), routing on which pending marker holds the id.
 ///
 /// # Rung 5(iv), avenue 4 — the branch merge
 ///
@@ -1437,15 +1543,11 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 /// (refund.zkir; the port's two guarded branches, merged.)
 pub fn refund() -> Compiled3 {
     let mut c = Circuit3::new();
-    let (args, output) = settle_args(&mut c, |c| {
-        let w = c.arg::<FieldT>("serializedOutput");
-        vec![w]
-    });
-    c.assert_bits(output[0], 40);
+    let (args, output) = settle_args::<FailureResponse>(&mut c);
 
     let one = c.constant(1u64);
 
-    let request_id = verify_attestation::<5>(&mut c, one, &args, &output);
+    let request_id = verify_attestation(&mut c, one, &args, &output);
     let request_id_val = LedgerValue::bytes(
         32,
         vec![
@@ -1454,10 +1556,10 @@ pub fn refund() -> Compiled3 {
         ],
     );
 
-    // assert(serializedOutput == 0xdeadbeef01, "Not the MPC failure output")
-    let failure = c.constant(minocrab::Fr::from_le_bytes(&MPC_FAILURE_OUTPUT).unwrap());
-    let is_failure = c.test_eq(output[0], failure.private());
-    c.assert(is_failure);
+    // assert(serializedOutput.kind == FAILURE, "Not the MPC failure output")
+    // — the same single equality the 5-byte `0xdeadbeef01` sentinel bought,
+    // against a byte that means the same thing in every response type.
+    assert_kind(&mut c, output.kind, RESPONSE_KIND_FAILURE);
 
     // Route on which pending marker holds the id (public branch).
     // The member result is already Public; disclosure is the source's
@@ -1614,7 +1716,7 @@ struct RespondSignature {
 }
 
 /// `export circuit claim(requestId: RequestId, respondBidirectionalEvent:
-/// RespondBidirectionalEvent, serializedOutput: Bytes<1>, mintNonce:
+/// RespondBidirectionalEvent, serializedOutput: VaultResponse, mintNonce:
 /// Bytes<32>, recipient: Maybe<Either<ZswapCoinPublicKey,
 /// ContractAddress>>): []` — Runtime step 5 of a deposit: verify the
 /// MPC's attestation over the presented output, consume the stored
@@ -1634,7 +1736,7 @@ pub fn claim(
     c: &mut Circuit3,
     request_id: B32<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
-    serialized_output: Bytes<1>,
+    serialized_output: VaultResponse,
     mint_nonce: B32<Private>,
     recipient: Maybe<Either<B32<Private>, B32<Private>>>,
 ) {
@@ -1643,7 +1745,6 @@ pub fn claim(
     // verification reads neither, exactly as in the Compact original.
     let big_r_x = respond_bidirectional_event.big_r.x;
     let sig_s = respond_bidirectional_event.s;
-    let serialized_output = serialized_output.field();
     let rec_is_some = recipient.is_some.field();
     let rec_is_left = recipient.value.is_left.field();
     let rec_left = recipient.value.left;
@@ -1661,22 +1762,27 @@ pub fn claim(
     // assert(initialized >= 1, "Not initialized")
     assert_initialized(c, one);
 
-    // const response = deserialize<VaultResponse, 1>(serializedOutput);
-    // assert(response.success) — the packed Boolean is (byte == 1).
-    let success = c.test_eq(serialized_output, one.private());
-    c.assert(success);
+    // assert(serializedOutput.kind == CLAIM) — the response was issued for a
+    // deposit, not for a withdrawal, a swap or a failure.
+    assert_kind(c, serialized_output.kind, RESPONSE_KIND_CLAIM);
 
-    // assert(verifyRespondBidirectionalEvent<1>(requestId,
-    //   serializedOutput, event, mpcResponseKey))
+    // assert(serializedOutput.success) — the wire is a Borsh `bool`, so
+    // `assert_boolean` (emitted with the argument constraints) has already
+    // ruled out every byte but 0 and 1 and this is the whole check. The port
+    // spells the same thing `byte == 1`, which is where its 0x02 hazard lives.
+    c.assert(serialized_output.success.field());
+
+    // assert(verifyRespondBidirectionalEvent(requestId, serializedOutput,
+    //   event, mpcResponseKey))
     let mpc_key = common::cell_read_point(c, one, MPC_RESPONSE_KEY);
     let rid_priv = B32 {
         hi: request_id.hi.private(),
         lo: request_id.lo.private(),
     };
-    let valid = signet::verify_respond_bidirectional_event::<Private, 1>(
+    let valid = signet::verify_respond_bidirectional_event_borsh(
         c,
         &rid_priv,
-        &[serialized_output],
+        &serialized_output,
         &big_r_x,
         &sig_s,
         mpc_key.private(),

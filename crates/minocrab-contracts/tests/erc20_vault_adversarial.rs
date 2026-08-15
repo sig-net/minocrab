@@ -32,7 +32,7 @@ use std::collections::HashMap;
 
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
-use minocrab_contracts::erc20_vault;
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
 use proptest::prelude::*;
@@ -153,6 +153,12 @@ fn unread_argument_slots_are_exactly_the_declared_ones() {
     // Argument layout: 0,1 requestId · 2,3 bigR.x · 4,5 bigR.y · 6,7 s ·
     // 8 recoveryId · 9 serializedOutput · 10,11 mintNonce · 12 is_some ·
     // 13 is_left · 14,15 left(pk) · 16,17 right(contract).
+    //
+    // Under `Art::Borsh` the attested output is TWO declared slots (9 kind,
+    // 10 success) rather than one opaque byte, so every slot from mintNonce
+    // on shifts by one — the only interface movement M11 stage 5 makes, and
+    // the interface snapshot carries it too.
+    let slot = |art: Art, i: usize| if art == Art::Borsh && i >= 10 { i + 1 } else { i };
     let mut other = [0u8; 32];
     other[..8].copy_from_slice(b"other-ct");
     let base = ClaimScenario::new();
@@ -183,6 +189,7 @@ fn unread_argument_slots_are_exactly_the_declared_ones() {
     for art in ARTS {
         let ours = Circuit::Claim.ir(art);
         for (name, recipient, unread) in &cases {
+            let unread: Vec<usize> = unread.iter().map(|&i| slot(art, i)).collect();
             let mut c = ClaimScenario::new().with_art(art);
             c.recipient = *recipient;
             let pi = c.preimage();
@@ -464,25 +471,38 @@ fn a_forged_membership_answer_passes_the_circuit_and_fails_the_ledger() {
     }
 }
 
-/// `refund` settles only the protocol's fixed 5-byte failure sentinel. A
-/// success-shaped 5-byte output must not route a refund — otherwise an
-/// executed withdrawal could be refunded as well as delivered.
+/// `refund` settles only the response that says "the transaction never
+/// executed". A success-shaped response must not route a refund — otherwise
+/// an executed withdrawal could be refunded as well as delivered.
+///
+/// Each case is that statement in BOTH encodings: the deployed 5-byte output
+/// that is not the `0xdeadbeef01` sentinel, and (M11 stage 5) the response
+/// KIND that is not the failure kind — including a byte that is no declared
+/// kind at all.
 #[test]
 fn refund_rejects_success_shaped_outputs() {
     for art in ARTS {
         let ours = Circuit::Refund.ir(art);
-        for output in [
-            [0u8, 0, 0, 0, 1],
-            [0xde, 0xad, 0xbe, 0xef, 0x00],
-            [0xde, 0xad, 0xbe, 0xee, 0x01],
-            [0u8; 5],
+        for (output, response_kind) in [
+            ([0u8, 0, 0, 0, 1], erc20_vault_borsh::RESPONSE_KIND_CLAIM),
+            (
+                [0xde, 0xad, 0xbe, 0xef, 0x00],
+                erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+            ),
+            (
+                [0xde, 0xad, 0xbe, 0xee, 0x01],
+                erc20_vault_borsh::RESPONSE_KIND_SWAP,
+            ),
+            ([0u8; 5], 255),
         ] {
             let mut r = RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()))
                 .with_art(art);
             r.serialized_output = output;
+            r.response_kind = u8::try_from(response_kind).expect("a kind is one byte");
             assert!(
                 simulate(&ours, &r.preimage()).is_err(),
-                "{art:?}: refund accepts a non-sentinel output {output:02x?}"
+                "{art:?}: refund accepts a non-failure response \
+                 (bytes {output:02x?}, kind {response_kind})"
             );
         }
     }
@@ -755,4 +775,138 @@ fn complete_swap_change_at_the_uint64_ceiling() {
         false,
         "cap u64::MAX - 1, spend u64::MAX MUST reject",
     );
+}
+
+// --- family 6: the response KIND, and the bool that closes 0x02 ---------------
+//
+// M11 stage 5. Both properties are about the borsh artifact ONLY, because the
+// port and the optimized fork have no kind byte and no `bool` — which is
+// exactly the point: these are the two things the format buys, and each test
+// says what the other artifacts do instead.
+
+/// CROSS-CIRCUIT ATTESTATION REPLAY IS STRUCTURALLY IMPOSSIBLE.
+///
+/// Before the kind byte, `claim` and `completeWithdraw` signed the same
+/// digest shape — `keccak256(requestId ‖ successByte)` — so one MPC
+/// signature was a valid signature for both circuits, and only which map held
+/// the id kept them apart. The kind is inside the signed preimage now, so an
+/// attestation issued for another settle circuit does not verify here at all:
+/// the equality against this circuit's own kind fails first, and even without
+/// it the digest would be a different one.
+///
+/// Asserted the honest way — the SAME scenario with the right kind is
+/// accepted, so it is the kind that rejected the others and not some unrelated
+/// guard.
+#[test]
+fn an_attestation_for_another_settle_circuit_does_not_settle() {
+    use erc20_vault_borsh::{
+        RESPONSE_KINDS, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_SWAP,
+        RESPONSE_KIND_WITHDRAW,
+    };
+    let art = Art::Borsh;
+    // (circuit, its own kind, a preimage builder that takes the kind byte)
+    let cases: Vec<(Circuit, u32, Box<dyn Fn(u8) -> _>)> = vec![
+        (
+            Circuit::Claim,
+            RESPONSE_KIND_CLAIM,
+            Box::new(move |k: u8| {
+                let mut c = ClaimScenario::new().with_art(art);
+                c.response_kind = k;
+                c.preimage()
+            }),
+        ),
+        (
+            Circuit::CompleteWithdraw,
+            RESPONSE_KIND_WITHDRAW,
+            Box::new(move |k: u8| {
+                let mut c = CompleteWithdrawScenario::new(1).with_art(art);
+                c.response_kind = k;
+                c.preimage()
+            }),
+        ),
+        (
+            Circuit::CompleteSwap,
+            RESPONSE_KIND_SWAP,
+            Box::new(move |k: u8| {
+                let mut c = CompleteSwapScenario::new().with_art(art);
+                c.response_kind = k;
+                c.preimage()
+            }),
+        ),
+        (
+            Circuit::Refund,
+            RESPONSE_KIND_FAILURE,
+            Box::new(move |k: u8| {
+                let mut r =
+                    RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()))
+                        .with_art(art);
+                r.response_kind = k;
+                r.preimage()
+            }),
+        ),
+    ];
+    for (circuit, own, build) in cases {
+        let ours = circuit.ir(art);
+        let own_byte = u8::try_from(own).expect("a kind is one byte");
+        simulate(&ours, &build(own_byte)).unwrap_or_else(|e| {
+            panic!(
+                "{}: the borsh artifact rejects its OWN kind {own}: {e}",
+                circuit.zkir_name()
+            )
+        });
+        // Every other declared kind, and a byte that is no kind at all.
+        for other in (0..RESPONSE_KINDS).filter(|k| *k != own).chain([255]) {
+            let byte = u8::try_from(other).expect("a kind is one byte");
+            assert!(
+                simulate(&ours, &build(byte)).is_err(),
+                "{}: settles on an attestation issued for kind {other}",
+                circuit.zkir_name()
+            );
+        }
+    }
+}
+
+/// THE DELIBERATE DIVERGENCE (deviation D6), pinned in both directions.
+///
+/// The deployed `completeWithdraw` reads its attested output as `byte == 1`,
+/// so `0x02` — or any byte but `0x01` — routes to the REFUND branch and
+/// re-mints the surrendered value on a withdrawal that SUCCEEDED. The port and
+/// the optimized fork therefore ACCEPT such an attestation and refund on it;
+/// the borsh artifact declares the field a Borsh `bool`, whose canonical
+/// encoding is 0 or 1 and nothing else, so `assert_boolean` makes the same
+/// transaction UNPROVABLE.
+///
+/// This is the one input on which the three artifacts genuinely disagree, so
+/// the harness states it as a test rather than leaving it to a note: the
+/// intentional divergence is a checked fact, and an artifact that silently
+/// stopped diverging would fail here.
+#[test]
+fn a_non_boolean_success_byte_refunds_on_the_port_and_is_unprovable_in_borsh() {
+    for outcome in [2u8, 3, 0x80, 0xff] {
+        for art in ARTS {
+            let c = CompleteWithdrawScenario::new(outcome).with_art(art);
+            let accepted = simulate(&Circuit::CompleteWithdraw.ir(art), &c.preimage()).is_ok();
+            match art {
+                Art::Compat | Art::Opt => assert!(
+                    accepted,
+                    "{art:?}: the deployed semantics REFUND on a non-boolean \
+                     success byte {outcome:#04x} — if that has stopped being \
+                     true, the M10 finding has been fixed somewhere it should \
+                     not have been"
+                ),
+                Art::Borsh => assert!(
+                    !accepted,
+                    "{art:?}: a non-boolean success byte {outcome:#04x} must be \
+                     unprovable — that is what declaring the field a Borsh bool buys"
+                ),
+            }
+            // The spec agrees, which is what makes the divergence a modelled
+            // one rather than an accident of the circuit.
+            assert_eq!(
+                spec::spec_complete_withdraw(&c).accepts(),
+                accepted,
+                "{art:?}: spec and circuit disagree on success byte {outcome:#04x}"
+            );
+        }
+    }
 }

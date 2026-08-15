@@ -323,6 +323,57 @@ impl FixedLen for CompleteSwapOutput {
     const LEN: usize = 8;
 }
 
+// ---- the attested outputs, M11 stage 5 ----------------------------------------
+//
+// What the BORSH artifact signs: the same four sites with a response KIND at
+// byte 0 and declared payload types. These are not deployed anywhere — the
+// MPC has never settled on Midnight — so they are a SPECIFICATION, and this
+// is where its byte layout is pinned against borsh's own encoder and schema.
+// The circuit-side declarations are `erc20_vault_borsh::{VaultResponse,
+// SwapResponse, FailureResponse}`; these are the independent second
+// statement of them, which is the whole point of a spec type.
+
+/// `claim` (kind 0) and `completeWithdraw` (kind 1): the kind byte and the
+/// EVM outcome as a Borsh `bool`.
+///
+/// ONE TYPE FOR TWO SITES, unlike [`ClaimOutput`]/[`CompleteWithdrawOutput`]:
+/// the two are now separated by the KIND VALUE rather than by being
+/// structurally identical types at different sites, which is what makes a
+/// cross-circuit replay a signature failure instead of a state-machine
+/// question. And `success` is a `bool`, not a `u8` — the 0x02 hazard closing.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VaultResponse {
+    pub kind: u8,
+    pub success: bool,
+}
+
+impl FixedLen for VaultResponse {
+    const LEN: usize = 1 + 1;
+}
+
+/// `completeSwap` (kind 2): the kind byte and the attested `amountIn`.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SwapResponse {
+    pub kind: u8,
+    pub amount_in: u64,
+}
+
+impl FixedLen for SwapResponse {
+    const LEN: usize = 1 + 8;
+}
+
+/// `refund` (kind 3): the kind byte, and nothing else — the whole content of
+/// the deployed 5-byte `0xdeadbeef01` sentinel, in the byte position every
+/// response type puts its kind.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FailureResponse {
+    pub kind: u8,
+}
+
+impl FixedLen for FailureResponse {
+    const LEN: usize = 1;
+}
+
 /// `calculateSignetAttestationDigest(requestId, serializedOutput)`'s
 /// preimage — the raw concatenation the MPC signs.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,6 +456,25 @@ pub fn schema_containers() -> Vec<(&'static str, BorshSchemaContainer)> {
         (
             "AttestationPreimage<CompleteSwapOutput>",
             BorshSchemaContainer::for_type::<AttestationPreimage<CompleteSwapOutput>>(),
+        ),
+        // M11 stage 5: the specified (not yet deployed) attested outputs.
+        ("VaultResponse", BorshSchemaContainer::for_type::<VaultResponse>()),
+        ("SwapResponse", BorshSchemaContainer::for_type::<SwapResponse>()),
+        (
+            "FailureResponse",
+            BorshSchemaContainer::for_type::<FailureResponse>(),
+        ),
+        (
+            "AttestationPreimage<VaultResponse>",
+            BorshSchemaContainer::for_type::<AttestationPreimage<VaultResponse>>(),
+        ),
+        (
+            "AttestationPreimage<SwapResponse>",
+            BorshSchemaContainer::for_type::<AttestationPreimage<SwapResponse>>(),
+        ),
+        (
+            "AttestationPreimage<FailureResponse>",
+            BorshSchemaContainer::for_type::<AttestationPreimage<FailureResponse>>(),
         ),
         (
             "SignBidirectionalMisc",

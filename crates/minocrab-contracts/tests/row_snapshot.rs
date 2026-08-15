@@ -43,21 +43,24 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("erc20_vault_opt::refund", 16, 40806),
     ("erc20_vault_opt::swap", 16, 32819),
     ("erc20_vault_opt::complete_swap", 16, 50254),
-    // erc20-vault, BORSH (M11 stage 4 onwards). Frozen IDENTICAL to the
-    // optimized block above at the forking commit — same k, same rows, line
-    // for line — because the artifact is a byte-identical fork of it, which
-    // `tests/erc20_vault_borsh_fork.rs` asserts as ZKIR rather than leaving to
-    // this table. Each later M11 stage moves ONLY these rows, and its commit
-    // message states the before → after per circuit.
+    // erc20-vault, BORSH (M11 stage 4 onwards). Forked byte-identical to the
+    // optimized block above; each M11 stage moves ONLY these rows, and its
+    // commit message states the before → after per circuit. Stage 5 (attested
+    // outputs → the kind-tagged Borsh subset) moved the four settle circuits:
+    // claim 42,051 → 42,057 (+6), completeWithdraw 40,157 → 40,163 (+6),
+    // refund 40,806 → 40,797 (-9, the 5-byte sentinel became a 1-byte kind),
+    // completeSwap 50,254 → 50,263 (+9). No k boundary moves. The other five
+    // are still identical to their optimized twins, which
+    // `tests/erc20_vault_borsh_fork.rs` asserts as ZKIR.
     ("erc20_vault_borsh::initialize", 13, 2412),
     ("erc20_vault_borsh::deposit", 14, 15632),
-    ("erc20_vault_borsh::claim", 16, 42051),
+    ("erc20_vault_borsh::claim", 16, 42057),
     ("erc20_vault_borsh::approve_router", 14, 13332),
     ("erc20_vault_borsh::withdraw", 15, 23707),
-    ("erc20_vault_borsh::complete_withdraw", 16, 40157),
-    ("erc20_vault_borsh::refund", 16, 40806),
+    ("erc20_vault_borsh::complete_withdraw", 16, 40163),
+    ("erc20_vault_borsh::refund", 16, 40797),
     ("erc20_vault_borsh::swap", 16, 32819),
-    ("erc20_vault_borsh::complete_swap", 16, 50254),
+    ("erc20_vault_borsh::complete_swap", 16, 50263),
     // signet-contract singletons (the other three benchmark circuits)
     ("signet_contract::sign_bidirectional", 11, 1205),
     ("signet_contract::respond", 10, 1004),
