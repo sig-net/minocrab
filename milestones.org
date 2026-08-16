@@ -1637,3 +1637,50 @@ GONE (all 24 fixture circuits ported and equal to compactc;
 `kernel.checkpoint()` is not a gap of ours, since compactc's own v3
 backend cannot compile it), and M4's two pointer bullets tick with M16
 and M17 both closed. M17 CLOSED.
+
+* M18 — Ergonomic parity for the optimized vault (dmd, 2026-08-16)
+dmd's question, queued behind the ir-passes staging (notes/ir-passes.org §5
+steps 3-5): "what optimisations would make the opt version of the erc-20
+vault as ergonomic as the non-opt version?"
+THE PREMISE NEEDS CORRECTING FIRST, and the correction is measured rather
+than argued. The optimized vault is ALREADY the ergonomic one:
+`erc20_vault_modern` is the SHORTEST of the four artifacts (1,608 lines vs
+the port's 1,651) with zero raw `emit(` calls, and it is forked from borsh
+which is forked from opt — every M10 optimisation is underneath it.
+What the opt lineage actually costs is a PARALLEL VOCABULARY: it calls
+`burn_spend` where the port calls `burn_coin`, `mint_shielded_token_to_key
+_with` where the port calls `..._to_key`, `commitment_short`,
+`assert_deployer_short`. The optimisation is encoded in the function NAME a
+caller must know to reach for — the same shape as the `_under`/`_guarded`
+halves staging step 3 retires. So the milestone's real question is which
+suffixes can stop being lexical and become AMBIENT.
+- [ ] Design note first (the method every milestone since M14 has used):
+      which of the opt vocabulary is a PROFILE and which is a genuinely
+      different operation. First pass, to be checked rather than trusted:
+      (a) `_with` (threaded `kernel.self()`) is MEMOIZATION, and its
+      soundness paragraph is already written (M10 rung i: read count is
+      framing, not protocol — every emitted read still reconciles through
+      `process_read`). Under an opt profile `kernel::self_address` returns
+      the cached read and every `_with` twin disappears. This is the typed
+      CSE notes/ir-passes.org §3 says belongs in a gadget rather than a
+      pass.
+      (b) `commitment_short` / `assert_deployer_short` are a one-block hash
+      shape — instruction selection from the type, which §4 keeps in the
+      typed layer: the commitment builder picks the cheapest limbing.
+      (c) `burn_spend` vs `burn_coin` is NOT ergonomics. Different protocol
+      shape, different well-formedness warrant (tests/erc20_vault_opt_burn
+      _wellformed.rs). Two names is right; the names should say what they do.
+      (d) The M10 rungs that changed the SPEC (derived changeNonce,
+      injective domain separator, Poseidon refund commitments) are not
+      candidates at all — they are decisions, not spellings.
+- [ ] THE PRIZE, and the reason this is a milestone rather than a cleanup:
+      if the choice is a profile rather than a spelling, `erc20_vault_opt`
+      stops needing to be a separate SOURCE. The recurring cost in this
+      repo is not that opt reads worse — it is that FOUR FORKS are edited
+      in lockstep every time the API moves (M9 phase 7, M9 phase 8 and
+      M17's `token_type` each paid it). Whether the fork can collapse
+      depends on (d): a spec divergence cannot be a profile.
+Exit criteria: the opt artifact is written in the same vocabulary as the
+port, with every remaining twin justified by a protocol or spec difference
+rather than by cost — and the four-fork lockstep either gone or explicitly
+priced.
