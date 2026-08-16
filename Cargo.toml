@@ -100,6 +100,22 @@ midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-l
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 
+[profile.dev]
+# DEBUG INFO IS THE TARGET DIRECTORY (dmd, 2026-08-16, at 36 GB). On macOS the
+# dev default is `split-debuginfo = "unpacked"`, which leaves DWARF in a `.o`
+# per codegen unit beside the artifact, and cargo NEVER prunes target/ — every
+# fingerprint change writes a fresh generation and keeps the old one. The pile
+# measured 29.8 GB across 218,997 `.o` files, against 6.6 GB of rlibs and
+# 3.2 GB of test binaries. This workspace amplifies it: 29 test targets in
+# minocrab-contracts alone, minocrab-std built twice (the `borsh-schema`
+# feature duplicates the graph below it), and dependencies at opt-level 3.
+#
+# `line-tables-only` keeps what a failing test actually needs — file and line
+# in every backtrace and panic — and drops the type and variable DWARF nothing
+# here reads. A debugger stepping through dependency code is the thing given
+# up; `debug = true` restores it locally for as long as it is wanted.
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 # Dependencies carry the field arithmetic (midnight-ledger, transient-crypto,
 # the hash chips); optimized once here, our own crates stay unoptimized with

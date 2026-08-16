@@ -627,7 +627,23 @@ pub struct Disclosure3 {
     /// How it leaves the circuit.
     pub kind: DisclosureKind,
     /// The disclosed value's wires, in wire order.
-    pub values: Vec<Identifier>,
+    pub values: Vec<DisclosedWire>,
+}
+
+/// One wire of a [`Disclosure3`] — a name the run's memory can be keyed by,
+/// or the CONSTANT it holds.
+///
+/// The constant arm is what keeps the valued report whole under the
+/// constant-folding pass (notes/ir-passes.org §2 ii): a `Copy` of an immediate
+/// is inlined into its consumers and dropped, so a disclosed constant has no
+/// identifier left to look up — but its value was never in doubt, and saying
+/// so is strictly more informative than a name would have been.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisclosedWire {
+    /// A computed wire, resolved through the run's memory.
+    Named(Identifier),
+    /// A constant, known without running anything.
+    Constant(Fr),
 }
 
 // --- circuit ---------------------------------------------------------------------
@@ -1172,6 +1188,16 @@ impl Circuit3 {
         wires.iter().map(|w| Wire3::new(w.val)).collect()
     }
 
+    /// How a disclosure record names one wire: by identifier, or — when the
+    /// wire is a named constant the folding pass will inline away — by the
+    /// constant itself.
+    fn disclosed_wire(&self, val: Val) -> DisclosedWire {
+        match self.b.immediate_of(val) {
+            Some(imm) => DisclosedWire::Constant(imm),
+            None => DisclosedWire::Named(self.b.identifier(val)),
+        }
+    }
+
     /// One `Disclosed` record over `wires` — or NONE, if there are no wires.
     /// A value with no wires discloses nothing (a cross-contract call to a
     /// `[]`-returning circuit has an empty result list), and recording it
@@ -1180,10 +1206,11 @@ impl Circuit3 {
         if wires.is_empty() {
             return;
         }
+        let values = wires.iter().map(|&w| self.disclosed_wire(w.val)).collect();
         self.disclosures.push(Disclosure3 {
             label: label.to_string(),
             kind: DisclosureKind::Disclosed,
-            values: wires.iter().map(|w| self.b.identifier(w.val)).collect(),
+            values,
         });
     }
 
@@ -1221,10 +1248,11 @@ impl Circuit3 {
             .map(|e| match e {
                 ImpactElem::Imm(imm) => Arg::Imm(*imm),
                 ImpactElem::Wire(w) => {
+                    let value = self.disclosed_wire(w.val);
                     self.disclosures.push(Disclosure3 {
                         label: "impact public input".to_string(),
                         kind: DisclosureKind::Statement,
-                        values: vec![self.b.identifier(w.val)],
+                        values: vec![value],
                     });
                     Arg::Val(w.val)
                 }
@@ -1237,10 +1265,11 @@ impl Circuit3 {
     /// Queue a wire as a circuit output (the single v3 Output terminator is
     /// emitted by [`Circuit3::finish`]).
     pub fn output<T: IrTy>(&mut self, w: Wire3<T, Public>, label: &str) {
+        let value = self.disclosed_wire(w.val);
         self.disclosures.push(Disclosure3 {
             label: label.to_string(),
             kind: DisclosureKind::Output,
-            values: vec![self.b.identifier(w.val)],
+            values: vec![value],
         });
         self.queued_outputs.push((w.val, T::ir_type()));
     }

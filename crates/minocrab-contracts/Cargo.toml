@@ -29,6 +29,11 @@ minocrab-sim = { path = "../minocrab-sim" }
 # against the schema signet-signer-interface publishes.
 minocrab-abi = { path = "../minocrab-abi" }
 minocrab-zkir = { path = "../minocrab-zkir" }
+# The IR-pass normalisation the instruction-for-instruction differentials run
+# over BOTH sides (notes/ir-passes.org §2 ii): our builder folds a `Copy` of an
+# immediate at `finish`, so compactc's artifact is folded the same way before
+# the comparison. One definition of the fold, used by the pass and the test.
+minocrab-ir = { path = "../minocrab-ir" }
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-onchain-runtime.workspace = true

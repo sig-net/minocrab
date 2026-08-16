@@ -2271,6 +2271,7 @@ dependencies = [
  "midnight-zswap",
  "minocrab",
  "minocrab-abi",
+ "minocrab-ir",
  "minocrab-ledger",
  "minocrab-sim",
  "minocrab-std",

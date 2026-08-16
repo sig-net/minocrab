@@ -243,13 +243,25 @@ pub fn fork_status(circuit: Circuit) -> Fork {
 /// fork tests: a `PiEqual` entry must really differ in bytes AND really agree
 /// on `pis`/`pi_skips` for the SAME `ProofPreimage`.
 pub fn modern_fork_status(circuit: Circuit) -> Twin {
-    /// Every circuit is rewritten the same way, so the reason is one string.
-    const MODERN: &str = "the M9 API's spelling: guard-free ledger methods (the Impact guard is \
-                          the immediate 1, not a named wire), typed cells and a typed \
-                          Secp256k1Point cell, predicates for the boolean and in-branch checks, \
-                          literal operands where a constant was named only to be compared";
+    // ALL NINE ARE `Identical` SINCE THE CONSTANT-FOLDING PASS
+    // (notes/ir-passes.org §2 ii), and that is the pass's headline result
+    // rather than a weakening here. Phase 8's rewrite differed from the borsh
+    // fork in exactly one class of instruction: the `Copy`s that NAMED a
+    // constant — the Impact guard `1` the guard-free ledger methods inline,
+    // the literals that used to be named only to be compared, the typed
+    // cells' zero limbs. The pass inlines every one of them at `finish`, on
+    // both sides, so the twin's spelling and the fork it was rewritten from
+    // now lower to the same stream: five circuits byte-for-byte, and all nine
+    // up to identifier naming, which is the criterion the fork test uses and
+    // the same one every instruction-for-instruction differential here uses.
+    //
+    // What that says is worth stating plainly: the M9 API's ergonomics are
+    // free at the IR level, not merely PI-equivalent. `Twin::PiEqual` stays
+    // in the vocabulary — and both directions stay asserted — so the first
+    // rewrite that genuinely moves an instruction has to come back here and
+    // say so.
     let _ = circuit;
-    Twin::PiEqual { why: MODERN }
+    Twin::Identical
 }
 
 /// Where a rewritten circuit stands relative to the artifact it was rewritten

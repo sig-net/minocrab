@@ -17,6 +17,8 @@ pub use minocrab_zkir::v3::{Identifier, Instruction, IrSource, IrType, Operand, 
 
 pub use midnight_base_crypto::fab::Alignment;
 
+pub mod passes;
+
 /// A handle to one named, typed circuit value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Val(u32);
@@ -227,6 +229,22 @@ impl Builder3 {
             output: self.name(output),
         });
         output
+    }
+
+    /// The immediate a value NAMES, if it was bound by a `Copy` of one — the
+    /// question the disclosure layer asks before recording a wire, since the
+    /// folding pass will inline such a copy away (`passes`).
+    pub fn immediate_of(&self, val: Val) -> Option<Fr> {
+        let name = self.name(val);
+        self.instructions.iter().rev().find_map(|instruction| {
+            match instruction {
+                Instruction::Copy {
+                    val: Operand::Immediate(imm),
+                    output,
+                } if *output == name => Some(*imm),
+                _ => None,
+            }
+        })
     }
 
     /// Copy a value (does not extend the actual circuit).
@@ -769,7 +787,7 @@ impl Builder3 {
             inputs: self.inputs,
             outputs: self.outputs.unwrap_or_default(),
             do_communications_commitment: communications_commitment,
-            instructions: Arc::new(self.instructions),
+            instructions: Arc::new(passes::fold_immediate_copies(self.instructions)),
         }
     }
 }

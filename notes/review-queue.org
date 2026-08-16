@@ -597,3 +597,24 @@ reviewer should look at.
       static recipient, from the dropped `cond_select`s — measured in
       `opcost`: a select is 1 row, a copy is 0), so it needs its own
       commit and its own regenerated row snapshot.
+- [ ] The constant-folding pass (notes/ir-passes.org §8):
+      ONE JUDGEMENT NEEDS DMD, and it is stated at the top of §8. The pass
+      makes us strictly more inlined than compactc (compactc names some
+      constants it inlines elsewhere, driven by its frontend, not by any
+      rule a ZKIR pass can see), so the four instruction-for-instruction
+      differentials now fold BOTH sides before comparing. Their criterion
+      is "identical instruction for instruction, modulo the naming of
+      constants". Everything else still compares exactly and the
+      normaliser IS the pass, but this is a relaxation of the primary
+      warrant and it is dmd's to veto — the alternative is putting the
+      fold behind the opt profile, which would keep the ports byte-equal
+      and give up the deletions the pass is for.
+      Second, `Disclosure3` gained a `Constant` arm. Worth checking that
+      no consumer wants the old identifier — the valued report is the only
+      one in tree, and it prints the constant.
+      Third, the exhaustive `operands_mut` match: an upstream ZKIR
+      instruction with a new operand position breaks the build rather than
+      escaping the fold, which is the property to preserve on a bump.
+      Self-checking: the 768 removed copies over 91 circuits (each dump
+      equals its baseline after substituting the immediate for the name),
+      row_snapshot and interface_snapshot unchanged, full suite green.

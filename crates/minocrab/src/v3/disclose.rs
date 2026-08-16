@@ -359,7 +359,7 @@ pub fn assert_declared_disclosures<T: Declared>(circuit: &str, compiled: &Compil
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v3::FieldT;
+    use crate::v3::{DisclosedWire, FieldT, Identifier};
 
     label!(Alpha = "alpha");
     label!(Beta = "beta");
@@ -399,8 +399,13 @@ mod tests {
         assert_eq!(disclosed.len(), 1);
         assert_eq!(disclosed[0].label, "alpha");
         assert_eq!(disclosed[0].values.len(), 2);
-        assert_eq!(disclosed[0].values[0].0, "%v_hi.0");
-        assert_eq!(disclosed[0].values[1].0, "%v_lo.1");
+        assert_eq!(
+            disclosed[0].values,
+            vec![
+                DisclosedWire::Named(Identifier("%v_hi.0".into())),
+                DisclosedWire::Named(Identifier("%v_lo.1".into())),
+            ]
+        );
         assert_eq!(disclosed_labels(&compiled), ["alpha"].into());
     }
 

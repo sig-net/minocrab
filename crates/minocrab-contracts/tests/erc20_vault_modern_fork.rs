@@ -3,8 +3,8 @@
 //!
 //! The two earlier fork tests (`erc20_vault_opt_fork.rs`,
 //! `erc20_vault_borsh_fork.rs`) gate a chain whose links are byte-identity
-//! until a rung deliberately cuts one. This link is different in kind: the
-//! twin rewrites ALL NINE circuits on purpose, and the thing it claims is not
+//! until a rung deliberately cuts one. This link was different in kind: the
+//! twin rewrites ALL NINE circuits on purpose, and what it claimed was not
 //! that the streams agree but that the STATEMENTS do.
 //!
 //! That claim is the project's own equivalence criterion, unchanged since M3
@@ -16,14 +16,26 @@
 //! coverage (the spec harness, the adversarial sweeps, and transitively
 //! whatever covers those) instead of needing a coverage story of its own.
 //!
+//! SINCE THE CONSTANT-FOLDING PASS (notes/ir-passes.org §2 ii) the claim is
+//! stronger than that, and the ledger says so: all nine entries are
+//! `Identical`. Phase 8's rewrite differed from the borsh fork in exactly one
+//! class of instruction — the `Copy`s that NAMED a constant — and the pass
+//! inlines every one of them on both sides. The M9 API's ergonomics are free
+//! at the IR level, not merely PI-equivalent. The PI-equality test below is
+//! kept, because it is the claim that would still hold if a future rewrite
+//! did move an instruction.
+//!
 //! `vault::artifact::modern_fork_status` is the ledger and BOTH directions
 //! are asserted, one assertion per [`Twin`] variant:
 //!
-//! - `Identical` — really byte-identical (unused today; a circuit the rewrite
-//!   did not reach would be recorded here);
-//! - `PiEqual` — really byte-DIFFERENT, and really PI-equal on the reference
+//! - `Identical` — really identical, instruction for instruction, up to the
+//!   naming of values (the fold removes a different number of named constants
+//!   on each side, so four of the nine agree only after canonicalizing names);
+//! - `PiEqual` — really DIFFERENT, and really PI-equal on the reference
 //!   model's preimage. Both halves matter: the first says the entry is not
-//!   stale, the second is the whole warrant for the inheritance;
+//!   stale, the second is the whole warrant for the inheritance. Unused today,
+//!   and the first rewrite that genuinely moves an instruction has to come
+//!   back and use it;
 //! - `SpecAnchored` — really PI-different. Unused today, and asserted to be
 //!   unused: a rewrite that moved a public input would have to say so here,
 //!   in this file's failure, before it could be committed.
@@ -85,18 +97,53 @@ fn preimages() -> Vec<(Circuit, ProofPreimage)> {
     ]
 }
 
-/// A circuit the ledger calls `Identical` really is byte-identical.
+/// Serialized ZKIR with every `%name.index` identifier canonicalized — the
+/// same renaming the instruction-for-instruction differentials use.
+///
+/// Needed here because the fold removes a different number of named constants
+/// on each side (a removed `Copy` still consumed its number), so four of the
+/// nine twins are identical in every instruction and differ only in the
+/// numeric suffix of names. A name is not a lowering.
+fn canonical(ir: &minocrab_zkir::v3::IrSource) -> String {
+    let text = to_zkir_string(ir).expect("serializes");
+    let mut renames: Vec<(String, String)> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find('%') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let end = rest[1..]
+            .find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.'))
+            .map(|i| i + 1)
+            .unwrap_or(rest.len());
+        let name = &rest[..end];
+        let next = renames.len();
+        let canon = match renames.iter().find(|(from, _)| from == name) {
+            Some((_, to)) => to.clone(),
+            None => {
+                let to = format!("%{next}");
+                renames.push((name.to_string(), to.clone()));
+                to
+            }
+        };
+        out.push_str(&canon);
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A circuit the ledger calls `Identical` really is identical — instruction
+/// for instruction, up to the naming of values.
 #[test]
-fn identical_circuits_are_byte_identical_to_the_borsh_fork() {
+fn identical_circuits_are_identical_to_the_borsh_fork() {
     for circuit in Circuit::ALL {
         let Twin::Identical = vault::artifact::modern_fork_status(circuit) else {
             continue;
         };
-        let borsh = to_zkir_string(&circuit.ir(Art::Borsh)).expect("the borsh artifact serializes");
-        let modern = to_zkir_string(&circuit.ir(Art::Modern)).expect("the twin serializes");
         assert_eq!(
-            borsh,
-            modern,
+            canonical(&circuit.ir(Art::Borsh)),
+            canonical(&circuit.ir(Art::Modern)),
             "{}: the twin's ledger calls this circuit identical to the borsh \
              fork, but the two artifacts differ — move its entry to \
              `Twin::PiEqual` with the reason",
@@ -114,11 +161,9 @@ fn pi_equal_circuits_really_differ_from_the_borsh_fork() {
         let Twin::PiEqual { why } = vault::artifact::modern_fork_status(circuit) else {
             continue;
         };
-        let borsh = to_zkir_string(&circuit.ir(Art::Borsh)).expect("the borsh artifact serializes");
-        let modern = to_zkir_string(&circuit.ir(Art::Modern)).expect("the twin serializes");
         assert_ne!(
-            borsh,
-            modern,
+            canonical(&circuit.ir(Art::Borsh)),
+            canonical(&circuit.ir(Art::Modern)),
             "{}: the ledger says the twin rewrote this circuit ({why}), but it \
              is byte-identical to the borsh fork — record it as \
              `Twin::Identical` instead",

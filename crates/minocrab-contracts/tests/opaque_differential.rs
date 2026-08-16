@@ -171,6 +171,12 @@ fn cell_write_transcript(index: u8, value: AlignedValue) -> Vec<Fr> {
 /// `bounded_differential.rs` uses, and for the same reason: names are the only
 /// thing the two artifacts may differ in, and they are cosmetic to the ABI.
 fn canonical(ir: &IrSource) -> String {
+    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
+    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
+    // the constants it inlines elsewhere, so the comparison is instruction for
+    // instruction MODULO the naming of constants — a rename with no rows, no
+    // public input and no semantics. Everything else still compares exactly.
+    let ir = &minocrab_ir::v3::passes::folded(ir);
     let text = to_zkir_string(ir).expect("serializes");
     let mut renames: Vec<(String, String)> = Vec::new();
     let mut out = String::with_capacity(text.len());
@@ -219,55 +225,6 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     ]
 }
 
-/// Our stream with every `copy <immediate>` REMOVED and its output name
-/// replaced by the immediate it named.
-///
-/// The three circuits that write a LITERAL ledger value (`opDefault`'s zero,
-/// `opMapKey`'s `1`, `opMaybe`'s `is_some` tag) name it with a `copy` where
-/// compactc inlines it into the Impact instruction. The reason is a known gap,
-/// not a lowering difference: M9 phase 7 made every OPERAND position take
-/// `impl Into<Operand>` so a native Rust value inlines, but a ledger VALUE
-/// position still goes through `LedgerRepr::push_limbs`, which hands back
-/// wires. `Opaque::default_value` therefore builds a constant wire.
-///
-/// Phase 7 measured this exact class: it removed 47 such `copy`s across 27
-/// circuits and `row_snapshot` was bit-identical, because a `copy` of an
-/// immediate is ZERO ROWS. So the delta is free, and it is stated here rather
-/// than hidden behind a weaker criterion — after this substitution the streams
-/// must be EQUAL, which pins that a `copy` is the only difference.
-///
-/// Closing it properly means letting a ledger value carry an immediate, which
-/// is an API change to a trait all four vault forks use — an
-/// overhead-for-ergonomics call for dmd, recorded in
-/// notes/opaque-bridging.org §"As built".
-fn without_named_immediates(ir: &IrSource) -> String {
-    let mut value: serde_json::Value =
-        serde_json::from_str(&to_zkir_string(ir).expect("serializes")).expect("valid JSON");
-    let instructions = value["instructions"].as_array().expect("an array").clone();
-
-    let mut named: Vec<(String, String)> = Vec::new();
-    let mut kept = Vec::new();
-    for instruction in instructions {
-        let is_copy_of_immediate = instruction["op"] == "copy"
-            && instruction["val"].as_str().is_some_and(|v| v.starts_with("0x"));
-        if is_copy_of_immediate {
-            named.push((
-                instruction["output"].as_str().expect("a name").to_string(),
-                instruction["val"].as_str().expect("an immediate").to_string(),
-            ));
-            continue;
-        }
-        kept.push(instruction);
-    }
-    value["instructions"] = serde_json::Value::Array(kept);
-
-    let mut text = serde_json::to_string(&value).expect("re-serializes");
-    for (name, immediate) in &named {
-        text = text.replace(&format!("\"{name}\""), &format!("\"{immediate}\""));
-    }
-    text
-}
-
 /// CLAIM 1, and the headline: for every position an opaque can occupy, our
 /// circuit IS compactc's — op for op, immediate for immediate.
 ///
@@ -276,61 +233,23 @@ fn without_named_immediates(ir: &IrSource) -> String {
 /// constraint, and the two curve alignments are all compactc's decisions and
 /// not ours.
 ///
-/// Eleven of the fourteen are equal outright. The three that write a literal
-/// ledger value are equal after [`without_named_immediates`], which is a
-/// precise statement of a zero-row difference rather than a weaker criterion —
-/// see that function for why, and note it is applied to BOTH sides, so it
-/// cannot paper over a `copy` compactc emits and we do not.
+/// ALL FOURTEEN are equal outright. Three of them — `opDefault`, `opMapKey`
+/// and `opMaybe`, the ones whose ledger value is a LITERAL — used not to be:
+/// they named the constant with a `copy` where compactc inlines it, because a
+/// ledger value position goes through `LedgerRepr::push_limbs`, which hands
+/// back wires. That gap (M15, notes/opaque-bridging.org) was measured at zero
+/// rows and described here by a bespoke `without_named_immediates` normaliser
+/// plus a test counting the extra `copy`s. Both are GONE: the constant-folding
+/// pass (notes/ir-passes.org §2 ii) inlines the copy at `finish`, so the
+/// three circuits are equal on the same criterion as the other eleven and the
+/// API change the gap was waiting on is not needed.
 #[test]
 fn identical_instruction_streams() {
-    // The three whose ledger value is a literal (see `without_named_immediates`).
-    const NAMES_A_LITERAL: [&str; 3] = ["opDefault", "opMapKey", "opMaybe"];
-
     for (name, build) in cases() {
-        let ours = build().ir;
-        let theirs = theirs(name);
-        if NAMES_A_LITERAL.contains(&name) {
-            assert_ne!(
-                canonical(&ours),
-                canonical(&theirs),
-                "{name} is in NAMES_A_LITERAL but is already equal — drop it from the list"
-            );
-            assert_eq!(
-                without_named_immediates(&ours),
-                without_named_immediates(&theirs),
-                "{name}: our lowering differs from compactc's by more than a named immediate"
-            );
-        } else {
-            assert_eq!(
-                canonical(&ours),
-                canonical(&theirs),
-                "{name}: our lowering differs from compactc's"
-            );
-        }
-    }
-}
-
-/// The literal-writing circuits differ by EXACTLY one `copy` each, and by
-/// nothing else — the count, so that "more than a named immediate" in the test
-/// above cannot grow quietly.
-#[test]
-fn each_literal_costs_exactly_one_named_immediate() {
-    for (name, build) in [
-        ("opDefault", opaque::op_default as fn() -> Compiled3),
-        ("opMapKey", opaque::op_map_key),
-        ("opMaybe", opaque::op_maybe),
-    ] {
-        let ours = to_zkir_string(&build().ir).expect("serializes");
-        let theirs = to_zkir_string(&theirs(name)).expect("serializes");
         assert_eq!(
-            ours.matches("\"op\":\"copy\"").count(),
-            1,
-            "{name}: expected exactly one named immediate"
-        );
-        assert_eq!(
-            theirs.matches("\"op\":\"copy\"").count(),
-            0,
-            "{name}: compactc named an immediate too — the delta is not what this test says"
+            canonical(&build().ir),
+            canonical(&theirs(name)),
+            "{name}: our lowering differs from compactc's"
         );
     }
 }

@@ -896,9 +896,10 @@ fn value_display(value: &IrValue) -> String {
 /// [`crate::report`].
 ///
 /// A disclosed value is resolved through the run's memory by the
-/// [`Identifier`] the record carries. `"<not computed>"` can only appear for
-/// a value the run never produced, which for a completed run means a
-/// disclosure of a wire that no instruction reached.
+/// [`Identifier`] the record carries, or taken straight from the record when
+/// it is a constant. `"<not computed>"` can only appear for a value the run
+/// never produced, which for a completed run means a disclosure of a wire that
+/// no instruction reached.
 pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 {
     Report3 {
         instructions_executed: run.op_counts.values().sum(),
@@ -918,11 +919,15 @@ pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 
                 values: d
                     .values
                     .iter()
-                    .map(|id| {
-                        run.memory
+                    .map(|value| match value {
+                        minocrab::v3::DisclosedWire::Named(id) => run
+                            .memory
                             .get(id)
                             .map(value_display)
-                            .unwrap_or_else(|| "<not computed>".into())
+                            .unwrap_or_else(|| "<not computed>".into()),
+                        // A constant needs no run to resolve — see
+                        // `DisclosedWire::Constant`.
+                        minocrab::v3::DisclosedWire::Constant(imm) => format!("{imm:?}"),
                     })
                     .collect(),
             })

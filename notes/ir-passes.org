@@ -72,7 +72,7 @@ So passes divide cleanly:
 
 | pass | vs compactc | gate |
 |------+-------------+------|
-| constant folding | converges | always on |
+| constant folding | DIVERGES by inlining (see §8) | always on, both sides normalised |
 | guard scoping | neutral (same stream) | always on |
 | constraint dedup | DIVERGES | opt profile, M10 warrant |
 | dead code elimination | diverges | rejected, see §3 |
@@ -193,8 +193,8 @@ Instruction selection is not, and never will be.
 3. Delete the =_under= / =_guarded= API halves and migrate the 127 call
    sites. NOT started, deliberately: the mechanism lands first and proves
    itself, the churn in three vault ports comes after.
-4. Constant folding, and delete the five special cases (NOT the =LedgerRepr=
-   change).
+4. Constant folding — DONE (§8). The five special cases are not deleted yet;
+   the pass makes them inert first, and removing them is its own commit.
 5. Constraint dedup behind the opt profile.
 
 * 6. GUARD SCOPING, as built
@@ -433,3 +433,70 @@ cost ZERO rows; 100 =cond_select=s cost 101. So constant folding (§2 ii) is
 worth exactly its instruction count and no rows — which §0(a) already said —
 while a select that a fold could remove is one row each. Both remain small;
 the case for the passes is API surface, not cost, exactly as §2 argues.
+
+* 8. CONSTANT FOLDING, as built (2026-08-16)
+
+=minocrab_ir::v3::passes::fold_immediate_copies=, run by =Builder3::finish=
+so every circuit gets it: a =Copy= of an immediate is substituted into its
+consumers and dropped. 768 =copy= instructions removed across 91 of the 167
+workspace circuits; the other 76 had none. Zero rows, as §0(a) measured —
+row_snapshot is bit-identical and the interface snapshot untouched.
+
+** §1's table was WRONG, and the fixture that proved it
+
+The table said constant folding CONVERGES on compactc. It does not:
+*compactc names some of the constants it inlines elsewhere*, and the naming
+is driven by its own frontend rather than by any operand-position rule.
+M17's =sSendShielded= is the counterexample —
+=upgradeFromTransient='s zero high limb is emitted as =copy 0x00= and then
+used BOTH as a hash operand and, through a =cond_select=, as an output. An
+always-on fold makes us strictly MORE inlined than compactc, which costs the
+instruction-for-instruction fixtures.
+
+An "all uses are operands" rule does not save it (that was tried first: the
+change coin's zero limb reaches the output only through a select, so the rule
+folds it and the fixture still fires). The naming is not a property of the
+ZKIR at all.
+
+*THE RESOLUTION*: the four instruction-for-instruction differentials
+(=kernel_tokens=, =adts=, =bounded=, =opaque=) run the SAME fold over
+compactc's artifact before comparing. Their criterion becomes "identical
+instruction for instruction, MODULO the naming of constants" — and that is a
+precise, mechanically defined relation rather than a weaker one: everything
+else still compares exactly, the normaliser is the pass itself (one
+definition, not a test-local approximation), and a =copy= of an immediate is
+a rename with zero rows, no public input and no semantics. *This is the one
+judgement in the pass that is dmd's to veto.*
+
+** What it bought, immediately and without being asked
+
+- =opaque_differential= lost its bespoke =without_named_immediates=
+  normaliser, its =NAMES_A_LITERAL= list and a whole test that counted the
+  extra =copy=s. All fourteen circuits are now equal on the same criterion as
+  each other. M15 left that gap open pending an API change to =LedgerRepr=
+  that all four vault forks depend on; *that change is now unnecessary*,
+  which is §2(ii)'s prediction landing exactly as written.
+- =erc20_vault_modern='s divergence ledger collapsed to =Twin::Identical=
+  for ALL NINE circuits. M9 phase 8's showcase twin differed from the borsh
+  fork in precisely one class of instruction — the =Copy=s that named a
+  constant — so the ergonomic rewrite is now free at the IR level rather
+  than merely PI-equivalent. Five are byte-identical; the other four agree
+  up to identifier NUMBERING (a removed copy still consumed its number), so
+  that ledger's test canonicalises names like every other differential.
+
+** The one thing the fold broke, and what it says about disclosure
+
+A disclosed constant had no identifier left to resolve, so the valued
+disclosure report read =<not computed>=. =Disclosure3= now carries
+=DisclosedWire::Named(Identifier) | Constant(Fr)= and the simulator resolves
+the second directly. That is better than what it replaced: a constant's value
+was never in doubt, and the record now says so instead of pointing at a wire.
+
+** NOT DONE
+
+The five special cases are inert but still present: M9 phase 7's operand
+positions, M9 phase 8's inlined guard, M16's =AnyWire3::immediate=, M17's
+=UnshieldedToken= and =token_type=. Deleting them is mechanical, touches the
+vault forks, and belongs in its own commit with its own dump diff — the
+=impl Into<Operand>= ergonomics stay either way (§2 ii), what goes is their
+NECESSITY.

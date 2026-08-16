@@ -165,6 +165,12 @@ fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage
 /// immediates, the widths, which operand sits where — survives this and is
 /// therefore asserted.
 fn canonical(ir: &IrSource) -> String {
+    // BOTH SIDES are folded first (notes/ir-passes.org §2 ii): our builder
+    // inlines a `Copy` of an immediate at `finish`, and compactc names some of
+    // the constants it inlines elsewhere, so the comparison is instruction for
+    // instruction MODULO the naming of constants — a rename with no rows, no
+    // public input and no semantics. Everything else still compares exactly.
+    let ir = &minocrab_ir::v3::passes::folded(ir);
     let text = to_zkir_string(ir).expect("serializes");
     let mut renames: Vec<(String, String)> = Vec::new();
     let mut out = String::with_capacity(text.len());
