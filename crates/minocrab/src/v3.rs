@@ -259,6 +259,17 @@ impl<V: Visibility> Select<V> for Wire3<FieldT, V> {
 
 /// An if / else-if / else chain that produces a VALUE — see
 /// [`Circuit3::when_value`].
+/// Unfinished, it produces nothing — so leaving off `otherwise` is a warning
+/// rather than a chain that silently emitted its arms and discarded them:
+///
+/// ```compile_fail
+/// # #![deny(unused_must_use)]
+/// # use minocrab::v3::{Circuit3, FieldT};
+/// # let mut c = Circuit3::new();
+/// # let g = c.arg::<FieldT>("g");
+/// # let x = c.arg::<FieldT>("x");
+/// c.when_value(g, |_c| x);
+/// ```
 #[must_use = "a value chain produces nothing until `otherwise` supplies the fallback"]
 pub struct ValueBranches<'a, V: Visibility, T> {
     c: &'a mut Circuit3,
@@ -270,8 +281,8 @@ pub struct ValueBranches<'a, V: Visibility, T> {
 
 impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// The next arm: its value wins where `cond` holds and no earlier arm
-    /// matched. Costs one `cond_select` per slot of `T`, plus the two the
-    /// guard accumulator costs.
+    /// matched. Costs one `cond_select` per slot of `T`, plus two to thread
+    /// the guard — see [`Circuit3::when_value`] for the whole table.
     pub fn else_when(
         self,
         cond: impl GuardCond<V>,
@@ -297,7 +308,32 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     }
 
     /// The fallback, and the only way to get the value out — so a value chain
-    /// is EXHAUSTIVE by construction. Costs one `cond_select` per slot.
+    /// is EXHAUSTIVE by construction. Costs one `cond_select` per slot of
+    /// `T`, plus one to thread the guard.
+    ///
+    /// Dropping the result is a warning, because it means every arm was
+    /// emitted for nothing:
+    ///
+    /// ```compile_fail
+    /// # #![deny(unused_must_use)]
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # let mut c = Circuit3::new();
+    /// # let g = c.arg::<FieldT>("g");
+    /// # let x = c.arg::<FieldT>("x");
+    /// c.when_value(g, |_c| x).otherwise(|_c| x);
+    /// ```
+    ///
+    /// ```
+    /// # #![deny(unused_must_use)]
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # let mut c = Circuit3::new();
+    /// # let g = c.arg::<FieldT>("g");
+    /// # let x = c.arg::<FieldT>("x");
+    /// let chosen = c.when_value(g, |_c| x).otherwise(|_c| x);
+    /// c.assert(chosen);
+    /// ```
+    #[must_use = "this is the value the chain selected; dropping it means every arm \
+                  was emitted for nothing"]
     pub fn otherwise(self, body: impl FnOnce(&mut Circuit3) -> T) -> T {
         let ValueBranches {
             c,
@@ -1211,24 +1247,44 @@ impl Circuit3 {
     /// not run simply has its effects guarded off — but a value has to come
     /// from somewhere.
     ///
-    /// # What it costs, and what it does not
+    /// # What it costs
     ///
-    /// Every arm's instructions are emitted whatever the conditions turn out
-    /// to be. A circuit does not branch: an `if` costs the SUM of its arms,
-    /// not the maximum, and that is the setting rather than a property of
-    /// this API. On top of that, one `cond_select` per slot of `T` per arm,
-    /// and the two the guard accumulator costs.
+    /// **Every arm's instructions are emitted, whatever the conditions turn
+    /// out to be.** A circuit does not branch, so an `if` costs the SUM of
+    /// its arms and never the maximum. That is the setting rather than
+    /// anything this API chose, and it is the dominant term whenever the arms
+    /// do real work.
     ///
-    /// What it does NOT cost is anything over the hand-written form. The
-    /// selects are the ones a careful author writes anyway; what this removes
-    /// is the chance of selecting on the wrong guard, and the temptation to
-    /// skip the guard on the arms' EFFECTS because only the value looked
+    /// On top of the arms, for `n` arms over a `T` of `s` native slots:
+    ///
+    /// | | `cond_select`s |
+    /// |---|---|
+    /// | threading the guards | `2(n − 2) + 3`, and none at all for `n = 1` |
+    /// | choosing the value | `s(n − 1)` |
+    ///
+    /// So a three-arm chain returning a `Bytes<32>` (two slots) is **seven**
+    /// selects over the three bodies —
+    /// `a_three_arm_value_chain_costs_what_the_docs_say` in
+    /// `minocrab-std/tests/v3_guard_scope.rs` pins that number so this table
+    /// cannot rot. A `Maybe<T>` counts its tag as a slot; see [`Select`].
+    ///
+    /// # What it does not cost
+    ///
+    /// Anything over the hand-written form. The selects are the ones a
+    /// careful author writes anyway
+    /// (`a_value_chain_is_the_hand_written_select` pins the equality). What
+    /// the chain removes is selecting on the wrong guard, and the temptation
+    /// to skip guarding the arms' EFFECTS because only the value looked
     /// conditional.
     ///
-    /// So the advice is not "avoid it" — it is: reach for it when the
-    /// branches genuinely produce a value, and reach for straight-line code
-    /// with [`Circuit3::cond_select`] at the end when one arm is much dearer
-    /// than the other and you would rather pay for it once unconditionally.
+    /// # When to reach for something else
+    ///
+    /// The advice is not "avoid it". It is: use it when the branches
+    /// genuinely produce a value. Prefer straight-line code with a single
+    /// [`Circuit3::cond_select`] at the end when one arm is much dearer than
+    /// the others and you would rather pay for that work once,
+    /// unconditionally — because the chain will pay for it regardless of
+    /// which way the condition goes.
     pub fn when_value<V: Visibility, T: Select<V>>(
         &mut self,
         cond: impl GuardCond<V>,

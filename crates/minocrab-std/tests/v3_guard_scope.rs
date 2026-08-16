@@ -360,3 +360,41 @@ fn a_value_chain_still_guards_effects() {
     });
     assert_eq!(by_chain, by_hand);
 }
+
+/// THE COST OF A VALUE CHAIN, as a number rather than a description — so the
+/// figure quoted in `when_value`'s docs cannot rot.
+///
+/// Three arms returning a `Bytes<32>` (two native slots), over a baseline
+/// that runs the same three bodies unconditionally.
+#[test]
+fn a_three_arm_value_chain_costs_what_the_docs_say() {
+    use minocrab_std::v3::B32;
+
+    fn instrs(build: impl FnOnce(&mut Circuit3)) -> usize {
+        let mut c = Circuit3::new();
+        build(&mut c);
+        c.finish(true).ir.instructions.len()
+    }
+
+    let bodies_only = instrs(|c| {
+        let a = B32 { hi: c.arg::<FieldT>("a0"), lo: c.arg::<FieldT>("a1") };
+        c.assert(a.hi);
+        c.assert(a.lo);
+    });
+    let chained = instrs(|c| {
+        let p = c.arg::<FieldT>("p");
+        let q = c.arg::<FieldT>("q");
+        let a = B32 { hi: c.arg::<FieldT>("a0"), lo: c.arg::<FieldT>("a1") };
+        let chosen = c
+            .when_value(p, |_c| a)
+            .else_when(q, |_c| a)
+            .otherwise(|_c| a);
+        c.assert(chosen.hi);
+        c.assert(chosen.lo);
+    });
+
+    // 3 selects to thread the guards (none for the first arm, two for the
+    // middle, one for the fallback) + 4 to choose the value (two slots for
+    // each arm after the first).
+    assert_eq!(chained - bodies_only, 7);
+}
