@@ -181,7 +181,7 @@ impl<const BITS: u32, V: Vis3> CircuitAbi for Uint<BITS, V> {
 
 impl<const BITS: u32> CircuitArg for Uint<BITS, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Uint::from_field(c.arg::<FieldT>(path.as_str()))
+        Uint::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -214,7 +214,7 @@ impl<const BOUND: u128, V: Vis3> CircuitAbi for BoundedUint<BOUND, V> {
 
 impl<const BOUND: u128> CircuitArg for BoundedUint<BOUND, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        BoundedUint::from_field(c.arg::<FieldT>(path.as_str()))
+        BoundedUint::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -236,7 +236,7 @@ impl<V: Vis3> CircuitAbi for Bool<V> {
 
 impl CircuitArg for Bool<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Bool::from_field(c.arg::<FieldT>(path.as_str()))
+        Bool::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -258,7 +258,7 @@ impl<const N: usize, V: Vis3> CircuitAbi for Bytes<N, V> {
 
 impl<const N: usize> CircuitArg for Bytes<N, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Bytes::from_field(c.arg::<FieldT>(path.as_str()))
+        Bytes::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -368,7 +368,7 @@ impl<T: TsType, V: Vis3> CircuitAbi for Opaque<T, V> {
 
 impl<T: TsType> CircuitArg for Opaque<T, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Opaque::from_field(c.arg::<FieldT>(path.as_str()))
+        Opaque::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -394,7 +394,7 @@ impl<V: Vis3> CircuitAbi for MerkleTreeDigest<V> {
 
 impl CircuitArg for MerkleTreeDigest<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        MerkleTreeDigest::from_field(c.arg::<FieldT>(path.as_str()))
+        MerkleTreeDigest::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {

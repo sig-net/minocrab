@@ -334,6 +334,47 @@ be the same shape: named so it reads as an assertion
 the short name. Zero rows for the rename; the constrained twin costs exactly
 the constraint it emits, which is the point.
 
+FIX — *BUILT, 2026-08-16* (M19 fix 3), one deviation from the paragraph
+above, argued below. Every v3 leaf's =from_field= is renamed to
+=from_field_unchecked=, doc rewritten as an ASSERTION in =Guarded='s
+register — what justifies a typical call (a constrained argument, the
+result of a checked op) and a pointer to the checked twin. =Uint=,
+=BoundedUint=, =Bool=, =Bytes=, and Borsh's =Tag<K>= each get
+=from_field_checked(c, w)=: build with =from_field_unchecked=, call the
+leaf's own =constrain_input=, return — so it cannot say anything
+=constrain_input= does not, and costs exactly that constraint (free under
+=Circuit3::dedup_range_constraints=). =Opaque= and =MerkleTreeDigest= get
+the rename only — both are compactc's own no-constraint primitives
+(=Prim::Opaque=, =Prim::Field=), so there is no =constrain_input= to
+delegate to; renaming them anyway keeps the assertion-shaped name uniform
+across every leaf, not only the ones with a check to offer. There is no
+plain =from_field= left anywhere — the old spelling is a compile error, so
+every call site (~100, minocrab-std and minocrab-contracts, src and tests)
+had to choose, and all of them chose =_unchecked=: the ports mirror
+compactc instruction for instruction, and adopting the checked twin at an
+existing site would move the ZKIR dump, which is the one thing this fix is
+not allowed to do (162 byte-identical / 5 renumbered / 0 changed, unchanged
+by this fix).
+
+THE DEVIATION: the note above says the constrained twin should take the
+SHORT name (=from_field=), with the unchecked one marked. Built the other
+way — =from_field_checked= is its own name, not a reuse of the bare
+spelling — because Rust has no way to make an unadorned =from_field= mean
+"checked" at some call sites and not exist at all at others; a short name
+here would have to WIN the name outright, and that forces every existing
+=_unchecked= call site to add the suffix instead of the (rarer, currently
+zero) checked ones. Suffixing the checked spelling is one word longer at
+the sites that will eventually want it and zero words longer at the ~100
+that do not.
+
+The vault's four settle circuits (claim, completeWithdraw, refund,
+completeSwap) are where A1 meets B4: their
+=Uint::<64, Public>::from_field_unchecked= calls (five per fork —
+completeSwap mints twice) each carry a new comment pointing at both
+sections, since the claim there is B4's WHOLE-CONTRACT argument, not a
+local one, and is first in line for the checked spelling once a
+spec-anchored artifact exists to check it against.
+
 ** A2. =.field()= DISCARDS THE OBLIGATION SILENTLY, AND IT IS EVERYWHERE
 
 174 calls in the contracts crate. Every one converts a leaf whose type

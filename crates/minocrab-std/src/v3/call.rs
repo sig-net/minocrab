@@ -44,7 +44,7 @@ impl<T: TsType> CallArg for Opaque<T, Public> {
 
 impl<T: TsType> CallResult for Opaque<T, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        Opaque::from_field(slots[0])
+        Opaque::from_field_unchecked(slots[0])
     }
 }
 
@@ -59,7 +59,7 @@ impl CallArg for MerkleTreeDigest<Public> {
 
 impl CallResult for MerkleTreeDigest<Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        MerkleTreeDigest::from_field(slots[0])
+        MerkleTreeDigest::from_field_unchecked(slots[0])
     }
 }
 
@@ -71,7 +71,7 @@ impl<const BITS: u32> CallArg for Uint<BITS, Public> {
 
 impl<const BITS: u32> CallResult for Uint<BITS, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        Uint::from_field(slots[0])
+        Uint::from_field_unchecked(slots[0])
     }
 }
 
@@ -83,7 +83,7 @@ impl<const BOUND: u128> CallArg for BoundedUint<BOUND, Public> {
 
 impl<const BOUND: u128> CallResult for BoundedUint<BOUND, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        BoundedUint::from_field(slots[0])
+        BoundedUint::from_field_unchecked(slots[0])
     }
 }
 
@@ -95,7 +95,7 @@ impl CallArg for Bool<Public> {
 
 impl CallResult for Bool<Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        Bool::from_field(slots[0])
+        Bool::from_field_unchecked(slots[0])
     }
 }
 
@@ -107,7 +107,7 @@ impl<const N: usize> CallArg for Bytes<N, Public> {
 
 impl<const N: usize> CallResult for Bytes<N, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
-        Bytes::from_field(slots[0])
+        Bytes::from_field_unchecked(slots[0])
     }
 }
 

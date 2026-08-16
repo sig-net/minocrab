@@ -256,7 +256,7 @@ impl CheckOperand for Fr {
 /// What this layer will NOT do either way is emit the range constraint for
 /// you: that would be silent cost, and the author is the one who knows
 /// whether the wire is already constrained. The explicit forms are
-/// `Uint::<64>::from_field(w)` (plus `constrain_input` if nothing has
+/// `Uint::<64>::from_field_unchecked(w)` (plus `constrain_input` if nothing has
 /// constrained it yet) and `c.less_than(a, b, bits)`.
 ///
 /// The visibility of a comparison of an `A` with a `B`: the meet.
@@ -525,7 +525,7 @@ impl<V: Vis3> Check<V> {
     /// branch guard, a `cond_select`) rather than an assertion. This is the
     /// escape hatch; `c.assert(p)` is the normal path.
     pub fn eval(self, c: &mut Circuit3) -> Bool<V> {
-        Bool::from_field(lower(c, self.node))
+        Bool::from_field_unchecked(lower(c, self.node))
     }
 }
 

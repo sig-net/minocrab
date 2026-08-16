@@ -1817,11 +1817,35 @@ green on every differential the day before.
       opt-profile framing rests on is prospective, not observed; the flag
       stays off regardless. Gates: `cargo test --workspace` green, 162
       byte-identical / 5 renumbered / 0 changed.)
-- [ ] Fix 3 (closes A1): `from_field` renamed to what it is, with a
-      constrained twin taking the short name. It is an unaudited `unsafe`
-      that every other soundness argument leaks through, and it does not
-      look different from the escape hatches that ARE enforced
-      (`disclose`, visibility, `Guarded`). Zero rows for the rename.
+- [X] Fix 3 (closes A1): `from_field` split into an explicit
+      unchecked/checked pair. It was an unaudited `unsafe` that every other
+      soundness argument leaks through, and it did not look different from
+      the escape hatches that ARE enforced (`disclose`, visibility,
+      `Guarded`).
+      (DONE 2026-08-16. Every v3 leaf's `from_field` renamed to
+      `from_field_unchecked` (`Uint`, `BoundedUint`, `Bool`, `Bytes`,
+      `Tag<K>`, `Opaque`, `MerkleTreeDigest`) and no plain `from_field`
+      remains — an old spelling fails to compile, so every call site had to
+      choose. `from_field_checked(c, w)` added for the five leaves that
+      have a `constrain_input` to delegate to (`Uint`, `BoundedUint`,
+      `Bool`, `Bytes`, `Tag<K>`): build unchecked, call the existing
+      `constrain_input`, return — costs exactly that constraint, free under
+      `dedup_range_constraints`. `Opaque` and `MerkleTreeDigest` keep the
+      rename only, by design: both are compactc's own no-constraint
+      primitives (`Prim::Opaque`, `Prim::Field`), so there is no
+      `constrain_input` to delegate to. ~100 call sites migrated to
+      `_unchecked` across minocrab-std (src+tests) and minocrab-contracts
+      (src+tests); no macro-generated `from_field` existed to update. The
+      vault's four settle circuits (claim, completeWithdraw, refund,
+      completeSwap — five `Uint::<64, Public>::from_field_unchecked` call
+      sites per fork, completeSwap mints twice) each got the same one-line
+      comment: the claim rests on request-time bounds, not a local one
+      (§B4's correction), first in line for `from_field_checked` once
+      there's a spec-anchored artifact. Four new tests (`v3_leaves.rs`,
+      `v3_bounded.rs`) pin `from_field_checked` byte-equal to
+      `from_field_unchecked` + `constrain_input` for `Uint`, `Bool`,
+      `Bytes`, `BoundedUint`. Gates: `cargo test --workspace` green, 162
+      byte-identical / 5 renumbered / 0 changed.)
 - [X] Fix 4 (closes B4): the Compact signature types on the
       contracts-level helpers — `mint_shielded_token` took a raw `Wire3`
       where Compact's takes `Uint<64>`. The typed kernel layer already got

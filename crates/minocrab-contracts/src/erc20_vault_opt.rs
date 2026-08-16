@@ -1157,7 +1157,10 @@ fn refund_surrendered_value(
     let domain_sep = vault_token_domain_separator(c, ev.to());
     let own_pk = minocrab_std::v3::own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field(amount), mint_nonce, &own_pk);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
+    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1291,8 +1294,11 @@ pub fn complete_swap(
     let token_out = signet::abi_word_low20(c, &word1);
     let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = args.mint_nonce.disclose_as::<SwapMintNonce>(c);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, one, me, &ds_out, Uint::<64, Public>::from_field(amount_out), &mint_nonce, &recipient,
+        c, one, me, &ds_out, Uint::<64, Public>::from_field_unchecked(amount_out), &mint_nonce, &recipient,
     );
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
@@ -1304,15 +1310,18 @@ pub fn complete_swap(
     // — same instructions in the same order at the same width, which is what
     // the unchanged dump proves against compactc's own artifact
     // (notes/api-safety-survey.org §B1).
-    let change = Uint::<128, Public>::from_field(amount_in_max)
-        .sub(c, Uint::<128, Public>::from_field(amount_in))
+    let change = Uint::<128, Public>::from_field_unchecked(amount_in_max)
+        .sub(c, Uint::<128, Public>::from_field_unchecked(amount_in))
         .field();
     let word0 = ev.word(0);
     let token_in = signet::abi_word_low20(c, &word0);
     let ds_in = vault_token_domain_separator(c, token_in);
     let change_nonce = change_nonce(c, &mint_nonce);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, one, me, &ds_in, Uint::<64, Public>::from_field(change), &change_nonce, &recipient,
+        c, one, me, &ds_in, Uint::<64, Public>::from_field_unchecked(change), &change_nonce, &recipient,
     );
 
     Discloses::of(())
@@ -1539,8 +1548,11 @@ pub fn refund(
     let domain_sep = vault_token_domain_separator(c, token);
     let own_pk = minocrab_std::v3::own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, one, me, &domain_sep, Uint::<64, Public>::from_field(amount), &mint_nonce, &own_pk,
+        c, one, me, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &own_pk,
     );
 
     Discloses::of(())
@@ -1703,7 +1715,10 @@ pub fn claim(
     // mintShieldedToken(domainSep, amount as Uint<64>, disclose(mintNonce),
     //   claimRecipient)
     let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field(amount), &mint_nonce, &recipient);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
+    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &recipient);
 
     Discloses::of(())
 }

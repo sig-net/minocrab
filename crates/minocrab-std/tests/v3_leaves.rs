@@ -32,7 +32,7 @@ fn uint_lowers_like_the_hand_written_argument() {
         c.assert_bits(sum, 65);
     });
     let typed = ir_of(|c| {
-        let x = Uint::<64>::from_field(c.arg("evmNonce"));
+        let x = Uint::<64>::from_field_unchecked(c.arg("evmNonce"));
         x.constrain_input(c);
         let k = Uint::<64, _>::constant(c, 5);
         let sum = c.add(x.field(), k.field());
@@ -51,7 +51,7 @@ fn bool_lowers_like_the_hand_written_argument() {
         c.assert_boolean(and);
     });
     let typed = ir_of(|c| {
-        let b = Bool::from_field(c.arg("isSome"));
+        let b = Bool::from_field_unchecked(c.arg("isSome"));
         b.constrain_input(c);
         let t = Bool::constant(c, true);
         let and = c.mul(b.field(), t.field());
@@ -70,7 +70,7 @@ fn bytes_lowers_like_the_hand_written_argument() {
         c.assert_eq(a, k);
     });
     let typed = ir_of(|c| {
-        let a = Bytes::<20>::from_field(c.arg("erc20Address"));
+        let a = Bytes::<20>::from_field_unchecked(c.arg("erc20Address"));
         a.constrain_input(c);
         let k = Bytes::<20, _>::constant(c, &address);
         c.assert_eq(a.field(), k.field());
@@ -82,9 +82,9 @@ fn bytes_lowers_like_the_hand_written_argument() {
 fn field_unwrap_emits_no_instruction() {
     assert_eq!(
         instructions(|c| {
-            let u = Uint::<64>::from_field(c.arg("a"));
-            let b = Bool::from_field(c.arg("b"));
-            let s = Bytes::<20>::from_field(c.arg("c"));
+            let u = Uint::<64>::from_field_unchecked(c.arg("a"));
+            let b = Bool::from_field_unchecked(c.arg("b"));
+            let s = Bytes::<20>::from_field_unchecked(c.arg("c"));
             let _ = (u.field(), b.field(), s.field());
         }),
         0
@@ -105,6 +105,49 @@ fn uint_constant_accepts_every_u64_at_64_bits_and_wider() {
 #[should_panic(expected = "256 does not fit in Uint<8>")]
 fn uint_constant_rejects_an_out_of_range_value() {
     Uint::<8, _>::constant(&mut Circuit3::new(), 256);
+}
+
+/// `from_field_checked` is DEFINED as `from_field_unchecked` immediately
+/// followed by `constrain_input` (notes/api-safety-survey.org §A1's fix) —
+/// so the two spellings must lower to byte-identical ZKIR, for every typed
+/// leaf that has a `constrain_input` to delegate to.
+#[test]
+fn uint_from_field_checked_matches_unchecked_plus_constrain_input() {
+    let checked = ir_of(|c| {
+        let w = c.arg("evmNonce");
+        Uint::<64>::from_field_checked(c, w);
+    });
+    let unchecked_then_constrained = ir_of(|c| {
+        let x = Uint::<64>::from_field_unchecked(c.arg("evmNonce"));
+        x.constrain_input(c);
+    });
+    assert_eq!(checked, unchecked_then_constrained);
+}
+
+#[test]
+fn bool_from_field_checked_matches_unchecked_plus_constrain_input() {
+    let checked = ir_of(|c| {
+        let w = c.arg("isSome");
+        Bool::from_field_checked(c, w);
+    });
+    let unchecked_then_constrained = ir_of(|c| {
+        let b = Bool::from_field_unchecked(c.arg("isSome"));
+        b.constrain_input(c);
+    });
+    assert_eq!(checked, unchecked_then_constrained);
+}
+
+#[test]
+fn bytes_from_field_checked_matches_unchecked_plus_constrain_input() {
+    let checked = ir_of(|c| {
+        let w = c.arg("erc20Address");
+        Bytes::<20>::from_field_checked(c, w);
+    });
+    let unchecked_then_constrained = ir_of(|c| {
+        let a = Bytes::<20>::from_field_unchecked(c.arg("erc20Address"));
+        a.constrain_input(c);
+    });
+    assert_eq!(checked, unchecked_then_constrained);
 }
 
 #[test]

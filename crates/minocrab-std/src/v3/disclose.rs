@@ -22,7 +22,7 @@ impl<const BITS: u32> Disclose for Uint<BITS, Private> {
     type Public = Uint<BITS, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Uint<BITS, Public> {
-        Uint::from_field(self.field().disclose_as::<L>(c))
+        Uint::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 
@@ -30,7 +30,7 @@ impl<const BOUND: u128> Disclose for BoundedUint<BOUND, Private> {
     type Public = BoundedUint<BOUND, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> BoundedUint<BOUND, Public> {
-        BoundedUint::from_field(self.field().disclose_as::<L>(c))
+        BoundedUint::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 
@@ -38,7 +38,7 @@ impl Disclose for Bool<Private> {
     type Public = Bool<Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Bool<Public> {
-        Bool::from_field(self.field().disclose_as::<L>(c))
+        Bool::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 
@@ -46,7 +46,7 @@ impl<const N: usize> Disclose for Bytes<N, Private> {
     type Public = Bytes<N, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Bytes<N, Public> {
-        Bytes::from_field(self.field().disclose_as::<L>(c))
+        Bytes::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 
@@ -125,7 +125,7 @@ impl<T: TsType> Disclose for Opaque<T, Private> {
     type Public = Opaque<T, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Opaque<T, Public> {
-        Opaque::from_field(self.field().disclose_as::<L>(c))
+        Opaque::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 
@@ -134,7 +134,7 @@ impl Disclose for MerkleTreeDigest<Private> {
     type Public = MerkleTreeDigest<Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> MerkleTreeDigest<Public> {
-        MerkleTreeDigest::from_field(self.field().disclose_as::<L>(c))
+        MerkleTreeDigest::from_field_unchecked(self.field().disclose_as::<L>(c))
     }
 }
 

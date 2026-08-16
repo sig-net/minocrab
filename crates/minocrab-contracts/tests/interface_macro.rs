@@ -158,12 +158,12 @@ fn returning_call(build: impl FnOnce(&mut Circuit3, Wire3<FieldT, Public>) -> B3
 fn a_returning_call_lowers_like_the_hand_written_handle() {
     let attributed = returning_call(|c, one| {
         let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
-        let amount = Uint::from_field(pull_amount(c));
+        let amount = Uint::from_field_unchecked(pull_amount(c));
         Token::at_field(0).deposit(c, one, amount, me)
     });
     let hand = returning_call(|c, one| {
         let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
-        let amount = Uint::from_field(pull_amount(c));
+        let amount = Uint::from_field_unchecked(pull_amount(c));
         HandToken::at_field(0).deposit(c, one, amount, me)
     });
     assert_eq!(zkir(&hand), zkir(&attributed));

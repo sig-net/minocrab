@@ -179,9 +179,19 @@ impl Vis3 for Private {
 pub struct Uint<const BITS: u32, V: Vis3 = Private>(Wire3<FieldT, V>);
 
 impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
-    /// Wrap a wire already known to hold a `Uint<BITS>` (a circuit argument
-    /// about to be constrained, or the result of a checked operation).
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// value below `2^BITS`, and this emits nothing to verify it
+    /// (notes/api-safety-survey.org §A1). Typical justification is a
+    /// constrained circuit argument about to receive [`Self::constrain_input`],
+    /// or the result of an operation this module already range-checked
+    /// (`sub`, `narrow`, a `BoundedUint::to_uint` bridge). Getting the claim
+    /// wrong is silent — `CheckOperand::BITS`/`MAX`, the comparison widths,
+    /// [`Self::widen`]'s soundness argument, and the Borsh packing all rest on
+    /// it holding.
+    ///
+    /// When the wire is NOT already known to satisfy the bound, use
+    /// [`Self::from_field_checked`] instead.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         const {
             assert!(
                 BITS > 0 && BITS < 255,
@@ -190,6 +200,20 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
             )
         };
         Uint(w)
+    }
+
+    /// [`Self::from_field_unchecked`] immediately followed by
+    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// already known to hold a `Uint<BITS>`.
+    ///
+    /// Cost: exactly `constrain_input`'s constraint (~`BITS`/4 rows, one
+    /// `assert_boolean` at `BITS = 1`). With
+    /// `Circuit3::dedup_range_constraints` enabled, a redundant call is free —
+    /// the pass drops a later constraint no tighter than one already proven.
+    pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
+        let leaf = Self::from_field_unchecked(w);
+        leaf.constrain_input(c);
+        leaf
     }
 
     /// `x as Field` — the same slot, no instructions.
@@ -261,7 +285,7 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     {
         c.assert(crate::v3::predicate::ge(self, other).message(message));
         let negated = c.neg(other.field());
-        Uint::from_field(c.add(self.field(), negated))
+        Uint::from_field_unchecked(c.add(self.field(), negated))
     }
 
     /// `x as Uint<WIDER>` — the LOSSLESS widening, and the explicit escape
@@ -276,23 +300,23 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     /// argument rests on the leaf's invariant, which is the type's whole
     /// point: a `Uint<BITS>` is a wire something has constrained — an
     /// argument by `CircuitArg::constrain`, a computed value by whoever
-    /// called `from_field`. Widening PROPAGATES that obligation, it does not
-    /// discharge one.)
+    /// called `from_field_unchecked`. Widening PROPAGATES that obligation, it
+    /// does not discharge one.)
     ///
     /// Narrowing is not offered and is not an oversight: it needs a real
-    /// range check, so it is `Uint::<N>::from_field` plus an explicit
-    /// `constrain_input` — visibly a cost.
+    /// range check, so it is `Uint::<N>::from_field_checked` — visibly a
+    /// cost.
     pub fn widen<const WIDER: u32>(self) -> Uint<WIDER, V> {
         const {
             assert!(
                 WIDER >= BITS,
                 "`.widen::<W>()` only widens: W must be at least the source's \
                  BITS. Narrowing needs a range check, so spell it out — \
-                 `Uint::<W>::from_field(x.field())` followed by \
-                 `constrain_input`, which is the cost made visible"
+                 `Uint::<W>::from_field_checked(c, x.field())`, which is the \
+                 cost made visible"
             )
         };
-        Uint::from_field(self.0)
+        Uint::from_field_unchecked(self.0)
     }
 }
 
@@ -304,7 +328,7 @@ impl<const BITS: u32> Uint<BITS, Public> {
             BITS >= 64 || v >> BITS == 0,
             "{v} does not fit in Uint<{BITS}>"
         );
-        Uint::from_field(c.constant(v))
+        Uint::from_field_unchecked(c.constant(v))
     }
 }
 
@@ -342,10 +366,17 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// The largest legal value: `BOUND - 1`, compactc's `maxval`.
     pub const MAX: u128 = BOUND - 1;
 
-    /// Wrap a wire already known to hold a value below `BOUND` (a circuit
-    /// argument about to be constrained, or the result of a checked
-    /// operation).
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// value below `BOUND`, and this emits nothing to verify it
+    /// (notes/api-safety-survey.org §A1). Typical justification is a
+    /// constrained circuit argument about to receive [`Self::constrain_input`],
+    /// or the result of an operation this module already range-checked
+    /// (`sub`, `narrow`, [`Uint::widen`]'s bridge). Getting the claim wrong is
+    /// silent — everything built on this leaf's invariant rests on it holding.
+    ///
+    /// When the wire is NOT already known to satisfy the bound, use
+    /// [`Self::from_field_checked`] instead.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         const {
             assert!(
                 BOUND >= 1,
@@ -355,6 +386,19 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
             )
         };
         BoundedUint(w)
+    }
+
+    /// [`Self::from_field_unchecked`] immediately followed by
+    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// already known to hold a value below `BOUND`.
+    ///
+    /// Cost: exactly `constrain_input`'s constraint (whichever of its four
+    /// cases the bound lands on). With `Circuit3::dedup_range_constraints`
+    /// enabled, a redundant call is free.
+    pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
+        let leaf = Self::from_field_unchecked(w);
+        leaf.constrain_input(c);
+        leaf
     }
 
     /// `x as Field` — the same slot, no instructions.
@@ -386,11 +430,11 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
                 BIGGER >= BOUND,
                 "`.widen::<B>()` only widens: B must be at least the source's BOUND. \
                  Narrowing needs a range check, so spell it out — \
-                 `BoundedUint::<B>::from_field(x.field())` followed by `constrain_input`, \
-                 which is the cost made visible"
+                 `BoundedUint::<B>::from_field_checked(c, x.field())`, which is the \
+                 cost made visible"
             )
         };
-        BoundedUint::from_field(self.0)
+        BoundedUint::from_field_unchecked(self.0)
     }
 
     /// `x as Uint<BITS>` — the free bridge to the sized leaf, and with it to
@@ -410,7 +454,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
                  `.narrow::<BITS>(c)`, which emits the range check"
             )
         };
-        Uint::from_field(self.0)
+        Uint::from_field_unchecked(self.0)
     }
 
     /// `self + other`, with COMPACT'S MAX TRACKING — the bound of the result
@@ -436,8 +480,8 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # use minocrab_std::v3::BoundedUint;
     /// let mut c = Circuit3::new();
-    /// let a = BoundedUint::<300>::from_field(c.arg::<FieldT>("a"));
-    /// let b = BoundedUint::<200>::from_field(c.arg::<FieldT>("b"));
+    /// let a = BoundedUint::<300>::from_field_unchecked(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<200>::from_field_unchecked(c.arg::<FieldT>("b"));
     /// // error[E0080]: `.add::<OUT>()` needs OUT >= BOUND + BOUND2 - 1 …
     /// let _ = a.add::<498, 200>(&mut c, b);
     /// ```
@@ -467,7 +511,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
                  not, so the type is the only thing tracking the max"
             )
         };
-        BoundedUint::from_field(c.add(self.field(), other.field()))
+        BoundedUint::from_field_unchecked(c.add(self.field(), other.field()))
     }
 
     /// `self * other`, the same rule as [`Self::add`] with compactc's
@@ -481,8 +525,8 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # use minocrab_std::v3::BoundedUint;
     /// let mut c = Circuit3::new();
-    /// let a = BoundedUint::<300>::from_field(c.arg::<FieldT>("a"));
-    /// let b = BoundedUint::<200>::from_field(c.arg::<FieldT>("b"));
+    /// let a = BoundedUint::<300>::from_field_unchecked(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<200>::from_field_unchecked(c.arg::<FieldT>("b"));
     /// // error[E0080]: `.mul::<OUT>()` needs OUT >= (BOUND - 1) * (BOUND2 - 1) + 1 …
     /// let _ = a.mul::<59_400, 200>(&mut c, b);
     /// ```
@@ -499,8 +543,8 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # use minocrab_std::v3::BoundedUint;
     /// let mut c = Circuit3::new();
-    /// let a = BoundedUint::<{ u128::MAX }>::from_field(c.arg::<FieldT>("a"));
-    /// let b = BoundedUint::<{ u128::MAX }>::from_field(c.arg::<FieldT>("b"));
+    /// let a = BoundedUint::<{ u128::MAX }>::from_field_unchecked(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<{ u128::MAX }>::from_field_unchecked(c.arg::<FieldT>("b"));
     /// // error[E0080]: the result's bound does not fit a u128 const parameter …
     /// let _ = a.mul::<{ u128::MAX }, { u128::MAX }>(&mut c, b);
     /// ```
@@ -522,7 +566,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
                  check, exactly as compactc's does not"
             )
         };
-        BoundedUint::from_field(c.mul(self.field(), other.field()))
+        BoundedUint::from_field_unchecked(c.mul(self.field(), other.field()))
     }
 
     /// `self - other`, with COMPACT'S UNDERFLOW GUARD — [`Uint::sub`]'s
@@ -569,7 +613,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     {
         c.assert(crate::v3::predicate::ge(self, other).message(message));
         let negated = c.neg(other.field());
-        BoundedUint::from_field(c.add(self.field(), negated))
+        BoundedUint::from_field_unchecked(c.add(self.field(), negated))
     }
 
     /// `x as Uint<BITS>` when the bound does NOT fit — the CHECKED
@@ -603,7 +647,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # use minocrab_std::v3::BoundedUint;
     /// let mut c = Circuit3::new();
-    /// let x = BoundedUint::<300>::from_field(c.arg::<FieldT>("x"));
+    /// let x = BoundedUint::<300>::from_field_unchecked(c.arg::<FieldT>("x"));
     /// // error[E0080]: `.narrow::<BITS>()` is the CHECKED narrowing … use `.to_uint`
     /// let _ = x.narrow::<9>(&mut c);
     /// ```
@@ -620,7 +664,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
                  `.to_uint::<BITS>()`, which is free"
             )
         };
-        let narrowed = Uint::<BITS, V>::from_field(self.0);
+        let narrowed = Uint::<BITS, V>::from_field_unchecked(self.0);
         narrowed.constrain_input(c);
         narrowed
     }
@@ -689,7 +733,7 @@ impl<const BOUND: u128> BoundedUint<BOUND, Public> {
             BOUND - 1
         );
         let fr = Fr::from_le_bytes(&v.to_le_bytes()).expect("16 bytes fit the native field");
-        BoundedUint::from_field(c.constant(fr))
+        BoundedUint::from_field_unchecked(c.constant(fr))
     }
 }
 
@@ -700,9 +744,30 @@ impl<const BOUND: u128> BoundedUint<BOUND, Public> {
 pub struct Bool<V: Vis3 = Private>(Wire3<FieldT, V>);
 
 impl<V: Vis3> Bool<V> {
-    /// Wrap a wire already known to hold 0 or 1.
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds 0
+    /// or 1, and this emits nothing to verify it (notes/api-safety-survey.org
+    /// §A1). Typical justification is a constrained circuit argument about to
+    /// receive [`Self::constrain_input`], or the result of an operation this
+    /// module already produced as boolean (`cond_select` of two booleans, a
+    /// comparison's own output). Getting the claim wrong is silent.
+    ///
+    /// When the wire is NOT already known to be 0 or 1, use
+    /// [`Self::from_field_checked`] instead.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         Bool(w)
+    }
+
+    /// [`Self::from_field_unchecked`] immediately followed by
+    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// already known to be boolean.
+    ///
+    /// Cost: exactly `constrain_input`'s constraint (one `assert_boolean`).
+    /// With `Circuit3::dedup_range_constraints` enabled, a redundant call is
+    /// free.
+    pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
+        let leaf = Self::from_field_unchecked(w);
+        leaf.constrain_input(c);
+        leaf
     }
 
     /// The underlying 0/1 wire — the same slot, no instructions.
@@ -733,8 +798,17 @@ impl Bool<Public> {
 pub struct Bytes<const N: usize, V: Vis3 = Private>(Wire3<FieldT, V>);
 
 impl<const N: usize, V: Vis3> Bytes<N, V> {
-    /// Wrap a wire already known to hold `N` little-endian bytes.
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds
+    /// `N` little-endian bytes (`< 2^(8N)`), and this emits nothing to verify
+    /// it (notes/api-safety-survey.org §A1). Typical justification is a
+    /// constrained circuit argument about to receive
+    /// [`Self::constrain_input`], or the result of an operation this module
+    /// already range-checked. Getting the claim wrong is silent — the Borsh
+    /// packing's injectivity rests on it holding.
+    ///
+    /// When the wire is NOT already known to satisfy the bound, use
+    /// [`Self::from_field_checked`] instead.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         const {
             assert!(
                 N > 0 && N <= 31,
@@ -742,6 +816,18 @@ impl<const N: usize, V: Vis3> Bytes<N, V> {
             )
         };
         Bytes(w)
+    }
+
+    /// [`Self::from_field_unchecked`] immediately followed by
+    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// already known to hold `N` in-range bytes.
+    ///
+    /// Cost: exactly `constrain_input`'s constraint (~`8N`/4 rows). With
+    /// `Circuit3::dedup_range_constraints` enabled, a redundant call is free.
+    pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
+        let leaf = Self::from_field_unchecked(w);
+        leaf.constrain_input(c);
+        leaf
     }
 
     /// The packed little-endian limb — the same slot, no instructions.
@@ -760,7 +846,7 @@ impl<const N: usize> Bytes<N, Public> {
     /// A `Bytes<N>` constant from native Rust bytes, `bytes[0]` least
     /// significant (the in-slot order of [`B32`]'s low limb).
     pub fn constant(c: &mut Circuit3, bytes: &[u8; N]) -> Self {
-        Bytes::from_field(c.constant(Fr::from_le_bytes(bytes).expect("N <= 31 bytes fit")))
+        Bytes::from_field_unchecked(c.constant(Fr::from_le_bytes(bytes).expect("N <= 31 bytes fit")))
     }
 }
 
@@ -943,7 +1029,16 @@ pub struct MerkleTreeDigest<V: Vis3 = Private>(Wire3<FieldT, V>);
 
 impl<V: Vis3> MerkleTreeDigest<V> {
     /// Wrap a wire holding a digest (a circuit argument, a computed root).
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    ///
+    /// Named `_unchecked` for the same reason every other leaf's
+    /// constructor is (notes/api-safety-survey.org §A1): it is the caller
+    /// CLAIMING the wire holds a digest, not a check. Unlike the other v3
+    /// leaves there is no `from_field_checked` twin, because there is
+    /// nothing to constrain — this type's whole point is that it is the ONE
+    /// leaf with an unconstrained native slot (see the type's docs,
+    /// `Prim::Field`), so `constrain_input` does not exist here to delegate
+    /// to.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         MerkleTreeDigest(w)
     }
 
@@ -972,11 +1067,11 @@ macro_rules! select_via_field {
 }
 
 select_via_field! {
-    [V: Vis3] Bool<V> => |c, bit, a, b| Bool::from_field(c.cond_select(bit, a.field(), b.field())),
+    [V: Vis3] Bool<V> => |c, bit, a, b| Bool::from_field_unchecked(c.cond_select(bit, a.field(), b.field())),
     [const BITS: u32, V: Vis3] Uint<BITS, V> =>
-        |c, bit, a, b| Uint::from_field(c.cond_select(bit, a.field(), b.field())),
+        |c, bit, a, b| Uint::from_field_unchecked(c.cond_select(bit, a.field(), b.field())),
     [const N: usize, V: Vis3] Bytes<N, V> =>
-        |c, bit, a, b| Bytes::from_field(c.cond_select(bit, a.field(), b.field())),
+        |c, bit, a, b| Bytes::from_field_unchecked(c.cond_select(bit, a.field(), b.field())),
     /// Two slots — the `[hi, lo]` pair.
     [V: Vis3] B32<V> => |c, bit, a, b| B32 {
         hi: c.cond_select(bit, a.hi, b.hi),
@@ -1582,8 +1677,8 @@ pub mod ts {
 /// use minocrab_std::v3::{ts, Opaque};
 ///
 /// let mut c = Circuit3::new();
-/// let name: Opaque<ts::Str> = Opaque::from_field(c.witness());
-/// let blob: Opaque<ts::Uint8Array> = Opaque::from_field(c.witness());
+/// let name: Opaque<ts::Str> = Opaque::from_field_unchecked(c.witness());
+/// let blob: Opaque<ts::Uint8Array> = Opaque::from_field_unchecked(c.witness());
 /// // ERROR: expected `Opaque<Str>`, found `Opaque<Uint8Array>`
 /// let _ = name.eq(&mut c, blob);
 /// ```
@@ -1597,8 +1692,8 @@ pub mod ts {
 /// use minocrab_std::v3::{ts, Opaque};
 ///
 /// let mut c = Circuit3::new();
-/// let a: Opaque<ts::Str> = Opaque::from_field(c.witness());
-/// let b: Opaque<ts::Str> = Opaque::from_field(c.witness());
+/// let a: Opaque<ts::Str> = Opaque::from_field_unchecked(c.witness());
+/// let b: Opaque<ts::Str> = Opaque::from_field_unchecked(c.witness());
 /// let _same = a.eq(&mut c, b);
 /// ```
 #[repr(transparent)]
@@ -1620,7 +1715,14 @@ impl<T: TsType, V: Vis3> Copy for Opaque<T, V> {}
 impl<T: TsType, V: Vis3> Opaque<T, V> {
     /// Wrap a wire holding an opaque's commitment (a circuit argument, a
     /// witnessed value, a ledger read).
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    ///
+    /// Named `_unchecked` for the same reason every other leaf's
+    /// constructor is (notes/api-safety-survey.org §A1): it is the caller
+    /// CLAIMING the wire holds a commitment, not a check. There is no
+    /// `from_field_checked` twin — `Prim::Opaque` is compactc's own
+    /// no-constraint primitive (see the type's docs), so there is no
+    /// `constrain_input` here to delegate to.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         Opaque(w, std::marker::PhantomData)
     }
 
@@ -1639,7 +1741,7 @@ impl<T: TsType> Opaque<T, Public> {
     /// the field element zero (see the type's docs). One `Circuit3::constant`,
     /// which inlines as an immediate wherever it is used.
     pub fn default_value(c: &mut Circuit3) -> Self {
-        Opaque::from_field(c.constant(Fr::from(0u64)))
+        Opaque::from_field_unchecked(c.constant(Fr::from(0u64)))
     }
 }
 

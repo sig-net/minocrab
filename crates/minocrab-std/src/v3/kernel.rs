@@ -255,7 +255,7 @@ pub fn balance_under<G: Visibility>(
     token: &UnshieldedToken<Public>,
 ) -> Uint<128, Public> {
     let t = token.ledger_value();
-    Uint::from_field(kernel_balance(c, guard, &t, BalanceCmp::Value, None))
+    Uint::from_field_unchecked(kernel_balance(c, guard, &t, BalanceCmp::Value, None))
 }
 
 /// `kernel.balanceLessThan(token_type, amount)`.
@@ -275,7 +275,7 @@ pub fn balance_less_than_under<G: Visibility>(
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    Bool::from_field(kernel_balance(
+    Bool::from_field_unchecked(kernel_balance(
         c,
         guard,
         &t,
@@ -301,7 +301,7 @@ pub fn balance_greater_than_under<G: Visibility>(
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    Bool::from_field(kernel_balance(
+    Bool::from_field_unchecked(kernel_balance(
         c,
         guard,
         &t,
@@ -322,7 +322,7 @@ pub fn block_time_less_than_under<G: Visibility>(
     time: Uint<64, Public>,
 ) -> Bool<Public> {
     let t = time.ledger_value(c);
-    Bool::from_field(kernel_block_time(c, guard, &t, false))
+    Bool::from_field_unchecked(kernel_block_time(c, guard, &t, false))
 }
 
 /// `kernel.blockTimeGreaterThan(t)`.
@@ -337,7 +337,7 @@ pub fn block_time_greater_than_under<G: Visibility>(
     time: Uint<64, Public>,
 ) -> Bool<Public> {
     let t = time.ledger_value(c);
-    Bool::from_field(kernel_block_time(c, guard, &t, true))
+    Bool::from_field_unchecked(kernel_block_time(c, guard, &t, true))
 }
 
 // ---- the stdlib circuits ----------------------------------------------------
@@ -371,7 +371,7 @@ pub fn block_time_lte(c: &mut Circuit3, time: Uint<64, Public>) -> Bool<Public> 
 /// `cond_select(b, 0, 1)` rather than to an arithmetic negation — the shape
 /// the fixture's `sBlockTimeGte` shows.
 fn not(c: &mut Circuit3, b: Bool<Public>) -> Bool<Public> {
-    Bool::from_field(c.cond_select(b.field(), 0u64, 1u64))
+    Bool::from_field_unchecked(c.cond_select(b.field(), 0u64, 1u64))
 }
 
 /// `circuit unshieldedBalance(color): Uint<128>`
@@ -498,7 +498,7 @@ pub fn mint_unshielded_token(
     let me = self_address(c);
     let color = super::token_type(c, domain_sep, &me.bytes());
     let token = unshielded(c, color);
-    let wide = Uint::<128, Public>::from_field(amount.field());
+    let wide = Uint::<128, Public>::from_field_unchecked(amount.field());
     claim_unshielded_coin_spend(c, &token, recipient, wide);
     let mine = is_self(c, recipient);
     inc_unshielded_inputs_under(c, mine, &token, wide);
@@ -608,7 +608,7 @@ fn checked_sub(
     b: Wire3<FieldT, Public>,
 ) -> Wire3<FieldT, Public> {
     let underflow = c.less_than(a, b, 128);
-    let ok = not(c, Bool::from_field(underflow));
+    let ok = not(c, Bool::from_field_unchecked(underflow));
     c.assert(is_true(ok).message("subtraction would underflow"));
     let neg = c.neg(b);
     c.add(a, neg)
@@ -617,7 +617,7 @@ fn checked_sub(
 /// Compact's `x as Uint<128>` on a value just computed: the range constraint,
 /// then the `Copy` the cast names its result with.
 fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
-    Uint::<128, Public>::from_field(w).constrain_input(c);
+    Uint::<128, Public>::from_field_unchecked(w).constrain_input(c);
     c.copy(w)
 }
 
@@ -689,7 +689,7 @@ fn merge(
 
     let same_colour = bytes_eq(c, &a.color, &b.color);
     c.assert(
-        is_true(Bool::from_field(same_colour)).message("Can only merge coins of the same color"),
+        is_true(Bool::from_field_unchecked(same_colour)).message("Can only merge coins of the same color"),
     );
 
     // Field order is evaluation order, and compactc's too: the derived nonce
@@ -770,7 +770,7 @@ pub fn send_shielded(
     claim_zswap_coin_receive_under(c, mine, &cm_again);
 
     let spent_it_all = c.test_eq(change, 0u64);
-    let has_change = not(c, Bool::from_field(spent_it_all)).field();
+    let has_change = not(c, Bool::from_field_unchecked(spent_it_all)).field();
     let change_coin = ShieldedCoinInfo3 {
         nonce: derived_nonce(c, NONCE_EVOLVE_CHANGE, &input.nonce),
         color: input.color,
@@ -798,7 +798,7 @@ pub fn send_shielded(
     };
     ShieldedSendResult {
         change: Maybe {
-            is_some: Bool::from_field(has_change),
+            is_some: Bool::from_field_unchecked(has_change),
             value: change_value,
         },
         sent: output,

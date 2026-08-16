@@ -76,8 +76,8 @@ pub fn token_deposit(
     // `events_borsh`'s note; the bytes are pinned against compactc's artifact
     // in tests/xcontract_events_differential.rs.
     let event = DepositEvent {
-        amount: minocrab_std::v3::Uint::from_field(a),
-        sequence: minocrab_std::v3::Uint::from_field(sequence),
+        amount: minocrab_std::v3::Uint::from_field_unchecked(a),
+        sequence: minocrab_std::v3::Uint::from_field_unchecked(sequence),
         recipient: cal,
     };
     let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);

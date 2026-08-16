@@ -150,8 +150,8 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                 let misc = MiscDepositEvent {
                     name: event_name_literal(c, &event_name(i)),
                     payload: DepositEvent {
-                        amount: Uint::from_field(a),
-                        sequence: Uint::from_field(sequence.expect("sequence read exists")),
+                        amount: Uint::from_field_unchecked(a),
+                        sequence: Uint::from_field_unchecked(sequence.expect("sequence read exists")),
                         recipient: r,
                     },
                 };

@@ -85,7 +85,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_eq(x, 0u64);
         }),
-        ir_of(|c| BoundedUint::<1>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| BoundedUint::<1>::from_field_unchecked(c.arg("x")).constrain_input(c)),
     );
     // `Uint<0..2>` is `Boolean`.
     assert_eq!(
@@ -93,7 +93,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_boolean(x);
         }),
-        ir_of(|c| BoundedUint::<2>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| BoundedUint::<2>::from_field_unchecked(c.arg("x")).constrain_input(c)),
     );
     // A bound that IS a power of two is a BIT WIDTH, not a `less_than` —
     // so `BoundedUint<256>` and `Uint<8>` are the same instruction.
@@ -102,11 +102,11 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_bits(x, 8);
         }),
-        ir_of(|c| BoundedUint::<256>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c)),
     );
     assert_eq!(
-        ir_of(|c| Uint::<8>::from_field(c.arg("x")).constrain_input(c)),
-        ir_of(|c| BoundedUint::<256>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c)),
     );
     // Everything else is `less_than v BOUND bits` + `assert`, with
     // compactc's EVEN-ROUNDED width and the bound as an inline immediate.
@@ -118,10 +118,10 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
                 c.assert(ok);
             }),
             match bound {
-                10 => ir_of(|c| BoundedUint::<10>::from_field(c.arg("x")).constrain_input(c)),
-                255 => ir_of(|c| BoundedUint::<255>::from_field(c.arg("x")).constrain_input(c)),
-                300 => ir_of(|c| BoundedUint::<300>::from_field(c.arg("x")).constrain_input(c)),
-                _ => ir_of(|c| BoundedUint::<1000>::from_field(c.arg("x")).constrain_input(c)),
+                10 => ir_of(|c| BoundedUint::<10>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+                255 => ir_of(|c| BoundedUint::<255>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+                300 => ir_of(|c| BoundedUint::<300>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+                _ => ir_of(|c| BoundedUint::<1000>::from_field_unchecked(c.arg("x")).constrain_input(c)),
             },
             "Uint<0..{bound}>"
         );
@@ -135,13 +135,39 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
 fn the_derived_constraint_is_the_leafs_own() {
     fn both<const BOUND: u128>() {
         assert_eq!(
-            ir_of(|c| BoundedUint::<BOUND>::from_field(c.arg("x")).constrain_input(c)),
+            ir_of(|c| BoundedUint::<BOUND>::from_field_unchecked(c.arg("x")).constrain_input(c)),
             ir_of(|c| {
                 let x = <BoundedUint<BOUND, Private> as CircuitArg>::declare(
                     c,
                     &minocrab_std::v3::ArgPath::root("x"),
                 );
                 x.constrain(c);
+            }),
+        );
+    }
+    both::<1>();
+    both::<2>();
+    both::<10>();
+    both::<256>();
+    both::<300>();
+    both::<70_000>();
+}
+
+/// `from_field_checked` is DEFINED as `from_field_unchecked` immediately
+/// followed by `constrain_input` (notes/api-safety-survey.org §A1's fix), so
+/// the two spellings must lower to byte-identical ZKIR — every arm of the
+/// bound table, same as [`each_bound_lowers_to_compactc_s_own_constraint`].
+#[test]
+fn from_field_checked_matches_unchecked_plus_constrain_input() {
+    fn both<const BOUND: u128>() {
+        assert_eq!(
+            ir_of(|c| {
+                let w = c.arg("x");
+                BoundedUint::<BOUND>::from_field_checked(c, w);
+            }),
+            ir_of(|c| {
+                let x = BoundedUint::<BOUND>::from_field_unchecked(c.arg("x"));
+                x.constrain_input(c);
             }),
         );
     }
@@ -173,12 +199,12 @@ fn the_three_widths_are_three_numbers() {
         BoundedUint::<70_000, Private>::prims(),
         vec![Prim::UintMax { maxval: 69_999 }]
     );
-    assert!(ir_of(|c| BoundedUint::<70_000>::from_field(c.arg("x")).constrain_input(c))
+    assert!(ir_of(|c| BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c))
         .contains("\"bits\":18"));
     // … while a COMPARISON of two of them runs at 17.
     assert!(ir_of(|c| {
-        let a = BoundedUint::<70_000>::from_field(c.arg("a"));
-        let b = BoundedUint::<70_000>::from_field(c.arg("b"));
+        let a = BoundedUint::<70_000>::from_field_unchecked(c.arg("a"));
+        let b = BoundedUint::<70_000>::from_field_unchecked(c.arg("b"));
         c.assert(less_than(a, b));
     })
     .contains("\"bits\":17"));
@@ -196,8 +222,8 @@ fn a_comparison_is_the_hand_written_one() {
             c.assert(lt);
         }),
         ir_of(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a"));
-            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field_unchecked(c.arg("b"));
             c.assert(a.lt(b));
         }),
     );
@@ -206,8 +232,8 @@ fn a_comparison_is_the_hand_written_one() {
     // compile error — see `_COMPILE_ERRORS_NOT_PANICS`.
     assert_eq!(
         instructions(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a"));
-            let b = Uint::<10>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
+            let b = Uint::<10>::from_field_unchecked(c.arg("b"));
             c.assert(a.lt(b));
         }),
         2
@@ -220,7 +246,7 @@ fn a_comparison_is_the_hand_written_one() {
 fn widening_and_retyping_cost_nothing() {
     assert_eq!(
         instructions(|c| {
-            let x = BoundedUint::<1000>::from_field(c.arg("x"));
+            let x = BoundedUint::<1000>::from_field_unchecked(c.arg("x"));
             let _wider: BoundedUint<70_000, Private> = x.widen::<70_000>();
             let _sized: Uint<10, Private> = x.to_uint::<10>();
         }),
@@ -236,8 +262,8 @@ fn widening_and_retyping_cost_nothing() {
             c.assert(lt);
         }),
         ir_of(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a")).widen::<70_000>();
-            let b = BoundedUint::<70_000>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a")).widen::<70_000>();
+            let b = BoundedUint::<70_000>::from_field_unchecked(c.arg("b"));
             c.assert(a.lt(b));
         }),
     );
@@ -267,7 +293,7 @@ fn borsh_serializes_at_the_next_primitive_width() {
     // Describing the preimage emits nothing, and the hash atom is the
     // BORSH width (4), not the FAB one (3).
     let mut c = Circuit3::new();
-    let x = BoundedUint::<70_000, Private>::from_field(c.arg("x"));
+    let x = BoundedUint::<70_000, Private>::from_field_unchecked(c.arg("x"));
     let before = c.instruction_count();
     let limbs = limbs_of::<Private, _>(&x);
     assert_eq!(c.instruction_count(), before);
@@ -279,9 +305,9 @@ fn borsh_serializes_at_the_next_primitive_width() {
     // `constrain_canonical` is `constrain_input` — no extra bound, unlike
     // `Tag<K>`. So a value that entered as an argument is already canonical.
     assert_eq!(
-        ir_of(|c| BoundedUint::<70_000>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c)),
         ir_of(|c| {
-            let x = BoundedUint::<70_000, Private>::from_field(c.arg("x"));
+            let x = BoundedUint::<70_000, Private>::from_field_unchecked(c.arg("x"));
             <BoundedUint<70_000, Private> as CircuitBorsh<Private>>::constrain_canonical(&x, c);
         }),
     );
@@ -309,8 +335,8 @@ fn add_is_one_field_add_and_no_check() {
             c.output(sum, "sum");
         }),
         ir_of(|c| {
-            let a = BoundedUint::<300>::from_field(c.arg("a"));
-            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let a = BoundedUint::<300>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<200>::from_field_unchecked(c.arg("b"));
             let sum: BoundedUint<499, Private> = a.add::<499, 200>(c, b);
             let sum = c.disclose(sum.field(), "sum");
             c.output(sum, "sum");
@@ -318,8 +344,8 @@ fn add_is_one_field_add_and_no_check() {
     );
     assert_eq!(
         instructions(|c| {
-            let a = BoundedUint::<300>::from_field(c.arg("a"));
-            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let a = BoundedUint::<300>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<200>::from_field_unchecked(c.arg("b"));
             let _ = a.add::<499, 200>(c, b);
         }),
         1
@@ -338,8 +364,8 @@ fn mul_is_one_field_mul_and_no_check() {
             c.output(product, "p");
         }),
         ir_of(|c| {
-            let a = BoundedUint::<300>::from_field(c.arg("a"));
-            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let a = BoundedUint::<300>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<200>::from_field_unchecked(c.arg("b"));
             // 299 * 199 = 59_501, so 59_502 is the narrowest legal OUT.
             let product: BoundedUint<59_502, Private> = a.mul::<59_502, 200>(c, b);
             let product = c.disclose(product.field(), "p");
@@ -348,8 +374,8 @@ fn mul_is_one_field_mul_and_no_check() {
     );
     assert_eq!(
         instructions(|c| {
-            let a = BoundedUint::<300>::from_field(c.arg("a"));
-            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let a = BoundedUint::<300>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<200>::from_field_unchecked(c.arg("b"));
             let _ = a.mul::<59_502, 200>(c, b);
         }),
         1
@@ -376,8 +402,8 @@ fn sub_is_compactcs_guarded_lowering() {
             c.output(diff, "d");
         }),
         ir_of(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a"));
-            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field_unchecked(c.arg("b"));
             let diff: BoundedUint<1000, Private> = a.sub(c, b);
             let diff = c.disclose(diff.field(), "d");
             c.output(diff, "d");
@@ -386,13 +412,13 @@ fn sub_is_compactcs_guarded_lowering() {
     // The message is metadata: `sub_with` is the SAME lowering.
     assert_eq!(
         ir_of(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a"));
-            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field_unchecked(c.arg("b"));
             let _ = a.sub(c, b);
         }),
         ir_of(|c| {
-            let a = BoundedUint::<1000>::from_field(c.arg("a"));
-            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let a = BoundedUint::<1000>::from_field_unchecked(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field_unchecked(c.arg("b"));
             let _ = a.sub_with(c, b, "the vault's own words");
         }),
     );
@@ -420,27 +446,27 @@ fn narrow_emits_the_check_compactc_omits() {
             c.assert_bits(x, 8);
         }),
         ir_of(|c| {
-            let x = BoundedUint::<300>::from_field(c.arg("x"));
+            let x = BoundedUint::<300>::from_field_unchecked(c.arg("x"));
             let _: Uint<8, Private> = x.narrow::<8>(c);
         }),
     );
     // …and it is the SAME instruction `Uint<8>` constrains an argument with.
     assert_eq!(
-        ir_of(|c| Uint::<8>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c)),
         ir_of(|c| {
-            let _ = BoundedUint::<300>::from_field(c.arg("x")).narrow::<8>(c);
+            let _ = BoundedUint::<300>::from_field_unchecked(c.arg("x")).narrow::<8>(c);
         }),
     );
     assert_eq!(
         instructions(|c| {
-            let _ = BoundedUint::<300>::from_field(c.arg("x")).narrow::<8>(c);
+            let _ = BoundedUint::<300>::from_field_unchecked(c.arg("x")).narrow::<8>(c);
         }),
         1
     );
     // The free direction is `to_uint`, and it stays free (zero instructions).
     assert_eq!(
         instructions(|c| {
-            let _ = BoundedUint::<300>::from_field(c.arg("x")).to_uint::<9>();
+            let _ = BoundedUint::<300>::from_field_unchecked(c.arg("x")).to_uint::<9>();
         }),
         0
     );
@@ -455,8 +481,8 @@ fn bounds_track_and_the_values_round_trip() {
     fn sum(a: u64, b: u64) -> Fr {
         run(
             |c| {
-                let x = BoundedUint::<300, Private>::from_field(c.arg("a"));
-                let y = BoundedUint::<200, Private>::from_field(c.arg("b"));
+                let x = BoundedUint::<300, Private>::from_field_unchecked(c.arg("a"));
+                let y = BoundedUint::<200, Private>::from_field_unchecked(c.arg("b"));
                 x.constrain_input(c);
                 y.constrain_input(c);
                 let out: BoundedUint<499, Private> = x.add::<499, 200>(c, y);
@@ -475,8 +501,8 @@ fn bounds_track_and_the_values_round_trip() {
     // The product, at its own bound.
     let product = run(
         |c| {
-            let x = BoundedUint::<300, Private>::from_field(c.arg("a"));
-            let y = BoundedUint::<200, Private>::from_field(c.arg("b"));
+            let x = BoundedUint::<300, Private>::from_field_unchecked(c.arg("a"));
+            let y = BoundedUint::<200, Private>::from_field_unchecked(c.arg("b"));
             x.constrain_input(c);
             y.constrain_input(c);
             let out: BoundedUint<59_502, Private> = x.mul::<59_502, 200>(c, y);
@@ -493,8 +519,8 @@ fn bounds_track_and_the_values_round_trip() {
     let difference = |a: u64, b: u64| {
         run_result(
             |c| {
-                let x = BoundedUint::<1000, Private>::from_field(c.arg("a"));
-                let y = BoundedUint::<1000, Private>::from_field(c.arg("b"));
+                let x = BoundedUint::<1000, Private>::from_field_unchecked(c.arg("a"));
+                let y = BoundedUint::<1000, Private>::from_field_unchecked(c.arg("b"));
                 x.constrain_input(c);
                 y.constrain_input(c);
                 let out = x.sub(c, y);
@@ -540,7 +566,7 @@ fn the_largest_legal_constant_is_fine() {
 /// # use minocrab_std::v3::BoundedUint;
 /// let mut c = Circuit3::new();
 /// // error[E0080]: range end for Uint type is 0 but must be at least 1 …
-/// let _ = BoundedUint::<0>::from_field(c.arg::<FieldT>("x"));
+/// let _ = BoundedUint::<0>::from_field_unchecked(c.arg::<FieldT>("x"));
 /// ```
 ///
 /// a `widen` that narrows,
@@ -549,7 +575,7 @@ fn the_largest_legal_constant_is_fine() {
 /// # use minocrab::v3::{Circuit3, FieldT};
 /// # use minocrab_std::v3::BoundedUint;
 /// let mut c = Circuit3::new();
-/// let x = BoundedUint::<1000>::from_field(c.arg::<FieldT>("x"));
+/// let x = BoundedUint::<1000>::from_field_unchecked(c.arg::<FieldT>("x"));
 /// let _ = x.widen::<300>();   // error[E0080]: `.widen::<B>()` only widens …
 /// ```
 ///
@@ -559,7 +585,7 @@ fn the_largest_legal_constant_is_fine() {
 /// # use minocrab::v3::{Circuit3, FieldT};
 /// # use minocrab_std::v3::BoundedUint;
 /// let mut c = Circuit3::new();
-/// let x = BoundedUint::<1000>::from_field(c.arg::<FieldT>("x"));
+/// let x = BoundedUint::<1000>::from_field_unchecked(c.arg::<FieldT>("x"));
 /// let _ = x.to_uint::<9>();   // error[E0080]: needs 2^BITS >= BOUND …
 /// ```
 ///
@@ -571,8 +597,8 @@ fn the_largest_legal_constant_is_fine() {
 /// # use minocrab::v3::{Circuit3, FieldT};
 /// # use minocrab_std::v3::{BoundedUint, Uint};
 /// let mut c = Circuit3::new();
-/// let a = BoundedUint::<70_000>::from_field(c.arg::<FieldT>("a"));
-/// let b = Uint::<32>::from_field(c.arg::<FieldT>("b"));
+/// let a = BoundedUint::<70_000>::from_field_unchecked(c.arg::<FieldT>("a"));
+/// let b = Uint::<32>::from_field_unchecked(c.arg::<FieldT>("b"));
 /// c.assert(a.lt(b));          // error[E0080]: … different widths …
 /// ```
 ///

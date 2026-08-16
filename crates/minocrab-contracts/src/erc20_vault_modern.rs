@@ -1063,7 +1063,7 @@ fn refund_surrendered_value(
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
-    c.assert(is_true(Bool::from_field(ev.calldata_is_some())));
+    c.assert(is_true(Bool::from_field_unchecked(ev.calldata_is_some())));
 
     // const amount = abiWordToUint128(calldata.words[1])
     let word1 = ev.word(1);
@@ -1073,7 +1073,10 @@ fn refund_surrendered_value(
     let domain_sep = vault_token_domain_separator(c, ev.to());
     let own_pk = own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field(amount), mint_nonce, &own_pk);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
+    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1196,8 +1199,11 @@ pub fn complete_swap(
     let token_out = signet::abi_word_low20(c, &word1);
     let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = args.mint_nonce.disclose_as::<SwapMintNonce>(c);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &ds_out, Uint::<64, Public>::from_field(amount_out), &mint_nonce, &recipient,
+        c, 1u64, me, &ds_out, Uint::<64, Public>::from_field_unchecked(amount_out), &mint_nonce, &recipient,
     );
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
@@ -1212,8 +1218,8 @@ pub fn complete_swap(
     // `Uint::sub` IS this guard plus the subtraction, in compactc's own order
     // and at compactc's width — the guard stops being a line the author has
     // to remember (notes/api-safety-survey.org §B1).
-    let amount_in_max_u = Uint::<128, Public>::from_field(amount_in_max);
-    let amount_in_u = Uint::<128, Public>::from_field(amount_in);
+    let amount_in_max_u = Uint::<128, Public>::from_field_unchecked(amount_in_max);
+    let amount_in_u = Uint::<128, Public>::from_field_unchecked(amount_in);
     let change = amount_in_max_u
         .sub_with(c, amount_in_u, "Attested amountIn exceeds amountInMaximum")
         .field();
@@ -1221,8 +1227,11 @@ pub fn complete_swap(
     let token_in = signet::abi_word_low20(c, &word0);
     let ds_in = vault_token_domain_separator(c, token_in);
     let change_nonce = change_nonce(c, &mint_nonce);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &ds_in, Uint::<64, Public>::from_field(change), &change_nonce, &recipient,
+        c, 1u64, me, &ds_in, Uint::<64, Public>::from_field_unchecked(change), &change_nonce, &recipient,
     );
 
     Discloses::of(())
@@ -1418,8 +1427,8 @@ pub fn refund(
     // surrendered amountInMaximum) of `word0`'s low-20 token. The unused
     // decode is guarded off (no canonicity assert on the garbage record) or
     // assert-free (`abi_word_low20`).
-    c.assert(is_true(Bool::from_field(ev.calldata_is_some())).when(is_withdrawal));
-    c.assert(is_true(Bool::from_field(ev7.calldata_is_some())).when(swapping));
+    c.assert(is_true(Bool::from_field_unchecked(ev.calldata_is_some())).when(is_withdrawal));
+    c.assert(is_true(Bool::from_field_unchecked(ev7.calldata_is_some())).when(swapping));
     let word1 = ev.word(1);
     let amount_wd = signet::abi_word_to_uint128_guarded(c, is_withdrawal, &word1);
     let word5 = ev7.word(5);
@@ -1430,8 +1439,11 @@ pub fn refund(
     let token = c.cond_select(is_withdrawal, ev.to(), token_sw);
     let domain_sep = vault_token_domain_separator(c, token);
     let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
     common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &domain_sep, Uint::<64, Public>::from_field(amount), &mint_nonce, &own_pk,
+        c, 1u64, me, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &own_pk,
     );
 
     Discloses::of(())
@@ -1589,7 +1601,10 @@ pub fn claim(
     // mintShieldedToken(domainSep, amount as Uint<64>, disclose(mintNonce),
     //   claimRecipient)
     let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field(amount), &mint_nonce, &recipient);
+    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
+    // locally (notes/api-safety-survey.org §B4's correction) — first in
+    // line for `from_field_checked` once there's a spec-anchored artifact.
+    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &recipient);
 
     Discloses::of(())
 }

@@ -342,7 +342,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         key: &K,
     ) -> Bool<Public> {
         let key = key.ledger_value(c);
-        Bool::from_field(map_member(c, guard, self.index, &key))
+        Bool::from_field_unchecked(map_member(c, guard, self.index, &key))
     }
 
     /// [`LedgerMap::member`] inside a conditional branch.
@@ -354,7 +354,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
     ) -> Guarded<Bool<Public>, G> {
         let key = key.ledger_value(c);
         Guarded::new(
-            Bool::from_field(map_member_guarded(c, guard, self.index, &key)),
+            Bool::from_field_unchecked(map_member_guarded(c, guard, self.index, &key)),
             guard,
         )
     }
@@ -440,7 +440,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field(map_size(c, guard, self.index))
+        Uint::from_field_unchecked(map_size(c, guard, self.index))
     }
 
     /// `map.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
@@ -454,7 +454,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field(map_is_empty(c, guard, self.index))
+        Bool::from_field_unchecked(map_is_empty(c, guard, self.index))
     }
 
     /// `map.insertDefault(key)` — `idxp [field]; push key; pushs default;
@@ -569,7 +569,7 @@ impl<T: LedgerRepr> LedgerSet<T> {
         elem: &T,
     ) -> Bool<Public> {
         let elem = elem.ledger_value(c);
-        Bool::from_field(map_member(c, guard, self.index, &elem))
+        Bool::from_field_unchecked(map_member(c, guard, self.index, &elem))
     }
 
     /// `set.remove(elem)` — `idxp [field]; push elem; rem; insc 1`.
@@ -601,7 +601,7 @@ impl<T> LedgerSet<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field(set_size(c, guard, self.index))
+        Uint::from_field_unchecked(set_size(c, guard, self.index))
     }
 
     /// `set.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
@@ -615,7 +615,7 @@ impl<T> LedgerSet<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field(set_is_empty(c, guard, self.index))
+        Bool::from_field_unchecked(set_is_empty(c, guard, self.index))
     }
 
     /// `set.resetToDefault()` — `push key; pushs (empty map); ins 1`.
@@ -690,7 +690,7 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field(list_length(c, guard, self.index))
+        Uint::from_field_unchecked(list_length(c, guard, self.index))
     }
 
     /// `list.isEmpty()` — `dup 0; idx [field]; idx [1]; type; push 1; eq;
@@ -705,7 +705,7 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field(list_is_empty(c, guard, self.index))
+        Bool::from_field_unchecked(list_is_empty(c, guard, self.index))
     }
 
     /// `list.resetToDefault()` — `push key; pushs [null, null, 0]; ins 1`.
@@ -758,7 +758,7 @@ impl<T: LedgerRepr> LedgerList<T> {
         let mut limbs = list_head(c, guard, self.index, T::atoms());
         let value = T::from_limbs(limbs.split_off(1));
         Maybe {
-            is_some: Bool::from_field(limbs[0]),
+            is_some: Bool::from_field_unchecked(limbs[0]),
             value,
         }
     }
@@ -837,7 +837,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field(merkle_tree_is_full(c, guard, self.index, DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full(c, guard, self.index, DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is the tree's CURRENT root.
@@ -853,7 +853,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         root: MerkleTreeDigest<Public>,
     ) -> Bool<Public> {
         let root = root.ledger_value(c);
-        Bool::from_field(merkle_tree_check_root(c, guard, self.index, &root))
+        Bool::from_field_unchecked(merkle_tree_check_root(c, guard, self.index, &root))
     }
 
     /// `t.insertHash(hash)` — insert a leaf whose digest is already known, at
@@ -1011,7 +1011,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field(merkle_tree_is_full(c, guard, self.index, DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full(c, guard, self.index, DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is one of the tree's PAST roots.
@@ -1027,7 +1027,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         root: MerkleTreeDigest<Public>,
     ) -> Bool<Public> {
         let root = root.ledger_value(c);
-        Bool::from_field(historic_merkle_tree_check_root(
+        Bool::from_field_unchecked(historic_merkle_tree_check_root(
             c, guard, self.index, &root,
         ))
     }
@@ -1300,7 +1300,7 @@ impl LedgerCounter {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field(counter_read(c, guard, self.index))
+        Uint::from_field_unchecked(counter_read(c, guard, self.index))
     }
 
     /// [`LedgerCounter::read`] inside a conditional branch.
@@ -1310,7 +1310,7 @@ impl LedgerCounter {
         guard: Wire3<FieldT, G>,
     ) -> Guarded<Uint<64, Public>, G> {
         Guarded::new(
-            Uint::from_field(counter_read_guarded(c, guard, self.index)),
+            Uint::from_field_unchecked(counter_read_guarded(c, guard, self.index)),
             guard,
         )
     }
@@ -1347,7 +1347,7 @@ impl LedgerCounter {
             8,
             vec![ImpactElem::Imm(minocrab::Fr::from(threshold))],
         );
-        Bool::from_field(counter_less_than(c, guard, self.index, &threshold))
+        Bool::from_field_unchecked(counter_less_than(c, guard, self.index, &threshold))
     }
 }
 

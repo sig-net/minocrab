@@ -166,8 +166,8 @@ fn a_check_guards_exactly_as_its_wire_does() {
         c.when(same, |c| c.impact_mixed(1u64, &op()));
     });
     let by_check = zkir(|c| {
-        let x: Uint<64> = Uint::from_field(c.arg::<FieldT>("x"));
-        let y: Uint<64> = Uint::from_field(c.arg::<FieldT>("y"));
+        let x: Uint<64> = Uint::from_field_unchecked(c.arg::<FieldT>("x"));
+        let y: Uint<64> = Uint::from_field_unchecked(c.arg::<FieldT>("y"));
         c.when(eq(x, y), |c| c.impact_mixed(1u64, &op()));
     });
     assert_eq!(by_check, by_wire);
@@ -231,8 +231,8 @@ fn chain_arms_take_checks() {
             .otherwise(|c| c.impact_mixed(1u64, &op()));
     });
     let by_check = zkir(|c| {
-        let x: Uint<64> = Uint::from_field(c.arg::<FieldT>("x"));
-        let y: Uint<64> = Uint::from_field(c.arg::<FieldT>("y"));
+        let x: Uint<64> = Uint::from_field_unchecked(c.arg::<FieldT>("x"));
+        let y: Uint<64> = Uint::from_field_unchecked(c.arg::<FieldT>("y"));
         c.when(eq(x, y), |c| c.impact_mixed(1u64, &op()))
             .otherwise(|c| c.impact_mixed(1u64, &op()));
     });

@@ -118,7 +118,7 @@ pub fn op_eq(
     OPAQUE.dummy.increment(c, 1);
     let a = a.disclose_as::<Name>(c);
     let b = b.disclose_as::<Other>(c);
-    Discloses::of(Bool::from_field(a.eq(c, b)))
+    Discloses::of(Bool::from_field_unchecked(a.eq(c, b)))
 }
 
 /// `export circuit opDefault(): [] { cell = default<Opaque<"string">>; }`
@@ -147,7 +147,7 @@ pub fn op_cell(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
 /// admits any value.
 #[circuit]
 pub fn op_witness(c: &mut Circuit3) -> Discloses<Name> {
-    let name = OpaqueStr::from_field(c.witness());
+    let name = OpaqueStr::from_field_unchecked(c.witness());
     let name = name.disclose_as::<Name>(c);
     OPAQUE.cell.write(c, &name);
     Discloses::of(())
@@ -171,7 +171,7 @@ pub fn op_map_value(c: &mut Circuit3, k: B32<minocrab::Private>, v: OpaqueStr) -
 #[circuit]
 pub fn op_map_key(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key> {
     let k = k.disclose_as::<Key>(c);
-    let one: Uint<64, Public> = Uint::from_field(c.constant(minocrab::Fr::from(1u64)));
+    let one: Uint<64, Public> = Uint::from_field_unchecked(c.constant(minocrab::Fr::from(1u64)));
     OPAQUE.by_name.insert(c, &k, &one);
     Discloses::of(())
 }
@@ -195,7 +195,7 @@ pub fn op_set(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key, Bool<Public>> {
 pub fn op_maybe(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
     let x = x.disclose_as::<Name>(c);
     let some = Maybe {
-        is_some: Bool::from_field(c.constant(minocrab::Fr::from(1u64))),
+        is_some: Bool::from_field_unchecked(c.constant(minocrab::Fr::from(1u64))),
         value: x,
     };
     OPAQUE.maybe.write(c, &some);

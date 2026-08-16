@@ -31,8 +31,8 @@ fn same_zkir(
         f: impl FnOnce(&mut Circuit3, Uint<128, Private>, Uint<128, Private>),
     ) -> String {
         let mut c = Circuit3::new();
-        let a = Uint::<128, Private>::from_field(c.arg::<FieldT>("a"));
-        let b = Uint::<128, Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+        let b = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         f(&mut c, a, b);
         zkir(c.finish(false))
     }
@@ -172,7 +172,7 @@ fn eval_is_the_comparison_without_the_assert() {
 #[test]
 fn an_unasserted_predicate_emits_nothing() {
     let mut c = Circuit3::new();
-    let a = Uint::<128, Private>::from_field(c.arg::<FieldT>("a"));
+    let a = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
     let before = c.instruction_count();
     let _dropped = less_than(0u64, a).and(le(a, u64::MAX)).message("unused");
     assert_eq!(c.instruction_count(), before);
@@ -184,7 +184,7 @@ fn an_unasserted_predicate_emits_nothing() {
 fn a_message_costs_nothing_and_is_recorded() {
     let build = |message: bool| {
         let mut c = Circuit3::new();
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
         let check = greater_than(a, 0u64);
         c.assert(if message {
             check.message("Chain ID must be positive")
@@ -225,8 +225,8 @@ fn the_method_surface_is_the_free_constructors() {
 /// # use minocrab::Private;
 /// # use minocrab_std::v3::{less_than, Uint};
 /// let mut c = Circuit3::new();
-/// let a = Uint::<128, Private>::from_field(c.arg::<FieldT>("a"));
-/// let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+/// let a = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+/// let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
 /// c.assert(less_than(a, b));  // error[E0080]: … different widths …
 /// ```
 ///
@@ -262,7 +262,7 @@ fn equality_of_raw_wires_is_allowed() {
 #[should_panic(expected = "does not fit the 8 bits")]
 fn a_literal_wider_than_the_comparison_is_rejected() {
     let mut c = Circuit3::new();
-    let byte = Bytes::<1, Private>::from_field(c.arg::<FieldT>("byte"));
+    let byte = Bytes::<1, Private>::from_field_unchecked(c.arg::<FieldT>("byte"));
     c.assert(less_than(byte, 300u64));
 }
 
@@ -270,8 +270,8 @@ fn a_literal_wider_than_the_comparison_is_rejected() {
 #[test]
 fn visibility_follows_the_meet() {
     let mut c = Circuit3::new();
-    let secret = Uint::<64, Private>::from_field(c.arg::<FieldT>("secret"));
-    let public = Uint::<64, Public>::from_field(c.public_transcript_input::<FieldT>());
+    let secret = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("secret"));
+    let public = Uint::<64, Public>::from_field_unchecked(c.public_transcript_input::<FieldT>());
 
     let _private: Bool<Private> = less_than(0u64, secret).eval(&mut c);
     let _public: Bool<Public> = less_than(0u64, public).eval(&mut c);
@@ -285,7 +285,7 @@ fn visibility_follows_the_meet() {
 fn is_true_is_the_wire_itself() {
     let build = |leaf: bool| {
         let mut c = Circuit3::new();
-        let b = Bool::<Private>::from_field(c.arg::<FieldT>("b"));
+        let b = Bool::<Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         if leaf {
             c.assert(is_true(b).message("Request already exists"));
         } else {
@@ -308,8 +308,8 @@ fn is_true_is_the_wire_itself() {
 fn is_true_composes_with_the_combinators() {
     let build = |predicates: bool| {
         let mut c = Circuit3::new();
-        let b = Bool::<Private>::from_field(c.arg::<FieldT>("b"));
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let b = Bool::<Private>::from_field_unchecked(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
         if predicates {
             c.assert(is_true(b).and(a.gt(0u64)));
         } else {
@@ -328,8 +328,8 @@ fn is_true_composes_with_the_combinators() {
 fn when_is_the_in_branch_assert() {
     let build = |predicates: bool| {
         let mut c = Circuit3::new();
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
-        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         let guard = c.public_transcript_input::<FieldT>();
         if predicates {
             c.assert(less_than(a, b).when(guard).message("Not the withdrawer"));
@@ -354,7 +354,7 @@ fn when_is_the_in_branch_assert() {
 #[test]
 fn a_public_guard_gates_a_private_check() {
     let mut c = Circuit3::new();
-    let secret = Uint::<64, Private>::from_field(c.arg::<FieldT>("secret"));
+    let secret = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("secret"));
     let guard = c.public_transcript_input::<FieldT>();
     let _: Bool<Private> = less_than(0u64, secret).when(guard).eval(&mut c);
 }
@@ -366,8 +366,8 @@ fn a_public_guard_gates_a_private_check() {
 fn widen_is_free_and_compares_at_the_wider_width() {
     let build = |widened: bool| {
         let mut c = Circuit3::new();
-        let narrow = Uint::<64, Private>::from_field(c.arg::<FieldT>("narrow"));
-        let wide = Uint::<128, Private>::from_field(c.arg::<FieldT>("wide"));
+        let narrow = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("narrow"));
+        let wide = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("wide"));
         if widened {
             c.assert(less_than(narrow.widen::<128>(), wide));
         } else {
@@ -380,7 +380,7 @@ fn widen_is_free_and_compares_at_the_wider_width() {
 
     // …and it really is zero instructions on its own.
     let mut c = Circuit3::new();
-    let narrow = Uint::<64, Private>::from_field(c.arg::<FieldT>("narrow"));
+    let narrow = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("narrow"));
     let before = c.instruction_count();
     let _wide: Uint<128, Private> = narrow.widen();
     assert_eq!(c.instruction_count(), before);
@@ -399,7 +399,7 @@ fn widen_is_free_and_compares_at_the_wider_width() {
 #[should_panic(expected = "is larger than the largest value the operand it is compared with can hold (299)")]
 fn a_literal_above_the_bound_is_rejected() {
     let mut c = Circuit3::new();
-    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    let b = BoundedUint::<300, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
     c.assert(less_than(b, 500u64));
 }
 
@@ -408,7 +408,7 @@ fn a_literal_above_the_bound_is_rejected() {
 #[test]
 fn a_literal_at_the_bound_is_accepted() {
     let mut c = Circuit3::new();
-    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    let b = BoundedUint::<300, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
     c.assert(less_than(b, 299u64));
 }
 
@@ -418,7 +418,7 @@ fn a_literal_at_the_bound_is_accepted() {
 #[should_panic(expected = "is larger than the largest value the operand it is compared with can hold (299)")]
 fn a_literal_above_the_bound_is_rejected_on_the_left() {
     let mut c = Circuit3::new();
-    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    let b = BoundedUint::<300, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
     c.assert(greater_than(500u64, b));
 }
 
@@ -428,7 +428,7 @@ fn a_literal_above_the_bound_is_rejected_on_the_left() {
 #[should_panic(expected = "does not fit the 8 bits")]
 fn a_literal_above_a_plain_width_is_still_rejected() {
     let mut c = Circuit3::new();
-    let byte = Uint::<8, Private>::from_field(c.arg::<FieldT>("byte"));
+    let byte = Uint::<8, Private>::from_field_unchecked(c.arg::<FieldT>("byte"));
     c.assert(less_than(byte, 300u64));
 }
 
@@ -445,8 +445,8 @@ fn a_literal_above_a_plain_width_is_still_rejected() {
 fn sub_is_compactcs_guarded_lowering() {
     let by_hand = zkir({
         let mut c = Circuit3::new();
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
-        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         // the guard compactc emits, at compactc's width (64 = intlen(max))
         c.assert(ge(a, b).message("result of subtraction would be negative"));
         let negated = c.neg(b.field());
@@ -455,8 +455,8 @@ fn sub_is_compactcs_guarded_lowering() {
     });
     let typed = zkir({
         let mut c = Circuit3::new();
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
-        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         let _ = a.sub(&mut c, b);
         c.finish(true)
     });
@@ -479,8 +479,8 @@ fn the_raw_spelling_has_no_guard_and_the_typed_one_does() {
     });
     let typed = zkir({
         let mut c = Circuit3::new();
-        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
-        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         let _ = a.sub(&mut c, b);
         c.finish(true)
     });
@@ -498,8 +498,8 @@ fn the_raw_spelling_has_no_guard_and_the_typed_one_does() {
 #[test]
 fn sub_keeps_the_left_operands_width() {
     let mut c = Circuit3::new();
-    let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
-    let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+    let a = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("a"));
+    let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
     let d: Uint<64, Private> = a.sub(&mut c, b);
     // and it composes: the difference compares at 64 bits like any Uint<64>
     c.assert(ge(d, b));

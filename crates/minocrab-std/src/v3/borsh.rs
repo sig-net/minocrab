@@ -717,7 +717,7 @@ macro_rules! borsh_uint {
             }
 
             fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
-                Uint::from_field(r.take(c, $len))
+                Uint::from_field_unchecked(r.take(c, $len))
             }
 
             fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -798,7 +798,7 @@ impl<const BOUND: u128, V: Vis3> CircuitBorsh<V> for BoundedUint<BOUND, V> {
     }
 
     fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
-        BoundedUint::from_field(r.take(c, Self::LEN))
+        BoundedUint::from_field_unchecked(r.take(c, Self::LEN))
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -829,7 +829,7 @@ impl<V: Vis3> CircuitBorsh<V> for Bool<V> {
     }
 
     fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
-        Bool::from_field(r.take(c, 1))
+        Bool::from_field_unchecked(r.take(c, 1))
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -857,7 +857,7 @@ impl<const N: usize, V: Vis3> CircuitBorsh<V> for Bytes<N, V> {
     }
 
     fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
-        Bytes::from_field(r.take(c, N))
+        Bytes::from_field_unchecked(r.take(c, N))
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
@@ -944,8 +944,17 @@ impl<const N: usize, V: Vis3> CircuitBorsh<V> for BytesN<V, N> {
 pub struct Tag<const K: u32, V: Vis3 = Private>(Wire3<FieldT, V>);
 
 impl<const K: u32, V: Vis3> Tag<K, V> {
-    /// Wrap a wire already known to hold a discriminant.
-    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+    /// An ASSERTION, not a check: the caller is CLAIMING `w` already holds a
+    /// discriminant byte, and this emits nothing to verify it
+    /// (notes/api-safety-survey.org §A1). Typical justification is a
+    /// constrained circuit argument about to receive [`Self::constrain_input`]
+    /// (or Borsh's own [`CircuitBorsh::constrain_canonical`], which adds the
+    /// `< K` bound this method does not).
+    ///
+    /// When the wire is NOT already known to hold a byte, use
+    /// [`Self::from_field_checked`] instead — note that gets only the
+    /// byte-width constraint, not Borsh's `< K` canonicity bound.
+    pub fn from_field_unchecked(w: Wire3<FieldT, V>) -> Self {
         const {
             assert!(
                 K > 0 && K <= 256,
@@ -953,6 +962,20 @@ impl<const K: u32, V: Vis3> Tag<K, V> {
             )
         };
         Tag(w)
+    }
+
+    /// [`Self::from_field_unchecked`] immediately followed by
+    /// [`Self::constrain_input`] — the CHECKED twin, for a wire that is not
+    /// already known to hold a byte. This is the byte-width constraint only;
+    /// the `< K` variant bound is [`CircuitBorsh::constrain_canonical`]'s.
+    ///
+    /// Cost: exactly `constrain_input`'s constraint (one `constrain_bits 8`).
+    /// With `Circuit3::dedup_range_constraints` enabled, a redundant call is
+    /// free.
+    pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
+        let leaf = Self::from_field_unchecked(w);
+        leaf.constrain_input(c);
+        leaf
     }
 
     /// The discriminant wire — the same slot, no instructions.
@@ -974,7 +997,7 @@ impl<const K: u32> Tag<K, Public> {
     /// variant of the enum.
     pub fn constant(c: &mut Circuit3, variant: u32) -> Self {
         assert!(variant < K, "{variant} is not a variant of Tag<{K}>");
-        Tag::from_field(c.constant(u64::from(variant)))
+        Tag::from_field_unchecked(c.constant(u64::from(variant)))
     }
 }
 
@@ -994,7 +1017,7 @@ impl<const K: u32, V: Vis3> CircuitAbi for Tag<K, V> {
 
 impl<const K: u32> CircuitArg for Tag<K, Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Tag::from_field(c.arg::<FieldT>(path.as_str()))
+        Tag::from_field_unchecked(c.arg::<FieldT>(path.as_str()))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
@@ -1026,7 +1049,7 @@ impl<const K: u32, V: Vis3> CircuitBorsh<V> for Tag<K, V> {
     }
 
     fn read<R: BorshReader<V>>(c: &mut Circuit3, r: &mut R) -> Self {
-        Tag::from_field(r.take(c, 1))
+        Tag::from_field_unchecked(r.take(c, 1))
     }
 
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {

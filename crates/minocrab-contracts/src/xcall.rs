@@ -127,7 +127,7 @@ pub fn call_emit(
     let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
     let one = c.constant(1u64);
     emit(c, one, &counter_increment(CALL_COUNT, 1));
-    TARGET_CONTRACT.deposit_emit(c, one, r, Uint::from_field(a));
+    TARGET_CONTRACT.deposit_emit(c, one, r, Uint::from_field_unchecked(a));
     Discloses::of(())
 }
 
@@ -147,7 +147,7 @@ fn call_n_times(n: usize) -> Compiled3 {
 
         emit(c, one, &counter_increment(CALL_COUNT, 1));
         for _ in 0..n {
-            TARGET_CONTRACT.deposit(c, one, r, Uint::from_field(a));
+            TARGET_CONTRACT.deposit(c, one, r, Uint::from_field_unchecked(a));
         }
         Discloses::of(())
     })

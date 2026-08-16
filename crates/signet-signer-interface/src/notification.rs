@@ -38,7 +38,7 @@ pub fn construct_notification_v1<V: Vis3>(
         let zero = V::from_public(c.constant(0u64));
         let payload = BytesN::from_limbs(vec![zero, zero, zero, second, caller_address.lo]);
         SignBidirectionalEventNotification {
-            version: Uint::from_field(version),
+            version: Uint::from_field_unchecked(version),
             payload,
         }
     })
