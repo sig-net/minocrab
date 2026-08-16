@@ -8,7 +8,6 @@ use minocrab_ledger::{
     popeq, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::kernel;
-use minocrab::v3::Guarded;
 use minocrab_std::v3::{
     coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
     ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32, STRAIGHT_LINE,
@@ -174,25 +173,6 @@ pub fn receive_shielded(
     });
 }
 
-/// [`receive_shielded`] against a `kernel.self()` the caller already read.
-///
-/// compactc emits a fresh read per stdlib call; how many times the read is
-/// EMITTED is framing, not protocol (notes/vault-optimization.org §"(b)
-/// COMPACTC-FRAMING-ONLY"), and the value is invariant within a
-/// transaction. The M10 artifact reads it once per circuit and threads it;
-/// the direct ports keep [`receive_shielded`] and their frozen rows.
-pub fn receive_shielded_with(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
-    me: ContractAddress<Public>,
-    coin: &ShieldedCoinInfo3<Public>,
-) {
-    c.region("coin: receive", |c| {
-        let recipient = contract_recipient(c, me);
-        claim_receive(c, guard, coin, &recipient);
-    });
-}
-
 /// `kernel.claimZswapCoinReceive(coinCommitment(coin, recipient))`.
 fn claim_receive(
     c: &mut Circuit3,
@@ -337,23 +317,6 @@ pub fn burn_coin(
     });
 }
 
-/// [`burn_coin`] against a `kernel.self()` the caller already read — see
-/// [`receive_shielded_with`] for why the M10 artifact wants that.
-///
-/// `me` is a [`ContractAddress`], not a `B32`, and that is the point: this
-/// family is MEMOIZATION WITH A KEY, and the key used to be un-typed. Only
-/// `kernel::self_address` produces a `ContractAddress`, so a caller can no
-/// longer thread the wrong 32 bytes here and burn against another contract's
-/// identity (notes/api-safety-survey.org §A4).
-pub fn burn_coin_with(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    me: ContractAddress<Public>,
-    coin: &ShieldedCoinInfo3<Public>,
-) {
-    c.region("coin: burn", |c| burn_body(c, one, me, coin));
-}
-
 /// Everything [`burn_coin`] does after reading `kernel.self()`.
 fn burn_body(
     c: &mut Circuit3,
@@ -449,19 +412,6 @@ pub fn burn_spend(
     });
 }
 
-/// [`witness_sk`] under a branch guard.
-pub fn witness_sk_guarded(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
-) -> Guarded<B32<Private>, Public> {
-    let sk = B32 {
-        hi: c.witness_guarded::<FieldT, Public>(guard),
-        lo: c.witness_guarded::<FieldT, Public>(guard),
-    };
-    sk.constrain_input(c);
-    Guarded::new(sk, guard)
-}
-
 /// In-branch assert: `assert(select(guard, cond, 1))` — the condition only
 /// binds when the branch is taken (completeWithdraw.zkir:300-304).
 pub fn assert_if<V: minocrab_std::v3::Vis3>(
@@ -499,7 +449,7 @@ fn assert_if_message<V: minocrab_std::v3::Vis3>(
 /// `guard`.
 ///
 /// Public as the "caller already read `kernel.self()`" form of
-/// [`mint_shielded_token_to_key`] — see [`receive_shielded_with`]. A
+/// [`mint_shielded_token_to_key`]. A
 /// circuit that mints twice (completeSwap) or mints on either of two
 /// branches (refund) needs one read, not one per mint.
 pub fn mint_shielded_token_to_key_with<G: Visibility>(
@@ -547,21 +497,6 @@ pub fn mint_shielded_token_to_key(
 ) {
     let me = kernel::self_address(c);
     mint_shielded_token_to_key_with(c, STRAIGHT_LINE, me, domain_sep, value, nonce, pk);
-}
-
-/// `mintShieldedToken(domain_sep, value, nonce, left(pk))` under a branch
-/// guard (completeWithdraw.zkir:482-512): the kernel.self read and every
-/// effects op carry the guard.
-pub fn mint_shielded_token_to_key_guarded(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
-    domain_sep: &B32<Public>,
-    value: Uint<64, Public>,
-    nonce: &B32<Public>,
-    pk: &B32<Public>,
-) {
-    let me = kernel::self_address_guarded(c, guard).or_default();
-    mint_shielded_token_to_key_with(c, guard, me, domain_sep, value, nonce, pk);
 }
 
 /// The one-shot gate: `assert(<counter at field> == 0)`.

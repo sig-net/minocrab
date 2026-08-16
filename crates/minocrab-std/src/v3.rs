@@ -234,8 +234,9 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     /// `Uint<maxa>`) and is sound because `a - b <= a < 2^BITS`.
     ///
     /// Cost: identical to compactc's, because it IS compactc's — one
-    /// `less_than`, one `cond_select` for the negation, one `assert`, one
-    /// `neg`, one `add`.
+    /// `less_than`, one `not` for the negation (verified against the port's
+    /// own completeSwap, which mirrors compactc's artifact), one `assert`,
+    /// one `neg`, one `add`.
     /// Both operands at the same visibility — a subtraction mixing them is
     /// spelled by moving one with `.private()` first, which is where the
     /// visibility join belongs and is free.

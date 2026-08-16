@@ -659,3 +659,39 @@ reviewer should look at.
       is the silent default the type exists to catch. Also worth a look:
       all 19 migrated sites chose `.or_default()`, so nothing exercises
       `.or` or `.assert_read` outside their unit tests.
+
+* Fine-tooth-comb review of the 2026-08-16 session (dmd asked; done same day)
+Every code hunk of 9bc7bb9..eb9bbd7 read, not gate-trusted. VERIFIED
+SOUND: the guard-scope migration's five renumbered circuits (the dump
+canonicalization DOES distinguish a renumbering from a moved guard —
+a guard operand change alters instruction content, which the comparison
+would flag as CHANGED); Guarded<T>'s three exits incl. the load-bearing
+`or_default` in mint_shielded_token's auto-receive (guarded-off self
+compares against zero and the `mul` masks it — correct, and now named);
+Uint::sub's lowering identity on both the port's and the modern fork's
+original spellings (le(a,b) and not(less_than(b,a)) are the same
+instructions); the `.or_default()` regex migration (completeness enforced
+by the type system — a missed site cannot compile); the MAX boundaries
+(Uint<128>/Bytes<16> fall back to the width check, which covers exactly
+128 bits; eq/ne against out-of-range literals are also caught, a
+strictness bonus). FOUND AND FIXED, four things:
+1. Uint::sub's doc priced the negation as a `cond_select`; the lowering
+   emits `not`. Doc corrected with the verification stated.
+2. Four dead helpers deleted from common.rs: witness_sk_guarded and
+   mint_shielded_token_to_key_guarded (orphaned by the guard-scope
+   migration; the "kept as the equivalence twin" rationale did NOT apply
+   — no test referenced them, the tests exercise the Circuit3/ledger
+   primitives), plus receive_shielded_with and burn_coin_with (dead
+   since BEFORE the session).
+3. Which falsifies a premise in notes/vault-vocabulary.org §1(a): two of
+   the three `_with` twins it analysed as live opt vocabulary had zero
+   callers. Corrected in place; the caching-profile prize is one
+   function, not a family.
+4. THE DISCOVERY: compactc emits NO range check for `as Uint<64>` in
+   argument position — artifact-verified at all four settle mints, where
+   the only 64-bit op is the `initialized` guard. The vault is safe via
+   request-time bounds (a whole-contract argument Compact never writes
+   down), fix 4's commit message overstated the local justification
+   (corrected in the survey), and builtin-lowering §9's downcast rule is
+   refined at the source. Fix 1's `BoundedUint::to_uint` is where our
+   API can be STRICTER than Compact by emitting the check compactc omits.

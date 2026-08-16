@@ -61,6 +61,16 @@ has no way to learn a divergent twin exists.
 the same operation against a =kernel.self()= the CALLER already read. Manual
 common-subexpression elimination, spelled in the callee's name.
 
+CORRECTED BY THE FINE-TOOTH-COMB REVIEW (2026-08-16, same day): only ONE of
+the three was alive. =burn_coin_with= and =receive_shielded_with= had ZERO
+callers at the time this note analysed them as the live opt vocabulary — the
+M10 artifact's burn moved to =burn_spend= and its receive shapes inlined, and
+nobody deleted the twins. Both are now deleted (with
+=witness_sk_guarded= and =mint_shielded_token_to_key_guarded=, which the
+guard-scope migration orphaned later the same day). So the caching-profile
+prize in this section is one function's three call sites, not a family — the
+analysis stands but the payoff is smaller than written.
+
 Soundness is already written (M10 rung i): read count is framing, not
 protocol — every emitted read still reconciles through =process_read=. And it
 is already priced: 12 rows per read, 144 across the artifact.

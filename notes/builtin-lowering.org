@@ -355,6 +355,16 @@ Types carry *max values*, not widths (=tunsigned max=). Rules
   gates beyond add/mul — *no overflow check at the op itself*; the check
   happens only when the value is later downcast (assignment to a declared
   =Uint<N>= inserts =downcast-unsigned= → §1 constraint).
+  REFINED (2026-08-16, artifact evidence): the downcast check does NOT
+  extend to a cast in ARGUMENT position. The vault writes =amount as
+  Uint<64>= at all four settle mints (claim/completeWithdraw/refund/
+  completeSwap) on a value locally bounded only to < 2^128, and the
+  artifacts contain no 64-bit constraint between decode and mint — the only
+  64-bit op in each is the =initialized= counter guard. The contract is
+  safe because every request circuit bounds its amounts to ≤ u64::MAX
+  before the record enters the map (erc20-vault.compact:263/431/801-802) —
+  a whole-contract argument compactc neither makes nor checks. See
+  notes/api-safety-survey.org §B4.
 - =-=: inserts an explicit guard *before* the subtraction:
   =assert(a >= b, "result of subtraction would be negative")= with
   bits = max(1, intlen(max(maxa,maxb))), then field subtraction lowered as

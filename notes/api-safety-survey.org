@@ -187,9 +187,33 @@ WHAT IT DOES NOT BUY, said plainly: the narrowing is still not CHECKED. The
 caller writes =Uint::<64, Public>::from_field(amount)=, which is A1's
 unchecked assertion wearing its own name. What changed is that the claim is
 now WRITTEN at the call site instead of a 128-bit wire sliding into a 64-bit
-parameter in silence — and in the vault the =assert(amount <= u64::MAX)= is
-a few lines above it, so the claim is justified where it is made. Making it
-checked is A1's fix.
+parameter in silence. Making it checked is A1's fix.
+
+CORRECTED BY THE REVIEW (2026-08-16), in two parts, both artifact-verified:
+
+1. The =assert(amount <= u64::MAX)= justification is LOCAL only for the
+   request circuits (deposit, withdraw, swap — swap bounds BOTH its amounts,
+   =erc20-vault.compact:801-802=). At the four SETTLE mints (claim,
+   completeWithdraw, refund, completeSwap) the decoded word is bounded only
+   to =< 2^128= locally; the =Uint<64>= claim there rests on the fact that
+   every record in the map was written by a request circuit that bounded it
+   — a WHOLE-CONTRACT argument, not a local one. The =from_field=s at those
+   four sites are exactly A1's shape and should be first in line when A1's
+   constrained twin exists.
+
+2. *COMPACTC EMITS NO CHECK FOR A CAST IN ARGUMENT POSITION.* The source
+   writes =amount as Uint<64>= at all four settle mints, and the artifacts
+   contain no 64-bit constraint anywhere between the decode and the mint —
+   the ONLY 64-bit op in claim/completeWithdraw/refund is the
+   =initialized >= 1= counter guard (checked instruction by instruction in
+   the dumps). So notes/builtin-lowering.org §9's downcast rule
+   ("assignment to a declared =Uint<N>= inserts downcast-unsigned") does
+   NOT extend to argument-position casts, at least in this compiler version
+   at these sites. Compact's own safety here rests on the request-time
+   guards — i.e. Compact has the same whole-contract dependency our
+   =from_field= has, it just never wrote it down. Worth carrying into fix
+   1's design: =BoundedUint::to_uint= is exactly the place OUR api can be
+   stricter than Compact by emitting the check compactc omits.
 
 * 2. FOOTGUNS (question 1)
 
