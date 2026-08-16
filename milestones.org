@@ -1702,3 +1702,61 @@ Exit criteria: the opt artifact is written in the same vocabulary as the
 port, with every remaining twin justified by a protocol or spec difference
 rather than by cost — and the four-fork lockstep either gone or explicitly
 priced. Not one instrument weaker than it is today.
+
+* M19 — API safety survey and the fixes it ranks (dmd, 2026-08-16)
+Commissioned mid-session: survey (a) obvious Rust API footguns — where a
+Rust programmer thinks the compiler or build guarantees something it does
+not (hard to use is fine; failing after typecheck but before deploy is
+fine); (b) anywhere we generate the WRONG code, semantically different
+from the equivalent Compact; (c) anything we can encode in the type system
+so users make fewer mistakes. "This is a smart contract programming
+language."
+Survey: notes/api-safety-survey.org. THE METHOD, since it is reusable:
+look where a test on WELL-FORMED INPUT CANNOT SEE THE ERROR. Two seams —
+invariants stated in prose (`PRECONDITION`, "the caller's job"), and
+compactc's own verified lowering rules (notes/builtin-lowering.org §9),
+where anything compactc does automatically and we leave to the author is a
+divergence whatever the differentials say. The prior for this was earned
+the same day: three bugs of exactly that class were found and fixed, all
+green on every differential the day before.
+- [X] The survey itself.
+      (DONE 2026-08-16. FOUR wrong-code findings and four footguns; the
+      headline is that COMPACT EMITS `assert(a >= b)` BEFORE EVERY
+      SUBTRACTION and we emit nothing — an author writes
+      `c.add(a, c.neg(b))`, which is compactc's lowering with the guard
+      removed. The vault's one subtraction carries a hand-written guard
+      whose comment calls it "the most dangerous arithmetic in the
+      contract"; delete those three lines and every test still passes.
+      Field arithmetic has no sign, so an underflow is not −1, it is a
+      value near 2^255 — a coin worth 2^255, or a Uint<64> ledger write of
+      a 255-bit number. This is the balance-underflow bug and our API
+      makes it EASIER to write than Compact does.)
+- [ ] Fix 1 (closes B1 + B2 + most of A2): typed arithmetic carrying
+      Compact's guards. `a.sub(c, b)` emits exactly compactc's
+      `assert(a >= b)` + `neg` + `add` at compactc's width; `BoundedUint`
+      add/mul compute the result's bound at the type level
+      (`BoundedUint<A> + BoundedUint<B> -> BoundedUint<A+B-1>`), which IS
+      Compact's max-tracking rule in const generics, so the downcast is
+      where the range check appears. The raw `c.add(x, c.neg(y))` stays
+      for the ports, which must mirror compactc instruction for
+      instruction, but stops being how a contract spells subtraction.
+- [ ] Fix 2 (closes B3): constrain-on-construction, made free by
+      ir-passes step 5's dedup pass. Turns every "PRECONDITION: already
+      range-constrained" in the Borsh layer into a check — `hash.rs` says
+      the consequence itself, "without that the packing is not injective
+      and the digest binds nothing".
+- [ ] Fix 3 (closes A1): `from_field` renamed to what it is, with a
+      constrained twin taking the short name. It is an unaudited `unsafe`
+      that every other soundness argument leaks through, and it does not
+      look different from the escape hatches that ARE enforced
+      (`disclose`, visibility, `Guarded`). Zero rows for the rename.
+- [ ] Fix 4 (closes B4): the Compact signature types on the
+      contracts-level helpers — `mint_shielded_token` takes a raw `Wire3`
+      where Compact's takes `Uint<64>`. The typed kernel layer already
+      gets this right; this is the older layer catching up.
+- [ ] Fix 5 (closes the sharpest edge of A4): a `SelfAddress` newtype so
+      the `_with` family cannot be handed an arbitrary `B32` — it is
+      memoization with an unchecked key, and a wrong address mints to the
+      wrong contract.
+Exit criteria: every finding either fixed or refused in writing with a
+reason; no invariant left as prose that a pass or a type could hold.

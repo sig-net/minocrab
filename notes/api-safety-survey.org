@@ -1,0 +1,271 @@
+#+title: M19 — API safety survey: footguns, wrong code, and what the types could hold
+
+Commissioned by dmd 2026-08-16, three questions:
+
+1. *Footguns* — where a Rust programmer thinks the compiler or the build
+   guarantees something it does not. (Hard to use is fine; failing after
+   typecheck but before deploy is fine.)
+2. *Wrong code* — where we generate something SEMANTICALLY DIFFERENT from the
+   equivalent Compact.
+3. *Invariants the type system could hold* instead of the programmer.
+
+* 0. METHOD, and why it found things
+
+Two seams, both chosen because they find the errors that TESTING CANNOT.
+
+*(a) Invariants stated in prose.* A doc comment that says =PRECONDITION=,
+"the caller's job", "must already be" is an invariant somebody decided not to
+check. Grep is a complete enumeration of them, and every hit is a candidate
+by construction.
+
+*(b) Compact's own lowering rules, from notes/builtin-lowering.org §9* —
+which were read out of compactc's source and VERIFIED against artifacts. Any
+rule compactc applies automatically and we leave to the author is a semantic
+divergence, whatever the differentials say: a differential runs one honest
+preimage through both sides, and a missing guard is invisible on honest
+input. That is not a hypothesis. THREE bugs of exactly this class were found
+and fixed in the session that commissioned this survey — guarded witnesses
+consuming the private transcript on the untaken branch, unguarded assertions
+firing on the branch not taken, and a literal silently outside its operand's
+bound. All three were green on every differential the day before.
+
+*The prior this establishes:* look where a test on well-formed input cannot
+see the error. Everything below is found that way.
+
+* 1. WRONG CODE (question 2), most severe first
+
+** B1. SUBTRACTION HAS NO UNDERFLOW GUARD, AND COMPACT'S DOES — /the finding/
+
+Compact, verified (=infer-types.ss=, quoted in builtin-lowering.org §9):
+
+#+begin_quote
+=-=: inserts an explicit guard *before* the subtraction:
+=assert(a >= b, "result of subtraction would be negative")= with
+bits = max(1, intlen(max(maxa,maxb))), then field subtraction lowered as
+=neg(b)= + =add(a, neg)=.
+#+end_quote
+
+MinoCrab: there is no subtraction. An author writes =c.add(a, c.neg(b))=,
+which is compactc's lowering *with the guard removed*. Nothing emits the
+assert and nothing asks for it.
+
+This is not theoretical. =erc20_vault_modern= line 1204-1219 is the vault's
+one subtraction, and it carries a HAND-WRITTEN guard with a comment that
+names the risk:
+
+#+begin_src rust
+// The subtraction's guard, and the most dangerous arithmetic in the
+// contract: the attested spend cannot exceed what was surrendered.
+c.assert(amount_in_u.le(amount_in_max_u).message("Attested amountIn exceeds amountInMaximum"));
+let neg_in = c.neg(amount_in);
+let change = c.add(amount_in_max, neg_in);
+#+end_src
+
+The comment is correct and the code is correct. The problem is that *both are
+optional*. Delete the three assert lines and every test still passes: the
+differentials run honest preimages, the spec harness generates
+=amount_in <= amount_in_max= because that is what the spec says, and the
+adversarial sweeps were written from the same understanding.
+
+WHAT AN UNDERFLOW PRODUCES, since "negative" is the wrong intuition: field
+arithmetic has no sign. =a - b= for =a < b= is =a - b + p=, a value near
+2^255. Not −1. So downstream it is not a small wrong number, it is a coin
+worth ~2^255, or a =Uint<64>= ledger write of a 255-bit value, or a
+=less_than(_, _, 64)= over a 64-bit window of a 255-bit number.
+
+*This is the balance-underflow bug, and our API makes it easier to write than
+Compact does.* Compact's author cannot forget; ours must remember.
+
+FIX (question 3): typed subtraction that emits the guard —
+=a.sub(c, b) -> Uint<BITS>= on the typed leaves, emitting exactly compactc's
+=assert(a >= b)= + =neg= + =add= at compactc's width. The raw
+=c.add(x, c.neg(y))= stays for the ports (which must mirror compactc
+instruction for instruction) but stops being the way a contract spells
+subtraction. Cost: identical to compactc's, because it IS compactc's.
+
+** B2. NO MAX TRACKING, SO NO DOWNCAST CHECK ON =+= AND =*=
+
+Compact, same source:
+
+#+begin_quote
+=+=, =*=: plain field =add= / =mul=, result type =Uint<maxa+maxb>= resp.
+=Uint<maxa·maxb>= … *no overflow check at the op itself*; the check happens
+only when the value is later downcast (assignment to a declared =Uint<N>=
+inserts =downcast-unsigned= → a range constraint).
+#+end_quote
+
+So Compact's safety on =+= is entirely in the DOWNCAST. Its types carry max
+values and propagate them, and the moment a widened value is stored into a
+declared type the constraint appears.
+
+MinoCrab tracks nothing: =c.add= returns =Wire3<FieldT>=, which has no max
+and no width. Re-entering the typed world is =Uint::<64>::from_field(sum)= —
+an unchecked assertion (see A1). *The downcast that is Compact's entire
+overflow story does not exist here.*
+
+=Uint<BITS>= is not the same as Compact's =Uint<maxa+maxb>= tracking, so this
+is not a like-for-like fix; the honest version is a =BoundedUint=-style max
+carried through arithmetic, which is what =BoundedUint<BOUND>= already is.
+=BoundedUint= arithmetic that computes the result's bound at the type level
+(=BoundedUint<A> + BoundedUint<B> -> BoundedUint<A+B-1>=) is Compact's rule
+exactly, in const generics, and the downcast is then =to_uint= /
+=constrain_input=, which already range-checks.
+
+** B3. THE BORSH LAYER'S INJECTIVITY IS A DOC COMMENT
+
+Three sites (=Serializer=, =BorshReader::take=, =hash::persistent_hash=) all
+say the same thing:
+
+#+begin_quote
+PRECONDITION: every pushed wire must already be constrained to its byte
+length … the limb packing is only injective for in-range segments.
+#+end_quote
+
+=hash.rs= states the consequence itself: *"Without that the packing is not
+injective and the digest binds nothing."*
+
+A digest that binds nothing is a signature that verifies over a preimage the
+prover chose. This is the most severe consequence in the survey; it is third
+only because reaching it requires a caller to push an unconstrained wire,
+where B1 requires a caller to forget a line.
+
+Not a divergence from Compact — the note records that compactc's byte-wise
+form has the same property (an explode chain leaves its top byte
+unconstrained). But "no worse than Compact" is the wrong bar for a
+precondition that nothing checks and whose violation is invisible.
+
+FIX: this is exactly what notes/ir-passes.org §2(iii) (constraint dedup) was
+designed to enable — with a deduplicating pass, the gadget can constrain its
+own inputs and the redundant constraint costs nothing. The precondition
+becomes a check. §0(b) of that note already measured the price of the
+alternative: a repeated =constrain_bits= is 2 rows, the most expensive
+redundancy measured, which is why the comments exist.
+
+** B4. STDLIB HELPERS TAKING RAW =Wire3= WHERE COMPACT SAYS =Uint<64>=
+
+=common::mint_shielded_token(c, domain_sep, value: Wire3<FieldT, Public>, …)=
+against Compact's =mintShieldedToken(domainSep, value: Uint<64>, …)=. The
+Compact signature rejects a 128-bit value at the call site (the caller must
+write =amount as Uint<64>=, whose downcast range-checks); ours accepts any
+field element.
+
+The vault is safe because it asserts =amount <= u64::MAX= by hand, mirroring
+the Compact source, which asserts it too. But the Compact source's assert is
+a nice error message on top of a cast that would fail anyway; ours is the
+only thing standing there.
+
+Note the typed kernel layer gets this RIGHT — =kernel::mint_shielded= takes
+=Uint<64, Public>=. The raw-wire signatures are the contracts-level helpers
+in =minocrab-contracts::common=, i.e. the older layer. Fix is mechanical:
+give them the types the Compact signatures have.
+
+* 2. FOOTGUNS (question 1)
+
+** A1. =from_field= IS AN UNAUDITED =unsafe=, AND IT IS THE HOLE EVERY OTHER
+   SOUNDNESS ARGUMENT LEAKS THROUGH
+
+Every typed leaf has one:
+
+#+begin_src rust
+Uint::<8, Private>::from_field(w)   // "wrap a wire already known to hold a Uint<8>"
+#+end_src
+
+It emits nothing. It is a *claim*, and the claim is what
+=CheckOperand::BITS=, =CheckOperand::MAX= (added this session), the
+comparison widths, =widen='s soundness argument and the Borsh packing all
+rest on.
+
+A Rust programmer reads =Uint<8>= as a type with an invariant — that is what
+the newtype pattern MEANS in Rust, and this codebase has trained them to
+believe it, because `disclose` really is enforced, visibility really is
+enforced, and `Guarded` really is enforced. `from_field` is the one place
+where a type says something the build does not check, and it does not look
+different from the ones that do.
+
+Usage: 80 sites in minocrab-std, 16 in contracts. Most are safe (the value
+came from a constrained argument or a checked instruction) — but "most" is
+established by reading, not by anything mechanical.
+
+WHY IT CANNOT SIMPLY BE DELETED: it is the constructor the =CircuitArg=
+machinery uses on the way in, before =constrain_input= runs. The obligation
+is real and the escape hatch has to exist.
+
+FIX, and the precedent is in this repo: *make it look like what it is.* The
+disclosure escape hatch is =disclose(w, label)= — greppable, labelled,
+carried into a report, and enforced by generated tests. =from_field= should
+be the same shape: named so it reads as an assertion
+(=from_field_unchecked=), and where a constrained twin is possible
+(=from_field_constrained(c, w)= emitting the range check) that twin should be
+the short name. Zero rows for the rename; the constrained twin costs exactly
+the constraint it emits, which is the point.
+
+** A2. =.field()= DISCARDS THE OBLIGATION SILENTLY, AND IT IS EVERYWHERE
+
+174 calls in the contracts crate. Every one converts a leaf whose type
+carries a range into a raw wire that does not. Nothing marks the loss, and
+the round trip =x.field()= → arithmetic → =from_field= is precisely the B1/B2
+path.
+
+This is not an argument for =Deref= (see the Deref survey the same session:
+=Deref= would make the loss INVISIBLE rather than merely unmarked). It is an
+argument for typed arithmetic — if =a.sub(c, b)= and =a.add(c, b)= exist,
+most of the 174 disappear and the ones that remain are genuinely leaving the
+typed world.
+
+** A3. WHAT THE SESSION ALREADY CLOSED, recorded so the pattern is visible
+
+Three, all found in one day, all invisible to every differential:
+
+- *guarded witnesses* consumed the private transcript on the branch NOT
+  taken (fixed: the ambient guard reaches witnesses);
+- *assertions inside a branch* were the caller's job, recorded only in a doc
+  comment (fixed: an assert inside a scope lowers as
+  =assert(select(guard, x, 1))=);
+- *guarded reads* handed back the type's default with nothing saying so
+  (fixed: =Guarded<T>= — 19 sites had to say =.or_default()=);
+- *a literal outside its operand's bound* made a comparison constant (fixed:
+  =CheckOperand::MAX=).
+
+Every one of these was a doc comment before it was a check. That is the
+pattern, and §0(a) is how to keep finding them.
+
+** A4. SMALLER, LISTED WITHOUT ARGUMENT
+
+- =c.assert(w)= on a raw wire: Compact's =assert= takes a =Boolean=. Ours
+  takes any wire. A non-boolean truthy value passes ours.
+- The =_with= family (=mint_shielded_token_to_key_with=, =burn_coin_with=,
+  =receive_shielded_with=) takes a =me: B32<Public>= the caller promises is
+  =kernel.self()=. Nothing checks it is. Passing the WRONG address mints to
+  the wrong contract. (M18's note calls this memoization; it is memoization
+  with an unchecked key.)
+- =LedgerCell<T>::write= of a value wider than =T='s atoms: the atom list
+  comes from the type (good) but the VALUE is not re-checked against it.
+- =Circuit3::copy= is documented as "not a way to make a value cheaper" —
+  which is a hint that somebody will try.
+
+* 3. WHAT THE TYPES COULD HOLD (question 3), ranked by value
+
+1. *Typed arithmetic with Compact's guards.* =sub= emits the underflow
+   assert; =add=/=mul= on =BoundedUint= compute the result's bound at the
+   type level, so the downcast is where the range check appears — Compact's
+   rule, in const generics. Closes B1 and B2 and most of A2.
+2. *Constrain-on-construction, with a dedup pass making it free.* Closes B3,
+   and turns every "PRECONDITION" comment in the Borsh layer into a check.
+   This is ir-passes step 5, already designed and measured.
+3. *=from_field= renamed to what it is*, with a constrained twin taking the
+   short name. Closes A1 by making it visible; zero rows.
+4. *The Compact signature types on the contracts-level helpers.* Closes B4,
+   mechanical.
+5. *A =SelfAddress= newtype* so =_with= cannot be handed an arbitrary
+   =B32=. Closes the sharpest edge of A4.
+
+* 4. WHAT THIS SURVEY DOES NOT COVER
+
+Stated so the gaps are known rather than assumed:
+
+- The =minocrab-ir= / ZKIR boundary. Everything here is above it.
+- Cross-contract call argument marshalling, beyond noting that =CallArg= and
+  =CircuitArg= share their constraint path (which is the good case).
+- The macros' generated code, which the thinness tests cover for SHAPE but
+  not for these properties.
+- Anything about the proving system.
