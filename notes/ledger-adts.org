@@ -1,0 +1,512 @@
+#+title: M16 — Ledger ADTs: List, MerkleTree, HistoricMerkleTree, full Set
+
+Design of record for M16. Written before any code, per the milestone.
+Everything below that is a fact about compactc or about Midnight's ledger was
+read off a compiled artifact or upstream source, and the artifact is named.
+
+The probe this note is built on is the M16 fixture itself —
+=crates/minocrab-contracts/tests/fixtures/adts/adts.compact=, thirty-one
+circuits, one per ledger-ADT operation Compact exposes, compiled with the
+PINNED compactc under =--feature-zkir-v3=. Every instruction stream quoted
+below is =out/zkir/<circuit>.zkir= from that build, so nothing here rests on
+a probe that was thrown away.
+
+* 0. THE FINDINGS
+
+** (a) There is no new lowering machinery. There are new OPCODES.
+
+M16 reads as four ADTs' worth of new work. It is not: every one of the
+thirty-one operations is the same three-part shape the crate already emits —
+descend to the field, do the thing, write back (or =popeq= the witnessed
+read) — and the only genuinely new capability is the set of Impact opcodes
+those shapes use. Concretely, =minocrab-ledger= today emits nine distinct
+opcodes; M16 needs SEVEN more, all of which exist in upstream's =Op= and all
+of which =ImpactOp::constant= can already encode:
+
+| opcode | =Op= variant   | first used by                       |
+|--------+----------------+-------------------------------------|
+| =0x03= | =Op::Type=     | =List.isEmpty=, =List.head=         |
+| =0x08= | =Op::Neg=      | =MerkleTree.isFull=                 |
+| =0x0a= | =Op::Root=     | =MerkleTree.checkRoot=, =hmt.insert*= |
+| =0x0b= | =Op::Pop=      | =List.head=, =mt.insertIndex=       |
+| =0x12= | =Op::Branch=   | =List.head=, =mt.insertIndex=       |
+| =0x13= | =Op::Jmp=      | =List.head=, =mt.insertIndex=       |
+| =0x16= | =Op::Concat=   | =List.head=                         |
+
+What is NOT new: =Op::Size=, =Op::Member=, =Op::Rem=, =Op::Lt=, =Op::Eq=,
+=Op::Addi=, =Op::Dup=, =Op::Swap=, =Op::Ins=, =Op::Idx=, =Op::Push=,
+=Op::Popeq= are all already emitted by the Cell/Counter/Map ops.
+
+** (b) The ADTs are BRANCHY, and the branches are in the TRANSCRIPT, not the circuit
+
+=List.head= and the four =insert*Index*= operations contain
+=branch= / =jmp= / =pop=. That is Impact-VM control flow inside a single
+ledger operation, and it is worth being explicit about what it is not: it is
+NOT circuit control flow. Every one of those instructions is a CONSTANT
+=impact= instruction with a constant guard; the branch is taken by the
+verifier replaying the transcript, and the circuit sees a fixed instruction
+sequence with a fixed cost. So the guard machinery ([[file:../crates/minocrab-ledger/src/lib.rs][=emit=]], M9 phase 8)
+composes with them unchanged: a =List.head= inside a conditional is the same
+seventeen instructions under a wire guard.
+
+This is why =head= can return a =Maybe<T>= without the circuit ever
+branching — the =popeq= at the end embeds a =Maybe<T>='s worth of witnessed
+limbs, and which of the two Impact paths produced them is the transcript's
+business.
+
+** (c) A "default value" is all-zero limbs, always
+
+Two operations need the default of the element type: =head= (its =None=
+constant) and =insertIndexDefault= (it hashes the default leaf). compactc's
+=VMnull= reduction is
+=(append (make-list count 0) (map assemble-alignment-atom …))= —
+[[file:../corpus/src/compact/compiler/zkir-v3-passes/reduce-to-zkir.ss][reduce-to-zkir.ss:350-355]] — where =count= is the LIMB count. So the
+default is zeros, one per FAB limb, for every type: no per-type default
+table is needed, and =LedgerRepr::atoms()= already determines it. (Same fact
+M15 recorded for =default<Opaque<..>>=, now known to be general.)
+
+Confirmed on the wire: =mtInsertIndexDefault='s leaf hash is
+=persistent_hash([bytes<6>, bytes<32>], ["0x6d646e3a6c68", "0x00", "0x00"])= —
+two zero limbs for the =Bytes<32>= element.
+
+** (d) =resetToDefault= at a top-level field is =cell_write= with an ADT constant
+
+The vm-code for every =resetToDefault= is
+
+: idx  [pushPath #t] [path (suppress-null (reverse (cdr (reverse f))))]
+: push [storage #f]  [value (cell (car (reverse f)))]
+: push [storage #t]  [value <the ADT's initial-value>]
+: ins  [cached #f]   [n 1]
+: ins  [cached #t]   [n (suppress-zero (sub1 (length f)))]
+
+and for a TOP-LEVEL field =f= is a one-element path, so the leading =idx=
+gets =(suppress-null '())= and the trailing =insc= gets =(suppress-zero 0)=.
+A suppressed operand makes =assemble1= return the empty operand list, and
+[[file:../corpus/src/compact/compiler/zkir-v3-passes/reduce-to-zkir.ss][=assemble= drops empty ones]] — so both instructions VANISH. What is left is
+=push key; pushs <initial value>; ins 1=, which is exactly the shape
+=cell_write= already emits. Verified: =setReset= is three instructions,
+
+: 0x10 0x01 0x01 0x01 0x01      push (cell bytes<1> 0x01)     ← the field key
+: 0x11 0x02                     pushs (map, size 0)
+: 0x91                          ins 1
+
+This is the same "top-level Cell writes lose their idxp/insc wrapper"
+suppression the crate's module docs already record; M16 is the first time it
+applies to something other than a Cell.
+
+** (e) The corpus can only pay for ONE of the four ADTs
+
+The fairness count in the milestone (25 =List=, 15 =MerkleTree=, 7
+=HistoricMerkleTree=, 41 =Set= declarations) is a count over ALL 673 corpus
+sources. Under the M14/M15 filter — our IR is v3, and only the three sig-net
+sources carry =--feature-zkir-v3= — it collapses to:
+
+| ADT                  | v3 declarations | v3 operations exercised    |
+|----------------------+-----------------+----------------------------|
+| =Set<Bytes<32>>=     | 4 fields        | =insert=, =member=         |
+| =List<Bytes<32>>=    | 2 fields        | =pushFront=                |
+| =MerkleTree=         | 0               | —                          |
+| =HistoricMerkleTree= | 0               | —                          |
+
+So =List.pushFront= is the one operation with REAL CORPUS PROVENANCE, and it
+is already in a contract we have ported the neighbourhood of:
+=test-caller-contract='s =submitSignatureRequest=,
+=submitIsEvenRequest= and =submitCheckAndDoubleRequest= each end with
+=requestLog.pushFront(requestId)=. Its instruction stream is
+[[file:../corpus/zkir/signet-midnight-integration/packages/test-caller-contract/src/test-caller-contract/zkir/submitSignatureRequest.zkir][submitSignatureRequest.zkir:43-55]], and it is BYTE-FOR-BYTE the
+=listPushFront= of our fixture with the field index changed — which is the
+check that says the fixture route is not measuring something narrower than
+the corpus does.
+
+Everything else goes through the fixture, for the reason M14 and M15 both
+recorded, and the fixture is written in the same style.
+
+* 1. The vm-code, per ADT
+
+Source: [[file:../corpus/src/compact/compiler/midnight-ledger.ss][midnight-ledger.ss]] =declare-ledger-adt= forms; assembled by
+=zkir-v3-passes/reduce-to-zkir.ss:484-633=. =f= is the field path — one
+=bytes<1>= key for a top-level field, which is the only case we support (as
+today). Instruction streams are the fixture's, field indices are the
+fixture's (=s=1=, =l=2=, =m=3=, =mt=4=, =hmt=5=).
+
+** Set — a Map with =Null= values
+
+| method | vm-code | new? |
+|--------+---------+------|
+| =insert(e)=   | =idxp f; push e; pushs null; ins 1; insc 1= | have it |
+| =member(e)=   | =dup 0; idx f; push e; member; popeqc=      | have it |
+| =remove(e)=   | =idxp f; push e; rem; insc 1=               | = =map_remove= |
+| =size()=      | =dup 0; idx f; size; popeqc=                | = =map_size= |
+| =isEmpty()=   | =dup 0; idx f; size; push 0u64; eq; popeqc= | = =map_is_empty= |
+| =resetToDefault()= | =push key; pushs (map); ins 1=        | NEW: =pushs (map)= |
+
+All four missing methods are byte-identical to the =Map= ones — the fixture
+proves it, since =setRemove= is =map_remove='s stream and =setSize= is
+=map_size='s. So =LedgerSet= gains them by DELEGATING, exactly as its
+=member= already delegates, and no lowering is invented. The one genuinely
+new thing is pushing a =StateValue::Map= as a constant, which is one
+=ImpactOp::constant(&Op::Push { storage: true, value: StateValue::Map(..) })=.
+
+** Map — the two methods =LedgerMap= is missing
+
+Not in M16's title, but the fixture found them and they are one line each:
+
+| =insertDefault(k)=   | =idxp f; push k; pushs (cell 0…0); ins 1; insc 1= |
+| =resetToDefault()=   | =push key; pushs (map); ins 1=                    |
+
+=mapInsertDefault= confirms finding (c): the pushed value is the value type's
+zero limbs under its own alignment (=0x11 0x01 0x01 0x08 0x00= for
+=Uint<64>=).
+
+** List — an =Array[3]= of ={head, tail, length}=
+
+Initial value: =[null, null, cell 0u64]=. Position 0 is the head CELL,
+position 1 the tail LIST, position 2 the =Uint<64>= length. That layout is
+the whole explanation of the vm-code:
+
+| method | vm-code |
+|--------+---------|
+| =isEmpty()= | =dup 0; idx f; idx [1]; type; push 1u8; eq; popeqc= |
+| =length()=  | =dup 0; idx f; idx [2]; popeqc= |
+| =popFront()= | =idxp f; idx [1]; insc 1= |
+| =pushFront(v)= | 13 instructions, below |
+| =head()= | 15 instructions, below |
+| =resetToDefault()= | =push key; pushs [null,null,cell 0u64]; ins 1= |
+
+=isEmpty= tests the TAIL's =type= against =1=, and the number is worth
+pinning because upstream's own source comment gets it wrong.
+=Op::Type='s result is NOT the =field_repr= tag: =onchain-vm/src/vm.rs:414-425= returns
+=Cell → 0=, =Null → 1=, =Map → 2=, =Array → 3 + 8n=,
+=BoundedMerkleTree → 4 + 8(h−1)= — a DIFFERENT numbering from
+=StateValue::field_repr='s =Null → 0, Cell → 1=. So =type == 1= means "is
+null", and =isEmpty= reads as it should: an empty list's tail is =null=, a
+non-empty one's is an =Array=.
+
+The same number appears in =head=, where midnight-ledger.ss:861 carries
+@tkerber's comment "Since '1' encodes a cell … which is the opposite of what
+I'd expect". It does not encode a cell; the comment mis-reads the same table.
+=head='s branch is taken when the head IS null, and =Op::Branch= jumps on a
+NON-EMPTY (truthy) cell (=onchain-vm/src/vm.rs:1015-1021=) — so the taken path is the =None=
+one, which is exactly what it should be.
+
+=pushFront(v)= — =listPushFront.zkir=, and the shape with corpus provenance:
+
+: 0x70 01 01 02     idxp [field]                      ; [.., path, list]
+: 0x30              dup 0
+: 0x50 01 01 02     idx [2]                           ; the length
+: 0x0e 01           addi 1
+: 0x11 33 …         pushs [cell v, null, null]        ; the new node
+: 0x40              swap 0
+: 0x10 01 01 01 02  push (cell 2u8)
+: 0x40              swap 0
+: 0xa1              insc 1                            ; node[2] = len+1
+: 0x40              swap 0
+: 0x10 01 01 01 01  push (cell 1u8)
+: 0x40              swap 0
+: 0xa2              insc 2                            ; node[1] = old list
+
+The =pushs= is an =Array= of three =StateValue=s whose FIRST is a =Cell=
+carrying CIRCUIT WIRES. That is the one place in M16 where a pushed
+=StateValue= is not fully constant, so it cannot go through
+=ImpactOp::constant= — see §2.
+
+=head()= — =listHead.zkir=, the branchy one:
+
+: dup 0; idx [field]; idx [0]      ; the head cell (or null)
+: dup 0; type; push 1u8; eq
+: branch 4
+:   push 1u8; swap 0; concat 39    ; Some: (1, head)
+:   jmp 2
+:   pop; push (cell [0u8, 0…0])    ; None: (0, default)
+: popeqc <Maybe<T> alignment>
+
+=concat 39= is =2 + rt-max-sizeof(Bytes<32>)=; =rt-max-sizeof= is a
+serialized-size bound, [[file:../corpus/src/compact/compiler/zkir-v3-passes/reduce-to-zkir.ss][reduce-to-zkir.ss:356-375]]:
+
+: max_sizeof(T) = if T has no atoms { 2 }
+:                 else 1 + ceil(bitlen(#atoms)/8)
+:                      + Σ_atoms { bytes<0> → 3
+:                                ; bytes<n> → 2 + n + ceil(bitlen(n)/8)
+:                                ; field/compress → 34 }
+
+For =Bytes<32>=: =1+1 + (2+32+1) = 37=, and =2 + 37 = 39 = 0x27=. ✓
+
+The =None= constant is =rt-aligned-concat (align 0 1) (rt-null T)= — a
+two-atom =[bytes<1>, bytes<32>]= cell with three zero limbs, which is finding
+(c) again.
+
+** MerkleTree — an =Array[2]= of ={tree, next-index}=
+
+Initial value: =[merkle-tree<DEPTH> (), cell 0u64]=.
+
+| method | vm-code |
+|--------+---------|
+| =isFull()=    | =dup 0; idx f; idx [1]; push (2^DEPTH)u64; lt; neg; popeqc= |
+| =checkRoot(r)= | =dup 0; idx f; idx [0]; root; push (cell field r); eq; popeqc= |
+| =insert(item)= | =idxp f; idxp [0]; dup 2; idx [1]; pushs (cell leafhash); ins 1; insc 1; idxp [1]; addi 1; insc 2= |
+| =insertHash(h)= | =insert= with =h= in place of =leafhash(item)= |
+| =insertIndex(item, i)= | 18 instructions, below |
+| =insertHashIndex(h, i)= | =insertIndex= with =h= for =leafhash(item)= |
+| =insertIndexDefault(i)= | =insertIndex= with =leafhash(default)= |
+| =resetToDefault()= | =push key; pushs [merkle-tree<DEPTH>(), cell 0u64]; ins 1= |
+
+=insertIndex= is =insert= with the next-index bumped to =max(next, i+1)=,
+and THAT is where the =branch/jmp= is:
+
+: idxp f; idxp [0]; push i; pushs (cell leafhash); ins 2
+: idxp [1]; push i; addi 1; dup 1; dup 1; lt
+: branch 2; pop; jmp 2; swap 0; pop
+: ins 1; insc 1
+
+Two facts on the wire worth pinning. =isFull= pushes the bound as a
+=bytes<8>= immediate (=0x0004= — the LE byte string of 1024, which is how
+the ZKIR printer renders a =bytes<n>= limb); and the leaf-hash limbs are
+pushed HIGH FIRST (=%hash.4 %hash.3= where =bytes32_into_low_high= produced
+=(low, high) = (%hash.3, %hash.4)=), i.e. the ordinary =B32= =[hi, lo]= slot
+order the crate already uses.
+
+** HistoricMerkleTree — an =Array[3]= of ={tree, next-index, history}=
+
+Every method is the =MerkleTree= one with a HISTORY APPEND spliced in:
+after the tree mutation, descend to position 2 and insert the new root as a
+=Map= key with a =null= value.
+
+: idxp [2]; dup 2; idx [0]; root; pushs null; ins 1
+
+and =checkRoot= becomes a =member= on that map rather than an =eq= on the
+current root (=hmtCheckRoot=: =idx [2]; push r; member; popeqc=).
+
+Two operations have no =MerkleTree= twin:
+
+- =resetHistory()= — =idxp f; push 2u8; pushs (map); dup 2; idx [0]; root;
+  pushs null; insc 3=. Replaces the history with a one-entry map holding the
+  CURRENT root.
+- =resetToDefault()= — the initial value is =[merkle-tree(), cell 0u64,
+  map ()]=, and the reset then re-seeds the history with the empty tree's
+  root, so unlike every other =resetToDefault= it is NOT three instructions:
+  =push key; pushs [tree, 0, map]; idxp [2]; dup 2; idx [0]; root; pushs
+  null; insc 2; ins 1=.
+
+* 2. What the emission layer needs
+
+Three additions to =minocrab-ledger=, and they are the whole of the new
+machinery.
+
+** (i) =push= of a non-Cell =StateValue=
+
+Today =push_cell(storage, value)= is the only push. M16 needs =Null=, =Map=,
+=Array=, and =BoundedMerkleTree= — all of which =StateValue::field_repr=
+(=onchain-state/src/state.rs:171-205=) encodes as one tag element followed by the
+children, with the tag packing the size:
+
+| =Null= | =0= | =Map(n)= | =2 \vert n<<4= | =Array(n)= | =3 \vert n<<4= | =BoundedMerkleTree(h,n)= | =4 \vert h<<4 \vert n<<12= |
+
+All four are FULLY CONSTANT except one: =List.pushFront='s
+=[cell v, null, null]=, whose first child carries wires. So the design is
+
+- constant pushes go through =ImpactOp::constant(&Op::Push { .. })= with a
+  real =StateValue= — never a hand-written tag — which keeps the crate's
+  standing rule ("fully-constant ops go through the real =Op= type");
+- the ONE mixed push gets a =push_array= helper taking a small
+  =LedgerStateValue= enum (=Null= / =Cell(LedgerValue)=), whose constant
+  arms are unit-tested to agree with =StateValue::field_repr= element for
+  element. That is the same "reproduce the layout with wires spliced in"
+  contract =push_cell= and =popeq= already work under.
+
+** (ii) =idx= by a positional key
+
+Every ADT descends into its =Array= by =(align i 1)= — a =bytes<1>= key,
+which is exactly what =field_key(i)= already builds. So =idx_field= /
+=idxp_field= generalize to =(cached, push_path, index)= rather than needing
+new encoders; the existing two become the =(false,false,·)= and
+=(false,true,·)= cases and keep their names.
+
+** (iii) The leaf hash
+
+=rt-leaf-hash(v) = persistentHash([bytes<6>] ++ atoms(v), ["mdn:lh"] ++
+limbs(v))=, then =bytes32_into_low_high=, pushed =[hi, lo]=. That is
+=hash::persistent_hash_compact= over a =LeafPreimage=, and
+=minocrab-std/src/merkle.rs= already spells the same preimage for the PATH
+circuits — so this is the fourth caller of an existing gadget, not a new one.
+It belongs in =minocrab-std= (it emits circuit instructions, and
+=minocrab-ledger= emits Impact instructions), which is where
+=LedgerMerkleTree= lives anyway.
+
+* 3. The Rust API
+
+Follows M9 phase 7's conventions exactly — a =const=-constructible handle
+carrying a =u8= index, Compact's method names, =c= and the guard visible in
+every signature, one Impact operation per method, plain name = straight-line
+and =_under= = guarded.
+
+#+begin_src rust
+pub struct LedgerList<T>                                  { index: u8, .. }
+pub struct LedgerMerkleTree<const DEPTH: u8, T>           { index: u8, .. }
+pub struct LedgerHistoricMerkleTree<const DEPTH: u8, T>   { index: u8, .. }
+#+end_src
+
+=#[derive(Ledger)]= needs no change: it emits =<#ty>::at(i)=, so
+=mt: LedgerMerkleTree<10, B32<Public>>= just works.
+
+Three decisions worth recording.
+
+** =DEPTH= is a =const= parameter with a const assert
+
+Compact's rule is =2 <= nat <= 32=; upstream's =BoundedMerkleTree= carries
+the height in its =field_repr= tag, so a wrong depth is a wrong transcript
+rather than a runtime error. Per the project's hard rule the rejection is an
+inline-const assert (E0080) — the bound is const-known, and there is no
+missing-impl or non-unifying-types spelling that expresses "2..=32" without
+inventing 31 marker types.
+
+** =LedgerSet= BECOMES M16's Set
+
+The milestone's head-start bullet says so, and it is the right call: =remove=
+/ =size= / =isEmpty= are the =Map= ops, so they are three delegating
+one-liners in the type that already exists rather than a second =Set=.
+
+** =MerkleTreeDigest= is a new leaf
+
+=checkRoot= takes one, and its ABI is a bare =field= atom with NO constraint
+(=mtCheckRoot=: =push (cell field %r.0)=, and =%r.0= has no
+=constrain_bits=). =Prim::Field= has existed in the ABI table since M12 and,
+like =Prim::Opaque= before M15, has never been reachable from a typed leaf.
+M16 reaches it, with the same shape M15 gave =Opaque=: a one-wire newtype
+whose =CircuitAbi::prims= is =[Prim::Field]=.
+
+That is deliberately a NEW type rather than exposing a bare =Field= leaf: a
+digest is the only unconstrained-field value a contract has a reason to
+accept from outside, and naming it keeps "an unconstrained field argument"
+from becoming an idiom.
+
+* 4. Staging
+
+1. =minocrab-ledger=: the seven opcodes, the three additions of §2, and the
+   thirty-one op sequences, each unit-tested against =Op::field_repr=.
+2. =minocrab-std=: =MerkleTreeDigest=, the leaf hash, =LedgerList=,
+   =LedgerMerkleTree=, =LedgerHistoricMerkleTree=, =LedgerSet= completed,
+   =LedgerMap= completed.
+3. The fixture differential — all thirty-one circuits, serialized ZKIR
+   against compactc's, the M15 bar (equal up to identifier renaming).
+4. The corpus differential for =pushFront= per finding (e).
+5. Zero-movement check: =tests/zkir_dump.rs= over all pre-existing circuits.
+
+* 5. AS BUILT
+
+Everything in §§1–4 landed as designed. What follows is what the code says
+that the design did not, in the order a reader would meet it.
+
+** The emission layer is 3 helpers and 14 op sequences
+
+=minocrab-ledger= gained =idx_one= (the general one-key =idx=, with
+=idx_field= / =idxp_field= rewritten as its two cases), =push_array= +
+=LedgerElem= (the ONE mixed =StateValue= push), and =default_value= (finding
+(c) as a function). Every other constant push goes through
+=ImpactOp::constant= with a real =StateValue= — =StateValue::Map=,
+=StateValue::Array=, =MerkleTree::blank(depth)= — so the crate's rule that
+fully-constant ops are encoded by upstream's own =field_repr= holds without
+exception, and =push_array_matches_field_repr= pins that the hand-laid
+encoder agrees with it on the constant case.
+
+Two op sequences serve five methods each, and that is a FACT rather than a
+saving: =mtInsert= and =mtInsertHash= are identical instruction for
+instruction, as are the three =insertIndex*=. So =merkle_tree_insert(index,
+leaf)= and =merkle_tree_insert_index(index, leaf, at)= are the whole
+MerkleTree write layer, and which leaf is passed — hashed from the item,
+handed over, or hashed from the type's default — is the std layer's business.
+
+** THE BUG THE FIXTURE FOUND: the two closing =ins= are not shared
+
+=history_append= was first written to take the closing =insc= depth as an
+argument, on the reading that every =HistoricMerkleTree= mutation ends the
+same way. It does not: an =insert*= ends =ins 1; insc 2= and
+=resetToDefault= ends =insc 2; ins 1= (midnight-ledger.ss:1183-1190 against
+:1211-1228). Only =hmtReset= failed, by one instruction, and only because the
+differential is instruction-for-instruction — a call-compatibility criterion
+would not have seen it. The closing pair is now the caller's, with the
+asymmetry recorded at =history_append=.
+
+** THE ONE API CHANGE OUTSIDE M16's SCOPE: =AnyWire3= carries an =Arg=
+
+=rt-leaf-hash='s preimage begins with the constant =0x6d646e3a6c68=
+("mdn:lh"), and =insertIndexDefault='s continues with the default's zeros.
+compactc puts all of them INLINE in the =persistent_hash= operand list; we
+named each with a =copy=, which is the M9-phase-7/M15 named-immediate gap
+again — zero rows, but visible to an instruction-for-instruction differential.
+
+Rather than record a third deviation, =AnyWire3<V>= now holds an =Arg= rather
+than a =Val=, and =AnyWire3::immediate= is the constant arm. That is M9 phase
+8's rule ("every operand position takes a wire or an inline immediate")
+reaching the last operand position that lacked it, and it costs nothing: the
+field was private, =Wire3::erase= is the only other constructor, and all 112
+pre-existing circuits are byte-identical after the change.
+
+So M16 closes the named-immediate gap for HASH operands. The one M15 recorded
+— a ledger VALUE position, which still goes through =LedgerRepr::push_limbs=
+— is untouched and still dmd's call.
+
+** =MerkleTreeDigest=, and what compactc publishes it as
+
+The leaf is as designed: one =field= atom, =Prim::Field=, no constraint. What
+the fixture added is where that is CHECKED — =contract-info.json= publishes
+it as =Struct { name: "MerkleTreeDigest", elements: [field: Field] }=, which
+=CompactType::flatten= already handled, so the ABI reader needed no change and
+=compactc_s_abi_agrees_with_the_leaves= says so from the artifact rather than
+from a doc comment. Same test covers =List.head='s result, published as
+=Struct { name: "Maybe", … }=, against our =Maybe<T, Public>=.
+
+=Maybe<T, Public>= gained a =CircuitOut= impl (the tag's slot, then the
+payload's) — it was declarable as an argument and as a ledger value but not
+RETURNABLE, and =listHead= is the first circuit that returns one.
+
+** The result, and what it cost
+
+Serialized ZKIR EQUAL to compactc's up to identifier renaming for ALL 31
+circuits — no substitution, unlike M14's and M15's, because the two gaps that
+forced those (the named immediate in a hash operand; nothing else) were closed
+rather than recorded. Plus:
+
+- =push_front_matches_the_corpus=: the thirteen Impact instructions
+  =test-caller-contract='s =submitSignatureRequest= emits for
+  =requestLog.pushFront(requestId)=, against ours, differing only in the field
+  key and the wire carrying the value. This is the corpus provenance the
+  fixture route costs, recovered where the corpus has coverage.
+- =the_tree_reads_are_accepted_by_upstream=: a preimage built from the
+  REFERENCE Impact program (ops written out by hand, not read back off either
+  artifact) accepted by both artifacts and by upstream's =check()=, for
+  =isFull= on both trees and =checkRoot= on both. That covers every opcode M16
+  adds that a write does not exercise: =lt=+=neg=, =root=+=eq=, and =member=
+  on the history map.
+- =every_fixture_circuit_is_covered=: one case per =.zkir= compactc produced,
+  so the case list cannot quietly shrink.
+
+Zero movement, measured rather than inferred — which matters here because
+=AnyWire3= is a FRONTEND type and every circuit in the workspace goes through
+it. =tests/zkir_dump.rs=, the instrument M15 committed for exactly this, run
+at HEAD and again with M16 applied:
+
+: diff -rq before after
+: 0 files differ, 31 files added
+
+All 112 pre-existing circuits BYTE-IDENTICAL, and the only new files are the
+fixture's own. The frozen snapshots agree: both were regenerated and both
+diffs are INSERTIONS ONLY (+201 lines in interface_snapshot, +31 in
+row_snapshot, zero deletions in either). =cargo test --workspace= is 568
+passed / 0 failed, and =--release row_snapshot= is green.
+
+** NOT DONE, documented
+
+- =Set.insertCoin= / =Map.insertCoin= / =List.pushFrontCoin= — the
+  =QualifiedShieldedCoinInfo= arms of the three collection ADTs, which exist
+  only =(when (= value_type QualifiedShieldedCoinInfo))=. Their shape is
+  =cell_write_coin='s (the =rt-coin-commit= + =idxc [1, stack]= + =concatc 91=
+  dance the crate already emits for a =Cell=), so they are a known quantity,
+  but no corpus contract in v3 uses one and the fixture would need a coin to
+  be meaningful. They belong with M17's token work, where a coin is at hand.
+- =MerkleTree.root= / =pathForLeaf= / =findPathForLeaf= and the =iter= family
+  are =js-only= in compactc — they have no vm-code at all and cannot be
+  circuits. Nothing to port.
+- Nested ADTs. Every operation here assumes a TOP-LEVEL field, which is the
+  one-element path =f= and the suppression rules that follow from it (finding
+  (d)). A =Map<K, List<V>>= would need the general path, which is a shape the
+  crate has never emitted for any ADT and which no ported contract uses.

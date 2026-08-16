@@ -1,0 +1,79 @@
+pragma language_version >= 0.25;
+
+// M16 fixture — every ledger-ADT operation Compact exposes, one circuit each.
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/adts/adts.compact \
+//       crates/minocrab-contracts/tests/fixtures/adts/out
+
+import CompactStandardLibrary;
+
+export ledger dummy: Counter;                       // 0
+export ledger s: Set<Bytes<32>>;                    // 1
+export ledger l: List<Bytes<32>>;                   // 2
+export ledger m: Map<Bytes<32>, Uint<64>>;          // 3
+export ledger mt: MerkleTree<10, Bytes<32>>;        // 4
+export ledger hmt: HistoricMerkleTree<10, Bytes<32>>; // 5
+
+// ---- Set --------------------------------------------------------------------
+
+export circuit setInsert(x: Bytes<32>): [] { s.insert(disclose(x)); }
+export circuit setMember(x: Bytes<32>): Boolean { return s.member(disclose(x)); }
+export circuit setRemove(x: Bytes<32>): [] { s.remove(disclose(x)); }
+export circuit setSize(): Uint<64> { return s.size(); }
+export circuit setIsEmpty(): Boolean { return s.isEmpty(); }
+export circuit setReset(): [] { s.resetToDefault(); }
+
+// ---- List -------------------------------------------------------------------
+
+export circuit listPushFront(x: Bytes<32>): [] { l.pushFront(disclose(x)); }
+export circuit listPopFront(): [] { l.popFront(); }
+export circuit listHead(): Maybe<Bytes<32>> { return l.head(); }
+export circuit listLength(): Uint<64> { return l.length(); }
+export circuit listIsEmpty(): Boolean { return l.isEmpty(); }
+export circuit listReset(): [] { l.resetToDefault(); }
+
+// ---- Map (the two operations LedgerMap is still missing) --------------------
+
+export circuit mapInsertDefault(k: Bytes<32>): [] { m.insertDefault(disclose(k)); }
+export circuit mapReset(): [] { m.resetToDefault(); }
+
+// ---- MerkleTree -------------------------------------------------------------
+
+export circuit mtInsert(x: Bytes<32>): [] { mt.insert(disclose(x)); }
+export circuit mtInsertIndex(x: Bytes<32>, i: Uint<64>): [] {
+  mt.insertIndex(disclose(x), disclose(i));
+}
+export circuit mtInsertHash(h: Bytes<32>): [] { mt.insertHash(disclose(h)); }
+export circuit mtInsertHashIndex(h: Bytes<32>, i: Uint<64>): [] {
+  mt.insertHashIndex(disclose(h), disclose(i));
+}
+export circuit mtInsertIndexDefault(i: Uint<64>): [] {
+  mt.insertIndexDefault(disclose(i));
+}
+export circuit mtCheckRoot(r: MerkleTreeDigest): Boolean {
+  return mt.checkRoot(disclose(r));
+}
+export circuit mtIsFull(): Boolean { return mt.isFull(); }
+export circuit mtReset(): [] { mt.resetToDefault(); }
+
+// ---- HistoricMerkleTree -----------------------------------------------------
+
+export circuit hmtInsert(x: Bytes<32>): [] { hmt.insert(disclose(x)); }
+export circuit hmtInsertIndex(x: Bytes<32>, i: Uint<64>): [] {
+  hmt.insertIndex(disclose(x), disclose(i));
+}
+export circuit hmtInsertHash(h: Bytes<32>): [] { hmt.insertHash(disclose(h)); }
+export circuit hmtInsertHashIndex(h: Bytes<32>, i: Uint<64>): [] {
+  hmt.insertHashIndex(disclose(h), disclose(i));
+}
+export circuit hmtInsertIndexDefault(i: Uint<64>): [] {
+  hmt.insertIndexDefault(disclose(i));
+}
+export circuit hmtCheckRoot(r: MerkleTreeDigest): Boolean {
+  return hmt.checkRoot(disclose(r));
+}
+export circuit hmtIsFull(): Boolean { return hmt.isFull(); }
+export circuit hmtResetHistory(): [] { hmt.resetHistory(); }
+export circuit hmtReset(): [] { hmt.resetToDefault(); }
