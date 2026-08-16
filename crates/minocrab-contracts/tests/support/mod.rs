@@ -332,6 +332,13 @@ pub fn circuits() -> Vec<Circuit> {
         c!("kernel_tokens::s_mint_unshielded_token", || {
             kernel_tokens::s_mint_unshielded_token()
         }),
+        c!("kernel_tokens::s_merge_coin", || kernel_tokens::s_merge_coin()),
+        c!("kernel_tokens::s_merge_coin_immediate", || {
+            kernel_tokens::s_merge_coin_immediate()
+        }),
+        c!("kernel_tokens::s_send_shielded", || {
+            kernel_tokens::s_send_shielded()
+        }),
     ]
 }
 

@@ -15,6 +15,29 @@ fn rows(label: &str, build: impl FnOnce(&mut Circuit3)) {
 }
 
 fn main() {
+    // What a `cond_select` costs, and what a `Copy` does not (M17): the two
+    // instruction classes a lowering change most often removes. The `Copy`
+    // row is the evidence behind "inlining an immediate is zero rows"; the
+    // `cond_select` row is what a folded select would actually save.
+    rows("baseline (arg only, for the two below)", |c| {
+        let w = c.arg::<FieldT>("x");
+        c.assert_bits(w, 248);
+    });
+    rows("+ 100x copy of an immediate", |c| {
+        let w = c.arg::<FieldT>("x");
+        c.assert_bits(w, 248);
+        for _ in 0..100 {
+            let _ = c.constant(0u64);
+        }
+    });
+    rows("+ 100x cond_select(1, x, 0)", |c| {
+        let w = c.arg::<FieldT>("x");
+        c.assert_bits(w, 248);
+        for _ in 0..100 {
+            let _ = c.cond_select(1u64, w, 0u64);
+        }
+    });
+
     // Baseline: one constrained 248-bit arg, nothing else.
     rows("baseline (arg only)", |c| {
         let w = c.arg::<FieldT>("x");

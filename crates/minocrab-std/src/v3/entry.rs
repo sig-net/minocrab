@@ -45,7 +45,8 @@ use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
     Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
-    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, UserAddress, Vis3, B32,
+    MerkleTreeDigest, Opaque, Secp256k1Point, ShieldedCoinInfo3, ShieldedSendResult, TsType, Uint,
+    UserAddress, Vis3, ZswapCoinPublicKey, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -425,6 +426,30 @@ impl CircuitArg for ContractAddress<Private> {
     }
 }
 
+/// Compact's `ZswapCoinPublicKey`: a struct of one `Bytes<32>`, which
+/// flattens to exactly that `Bytes<32>`'s slots.
+impl<V: Vis3> CircuitAbi for ZswapCoinPublicKey<V> {
+    const SLOTS: usize = <B32<V> as CircuitAbi>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <B32<V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for ZswapCoinPublicKey<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        ZswapCoinPublicKey(B32::declare(c, path))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.0.push_slots(slots);
+    }
+}
+
 /// Compact's `UserAddress`: a struct of one `Bytes<32>`, which flattens to
 /// exactly that `Bytes<32>`'s slots — the same shape [`ContractAddress`] has,
 /// and a separate type for the reason its own docs give.
@@ -690,6 +715,30 @@ impl CircuitOut for B32<Public> {
     fn emit(self, c: &mut Circuit3, label: &str) {
         c.output(self.hi, &format!("{label} (hi)"));
         c.output(self.lo, &format!("{label} (lo)"));
+    }
+}
+
+/// Returning a coin: its three fields' slots in declaration order, the same
+/// layout [`CircuitAbi`] declares for it. `mergeCoin` is what needs it (M17).
+impl CircuitOut for ShieldedCoinInfo3<Public> {
+    const SLOTS: usize = <B32<Public> as CircuitOut>::SLOTS * 2 + 1;
+
+    fn emit(self, c: &mut Circuit3, label: &str) {
+        self.nonce.emit(c, &format!("{label} nonce"));
+        self.color.emit(c, &format!("{label} color"));
+        c.output(self.value, &format!("{label} value"));
+    }
+}
+
+/// Returning a `ShieldedSendResult`: the change `Maybe` then the coin sent —
+/// `sendShielded`'s return value (M17).
+impl CircuitOut for ShieldedSendResult<Public> {
+    const SLOTS: usize = <Maybe<ShieldedCoinInfo3<Public>, Public> as CircuitOut>::SLOTS
+        + <ShieldedCoinInfo3<Public> as CircuitOut>::SLOTS;
+
+    fn emit(self, c: &mut Circuit3, label: &str) {
+        self.change.emit(c, &format!("{label} change"));
+        self.sent.emit(c, &format!("{label} sent"));
     }
 }
 

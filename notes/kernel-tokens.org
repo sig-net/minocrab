@@ -245,3 +245,113 @@ passes: they compare PI streams, and a removed =copy= does not touch the PI.
 So this is a strict improvement — 26 circuits move CLOSER to compactc — but
 it is movement, and it is recorded here rather than folded into a
 "zero movement" line.
+
+** The shielded compositions, and the four things they needed
+
+=sendShielded=, =mergeCoin= and =mergeCoinImmediate= are ported, so ALL 24 of
+the fixture's circuits now match compactc instruction for instruction and
+=NOT_YET_PORTED= is empty.
+
+They are the only circuits here with coin ALGEBRA between the kernel calls —
+a nonce derived, a commitment hashed, a value split into what is sent and
+what comes back — and four small things had to exist first. Each is a
+primitive that compactc's own lowering has and ours did not:
+
+1. =Circuit3::copy=. A =Copy= is a rename and zero rows, but compactc emits
+   one for every CAST: =(a.value + b.value) as Uint<128>= names its
+   range-checked result, and =degradeToTransient(nonce)= names the limb it
+   degrades. Without it a port cannot BE compactc's lowering, only agree with
+   it up to a missing instruction.
+2. =transient_hash= over =AnyWire3=. Poseidon's operand list had accepted
+   wires only, so a constant domain separator had to be named first. It now
+   takes the same operand type =persistent_hash= has taken since M16, and the
+   nonce-evolution tag is inline. This is the named-immediate gap AGAIN — the
+   fourth appearance, and the first in the transient flavor.
+3. =degrade_to_transient= / =upgrade_from_transient= for v3. The v2 twins have
+   existed since M4; the v3 ones are the same rule with compactc's shape —
+   the degrade IS the =Copy= of (1), and the upgrade emits its zero high limb
+   BEFORE the =div_mod=, because that is the order in the artifact.
+4. =coin_commitment_to= and =coin_commitment_to_contract=. See below.
+
+*** The recipient select, hoisted and folded
+
+=coinCommitment= takes a recipient and hashes ONE address, so it selects
+between the =Either='s two arms. Two things about that select are compactc's
+and were not ours:
+
+- A recipient that is a static =right(addr)= — every coin a contract pays
+  ITSELF, which is `receiveShielded`, `mergeCoin`'s output and
+  `sendShielded`'s change coin — has NOTHING to select. compactc inlines the
+  tag as the immediate =0x00= and hashes the address directly.
+  =coin_commitment_to_contract= is that, and it is a distinct function rather
+  than a fold inside the general one for the reason M17 stage 3 gave for
+  =UnshieldedToken=: the constants belong to the CONSTRUCTOR, not to a value.
+- A circuit that commits to the same coin TWICE — =sendShielded= claims the
+  spend and then, on the self-send path, the receive — selects once and
+  hashes twice. compactc CSEs the =cond_select= pair and does not CSE the
+  =persistent_hash=. So the select is hoisted to the caller and
+  =coin_commitment_to= takes the tag and the address it produced.
+
+*** What the value branch taught, and why it is written out
+
+=sendShielded= ends in Compact's =if= as an EXPRESSION — =change == 0= gives
+=none=, otherwise =some(changeCoin)= — which is exactly what this session's
+=when_value= chain is for. It is NOT used, and the reason is worth recording
+because it is a limit of the abstraction rather than an oversight:
+
+compactc FOLDS the =Maybe='s tag into the guard it already has. =none= and
+=some= differ in a tag that is 0 on one side and 1 on the other, so selecting
+it is =cond_select(change == 0, 0, 1)= — which is bit-for-bit the =else= arm's
+guard, already computed and already named. A chain would emit that select a
+SECOND time (one instruction, zero rows, but a visible difference). So the
+port names the guard once and uses it as the tag, and selects only the five
+payload slots. The effects still go through =c.when=, which is byte-identical
+to the hand-threaded form.
+
+Same story one level down, and the same conclusion: our =&&= is
+=predicate::and=, which is a =mul=; compactc's is a =cond_select=. Both are
+correct on booleans and cost the same, but a circuit that must match
+instruction for instruction cannot go through the predicate vocabulary for a
+conjunction. =bytes_eq= writes compactc's shape once, and =is_self= (stage 3)
+already had it.
+
+BOTH are arguments for the normalisation pass notes/ir-passes.org §2(ii)
+describes, from a direction that note did not anticipate: the surface API can
+only be as ergonomic as the LOWERING lets it be, as long as the bar is
+instruction equality with compactc. A pass that folded =cond_select(b, 0, 1)=
+and CSEd pure instructions would let both of these be written the obvious way.
+
+*** MEASURED MOVEMENT, and it is the same class as stage 3's
+
+Inlining the two constants in =coin_nullifier_contract= and =coin_commitment=
+(the domain prefixes and the nullifier's =dataType= byte) moved 28
+PRE-EXISTING circuits: six vault circuits in each of the four forks, both
+mint-tokens circuits, and xcall-with-payment's notify and pay. 42 =copy=
+instructions removed in total, between one and four per circuit.
+
+The claim that nothing else changed is CHECKED, not asserted: every one of the
+28 dumps was compared against its baseline after substituting each removed
+=copy='s immediate for its output name, and all 28 are then IDENTICAL. And
+row_snapshot was regenerated: +3 lines for the new circuits, ZERO deletions,
+so no =(k, rows)= moved anywhere. Every differential still passes, because a
+removed =copy= does not touch the PI stream.
+
+28 more circuits move CLOSER to compactc, and the benchmark contract is among
+them — recorded as movement rather than folded into a zero-movement line.
+
+*** NOT DONE, and named
+
+The vault's own shielded compositions in =minocrab_contracts::common= —
+=receive_shielded=, =burn_coin=, =mint_shielded_token= — are ad-hoc twins of
+what now exists in the stdlib. Lifting them is worth doing and is not in this
+commit, because unlike the =copy= change it would MOVE ROWS: every static
+=right(kernel.self())= recipient would drop two =cond_select=s.
+
+THE TWO CLASSES, measured rather than assumed (=minocrab-sim/examples/opcost.rs=,
+new cases): 100 =copy=s of an immediate cost ZERO rows (64 → 64), and 100
+=cond_select=s cost 101 (64 → 165) — so a select is one row and a rename is
+none. That is why this session's 42 removed =copy=s left row_snapshot
+bit-identical, and why the lifting would not: ~2 rows per site, which crosses
+no =k= boundary and changes no prove time, but does move a frozen instrument
+and therefore has to be a deliberate change with its own gate rather than a
+refactor slipped in beside a port. Queued in notes/review-queue.org.

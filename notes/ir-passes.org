@@ -388,3 +388,48 @@ UNGUARDED, which M10 rung i already established is sound (read count is
 =process_read=). That costs the differential and therefore belongs in the
 opt profile — which is exactly the split §1 predicts, arriving from a
 direction nobody planned.
+
+* 7. EVIDENCE FROM M17's SHIELDED PORTS (2026-08-16)
+
+Three ports written to compactc's own instruction stream, and every place
+they could NOT go through the ergonomic API is evidence for §2. Recorded
+here because it arrives from a direction §1 did not anticipate: not "the
+backend already folds this", but *the surface API can only be as ergonomic
+as the lowering allows, while the bar is instruction equality*.
+
+1. *=!b= is a =cond_select=, not our =not=.* compactc has no boolean-negation
+   opcode; it emits =cond_select(b, 0, 1)=. =minocrab_std::v3::kernel= has
+   carried a private =not= of exactly that shape since stage 2, and the
+   shielded ports use it twice more. Our =Circuit3::not= emits ZKIR's =Not=,
+   which is correct, one row, and never what compactc writes.
+
+2. *=&&= is a =cond_select=, and =predicate::and= is a =mul=.* Both are right
+   on booleans and both cost one row. But a circuit that must match
+   instruction for instruction cannot use the predicate vocabulary for a
+   conjunction, so =bytes_eq= and =is_self= hand-write the select.
+   Note this one is NOT a pass's job: =mul= on two arbitrary field elements
+   is not a select, so a pass over type-erased ZKIR may not rewrite it. It is
+   a TYPED decision — =Check::and= knows its operands are booleans — and
+   therefore §4's rule says it belongs in =predicate.rs=. Changing it would
+   move instructions (not rows) in every circuit that guards through
+   predicates, so it wants its own commit and its own dump diff.
+
+3. *A folded tag beats a chain.* =sendShielded= ends in Compact's =if= as an
+   expression, which is what =when_value= is for, and it still cannot use it:
+   compactc folds the =Maybe='s tag into the else-arm's guard, because
+   selecting between the constants 0 and 1 IS that guard. The chain would emit
+   the select a second time. Constant folding (§2 ii) does not fix this one
+   either — the inputs are constants but the SELECT is what has to disappear,
+   which is a peephole on =cond_select(b, 0, 1)= → the guard wire itself.
+
+So §2(ii) grows a sibling worth naming: a *boolean normal form* — fold
+=cond_select(b, 0, 1)= to =b='s negation-of-record and recognise the shape
+when it is asked for a second time. Cheaper than it sounds, because there are
+only two spellings in play and both are already written down here.
+
+MEASURED, since both classes now have a number
+(=minocrab-sim/examples/opcost.rs=, new cases): 100 =copy=s of an immediate
+cost ZERO rows; 100 =cond_select=s cost 101. So constant folding (§2 ii) is
+worth exactly its instruction count and no rows — which §0(a) already said —
+while a select that a fold could remove is one row each. Both remain small;
+the case for the passes is API surface, not cost, exactly as §2 argues.

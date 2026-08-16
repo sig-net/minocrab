@@ -210,7 +210,6 @@ Only real gaps. Candidates that failed the check are in [notes/readme-research.o
 
 - The three `insertCoin` / `pushFrontCoin` arms — `Set`, `Map` and `List` grow an extra method when the element type is `QualifiedShieldedCoinInfo`. Everything else in `Set` / `List` / `MerkleTree` / `HistoricMerkleTree` is ported ([ledger](crates/minocrab-ledger/src/lib.rs)) with a 31-circuit differential.
 - Nested ADTs. Every ledger op assumes a top-level field, which is what compactc's path suppression rests on; a `Map<K, List<V>>` would need the general path.
-- Five token-stdlib circuits: `sendUnshielded` and `mintUnshieldedToken` (both end in a conditional self-transfer), and the shielded `sendShielded` / `mergeCoin` / `mergeCoinImmediate`. The nine kernel primitives that have vm-code, the block-time family and the unshielded-balance family are ported ([kernel](crates/minocrab-std/src/v3/kernel.rs)) with a 19-circuit differential. Tracked in [milestones.org](milestones.org).
 - A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing. Not formal-verification parity.
 
 ## Layout

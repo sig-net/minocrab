@@ -521,7 +521,7 @@ reviewer should look at.
       NOT DONE, documented: the three `insertCoin`/`pushFrontCoin` arms
       and nested ADTs — both in the milestone and in the README's gap
       list, both with a reason rather than a shrug.
-- [ ] M17 so far (in progress — 21 of the fixture's 24, three commits):
+- [ ] M17 (21 of the fixture's 24, three commits):
       the differential is instruction-for-instruction, so the LOWERINGS
       check themselves. THE ONE THING THAT NEEDS EYES is the `token_type`
       change, because it is the only edit this session that MOVED
@@ -557,3 +557,43 @@ reviewer should look at.
       gadget it needs exists (`coin_nullifier_contract`, `coin_commitment`,
       the kernel claims) — the nonce evolution is the one piece that wants
       care, since it is a transient hash degraded and re-upgraded.
+- [ ] M17's shielded stage (the fourth commit — `sendShielded`,
+      `mergeCoin`, `mergeCoinImmediate`, and the fixture at 24 of 24):
+      the differential is instruction-for-instruction, so the LOWERINGS
+      check themselves. THE THINGS THAT NEED EYES are the three
+      primitives it added to the CORE, because they are reachable from
+      every circuit, not just these:
+      (1) `Circuit3::copy`. It exists so a port can spell compactc's
+      cast (`as Uint<128>` names its result; `degradeToTransient` names
+      the limb). It is zero rows and cannot be unsound, but it IS a
+      footgun-shaped method — its doc says so twice and says there is no
+      reason to reach for it in ordinary code. Worth checking that the
+      doc is discouraging enough, and that no non-stdlib caller has
+      appeared.
+      (2) `transient_hash` now takes `impl Into<AnyWire3>` rather than
+      `&[Wire3]`, so its operand list matches `persistent_hash`'s and a
+      constant absorbs inline. Every existing call site still compiles
+      unchanged (the blanket `From<Wire3> for AnyWire3` does it), which
+      is the property to check by eye — an inference change here would
+      be silent.
+      (3) `coin_commitment` split into `coin_commitment_to` (tag and
+      address already chosen) and `coin_commitment_to_contract` (static
+      `right(addr)`, no select at all). The claim is that the general
+      entry point is unchanged for its existing callers — the four vault
+      forks — and the zkir dump says so modulo the inlined constants.
+      What to read is whether the THREE-function surface reads as one
+      idea or three, since a reader who picks the wrong one gets either
+      two dead selects or a wrong commitment.
+      Second, the MEASURED MOVEMENT: 28 pre-existing circuits lost 42
+      `copy`s (constants inlined in the two coin digests). Checked by
+      substituting each removed copy's immediate for its output name and
+      comparing — all 28 identical, row_snapshot +3 lines and zero
+      deletions. Same claim shape as stage 3's `token_type`, and the
+      benchmark contract is again among the moved.
+      NOT DONE, and it is the natural next change rather than a gap:
+      `minocrab_contracts::common`'s `receive_shielded` / `burn_coin` /
+      `mint_shielded_token` are ad-hoc twins of the stdlib's shielded
+      compositions and should be lifted onto them. It moves rows (~2 per
+      static recipient, from the dropped `cond_select`s — measured in
+      `opcost`: a select is 1 row, a copy is 0), so it needs its own
+      commit and its own regenerated row snapshot.

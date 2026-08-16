@@ -15,8 +15,9 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
-    circuit, kernel, label, Bool, Disclose, Discloses, Either, Ledger, LedgerCounter, Uint,
-    UserAddress, B32,
+    circuit, kernel, label, Bool, CircuitArg, CoinRecipient, Disclose, Discloses, Either, Ledger,
+    LedgerCounter, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, ShieldedSendResult, Uint,
+    UserAddress, ZswapCoinPublicKey, B32,
 };
 
 label! {
@@ -25,6 +26,9 @@ label! {
     Color = "token colour";
     Recipient = "recipient";
     Time = "block time";
+    CoinA = "coin a";
+    CoinB = "coin b";
+    InputCoin = "input coin";
 }
 
 /// THE LEDGER BLOCK — one counter, because a Compact circuit that touches
@@ -282,4 +286,103 @@ pub fn s_receive_unshielded(
     let a = a.disclose_as::<Amount>(c);
     kernel::receive_unshielded(c, color, a);
     Discloses::of(())
+}
+
+// ---- the SHIELDED compositions ----------------------------------------------
+
+/// `QualifiedShieldedCoinInfo` as an argument — a coin the contract can spend,
+/// which is [`ShieldedCoinArg`] plus its place in the commitment tree.
+#[derive(CircuitArg)]
+struct QualifiedCoinArg {
+    nonce: B32<Private>,
+    color: B32<Private>,
+    value: Uint<128>,
+    mt_index: Uint<64>,
+}
+
+impl QualifiedCoinArg {
+    /// Disclose the whole coin under one label — a coin is one logical value,
+    /// and every field of it reaches the transcript together.
+    fn disclose<L: minocrab_std::v3::DisclosureLabel>(
+        self,
+        c: &mut Circuit3,
+    ) -> QualifiedShieldedCoinInfo3<Public> {
+        QualifiedShieldedCoinInfo3 {
+            nonce: self.nonce.disclose_as::<L>(c),
+            color: self.color.disclose_as::<L>(c),
+            value: self.value.disclose_as::<L>(c).field(),
+            mt_index: self.mt_index.disclose_as::<L>(c).field(),
+        }
+    }
+}
+
+/// `ShieldedCoinInfo` as an argument.
+#[derive(CircuitArg)]
+struct ShieldedCoinArg {
+    nonce: B32<Private>,
+    color: B32<Private>,
+    value: Uint<128>,
+}
+
+impl ShieldedCoinArg {
+    fn disclose<L: minocrab_std::v3::DisclosureLabel>(
+        self,
+        c: &mut Circuit3,
+    ) -> ShieldedCoinInfo3<Public> {
+        ShieldedCoinInfo3 {
+            nonce: self.nonce.disclose_as::<L>(c),
+            color: self.color.disclose_as::<L>(c),
+            value: self.value.disclose_as::<L>(c).field(),
+        }
+    }
+}
+
+/// `export circuit sMergeCoin(a, b: QualifiedShieldedCoinInfo): ShieldedCoinInfo`
+#[circuit(output = "coin")]
+pub fn s_merge_coin(
+    c: &mut Circuit3,
+    a: QualifiedCoinArg,
+    b: QualifiedCoinArg,
+) -> Discloses<(CoinA, CoinB), ShieldedCoinInfo3<Public>> {
+    let a = a.disclose::<CoinA>(c);
+    let b = b.disclose::<CoinB>(c);
+    Discloses::of(kernel::merge_coin(c, &a, &b))
+}
+
+/// `export circuit sMergeCoinImmediate(a: QualifiedShieldedCoinInfo,
+/// b: ShieldedCoinInfo): ShieldedCoinInfo`
+#[circuit(output = "coin")]
+pub fn s_merge_coin_immediate(
+    c: &mut Circuit3,
+    a: QualifiedCoinArg,
+    b: ShieldedCoinArg,
+) -> Discloses<(CoinA, CoinB), ShieldedCoinInfo3<Public>> {
+    let a = a.disclose::<CoinA>(c);
+    let b = b.disclose::<CoinB>(c);
+    Discloses::of(kernel::merge_coin_immediate(c, &a, &b))
+}
+
+/// `export circuit sSendShielded(input: QualifiedShieldedCoinInfo,
+/// r: Either<ZswapCoinPublicKey, ContractAddress>, v: Uint<128>):
+/// ShieldedSendResult`
+///
+/// The largest M17 circuit, and the one with a conditional in both flavours:
+/// an effect branch (the self-send auto-receive) and a VALUE branch (change,
+/// or none).
+#[circuit(output = "result")]
+pub fn s_send_shielded(
+    c: &mut Circuit3,
+    input: QualifiedCoinArg,
+    r: Either<ZswapCoinPublicKey<Private>, minocrab_std::v3::ContractAddress<Private>, Private>,
+    v: Uint<128>,
+) -> Discloses<(InputCoin, Recipient, Amount), ShieldedSendResult<Public>> {
+    let input = input.disclose::<InputCoin>(c);
+    let r = r.disclose_as::<Recipient>(c);
+    let v = v.disclose_as::<Amount>(c);
+    let recipient = CoinRecipient {
+        is_left: r.is_left.field(),
+        left: r.left.bytes(),
+        right: r.right.bytes(),
+    };
+    Discloses::of(kernel::send_shielded(c, &input, &recipient, v))
 }

@@ -195,6 +195,14 @@ impl<T: IrTy, V: Visibility> Wire3<T, V> {
     }
 }
 
+/// [`Wire3::erase`] as a conversion, so a hash operand list may be written as
+/// plain wires where none of them is constant.
+impl<T: IrTy, V: Visibility> From<Wire3<T, V>> for AnyWire3<V> {
+    fn from(w: Wire3<T, V>) -> AnyWire3<V> {
+        w.erase()
+    }
+}
+
 /// A type-erased hash OPERAND: a wire of any value type, or an INLINE
 /// IMMEDIATE ([`AnyWire3::immediate`]).
 ///
@@ -774,6 +782,23 @@ impl Circuit3 {
         Wire3::new(self.b.imm(imm))
     }
 
+    /// Name a value that already exists: `Copy val` into a fresh wire.
+    ///
+    /// Zero rows — a `Copy` is a rename, which is why M9 phase 7's literals
+    /// work removed 47 of them without moving a single row, and why this
+    /// session's 42 removed the same way (`opcost`: 100 `Copy`s cost 0 rows,
+    /// 100 `cond_select`s cost 101). It is NOT a way to make a value cheaper,
+    /// and there is no reason to reach for it in ordinary circuit code.
+    ///
+    /// It exists because compactc's own lowering emits it, and a stdlib
+    /// circuit that claims to BE compactc's lowering has to be able to say so:
+    /// an `x as Uint<N>` cast names its range-checked result, and
+    /// `degradeToTransient` names the limb it degrades
+    /// (`minocrab_std::v3::kernel`'s shielded compositions, M17).
+    pub fn copy<T: IrTy, V: Visibility>(&mut self, val: Wire3<T, V>) -> Wire3<T, V> {
+        Wire3::new(self.b.copy(val.val))
+    }
+
     // --- arithmetic and logic (visibility joins via Meet) --------------------------
     //
     // Every operand position takes an `impl Into<Operand<T, V>>`: a wire, or
@@ -890,11 +915,17 @@ impl Circuit3 {
     // --- hashes -----------------------------------------------------------------
 
     /// Poseidon-family hash of native field elements.
-    pub fn transient_hash<V: Visibility>(
+    ///
+    /// The operands are wires or, like [`persistent_hash`](Self::persistent_hash)'s,
+    /// [`AnyWire3`]s — so a constant element (a domain separator always is one)
+    /// can be INLINED into the instruction rather than named by a `Copy` first,
+    /// which is the shape compactc emits (the nonce evolution's
+    /// `"midnight:kernel:nonce_evolve"`).
+    pub fn transient_hash<V: Visibility, O: Copy + Into<AnyWire3<V>>>(
         &mut self,
-        inputs: &[Wire3<FieldT, V>],
+        inputs: &[O],
     ) -> Wire3<FieldT, V> {
-        let args: Vec<Arg> = inputs.iter().map(|w| Arg::Val(w.val)).collect();
+        let args: Vec<Arg> = inputs.iter().map(|&w| w.into().arg).collect();
         Wire3::new(self.b.transient_hash(&args))
     }
 

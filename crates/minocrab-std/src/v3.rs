@@ -572,6 +572,29 @@ impl<V: Vis3> UserAddress<V> {
     }
 }
 
+/// Compact's `ZswapCoinPublicKey` — a struct of one `Bytes<32>`, and the
+/// SHIELDED half of a coin recipient (`Either<ZswapCoinPublicKey,
+/// ContractAddress>`, [`CoinRecipient`]).
+///
+/// The third leaf of this shape after [`ContractAddress`] and [`UserAddress`],
+/// and separate from both for the reason they are separate from each other: a
+/// zswap public key is a user's spending key, not an address, and an `Either`
+/// whose arms were the same type would say nothing.
+#[derive(Clone, Copy)]
+pub struct ZswapCoinPublicKey<V: Vis3>(pub B32<V>);
+
+impl<V: Vis3> ZswapCoinPublicKey<V> {
+    /// The key's FAB limbs, `[hi, lo]`.
+    pub fn limbs(self) -> [Wire3<FieldT, V>; 2] {
+        [self.0.hi, self.0.lo]
+    }
+
+    /// The underlying `Bytes<32>`.
+    pub fn bytes(self) -> B32<V> {
+        self.0
+    }
+}
+
 /// Compact's `MerkleTreeDigest` — a struct of one `Field`, and the argument
 /// of [`LedgerMerkleTree::check_root`](crate::v3::LedgerMerkleTree::check_root).
 ///
@@ -1378,10 +1401,13 @@ pub fn own_public_key_guarded<V: Vis3>(
     pk
 }
 
-/// A `bytes<n>` (n ≤ 31) literal as a single constant limb.
-fn short_literal<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Wire3<FieldT, V> {
+/// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE
+/// hash operand, since compactc puts a constant preimage element straight into
+/// the instruction (M16's `AnyWire3::immediate`), so there is no
+/// wire-producing twin.
+fn short_literal_imm(bytes: &[u8]) -> Fr {
     assert!(bytes.len() <= 31);
-    V::from_public(c.constant(Fr::from_le_bytes(bytes).expect("≤31 bytes fit")))
+    Fr::from_le_bytes(bytes).expect("≤31 bytes fit")
 }
 
 fn b32_atom() -> AlignmentSegment {
@@ -1464,6 +1490,57 @@ impl<V: Vis3> CircuitAbi for ShieldedCoinInfo3<V> {
     }
 }
 
+/// `struct QualifiedShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
+/// value: Uint<128>, mt_index: Uint<64> }` — a coin the contract can SPEND,
+/// which is [`ShieldedCoinInfo3`] plus its position in the coin commitment
+/// tree.
+#[derive(Clone, Copy)]
+pub struct QualifiedShieldedCoinInfo3<V: Vis3> {
+    pub nonce: B32<V>,
+    pub color: B32<V>,
+    pub value: Wire3<FieldT, V>,
+    pub mt_index: Wire3<FieldT, V>,
+}
+
+impl<V: Vis3> QualifiedShieldedCoinInfo3<V> {
+    /// `downcastQualifiedCoin(coin)` — forget the tree index. Zero
+    /// instructions; the index is the ledger's business, not the
+    /// commitment's.
+    pub fn downcast(&self) -> ShieldedCoinInfo3<V> {
+        ShieldedCoinInfo3 {
+            nonce: self.nonce,
+            color: self.color,
+            value: self.value,
+        }
+    }
+}
+
+/// The ABI of Compact's `QualifiedShieldedCoinInfo`, in declaration order —
+/// [`ShieldedCoinInfo3`]'s three fields then the `Uint<64>` index.
+impl<V: Vis3> CircuitAbi for QualifiedShieldedCoinInfo3<V> {
+    const SLOTS: usize = <ShieldedCoinInfo3<V> as CircuitAbi>::SLOTS + 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <ShieldedCoinInfo3<V> as CircuitAbi>::push_atoms(atoms);
+        <Uint<64, V> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <ShieldedCoinInfo3<V> as CircuitAbi>::push_prims(prims);
+        <Uint<64, V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+/// `struct ShieldedSendResult { change: Maybe<ShieldedCoinInfo>, sent:
+/// ShieldedCoinInfo }` — what [`kernel::send_shielded`](super::v3::kernel::send_shielded)
+/// hands back: the coin that went to the recipient, and the change coin the
+/// contract paid back to itself, if there was any.
+#[derive(Clone, Copy)]
+pub struct ShieldedSendResult<V: Vis3> {
+    pub change: Maybe<ShieldedCoinInfo3<V>, V>,
+    pub sent: ShieldedCoinInfo3<V>,
+}
+
 /// `Either<ZswapCoinPublicKey, ContractAddress>` — a coin recipient. Both
 /// arms are `Bytes<32>` on the wire; `is_left` = 1 selects the public key.
 #[derive(Clone, Copy)]
@@ -1510,31 +1587,40 @@ pub fn coin_nullifier_contract<V: Vis3>(
     coin: &ShieldedCoinInfo3<V>,
     addr: &B32<V>,
 ) -> B32<V> {
-    let prefix = short_literal::<V>(c, b"midnight:zswap-cn[v1]");
-    let zero = V::from_public(c.constant(0u64));
-    let alignment = Alignment(vec![
+    // The domain prefix and the `dataType` byte are CONSTANT, so both are
+    // inlined into the hash operand list rather than named by a `copy` —
+    // compactc emits `["0x6d69…", …, "0x00", %self.hi, %self.lo]` with no
+    // `copy` in sight (`kernel.compact`'s `sMergeCoin`). Same rule, same
+    // mechanism and the same zero rows as `token_type`'s (M17).
+    hash::persistent_hash_compact(
+        c,
+        coin_preimage_alignment(),
+        &[
+            AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cn[v1]")),
+            coin.nonce.hi.erase(),
+            coin.nonce.lo.erase(),
+            coin.color.hi.erase(),
+            coin.color.lo.erase(),
+            coin.value.erase(),
+            AnyWire3::immediate(0u64),
+            addr.hi.erase(),
+            addr.lo.erase(),
+        ],
+    )
+}
+
+/// The `CoinPreimage` alignment both coin digests hash under:
+/// `[domain_sep: Bytes<21>, coin: ShieldedCoinInfo, dataType: Boolean,
+/// data: Bytes<32>]`.
+fn coin_preimage_alignment() -> Alignment {
+    Alignment(vec![
         AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 21 }),
         b32_atom(),
         b32_atom(),
         AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 16 }),
         AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
         b32_atom(),
-    ]);
-    hash::persistent_hash_compact(
-        c,
-        alignment,
-        &[
-            prefix.erase(),
-            coin.nonce.hi.erase(),
-            coin.nonce.lo.erase(),
-            coin.color.hi.erase(),
-            coin.color.lo.erase(),
-            coin.value.erase(),
-            zero.erase(),
-            addr.hi.erase(),
-            addr.lo.erase(),
-        ],
-    )
+    ])
 }
 
 /// `circuit coinCommitment(coin, recipient): Bytes<32>` —
@@ -1547,29 +1633,56 @@ pub fn coin_commitment<V: Vis3>(
     coin: &ShieldedCoinInfo3<V>,
     recipient: &CoinRecipient<V>,
 ) -> B32<V> {
-    let prefix = short_literal::<V>(c, b"midnight:zswap-cc[v1]");
     let data = B32::cond_select(c, recipient.is_left, &recipient.left, &recipient.right);
-    let alignment = Alignment(vec![
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 21 }),
-        b32_atom(),
-        b32_atom(),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 16 }),
-        AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 1 }),
-        b32_atom(),
-    ]);
+    coin_commitment_to(c, coin, recipient.is_left.erase(), &data)
+}
+
+/// [`coin_commitment`] against a recipient whose tag and address are already
+/// to hand — the two things the preimage actually contains.
+///
+/// It is separate for two reasons, both visible in the artifacts. A recipient
+/// that is a STATIC `right(addr)` has no select to do at all, and compactc
+/// emits none ([`coin_commitment_to_contract`]). And a circuit that commits to
+/// the same coin TWICE — `sendShielded` claims the spend and then, on the
+/// self-send path, the receive — selects once and hashes twice, which is
+/// exactly what compactc's `sSendShielded` does (the `cond_select` pair is
+/// shared, the `persistent_hash` is not).
+pub fn coin_commitment_to<V: Vis3>(
+    c: &mut Circuit3,
+    coin: &ShieldedCoinInfo3<V>,
+    is_left: AnyWire3<V>,
+    data: &B32<V>,
+) -> B32<V> {
+    // The domain prefix is constant — inlined, per `coin_nullifier_contract`.
     hash::persistent_hash_compact(
         c,
-        alignment,
+        coin_preimage_alignment(),
         &[
-            prefix.erase(),
+            AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cc[v1]")),
             coin.nonce.hi.erase(),
             coin.nonce.lo.erase(),
             coin.color.hi.erase(),
             coin.color.lo.erase(),
             coin.value.erase(),
-            recipient.is_left.erase(),
+            is_left,
             data.hi.erase(),
             data.lo.erase(),
         ],
     )
+}
+
+/// [`coin_commitment`] against `right<ZswapCoinPublicKey, ContractAddress>(addr)`
+/// — a contract recipient written as a literal, which is what every stdlib
+/// circuit that pays a contract (`receiveShielded`, `mergeCoin`, the change
+/// coin of `sendShielded`) constructs.
+///
+/// The tag is the inline immediate `0` and the address is the data, so there
+/// is no select: the arm that is not taken is `default<ZswapCoinPublicKey>`
+/// and never reaches the preimage. compactc folds it the same way.
+pub fn coin_commitment_to_contract<V: Vis3>(
+    c: &mut Circuit3,
+    coin: &ShieldedCoinInfo3<V>,
+    addr: &B32<V>,
+) -> B32<V> {
+    coin_commitment_to(c, coin, AnyWire3::immediate(0u64), addr)
 }

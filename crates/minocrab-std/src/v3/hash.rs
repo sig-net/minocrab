@@ -151,3 +151,34 @@ pub fn transient_hash_compact<V: Vis3>(
 ) -> Wire3<FieldT, V> {
     c.transient_hash(slots)
 }
+
+/// `degradeToTransient(b)`: the low limb (bytes 0..30 little-endian; byte 31
+/// is DISCARDED), as a field element fit to absorb into a Poseidon hash.
+///
+/// The lossy direction, and deliberately so — a `Bytes<32>` does not fit a
+/// 255-bit field, so the pair `[degrade, upgrade]` is not a round trip and
+/// nothing should treat it as one.
+///
+/// One `Copy`, which is zero rows and is compactc's own shape for a cast
+/// (`kernel.compact`'s `sMergeCoin`: `copy %t.23 = %a.1` before the
+/// `transient_hash`). The v2 twin ([`crate::hash::degrade_to_transient`])
+/// emits nothing at all, because its callers were not agreeing with an
+/// artifact instruction for instruction.
+pub fn degrade_to_transient<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3<FieldT, V> {
+    c.copy(b.lo)
+}
+
+/// `upgradeFromTransient(f)`: the field element's low 31 bytes as a
+/// `Bytes<32>` whose byte 31 is zero — `div_mod_power_of_two(f, 248)` keeping
+/// the remainder, and a literal `0` for the high limb.
+///
+/// The high limb is emitted FIRST, which is compactc's order (`copy 0x00`,
+/// then the `div_mod`), and it is a named `Copy` rather than an inline
+/// immediate because it is a VALUE: it goes on to be a struct field, a hash
+/// operand and — in `sendShielded` — a circuit output, and an output slot
+/// names a wire.
+pub fn upgrade_from_transient<V: Vis3>(c: &mut Circuit3, f: Wire3<FieldT, V>) -> B32<V> {
+    let hi = V::from_public(c.constant(0u64));
+    let (_over_31_bytes, lo) = c.div_mod_power_of_two(f, 248);
+    B32 { hi, lo }
+}

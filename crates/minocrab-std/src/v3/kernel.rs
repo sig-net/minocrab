@@ -29,16 +29,23 @@
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
-use minocrab::v3::{Circuit3, FieldT, Operand, Wire3};
+use minocrab::v3::{AnyWire3, Circuit3, FieldT, Operand, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public, Visibility};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
+    kernel_claim_zswap_coin_receive, kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier,
     kernel_inc_unshielded_inputs, kernel_inc_unshielded_outputs, kernel_mint_shielded,
     kernel_mint_unshielded, kernel_self, kernel_self_guarded, BalanceCmp, ImpactElem, LedgerValue,
 };
 
+use super::hash;
 use super::ledger::LedgerRepr;
-use super::{Bool, ContractAddress, Either, Uint, UserAddress, B32};
+use super::predicate::is_true;
+use super::{
+    coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinRecipient,
+    ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3,
+    ShieldedSendResult, Uint, UserAddress, B32,
+};
 
 /// The guard of a STRAIGHT-LINE kernel operation: the immediate `1`, inlined
 /// into the Impact instruction rather than named by a `Copy` — the same
@@ -483,4 +490,304 @@ pub fn mint_unshielded_token(
     let mine = is_self(c, recipient);
     inc_unshielded_inputs_under(c, mine, &token, wide);
     color
+}
+
+// ---- the SHIELDED half ------------------------------------------------------
+//
+// The zswap primitives and the three stdlib circuits built from them. What
+// makes this half longer than the unshielded one is not the kernel — the three
+// claims below are the same accumulator shape as the rest — but the COIN
+// ALGEBRA between them: a nonce is evolved, a commitment is hashed, a value is
+// split into what is sent and what comes back as change.
+//
+// Two shapes recur, and both are compactc's rather than ours:
+//
+//   - A coin paid to THIS contract is `right(kernel.self())`, a literal, so
+//     its commitment has no recipient select at all
+//     (`coin_commitment_to_contract`).
+//   - `upgradeFromTransient(transientHash([<tag>, degradeToTransient(nonce)]))`
+//     is how every derived nonce is made; the tag is inline and the two
+//     `Copy`s are the casts (`hash::degrade_to_transient`).
+
+/// `kernel.claimZswapNullifier(nul)` — effects[0]. Says this contract spent
+/// the coin that nullifier names.
+pub fn claim_zswap_nullifier(c: &mut Circuit3, nullifier: &B32<Public>) {
+    claim_zswap_nullifier_under(c, STRAIGHT_LINE, nullifier)
+}
+
+/// [`claim_zswap_nullifier`] under a branch condition.
+pub fn claim_zswap_nullifier_under<G: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, G>>,
+    nullifier: &B32<Public>,
+) {
+    let nul = nullifier.ledger_value(c);
+    emit(c, guard, &kernel_claim_zswap_nullifier(&nul));
+}
+
+/// `kernel.claimZswapCoinSpend(cm)` — effects[2]. Says this contract
+/// AUTHORIZED the output that commitment names.
+pub fn claim_zswap_coin_spend(c: &mut Circuit3, commitment: &B32<Public>) {
+    claim_zswap_coin_spend_under(c, STRAIGHT_LINE, commitment)
+}
+
+/// [`claim_zswap_coin_spend`] under a branch condition.
+pub fn claim_zswap_coin_spend_under<G: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, G>>,
+    commitment: &B32<Public>,
+) {
+    let cm = commitment.ledger_value(c);
+    emit(c, guard, &kernel_claim_zswap_coin_spend(&cm));
+}
+
+/// `kernel.claimZswapCoinReceive(cm)` — effects[1]. Says this contract now
+/// OWNS the coin that commitment names. Separate from the spend claim because
+/// a contract paying itself makes both.
+pub fn claim_zswap_coin_receive(c: &mut Circuit3, commitment: &B32<Public>) {
+    claim_zswap_coin_receive_under(c, STRAIGHT_LINE, commitment)
+}
+
+/// [`claim_zswap_coin_receive`] under a branch condition.
+pub fn claim_zswap_coin_receive_under<G: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, G>>,
+    commitment: &B32<Public>,
+) {
+    let cm = commitment.ledger_value(c);
+    emit(c, guard, &kernel_claim_zswap_coin_receive(&cm));
+}
+
+/// The domain a coin's successor nonce is derived under, and the `/2` variant
+/// `sendShielded` gives its CHANGE coin — two coins come out of one input, so
+/// they cannot share a nonce.
+const NONCE_EVOLVE: &[u8] = b"midnight:kernel:nonce_evolve";
+const NONCE_EVOLVE_CHANGE: &[u8] = b"midnight:kernel:nonce_evolve/2";
+
+/// `upgradeFromTransient(transientHash<Vector<2, Field>>([<domain> as Field,
+/// degradeToTransient(nonce)]))` — the nonce of a coin derived from another.
+///
+/// Not the stdlib's `evolveNonce`, which hashes an INDEX as well; this is the
+/// two-element form `sendShielded` and `mergeCoin` write inline.
+fn derived_nonce(c: &mut Circuit3, domain: &[u8], nonce: &B32<Public>) -> B32<Public> {
+    let degraded = hash::degrade_to_transient(c, nonce);
+    let h = c.transient_hash(&[
+        AnyWire3::immediate(super::short_literal_imm(domain)),
+        degraded.erase(),
+    ]);
+    hash::upgrade_from_transient(c, h)
+}
+
+/// `a == b` on `Bytes<32>`, as compactc lowers it: a `test_eq` per limb and
+/// the `&&` of the two, which is one `cond_select` and not a `mul`.
+fn bytes_eq(c: &mut Circuit3, a: &B32<Public>, b: &B32<Public>) -> Wire3<FieldT, Public> {
+    let hi = c.test_eq(a.hi, b.hi);
+    let lo = c.test_eq(a.lo, b.lo);
+    c.cond_select(hi, lo, 0u64)
+}
+
+/// Compact's `a - b` on a `Uint<128>`: the difference, and the assertion that
+/// there is one — a subtraction that would go below zero is a failed proof,
+/// not a wrap.
+fn checked_sub(
+    c: &mut Circuit3,
+    a: Wire3<FieldT, Public>,
+    b: Wire3<FieldT, Public>,
+) -> Wire3<FieldT, Public> {
+    let underflow = c.less_than(a, b, 128);
+    let ok = not(c, Bool::from_field(underflow));
+    c.assert(is_true(ok).message("subtraction would underflow"));
+    let neg = c.neg(b);
+    c.add(a, neg)
+}
+
+/// Compact's `x as Uint<128>` on a value just computed: the range constraint,
+/// then the `Copy` the cast names its result with.
+fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
+    Uint::<128, Public>::from_field(w).constrain_input(c);
+    c.copy(w)
+}
+
+/// ```text
+/// circuit mergeCoin(a: QualifiedShieldedCoinInfo, b: QualifiedShieldedCoinInfo): ShieldedCoinInfo {
+///   const selfAddr = kernel.self();
+///   createZswapInput(a);
+///   kernel.claimZswapNullifier(coinNullifier(downcastQualifiedCoin(a), selfAddr));
+///   createZswapInput(b);
+///   kernel.claimZswapNullifier(coinNullifier(downcastQualifiedCoin(b), selfAddr));
+///   assert(a.color == b.color, "Can only merge coins of the same color");
+///   const newCoin = ShieldedCoinInfo{
+///     nonce: upgradeFromTransient(transientHash<Vector<2, Field>>([
+///              "midnight:kernel:nonce_evolve" as Field, degradeToTransient(a.nonce)])),
+///     color: a.color,
+///     value: (a.value + b.value) as Uint<128>
+///   };
+///   createZswapOutput(newCoin, right<ZswapCoinPublicKey, ContractAddress>(selfAddr));
+///   const cm = coinCommitment(newCoin, right<ZswapCoinPublicKey, ContractAddress>(selfAddr));
+///   kernel.claimZswapCoinSpend(cm);
+///   kernel.claimZswapCoinReceive(cm);
+///   return newCoin;
+/// }
+/// ```
+///
+/// `createZswapInput`/`createZswapOutput` are Void witness natives — they tell
+/// the off-circuit builder to put the coin in the transaction's offer and emit
+/// NOTHING here, which is why two coins going in cost only their two
+/// nullifiers.
+pub fn merge_coin(
+    c: &mut Circuit3,
+    a: &QualifiedShieldedCoinInfo3<Public>,
+    b: &QualifiedShieldedCoinInfo3<Public>,
+) -> ShieldedCoinInfo3<Public> {
+    merge(c, &a.downcast(), &b.downcast())
+}
+
+/// ```text
+/// circuit mergeCoinImmediate(a: QualifiedShieldedCoinInfo, b: ShieldedCoinInfo): ShieldedCoinInfo {
+///   return mergeCoin(a, upcastQualifiedCoin(b));
+/// }
+/// ```
+///
+/// `upcastQualifiedCoin` sets `mt_index: 0`, and NOTHING reads it — the index
+/// is the ledger's business, and the merge only ever downcasts back. So this
+/// is [`merge_coin`]'s body against `b` directly rather than a round trip
+/// through a qualified coin with a fabricated index, and compactc's artifacts
+/// agree: `sMergeCoinImmediate` is `sMergeCoin` minus `b`'s `mt_index`
+/// constraint, instruction for instruction.
+pub fn merge_coin_immediate(
+    c: &mut Circuit3,
+    a: &QualifiedShieldedCoinInfo3<Public>,
+    b: &ShieldedCoinInfo3<Public>,
+) -> ShieldedCoinInfo3<Public> {
+    merge(c, &a.downcast(), b)
+}
+
+/// Everything both merges do, once the coins are downcast.
+fn merge(
+    c: &mut Circuit3,
+    a: &ShieldedCoinInfo3<Public>,
+    b: &ShieldedCoinInfo3<Public>,
+) -> ShieldedCoinInfo3<Public> {
+    let me = self_address(c).bytes();
+    let nul_a = coin_nullifier_contract(c, a, &me);
+    claim_zswap_nullifier(c, &nul_a);
+    let nul_b = coin_nullifier_contract(c, b, &me);
+    claim_zswap_nullifier(c, &nul_b);
+
+    let same_colour = bytes_eq(c, &a.color, &b.color);
+    c.assert(
+        is_true(Bool::from_field(same_colour)).message("Can only merge coins of the same color"),
+    );
+
+    // Field order is evaluation order, and compactc's too: the derived nonce
+    // before the sum.
+    let nonce = derived_nonce(c, NONCE_EVOLVE, &a.nonce);
+    let sum = c.add(a.value, b.value);
+    let new_coin = ShieldedCoinInfo3 {
+        nonce,
+        color: a.color,
+        value: as_uint128(c, sum),
+    };
+    let cm = coin_commitment_to_contract(c, &new_coin, &me);
+    claim_zswap_coin_spend(c, &cm);
+    claim_zswap_coin_receive(c, &cm);
+    new_coin
+}
+
+/// ```text
+/// circuit sendShielded(input: QualifiedShieldedCoinInfo,
+///                      recipient: Either<ZswapCoinPublicKey, ContractAddress>,
+///                      value: Uint<128>): ShieldedSendResult {
+///   const selfAddr = kernel.self();
+///   createZswapInput(input);
+///   kernel.claimZswapNullifier(coinNullifier(downcastQualifiedCoin(input), selfAddr));
+///   const change = input.value - value;
+///   const output = ShieldedCoinInfo{ nonce: <derived>, color: input.color, value: value };
+///   createZswapOutput(output, recipient);
+///   kernel.claimZswapCoinSpend(coinCommitment(output, recipient));
+///   // Auto-receive when sending to self
+///   if (!recipient.is_left && recipient.right.bytes == selfAddr.bytes) {
+///     kernel.claimZswapCoinReceive(coinCommitment(output, recipient));
+///   }
+///   if (change == 0) { return ShieldedSendResult{ change: none, sent: output }; }
+///   else { <change coin, spent and received by this contract>; }
+/// }
+/// ```
+///
+/// THE `if (change == 0)` IS AN EXPRESSION, and it is written out here rather
+/// than through [`Circuit3::when_value`](minocrab::v3::Circuit3::when_value)
+/// for one reason worth stating: compactc FOLDS the `Maybe`'s tag into the
+/// guard it already has. `none` and `some` differ in a tag that is `0` on one
+/// side and `1` on the other, so selecting it yields `cond_select(change == 0,
+/// 0, 1)` — which is the `else` arm's guard, already computed. A chain would
+/// emit that select a second time. So the tag IS the guard here, named once,
+/// and only the five payload slots are selected.
+///
+/// Both commitments of `output` are the same digest, hashed twice, because
+/// that is what compactc's inlining of two `coinCommitment` calls produces;
+/// the recipient select they share is hoisted (see [`coin_commitment_to`]).
+pub fn send_shielded(
+    c: &mut Circuit3,
+    input: &QualifiedShieldedCoinInfo3<Public>,
+    recipient: &CoinRecipient<Public>,
+    value: Uint<128, Public>,
+) -> ShieldedSendResult<Public> {
+    let me = self_address(c).bytes();
+    let spent = input.downcast();
+    let nul = coin_nullifier_contract(c, &spent, &me);
+    claim_zswap_nullifier(c, &nul);
+
+    let change = checked_sub(c, input.value, value.field());
+
+    let output = ShieldedCoinInfo3 {
+        nonce: derived_nonce(c, NONCE_EVOLVE, &input.nonce),
+        color: input.color,
+        value: value.field(),
+    };
+    let to = B32::cond_select(c, recipient.is_left, &recipient.left, &recipient.right);
+    let cm = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
+    claim_zswap_coin_spend(c, &cm);
+
+    // Auto-receive when sending to self: `!recipient.is_left && …`, which is
+    // one `cond_select` with the arms the other way round from `is_self`'s.
+    // The address needs no guarded read — `selfAddr` is already to hand.
+    let same = bytes_eq(c, &recipient.right, &me);
+    let mine = c.cond_select(recipient.is_left, 0u64, same);
+    let cm_again = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
+    claim_zswap_coin_receive_under(c, mine, &cm_again);
+
+    let spent_it_all = c.test_eq(change, 0u64);
+    let has_change = not(c, Bool::from_field(spent_it_all)).field();
+    let change_coin = ShieldedCoinInfo3 {
+        nonce: derived_nonce(c, NONCE_EVOLVE_CHANGE, &input.nonce),
+        color: input.color,
+        value: change,
+    };
+    let change_cm = coin_commitment_to_contract(c, &change_coin, &me);
+    c.when(has_change, |c| {
+        claim_zswap_coin_spend(c, &change_cm);
+        claim_zswap_coin_receive(c, &change_cm);
+    });
+
+    // `none<ShieldedCoinInfo>()` is the default coin, so the payload is the
+    // change coin selected against zero — the tag is `has_change` above.
+    let none_unless = |c: &mut Circuit3, w| c.cond_select(spent_it_all, 0u64, w);
+    let change_value = ShieldedCoinInfo3 {
+        nonce: B32 {
+            hi: none_unless(c, change_coin.nonce.hi),
+            lo: none_unless(c, change_coin.nonce.lo),
+        },
+        color: B32 {
+            hi: none_unless(c, change_coin.color.hi),
+            lo: none_unless(c, change_coin.color.lo),
+        },
+        value: none_unless(c, change_coin.value),
+    };
+    ShieldedSendResult {
+        change: Maybe {
+            is_some: Bool::from_field(has_change),
+            value: change_value,
+        },
+        sent: output,
+    }
 }

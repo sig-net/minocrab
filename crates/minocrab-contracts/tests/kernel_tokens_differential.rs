@@ -84,6 +84,10 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
         // the two with a conditional auto-receive
         ("sSendUnshielded", kt::s_send_unshielded),
         ("sMintUnshieldedToken", kt::s_mint_unshielded_token),
+        // the shielded compositions
+        ("sMergeCoin", kt::s_merge_coin),
+        ("sMergeCoinImmediate", kt::s_merge_coin_immediate),
+        ("sSendShielded", kt::s_send_shielded),
     ]
 }
 
@@ -107,9 +111,13 @@ fn identical_instruction_streams() {
 }
 
 /// What the fixture compiles that is NOT yet ported, named so the gap is a
-/// list rather than an absence. Each is a SHIELDED composition or a
-/// conditional one; see notes/kernel-tokens.org §"As built".
-const NOT_YET_PORTED: [&str; 3] = ["sMergeCoin", "sMergeCoinImmediate", "sSendShielded"];
+/// list rather than an absence.
+///
+/// EMPTY since the shielded compositions landed: every circuit `kernel.compact`
+/// compiles is ported and agrees with compactc instruction for instruction.
+/// `kernel.checkpoint()` is not here because it is not in the fixture — it
+/// cannot be compiled for our IR version at all (see this file's header).
+const NOT_YET_PORTED: [&str; 0] = [];
 
 /// Every fixture circuit is either ported or explicitly listed as not — so
 /// the coverage gap cannot widen silently, which is the failure mode a

@@ -1925,6 +1925,77 @@ out color (hi): Scalar<BLS12-381>
 out color (lo): Scalar<BLS12-381>
 ",
     ),
+    (
+        "kernel_tokens::s_merge_coin",
+        "\
+in  a_nonce_hi: Scalar<BLS12-381>
+in  a_nonce_lo: Scalar<BLS12-381>
+in  a_color_hi: Scalar<BLS12-381>
+in  a_color_lo: Scalar<BLS12-381>
+in  a_value: Scalar<BLS12-381>
+in  a_mtIndex: Scalar<BLS12-381>
+in  b_nonce_hi: Scalar<BLS12-381>
+in  b_nonce_lo: Scalar<BLS12-381>
+in  b_color_hi: Scalar<BLS12-381>
+in  b_color_lo: Scalar<BLS12-381>
+in  b_value: Scalar<BLS12-381>
+in  b_mtIndex: Scalar<BLS12-381>
+out coin nonce (hi): Scalar<BLS12-381>
+out coin nonce (lo): Scalar<BLS12-381>
+out coin color (hi): Scalar<BLS12-381>
+out coin color (lo): Scalar<BLS12-381>
+out coin value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_merge_coin_immediate",
+        "\
+in  a_nonce_hi: Scalar<BLS12-381>
+in  a_nonce_lo: Scalar<BLS12-381>
+in  a_color_hi: Scalar<BLS12-381>
+in  a_color_lo: Scalar<BLS12-381>
+in  a_value: Scalar<BLS12-381>
+in  a_mtIndex: Scalar<BLS12-381>
+in  b_nonce_hi: Scalar<BLS12-381>
+in  b_nonce_lo: Scalar<BLS12-381>
+in  b_color_hi: Scalar<BLS12-381>
+in  b_color_lo: Scalar<BLS12-381>
+in  b_value: Scalar<BLS12-381>
+out coin nonce (hi): Scalar<BLS12-381>
+out coin nonce (lo): Scalar<BLS12-381>
+out coin color (hi): Scalar<BLS12-381>
+out coin color (lo): Scalar<BLS12-381>
+out coin value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_send_shielded",
+        "\
+in  input_nonce_hi: Scalar<BLS12-381>
+in  input_nonce_lo: Scalar<BLS12-381>
+in  input_color_hi: Scalar<BLS12-381>
+in  input_color_lo: Scalar<BLS12-381>
+in  input_value: Scalar<BLS12-381>
+in  input_mtIndex: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+in  v: Scalar<BLS12-381>
+out result change (is_some): Scalar<BLS12-381>
+out result change nonce (hi): Scalar<BLS12-381>
+out result change nonce (lo): Scalar<BLS12-381>
+out result change color (hi): Scalar<BLS12-381>
+out result change color (lo): Scalar<BLS12-381>
+out result change value: Scalar<BLS12-381>
+out result sent nonce (hi): Scalar<BLS12-381>
+out result sent nonce (lo): Scalar<BLS12-381>
+out result sent color (hi): Scalar<BLS12-381>
+out result sent color (lo): Scalar<BLS12-381>
+out result sent value: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

@@ -104,7 +104,7 @@ mock-compile accepts it, reference VM agrees with the simulator
 Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
 
 * M4 — stdlib + corpus rewrites
-- [ ] Port the Compact stdlib pieces the corpus needs, mechanically translating
+- [X] Port the Compact stdlib pieces the corpus needs, mechanically translating
       Midnight's own implementations where possible.
       (Mostly DONE — crates/minocrab-std: Bundle wire-typing (+FAB atoms),
       Maybe/Either, full merkleTreePathRoot, persistent/transient
@@ -119,6 +119,12 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       (AUDIT 2026-08-15: the remainder is now OWNED BY M17, which lists it
       exhaustively against the pinned stdlib. This bullet stays open only
       as M17's pointer; everything the corpus rewrites needed is done.)
+      (TICKED 2026-08-16: M17 CLOSED — all 24 circuits of its fixture,
+      including the kernel primitives, the block-time and unshielded
+      families and the three shielded compositions, are ported and equal
+      to compactc instruction for instruction. The one thing that is not
+      ported, `kernel.checkpoint()`, cannot be compiled for our IR
+      version by compactc itself.)
 - [X] Prerequisite: ZKIR v3 emission + execution (sig-net contracts are v3).
       (minocrab-ir::v3::Builder3 — typed, zkir-v3 mock-compile accepts;
       minocrab::v3::Circuit3 — Wire3<T, Vis>, capability-trait ops, the
@@ -126,7 +132,7 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       port driving upstream's own pub ir_instructions helpers, full
       pis/pi_skips/comm_comm, 10 cross-checked tests. Needed because
       upstream's Preprocessed path is pub(crate) — notes/ledger-abi.org §6.)
-- [ ] Ledger-op layer (crates/minocrab-ledger): Impact ops via onchain-vm's
+- [X] Ledger-op layer (crates/minocrab-ledger): Impact ops via onchain-vm's
       Op::field_repr; constant ops through the real Op type, value-carrying
       ops splice wires into field_repr's layout (unit-tested equal).
       WRITES DONE + accepted: baseline noop/base rebuilt and call-compatible
@@ -148,6 +154,10 @@ Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
       remainder is MerkleTree ops, now owned by M16 together with List,
       HistoricMerkleTree and the rest of Set. This bullet stays open as
       M16's pointer.)
+      (TICKED 2026-08-16: M16 CLOSED — List, MerkleTree, HistoricMerkleTree
+      and the rest of Set landed with 31 of 31 circuits byte-identical to
+      compactc. What M16 did not do it named and scoped: the three
+      `insertCoin`/`pushFrontCoin` arms and nested ADTs.)
 - [X] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
       a differential + property test. (ABI modeled: notes/ledger-abi.org.
       Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
@@ -196,6 +206,9 @@ Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
 AUDIT 2026-08-15: two of three bullets tick; the two that stay open are
 pure pointers — the stdlib remainder is M17, the ledger-ADT remainder is
 M16. Nothing in M4's own scope is unaccounted for.
+CLOSED 2026-08-16: all three tick. Both pointers resolved — M16 closed
+the ledger ADTs and M17 the kernel/token stdlib, each with its own
+instruction-for-instruction differential against compactc.
 
 * M5 — Cross-contract calling
 Pulled ahead of the benchmark (dmd, 2026-08-14): the erc20-vault runtime
@@ -1511,7 +1524,7 @@ Gt/Gte), the unshielded-token family (mintUnshielded, sendUnshielded,
 receiveUnshielded, claimUnshieldedCoinSpend, incUnshieldedInputs/
 Outputs, unshieldedBalance*), kernel.balance/balanceLessThan/
 balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
-- [-] Port via the established route: compactc's vm-code lowering →
+- [X] Port via the established route: compactc's vm-code lowering →
       minocrab-ledger ops → stdlib circuits, each with a corpus (or
       tiny.compact-style) differential.
       (IN PROGRESS 2026-08-16, notes/kernel-tokens.org. DESIGN NOTE FIRST,
@@ -1580,5 +1593,47 @@ balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
       `mergeCoinImmediate` — the shielded compositions, whose pieces
       exist in ad-hoc form inside the ported vault contracts and want
       lifting into the stdlib.)
+      (SHIELDED STAGE DONE 2026-08-16 — all 24 of the fixture's circuits
+      match compactc instruction for instruction and `NOT_YET_PORTED` is
+      EMPTY. The three shielded compositions are the only ones here with
+      coin algebra between the kernel calls, and each of the four things
+      they needed is a primitive compactc's lowering has and ours did
+      not: `Circuit3::copy` (a cast NAMES its result — `as Uint<128>`,
+      and `degradeToTransient`); `transient_hash` over `AnyWire3`, so a
+      Poseidon domain separator inlines like a SHA one has since M16 —
+      the named-immediate gap's fourth appearance and first in the
+      transient flavor; v3 `degrade_to_transient`/`upgrade_from_transient`
+      (the v2 twins are M4's); and `coin_commitment_to_contract`, because
+      a static `right(kernel.self())` recipient has NO select to make and
+      compactc emits none.
+      THE VALUE BRANCH IS WRITTEN OUT, not through this session's
+      `when_value`, and the reason is a limit worth having found:
+      compactc folds the `Maybe`'s tag INTO the else-arm's guard (`none`
+      and `some` differ by a tag that is 0 or 1, so selecting it IS
+      `cond_select(change == 0, 0, 1)`), and a chain would emit that
+      select a second time. Same shape one level down: our `&&` is a
+      `mul`, compactc's is a `cond_select`. Both are arguments for
+      notes/ir-passes.org §2(ii)'s normalisation pass, arriving from a
+      direction that note did not anticipate — the surface API can only
+      be as ergonomic as the LOWERING allows while the bar is instruction
+      equality.
+      MEASURED MOVEMENT, same class as stage 3's: inlining the constants
+      in `coin_nullifier_contract`/`coin_commitment` moved 28 pre-existing
+      circuits (six vault circuits × four forks, both mint-tokens, xcall-
+      with-payment notify/pay), 42 `copy`s removed. CHECKED, not asserted:
+      each dump equals its baseline once every removed `copy`'s immediate
+      is substituted for its output name — all 28. row_snapshot regenerated
+      to +3 lines and ZERO deletions, and both classes are now measured in
+      `opcost` (100 `copy`s = 0 rows; 100 `cond_select`s = 101).
+      NOT DONE, queued in notes/review-queue.org: lifting the vault's own
+      `receive_shielded`/`burn_coin`/`mint_shielded_token` onto the stdlib
+      gadgets. It would drop two `cond_select`s per static recipient — ~2
+      rows, no `k` boundary, no prove time, but it MOVES a frozen
+      instrument, so it wants its own gate rather than a ride beside a
+      port.)
 Exit criteria: the README fairness bullet shrinks to nothing in this
-class; M4's stdlib bullet finally ticks.
+class; M4's stdlib bullet finally ticks. MET — the README bullet is
+GONE (all 24 fixture circuits ported and equal to compactc;
+`kernel.checkpoint()` is not a gap of ours, since compactc's own v3
+backend cannot compile it), and M4's two pointer bullets tick with M16
+and M17 both closed. M17 CLOSED.
