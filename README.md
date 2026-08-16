@@ -4,11 +4,17 @@ Rust eDSL for Midnight contracts, replacing Compact. Same target (ZKIR, never be
 
 This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose it, and neither you nor I will know why.
 
+That said: every claim below is instrumented, and the instruments are the product. If you are evaluating this stack seriously, start with these three documents —
+
+- [VERIFICATION.md](VERIFICATION.md) — the complete warrant chain: what proves what, which command re-checks it, which instrument catches which failure class, and the honest limits. Includes a one-day audit route.
+- [BENCHMARK.md](BENCHMARK.md) — reproducible from a clean checkout (`nix run .#bench`): rows −18..−58% against compactc on the vault, prove time −46..−97% where `k` crosses, with the losses stated beside the wins.
+- The supply chain is pinned by hash, not by version string: compactc by release hash, all `midnight-*` crates to one 40-character rev, the corpus deterministic (recompiling moves zero of 788 artifacts), and every generated file regenerated between markers into reviewable diffs.
+
 ## Safety
 
 - Leaking a `Wire<Private>` is a compile error until `c.disclose(w, label)` ([compile_fail doctest](crates/minocrab/src/lib.rs))
 - Argument types are the range constraints — `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own `emit-constraints-for` table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs), [v3_entry.rs](crates/minocrab-std/tests/v3_entry.rs))
-- Drift is a test failure: `(k, rows)` and the ordered interface of all 112 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
+- Drift is a test failure: `(k, rows)` and the ordered interface of all 167 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
 - 9,000,000 property cases against a Rust spec of every vault circuit, accepted runs replayed through the reference VM and the pinned ledger's `run_program` ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs))
 - Adversarial sweeps: `2^128 − 1`, zero addresses, malformed witnesses, witness malleability, injectivity ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs))
 - Bijective serialization — Borsh `bool` is `0|1`, so the `0x02` attestation hazard is unprovable, not refunded ([erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs))
@@ -17,7 +23,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 
 ## Features
 
-- [Borsh](https://borsh.io) subset encoding/decoding ([spec](spec/borsh-subset.md), [vectors](spec/vectors), [conformance](crates/minocrab-contracts/tests/serialization_conformance.rs)), with Rust and TypeScript parser generation ([spec/ts](spec/ts), [vectors.test.ts](spec/ts/vectors.test.ts), [ts_codegen.rs](crates/minocrab-contracts/tests/serialization/ts_codegen.rs))
+- [Borsh](https://borsh.io) subset encoding/decoding — a safety feature, not a convenience: the wire format is a published, stable spec with independent implementations in other languages, so both ends are auditable separately ([spec](spec/borsh-subset.md), [vectors](spec/vectors), [conformance](crates/minocrab-contracts/tests/serialization_conformance.rs)), with Rust and TypeScript parser generation ([spec/ts](spec/ts), [vectors.test.ts](spec/ts/vectors.test.ts), [ts_codegen.rs](crates/minocrab-contracts/tests/serialization/ts_codegen.rs))
 - FAB Compact too, named at the call site: `persistent_hash_compact` / `transient_hash_compact` ([v3_borsh.rs](crates/minocrab-std/tests/v3_borsh.rs))
 - Hashing a Borsh value is free — the hash chips pack in-chip, zero extra rows
 - Interfaces for contracts have to be explicitly altered ([spec_doc.rs](crates/minocrab-contracts/tests/serialization/spec_doc.rs))
@@ -104,7 +110,7 @@ pub fn deposit(
 ```
 
 - The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
-- `#[circuit]` and `#[derive(CircuitArg)]` build 96 of the 112 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
+- `#[circuit]` and `#[derive(CircuitArg)]` build all but one family of the 167 frozen workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
 - This is the *showcase twin*: the same contract as the three zero-movement ports, written through the whole API. It is not prettier prose — it is gated on proving the identical statement (same typed schema, same PI vector on the ports' own preimage) at identical rows and identical `k` ([erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs))
 
 ## Feature by feature
@@ -217,7 +223,7 @@ if (cond) { const record = eventMap.lookup(requestId); /* ... */ }
 let record = VAULT.event_map.lookup_guarded(c, cond, &request_id).or_default();
 ```
 
-**Bounded integer** — compares at compactc's own width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type, and `narrow` emits the range check compactc omits for argument-position casts.
+**Bounded integer** — compares at compactc's own width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type, and `narrow` additionally emits a range check at the narrowing seam — an extra guard beyond what the platform requires, stated at ~BITS/4 rows.
 
 ```compact
 const requestNonce = signetRequestNonce as Uint<64>;   // Uint<0..n> arithmetic tracked by the compiler
@@ -265,10 +271,10 @@ borsh::persistent_hash(c, &value)   // digest of the canonical Borsh encoding
 ```
 
 The two entries worth reading twice are **subtraction** and **guarded read**:
-they are the places where the Rust API is *stricter* than Compact rather than
-merely equivalent — the underflow guard cannot be forgotten, and a
-possibly-default value cannot be consumed without saying what the default
-means.
+they carry additional safety features on top of the platform's own — the
+underflow guard cannot be forgotten, and a possibly-default value cannot be
+consumed without saying what the default means. Every such addition costs
+zero rows or a stated number, never a hidden one.
 
 ## Cross-contract calls
 
@@ -371,9 +377,9 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- The three `insertCoin` / `pushFrontCoin` arms — `Set`, `Map` and `List` grow an extra method when the element type is `QualifiedShieldedCoinInfo`. Everything else in `Set` / `List` / `MerkleTree` / `HistoricMerkleTree` is ported ([ledger](crates/minocrab-ledger/src/lib.rs)) with a 31-circuit differential.
-- Nested ADTs. Every ledger op assumes a top-level field, which is what compactc's path suppression rests on; a `Map<K, List<V>>` would need the general path.
-- A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing. Not formal-verification parity.
+- The three `insertCoin` / `pushFrontCoin` arms — `Set`, `Map` and `List` grow an extra method when the element type is `QualifiedShieldedCoinInfo`. Everything else in `Set` / `List` / `MerkleTree` / `HistoricMerkleTree` is ported ([ledger](crates/minocrab-ledger/src/lib.rs)) with a 31-circuit differential. Scoped at one stage of work — the shared lowering already exists as `cell_write_coin` — and built on demand; the one real-world caller found in the corpus is OpenZeppelin's `ShieldedTreasury` ([the investigation](notes/coin-arms-nested-adts.org)).
+- Nested ADTs — narrower than it sounds: Compact's own kind system nests through `Map` alone (`Map<K, Map<..>>` / `Map<K, List<V>>`; `Set` and `List` take only plain types). Every ledger op here assumes a top-level field; the vm-code half of the general path is small, the Rust-API half is a real milestone, and the corpus demand is three OpenZeppelin declarations ([the investigation](notes/coin-arms-nested-adts.org)).
+- A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing — laid out end to end in [VERIFICATION.md](VERIFICATION.md), honest limits included. Not formal-verification parity.
 
 ## Layout
 
