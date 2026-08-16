@@ -1461,7 +1461,7 @@ pub fn refund(
     let ev = c.region("event map consume", |c| {
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup_guarded(c, is_withdrawal, &request_id);
+            .lookup_guarded(c, is_withdrawal, &request_id).or_default();
         VAULT
             .sign_bidirectional_event_map
             .remove_under(c, is_withdrawal, &request_id);
@@ -1473,12 +1473,12 @@ pub fn refund(
     let ev7 = c.region("event map consume", |c| {
         let swap_pending = VAULT
             .swap_refund_commitment
-            .member_guarded(c, swapping, &request_id)
+            .member_guarded(c, swapping, &request_id).or_default()
             .field();
         common::assert_if(c, swapping, swap_pending);
         let ev7 = VAULT
             .swap_event_map
-            .lookup_guarded(c, swapping, &request_id);
+            .lookup_guarded(c, swapping, &request_id).or_default();
         VAULT.swap_event_map.remove_under(c, swapping, &request_id);
         ev7
     });
@@ -1496,10 +1496,10 @@ pub fn refund(
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let wd_stored = VAULT
             .refund_commitment
-            .lookup_guarded(c, is_withdrawal, &request_id);
+            .lookup_guarded(c, is_withdrawal, &request_id).or_default();
         let sw_stored = VAULT
             .swap_refund_commitment
-            .lookup_guarded(c, swapping, &request_id);
+            .lookup_guarded(c, swapping, &request_id).or_default();
         let stored_hi = c.cond_select(is_withdrawal, wd_stored.hi, sw_stored.hi);
         let stored_lo = c.cond_select(is_withdrawal, wd_stored.lo, sw_stored.lo);
         let eq_hi = c.test_eq(rc.hi, stored_hi.private());
@@ -1681,7 +1681,7 @@ pub fn claim(
         let rec_is_some = rec_is_some.disclose_as::<ClaimRecipientTag>(c);
         let rec_is_left = rec_is_left.disclose_as::<ClaimRecipientSide>(c);
         let not_some = c.not(rec_is_some);
-        let own_pk = own_public_key_guarded(c, not_some);
+        let own_pk = own_public_key_guarded(c, not_some).or_default();
         let own_pk = own_pk.disclose_as::<ClaimRecipientOwnKey>(c);
         let rec_left = rec_left.disclose_as::<ClaimRecipientKey>(c);
         let rec_right = rec_right.disclose_as::<ClaimRecipientContract>(c);

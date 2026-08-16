@@ -28,7 +28,7 @@
 use std::marker::PhantomData;
 
 use minocrab::v3::{
-    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT, Operand,
+    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, Guarded, JubjubPointT, Operand,
     Secp256k1PointT, Wire3,
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public, Visibility};
@@ -351,9 +351,12 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
         key: &K,
-    ) -> Bool<Public> {
+    ) -> Guarded<Bool<Public>, G> {
         let key = key.ledger_value(c);
-        Bool::from_field(map_member_guarded(c, guard, self.index, &key))
+        Guarded::new(
+            Bool::from_field(map_member_guarded(c, guard, self.index, &key)),
+            guard,
+        )
     }
 
     /// `map.lookup(key)` — `dup 0; idx [field]; idx {key}; popeq`. The value
@@ -379,15 +382,16 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
         key: &K,
-    ) -> V {
+    ) -> Guarded<V, G> {
         let key = key.ledger_value(c);
-        V::from_limbs(map_lookup_guarded(
+        let value = V::from_limbs(map_lookup_guarded(
             c,
             guard,
             self.index,
             &key,
             V::atoms(),
-        ))
+        ));
+        Guarded::new(value, guard)
     }
 
     /// `map.insert(key, value)` — `idxp [field]; push key; pushs value;
@@ -1246,10 +1250,10 @@ impl<T: LedgerRepr> LedgerCell<T> {
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
-    ) -> T {
+    ) -> Guarded<T, G> {
         let (value, embed) = T::witness_read(c, Some(guard));
         cell_read_embedded(c, guard, self.index, &embed);
-        value
+        Guarded::new(value, guard)
     }
 
     /// `x = value` — `push key; pushs value; ins 1`.
@@ -1304,8 +1308,11 @@ impl LedgerCounter {
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
-    ) -> Uint<64, Public> {
-        Uint::from_field(counter_read_guarded(c, guard, self.index))
+    ) -> Guarded<Uint<64, Public>, G> {
+        Guarded::new(
+            Uint::from_field(counter_read_guarded(c, guard, self.index)),
+            guard,
+        )
     }
 
     /// `n.increment(amount)` — `idxp [field]; addi amount; insc 1`.

@@ -1593,7 +1593,7 @@ pub fn claim(
         let rec_is_some = rec_is_some.disclose_as::<ClaimRecipientTag>(c);
         let rec_is_left = rec_is_left.disclose_as::<ClaimRecipientSide>(c);
         let not_some = c.not(rec_is_some);
-        let own_pk = own_public_key_guarded(c, not_some);
+        let own_pk = own_public_key_guarded(c, not_some).or_default();
         let own_pk = own_pk.disclose_as::<ClaimRecipientOwnKey>(c);
         let rec_left = rec_left.disclose_as::<ClaimRecipientKey>(c);
         let rec_right = rec_right.disclose_as::<ClaimRecipientContract>(c);

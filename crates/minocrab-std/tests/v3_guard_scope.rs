@@ -435,3 +435,62 @@ fn an_unscoped_witness_carries_no_guard() {
         "an unscoped witness must have no guard: {ir}"
     );
 }
+
+// --- `Guarded<T>`: the guarded read's value, and what naming it costs -------
+//
+// A guarded-off gate yields the type's DEFAULT and skips the transcript
+// (upstream `ir_vm.rs:348-366`). `Guarded<T>` makes the caller say which they
+// mean instead of handing back a value that is silently zero on a path they
+// were not thinking about. These three tests are its price list.
+
+/// `or_default()` is FREE — the whole point. The gate already produced the
+/// default; naming that fact must not emit an instruction, or the type would
+/// be a tax on the honest case.
+#[test]
+fn or_default_emits_nothing() {
+    let bare = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let _ = c.witness_guarded::<FieldT, _>(g);
+    });
+    let named = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let _ = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g).or_default();
+    });
+    assert_eq!(bare, named);
+}
+
+/// `or(fallback)` costs exactly the `cond_select` a careful author writes by
+/// hand, on the same guard and in the same order.
+#[test]
+fn or_is_the_hand_written_select() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let alt = c.arg::<FieldT>("alt");
+        let read = c.witness_guarded::<FieldT, _>(g);
+        let _ = c.cond_select(g, read, alt);
+    });
+    let wrapped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let alt = c.arg::<FieldT>("alt");
+        let read = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g);
+        let _ = read.or(c, alt);
+    });
+    assert_eq!(by_hand, wrapped);
+}
+
+/// `assert_read()` is one `Assert` on the guard — the caller stating that the
+/// branch must have been taken, which makes the circuit unsatisfiable where
+/// it was not.
+#[test]
+fn assert_read_is_one_assert_on_the_guard() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let _ = c.witness_guarded::<FieldT, _>(g);
+        c.assert(g);
+    });
+    let wrapped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let _ = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g).assert_read(c);
+    });
+    assert_eq!(by_hand, wrapped);
+}

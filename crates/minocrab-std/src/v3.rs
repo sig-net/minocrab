@@ -84,6 +84,12 @@ pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint
 /// and the trait that lets its arms be written as wires or as [`Check`]s.
 pub use minocrab::v3::{Branches, GuardCond, Select, Selected, ValueBranches};
 
+/// The result of a guarded read — the value, or the type's DEFAULT where the
+/// guard was off. Re-exported here because this is where guarded reads are
+/// WRITTEN: every `_guarded` method on [`LedgerMap`], [`LedgerCell`] and
+/// [`LedgerCounter`] returns one.
+pub use minocrab::v3::Guarded;
+
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire
 /// contract). Named the same as the trait it implements, the way
@@ -1393,13 +1399,13 @@ pub fn own_public_key(c: &mut Circuit3) -> B32<Private> {
 pub fn own_public_key_guarded<V: Vis3>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
-) -> B32<Private> {
+) -> Guarded<B32<Private>, V> {
     let pk = B32 {
         hi: c.witness_guarded::<FieldT, V>(guard),
         lo: c.witness_guarded::<FieldT, V>(guard),
     };
     pk.constrain_input(c);
-    pk
+    Guarded::new(pk, guard)
 }
 
 /// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE

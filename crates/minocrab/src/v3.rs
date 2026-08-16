@@ -326,6 +326,93 @@ impl<V: Visibility, T: Select<V>> Select<V> for Selected<T> {
     }
 }
 
+/// The result of a GUARDED READ: the value the transcript carried if the
+/// guard held, and the type's DEFAULT if it did not.
+///
+/// The default is not this library's choice. A guarded-off `public_input` /
+/// `private_input` gate yields the type's default and does not consume the
+/// transcript — upstream's own VM semantics (`ir_vm.rs:348-366`), and the
+/// whole reason a read can sit inside a branch at all. What this type adds is
+/// that the caller has to SAY which they mean, instead of receiving a value
+/// that is silently zero on a path they were not thinking about.
+///
+/// It is deliberately NOT [`Deref`](std::ops::Deref), and that is the
+/// difference from [`Selected`]. `Selected` guards against DROPPING a value,
+/// so deref coercion is harmless and saves ceremony. `Guarded` guards against
+/// CONFUSING two values — the read one and the default one — and a coercion
+/// that silently produced the value would undo exactly the thing the type is
+/// for.
+///
+/// Three ways out, and the costs are the honest ones:
+///
+/// | | means | cost |
+/// |---+---+---|
+/// | [`or_default`](Guarded::or_default) | "the default is the right answer here" | *nothing* — the gate already did it |
+/// | [`or`](Guarded::or) | "use this instead when the guard was off" | one `cond_select` per native slot |
+/// | [`assert_read`](Guarded::assert_read) | "the guard must have held" | one `Assert` |
+///
+/// `or_default` being free is worth stating plainly, because the instinct is
+/// to expect a type-system win to cost rows: the wire already IS the default
+/// when the guard is off, so naming that fact emits nothing at all.
+#[must_use = "a guarded read is the type's DEFAULT when its guard was off — say which you \
+              mean with `.or_default()`, `.or(..)` or `.assert_read(c)`"]
+pub struct Guarded<T, V: Visibility> {
+    value: T,
+    guard: Wire3<FieldT, V>,
+}
+
+impl<T, V: Visibility> Guarded<T, V> {
+    /// Wrap a value read under `guard`. Called by the guarded read helpers;
+    /// a contract receives one rather than building it.
+    pub fn new(value: T, guard: Wire3<FieldT, V>) -> Self {
+        Guarded { value, guard }
+    }
+
+    /// Take the value, accepting the type's default where the guard was off.
+    ///
+    /// ZERO INSTRUCTIONS. The gate already yielded the default; this only
+    /// records that the caller meant it.
+    pub fn or_default(self) -> T {
+        self.value
+    }
+
+    /// The guard the read carried, for a caller doing its own selection.
+    pub fn guard(&self) -> Wire3<FieldT, V> {
+        self.guard
+    }
+}
+
+impl<T: Select<V>, V: Visibility> Guarded<T, V> {
+    /// Take the value, substituting `fallback` where the guard was off.
+    ///
+    /// One `cond_select` per native slot of `T` — the same instructions the
+    /// caller would write by hand, on the same guard.
+    pub fn or(self, c: &mut Circuit3, fallback: T) -> T {
+        T::select(c, self.guard, self.value, fallback)
+    }
+}
+
+impl<T, V: Visibility> Guarded<T, V> {
+    /// Take the value and REQUIRE that the guard held: `assert(guard)`.
+    ///
+    /// One `Assert`. Turns "may not have been read" into "was read", at the
+    /// price of making the circuit unsatisfiable on the path where it was
+    /// not — which is a statement about the protocol, so it is spelled out
+    /// rather than defaulted to.
+    pub fn assert_read(self, c: &mut Circuit3) -> T {
+        c.assert_with(self.guard, Some("guarded read: the guard must hold"));
+        self.value
+    }
+}
+
+impl<T: Clone, V: Visibility> Clone for Guarded<T, V> {
+    fn clone(&self) -> Self {
+        Guarded { value: self.value.clone(), guard: self.guard }
+    }
+}
+
+impl<T: Copy, V: Visibility> Copy for Guarded<T, V> {}
+
 /// A value that a conditional can SELECT between: one `cond_select` per
 /// native slot.
 ///

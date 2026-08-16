@@ -1367,7 +1367,7 @@ pub fn refund(
     let ev = c.region("event map consume", |c| {
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup_guarded(c, is_withdrawal, &request_id);
+            .lookup_guarded(c, is_withdrawal, &request_id).or_default();
         VAULT
             .sign_bidirectional_event_map
             .remove_under(c, is_withdrawal, &request_id);
@@ -1379,9 +1379,9 @@ pub fn refund(
     let ev7 = c.region("event map consume", |c| {
         let swap_pending = VAULT
             .swap_refund_commitment
-            .member_guarded(c, swapping, &request_id);
+            .member_guarded(c, swapping, &request_id).or_default();
         c.assert(is_true(swap_pending).when(swapping).message("Swap not found"));
-        let ev7 = VAULT.swap_event_map.lookup_guarded(c, swapping, &request_id);
+        let ev7 = VAULT.swap_event_map.lookup_guarded(c, swapping, &request_id).or_default();
         VAULT.swap_event_map.remove_under(c, swapping, &request_id);
         ev7
     });
@@ -1395,10 +1395,10 @@ pub fn refund(
         let rc = withdraw_refund_commitment(c, &sk, &request_id.private());
         let wd_stored = VAULT
             .refund_commitment
-            .lookup_guarded(c, is_withdrawal, &request_id);
+            .lookup_guarded(c, is_withdrawal, &request_id).or_default();
         let sw_stored = VAULT
             .swap_refund_commitment
-            .lookup_guarded(c, swapping, &request_id);
+            .lookup_guarded(c, swapping, &request_id).or_default();
         let stored = B32::cond_select(c, is_withdrawal, &wd_stored, &sw_stored);
         c.assert(b32_eq(&rc, &stored.private()).message("Not the claimant"));
     });
@@ -1568,7 +1568,7 @@ pub fn claim(
             .field()
             .disclose_as::<ClaimRecipientSide>(c);
         let not_some = c.not(rec_is_some);
-        let own_pk = own_public_key_guarded(c, not_some).disclose_as::<ClaimRecipientOwnKey>(c);
+        let own_pk = own_public_key_guarded(c, not_some).or_default().disclose_as::<ClaimRecipientOwnKey>(c);
         let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
         let rec_right = recipient
             .value

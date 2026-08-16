@@ -604,9 +604,19 @@ The decision to re-examine is narrow, and it is dmd's:
   wrong, it is exactly right — which is why the objection may not reach this
   case.
 
-Until that is settled the 27 sites keep naming their guard, and the four
-=_guarded= read helpers stay. Nothing is worse than it was; the API just has
-two spellings where one was intended.
+*SETTLED, and not the way the question was framed* (dmd, 2026-08-16): the
+right move was not to change =when= at all. dmd's objection to the silent
+default was stronger than the objection to naming a guard — /"I'm not sure
+how I feel about something returning a default value on failure, are there
+any ways to make it so the programmer generally has to think about it, but
+can do something like ok_or_default()?"/ — and that question has a better
+answer than a scope does. See §10.
+
+The rule that fell out: *a read whose value you keep is a read whose guard you
+name*, and the value comes back in a =Guarded<T>= that will not let you use it
+until you say what the default means. =when= stays effect-only, the =_guarded=
+read helpers stay (they are the equivalence twin anyway), and the 27 sites are
+no longer a gap — they are the API working.
 
 The other 12 remaining sites are effect-only =remove_under=s, and they COULD
 move — as twelve one-statement scopes, interleaved between the reads above
@@ -646,3 +656,45 @@ what the merged =refund= of the opt lineage is — the withdrawal route's and
 the swap route's reads interleaved so their results can be selected. One-statement scopes there would
 be more ceremony than the named guard they replace, and would say something
 false besides: that the statements form a block.
+
+* 10. =Guarded<T>=, as built (2026-08-16)
+
+A guarded-off gate yields the type's DEFAULT and skips the transcript
+(upstream =ir_vm.rs:348-366=). Until now the typed layer handed that value
+back as a bare =T= and nothing said so — the silent default was not a gap §9
+opened, it was one that had been there since M10's guarded reads landed.
+
+=minocrab::v3::Guarded<T, V>= is what the guarded read helpers return now.
+Three ways out, and the price list is =tests/v3_guard_scope.rs=:
+
+| | means | measured cost |
+|---+---+---|
+| =or_default()= | "the default is the right answer here" | *byte-identical to the bare read* |
+| =or(c, fallback)= | "use this instead where the guard was off" | exactly the hand-written =cond_select= |
+| =assert_read(c)= | "the guard must have held" | one =Assert= on the guard |
+
+=or_default= being FREE is the point worth stating, because the instinct is
+that a type-system win costs rows: the wire already IS the default, so naming
+that fact emits nothing. The type is a compile-time statement about a value
+the VM already produced.
+
+NOT =Deref=, and the reason is the test this session arrived at for Deref
+generally (see the Deref survey in the same session): =Selected<T>= derefs
+because it guards against DROPPING a value, where a coercion is harmless.
+=Guarded<T>= guards against CONFUSING two values — the read one and the
+default one — so a coercion that silently produced the value would undo
+exactly what the type is for. =#[must_use]= covers the dropped case instead.
+
+WHAT IT FOUND, which is the argument for having built it: 19 call sites
+across the four vault forks were consuming a possibly-default value with
+nothing at the type level saying so. All 19 turned out to MEAN
+=.or_default()= — the code was right — but that is a fact established by
+compiler error rather than by reading, and the next one might not be.
+
+One new helper fell out: =kernel::self_address_guarded=, so a contract never
+reaches for =minocrab_ledger::kernel_self_guarded= and its raw =[Wire3; 2]=.
+That completes the =kernel.self()= unification M18 started — the raw op is
+now entirely below the typed layer, guarded and unguarded alike.
+
+Zero movement: 162 of 167 circuits byte-identical, 5 identical modulo
+identifier numbering (inherited from §9's commit), 0 changed.

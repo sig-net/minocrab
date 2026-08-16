@@ -706,6 +706,27 @@ discipline; format_version byte recommended.
 6. Logs or state for the indexer? Recommend both: FAB in state for the
    chain, Borsh in the log for the indexer, log bytes = requestId
    preimage.
+   ANSWERED (dmd, 2026-08-16): *EVENTS* — the design emits events which
+   the MPC observes, as FakeNet already does today.
+   AND THE PINNED CORPUS SAYS WHICH EVENTS, which sharpens the answer into
+   the one stage 7 actually needs. `Signet.compact`:30-49 documents the
+   whole flow, and it is BOTH channels with a specific split:
+   - the EVENT is the NOTIFICATION. The Signet singleton emits
+     `SignBidirectionalEventNotification`; "MPC polls the Signet singleton
+     contract's events for SignBidirectionalEventNotifications".
+   - the RECORD is LEDGER STATE. Each notification is used "to look the
+     declared SignBidirectionalEvent signature request up in the named
+     client's own ledger" — which is why their reader is a hand-written FAB
+     atom cursor over `midnight_contractState` RPC rather than a log
+     decoder.
+   So the note's "recommend both" was right, and stage 7 moves the half
+   that lives in STATE. Its blast radius is their FAB cursor, not their
+   event decoding — which matches the stage-7 work order below
+   (reader.rs constants 22→21/3→2 + a uint<u8> read).
+   The FakeNet reference in the same header is to the responder's
+   `/responses/{requestId}` helper API, used for OUTPUT RECOVERY (the
+   destination-chain call's return data), not for the record — so it is
+   not on stage 7's path.
 7. Confirm the attestation digest (stage 5) and the requestId (stage
    7) preimages can move independently in the MPC's code; if coupled,
    re-cut the phasing.

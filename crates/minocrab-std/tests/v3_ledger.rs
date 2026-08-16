@@ -299,8 +299,17 @@ fn the_guarded_map_reads_are_the_guarded_ops() {
         let (key, _) = inputs(&mut c);
         let one = c.constant(1u64);
         let branch = c.not(one);
-        let pending = DEMO.refund_commitment.member_guarded(&mut c, branch, &key);
-        let stored = DEMO.refund_commitment.lookup_guarded(&mut c, branch, &key);
+        // `.or_default()` is the typed layer saying what the raw form below
+        // does silently: a guarded-off read IS the type's default. Zero
+        // instructions, which is what keeps the two sides equal.
+        let pending = DEMO
+            .refund_commitment
+            .member_guarded(&mut c, branch, &key)
+            .or_default();
+        let stored = DEMO
+            .refund_commitment
+            .lookup_guarded(&mut c, branch, &key)
+            .or_default();
         c.assert_eq(pending.field(), stored.hi);
         c.finish(true)
     };

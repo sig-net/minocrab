@@ -8,6 +8,7 @@ use minocrab_ledger::{
     kernel_self_guarded, popeq, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::kernel;
+use minocrab::v3::Guarded;
 use minocrab_std::v3::{
     coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
     Secp256k1Point, ShieldedCoinInfo3, B32, STRAIGHT_LINE,
@@ -299,9 +300,9 @@ pub fn mint_shielded_token(
 
         // Auto-receive when minting to this contract itself.
         let not_left = c.not(recipient.is_left);
-        let self2 = kernel_self_guarded(c, not_left);
-        let eq_hi = c.test_eq(recipient.right.hi, self2[0]);
-        let eq_lo = c.test_eq(recipient.right.lo, self2[1]);
+        let self2 = kernel::self_address_guarded(c, not_left).or_default().bytes();
+        let eq_hi = c.test_eq(recipient.right.hi, self2.hi);
+        let eq_lo = c.test_eq(recipient.right.lo, self2.lo);
         let eq = c.mul(eq_hi, eq_lo);
         let receive = c.mul(not_left, eq);
         emit(c, receive, &kernel_claim_zswap_coin_receive(&cm_val));
@@ -446,13 +447,13 @@ pub fn burn_spend(
 pub fn witness_sk_guarded(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
-) -> B32<Private> {
+) -> Guarded<B32<Private>, Public> {
     let sk = B32 {
         hi: c.witness_guarded::<FieldT, Public>(guard),
         lo: c.witness_guarded::<FieldT, Public>(guard),
     };
     sk.constrain_input(c);
-    sk
+    Guarded::new(sk, guard)
 }
 
 /// In-branch assert: `assert(select(guard, cond, 1))` — the condition only
@@ -553,8 +554,7 @@ pub fn mint_shielded_token_to_key_guarded(
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
-    let me = kernel_self_guarded(c, guard);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address_guarded(c, guard).or_default().bytes();
     mint_shielded_token_to_key_with(c, guard, me, domain_sep, value, nonce, pk);
 }
 

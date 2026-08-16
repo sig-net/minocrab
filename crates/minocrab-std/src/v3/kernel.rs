@@ -29,7 +29,7 @@
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
-use minocrab::v3::{AnyWire3, Circuit3, FieldT, Operand, Wire3};
+use minocrab::v3::{AnyWire3, Circuit3, FieldT, Guarded, Operand, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public, Visibility};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
@@ -116,6 +116,19 @@ pub fn self_address_under<G: Visibility>(
     guard: impl Into<Operand<FieldT, G>>,
 ) -> ContractAddress<Public> {
     ContractAddress::from_limbs(kernel_self(c, guard))
+}
+
+/// [`self_address`] inside a conditional branch, where the READ itself is
+/// guarded — so the answer is the zero address wherever the guard was off,
+/// which is why it comes back in a [`Guarded`].
+pub fn self_address_guarded<G: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, G>,
+) -> Guarded<ContractAddress<Public>, G> {
+    Guarded::new(
+        ContractAddress::from_limbs(kernel_self_guarded(c, guard)),
+        guard,
+    )
 }
 
 /// `kernel.mintShielded(domain_sep, amount)` — effects[4].

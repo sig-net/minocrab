@@ -646,3 +646,13 @@ reviewer should look at.
       scope by accident would now be guarded, and the dump comparison
       cannot tell that apart from the intended change because both show up
       as a renumbering. notes/ir-passes.org §9 names the boundary.
+- [ ] `Guarded<T>` (notes/ir-passes.org §10): the reviewable part is the
+      LINE, not the type. `Guarded` wraps values from guarded transcript
+      GATES (reads, witnesses) — which really are the type's default when
+      the guard is off — and deliberately does not wrap computations whose
+      ASSERT is guarded (`abi_word_to_uint128_guarded`), whose value is a
+      real computation either way. A reviewer should check that boundary
+      per helper: a wrapped computation would be noise, an unwrapped gate
+      is the silent default the type exists to catch. Also worth a look:
+      all 19 migrated sites chose `.or_default()`, so nothing exercises
+      `.or` or `.assert_read` outside their unit tests.
