@@ -56,7 +56,8 @@ pub use ledger::{
 /// the module docs). The same comparisons are methods on the typed leaves
 /// (`amount.gt(0u64)`), delegating to these.
 pub use predicate::{
-    eq, ge, greater_than, is_true, le, less_than, ne, not, Check, CheckOperand,
+    eq, ge, greater_than, guarded, guarded_all, if_else, is_true, le, less_than, ne, not, Check,
+    CheckOperand,
 };
 
 /// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,

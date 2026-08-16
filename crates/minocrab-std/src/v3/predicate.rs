@@ -488,6 +488,94 @@ impl<V: Vis3> Assertion for Bool<V> {
     }
 }
 
+impl<V: Vis3> Check<V> {
+    /// Lower this predicate to its wire, for use as a GUARD rather than as
+    /// an assertion — see [`guarded`].
+    pub fn into_wire(self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+        lower(c, self.node)
+    }
+}
+
+/// Run `body` under `cond` as the ambient guard, with `cond` written in the
+/// same vocabulary as an assertion: `guarded(c, eq(a, b), ..)`,
+/// `guarded(c, is_true(flag).and(less_than(x, y, 64)), ..)`.
+///
+/// The predicate layer and the guard layer are the same language on purpose.
+/// A condition is a condition, and whether it ends up in an `assert` or in an
+/// Impact instruction's guard operand is the caller's business — so `Check`'s
+/// combinators (`and`, `or`, `not`) compose into guards for free, and there
+/// is one place where a comparison's WIDTH is resolved from its operand
+/// types rather than two.
+///
+/// PURE CONJUNCTS ONLY. `and` evaluates both sides unconditionally, which is
+/// right for arithmetic and wrong for anything that READS: Compact's `&&`
+/// short-circuits, so `a && f()` guards `f`'s reads by `a`. Where the second
+/// conjunct reads, nest the scopes instead — that is what
+/// [`Circuit3::guarded`]'s nesting is for, and it reproduces compactc's shape
+/// exactly.
+pub fn guarded<V: Vis3, R>(
+    c: &mut Circuit3,
+    cond: Check<V>,
+    body: impl FnOnce(&mut Circuit3) -> R,
+) -> R {
+    let wire = cond.into_wire(c);
+    c.guarded(wire, body)
+}
+
+/// Both arms, with the condition in the predicate vocabulary — the
+/// [`Circuit3::if_else`] twin of [`guarded`].
+pub fn if_else<V: Vis3, R>(
+    c: &mut Circuit3,
+    cond: Check<V>,
+    then_body: impl FnOnce(&mut Circuit3) -> R,
+    else_body: impl FnOnce(&mut Circuit3) -> R,
+) -> (R, R) {
+    let wire = cond.into_wire(c);
+    c.if_else(wire, then_body, else_body)
+}
+
+/// Compact's `&&` as a SEQUENCE — each conjunct evaluated under the
+/// conjunction of the ones before it, then `body` under all of them.
+///
+/// This is the flat spelling of nested [`Circuit3::guarded`] scopes, for the
+/// case the nesting exists to serve: a later conjunct that performs a
+/// transcript read, which must happen under the earlier ones. M17's
+/// `sendUnshielded` is the worked example —
+/// `recipient.is_left && recipient.left == kernel.self()` reads the
+/// contract's own address, and compactc guards that read by `is_left` alone.
+///
+/// ```ignore
+/// guarded_all(c, &[
+///     &|c| is_true(recipient.is_left),
+///     &|c| eq(kernel::self_address(c).bytes(), recipient.left.bytes()),
+/// ], |c| {
+///     kernel::inc_unshielded_inputs(c, &token, amount);
+/// });
+/// ```
+///
+/// Identical instructions to the nested form; one statement instead of two
+/// levels of indentation.
+pub fn guarded_all<R>(
+    c: &mut Circuit3,
+    conjuncts: &[&dyn Fn(&mut Circuit3) -> Check<Public>],
+    body: impl FnOnce(&mut Circuit3) -> R,
+) -> R {
+    fn go<R>(
+        c: &mut Circuit3,
+        conjuncts: &[&dyn Fn(&mut Circuit3) -> Check<Public>],
+        body: impl FnOnce(&mut Circuit3) -> R,
+    ) -> R {
+        match conjuncts.split_first() {
+            None => body(c),
+            Some((head, rest)) => {
+                let wire = head(c).into_wire(c);
+                c.guarded(wire, |c| go(c, rest, body))
+            }
+        }
+    }
+    go(c, conjuncts, body)
+}
+
 /// THE LOWERING, and the whole claim of this module: every node emits
 /// exactly the instructions the hand-written form emits, in the same order.
 fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {

@@ -398,6 +398,10 @@ pub struct Circuit3 {
     regions: Vec<Region>,
     queued_outputs: Vec<(Val, IrType)>,
     assert_messages: Vec<AssertMessage>,
+    /// The AMBIENT GUARD stack — see [`Circuit3::guarded`]. Each entry is
+    /// already the conjunction of itself and everything below it, so the top
+    /// is the effective guard and reading it costs nothing.
+    guards: Vec<Val>,
 }
 
 /// A finished v3 circuit: the lowered ZKIR plus its disclosure record.
@@ -435,6 +439,7 @@ impl Circuit3 {
             regions: Vec::new(),
             queued_outputs: Vec::new(),
             assert_messages: Vec::new(),
+            guards: Vec::new(),
         }
     }
 
@@ -480,7 +485,10 @@ impl Circuit3 {
 
     /// Read the next value from the public transcript (visible on-chain).
     pub fn public_transcript_input<T: IrTy>(&mut self) -> Wire3<T, Public> {
-        Wire3::new(self.b.public_input(T::ir_type(), None))
+        // Picks up the ambient guard, so a read inside `guarded` needs no
+        // `_guarded` variant at the call site.
+        let guard = self.ambient().map(Arg::Val);
+        Wire3::new(self.b.public_input(T::ir_type(), guard))
     }
 
     /// Guarded public-transcript read.
@@ -800,7 +808,13 @@ impl Circuit3 {
                 message: message.to_string(),
             });
         }
-        self.b.assert(cond.val);
+        // An assertion inside a guarded scope holds only where the guard
+        // does: `assert(select(guard, cond, 1))`. See [`Circuit3::guarded`].
+        let cond = match self.ambient() {
+            Some(guard) => self.b.cond_select(guard, cond.val, Fr::from(1u64)),
+            None => cond.val,
+        };
+        self.b.assert(cond);
     }
 
     /// `constrain_eq a b` — either side may be an inline immediate, which is
@@ -921,7 +935,8 @@ impl Circuit3 {
                 }
             })
             .collect();
-        self.b.impact(guard.into().arg(), &args);
+        let guard = self.resolve_guard(guard.into().arg());
+        self.b.impact(guard, &args);
     }
 
     /// Queue a wire as a circuit output (the single v3 Output terminator is
@@ -933,6 +948,102 @@ impl Circuit3 {
             values: vec![self.b.identifier(w.val)],
         });
         self.queued_outputs.push((w.val, T::ir_type()));
+    }
+
+    // --- guard scoping ---------------------------------------------------------------------
+
+    /// Run `body` with `cond` as the AMBIENT GUARD: every ledger operation,
+    /// transcript read and assertion inside it is guarded by `cond`, without
+    /// any of them naming it.
+    ///
+    /// This is the scoped form of the `_under` / `_guarded` argument every
+    /// ledger and kernel method carries, and it exists because that argument
+    /// does not COMPOSE. A helper called under a branch has to thread the
+    /// guard through its whole call graph by hand, and a helper that performs
+    /// a transcript read has to know to reach for the `_guarded` variant —
+    /// knowledge that lives in no type and is checked by nothing.
+    ///
+    /// THREE THINGS ARE GUARDED, and the third is the one that makes this a
+    /// safety feature rather than a convenience:
+    ///
+    /// 1. Impact instructions ([`Circuit3::impact_mixed`]).
+    /// 2. Public-transcript reads ([`Circuit3::public_transcript_input`]),
+    ///    which yield the type's default when the guard is off.
+    /// 3. **Assertions.** `assert(x)` inside a guarded scope lowers as
+    ///    `assert(select(guard, x, 1))` — it holds only where the guard does.
+    ///    Written by hand this is the caller's job and nothing checks it, so
+    ///    an assert placed inside a conditional fires unconditionally and no
+    ///    differential test on an honest preimage can see the mistake.
+    ///
+    /// NESTING is Compact's `&&`: the inner scope's guard is `select(outer,
+    /// inner, 0)`, computed ONCE on entry rather than per operation. So
+    ///
+    /// ```ignore
+    /// c.guarded(a, |c| c.guarded(b, |c| { .. }))
+    /// ```
+    ///
+    /// reproduces exactly the shape compactc emits for `if (a && b)`: the
+    /// reads between the two scopes are guarded by `a` alone, and everything
+    /// in the inner scope by the conjunction.
+    pub fn guarded<V: Visibility, R>(
+        &mut self,
+        cond: Wire3<FieldT, V>,
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let effective = match self.guards.last() {
+            // `outer && inner`, the `cond_select` lowering compactc uses.
+            Some(&outer) => self.b.cond_select(outer, cond.val, Fr::from(0u64)),
+            None => cond.val,
+        };
+        self.guards.push(effective);
+        let result = body(self);
+        self.guards.pop();
+        result
+    }
+
+    /// Both arms of a conditional: `then_body` under `cond`, `else_body`
+    /// under its negation.
+    ///
+    /// The negation is `select(cond, 0, 1)` — compactc's own lowering of `!`
+    /// — and is computed ONCE. Note that BOTH bodies emit all their
+    /// instructions: a circuit does not branch, so the cost is the sum of the
+    /// two arms. That is inherent to the setting, not a choice made here.
+    pub fn if_else<V: Visibility, R>(
+        &mut self,
+        cond: Wire3<FieldT, V>,
+        then_body: impl FnOnce(&mut Self) -> R,
+        else_body: impl FnOnce(&mut Self) -> R,
+    ) -> (R, R) {
+        let taken = self.guarded(cond, then_body);
+        let negated: Wire3<FieldT, V> =
+            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
+        let not_taken = self.guarded(negated, else_body);
+        (taken, not_taken)
+    }
+
+    /// The effective ambient guard, if any.
+    fn ambient(&self) -> Option<Val> {
+        self.guards.last().copied()
+    }
+
+    /// Resolve an explicitly-passed guard operand against the ambient one.
+    ///
+    /// The straight-line immediate `1` YIELDS to the ambient guard, which is
+    /// what makes a plain method call inside [`Circuit3::guarded`] pick the
+    /// scope up. An explicit non-trivial guard inside a scope is conjoined
+    /// with it — correct, but it costs an instruction per call, so the plain
+    /// form is the one to use inside a scope.
+    fn resolve_guard(&mut self, guard: Arg) -> Arg {
+        match (self.ambient(), guard) {
+            (None, g) => g,
+            (Some(ambient), Arg::Imm(imm)) if imm == Fr::from(1u64) => Arg::Val(ambient),
+            (Some(ambient), Arg::Val(v)) => Arg::Val(self.b.cond_select(ambient, v, Fr::from(0u64))),
+            (Some(ambient), Arg::Imm(imm)) => {
+                // A guard that is a constant OTHER than 1 is either always-off
+                // or nonsense; `ambient && imm` is still the honest answer.
+                Arg::Val(self.b.cond_select(ambient, Arg::Imm(imm), Fr::from(0u64)))
+            }
+        }
     }
 
     // --- profiling regions ---------------------------------------------------------------

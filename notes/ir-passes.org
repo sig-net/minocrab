@@ -189,7 +189,82 @@ Instruction selection is not, and never will be.
 
 1. =tests/backend_folding.rs= — DONE, and it is the evidence for all of the
    above.
-2. Guard scoping, and delete the =_under= / =_guarded= API halves.
-3. Constant folding, and delete the five special cases (NOT the =LedgerRepr=
+2. Guard scoping — DONE (additive). See §6.
+3. Delete the =_under= / =_guarded= API halves and migrate the 127 call
+   sites. NOT started, deliberately: the mechanism lands first and proves
+   itself, the churn in three vault ports comes after.
+4. Constant folding, and delete the five special cases (NOT the =LedgerRepr=
    change).
-4. Constraint dedup behind the opt profile.
+5. Constraint dedup behind the opt profile.
+
+* 6. GUARD SCOPING, as built
+
+=Circuit3::guarded(cond, body)= sets an AMBIENT GUARD for the closure. Three
+things pick it up, and the third is why this is a safety feature rather than
+a convenience:
+
+1. Impact instructions.
+2. Public-transcript reads — so a read inside a scope needs no =_guarded=
+   variant.
+3. *Assertions.* =assert(x)= inside a scope lowers as
+   =assert(select(guard, x, 1))=. By hand this is the caller's job, recorded
+   only in a doc comment ("asserts inside the branch are the caller's job"),
+   and getting it wrong makes the assertion fire on the branch that was NOT
+   taken — which no differential test on an honest preimage can see. That
+   bug class is now unwritable inside a scope.
+
+THE GATE, and the reason it is safe to adopt incrementally:
+=tests/v3_guard_scope.rs= proves =guarded(g, plain)= is BYTE-IDENTICAL to
+the hand-threaded =plain_under(g)= for every shape — Impact ops, reads,
+assertions, nesting, and =if_else=. It is a way of writing the guard down,
+not a different lowering. All 164 pre-existing circuits are unchanged
+(zkir_dump: 0 files differ).
+
+NESTING IS COMPACT'S =&&=, and this is the part that pays. The conjunction
+is computed ONCE on entry, and a read between two scopes is guarded by the
+OUTER one alone — which is exactly the shape M17's =sendUnshielded= needed
+and which I had to reverse-engineer from compactc's artifact to write by
+hand. It now falls out of writing the code in the shape of the source.
+
+** dmd's two questions, both yes
+
+*THE PREDICATE VOCABULARY IS THE GUARD VOCABULARY.* =predicate::guarded(c,
+eq(a, b), ..)= — =Check='s =and= / =or= / =not= compose into guards for
+free, and a comparison's WIDTH is resolved from its operand types in one
+place rather than two. A condition is a condition; whether it lands in an
+=assert= or in an Impact guard operand is the caller's business.
+
+*IF/ELSE EXISTS*, =Circuit3::if_else=, with the negation
+(=select(cond, 0, 1)=, compactc's own =!=) computed once. Both arms emit all
+their instructions — a circuit does not branch, so cost is the sum. That is
+the setting, not a choice.
+
+** …and the third question: can two nested guards become one statement?
+
+Yes, =predicate::guarded_all=, and the reason it needs closures rather than
+a flat expression is worth recording because it is not obvious.
+
+The nesting is not incidental — it IS the short-circuit structure of
+Compact's =&&=. In
+=recipient.is_left && recipient.left == kernel.self()= the second conjunct
+performs a TRANSCRIPT READ, which compactc guards by the first conjunct. So
+the second cannot be evaluated before the first is known, and any
+single-statement spelling has to keep the later conjuncts as closures:
+
+#+begin_src rust
+guarded_all(c, &[
+    &|c| is_true(recipient.is_left),
+    &|c| eq(kernel::self_address(c).bytes(), recipient.left.bytes()),
+], |c| { .. });
+#+end_src
+
+Flat syntax, nested semantics, byte-identical instructions.
+
+A GENUINELY flat conjunction — =guarded(c, a.and(b), ..)= with both sides
+evaluated up front — is available and correct whenever the conjuncts are
+PURE. For the self-address case it would mean reading =kernel.self()=
+UNGUARDED, which M10 rung i already established is sound (read count is
+"framing, not protocol"; every emitted read still reconciles through
+=process_read=). That costs the differential and therefore belongs in the
+opt profile — which is exactly the split §1 predicts, arriving from a
+direction nobody planned.
