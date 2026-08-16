@@ -618,3 +618,19 @@ reviewer should look at.
       Self-checking: the 768 removed copies over 91 circuits (each dump
       equals its baseline after substituting the immediate for the name),
       row_snapshot and interface_snapshot unchanged, full suite green.
+- [ ] GAP FOUND while answering dmd on contract shape (2026-08-16), not
+      yet fixed: nothing asserts that every `#[circuit]` in the workspace
+      appears in `support::circuits()`. That list — 170 hand-written
+      entries in a TEST module — is the only statement of which circuits
+      exist, and it feeds row_snapshot, interface_snapshot, zkir_dump and
+      the adversarial suite. There are 156 `#[circuit]` attributes against
+      those 170 entries (the gap is the `entry()`-built families, which
+      carry no attribute), so the counts cannot simply be compared.
+      A circuit added and not listed is covered by NOTHING and nothing
+      fires. The snapshots catch the opposite direction only (a listed
+      circuit missing from the frozen table), which is what fired when
+      M17's three landed.
+      The fix is the same one M18/the contract-shape question wants: a
+      `#[contract]` block that DERIVES the set, so the list stops being
+      hand-written. Until then this is a known hole, written down rather
+      than assumed away.
