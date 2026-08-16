@@ -8,7 +8,8 @@
 //! chains over the low limb.
 
 use minocrab::v3::{
-    Bytes32T, Circuit3, FieldT, IrTy, JubjubPointT, Secp256k1PointT, Secp256k1ScalarT, Wire3,
+    AnyWire3, Bytes32T, Circuit3, FieldT, IrTy, JubjubPointT, Secp256k1PointT, Secp256k1ScalarT,
+    Wire3,
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
@@ -1351,20 +1352,39 @@ pub fn token_type<V: Vis3>(
     domain_sep: &B32<V>,
     contract: &B32<V>,
 ) -> B32<V> {
-    let prefix = B32::pad(c, "midnight:derive_token");
-    let (p_hi, p_lo) = (V::from_public(prefix.hi), V::from_public(prefix.lo));
+    // The domain prefix is CONSTANT, so it is inlined into the hash operand
+    // list rather than named by two `copy`s — compactc emits
+    // `["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", …]` with no
+    // `copy` in sight (the M17 fixture's `sMintUnshieldedToken`). This is
+    // M16's `AnyWire3::immediate` applied to the last hash operand in the
+    // stdlib that still named its constants; it removes one `copy` pair from
+    // every `token_type` call site and is zero rows (M9 phase 7 measured that
+    // class).
+    let (p_hi, p_lo) = b32_pad_limbs("midnight:derive_token");
     let alignment = Alignment(vec![b32_atom(), b32_atom(), b32_atom()]);
     hash::persistent_hash_compact(
         c,
         alignment,
         &[
-            p_hi.erase(),
-            p_lo.erase(),
+            AnyWire3::immediate(p_hi),
+            AnyWire3::immediate(p_lo),
             domain_sep.hi.erase(),
             domain_sep.lo.erase(),
             contract.hi.erase(),
             contract.lo.erase(),
         ],
+    )
+}
+
+/// The `[hi, lo]` field elements of `pad(32, s)`, as constants — the
+/// value half of [`B32::pad`], for the call sites that inline it.
+fn b32_pad_limbs(s: &str) -> (Fr, Fr) {
+    assert!(s.len() <= 32, "pad(32, ..) literal longer than 32 bytes");
+    let mut bytes = [0u8; 32];
+    bytes[..s.len()].copy_from_slice(s.as_bytes());
+    (
+        Fr::from(u64::from(bytes[31])),
+        Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit"),
     )
 }
 

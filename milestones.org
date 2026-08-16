@@ -1544,11 +1544,15 @@ balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
       DONE SO FAR: the emission layer (the generalized accumulator, plus
       `kernel_balance` and `kernel_block_time`), the `minocrab_std::v3::
       kernel` module, the `UserAddress` leaf, `Either`'s LedgerRepr and
-      Disclose, and NINETEEN of the fixture's 24 circuits — the nine
-      compilable kernel primitives and the ten non-conditional stdlib
-      compositions — all BYTE-EQUAL to compactc up to identifier
-      renaming. Zero movement measured with tests/zkir_dump.rs: 0 files
-      differ, 19 added.
+      Disclose, and TWENTY-ONE of the fixture's 24 circuits — the nine
+      compilable kernel primitives, the ten non-conditional stdlib
+      compositions, and the two with a conditional auto-receive
+      (sendUnshielded, mintUnshieldedToken) — all BYTE-EQUAL to compactc
+      up to identifier renaming.
+      The conditional pair's shared piece is the auto-receive guard, and
+      two details of it are compactc's rather than ours: `kernel.self()`
+      is read under `is_left` ALONE (a user-address recipient never needs
+      the contract's address), and the `&&` is TWO cond_selects.
       THE NAMED-IMMEDIATE GAP, third appearance and third local close:
       `left<Bytes<32>,Bytes<32>>(color)` is four constant FAB limbs, and
       routing them through LedgerRepr names each with a `copy`. M15's
@@ -1557,13 +1561,24 @@ balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
       own type that knows its own constants, which needs no trait change.
       The pattern is now nameable: a local close is legitimate exactly
       when the constants belong to the TYPE rather than to a value.
-      REMAINING, each named in the differential's `NOT_YET_PORTED` so the
-      gap cannot widen silently: `sendUnshielded` and
-      `mintUnshieldedToken` (both end in a conditional self-transfer
-      whose guard feeds a guarded `kernel.self()` read and a guarded
-      effect — every piece exists, the port does not), and `sendShielded`
-      / `mergeCoin` / `mergeCoinImmediate` (the shielded compositions,
-      whose pieces exist in ad-hoc form inside the ported vault
-      contracts and want lifting into the stdlib).)
+      AND ONE CHANGE TO A SHARED GADGET, measured rather than assumed.
+      `mintUnshieldedToken` calls `tokenType`, whose constant domain
+      prefix our `token_type` built with `B32::pad` — two `copy`s where
+      compactc inlines the constants into the persistent_hash operand
+      list. That is the named-immediate gap for a HASH operand, which
+      M16 already built `AnyWire3::immediate` for; `token_type` was the
+      last stdlib hash operand still naming its constants. Because it
+      has ten call sites across all four vault forks, 26 CIRCUITS MOVED
+      — and the diff in every one is the same two `copy`s removed plus
+      renumbering, nothing else. row_snapshot is UNCHANGED, which proves
+      the zero-rows claim rather than assuming it, and every vault
+      differential still passes because a removed `copy` does not touch
+      the PI stream. 26 circuits moved CLOSER to compactc; recorded as
+      movement rather than folded into a zero-movement line.
+      REMAINING, named in the differential's `NOT_YET_PORTED` so the gap
+      cannot widen silently: `sendShielded` / `mergeCoin` /
+      `mergeCoinImmediate` — the shielded compositions, whose pieces
+      exist in ad-hoc form inside the ported vault contracts and want
+      lifting into the stdlib.)
 Exit criteria: the README fairness bullet shrinks to nothing in this
 class; M4's stdlib bullet finally ticks.

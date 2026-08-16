@@ -206,14 +206,42 @@ NOT PORTED, and each for a stated reason rather than an absence
 
 - =kernel.checkpoint()= — finding (a). Cannot be compiled for our IR
   version at all. Not a gap of ours.
-- =sendUnshielded= and =mintUnshieldedToken= — both end in a CONDITIONAL
-  self-transfer (=if (recipient.is_left && recipient.left == kernel.self())=)
-  whose guard is a computed wire feeding both a guarded =kernel.self()= read
-  and a guarded effect. Every piece exists (=kernel_self_guarded=, the
-  =_under= forms, =cond_select=); what is missing is the port, and the
-  fixture pins the target stream (=sSendUnshielded= is 65 instructions).
 - =sendShielded=, =mergeCoin=, =mergeCoinImmediate= — the SHIELDED
   compositions, which are much larger (nonce evolution, coin commitments,
   nullifiers, a change-coin branch) and whose pieces already exist in
   ad-hoc form inside the ported vault contracts. Lifting them into the
   stdlib is worth doing and is the natural next stage; it is not started.
+
+** The conditional pair, and the change it forced in a SHARED gadget
+
+=sendUnshielded= and =mintUnshieldedToken= are ported, so 21 of the 24 now
+match. Their shared piece is the auto-receive guard,
+=recipient.is_left && recipient.left.bytes == kernel.self().bytes=, and two
+details of it are compactc's rather than ours: the =kernel.self()= read is
+guarded by =is_left= ALONE (a user-address recipient never needs the
+contract's address, so the read is skipped and its gates yield the default),
+and the conjunction is TWO =cond_select=s rather than a multiplication.
+
+=mintUnshieldedToken= then forced a change outside M17. It calls
+=tokenType(domainSep, kernel.self())=, and our =token_type= built its
+constant domain prefix with =B32::pad= — two =copy= instructions where
+compactc inlines the constants into the =persistent_hash= operand list. That
+is the named-immediate gap for a HASH operand, which M16 already built the
+mechanism for (=AnyWire3::immediate=); =token_type= was simply the last
+stdlib hash operand still naming its constants.
+
+MEASURED MOVEMENT, because =token_type= has ten call sites across all four
+vault forks and the benchmark contract is one of them: 26 circuits changed,
+and the diff in every one is the SAME TWO =copy= instructions removed plus
+renumbering — nothing else.
+
+THE ZERO-ROWS CLAIM IS PROVEN, not assumed. row_snapshot was REGENERATED
+after the change and gained exactly TWO lines — the two newly ported
+circuits — and lost NONE. So all 26 moved circuits' =(k, rows)= are
+identical, which is what "a =copy= of an immediate is zero rows" means and
+what M9 phase 7 measured for the same class. Every vault differential still
+passes: they compare PI streams, and a removed =copy= does not touch the PI.
+
+So this is a strict improvement — 26 circuits move CLOSER to compactc — but
+it is movement, and it is recorded here rather than folded into a
+"zero movement" line.

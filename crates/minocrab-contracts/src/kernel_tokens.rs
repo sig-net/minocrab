@@ -238,6 +238,39 @@ pub fn s_unshielded_balance_lte(
     Discloses::of(kernel::unshielded_balance_lte(c, color, a))
 }
 
+/// `export circuit sSendUnshielded(color, a, r): []`
+///
+/// The first M17 circuit with a CONDITIONAL: its auto-receive runs only when
+/// the recipient is this contract, which is a guarded `kernel.self()` read
+/// feeding a guarded effect.
+#[circuit]
+pub fn s_send_unshielded(
+    c: &mut Circuit3,
+    color: B32<Private>,
+    a: Uint<128>,
+    r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
+) -> Discloses<(Color, Amount, Recipient)> {
+    let color = color.disclose_as::<Color>(c);
+    let a = a.disclose_as::<Amount>(c);
+    let r = r.disclose_as::<Recipient>(c);
+    kernel::send_unshielded(c, color, a, &r);
+    Discloses::of(())
+}
+
+/// `export circuit sMintUnshieldedToken(ds, a, r): Bytes<32>`
+#[circuit(output = "color")]
+pub fn s_mint_unshielded_token(
+    c: &mut Circuit3,
+    ds: B32<Private>,
+    a: Uint<64>,
+    r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
+) -> Discloses<(DomainSep, Amount, Recipient), B32<Public>> {
+    let ds = ds.disclose_as::<DomainSep>(c);
+    let a = a.disclose_as::<Amount>(c);
+    let r = r.disclose_as::<Recipient>(c);
+    Discloses::of(kernel::mint_unshielded_token(c, &ds, a, &r))
+}
+
 /// `export circuit sReceiveUnshielded(color, a): []`
 #[circuit]
 pub fn s_receive_unshielded(

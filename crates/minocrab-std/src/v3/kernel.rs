@@ -29,12 +29,12 @@
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
-use minocrab::v3::{Circuit3, FieldT, Operand};
+use minocrab::v3::{Circuit3, FieldT, Operand, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public, Visibility};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
     kernel_inc_unshielded_inputs, kernel_inc_unshielded_outputs, kernel_mint_shielded,
-    kernel_mint_unshielded, kernel_self, BalanceCmp, ImpactElem, LedgerValue,
+    kernel_mint_unshielded, kernel_self, kernel_self_guarded, BalanceCmp, ImpactElem, LedgerValue,
 };
 
 use super::ledger::LedgerRepr;
@@ -408,4 +408,79 @@ pub fn unshielded_balance_lte(
 pub fn receive_unshielded(c: &mut Circuit3, color: B32<Public>, amount: Uint<128, Public>) {
     let token = unshielded(c, color);
     inc_unshielded_inputs(c, &token, amount);
+}
+
+/// `recipient.is_left && recipient.left.bytes == kernel.self().bytes` — the
+/// AUTO-RECEIVE guard both [`send_unshielded`] and [`mint_unshielded_token`]
+/// end with, and the reason each of them is more than a pair of effects.
+///
+/// Two things about its shape, both compactc's and both visible in the
+/// fixture. The `kernel.self()` read is guarded by `is_left` ALONE — a
+/// recipient that is a user address never needs the contract's own address,
+/// so the read is skipped and its `public_input` gates yield the default.
+/// And the conjunction is two `cond_select`s rather than a multiplication,
+/// because that is how compactc lowers `&&` on Booleans.
+fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<FieldT, Public> {
+    let is_left = recipient.is_left.field();
+    let me = kernel_self_guarded(c, is_left);
+    let left = recipient.left.bytes();
+    let eq_hi = c.test_eq(left.hi, me[0]);
+    let eq_lo = c.test_eq(left.lo, me[1]);
+    let both = c.cond_select(eq_hi, eq_lo, 0u64);
+    c.cond_select(is_left, both, 0u64)
+}
+
+/// ```text
+/// circuit sendUnshielded(color, amount, recipient): [] {
+///   kernel.incUnshieldedOutputs(left<Bytes<32>, Bytes<32>>(color), amount);
+///   kernel.claimUnshieldedCoinSpend(left<Bytes<32>, Bytes<32>>(color), recipient, amount);
+///   // Auto-receive when sending to self
+///   if (recipient.is_left && recipient.left.bytes == kernel.self().bytes) {
+///     kernel.incUnshieldedInputs(left<Bytes<32>, Bytes<32>>(color), amount);
+///   }
+/// }
+/// ```
+pub fn send_unshielded(
+    c: &mut Circuit3,
+    color: B32<Public>,
+    amount: Uint<128, Public>,
+    recipient: &UnshieldedRecipient<Public>,
+) {
+    let token = unshielded(c, color);
+    inc_unshielded_outputs(c, &token, amount);
+    claim_unshielded_coin_spend(c, &token, recipient, amount);
+    let mine = is_self(c, recipient);
+    inc_unshielded_inputs_under(c, mine, &token, amount);
+}
+
+/// ```text
+/// circuit mintUnshieldedToken(domainSep, amount, recipient): Bytes<32> {
+///   kernel.mintUnshielded(domainSep, amount);
+///   const color = tokenType(domainSep, kernel.self());
+///   kernel.claimUnshieldedCoinSpend(left<Bytes<32>, Bytes<32>>(color), recipient, amount);
+///   // Auto-receive when minting to self
+///   if (recipient.is_left && recipient.left.bytes == kernel.self().bytes) {
+///     kernel.incUnshieldedInputs(left<Bytes<32>, Bytes<32>>(color), amount);
+///   }
+///   return color;
+/// }
+/// ```
+///
+/// Note the amount is a `Uint<64>` at the mint and a `Uint<128>` at the
+/// claim — Compact widens it, and so does this.
+pub fn mint_unshielded_token(
+    c: &mut Circuit3,
+    domain_sep: &B32<Public>,
+    amount: Uint<64, Public>,
+    recipient: &UnshieldedRecipient<Public>,
+) -> B32<Public> {
+    mint_unshielded(c, domain_sep, amount);
+    let me = self_address(c);
+    let color = super::token_type(c, domain_sep, &me.bytes());
+    let token = unshielded(c, color);
+    let wide = Uint::<128, Public>::from_field(amount.field());
+    claim_unshielded_coin_spend(c, &token, recipient, wide);
+    let mine = is_self(c, recipient);
+    inc_unshielded_inputs_under(c, mine, &token, wide);
+    color
 }

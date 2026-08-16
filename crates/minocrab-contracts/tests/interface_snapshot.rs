@@ -1897,6 +1897,34 @@ in  color_lo: Scalar<BLS12-381>
 in  a: Scalar<BLS12-381>
 ",
     ),
+    (
+        "kernel_tokens::s_send_unshielded",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_mint_unshielded_token",
+        "\
+in  ds_hi: Scalar<BLS12-381>
+in  ds_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+out color (hi): Scalar<BLS12-381>
+out color (lo): Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

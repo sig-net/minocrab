@@ -326,6 +326,12 @@ pub fn circuits() -> Vec<Circuit> {
         c!("kernel_tokens::s_receive_unshielded", || {
             kernel_tokens::s_receive_unshielded()
         }),
+        c!("kernel_tokens::s_send_unshielded", || {
+            kernel_tokens::s_send_unshielded()
+        }),
+        c!("kernel_tokens::s_mint_unshielded_token", || {
+            kernel_tokens::s_mint_unshielded_token()
+        }),
     ]
 }
 

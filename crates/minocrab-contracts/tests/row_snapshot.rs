@@ -187,6 +187,8 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("kernel_tokens::s_unshielded_balance_gt", 8, 215),
     ("kernel_tokens::s_unshielded_balance_lte", 8, 217),
     ("kernel_tokens::s_receive_unshielded", 8, 180),
+    ("kernel_tokens::s_send_unshielded", 9, 476),
+    ("kernel_tokens::s_mint_unshielded_token", 13, 4256),
     // GENERATED END
 ];
 
