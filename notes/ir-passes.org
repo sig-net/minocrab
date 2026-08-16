@@ -473,6 +473,31 @@ change coin's zero limb reaches the output only through a select, so the rule
 folds it and the fixture still fires). The naming is not a property of the
 ZKIR at all.
 
+*APPROVED (dmd, 2026-08-16)*: /"I'm fine if the naming of constants changes,
+obviously provided that doesn't cause changes to program behaviour, assuming
+the user doesn't hand code pointers to state (which we shouldn't expose as an
+option)."/ Both conditions are structural rather than conventional, and were
+checked at the point of approval rather than assumed:
+
+1. *NO CALLER CAN HOLD A POINTER INTO THE WIRE NAMESPACE.* =Circuit3='s
+   =b: Builder3= field is private and there is no accessor; =Wire3='s =val=
+   is private; =Builder3::identifier= has exactly ONE caller in the whole
+   workspace (the disclosure recorder, below). A contract cannot obtain,
+   store or hard-code a wire name, so there is nothing for a rename to
+   invalidate. The option dmd says we should not expose is not exposed.
+2. *THE TWO OUT-OF-BAND HOLDERS ARE BOTH HANDLED, AND THEY ARE THE ONLY TWO.*
+   - The =Output= terminator: =returned_identifiers= excludes any identifier
+     appearing there, so a constant a circuit RETURNS keeps its name on both
+     sides. This is the one position where a wire name is externally
+     meaningful.
+   - The disclosure record: =disclosed_wire= asks =immediate_of= at RECORD
+     time and stores =DisclosedWire::Constant(imm)= rather than a name the
+     pass is about to remove.
+   Everything else that maps identifiers — the simulator's =memory=,
+   =rowcost='s type inference, =minocrab-abi='s input names — DERIVES its map
+   from the (already folded) stream rather than holding one across =finish=.
+   Inputs are never =Copy= outputs, so the ABI is untouched.
+
 *THE RESOLUTION*: the four instruction-for-instruction differentials
 (=kernel_tokens=, =adts=, =bounded=, =opaque=) run the SAME fold over
 compactc's artifact before comparing. Their criterion becomes "identical

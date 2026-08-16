@@ -606,9 +606,12 @@ reviewer should look at.
       is "identical instruction for instruction, modulo the naming of
       constants". Everything else still compares exactly and the
       normaliser IS the pass, but this is a relaxation of the primary
-      warrant and it is dmd's to veto — the alternative is putting the
-      fold behind the opt profile, which would keep the ports byte-equal
-      and give up the deletions the pass is for.
+      warrant and it was dmd's to veto. APPROVED 2026-08-16 with two
+      conditions, both checked and recorded in §8 (no caller can hold a
+      wire identifier; the two out-of-band holders — the Output
+      terminator and the disclosure record — are handled and are the only
+      two). A reviewer's job here is now to confirm those are still the
+      only two, not to weigh the relaxation.
       Second, `Disclosure3` gained a `Constant` arm. Worth checking that
       no consumer wants the old identifier — the valued report is the only
       one in tree, and it prints the constant.
