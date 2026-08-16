@@ -321,6 +321,25 @@ en_US collation ignores =.= and =_=), and =corpus/update.sh= reformatted
 =sources.json= is stored in jq's own formatting, so a corpus bump's diff is
 the revs and the artifacts.
 
+** =target/= grows without bound, and a bump is when it bites (2026-08-16)
+
+A bump rebuilds the world, and cargo NEVER prunes =target/=: every fingerprint
+change writes a fresh generation and keeps the old one. Measured at 36 GB
+before this was noticed, of which *29.8 GB was loose =.o= debug info across
+218,997 files* — macOS's dev default is =split-debuginfo = "unpacked"=, so
+DWARF lands in a per-codegen-unit object beside the artifact. There were 13
+copies of one dependency rlib and 6 of the bench binary.
+
+This workspace amplifies it three ways: 29 test targets in minocrab-contracts
+alone (each its own binary), minocrab-std built twice (the =borsh-schema=
+feature duplicates the graph below it), and dependencies at =opt-level = 3=.
+
+FIXED at the profile: =[profile.dev] debug = "line-tables-only"= keeps file
+and line in every backtrace and panic and drops the type/variable DWARF
+nothing here reads. A full clean test run now leaves 3.5 GB rather than 36.
+Before a bump, =cargo clean= anyway — the pre-bump generations are dead by
+definition, and the bump's own rebuild is a full one regardless.
+
 * Accepting a new baseline
 =./bump.sh accept= runs every regenerator in dependency order, because after
 a real bump several move together and regenerating them one at a time is how
