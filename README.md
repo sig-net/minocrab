@@ -91,14 +91,14 @@ pub fn deposit(
 
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
-    let caller = common::commitment_short(c, &sk).disclose_as::<DepositorCommitment>(c);
+    let caller = common::commitment_packed_tag(c, &sk).disclose_as::<DepositorCommitment>(c);
 
     // a Bytes<20> cell: the FAB atoms come from the slot's type
     let vault_evm = VAULT.vault_evm_address.read(c);
     // ... compose calldata, tx params, request ...
 
     // requestId, freshness check, map insert, and the call to the signer
-    record_and_notify(c, one, me, &request, &VAULT.sign_bidirectional_event_map, [0, 0, 0, 0]);
+    record_and_notify(c, &request, &VAULT.sign_bidirectional_event_map, [0, 0, 0, 0]);
     Discloses::of(())
 }
 ```
@@ -106,6 +106,45 @@ pub fn deposit(
 - The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
 - `#[circuit]` and `#[derive(CircuitArg)]` build 96 of the 112 workspace circuits; the exception is `hashing`, whose WIDTH is a Rust parameter the benchmark sweeps
 - This is the *showcase twin*: the same contract as the three zero-movement ports, written through the whole API. It is not prettier prose — it is gated on proving the identical statement (same typed schema, same PI vector on the ports' own preimage) at identical rows and identical `k` ([erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs))
+
+## Feature by feature
+
+Every row is real code in this repo, not a sketch. Compact on the left, the
+MinoCrab spelling on the right.
+
+| | Compact | MinoCrab |
+|---|---|---|
+| **argument struct** | `struct DepositRequest { amount: Uint<128>; }` | `#[derive(CircuitArg)] struct DepositRequest { amount: Uint<128> }` |
+| **circuit** | `export circuit deposit(a: Uint<64>): []` | `#[circuit] pub fn deposit(c: &mut Circuit3, a: Uint<64>) -> Discloses<()>` |
+| **assert** | `assert(amount > 0 as Uint<128>, "…")` | `c.assert(amount.gt(0u64).message("…"))` — width from the type, never typed at the call site |
+| **subtraction** | `a - b` — compactc inserts `assert(a >= b)` | `a.sub(c, b)` — *the same guard, emitted for you*; the raw `c.add(a, c.neg(b))` is still there for the ports and is now the unusual spelling |
+| **disclose** | `disclose(x)` | `x.disclose_as::<Label>(c)` — and the label must appear in the circuit's return type or a generated test fails |
+| **ledger cell** | `export ledger vaultEvmAddress: Bytes<20>;` | `#[derive(Ledger)]` field; `VAULT.vault_evm_address.read(c)` — FAB atoms come from the slot's type |
+| **ledger map** | `map.insert(k, v)` / `map.member(k)` | `VAULT.map.insert(c, &k, &v)` / `.member(c, &k)` — one Impact op each, `c` visible because a ledger op is a cost |
+| **conditional effects** | `if (cond) { … }` | `c.when(cond, \|c\| { … })` — reads, witnesses *and* assertions inside inherit the guard |
+| **conditional value** | `if (cond) a else b` | `c.when_value(cond, \|c\| a).otherwise(b)` — returns `Selected<T>`, a `#[must_use]` that says every arm was paid for |
+| **guarded read** | a read inside a branch | `map.lookup_guarded(c, g, &k).or_default()` — returns `Guarded<T>`; you must say what the default means |
+| **bounded integer** | `Uint<0..1000>` | `BoundedUint<1000>` — compares at compactc's width, and a literal above the bound is rejected at build time |
+| **cross-contract call** | `SignetSigner.signBidirectional(…)` | `#[interface]`-generated typed method; the callee's disclosures must be named in *your* declaration |
+| **witness** | `witness callerSecretKey(): Bytes<32>` | `common::witness_sk(c)` — and inside `c.when` it does not consume the private transcript on the untaken branch |
+| **opaque** | `Opaque<"string">` | `Opaque<T: TsType>` — the TS type is a Rust type parameter |
+| **hash** | `persistentHash<Vector<2, Bytes<32>>>([a, b])` | `c.persistent_hash(alignment, &[…])`, or `borsh::persistent_hash(c, &value)` for `SHA-256(borsh(value))` in one instruction |
+
+The rows worth reading twice are **subtraction** and **guarded read**, because
+they are the two places where the Rust API is *stricter* than Compact rather
+than merely equivalent:
+
+```rust
+// Compact emits assert(a >= b) before every `-`. So does this, at the same
+// width, in the same order — proven by porting the vault's own subtraction
+// to it and finding the ZKIR byte-identical against compactc's artifact.
+let change = amount_in_max.sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
+
+// A guarded-off read yields the type's DEFAULT and skips the transcript.
+// That is upstream VM semantics; what the type adds is that you cannot use
+// the value until you say which you meant. `.or_default()` costs nothing.
+let record = VAULT.event_map.lookup_guarded(c, is_withdrawal, &id).or_default();
+```
 
 ## Cross-contract calls
 

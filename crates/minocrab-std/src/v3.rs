@@ -206,6 +206,63 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
         Prim::Uint { bits: BITS }.constraint().emit(c, self.0);
     }
 
+
+    /// `self - other`, with COMPACT'S UNDERFLOW GUARD — the whole reason this
+    /// method exists rather than leaving callers to `c.add(a, c.neg(b))`.
+    ///
+    /// compactc inserts a guard BEFORE every subtraction
+    /// (`infer-types.ss`, decoded in notes/builtin-lowering.org §9):
+    ///
+    /// ```text
+    /// assert(a >= b, "result of subtraction would be negative")
+    /// neg(b); add(a, neg)
+    /// ```
+    ///
+    /// and this is exactly that, in that order, at compactc's own width — the
+    /// comparison's `bits` comes from `BITS` through the predicate layer, not
+    /// from a number typed here.
+    ///
+    /// WHY IT IS NOT OPTIONAL, and why the raw spelling is a footgun
+    /// (notes/api-safety-survey.org §B1): field arithmetic has no sign. For
+    /// `a < b` the raw form yields `a - b + p` — a value near 2^255, not −1.
+    /// Downstream that is a coin worth 2^255, or a `Uint<64>` ledger write of
+    /// a 255-bit number. It is the balance-underflow bug, and no differential
+    /// on an honest preimage can see it, because an honest preimage does not
+    /// underflow.
+    ///
+    /// The result keeps `BITS`, which is compactc's rule (result type
+    /// `Uint<maxa>`) and is sound because `a - b <= a < 2^BITS`.
+    ///
+    /// Cost: identical to compactc's, because it IS compactc's — one
+    /// `less_than`, one `cond_select` for the negation, one `assert`, one
+    /// `neg`, one `add`.
+    /// Both operands at the same visibility — a subtraction mixing them is
+    /// spelled by moving one with `.private()` first, which is where the
+    /// visibility join belongs and is free.
+    pub fn sub(self, c: &mut Circuit3, other: Uint<BITS, V>) -> Uint<BITS, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        self.sub_with(c, other, "result of subtraction would be negative")
+    }
+
+    /// [`Uint::sub`] with the caller's own message on the underflow guard.
+    ///
+    /// The message is METADATA — no instruction, no row — so this is the SAME
+    /// lowering as [`Uint::sub`], and a contract that already had a
+    /// domain-specific message for its hand-written guard keeps it. That is
+    /// not a convenience: a good message is what makes a failed proof
+    /// diagnosable, and losing it would be a reason not to adopt the guarded
+    /// form at all.
+    pub fn sub_with(self, c: &mut Circuit3, other: Uint<BITS, V>, message: &'static str) -> Uint<BITS, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        c.assert(crate::v3::predicate::ge(self, other).message(message));
+        let negated = c.neg(other.field());
+        Uint::from_field(c.add(self.field(), negated))
+    }
+
     /// `x as Uint<WIDER>` — the LOSSLESS widening, and the explicit escape
     /// from a mixed-width comparison (dmd 2026-08-15, decision A: no implicit
     /// widening, Rust-style).

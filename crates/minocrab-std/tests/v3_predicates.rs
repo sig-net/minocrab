@@ -431,3 +431,76 @@ fn a_literal_above_a_plain_width_is_still_rejected() {
     let byte = Uint::<8, Private>::from_field(c.arg::<FieldT>("byte"));
     c.assert(less_than(byte, 300u64));
 }
+
+// --- subtraction carries Compact's guard (notes/api-safety-survey.org §B1) --
+//
+// compactc inserts `assert(a >= b, "result of subtraction would be negative")`
+// BEFORE every subtraction and then lowers it as neg + add. `Uint::sub` is
+// that, in that order, at that width — so these tests are the claim, not a
+// smoke check.
+
+/// `a.sub(c, b)` is byte-identical to the hand-written guard-then-subtract,
+/// which is compactc's own lowering.
+#[test]
+fn sub_is_compactcs_guarded_lowering() {
+    let by_hand = zkir({
+        let mut c = Circuit3::new();
+        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        // the guard compactc emits, at compactc's width (64 = intlen(max))
+        c.assert(ge(a, b).message("result of subtraction would be negative"));
+        let negated = c.neg(b.field());
+        let _ = c.add(a.field(), negated);
+        c.finish(true)
+    });
+    let typed = zkir({
+        let mut c = Circuit3::new();
+        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let _ = a.sub(&mut c, b);
+        c.finish(true)
+    });
+    assert_eq!(by_hand, typed);
+}
+
+/// The guard is not optional and not elidable: a subtraction emits an
+/// `assert`, where the raw `c.add(a, c.neg(b))` emits none. This is the
+/// difference the survey is about, pinned so a future "optimisation" that
+/// drops it fails here.
+#[test]
+fn the_raw_spelling_has_no_guard_and_the_typed_one_does() {
+    let raw = zkir({
+        let mut c = Circuit3::new();
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        let negated = c.neg(b);
+        let _ = c.add(a, negated);
+        c.finish(true)
+    });
+    let typed = zkir({
+        let mut c = Circuit3::new();
+        let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+        let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+        let _ = a.sub(&mut c, b);
+        c.finish(true)
+    });
+    assert!(!raw.contains("\"assert\""), "the raw spelling emits no guard: {raw}");
+    assert!(typed.contains("\"assert\""), "the typed one must: {typed}");
+    assert!(
+        typed.contains("\"less_than\"") && typed.contains("\"bits\":64"),
+        "and the guard compares at the TYPE's width, not a number typed here: {typed}"
+    );
+}
+
+/// The result keeps `BITS` — compactc's rule (result type `Uint<maxa>`),
+/// sound because `a - b <= a < 2^BITS`. Checked by using the result where a
+/// `Uint<64>` is required.
+#[test]
+fn sub_keeps_the_left_operands_width() {
+    let mut c = Circuit3::new();
+    let a = Uint::<64, Private>::from_field(c.arg::<FieldT>("a"));
+    let b = Uint::<64, Private>::from_field(c.arg::<FieldT>("b"));
+    let d: Uint<64, Private> = a.sub(&mut c, b);
+    // and it composes: the difference compares at 64 bits like any Uint<64>
+    c.assert(ge(d, b));
+}

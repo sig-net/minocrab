@@ -1299,11 +1299,13 @@ pub fn complete_swap(
     let amount_in = output[0].disclose_as::<AttestedAmountIn>(c);
     let word5 = ev.word(5);
     let amount_in_max = signet::abi_word_to_uint128(c, &word5);
-    let overspent = c.less_than(amount_in_max, amount_in, 128);
-    let ok = c.not(overspent);
-    c.assert(ok);
-    let neg_in = c.neg(amount_in);
-    let change = c.add(amount_in_max, neg_in);
+    // The port's hand-written underflow guard, now the one `Uint::sub` emits
+    // — same instructions in the same order at the same width, which is what
+    // the unchanged dump proves against compactc's own artifact
+    // (notes/api-safety-survey.org §B1).
+    let change = Uint::<128, Public>::from_field(amount_in_max)
+        .sub(c, Uint::<128, Public>::from_field(amount_in))
+        .field();
     let word0 = ev.word(0);
     let token_in = signet::abi_word_low20(c, &word0);
     let ds_in = vault_token_domain_separator(c, token_in);

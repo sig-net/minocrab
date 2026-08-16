@@ -5,7 +5,7 @@ use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public, Visi
 use minocrab_ledger::{
     cell_read, cell_write_coin, counter_read, dup, emit, idx_field, kernel_claim_zswap_coin_receive,
     kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_mint_shielded,
-    kernel_self_guarded, popeq, ImpactElem, LedgerValue,
+    popeq, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::kernel;
 use minocrab::v3::Guarded;

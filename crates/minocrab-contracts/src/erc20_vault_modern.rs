@@ -1208,15 +1208,14 @@ pub fn complete_swap(
     // contract: the attested spend cannot exceed what was surrendered.
     // Both sides are `Uint<128>` by construction (`abiWordToUint128`), so
     // the 128 is the TYPE's, not a number typed at the call site.
+    // `Uint::sub` IS this guard plus the subtraction, in compactc's own order
+    // and at compactc's width — the guard stops being a line the author has
+    // to remember (notes/api-safety-survey.org §B1).
     let amount_in_max_u = Uint::<128, Public>::from_field(amount_in_max);
     let amount_in_u = Uint::<128, Public>::from_field(amount_in);
-    c.assert(
-        amount_in_u
-            .le(amount_in_max_u)
-            .message("Attested amountIn exceeds amountInMaximum"),
-    );
-    let neg_in = c.neg(amount_in);
-    let change = c.add(amount_in_max, neg_in);
+    let change = amount_in_max_u
+        .sub_with(c, amount_in_u, "Attested amountIn exceeds amountInMaximum")
+        .field();
     let word0 = ev.word(0);
     let token_in = signet::abi_word_low20(c, &word0);
     let ds_in = vault_token_domain_separator(c, token_in);

@@ -76,12 +76,31 @@ worth ~2^255, or a =Uint<64>= ledger write of a 255-bit value, or a
 *This is the balance-underflow bug, and our API makes it easier to write than
 Compact does.* Compact's author cannot forget; ours must remember.
 
-FIX (question 3): typed subtraction that emits the guard —
-=a.sub(c, b) -> Uint<BITS>= on the typed leaves, emitting exactly compactc's
-=assert(a >= b)= + =neg= + =add= at compactc's width. The raw
-=c.add(x, c.neg(y))= stays for the ports (which must mirror compactc
-instruction for instruction) but stops being the way a contract spells
-subtraction. Cost: identical to compactc's, because it IS compactc's.
+FIX — *BUILT, same session.* =Uint::sub(c, other)= and
+=Uint::sub_with(c, other, message)= emit exactly compactc's
+=assert(a >= b)= + =neg= + =add=, in that order, at compactc's width (the
+comparison's bits come from =BITS= through the predicate layer, not from a
+number typed at the call site). The result keeps =BITS=, which is compactc's
+rule (=Uint<maxa>=) and is sound because =a - b <= a < 2^BITS=.
+
+=sub_with= exists because the message is what makes a failed proof
+diagnosable: the vault's hand-written guard said "Attested amountIn exceeds
+amountInMaximum", which is better than compactc's generic text, and losing it
+would have been a reason not to adopt the guarded form.
+
+THE PROOF IS BETTER THAN A UNIT TEST, and this is the part worth keeping: the
+vault's own subtraction — its ONLY one, in =completeSwap= across all four
+artifacts — was ported to =sub=, and *the ZKIR dump did not move*. Two of
+those artifacts are instruction-mirroring against compactc's own
+=completeSwap=. So the claim "=Uint::sub= is compactc's subtraction" is
+checked against a real compactc artifact, not against a twin we wrote.
+Three unit tests pin the rest: identity with the hand-written guarded form,
+that the raw spelling emits NO assert and the typed one does (so a future
+"optimisation" that drops the guard fails there), and that the width comes
+from the type.
+
+The raw =c.add(x, c.neg(y))= stays — the ports may need it — but it is now
+the unusual spelling rather than the only one.
 
 ** B2. NO MAX TRACKING, SO NO DOWNCAST CHECK ON =+= AND =*=
 
@@ -231,8 +250,15 @@ pattern, and §0(a) is how to keep finding them.
 
 ** A4. SMALLER, LISTED WITHOUT ARGUMENT
 
-- =c.assert(w)= on a raw wire: Compact's =assert= takes a =Boolean=. Ours
-  takes any wire. A non-boolean truthy value passes ours.
+- =c.assert(w)= on a raw wire: Compact's =assert= takes a =Boolean=; ours
+  takes any wire. CHECKED, and it is NOT the silent footgun it looks like —
+  the reference VM rejects a non-boolean condition outright
+  (=operand_bool=: "expected boolean, found: …"), so the failure is at
+  simulation/proving time rather than at typecheck. By dmd's own bar
+  ("errors after typechecking but before deploy are fine") this is
+  acceptable, and it is listed only so the next reader does not re-open it.
+  The residual cost is that the error arrives later than a =Bool<V>=
+  parameter would make it.
 - The =_with= family (=mint_shielded_token_to_key_with=, =burn_coin_with=,
   =receive_shielded_with=) takes a =me: B32<Public>= the caller promises is
   =kernel.self()=. Nothing checks it is. Passing the WRONG address mints to

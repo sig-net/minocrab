@@ -1732,14 +1732,28 @@ green on every differential the day before.
       a 255-bit number. This is the balance-underflow bug and our API
       makes it EASIER to write than Compact does.)
 - [ ] Fix 1 (closes B1 + B2 + most of A2): typed arithmetic carrying
-      Compact's guards. `a.sub(c, b)` emits exactly compactc's
-      `assert(a >= b)` + `neg` + `add` at compactc's width; `BoundedUint`
-      add/mul compute the result's bound at the type level
-      (`BoundedUint<A> + BoundedUint<B> -> BoundedUint<A+B-1>`), which IS
-      Compact's max-tracking rule in const generics, so the downcast is
-      where the range check appears. The raw `c.add(x, c.neg(y))` stays
-      for the ports, which must mirror compactc instruction for
-      instruction, but stops being how a contract spells subtraction.
+      Compact's guards.
+      SUBTRACTION DONE 2026-08-16 — `Uint::sub(c, other)` /
+      `Uint::sub_with(c, other, message)` emit exactly compactc's
+      `assert(a >= b)` + `neg` + `add`, in that order, at compactc's width
+      (the bits come from `BITS` through the predicate layer, never typed
+      at the call site); the result keeps `BITS`, compactc's `Uint<maxa>`
+      rule, sound because `a - b <= a < 2^BITS`. `sub_with` exists because
+      the message is what makes a failed proof diagnosable and the vault's
+      was better than compactc's generic text.
+      THE PROOF IS AGAINST A REAL ARTIFACT, not a twin: the vault's only
+      subtraction (completeSwap, all four forks) was ported to `sub` and
+      the ZKIR dump DID NOT MOVE — and two of those forks are
+      instruction-mirroring against compactc's own completeSwap. Three
+      unit tests pin the rest, including that the raw spelling emits NO
+      assert and the typed one does, so a future pass that drops the guard
+      fails there.
+      REMAINING: `BoundedUint` add/mul computing the result's bound at the
+      type level (`BoundedUint<A> + BoundedUint<B> -> BoundedUint<A+B-1>`),
+      which IS Compact's max-tracking rule in const generics and is what
+      makes the downcast the place the range check appears (B2). Needs the
+      output bound as a caller-named const parameter with an E0080 that it
+      is wide enough, since `generic_const_exprs` is unstable.
 - [ ] Fix 2 (closes B3): constrain-on-construction, made free by
       ir-passes step 5's dedup pass. Turns every "PRECONDITION: already
       range-constrained" in the Borsh layer into a check — `hash.rs` says
