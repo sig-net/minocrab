@@ -1539,6 +1539,207 @@ in  p: Point<Secp256k1>
 in  p: Point<Jubjub>
 ",
     ),
+    (
+        "adts::set_insert",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::set_member",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+out member: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::set_remove",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::set_size",
+        "\
+out size: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::set_is_empty",
+        "\
+out empty: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::set_reset",
+        "\
+",
+    ),
+    (
+        "adts::list_push_front",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::list_pop_front",
+        "\
+",
+    ),
+    (
+        "adts::list_head",
+        "\
+out head (is_some): Scalar<BLS12-381>
+out head (hi): Scalar<BLS12-381>
+out head (lo): Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::list_length",
+        "\
+out length: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::list_is_empty",
+        "\
+out empty: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::list_reset",
+        "\
+",
+    ),
+    (
+        "adts::map_insert_default",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::map_reset",
+        "\
+",
+    ),
+    (
+        "adts::mt_insert",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_insert_index",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_insert_hash",
+        "\
+in  h_hi: Scalar<BLS12-381>
+in  h_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_insert_hash_index",
+        "\
+in  h_hi: Scalar<BLS12-381>
+in  h_lo: Scalar<BLS12-381>
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_insert_index_default",
+        "\
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_check_root",
+        "\
+in  r: Scalar<BLS12-381>
+out ok: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_is_full",
+        "\
+out full: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::mt_reset",
+        "\
+",
+    ),
+    (
+        "adts::hmt_insert",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_insert_index",
+        "\
+in  x_hi: Scalar<BLS12-381>
+in  x_lo: Scalar<BLS12-381>
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_insert_hash",
+        "\
+in  h_hi: Scalar<BLS12-381>
+in  h_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_insert_hash_index",
+        "\
+in  h_hi: Scalar<BLS12-381>
+in  h_lo: Scalar<BLS12-381>
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_insert_index_default",
+        "\
+in  i: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_check_root",
+        "\
+in  r: Scalar<BLS12-381>
+out ok: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_is_full",
+        "\
+out full: Scalar<BLS12-381>
+",
+    ),
+    (
+        "adts::hmt_reset_history",
+        "\
+",
+    ),
+    (
+        "adts::hmt_reset",
+        "\
+",
+    ),
     // GENERATED END
 ];
 

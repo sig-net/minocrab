@@ -9,10 +9,9 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    attest, bounded, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt, events,
-    events_borsh, hashing, mint_tokens, opaque, serde_builtin, signet_contract, test_caller,
-    xcall,
-    xcall_with_payment, xcontract_events, xcontract_events_borsh,
+    adts, attest, bounded, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt,
+    events, events_borsh, hashing, mint_tokens, opaque, serde_builtin, signet_contract,
+    test_caller, xcall, xcall_with_payment, xcontract_events, xcontract_events_borsh,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -224,6 +223,48 @@ pub fn circuits() -> Vec<Circuit> {
         c!("opaque::op_struct", || opaque::op_struct()),
         c!("opaque::op_point", || opaque::op_point()),
         c!("opaque::op_jubjub", || opaque::op_jubjub()),
+        // `adts.compact` (M16): every ledger-ADT operation Compact exposes.
+        // Ours rather than the corpus's for the third time and the same
+        // reason — the corpus's `List`/`MerkleTree`/`HistoricMerkleTree`
+        // declarations are in v2 artifacts, and its v3 ones exercise three of
+        // these thirty-one (tests/adts_differential.rs has the scan).
+        c!("adts::set_insert", || adts::set_insert()),
+        c!("adts::set_member", || adts::set_member()),
+        c!("adts::set_remove", || adts::set_remove()),
+        c!("adts::set_size", || adts::set_size()),
+        c!("adts::set_is_empty", || adts::set_is_empty()),
+        c!("adts::set_reset", || adts::set_reset()),
+        c!("adts::list_push_front", || adts::list_push_front()),
+        c!("adts::list_pop_front", || adts::list_pop_front()),
+        c!("adts::list_head", || adts::list_head()),
+        c!("adts::list_length", || adts::list_length()),
+        c!("adts::list_is_empty", || adts::list_is_empty()),
+        c!("adts::list_reset", || adts::list_reset()),
+        c!("adts::map_insert_default", || adts::map_insert_default()),
+        c!("adts::map_reset", || adts::map_reset()),
+        c!("adts::mt_insert", || adts::mt_insert()),
+        c!("adts::mt_insert_index", || adts::mt_insert_index()),
+        c!("adts::mt_insert_hash", || adts::mt_insert_hash()),
+        c!("adts::mt_insert_hash_index", || adts::mt_insert_hash_index()),
+        c!("adts::mt_insert_index_default", || {
+            adts::mt_insert_index_default()
+        }),
+        c!("adts::mt_check_root", || adts::mt_check_root()),
+        c!("adts::mt_is_full", || adts::mt_is_full()),
+        c!("adts::mt_reset", || adts::mt_reset()),
+        c!("adts::hmt_insert", || adts::hmt_insert()),
+        c!("adts::hmt_insert_index", || adts::hmt_insert_index()),
+        c!("adts::hmt_insert_hash", || adts::hmt_insert_hash()),
+        c!("adts::hmt_insert_hash_index", || {
+            adts::hmt_insert_hash_index()
+        }),
+        c!("adts::hmt_insert_index_default", || {
+            adts::hmt_insert_index_default()
+        }),
+        c!("adts::hmt_check_root", || adts::hmt_check_root()),
+        c!("adts::hmt_is_full", || adts::hmt_is_full()),
+        c!("adts::hmt_reset_history", || adts::hmt_reset_history()),
+        c!("adts::hmt_reset", || adts::hmt_reset()),
     ]
 }
 

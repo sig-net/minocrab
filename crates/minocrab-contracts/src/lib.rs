@@ -6,6 +6,7 @@
 //! notes/ledger-abi.org §6 (same typed I/O schema, same pis/pi_skips on a
 //! shared preimage).
 
+pub mod adts;
 pub mod attest;
 pub mod bounded;
 pub mod common;
