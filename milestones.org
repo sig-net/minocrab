@@ -1680,7 +1680,25 @@ suffixes can stop being lexical and become AMBIENT.
       in lockstep every time the API moves (M9 phase 7, M9 phase 8 and
       M17's `token_type` each paid it). Whether the fork can collapse
       depends on (d): a spec divergence cannot be a profile.
+THE GOVERNING CONSTRAINT (dmd, 2026-08-16, on hearing the fork-collapse
+idea): "correctness is the number one most important thing in this API."
+So, stated before anyone reads the prize and reaches for the delete key:
+- `erc20_vault` (the COMPAT port) may never collapse into anything. It is
+  PI-equal to compactc and it IS the differential warrant — the whole chain
+  `compactc ≡ port ≡ opt ≡ borsh ≡ modern` hangs off it. Collapsing it
+  would not simplify the code, it would delete the evidence.
+- A fork may only collapse where its divergence is LEXICAL. Item (d) above
+  is the test: opt changed the spec in three places (derived changeNonce,
+  injective domain separator, Poseidon refund commitments), and a spec
+  divergence cannot be a profile. If those survive, opt stays a separate
+  source and the honest answer to this milestone is "the vocabulary
+  unifies, the fork does not".
+- Every divergence ledger stays, asserted in BOTH directions. They are what
+  makes a circuit leaving its predecessor's coverage an explicit edit; a
+  collapse that removed a ledger would be trading a correctness instrument
+  for line count, which is the wrong direction on this project's priority
+  order.
 Exit criteria: the opt artifact is written in the same vocabulary as the
 port, with every remaining twin justified by a protocol or spec difference
 rather than by cost — and the four-fork lockstep either gone or explicitly
-priced.
+priced. Not one instrument weaker than it is today.
