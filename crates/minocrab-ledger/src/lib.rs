@@ -759,6 +759,7 @@ fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, 
 }
 
 const U64_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 8 };
+const U128_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 16 };
 const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 
 /// `Cell.read()` of the top-level field `index`
@@ -1161,6 +1162,146 @@ pub fn historic_merkle_tree_check_root<V: Visibility>(
     wires[0]
 }
 
+// --- the context reads: balances and block time -----------------------------
+//
+// Both read the CONTEXT (stack slot 2) rather than the contract's state, and
+// both are `popeqc`. They are the two shapes of notes/kernel-tokens.org
+// finding (c) that the crate did not already have.
+
+/// Comparison tail of a balance read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BalanceCmp {
+    /// `kernel.balance(t)` — the balance itself, a `Uint<128>`.
+    Value,
+    /// `kernel.balanceLessThan(t, n)` — `balance < n`.
+    LessThan,
+    /// `kernel.balanceGreaterThan(t, n)` — `balance > n`.
+    GreaterThan,
+}
+
+/// `kernel.balance*(token_type[, amount])` (midnight-ledger.ss:427-540).
+///
+/// One shape for all three: fetch the context's unshielded-balances map
+/// (context[5]), yield `map[token_type]` or ZERO if the key is absent, then
+/// compare or not.
+///
+/// ```text
+/// dup 2; idxc [5]; dup 0; push token_type; member
+/// branch 3;  pop; push 0u128; jmp 1
+///            idxc [token_type]
+/// [push amount; lt|gt]
+/// popeqc
+/// ```
+///
+/// The zero default is why `unshieldedBalance` on a token the contract has
+/// never held is `0` rather than a failure. Note the balance is the one at
+/// the START of execution — the effect accumulator's entries do not feed back
+/// into it, which is the caveat Compact's own stdlib comment carries.
+pub fn kernel_balance<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    token_type: &LedgerValue,
+    cmp: BalanceCmp,
+    amount: Option<&LedgerValue>,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let result_atom = if cmp == BalanceCmp::Value {
+        U128_ATOM
+    } else {
+        BOOL_ATOM
+    };
+    let (wires, value) = mint_read(c, vec![result_atom]);
+    let zero = LedgerValue::new(vec![U128_ATOM], vec![ImpactElem::Imm(Fr::from(0u64))]);
+    // `greaterThan` pushes the amount BEFORE the lookup and ends with a bare
+    // `lt`, which is how compactc turns `<` into `>` without a `gt` opcode —
+    // the same trick `blockTimeGreaterThan` uses. Hence the leading push and
+    // the `dup 3` in that arm.
+    let greater = cmp == BalanceCmp::GreaterThan;
+    let mut ops = Vec::new();
+    if greater {
+        ops.push(push_cell(false, amount.expect("a comparison needs an amount")));
+    }
+    ops.extend([
+        dup(if greater { 3 } else { 2 }),
+        ImpactOp::constant(&Op::Idx {
+            cached: true,
+            push_path: false,
+            path: vec![Key::Value(field_key(5))].into(),
+        }),
+        dup(0),
+        push_cell(false, token_type),
+        ImpactOp::constant(&Op::Member),
+        ImpactOp::constant(&Op::Branch { skip: 3 }),
+        ImpactOp::constant(&Op::Pop),
+        push_cell(false, &zero),
+        ImpactOp::constant(&Op::Jmp { skip: 1 }),
+        idx_key_cached(token_type),
+    ]);
+    if cmp == BalanceCmp::LessThan {
+        ops.push(push_cell(false, amount.expect("a comparison needs an amount")));
+    }
+    if cmp != BalanceCmp::Value {
+        ops.push(ImpactOp::constant(&Op::Lt));
+    }
+    ops.push(popeq(true, &value));
+    emit(c, guard, &ops);
+    wires[0]
+}
+
+/// `idx` by a single dynamic key, CACHED — [`idx_key`]'s twin, and the shape
+/// the balance lookup descends with.
+pub fn idx_key_cached(key: &LedgerValue) -> ImpactOp {
+    let mut elems = vec![ImpactElem::Imm(Fr::from(0x60u64))];
+    elems.extend(alignment_header(&key.atoms));
+    elems.extend(key.elems.iter().copied());
+    ImpactOp(elems)
+}
+
+/// `kernel.blockTimeLessThan(t)` / `kernel.blockTimeGreaterThan(t)`
+/// (midnight-ledger.ss:513-540): five instructions, and the two differ ONLY
+/// in the order the operands reach `lt` — which is how a `<` becomes a `>`.
+///
+/// ```text
+/// less than:    dup 2; idxc [2]; push t; lt; popeqc
+/// greater than: push t; dup 3; idxc [2]; lt; popeqc
+/// ```
+///
+/// The `dup 3` rather than `dup 2` in the greater-than form is the pushed `t`
+/// sitting on the stack already.
+pub fn kernel_block_time<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    time: &LedgerValue,
+    greater: bool,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
+    let block_time = ImpactOp::constant(&Op::Idx {
+        cached: true,
+        push_path: false,
+        path: vec![Key::Value(field_key(2))].into(),
+    });
+    let ops = if greater {
+        vec![
+            push_cell(false, time),
+            dup(3),
+            block_time,
+            ImpactOp::constant(&Op::Lt),
+            popeq(true, &value),
+        ]
+    } else {
+        vec![
+            dup(2),
+            block_time,
+            push_cell(false, time),
+            ImpactOp::constant(&Op::Lt),
+            popeq(true, &value),
+        ]
+    };
+    emit(c, guard, &ops);
+    wires[0]
+}
+
 /// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
@@ -1285,19 +1426,38 @@ fn push_null() -> ImpactOp {
 }
 
 /// `kernel.mintShielded(domain_sep, amount)` (midnight-ledger.ss:216-254):
-/// upsert into the effects' shielded-mints map (effects[4]) — member test,
-/// then either insert `amount` or add it to the existing entry via a
-/// VM-side `branch` (the PI stream is identical on both paths; the branch
-/// is resolved on chain).
-pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
+/// The EFFECT ACCUMULATOR, shared by five kernel operations
+/// (notes/kernel-tokens.org finding (c)): `effects[slot][key] += amount`,
+/// where a key not already present starts from zero.
+///
+/// ```text
+/// swap 0; idxpc [slot]                       // reach the effects map
+/// push key; dup 1; dup 1; member             // is the key there?
+/// push amount; swap 0; neg; branch 4
+///     dup 2; dup 2; idxc [stack]; add        // …if so, add what is there
+/// insc 2; swap 0
+/// ```
+///
+/// The `branch` is resolved on chain and the PI stream is identical on both
+/// paths, so this costs the circuit nothing conditional. The five callers
+/// differ ONLY in the slot, the key's type and the amount's width:
+///
+/// | operation | slot | key |
+/// |---|---|---|
+/// | `mintShielded` | 4 | `Bytes<32>` domain separator |
+/// | `mintUnshielded` | 5 | `Bytes<32>` domain separator |
+/// | `incUnshieldedInputs` | 6 | `TokenType` |
+/// | `incUnshieldedOutputs` | 7 | `TokenType` |
+/// | `claimUnshieldedCoinSpend` | 8 | `(TokenType, UnshieldedRecipient)` |
+fn kernel_effect_add(slot: u8, key: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
     vec![
         ImpactOp::constant(&Op::Swap { n: 0 }),
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(field_key(4))].into(),
+            path: vec![Key::Value(field_key(slot))].into(),
         }),
-        push_cell(false, domain_sep),
+        push_cell(false, key),
         ImpactOp::constant(&Op::Dup { n: 1 }),
         ImpactOp::constant(&Op::Dup { n: 1 }),
         ImpactOp::constant(&Op::Member),
@@ -1316,6 +1476,46 @@ pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> V
         ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
         ImpactOp::constant(&Op::Swap { n: 0 }),
     ]
+}
+
+/// `kernel.mintShielded(domain_sep, amount)` — [`kernel_effect_add`] at
+/// effects[4]. This was the shape's only caller until M17 found it was five.
+pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
+    kernel_effect_add(4, domain_sep, amount)
+}
+
+/// `kernel.mintUnshielded(domain_sep, amount)` — effects[5], `Uint<64>`.
+pub fn kernel_mint_unshielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
+    kernel_effect_add(5, domain_sep, amount)
+}
+
+/// `kernel.incUnshieldedInputs(token_type, amount)` — effects[6],
+/// `Uint<128>`. Called when RECEIVING an unshielded token.
+pub fn kernel_inc_unshielded_inputs(
+    token_type: &LedgerValue,
+    amount: &LedgerValue,
+) -> Vec<ImpactOp> {
+    kernel_effect_add(6, token_type, amount)
+}
+
+/// `kernel.incUnshieldedOutputs(token_type, amount)` — effects[7],
+/// `Uint<128>`. Called when SENDING one.
+pub fn kernel_inc_unshielded_outputs(
+    token_type: &LedgerValue,
+    amount: &LedgerValue,
+) -> Vec<ImpactOp> {
+    kernel_effect_add(7, token_type, amount)
+}
+
+/// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
+/// effects[8]. The key is the CONCATENATION of the token type and the
+/// recipient, which is why the caller passes one `LedgerValue` of six atoms
+/// rather than two of three.
+pub fn kernel_claim_unshielded_coin_spend(
+    token_and_recipient: &LedgerValue,
+    amount: &LedgerValue,
+) -> Vec<ImpactOp> {
+    kernel_effect_add(8, token_and_recipient, amount)
 }
 
 /// The shared claim shape (claimZswapNullifier :162 / claimZswapCoinSpend

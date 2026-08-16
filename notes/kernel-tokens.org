@@ -1,0 +1,153 @@
+#+title: M17 — Kernel + token stdlib remainder
+
+Design of record for M17, which IS M4's remaining stdlib bullet promoted.
+Written before any code, per the milestone. Everything below that is a fact
+about compactc or about Midnight's ledger was read off a compiled artifact or
+upstream source, and the artifact is named.
+
+The probe is the M17 fixture itself —
+=crates/minocrab-contracts/tests/fixtures/kernel/kernel.compact=, 24 circuits
+compiled with the PINNED compactc under =--feature-zkir-v3=, one per
+operation the milestone names (less the one that cannot be compiled — finding
+(a)).
+
+* 0. THE FINDINGS
+
+** (a) =kernel.checkpoint()= CANNOT BE COMPILED for our IR version
+
+M17's first named item does not exist in ZKIR v3. Feeding compactc a contract
+that calls it, under the same =--feature-zkir-v3= every other fixture uses:
+
+: unimplemented: [#{vminstr f5kki0ul5pj8zvc19sy1zpm3n-51092} "ckpt" ()]
+: Internal error (please report): Exception: failed assertion
+: not-implemented at line 748, char 23 of compiler/zkir-v3-passes.ss
+
+The reason is exact and one-sided. The v2 backend assembles it —
+[[file:../corpus/src/compact/compiler/zkir-passes/print-zkir.ss][print-zkir.ss:546]] has ~["ckpt" (list (literal 255))]~ — and the v3
+backend's =assemble1= has no =ckpt= case at all, so it reaches the
+=[else … (assert not-implemented)]= arm
+([[file:../corpus/src/compact/compiler/zkir-v3-passes/reduce-to-zkir.ss][reduce-to-zkir.ss:612-615]]).
+
+So =checkpoint= is a v2-only feature, and this is a compactc gap rather than
+one of ours. WE COULD emit it — upstream's =Op::Ckpt= is =0xff= and
+=ImpactOp::constant= already encodes it — but there would be no artifact to
+differential against, and a contract using it could not be written in Compact
+for the same target. It is therefore NOT PORTED, and the fairness bullet
+should say why rather than list it.
+
+** (b) The milestone's list is TWO LAYERS, and only one of them has vm-code
+
+M17 names fourteen things as if they were one kind. They are not:
+
+| layer | what it is | where |
+|---|---|---|
+| KERNEL PRIMITIVES | =declare-ledger-adt Kernel= functions with vm-code | midnight-ledger.ss:159-540 |
+| STDLIB CIRCUITS | ordinary =export circuit=s written IN COMPACT, composed from the primitives | standard-library.compact:113-350 |
+
+=sendShielded=, =sendUnshielded=, =receiveUnshielded=, =mergeCoin=,
+=mergeCoinImmediate=, =unshieldedBalance*= and =blockTimeLt/Lte/Gt/Gte= are
+all in the SECOND layer — Compact source, not vm-code. So they are ports of
+CIRCUITS (the =minocrab-std= kind of work), and what they compose is the ten
+primitives in the first layer.
+
+The ten primitives M17 owes, against the six already ported (=self=,
+=mintShielded=, =claimZswapNullifier=, =claimZswapCoinSpend=,
+=claimZswapCoinReceive=, =claimContractCall=):
+
+=mintUnshielded=, =claimUnshieldedCoinSpend=, =incUnshieldedOutputs=,
+=incUnshieldedInputs=, =balance=, =balanceLessThan=, =balanceGreaterThan=,
+=blockTimeLessThan=, =blockTimeGreaterThan= — nine, because =checkpoint= is
+finding (a).
+
+** (c) Nine primitives are THREE instruction shapes
+
+This is M16's "two op sequences serve five methods" again, and stronger.
+
+*THE EFFECT ACCUMULATOR* — =mintUnshielded=, =claimUnshieldedCoinSpend=,
+=incUnshieldedOutputs=, =incUnshieldedInputs=. All four are the SAME
+nineteen-instruction stream (twenty-four for =claimUnshieldedCoinSpend=, and
+only because its key is longer). Read off the fixture:
+
+: swap 0                      ; [context, state, effects]
+: idxpc [effects slot]        ; 0x80 .. — slot 5/6/7/8, see below
+: push (cell KEY)
+: dup 1; dup 1; member
+: push (cell AMOUNT)
+: swap 0; neg; branch 4
+:   dup 2; dup 2; idxc [stack]; add
+: insc 2
+: swap 0
+
+i.e. "map[key] = amount + (map[key] if present else 0)", where the branch
+skips the addition when the key is absent. The four differ in exactly three
+places: the effects-array slot, the key's type, and the amount's width.
+
+| primitive | slot | key | amount |
+|---|---|---|---|
+| =mintShielded= (ported) | 4 | =Bytes<32>= | =Uint<64>= |
+| =mintUnshielded= | 5 | =Bytes<32>= | =Uint<64>= |
+| =incUnshieldedInputs= | 6 | =TokenType= | =Uint<128>= |
+| =incUnshieldedOutputs= | 7 | =TokenType= | =Uint<128>= |
+| =claimUnshieldedCoinSpend= | 8 | =(TokenType, UnshieldedRecipient)= | =Uint<128>= |
+
+*THE BALANCE READ* — =balance=, =balanceLessThan=, =balanceGreaterThan=.
+One shape, "look up the balances map or yield zero", then nothing / =lt= /
+=gt=:
+
+: dup 2; idxc [5]            ; the CONTEXT's balances map, not the state's
+: dup 0; push (cell KEY); member
+: branch 3
+:   pop; push (cell 0u128); jmp 1
+:   idxc [KEY]
+: [push AMOUNT; lt|gt]
+: popeqc
+
+*THE BLOCK-TIME READ* — =blockTimeLessThan=, =blockTimeGreaterThan=. Five
+instructions, and the two differ ONLY in operand order, which is how a `lt`
+becomes a `gt`:
+
+: less than:    dup 2; idxc [2]; push (cell t); lt; popeqc
+: greater than: push (cell t); dup 3; idxc [2]; lt; popeqc
+
+** (d) The emission layer already HAS the accumulator — as one special case
+
+The first draft of this note listed =Key::Stack= and =Op::Add= as missing.
+They are not: =kernel_mint_shielded= (M4) emits both, because =mintShielded=
+IS the effect accumulator of finding (c) at slot 4. So M17's four unshielded
+primitives are not new machinery at all — they are the FIFTH through EIGHTH
+callers of a shape that has been in the crate since M4 with the slot, the key
+and the amount hard-coded into one function.
+
+What M17 does there is generalize that function and give it four more
+callers, which is the same move M16 made for the two Merkle-insert streams.
+NOTHING in the emission layer is genuinely new for the accumulator; the
+balance read and the block-time read are, and they are five and nine
+instructions.
+
+This is worth recording because it is the second milestone running whose
+"new lowering" turned out to be an existing one with different arguments —
+and both times the design note found it before any code was written.
+
+** (e) The v3 corpus covers the SHIELDED half and nothing else
+
+Same filter as M14/M15/M16. Across the three =--feature-zkir-v3= sources the
+kernel/token surface used is =kernel.self= (25), =receiveShielded= (10),
+=mintShieldedToken= (7), =sendImmediateShielded= (6) — all SHIELDED, and all
+already reachable through the ported vault and mint-tokens contracts. NOT ONE
+v3 use of any unshielded primitive, of =balance*=, of =blockTime*=, or of
+=mergeCoin=.
+
+So the fixture route again, for the fourth milestone running and for the
+fourth time with the same recorded reason.
+
+* 1. Staging
+
+1. =minocrab-ledger=: generalize =kernel_mint_shielded= into the effect
+   accumulator of finding (c)/(d), and add the balance read and the
+   block-time read — three emitters, not nine.
+2. =minocrab-std=: =TokenType= / =UnshieldedRecipient= / =UserAddress=, and
+   the eighteen stdlib circuits, which are compositions and should read like
+   the Compact source beside them.
+3. The fixture differential at the M16 bar — serialized ZKIR equal to
+   compactc's up to identifier renaming, for all 24.
+4. Zero-movement check via =tests/zkir_dump.rs=.

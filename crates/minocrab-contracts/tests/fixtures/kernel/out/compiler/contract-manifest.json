@@ -1,0 +1,155 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 23487,
+      "hash": "26d9c9c95eb6399082cce2a9d332a0d4c2fa18414f26b9a6b5e2570eadaac812"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 22948,
+      "hash": "c261b2a1927864c8a00a06baa1baed4ddc10953573899d24f6af9a80af4c7977"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 172063,
+      "hash": "f758b2d4d43a8a7bac8f58e2ad9f3c9c3977ed9d35bd85b39f9a97bba4523f2e"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 8187,
+      "hash": "beccfc96dab951b9abc0bc68b47f3d190ee0d9564543a25d9667fbaa11cd0529"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "kBalance.zkir": {
+      "type": "file",
+      "size": 1479,
+      "hash": "5fd9cfbc3f25799f4e5292168e64ed595c8feed1728a7f04ea6383bc4ca9a987"
+    },
+    "kBalanceGreaterThan.zkir": {
+      "type": "file",
+      "size": 1761,
+      "hash": "366b5596da5152642380439ae0f204bcd099bd15f99cb3d8702ab73076920433"
+    },
+    "kBalanceLessThan.zkir": {
+      "type": "file",
+      "size": 1761,
+      "hash": "2137a8783205e5b1f4ba0a4dcd5ccf78e384d0e0fd12a4528301c2f636e53203"
+    },
+    "kBlockTimeGreaterThan.zkir": {
+      "type": "file",
+      "size": 801,
+      "hash": "eccb89709d2b06847371803b30a80276593e6f044750db080682066981adb90f"
+    },
+    "kBlockTimeLessThan.zkir": {
+      "type": "file",
+      "size": 801,
+      "hash": "ef60ffe26108af99eff76a29b2c35f42df2bb42aee59194332233c6f4f8d6e25"
+    },
+    "kClaimUnshieldedCoinSpend.zkir": {
+      "type": "file",
+      "size": 2314,
+      "hash": "46ff82a0f5d0a1db532ebc4481154679c6a8fbaced7298265a1b8f580c9e612e"
+    },
+    "kIncUnshieldedInputs.zkir": {
+      "type": "file",
+      "size": 1651,
+      "hash": "d08eb31851f9d1b0f32c9104a39d2226b1e828231d150a9750fc1bfadbe97a1e"
+    },
+    "kIncUnshieldedOutputs.zkir": {
+      "type": "file",
+      "size": 1651,
+      "hash": "4733ebf3dbdeb10538a832b4388ad7e01cb166d757ddb04a11fe2b33031b8525"
+    },
+    "kMintUnshielded.zkir": {
+      "type": "file",
+      "size": 1592,
+      "hash": "e406677d31f46a10f74810664dc73b377eca6927d5bfed9f726f7a69aa9521fb"
+    },
+    "sBlockTimeGt.zkir": {
+      "type": "file",
+      "size": 801,
+      "hash": "eccb89709d2b06847371803b30a80276593e6f044750db080682066981adb90f"
+    },
+    "sBlockTimeGte.zkir": {
+      "type": "file",
+      "size": 889,
+      "hash": "54a4d5873d86b3e387d0473b057face28a7ea7c287048bcd46221fd46cf5313b"
+    },
+    "sBlockTimeLt.zkir": {
+      "type": "file",
+      "size": 801,
+      "hash": "ef60ffe26108af99eff76a29b2c35f42df2bb42aee59194332233c6f4f8d6e25"
+    },
+    "sBlockTimeLte.zkir": {
+      "type": "file",
+      "size": 889,
+      "hash": "4939c178a681183063b56a2425880945a793736f96f6b6422aae8c46bbf5f8aa"
+    },
+    "sMergeCoin.zkir": {
+      "type": "file",
+      "size": 6763,
+      "hash": "47a7d1344e6b4a288f6059bcf317590d35fdb8f48fa2c6eaa1ff79e7be3a7eb7"
+    },
+    "sMergeCoinImmediate.zkir": {
+      "type": "file",
+      "size": 6649,
+      "hash": "56e3cb612a011314a66d38e488e7ac1281e43e3d79fb6244671d5b2219762357"
+    },
+    "sMintUnshieldedToken.zkir": {
+      "type": "file",
+      "size": 6318,
+      "hash": "06ecb24b673ba3e5acc986189e78fc27b03b760a998db63307072bc83a4f2f0e"
+    },
+    "sReceiveUnshielded.zkir": {
+      "type": "file",
+      "size": 1636,
+      "hash": "766d0bbe47b29a4bf2ad9b00fff2722385e02ed1384eff2065edb53c3a23c477"
+    },
+    "sSendShielded.zkir": {
+      "type": "file",
+      "size": 9588,
+      "hash": "5ed69e67e42ee642a4202d432f25b95165e144461b0c0144ad44de1dc441acc5"
+    },
+    "sSendUnshielded.zkir": {
+      "type": "file",
+      "size": 5292,
+      "hash": "6e87933293b91fe6af0089185b04c8206e7ea03a8c78a9780f04b08025837c07"
+    },
+    "sUnshieldedBalance.zkir": {
+      "type": "file",
+      "size": 1479,
+      "hash": "5fd9cfbc3f25799f4e5292168e64ed595c8feed1728a7f04ea6383bc4ca9a987"
+    },
+    "sUnshieldedBalanceGt.zkir": {
+      "type": "file",
+      "size": 1746,
+      "hash": "e54988e948c05a418dfd820562e0d05efe450d1886a9f82307dc3acc4fb5411c"
+    },
+    "sUnshieldedBalanceGte.zkir": {
+      "type": "file",
+      "size": 1834,
+      "hash": "0a4f2d48428792b95058a2150fa1992ad2d833c0e129a5b44089cd536feca776"
+    },
+    "sUnshieldedBalanceLt.zkir": {
+      "type": "file",
+      "size": 1746,
+      "hash": "25b5dcce5e7207954cbe25096c78129134ba2f6c02c366990844297e471b03ca"
+    },
+    "sUnshieldedBalanceLte.zkir": {
+      "type": "file",
+      "size": 1834,
+      "hash": "70d9f85be7c946e27e7eeefdd090d0f7f2c12986eade94f428b7ab8ec3ac60ee"
+    }
+  }
+}

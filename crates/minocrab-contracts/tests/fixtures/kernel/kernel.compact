@@ -1,0 +1,125 @@
+pragma language_version >= 0.25;
+
+// M17 fixture — the kernel primitives and token-stdlib circuits M4 left, one
+// circuit each.
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/kernel/kernel.compact \
+//       crates/minocrab-contracts/tests/fixtures/kernel/out
+
+import CompactStandardLibrary;
+
+export ledger dummy: Counter;
+
+// ---- kernel primitives with vm-code -----------------------------------------
+
+// kernel.checkpoint() IS ABSENT, and deliberately: compactc's ZKIR-v3
+// backend has no `ckpt` case at all. zkir-passes/print-zkir.ss:546 assembles
+// it to 255 for v2, but zkir-v3-passes/reduce-to-zkir.ss's `assemble1` falls
+// through to `assert not-implemented`, so `compactc --feature-zkir-v3` on a
+// contract calling it dies with
+//   unimplemented: [#{vminstr ...} "ckpt" ()]
+//   Internal error (please report): Exception: failed assertion
+//   not-implemented at line 748, char 23 of compiler/zkir-v3-passes.ss
+// It is a v2-only feature. See notes/kernel-tokens.org finding (a).
+
+export circuit kMintUnshielded(ds: Bytes<32>, amount: Uint<64>): [] {
+  kernel.mintUnshielded(disclose(ds), disclose(amount));
+}
+
+export circuit kClaimUnshieldedCoinSpend(
+  color: Bytes<32>,
+  addr: Either<ContractAddress, UserAddress>,
+  amount: Uint<128>
+): [] {
+  kernel.claimUnshieldedCoinSpend(
+    left<Bytes<32>, Bytes<32>>(disclose(color)), disclose(addr), disclose(amount));
+}
+
+export circuit kIncUnshieldedOutputs(color: Bytes<32>, amount: Uint<128>): [] {
+  kernel.incUnshieldedOutputs(left<Bytes<32>, Bytes<32>>(disclose(color)), disclose(amount));
+}
+
+export circuit kIncUnshieldedInputs(color: Bytes<32>, amount: Uint<128>): [] {
+  kernel.incUnshieldedInputs(left<Bytes<32>, Bytes<32>>(disclose(color)), disclose(amount));
+}
+
+export circuit kBalance(color: Bytes<32>): Uint<128> {
+  return kernel.balance(left<Bytes<32>, Bytes<32>>(disclose(color)));
+}
+
+export circuit kBalanceLessThan(color: Bytes<32>, amount: Uint<128>): Boolean {
+  return kernel.balanceLessThan(left<Bytes<32>, Bytes<32>>(disclose(color)), disclose(amount));
+}
+
+export circuit kBalanceGreaterThan(color: Bytes<32>, amount: Uint<128>): Boolean {
+  return kernel.balanceGreaterThan(left<Bytes<32>, Bytes<32>>(disclose(color)), disclose(amount));
+}
+
+export circuit kBlockTimeLessThan(t: Uint<64>): Boolean {
+  return kernel.blockTimeLessThan(disclose(t));
+}
+
+export circuit kBlockTimeGreaterThan(t: Uint<64>): Boolean {
+  return kernel.blockTimeGreaterThan(disclose(t));
+}
+
+// ---- the stdlib circuits composed from them ---------------------------------
+
+export circuit sBlockTimeLt(t: Uint<64>): Boolean { return blockTimeLt(disclose(t)); }
+export circuit sBlockTimeGte(t: Uint<64>): Boolean { return blockTimeGte(disclose(t)); }
+export circuit sBlockTimeGt(t: Uint<64>): Boolean { return blockTimeGt(disclose(t)); }
+export circuit sBlockTimeLte(t: Uint<64>): Boolean { return blockTimeLte(disclose(t)); }
+
+export circuit sUnshieldedBalance(color: Bytes<32>): Uint<128> {
+  return unshieldedBalance(disclose(color));
+}
+export circuit sUnshieldedBalanceLt(color: Bytes<32>, a: Uint<128>): Boolean {
+  return unshieldedBalanceLt(disclose(color), disclose(a));
+}
+export circuit sUnshieldedBalanceGte(color: Bytes<32>, a: Uint<128>): Boolean {
+  return unshieldedBalanceGte(disclose(color), disclose(a));
+}
+export circuit sUnshieldedBalanceGt(color: Bytes<32>, a: Uint<128>): Boolean {
+  return unshieldedBalanceGt(disclose(color), disclose(a));
+}
+export circuit sUnshieldedBalanceLte(color: Bytes<32>, a: Uint<128>): Boolean {
+  return unshieldedBalanceLte(disclose(color), disclose(a));
+}
+
+export circuit sReceiveUnshielded(color: Bytes<32>, a: Uint<128>): [] {
+  receiveUnshielded(disclose(color), disclose(a));
+}
+
+export circuit sSendUnshielded(
+  color: Bytes<32>, a: Uint<128>, r: Either<ContractAddress, UserAddress>
+): [] {
+  sendUnshielded(disclose(color), disclose(a), disclose(r));
+}
+
+export circuit sMintUnshieldedToken(
+  ds: Bytes<32>, a: Uint<64>, r: Either<ContractAddress, UserAddress>
+): Bytes<32> {
+  return mintUnshieldedToken(disclose(ds), disclose(a), disclose(r));
+}
+
+export circuit sMergeCoin(
+  a: QualifiedShieldedCoinInfo, b: QualifiedShieldedCoinInfo
+): ShieldedCoinInfo {
+  return mergeCoin(disclose(a), disclose(b));
+}
+
+export circuit sMergeCoinImmediate(
+  a: QualifiedShieldedCoinInfo, b: ShieldedCoinInfo
+): ShieldedCoinInfo {
+  return mergeCoinImmediate(disclose(a), disclose(b));
+}
+
+export circuit sSendShielded(
+  input: QualifiedShieldedCoinInfo,
+  r: Either<ZswapCoinPublicKey, ContractAddress>,
+  v: Uint<128>
+): ShieldedSendResult {
+  return sendShielded(disclose(input), disclose(r), disclose(v));
+}
