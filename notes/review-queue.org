@@ -521,3 +521,39 @@ reviewer should look at.
       NOT DONE, documented: the three `insertCoin`/`pushFrontCoin` arms
       and nested ADTs — both in the milestone and in the README's gap
       list, both with a reason rather than a shrug.
+- [ ] M17 so far (in progress — 21 of the fixture's 24, three commits):
+      the differential is instruction-for-instruction, so the LOWERINGS
+      check themselves. THE ONE THING THAT NEEDS EYES is the `token_type`
+      change, because it is the only edit this session that MOVED
+      pre-existing circuits.
+      `token_type` stopped naming its constant domain prefix with two
+      `copy`s and now inlines it (M16's `AnyWire3::immediate`). It has ten
+      call sites across all four vault forks, so 26 circuits moved,
+      INCLUDING THE BENCHMARK CONTRACT. What to check: (a) the diff really
+      is only those two `copy`s plus renumbering in all 26 — the claim is
+      from `diff -rq` over a full zkir_dump, and one circuit is quoted in
+      notes/kernel-tokens.org; (b) that BENCHMARK.md's numbers do not
+      depend on the removed instructions — row_snapshot regenerated to +2
+      lines and ZERO deletions, so `(k, rows)` is unchanged for all 26, but
+      the bench harness measures prove TIME and nobody has re-run it;
+      (c) that no OTHER `B32::pad` call site wants the same treatment, or
+      that leaving them is deliberate.
+      Second, `kernel.checkpoint()` is recorded as impossible rather than
+      unported, on the strength of one compactc invocation and a reading of
+      `assemble1`. Worth reproducing the failure independently, since a
+      README gap bullet now asserts it.
+      Third, the accumulator generalization: `kernel_mint_shielded` became
+      `kernel_effect_add(slot, key, amount)` with five callers, and the
+      claim is that not one instruction changed for the pre-existing
+      caller. zkir_dump says so (M17 stage 2's dump was 0 files differ);
+      worth confirming the M4 mintShielded differential still pins it.
+      Lower priority, self-checking: the nine primitives and twelve stdlib
+      circuits (21 of 21 byte-identical to compactc), `UserAddress`,
+      `Either`'s LedgerRepr/Disclose, and `UnshieldedToken` carrying its
+      own constants.
+      NOT DONE, named in the differential's `NOT_YET_PORTED` with a test
+      that fails if the list drifts: `sendShielded`, `mergeCoin`,
+      `mergeCoinImmediate`. `mergeCoin` is only 59 instructions and every
+      gadget it needs exists (`coin_nullifier_contract`, `coin_commitment`,
+      the kernel claims) — the nonce evolution is the one piece that wants
+      care, since it is a transient hash degraded and re-upgraded.
