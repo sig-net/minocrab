@@ -19,10 +19,13 @@
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
-use midnight_onchain_state::state::EntryPointBuf;
+use midnight_onchain_state::state::{EntryPointBuf, StateValue};
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
+use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
+use midnight_storage::storage::HashMap as StorageHashMap;
+use midnight_transient_crypto::merkle_tree::MerkleTree as VmMerkleTree;
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::{
     CallArgs, CallResult, Circuit3, Disclose, DisclosureLabel, FieldT, Operand, Prim, Wire3,
@@ -68,7 +71,14 @@ pub struct LedgerValue {
     elems: Vec<ImpactElem>,
 }
 
-fn atom_limbs(atom: &AlignmentAtom) -> usize {
+/// How many FAB limbs one alignment atom occupies: a `bytes<n>` is limbed in
+/// 31-byte chunks (at least one, so `bytes<0>` is one zero limb), a `field`
+/// and a `compress` are one each.
+///
+/// Public because it is the FAB rule and it should be stated once — the
+/// stdlib needs it to build a default value's zeros
+/// (notes/ledger-adts.org finding (c)).
+pub fn atom_limbs(atom: &AlignmentAtom) -> usize {
     match atom {
         AlignmentAtom::Bytes { length } => (*length as usize).div_ceil(31).max(1),
         AlignmentAtom::Field | AlignmentAtom::Compress => 1,
@@ -127,6 +137,56 @@ pub fn push_cell(storage: bool, value: &LedgerValue) -> ImpactOp {
     ImpactOp(elems)
 }
 
+/// One element of a pushed `StateValue::Array` whose cells may be
+/// circuit-computed — see [`push_array`].
+#[derive(Clone)]
+pub enum LedgerElem {
+    /// `StateValue::Null`.
+    Null,
+    /// `StateValue::Cell(..)`, possibly carrying wires.
+    Cell(LedgerValue),
+}
+
+/// `push` / `pushs` of a `StateValue::Array`:
+/// `[0x10 + storage, 3 | len << 4, element reprs…]` (`StateValue::field_repr`,
+/// onchain-state state.rs:171-205).
+///
+/// The ONE mixed push in the ADT layer: `List.pushFront` pushes
+/// `[Cell(value), Null, Null]` whose first element carries the pushed value's
+/// wires (notes/ledger-adts.org §2). Every other ADT constant — the empty
+/// map, the blank tree, a `List`'s initial value — is fully constant and goes
+/// through [`ImpactOp::constant`] with a real `StateValue`, per the crate's
+/// standing rule; `push_array_matches_field_repr` pins that the two agree on
+/// the constant case.
+pub fn push_array(storage: bool, elems: &[LedgerElem]) -> ImpactOp {
+    let mut out = vec![
+        ImpactElem::Imm(Fr::from(0x10u64 + u64::from(storage))),
+        ImpactElem::Imm(Fr::from(3u64 | ((elems.len() as u64) << 4))),
+    ];
+    for elem in elems {
+        match elem {
+            LedgerElem::Null => out.push(ImpactElem::Imm(Fr::from(0u64))),
+            LedgerElem::Cell(value) => {
+                out.push(ImpactElem::Imm(Fr::from(1u64)));
+                out.extend(alignment_header(&value.atoms));
+                out.extend(value.elems.iter().copied());
+            }
+        }
+    }
+    ImpactOp(out)
+}
+
+/// The DEFAULT value of a type with these atoms: one zero limb per FAB limb.
+///
+/// True for every Compact type, not just the scalar ones — compactc's `VMnull`
+/// reduction is `(make-list count 0)` over the limb count
+/// (reduce-to-zkir.ss:350-355, notes/ledger-adts.org finding (c)) — which is
+/// why no per-type default table exists anywhere below this line.
+pub fn default_value(atoms: Vec<AlignmentAtom>) -> LedgerValue {
+    let limbs: usize = atoms.iter().map(atom_limbs).sum();
+    LedgerValue::new(atoms, vec![ImpactElem::Imm(Fr::from(0u64)); limbs])
+}
+
 /// `popeq` / `popeqc` expecting `result`:
 /// `[0x0c + cached, alignment header…, limbs…]` (ops.rs:477-480). The limb
 /// wires must be the same `public_input` outputs that witnessed the read.
@@ -148,24 +208,45 @@ pub fn field_key(index: u8) -> AlignedValue {
     .expect("a byte fits a bytes<1> atom")
 }
 
+/// A `Uint<64>` as an `AlignedValue`: one `bytes<8>` atom. The initial-value
+/// constants of `List` (its length) and both trees (their next index) are
+/// this, and nothing else in the crate needs it.
+fn u64_aligned(value: u64) -> AlignedValue {
+    AlignedValue::new(
+        Value(vec![ValueAtom(value.to_le_bytes().to_vec()).normalize()]),
+        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+            length: 8,
+        })]),
+    )
+    .expect("a u64 fits a bytes<8> atom")
+}
+
+/// `idx` by ONE constant `bytes<1>` key.
+///
+/// Two things are spelled this way, and they are the same instruction: a
+/// top-level ledger FIELD ([`idx_field`] / [`idxp_field`]) and a POSITION
+/// inside an ADT's `Array` — `List` is `[head, tail, length]`, `MerkleTree`
+/// is `[tree, next-index]`, `HistoricMerkleTree` adds `[.., history]`, and
+/// every descent into one is `(align i 1)` in compactc's vm-code
+/// (notes/ledger-adts.org §1).
+pub fn idx_one(cached: bool, push_path: bool, index: u8) -> ImpactOp {
+    ImpactOp::constant(&Op::Idx {
+        cached,
+        push_path,
+        path: vec![Key::Value(field_key(index))].into(),
+    })
+}
+
 /// `idxp [field]`: uncached path-remembering fetch of a top-level field
 /// (the shape compactc emits to reach any field it will write back).
 pub fn idxp_field(index: u8) -> ImpactOp {
-    ImpactOp::constant(&Op::Idx {
-        cached: false,
-        push_path: true,
-        path: vec![Key::Value(field_key(index))].into(),
-    })
+    idx_one(false, true, index)
 }
 
 /// `idx [field]`: uncached fetch of a top-level field WITHOUT remembering
 /// the path — the read shape (nothing is written back).
 pub fn idx_field(index: u8) -> ImpactOp {
-    ImpactOp::constant(&Op::Idx {
-        cached: false,
-        push_path: false,
-        path: vec![Key::Value(field_key(index))].into(),
-    })
+    idx_one(false, false, index)
 }
 
 /// `dup n`.
@@ -287,6 +368,343 @@ pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
         }),
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
     ]
+}
+
+/// `set.remove(elem)` on ledger field `index` — the SAME instruction stream
+/// `map.remove(key)` is, because a Compact `Set` is a `Map` with `Null`
+/// values and `remove` does not touch the value (fixture `setRemove` is
+/// `map_remove`'s stream, notes/ledger-adts.org §1). Named for the caller's
+/// sake; it emits nothing of its own.
+pub fn set_remove(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
+    map_remove(index, elem)
+}
+
+/// `map.insertDefault(key)` / a `Map` whose value type's default is written
+/// (midnight-ledger.ss Map `insertDefault`): `idxp [field]; push key;
+/// pushs default; ins 1; insc 1`. `value_atoms` is the VALUE type's
+/// alignment; the limbs are zeros ([`default_value`]).
+pub fn map_insert_default(index: u8, key: &LedgerValue, value_atoms: Vec<AlignmentAtom>) -> Vec<ImpactOp> {
+    map_insert(index, key, &default_value(value_atoms))
+}
+
+/// The shared shape of every `resetToDefault` on a TOP-LEVEL field:
+/// `push key; pushs initial; ins 1`.
+///
+/// compactc's vm-code wraps this in `idx [pushPath] (all but the last path
+/// element)` and a trailing `insc (len(path) - 1)`, both of which are
+/// SUPPRESSED for a one-element path and so emit no instruction at all
+/// (notes/ledger-adts.org finding (d)) — the same suppression a top-level
+/// `Cell` write already gets.
+fn reset_to(index: u8, initial: StateValue<InMemoryDB>) -> Vec<ImpactOp> {
+    vec![
+        push_cell(false, &field_index_value(index)),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: initial,
+        }),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 1,
+        }),
+    ]
+}
+
+/// The field index as a pushable `bytes<1>` value — the key half of
+/// [`field_key`], for the ops that push it rather than index by it.
+fn field_index_value(index: u8) -> LedgerValue {
+    LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(u64::from(index)))])
+}
+
+/// `map.resetToDefault()` on field `index`: `push key; pushs (empty map);
+/// ins 1`.
+pub fn map_reset(index: u8) -> Vec<ImpactOp> {
+    reset_to(index, StateValue::Map(StorageHashMap::new()))
+}
+
+/// `set.resetToDefault()` — [`map_reset`], since a `Set`'s initial value is
+/// the empty map a `Map`'s is.
+pub fn set_reset(index: u8) -> Vec<ImpactOp> {
+    map_reset(index)
+}
+
+// --- List: an `Array[3]` of `{head cell, tail list, length}` ----------------
+
+/// A `List`'s initial value: `[null, null, cell 0u64]`.
+fn empty_list() -> StateValue<InMemoryDB> {
+    StateValue::Array(
+        [
+            StateValue::Null,
+            StateValue::Null,
+            StateValue::Cell(Sp::new(u64_aligned(0))),
+        ]
+        .into(),
+    )
+}
+
+/// `list.resetToDefault()` on field `index`.
+pub fn list_reset(index: u8) -> Vec<ImpactOp> {
+    reset_to(index, empty_list())
+}
+
+/// `list.pushFront(value)` on field `index` (midnight-ledger.ss List
+/// `pushFront`; the corpus's own shape is test-caller-contract
+/// submitSignatureRequest.zkir:43-55):
+///
+/// ```text
+/// idxp [field]; dup 0; idx [2]; addi 1        // len + 1
+/// pushs [cell value, null, null]              // the new node
+/// swap 0; push 2u8; swap 0; insc 1            // node[2] = len + 1
+/// swap 0; push 1u8; swap 0; insc 2            // node[1] = the old list
+/// ```
+pub fn list_push_front(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        dup(0),
+        idx_one(false, false, LIST_LENGTH),
+        ImpactOp::constant(&Op::Addi { immediate: 1 }),
+        push_array(
+            true,
+            &[
+                LedgerElem::Cell(value.clone()),
+                LedgerElem::Null,
+                LedgerElem::Null,
+            ],
+        ),
+        swap(0),
+        push_cell(false, &field_index_value(LIST_LENGTH)),
+        swap(0),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        swap(0),
+        push_cell(false, &field_index_value(LIST_TAIL)),
+        swap(0),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+    ]
+}
+
+/// `list.popFront()` on field `index`: `idxp [field]; idx [1]; insc 1` — the
+/// list becomes its own tail.
+pub fn list_pop_front(index: u8) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        idx_one(false, false, LIST_TAIL),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+    ]
+}
+
+/// Array positions inside a `List` node.
+const LIST_HEAD: u8 = 0;
+const LIST_TAIL: u8 = 1;
+const LIST_LENGTH: u8 = 2;
+
+/// Array positions inside a `MerkleTree` / `HistoricMerkleTree` node.
+const TREE: u8 = 0;
+const TREE_NEXT: u8 = 1;
+const TREE_HISTORY: u8 = 2;
+
+// --- MerkleTree: an `Array[2]` of `{tree, next index}` ----------------------
+
+/// A `MerkleTree`'s initial value: `[blank tree of height DEPTH, cell 0u64]`.
+fn empty_merkle_tree(depth: u8) -> [StateValue<InMemoryDB>; 2] {
+    [
+        StateValue::BoundedMerkleTree(VmMerkleTree::blank(depth)),
+        StateValue::Cell(Sp::new(u64_aligned(0))),
+    ]
+}
+
+/// `mt.resetToDefault()` on field `index`.
+pub fn merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
+    reset_to(
+        index,
+        StateValue::Array(empty_merkle_tree(depth).into_iter().collect()),
+    )
+}
+
+/// `mt.insert(item)` / `mt.insertHash(hash)` on field `index`
+/// (midnight-ledger.ss MerkleTree `insert`): ONE stream for both, because the
+/// two differ only in where the 32-byte leaf came from — `insert` hashes the
+/// item (`rt-leaf-hash`, computed above this layer) and `insertHash` is
+/// handed it. The fixture's `mtInsert` and `mtInsertHash` are identical
+/// instruction for instruction.
+///
+/// ```text
+/// idxp [field]; idxp [0]; dup 2; idx [1]      // the tree, then the next index
+/// pushs (cell leaf); ins 1; insc 1            // tree[next] = leaf
+/// idxp [1]; addi 1; insc 2                    // next += 1
+/// ```
+pub fn merkle_tree_insert(index: u8, leaf: &LedgerValue) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        idx_one(false, true, TREE),
+        dup(2),
+        idx_one(false, false, TREE_NEXT),
+        push_cell(true, leaf),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 1,
+        }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        idx_one(false, true, TREE_NEXT),
+        ImpactOp::constant(&Op::Addi { immediate: 1 }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+    ]
+}
+
+/// `mt.insertIndex(item, i)` / `insertHashIndex(hash, i)` /
+/// `insertIndexDefault(i)` on field `index` — again ONE stream for all three,
+/// which differ only in the leaf (the item's hash, the given hash, or the
+/// DEFAULT value's hash).
+///
+/// The tail is `next = max(next, i + 1)`, and it is where the Impact-level
+/// `branch`/`jmp` lives — transcript control flow, not circuit control flow
+/// (notes/ledger-adts.org finding (b)):
+///
+/// ```text
+/// idxp [field]; idxp [0]; push i; pushs (cell leaf); ins 2
+/// idxp [1]; push i; addi 1; dup 1; dup 1; lt
+/// branch 2; pop; jmp 2; swap 0; pop           // max(next, i + 1)
+/// ins 1; insc 1
+/// ```
+pub fn merkle_tree_insert_index(
+    index: u8,
+    leaf: &LedgerValue,
+    at: &LedgerValue,
+) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        idx_one(false, true, TREE),
+        push_cell(false, at),
+        push_cell(true, leaf),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 2,
+        }),
+        idx_one(false, true, TREE_NEXT),
+        push_cell(false, at),
+        ImpactOp::constant(&Op::Addi { immediate: 1 }),
+        dup(1),
+        dup(1),
+        ImpactOp::constant(&Op::Lt),
+        ImpactOp::constant(&Op::Branch { skip: 2 }),
+        ImpactOp::constant(&Op::Pop),
+        ImpactOp::constant(&Op::Jmp { skip: 2 }),
+        swap(0),
+        ImpactOp::constant(&Op::Pop),
+        ImpactOp::constant(&Op::Ins {
+            cached: false,
+            n: 1,
+        }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+    ]
+}
+
+// --- HistoricMerkleTree: the same, plus an `Array[2]` history map -----------
+
+/// The history append every `HistoricMerkleTree` mutation ends with: descend
+/// to position 2 and insert the tree's NEW root as a key with a `Null` value.
+///
+/// The two closing `ins` are the caller's, because the mutations and
+/// `resetToDefault` close in OPPOSITE ORDERS: an insert ends `ins 1; insc 2`,
+/// a reset `insc 2; ins 1` (midnight-ledger.ss:1183-1190 against :1211-1228).
+/// A shared "closing" argument would have hidden that.
+fn history_append() -> Vec<ImpactOp> {
+    vec![
+        idx_one(false, true, TREE_HISTORY),
+        dup(2),
+        idx_one(false, false, TREE),
+        ImpactOp::constant(&Op::Root),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: StateValue::Null,
+        }),
+    ]
+}
+
+/// `hmt.insert(item)` / `hmt.insertHash(hash)` — [`merkle_tree_insert`] with
+/// the history append spliced in, and the `insc 2` that closed it demoted to
+/// `insc 1` because the append now closes the operation.
+pub fn historic_merkle_tree_insert(index: u8, leaf: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = merkle_tree_insert(index, leaf);
+    let last = ops.len() - 1;
+    ops[last] = ImpactOp::constant(&Op::Ins { cached: true, n: 1 });
+    ops.extend(history_append());
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
+    ops
+}
+
+/// `hmt.insertIndex(..)` / `insertHashIndex(..)` / `insertIndexDefault(i)` —
+/// [`merkle_tree_insert_index`] with the history append replacing its closing
+/// `insc 1`.
+pub fn historic_merkle_tree_insert_index(
+    index: u8,
+    leaf: &LedgerValue,
+    at: &LedgerValue,
+) -> Vec<ImpactOp> {
+    let mut ops = merkle_tree_insert_index(index, leaf, at);
+    ops.pop();
+    ops.extend(history_append());
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
+    ops
+}
+
+/// `hmt.resetHistory()` on field `index` (midnight-ledger.ss
+/// HistoricMerkleTree `resetHistory`): replace the history with a one-entry
+/// map holding the CURRENT root.
+pub fn historic_merkle_tree_reset_history(index: u8) -> Vec<ImpactOp> {
+    vec![
+        idxp_field(index),
+        push_cell(false, &field_index_value(TREE_HISTORY)),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: StateValue::Map(StorageHashMap::new()),
+        }),
+        dup(2),
+        idx_one(false, false, TREE),
+        ImpactOp::constant(&Op::Root),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: StateValue::Null,
+        }),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 3 }),
+    ]
+}
+
+/// `hmt.resetToDefault()` on field `index` — the ONE `resetToDefault` that is
+/// not three instructions, because the fresh history has to be seeded with
+/// the blank tree's root.
+pub fn historic_merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
+    let [tree, next] = empty_merkle_tree(depth);
+    let initial = StateValue::Array(
+        [tree, next, StateValue::Map(StorageHashMap::new())]
+            .into_iter()
+            .collect(),
+    );
+    let mut ops = vec![
+        push_cell(false, &field_index_value(index)),
+        ImpactOp::constant(&Op::Push {
+            storage: true,
+            value: initial,
+        }),
+    ];
+    ops.extend(history_append());
+    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops
+}
+
+/// `swap n`.
+pub fn swap(n: u8) -> ImpactOp {
+    ImpactOp::constant(&Op::Swap { n })
 }
 
 /// Emit `ops` as Impact instructions (one per op) under `guard`.
@@ -502,6 +920,241 @@ pub fn map_is_empty<V: Visibility>(
             ImpactOp::constant(&Op::Size),
             push_cell(false, &zero),
             ImpactOp::constant(&Op::Eq),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// `set.size()` / `set.isEmpty()` — the `Map` streams, exactly
+/// ([`set_remove`] carries the argument).
+pub fn set_size<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+) -> Wire3<FieldT, Public> {
+    map_size(c, guard, index)
+}
+
+/// See [`set_size`].
+pub fn set_is_empty<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+) -> Wire3<FieldT, Public> {
+    map_is_empty(c, guard, index)
+}
+
+// --- List reads --------------------------------------------------------------
+
+/// `list.length()` on field `index`: `dup 0; idx [field]; idx [2]; popeqc`
+/// → Uint64. The length is a stored cell, not a computed `size`.
+pub fn list_length<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let (wires, value) = mint_read(c, vec![U64_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, LIST_LENGTH),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// `list.isEmpty()` on field `index`: `dup 0; idx [field]; idx [1]; type;
+/// push 1u8; eq; popeqc` → Boolean.
+///
+/// The `1` is `Op::Type`'s code for `Null` (vm.rs:414-425 — a DIFFERENT
+/// numbering from `StateValue::field_repr`'s, where `Null` is `0`), so this
+/// reads as "the tail is null", which is what an empty list's tail is. See
+/// notes/ledger-adts.org §1, which also disposes of the upstream comment
+/// claiming `1` encodes a cell.
+pub fn list_is_empty<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, LIST_TAIL),
+            ImpactOp::constant(&Op::Type),
+            push_cell(false, &field_index_value(TYPE_NULL)),
+            ImpactOp::constant(&Op::Eq),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// `Op::Type`'s result for `StateValue::Null` (vm.rs:414-425).
+const TYPE_NULL: u8 = 1;
+
+/// `list.head()` on field `index` → `Maybe<T>`, whose limbs are the returned
+/// wires: the tag's, then `elem_atoms`'.
+///
+/// The one ledger operation with Impact-level control flow in its middle. The
+/// `branch` is taken when the head IS null (`Op::Branch` jumps on a truthy
+/// cell, vm.rs:1015-1021), landing on the `None` path; the fall-through
+/// builds `(1, head)` with a `concat`. Both are constant instructions under
+/// the same guard, so the CIRCUIT does not branch — see
+/// notes/ledger-adts.org finding (b).
+///
+/// ```text
+/// dup 0; idx [field]; idx [0]; dup 0; type; push 1u8; eq
+/// branch 4;  push 1u8; swap 0; concat (2 + max_sizeof(T));  jmp 2
+///            pop; push (cell [0u8, default T])
+/// popeqc <Maybe<T>>
+/// ```
+pub fn list_head<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+    elem_atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
+    let guard = guard.into();
+    let mut maybe_atoms = vec![BOOL_ATOM];
+    maybe_atoms.extend(elem_atoms.iter().copied());
+    let none = default_value(maybe_atoms.clone());
+    let (wires, value) = mint_read(c, maybe_atoms);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, LIST_HEAD),
+            dup(0),
+            ImpactOp::constant(&Op::Type),
+            push_cell(false, &field_index_value(TYPE_NULL)),
+            ImpactOp::constant(&Op::Eq),
+            ImpactOp::constant(&Op::Branch { skip: 4 }),
+            push_cell(false, &field_index_value(1)),
+            swap(0),
+            ImpactOp::constant(&Op::Concat {
+                cached: false,
+                n: 2 + max_sizeof(&elem_atoms),
+            }),
+            ImpactOp::constant(&Op::Jmp { skip: 2 }),
+            ImpactOp::constant(&Op::Pop),
+            push_cell(false, &none),
+            popeq(true, &value),
+        ],
+    );
+    wires
+}
+
+/// compactc's `rt-max-sizeof` — an upper bound on a type's serialized size,
+/// and the operand of `List.head`'s `concat`
+/// (reduce-to-zkir.ss:356-375, transcribed).
+fn max_sizeof(atoms: &[AlignmentAtom]) -> u32 {
+    /// `(ceiling (/ (integer-length n) 8))`.
+    fn sep(n: u32) -> u32 {
+        (32 - n.leading_zeros()).div_ceil(8)
+    }
+    if atoms.is_empty() {
+        return 2;
+    }
+    atoms.iter().fold(1 + sep(atoms.len() as u32), |sum, atom| {
+        sum + match atom {
+            AlignmentAtom::Bytes { length: 0 } => 3,
+            AlignmentAtom::Bytes { length: n } => 2 + n + sep(*n),
+            AlignmentAtom::Field | AlignmentAtom::Compress => 34,
+        }
+    })
+}
+
+// --- MerkleTree reads --------------------------------------------------------
+
+/// `mt.isFull()` / `hmt.isFull()` on field `index`: `dup 0; idx [field];
+/// idx [1]; push 2^depth (u64 cell); lt; neg; popeqc` → Boolean, i.e.
+/// `!(next < 2^depth)`.
+pub fn merkle_tree_is_full<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+    depth: u8,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let capacity = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(1u64 << depth))]);
+    let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, TREE_NEXT),
+            push_cell(false, &capacity),
+            ImpactOp::constant(&Op::Lt),
+            ImpactOp::constant(&Op::Neg),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// `mt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [0]; root;
+/// push rt (field cell); eq; popeqc` → Boolean. `root` is the CURRENT root,
+/// so this is an equality — the historic twin is [`historic_merkle_tree_check_root`].
+pub fn merkle_tree_check_root<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+    root: &LedgerValue,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, TREE),
+            ImpactOp::constant(&Op::Root),
+            push_cell(false, root),
+            ImpactOp::constant(&Op::Eq),
+            popeq(true, &value),
+        ],
+    );
+    wires[0]
+}
+
+/// `hmt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [2];
+/// push rt; member; popeqc` → Boolean. A `member` on the HISTORY map, not an
+/// `eq` on the current root — which is the whole difference between the two
+/// tree ADTs at read time.
+pub fn historic_merkle_tree_check_root<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    index: u8,
+    root: &LedgerValue,
+) -> Wire3<FieldT, Public> {
+    let guard = guard.into();
+    let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
+    emit(
+        c,
+        guard,
+        &[
+            dup(0),
+            idx_field(index),
+            idx_one(false, false, TREE_HISTORY),
+            push_cell(false, root),
+            ImpactOp::constant(&Op::Member),
             popeq(true, &value),
         ],
     );
@@ -1048,6 +1701,47 @@ mod tests {
             ),
         ));
         assert_eq!(ours, real);
+    }
+
+    /// [`push_array`] is the one hand-laid `StateValue` encoder (the mixed
+    /// push `List.pushFront` needs), so its constant case must agree with
+    /// `StateValue::field_repr` element for element — tags, nesting and the
+    /// `3 | len << 4` packing.
+    #[test]
+    fn push_array_matches_field_repr() {
+        let cell = u64_aligned(7);
+        let real = repr(&Op::Push {
+            storage: true,
+            value: StateValue::Array(
+                [
+                    StateValue::Cell(Sp::new(cell.clone())),
+                    StateValue::Null,
+                    StateValue::Null,
+                ]
+                .into(),
+            ),
+        });
+        let ours = imms(&push_array(
+            true,
+            &[
+                LedgerElem::Cell(LedgerValue::bytes(
+                    8,
+                    vec![ImpactElem::Imm(Fr::from(7u64))],
+                )),
+                LedgerElem::Null,
+                LedgerElem::Null,
+            ],
+        ));
+        assert_eq!(ours, real);
+    }
+
+    /// `rt-max-sizeof` against the value compactc actually emitted: the
+    /// fixture's `listHead` over a `Bytes<32>` element is `concat 0x27`, and
+    /// that immediate is `2 + max_sizeof`.
+    #[test]
+    fn max_sizeof_matches_compactc() {
+        assert_eq!(2 + max_sizeof(&[AlignmentAtom::Bytes { length: 32 }]), 0x27);
+        assert_eq!(max_sizeof(&[]), 2);
     }
 
     /// The worked example's constant streams (notes/ledger-abi.org §5).

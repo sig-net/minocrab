@@ -35,11 +35,15 @@ pub mod hash;
 pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 
 /// The ledger block as types: `#[derive(Ledger)]`'s declaration-order
-/// indices and the typed slots ([`LedgerMap`] with Compact's method names,
-/// [`LedgerCell`], [`LedgerCounter`], [`LedgerField`]) over
-/// `minocrab_ledger`'s ops — one Impact operation per method, `c` and the
-/// guard visible at every call site.
-pub use ledger::{LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr, LedgerSet};
+/// indices and the typed slots ([`LedgerMap`] and [`LedgerSet`] with Compact's
+/// method names, [`LedgerList`], [`LedgerMerkleTree`],
+/// [`LedgerHistoricMerkleTree`], [`LedgerCell`], [`LedgerCounter`],
+/// [`LedgerField`]) over `minocrab_ledger`'s ops — one Impact operation per
+/// method, `c` and the guard visible at every call site.
+pub use ledger::{
+    leaf_hash, LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList,
+    LedgerMap, LedgerMerkleTree, LedgerRepr, LedgerSet,
+};
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
 /// `#[must_use]` descriptors whose widths come from the operand types (see
@@ -524,6 +528,40 @@ impl<V: Vis3> ContractAddress<V> {
 
     /// The underlying `Bytes<32>`.
     pub fn bytes(self) -> B32<V> {
+        self.0
+    }
+}
+
+/// Compact's `MerkleTreeDigest` — a struct of one `Field`, and the argument
+/// of [`LedgerMerkleTree::check_root`](crate::v3::LedgerMerkleTree::check_root).
+///
+/// The one type in the stdlib whose ABI is `Prim::Field`: an UNCONSTRAINED
+/// native slot (the fixture's `mtCheckRoot` takes `%r.0` with no
+/// `constrain_bits`, and pushes it under a `field` atom). `Prim::Field` has
+/// existed in the ABI table since M12 and, like `Prim::Opaque` before M15, has
+/// never been reachable from a typed leaf; this is what reaches it.
+///
+/// Deliberately a NAMED type rather than a bare `Field` leaf. A digest is the
+/// only unconstrained-field value a contract has a reason to accept from
+/// outside — a root it is about to compare against the tree's — and naming it
+/// keeps "an unconstrained field argument" from becoming an idiom
+/// (notes/ledger-adts.org §3).
+///
+/// The transient-hash side of Merkle proofs is [`crate::merkle`], which
+/// computes a root from a path; this is the LEDGER side, which asks the tree
+/// whether a root is one it has had.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct MerkleTreeDigest<V: Vis3 = Private>(Wire3<FieldT, V>);
+
+impl<V: Vis3> MerkleTreeDigest<V> {
+    /// Wrap a wire holding a digest (a circuit argument, a computed root).
+    pub fn from_field(w: Wire3<FieldT, V>) -> Self {
+        MerkleTreeDigest(w)
+    }
+
+    /// The digest wire — the same slot, no instructions.
+    pub fn field(self) -> Wire3<FieldT, V> {
         self.0
     }
 }

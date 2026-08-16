@@ -44,8 +44,8 @@ use minocrab::v3::{
 use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe, Opaque,
-    Secp256k1Point, TsType, Uint, Vis3, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
+    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, Vis3, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -375,6 +375,32 @@ impl<T: TsType> CircuitArg for Opaque<T, Private> {
     }
 }
 
+/// Compact's `MerkleTreeDigest`: ONE native slot under a `field` atom, and NO
+/// constraint — `Prim::Field` is compactc's `[(tfield …) instr*]` line, which
+/// like `Prim::Opaque` emits nothing (`mtCheckRoot`'s `%r.0` carries no
+/// `constrain_bits`).
+impl<V: Vis3> CircuitAbi for MerkleTreeDigest<V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Field);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Field);
+    }
+}
+
+impl CircuitArg for MerkleTreeDigest<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        MerkleTreeDigest::from_field(c.arg::<FieldT>(path.as_str()))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        slots.push(self.field());
+    }
+}
+
 /// Compact's `ContractAddress`: a struct of one `Bytes<32>`, which flattens
 /// to exactly that `Bytes<32>`'s slots.
 impl<V: Vis3> CircuitAbi for ContractAddress<V> {
@@ -639,6 +665,18 @@ impl CircuitOut for B32<Public> {
     fn emit(self, c: &mut Circuit3, label: &str) {
         c.output(self.hi, &format!("{label} (hi)"));
         c.output(self.lo, &format!("{label} (lo)"));
+    }
+}
+
+/// Returning a `Maybe<T>`: the tag's slot then the payload's, whichever way
+/// the tag points — the same layout the ABI declares, and the same one a
+/// `Maybe` argument occupies. `List.head` is what needs it (M16).
+impl<T: CircuitOut> CircuitOut for Maybe<T, Public> {
+    const SLOTS: usize = <Bool<Public> as CircuitOut>::SLOTS + T::SLOTS;
+
+    fn emit(self, c: &mut Circuit3, label: &str) {
+        self.is_some.emit(c, &format!("{label} (is_some)"));
+        self.value.emit(c, label);
     }
 }
 

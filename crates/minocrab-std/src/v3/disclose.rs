@@ -13,8 +13,8 @@ use minocrab::{Private, Public};
 
 use super::entry::CircuitOut;
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Opaque, Secp256k1Point,
-    ShieldedCoinInfo3, TsType, Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, MerkleTreeDigest, Opaque,
+    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, B32,
 };
 
 impl<const BITS: u32> Disclose for Uint<BITS, Private> {
@@ -94,6 +94,15 @@ impl<T: TsType> Disclose for Opaque<T, Private> {
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Opaque<T, Public> {
         Opaque::from_field(self.field().disclose_as::<L>(c))
+    }
+}
+
+/// One slot, one label.
+impl Disclose for MerkleTreeDigest<Private> {
+    type Public = MerkleTreeDigest<Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> MerkleTreeDigest<Public> {
+        MerkleTreeDigest::from_field(self.field().disclose_as::<L>(c))
     }
 }
 

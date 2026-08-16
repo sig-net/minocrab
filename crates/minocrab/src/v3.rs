@@ -189,17 +189,37 @@ impl<T: IrTy, V: Visibility> Wire3<T, V> {
     /// keeping visibility.
     pub fn erase(self) -> AnyWire3<V> {
         AnyWire3 {
-            val: self.val,
+            arg: Arg::Val(self.val),
             _vis: PhantomData,
         }
     }
 }
 
-/// A type-erased wire (known visibility, dynamic [`IrType`]) for
-/// heterogeneous instruction operands like hash preimages.
+/// A type-erased hash OPERAND: a wire of any value type, or an INLINE
+/// IMMEDIATE ([`AnyWire3::immediate`]).
+///
+/// The immediate arm is M9 phase 8's rule applied to preimages: compactc puts
+/// a constant preimage element straight into the instruction's operand list
+/// (a domain separator is always one), and naming it with a `copy` first is a
+/// zero-row but visible difference. `AnyWire3` therefore carries an [`Arg`]
+/// rather than a [`Val`], and every hash instruction inlines what is constant.
 pub struct AnyWire3<V: Visibility> {
-    val: Val,
+    arg: Arg,
     _vis: PhantomData<V>,
+}
+
+impl<V: Visibility> AnyWire3<V> {
+    /// A constant preimage element, inlined into the instruction rather than
+    /// named by a `copy` — the shape compactc emits for a domain separator.
+    ///
+    /// The visibility parameter is the LIST's, not the value's: a constant is
+    /// public, and it takes whatever visibility its neighbours have.
+    pub fn immediate(imm: impl Into<Fr>) -> AnyWire3<V> {
+        AnyWire3 {
+            arg: Arg::Imm(imm.into()),
+            _vis: PhantomData,
+        }
+    }
 }
 
 /// One element of an Impact public-input block: an inline constant or a
@@ -612,7 +632,7 @@ impl Circuit3 {
         alignment: Alignment,
         inputs: &[AnyWire3<V>],
     ) -> Wire3<Bytes32T, V> {
-        let args: Vec<Arg> = inputs.iter().map(|w| Arg::Val(w.val)).collect();
+        let args: Vec<Arg> = inputs.iter().map(|w| w.arg).collect();
         Wire3::new(self.b.persistent_hash(alignment, &args))
     }
 
@@ -622,7 +642,7 @@ impl Circuit3 {
         alignment: Alignment,
         inputs: &[AnyWire3<V>],
     ) -> Wire3<Bytes32T, V> {
-        let args: Vec<Arg> = inputs.iter().map(|w| Arg::Val(w.val)).collect();
+        let args: Vec<Arg> = inputs.iter().map(|w| w.arg).collect();
         Wire3::new(self.b.keccak256(alignment, &args))
     }
 

@@ -28,20 +28,25 @@
 use std::marker::PhantomData;
 
 use minocrab::v3::{
-    CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT, Operand, Secp256k1PointT,
-    Wire3,
+    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT, Operand,
+    Secp256k1PointT, Wire3,
 };
-use minocrab::{AlignmentAtom, Public, Visibility};
+use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public, Visibility};
 use minocrab_ledger::{
-    cell_read_embedded, cell_write, counter_increment, counter_less_than, counter_read,
-    counter_read_guarded, emit, map_insert, map_is_empty, map_lookup, map_lookup_guarded,
-    map_member, map_member_guarded, map_remove, map_size, mint_read_with, set_insert,
+    atom_limbs, cell_read_embedded, cell_write, counter_increment, counter_less_than, counter_read,
+    counter_read_guarded, emit, historic_merkle_tree_check_root, historic_merkle_tree_insert,
+    historic_merkle_tree_insert_index, historic_merkle_tree_reset,
+    historic_merkle_tree_reset_history, list_head, list_is_empty, list_length, list_pop_front,
+    list_push_front, list_reset, map_insert, map_insert_default, map_is_empty, map_lookup,
+    map_lookup_guarded, map_member, map_member_guarded, map_remove, map_reset, map_size,
+    merkle_tree_check_root, merkle_tree_insert, merkle_tree_insert_index, merkle_tree_is_full,
+    merkle_tree_reset, mint_read_with, set_insert, set_is_empty, set_remove, set_reset, set_size,
     ImpactElem, LedgerValue,
 };
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Maybe, Opaque,
-    Secp256k1Point, TsType, Uint, B32,
+    hash, Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Maybe, MerkleTreeDigest,
+    Opaque, Secp256k1Point, TsType, Uint, B32,
 };
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
@@ -143,6 +148,11 @@ macro_rules! ledger_repr_via_abi {
 
 ledger_repr_via_abi! {
     [const BITS: u32] Uint<BITS, Public>,
+    /// `MerkleTreeDigest` in a ledger slot — one limb under a `field` atom.
+    /// A tree's roots are not STORED as digests (the tree holds them), but a
+    /// `checkRoot` argument is pushed through this path, and a contract may
+    /// keep one in a `Cell`.
+    [] MerkleTreeDigest<Public>,
     [const BOUND: u128] BoundedUint<BOUND, Public>,
     [] Bool<Public>,
     [const N: usize] Bytes<N, Public>,
@@ -436,6 +446,41 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
     ) -> Bool<Public> {
         Bool::from_field(map_is_empty(c, guard, self.index))
     }
+
+    /// `map.insertDefault(key)` — `idxp [field]; push key; pushs default;
+    /// ins 1; insc 1`. The stored value is `V`'s default, which is zeros in
+    /// every one of its limbs (notes/ledger-adts.org finding (c)).
+    pub fn insert_default(&self, c: &mut Circuit3, key: &K) {
+        self.insert_default_under(c, STRAIGHT_LINE, key)
+    }
+
+    /// [`LedgerMap::insert_default`] under a branch condition.
+    pub fn insert_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        key: &K,
+    ) {
+        let key = key.ledger_value(c);
+        emit(c, guard, &map_insert_default(self.index, &key, V::atoms()));
+    }
+}
+
+impl<K, V> LedgerMap<K, V> {
+    /// `map.resetToDefault()` — `push key; pushs (empty map); ins 1`. Needs
+    /// no bound on `K`/`V`: an empty map is empty whatever it held.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerMap::reset_to_default`] under a branch condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &map_reset(self.index));
+    }
 }
 
 /// The guard of a STRAIGHT-LINE ledger operation: the immediate `1`, inlined
@@ -443,20 +488,20 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
 /// [`LedgerMap`]).
 const STRAIGHT_LINE: u64 = 1;
 
-/// `export ledger s: Set<T>` — PARTIAL, and deliberately so.
+/// `export ledger s: Set<T>` — a `Map` with `Null` values, which is what
+/// Compact's `Set` IS.
 ///
-/// Two methods, [`insert`](LedgerSet::insert) and
-/// [`member`](LedgerSet::member), because those are the two Impact lowerings
-/// that already exist: a Compact `Set` is a `Map` with `Null` values, so
-/// `set.insert(e)` is `map_insert` with a `Null` (landed with M6's vault work)
-/// and `set.member(e)` is the SAME `Op::Member` a map's is — verified against
-/// the M15 fixture's `opSet`, whose two Impact blocks are exactly those.
+/// Every method here delegates to the `Map` one, and that is a fact about the
+/// vm-code rather than a shortcut: compactc's `Set` and `Map` declarations
+/// give `member`, `remove`, `size`, `isEmpty` and `resetToDefault` character
+/// for character the same instruction sequences, and the M16 fixture's
+/// `setRemove` / `setSize` / `setIsEmpty` / `setReset` are byte-identical to
+/// `map_remove` / `map_size` / `map_is_empty` / `map_reset`
+/// (notes/ledger-adts.org §1). Only [`insert`](LedgerSet::insert) differs, and
+/// only in what it stores: a `Null` where a map stores a value.
 ///
-/// `remove` / `size` / `isEmpty` are NOT here. They are M16's, together with
-/// `List`, `MerkleTree` and `HistoricMerkleTree`, and this type exists early
-/// only because M15's fixture stores an [`Opaque`] in a `Set`, and inventing no
-/// lowering to do it seemed better than leaving the shape unported. When M16
-/// lands, this becomes its `Set` rather than a second one.
+/// Landed at M15 with `insert` and `member` (M15's fixture stores an
+/// [`Opaque`] in a `Set`); M16 completed it rather than adding a second `Set`.
 pub struct LedgerSet<T> {
     index: u8,
     _t: PhantomData<fn() -> T>,
@@ -512,7 +557,641 @@ impl<T: LedgerRepr> LedgerSet<T> {
         let elem = elem.ledger_value(c);
         Bool::from_field(map_member(c, guard, self.index, &elem))
     }
+
+    /// `set.remove(elem)` — `idxp [field]; push elem; rem; insc 1`.
+    pub fn remove(&self, c: &mut Circuit3, elem: &T) {
+        self.remove_under(c, STRAIGHT_LINE, elem)
+    }
+
+    /// [`LedgerSet::remove`] under a branch condition.
+    pub fn remove_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        elem: &T,
+    ) {
+        let elem = elem.ledger_value(c);
+        emit(c, guard, &set_remove(self.index, &elem));
+    }
 }
+
+impl<T> LedgerSet<T> {
+    /// `set.size()` — `dup 0; idx [field]; size; popeqc`.
+    pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
+        self.size_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerSet::size`] under a branch condition.
+    pub fn size_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Uint<64, Public> {
+        Uint::from_field(set_size(c, guard, self.index))
+    }
+
+    /// `set.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
+    pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
+        self.is_empty_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerSet::is_empty`] under a branch condition.
+    pub fn is_empty_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Bool<Public> {
+        Bool::from_field(set_is_empty(c, guard, self.index))
+    }
+
+    /// `set.resetToDefault()` — `push key; pushs (empty map); ins 1`.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerSet::reset_to_default`] under a branch condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &set_reset(self.index));
+    }
+}
+
+// ---- List -------------------------------------------------------------------
+
+/// `export ledger l: List<T>` — an unbounded singly-linked list, stored as an
+/// `Array[3]` of `{head cell, tail list, length}` (notes/ledger-adts.org §1).
+///
+/// Compact's own method names, and the same one-op-per-method invariant as
+/// every slot here. [`head`](LedgerList::head) is the one worth reading twice:
+/// it returns a [`Maybe<T>`](Maybe) — so it is safe on the empty list — and it
+/// does that with Impact-level `branch`/`jmp`, which the CIRCUIT does not see.
+/// Its cost is fifteen constant instructions and a `Maybe<T>`'s worth of
+/// witnessed limbs, whether the list is empty or not.
+pub struct LedgerList<T> {
+    index: u8,
+    _t: PhantomData<fn() -> T>,
+}
+
+impl<T> LedgerList<T> {
+    /// The list held in ledger field `index` (the derive supplies it).
+    pub const fn at(index: u8) -> Self {
+        LedgerList {
+            index,
+            _t: PhantomData,
+        }
+    }
+
+    /// The ledger field index.
+    pub const fn index(&self) -> u8 {
+        self.index
+    }
+
+    /// `list.popFront()` — `idxp [field]; idx [1]; insc 1`. Needs no bound on
+    /// `T`: the list becomes its own tail, and nothing is read or written.
+    pub fn pop_front(&self, c: &mut Circuit3) {
+        self.pop_front_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerList::pop_front`] under a branch condition.
+    pub fn pop_front_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &list_pop_front(self.index));
+    }
+
+    /// `list.length()` — `dup 0; idx [field]; idx [2]; popeqc`. A stored
+    /// count, not a computed `size`.
+    pub fn length(&self, c: &mut Circuit3) -> Uint<64, Public> {
+        self.length_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerList::length`] under a branch condition.
+    pub fn length_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Uint<64, Public> {
+        Uint::from_field(list_length(c, guard, self.index))
+    }
+
+    /// `list.isEmpty()` — `dup 0; idx [field]; idx [1]; type; push 1; eq;
+    /// popeqc`, i.e. "the tail is null".
+    pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
+        self.is_empty_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerList::is_empty`] under a branch condition.
+    pub fn is_empty_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Bool<Public> {
+        Bool::from_field(list_is_empty(c, guard, self.index))
+    }
+
+    /// `list.resetToDefault()` — `push key; pushs [null, null, 0]; ins 1`.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerList::reset_to_default`] under a branch condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &list_reset(self.index));
+    }
+}
+
+impl<T: LedgerRepr> LedgerList<T> {
+    /// `list.pushFront(value)` — thirteen instructions building a new
+    /// `[value, old list, len + 1]` node (notes/ledger-adts.org §1).
+    ///
+    /// The one M16 operation with corpus provenance: it is
+    /// `test-caller-contract`'s `requestLog.pushFront(requestId)`.
+    pub fn push_front(&self, c: &mut Circuit3, value: &T) {
+        self.push_front_under(c, STRAIGHT_LINE, value)
+    }
+
+    /// [`LedgerList::push_front`] under a branch condition.
+    pub fn push_front_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        value: &T,
+    ) {
+        let value = value.ledger_value(c);
+        emit(c, guard, &list_push_front(self.index, &value));
+    }
+
+    /// `list.head()` — the first element, or `None` on the empty list.
+    pub fn head(&self, c: &mut Circuit3) -> Maybe<T, Public> {
+        self.head_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerList::head`] under a branch condition.
+    pub fn head_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Maybe<T, Public> {
+        let mut limbs = list_head(c, guard, self.index, T::atoms());
+        let value = T::from_limbs(limbs.split_off(1));
+        Maybe {
+            is_some: Bool::from_field(limbs[0]),
+            value,
+        }
+    }
+}
+
+// ---- MerkleTree and HistoricMerkleTree --------------------------------------
+
+/// `export ledger t: MerkleTree<DEPTH, T>` — a bounded Merkle tree stored as
+/// an `Array[2]` of `{tree, next free index}`.
+///
+/// `DEPTH` is Compact's `nat`, and Compact's rule is `2 <= nat <= 32`: the
+/// height is part of the tree's `field_repr` tag, so a wrong depth is a wrong
+/// TRANSCRIPT rather than a runtime error. It is checked by an inline-const
+/// assert, per the project's compile-errors-over-panics rule — so a depth
+/// outside the range is E0080 at the `at()` that names it:
+///
+/// ```compile_fail
+/// use minocrab::Public;
+/// use minocrab_std::v3::{LedgerMerkleTree, B32};
+///
+/// const T: LedgerMerkleTree<1, B32<Public>> = LedgerMerkleTree::at(0);
+/// ```
+///
+/// while the same line at a legal depth compiles:
+///
+/// ```
+/// use minocrab::Public;
+/// use minocrab_std::v3::{LedgerMerkleTree, B32};
+///
+/// const T: LedgerMerkleTree<2, B32<Public>> = LedgerMerkleTree::at(0);
+/// ```
+///
+/// The five `insert*` methods are TWO instruction streams: `insert` /
+/// `insert_hash` share one, and `insert_index` / `insert_hash_index` /
+/// `insert_index_default` share the other. What differs between the members of
+/// a pair is only where the 32-byte leaf came from — hashed from the item
+/// ([`leaf_hash`]), handed over directly, or hashed from `T`'s default.
+pub struct LedgerMerkleTree<const DEPTH: u8, T> {
+    index: u8,
+    _t: PhantomData<fn() -> T>,
+}
+
+/// The `2 <= DEPTH <= 32` check, shared by both tree types.
+const fn check_depth(depth: u8) {
+    assert!(
+        depth >= 2 && depth <= 32,
+        "a Merkle tree's depth must satisfy 2 <= DEPTH <= 32 — Compact's own \
+         bound, and upstream's BoundedMerkleTree carries the height in its \
+         field_repr tag, so a wrong depth is a wrong transcript"
+    );
+}
+
+impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
+    /// The tree held in ledger field `index` (the derive supplies it).
+    pub const fn at(index: u8) -> Self {
+        const { check_depth(DEPTH) };
+        LedgerMerkleTree {
+            index,
+            _t: PhantomData,
+        }
+    }
+
+    /// The ledger field index.
+    pub const fn index(&self) -> u8 {
+        self.index
+    }
+
+    /// `t.isFull()` — `!(next < 2^DEPTH)`.
+    pub fn is_full(&self, c: &mut Circuit3) -> Bool<Public> {
+        self.is_full_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerMerkleTree::is_full`] under a branch condition.
+    pub fn is_full_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Bool<Public> {
+        Bool::from_field(merkle_tree_is_full(c, guard, self.index, DEPTH))
+    }
+
+    /// `t.checkRoot(rt)` — whether `rt` is the tree's CURRENT root.
+    pub fn check_root(&self, c: &mut Circuit3, root: MerkleTreeDigest<Public>) -> Bool<Public> {
+        self.check_root_under(c, STRAIGHT_LINE, root)
+    }
+
+    /// [`LedgerMerkleTree::check_root`] under a branch condition.
+    pub fn check_root_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        root: MerkleTreeDigest<Public>,
+    ) -> Bool<Public> {
+        let root = root.ledger_value(c);
+        Bool::from_field(merkle_tree_check_root(c, guard, self.index, &root))
+    }
+
+    /// `t.insertHash(hash)` — insert a leaf whose digest is already known, at
+    /// the first free index.
+    pub fn insert_hash(&self, c: &mut Circuit3, hash: &B32<Public>) {
+        self.insert_hash_under(c, STRAIGHT_LINE, hash)
+    }
+
+    /// [`LedgerMerkleTree::insert_hash`] under a branch condition.
+    pub fn insert_hash_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        hash: &B32<Public>,
+    ) {
+        let leaf = hash.ledger_value(c);
+        emit(c, guard, &merkle_tree_insert(self.index, &leaf));
+    }
+
+    /// `t.insertHashIndex(hash, at)` — insert a known digest at a specific
+    /// index, bumping the next-free index to `max(next, at + 1)`.
+    pub fn insert_hash_index(
+        &self,
+        c: &mut Circuit3,
+        hash: &B32<Public>,
+        at: Uint<64, Public>,
+    ) {
+        self.insert_hash_index_under(c, STRAIGHT_LINE, hash, at)
+    }
+
+    /// [`LedgerMerkleTree::insert_hash_index`] under a branch condition.
+    pub fn insert_hash_index_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        hash: &B32<Public>,
+        at: Uint<64, Public>,
+    ) {
+        let leaf = hash.ledger_value(c);
+        let at = at.ledger_value(c);
+        emit(
+            c,
+            guard,
+            &merkle_tree_insert_index(self.index, &leaf, &at),
+        );
+    }
+
+    /// `t.resetToDefault()` — the blank tree of this depth, and index 0.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerMerkleTree::reset_to_default`] under a branch condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &merkle_tree_reset(self.index, DEPTH));
+    }
+}
+
+impl<const DEPTH: u8, T: LedgerRepr> LedgerMerkleTree<DEPTH, T> {
+    /// `t.insert(item)` — hash the item into a leaf and insert it at the
+    /// first free index.
+    pub fn insert(&self, c: &mut Circuit3, item: &T) {
+        self.insert_under(c, STRAIGHT_LINE, item)
+    }
+
+    /// [`LedgerMerkleTree::insert`] under a branch condition.
+    pub fn insert_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        item: &T,
+    ) {
+        let hash = leaf_hash(c, item);
+        self.insert_hash_under(c, guard, &hash);
+    }
+
+    /// `t.insertIndex(item, at)` — hash the item and insert it at `at`.
+    pub fn insert_index(&self, c: &mut Circuit3, item: &T, at: Uint<64, Public>) {
+        self.insert_index_under(c, STRAIGHT_LINE, item, at)
+    }
+
+    /// [`LedgerMerkleTree::insert_index`] under a branch condition.
+    pub fn insert_index_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        item: &T,
+        at: Uint<64, Public>,
+    ) {
+        let hash = leaf_hash(c, item);
+        self.insert_hash_index_under(c, guard, &hash, at);
+    }
+
+    /// `t.insertIndexDefault(at)` — insert `T`'s DEFAULT value at `at`,
+    /// which is Compact's way of emulating a removal.
+    pub fn insert_index_default(&self, c: &mut Circuit3, at: Uint<64, Public>) {
+        self.insert_index_default_under(c, STRAIGHT_LINE, at)
+    }
+
+    /// [`LedgerMerkleTree::insert_index_default`] under a branch condition.
+    pub fn insert_index_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        at: Uint<64, Public>,
+    ) {
+        let hash = default_leaf_hash::<T>(c);
+        self.insert_hash_index_under(c, guard, &hash, at);
+    }
+}
+
+/// `export ledger t: HistoricMerkleTree<DEPTH, T>` — [`LedgerMerkleTree`]
+/// plus a history: an `Array[3]` whose third slot is a `Map` of every root the
+/// tree has ever had.
+///
+/// Every mutation appends the new root to that map, and
+/// [`check_root`](LedgerHistoricMerkleTree::check_root) is a `member` on it
+/// rather than an equality against the current root — which is the whole
+/// difference between the two tree types, and the reason a contract picks this
+/// one: a proof against a root that was current when the prover built it stays
+/// valid.
+pub struct LedgerHistoricMerkleTree<const DEPTH: u8, T> {
+    index: u8,
+    _t: PhantomData<fn() -> T>,
+}
+
+impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
+    /// The tree held in ledger field `index` (the derive supplies it).
+    pub const fn at(index: u8) -> Self {
+        const { check_depth(DEPTH) };
+        LedgerHistoricMerkleTree {
+            index,
+            _t: PhantomData,
+        }
+    }
+
+    /// The ledger field index.
+    pub const fn index(&self) -> u8 {
+        self.index
+    }
+
+    /// `t.isFull()` — the same stream [`LedgerMerkleTree::is_full`] emits;
+    /// the history does not affect capacity.
+    pub fn is_full(&self, c: &mut Circuit3) -> Bool<Public> {
+        self.is_full_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerHistoricMerkleTree::is_full`] under a branch condition.
+    pub fn is_full_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Bool<Public> {
+        Bool::from_field(merkle_tree_is_full(c, guard, self.index, DEPTH))
+    }
+
+    /// `t.checkRoot(rt)` — whether `rt` is one of the tree's PAST roots.
+    pub fn check_root(&self, c: &mut Circuit3, root: MerkleTreeDigest<Public>) -> Bool<Public> {
+        self.check_root_under(c, STRAIGHT_LINE, root)
+    }
+
+    /// [`LedgerHistoricMerkleTree::check_root`] under a branch condition.
+    pub fn check_root_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        root: MerkleTreeDigest<Public>,
+    ) -> Bool<Public> {
+        let root = root.ledger_value(c);
+        Bool::from_field(historic_merkle_tree_check_root(
+            c, guard, self.index, &root,
+        ))
+    }
+
+    /// `t.insertHash(hash)` — insert a known digest at the first free index,
+    /// and append the resulting root to the history.
+    pub fn insert_hash(&self, c: &mut Circuit3, hash: &B32<Public>) {
+        self.insert_hash_under(c, STRAIGHT_LINE, hash)
+    }
+
+    /// [`LedgerHistoricMerkleTree::insert_hash`] under a branch condition.
+    pub fn insert_hash_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        hash: &B32<Public>,
+    ) {
+        let leaf = hash.ledger_value(c);
+        emit(c, guard, &historic_merkle_tree_insert(self.index, &leaf));
+    }
+
+    /// `t.insertHashIndex(hash, at)`.
+    pub fn insert_hash_index(
+        &self,
+        c: &mut Circuit3,
+        hash: &B32<Public>,
+        at: Uint<64, Public>,
+    ) {
+        self.insert_hash_index_under(c, STRAIGHT_LINE, hash, at)
+    }
+
+    /// [`LedgerHistoricMerkleTree::insert_hash_index`] under a branch
+    /// condition.
+    pub fn insert_hash_index_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        hash: &B32<Public>,
+        at: Uint<64, Public>,
+    ) {
+        let leaf = hash.ledger_value(c);
+        let at = at.ledger_value(c);
+        emit(
+            c,
+            guard,
+            &historic_merkle_tree_insert_index(self.index, &leaf, &at),
+        );
+    }
+
+    /// `t.resetHistory()` — forget every past root but the current one.
+    pub fn reset_history(&self, c: &mut Circuit3) {
+        self.reset_history_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerHistoricMerkleTree::reset_history`] under a branch condition.
+    pub fn reset_history_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &historic_merkle_tree_reset_history(self.index));
+    }
+
+    /// `t.resetToDefault()` — the blank tree of this depth, index 0, and a
+    /// history holding just the blank tree's root.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerHistoricMerkleTree::reset_to_default`] under a branch
+    /// condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &historic_merkle_tree_reset(self.index, DEPTH));
+    }
+}
+
+impl<const DEPTH: u8, T: LedgerRepr> LedgerHistoricMerkleTree<DEPTH, T> {
+    /// `t.insert(item)`.
+    pub fn insert(&self, c: &mut Circuit3, item: &T) {
+        self.insert_under(c, STRAIGHT_LINE, item)
+    }
+
+    /// [`LedgerHistoricMerkleTree::insert`] under a branch condition.
+    pub fn insert_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        item: &T,
+    ) {
+        let hash = leaf_hash(c, item);
+        self.insert_hash_under(c, guard, &hash);
+    }
+
+    /// `t.insertIndex(item, at)`.
+    pub fn insert_index(&self, c: &mut Circuit3, item: &T, at: Uint<64, Public>) {
+        self.insert_index_under(c, STRAIGHT_LINE, item, at)
+    }
+
+    /// [`LedgerHistoricMerkleTree::insert_index`] under a branch condition.
+    pub fn insert_index_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        item: &T,
+        at: Uint<64, Public>,
+    ) {
+        let hash = leaf_hash(c, item);
+        self.insert_hash_index_under(c, guard, &hash, at);
+    }
+
+    /// `t.insertIndexDefault(at)`.
+    pub fn insert_index_default(&self, c: &mut Circuit3, at: Uint<64, Public>) {
+        self.insert_index_default_under(c, STRAIGHT_LINE, at)
+    }
+
+    /// [`LedgerHistoricMerkleTree::insert_index_default`] under a branch
+    /// condition.
+    pub fn insert_index_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        at: Uint<64, Public>,
+    ) {
+        let hash = default_leaf_hash::<T>(c);
+        self.insert_hash_index_under(c, guard, &hash, at);
+    }
+}
+
+/// compactc's `rt-leaf-hash`: `persistentHash` of the value's FAB
+/// representation behind the domain separator `"mdn:lh"`.
+///
+/// The SAME preimage [`crate::merkle`]'s path circuits hash — a Merkle leaf's
+/// digest is one thing whether the tree is in the ledger or the proof — so
+/// this is a fourth caller of an existing gadget rather than a new one.
+/// Interop flavor by necessity: the digest is one compactc also computes.
+pub fn leaf_hash<T: LedgerRepr>(c: &mut Circuit3, item: &T) -> B32<Public> {
+    let limbs: Vec<_> = item.limbs(c).into_iter().map(Wire3::erase).collect();
+    leaf_hash_of(c, T::atoms(), &limbs)
+}
+
+/// [`leaf_hash`] of `T`'s DEFAULT value — all-zero limbs
+/// (notes/ledger-adts.org finding (c)), which is what
+/// `insertIndexDefault` hashes.
+fn default_leaf_hash<T: LedgerRepr>(c: &mut Circuit3) -> B32<Public> {
+    let atoms = T::atoms();
+    let zeros = atoms.iter().map(atom_limbs).sum::<usize>();
+    // Inline immediates, like the separator: compactc's `insertIndexDefault`
+    // hashes `["0x6d646e3a6c68", "0x00", "0x00"]` with no `copy` in sight.
+    let limbs = vec![AnyWire3::immediate(0u64); zeros];
+    leaf_hash_of(c, atoms, &limbs)
+}
+
+fn leaf_hash_of(
+    c: &mut Circuit3,
+    atoms: Vec<AlignmentAtom>,
+    limbs: &[AnyWire3<Public>],
+) -> B32<Public> {
+    let mut segments = vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+        length: LEAF_HASH_SEP_LEN as u32,
+    })];
+    segments.extend(atoms.into_iter().map(AlignmentSegment::Atom));
+    // Inlined, not named by a `copy`: compactc puts the separator straight
+    // into the `persistent_hash` operand list.
+    let mut slots = vec![AnyWire3::immediate(
+        Fr::from_le_bytes(LEAF_HASH_DOMAIN_SEP).expect("6 bytes fit"),
+    )];
+    slots.extend(limbs.iter().copied());
+    hash::persistent_hash_compact(c, Alignment(segments), &slots)
+}
+
+/// The domain separator of every Merkle leaf digest, in compactc and here.
+const LEAF_HASH_DOMAIN_SEP: &[u8; LEAF_HASH_SEP_LEN] = b"mdn:lh";
+const LEAF_HASH_SEP_LEN: usize = 6;
+
 
 /// `export ledger x: T` — a Cell.
 pub struct LedgerCell<T> {

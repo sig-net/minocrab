@@ -22,8 +22,8 @@ use minocrab::v3::{CallArg, CallResult, FieldT, Wire3};
 use minocrab::Public;
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, Opaque, ShieldedCoinInfo3,
-    TsType, Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, MerkleTreeDigest, Opaque,
+    ShieldedCoinInfo3, TsType, Uint, B32,
 };
 
 /// Compact's `Opaque<'ts-type'>` across a contract boundary — one limb, in
@@ -45,6 +45,21 @@ impl<T: TsType> CallArg for Opaque<T, Public> {
 impl<T: TsType> CallResult for Opaque<T, Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
         Opaque::from_field(slots[0])
+    }
+}
+
+/// Compact's `MerkleTreeDigest` across a contract boundary — one limb, and
+/// unconstrained on the way back for the same reason an `Opaque` is: the
+/// `Prim::Field` in its [`CircuitAbi`](minocrab::v3::CircuitAbi) impl says so.
+impl CallArg for MerkleTreeDigest<Public> {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        slots.push(self.field());
+    }
+}
+
+impl CallResult for MerkleTreeDigest<Public> {
+    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
+        MerkleTreeDigest::from_field(slots[0])
     }
 }
 
