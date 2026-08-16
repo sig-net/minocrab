@@ -79,6 +79,16 @@ use super::{Serializer, Vis3, B32};
 /// [`CircuitBorsh::constrain_canonical`], or by the instruction that produced
 /// them. Without that the packing is not injective and the digest binds
 /// nothing.
+///
+/// HOW TO DISCHARGE IT RATHER THAN ASSUME IT: call
+/// [`CircuitBorsh::constrain_canonical`] on the value here, at the hash,
+/// where the obligation actually lives. That is a re-constraint of leaves a
+/// caller has usually already constrained, which is why it was written as a
+/// precondition instead — and with `Circuit3::dedup_range_constraints` on it
+/// costs nothing, because the duplicate constraints are exactly what the
+/// pass removes (`tests/v3_dedup.rs`; notes/ir-passes.org §11). There is no
+/// checked twin of this function because there is nothing to wrap: the check
+/// is one call the caller can already make.
 pub fn persistent_hash<V: Vis3, T: CircuitBorsh<V>>(c: &mut Circuit3, value: &T) -> B32<V> {
     let digest = limbs_of(value).persistent_hash(c);
     B32::from_typed(c, digest)
@@ -122,8 +132,11 @@ pub fn persistent_hash_compact<V: Vis3>(
 /// which is what `transient_hash_limbs_the_borsh_bytes_in_string_order`
 /// checks against. NOT the FAB limbing, whose leftover chunk comes first.
 ///
-/// Same precondition as [`persistent_hash`]: the leaves are already
-/// range-constrained (the [`Serializer`]'s own precondition).
+/// Same precondition as [`persistent_hash`], and discharged the same way:
+/// the leaves are already range-constrained (the [`Serializer`]'s own
+/// precondition — this builds an unconstrained one, so
+/// [`CircuitBorsh::constrain_canonical`] plus the dedup flag is the checked
+/// path here too).
 pub fn transient_hash<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     value: &T,

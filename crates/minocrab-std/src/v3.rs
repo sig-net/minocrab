@@ -1243,39 +1243,85 @@ fn literal_limbs<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Vec<Wire3<FieldT, V
 /// Compact-stdlib shape (explode every field to bytes, reconstitute every
 /// output limb), which costs ~150 rows per exploded byte.
 ///
-/// PRECONDITION: every pushed wire must already be constrained to its
-/// byte length (circuit arguments via `constrain_input`/`assert_bits`,
-/// typed-conversion limbs by their instruction, literals by
-/// construction) — the limb packing is only injective for in-range
-/// segments. This matches the callers the corpus needs; the old
-/// byte-wise form relied on the same property (an explode chain leaves
-/// its most-significant byte unconstrained too).
+/// PRECONDITION, on [`Serializer::new`]: every pushed wire must already be
+/// constrained to its byte length (circuit arguments via
+/// `constrain_input`/`assert_bits`, typed-conversion limbs by their
+/// instruction, literals by construction) — the limb packing is only
+/// injective for in-range segments, and a packing that is not injective is
+/// a digest that binds nothing.
+///
+/// [`Serializer::constrained`] DISCHARGES that obligation instead of stating
+/// it: it emits each segment's own `constrain_bits` at `8·len` before
+/// packing, so the caller can no longer forget. It is the entry point to
+/// reach for; `new` stays because the shipped circuits' segments are
+/// arguments already constrained at entry, and because the constraints only
+/// become free with `Circuit3::dedup_range_constraints` on — which no
+/// shipped artifact turns on (notes/ir-passes.org §11, api-safety-survey
+/// §B3).
 pub struct Serializer<V: Vis3> {
-    /// `(wire, byte length)` in string order; each wire packs its bytes LE.
-    segments: Vec<(Wire3<FieldT, V>, usize)>,
+    /// Fields in string order; each wire packs its bytes LE.
+    segments: Vec<Segment<V>>,
+    /// Set by [`Serializer::constrained`]: emit the segments' range
+    /// constraints at `finish` rather than trusting the caller for them.
+    constrained: bool,
+}
+
+/// One pushed field: the wire, its byte length, and whether this
+/// [`Serializer`] built it itself as a constant.
+struct Segment<V: Vis3> {
+    wire: Wire3<FieldT, V>,
+    len: usize,
+    /// A literal limb is in range BY CONSTRUCTION (it is `Fr::from_le_bytes`
+    /// of its own `len` bytes), so the constrained mode does not re-prove
+    /// it — and must not: after the immediate-copy fold the constraint's
+    /// operand is an immediate, which no pass can dedup away again.
+    literal: bool,
 }
 
 impl<V: Vis3> Serializer<V> {
     pub fn new() -> Serializer<V> {
-        Serializer { segments: Vec::new() }
+        Serializer { segments: Vec::new(), constrained: false }
+    }
+
+    /// A [`Serializer`] that PROVES its own precondition: `finish` emits
+    /// `constrain_bits(wire, 8·len)` for every pushed field before packing
+    /// it, so the injectivity of the packing does not rest on the caller.
+    ///
+    /// It is a mode of the whole serializer rather than a checked twin of
+    /// each `push_*`, for two reasons. The precondition is about EVERY
+    /// segment — a packing with three of four fields constrained is as
+    /// non-injective as one with none — so partial checking would discharge
+    /// nothing while looking like it did. And the pushes come from
+    /// `CircuitBorsh::push_segments`, including the derived ones, which
+    /// cannot pass a checked spelling through: as a mode, every existing
+    /// impl becomes checked without changing a line of it.
+    ///
+    /// THE COST IS ZERO WHERE THE WIRES WERE ALREADY CONSTRAINED, and only
+    /// there: the added constraints are exact duplicates of the caller's, so
+    /// `Circuit3::dedup_range_constraints` removes precisely them
+    /// (`tests/v3_dedup.rs` proves the two circuits are byte-identical
+    /// ZKIR). With the flag off they are two rows each — real, and the
+    /// price of the check.
+    pub fn constrained() -> Serializer<V> {
+        Serializer { segments: Vec::new(), constrained: true }
     }
 
     /// A `Uint` field: `nbytes` LE bytes (Boolean = 1 byte).
     pub fn push_uint(&mut self, value: Wire3<FieldT, V>, nbytes: usize) {
         assert!(nbytes <= 31, "Uint fields fit one limb");
-        self.segments.push((value, nbytes));
+        self.push(value, nbytes);
     }
 
     /// A `Bytes<32>` field.
     pub fn push_b32(&mut self, value: &B32<V>) {
-        self.segments.push((value.lo, 31));
-        self.segments.push((value.hi, 1));
+        self.push(value.lo, 31);
+        self.push(value.hi, 1);
     }
 
     /// A `Bytes<M>` field (M > 31), limbs taken as segments directly.
     pub fn push_bytes_n<const M: usize>(&mut self, value: &BytesN<V, M>) {
         for (limb, nbytes) in value.limbs().iter().zip(limb_lens(M)).rev() {
-            self.segments.push((*limb, nbytes));
+            self.push(*limb, nbytes);
         }
     }
 
@@ -1285,8 +1331,14 @@ impl<V: Vis3> Serializer<V> {
             let limb = V::from_public(
                 c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit")),
             );
-            self.segments.push((limb, chunk.len()));
+            self.segments.push(Segment { wire: limb, len: chunk.len(), literal: true });
         }
+    }
+
+    /// A caller-supplied field, whose range is the caller's claim (or, in
+    /// the constrained mode, this serializer's obligation).
+    fn push(&mut self, wire: Wire3<FieldT, V>, len: usize) {
+        self.segments.push(Segment { wire, len, literal: false });
     }
 
     /// Zero-pad to `N` and re-limb as `Bytes<N>`.
@@ -1299,10 +1351,23 @@ impl<V: Vis3> Serializer<V> {
     /// its length is `T::LEN`, an associated const of a generic parameter,
     /// which Rust cannot pass as a const-generic argument.
     pub fn finish_dyn(self, c: &mut Circuit3, len: usize) -> BytesNDyn<V> {
-        let total: usize = self.segments.iter().map(|&(_, n)| n).sum();
+        let total: usize = self.segments.iter().map(|s| s.len).sum();
         assert!(total <= len, "serialized size exceeds Bytes<{len}>");
+        // The constrained mode's whole content: the precondition, emitted —
+        // in string order, before anything consumes a segment.
+        if self.constrained {
+            for segment in self.segments.iter().filter(|s| !s.literal) {
+                Prim::Uint { bits: 8 * segment.len as u32 }
+                    .constraint()
+                    .emit(c, segment.wire);
+            }
+        }
         let zero = V::from_public(c.constant(0u64));
-        let mut segments = std::collections::VecDeque::from(self.segments);
+        let mut segments: std::collections::VecDeque<(Wire3<FieldT, V>, usize)> = self
+            .segments
+            .into_iter()
+            .map(|s| (s.wire, s.len))
+            .collect();
 
         // Fill output limbs least-significant first; missing tail
         // segments mean the remaining limbs are the zero pad.

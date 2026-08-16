@@ -79,6 +79,96 @@ pub fn fold_immediate_copies(instructions: Vec<Instruction>) -> Vec<Instruction>
     out
 }
 
+/// Drop every range constraint an earlier, equally tight or tighter one on
+/// the same wire already implies.
+///
+/// OPT-IN, and it is the only pass here that is: this makes us strictly MORE
+/// deduplicated than compactc, which re-emits. See [`crate::v3::Builder3::
+/// dedup_range_constraints`] for the flag and notes/ir-passes.org §1 for why
+/// it cannot be on by default.
+///
+/// # What it drops, and the one direction that is sound
+///
+/// Per IDENTIFIER, the tightest bound established so far: a
+/// `ConstrainBits { bits: n }` establishes `val < 2^n`, a
+/// `ConstrainToBoolean` establishes `val ∈ {0,1}` — bound 1. A later
+/// constraint whose bound is `m >= n` is implied by the earlier one and is
+/// removed; a later constraint that is TIGHTER (`m < n`) is new information
+/// and is kept, becoming the bound from there on. The first constraint on a
+/// wire is never dropped.
+///
+/// That is the same argument `Uint::widen` already makes for why widening
+/// needs no new constraint, and it is sound in that direction only: `val <
+/// 2^n` implies `val < 2^m` for `m >= n`, never the reverse.
+///
+/// ZKIR v3 is SSA, and more strongly than a rejecting check: upstream's
+/// synthesis memory is a PUSH-ONLY `Vec` (`ir_vm.rs`, `mem_push` — an
+/// instruction's output takes index `mem.len()` and no operation overwrites
+/// an index), and our own `Builder3` mints a fresh identifier per output. A
+/// rebinding is unrepresentable on both ends, so a bound established at one
+/// point in the stream holds for the whole circuit, and "earlier" is only a
+/// convention for which of two identical constraints survives.
+///
+/// # THE BOOLEAN FAMILY IS THE `bits = 1` FAMILY, and this was checked
+///
+/// The two instructions are different GADGETS and the same PREDICATE, which
+/// is what a pass over a constraint system needs:
+///
+/// - `ConstrainToBoolean` lowers to `std.convert::<AssignedNative,
+///   AssignedBit>` (`ir_vm.rs`, the arm carrying upstream's own "Yes, this
+///   does insert a constraint") — an assigned bit the wire must equal, so
+///   `val ∈ {0,1}`.
+/// - `ConstrainBits { bits }` lowers, for the CURRENT IR minor version, to
+///   `assert_lower_than_fixed(x, 2^bits)` (`ir_vm.rs`; the
+///   `assigned_to_le_bits` decomposition is the V0-only arm beside it) — so
+///   at `bits = 1`, `val < 2` i.e. `val ∈ {0,1}`. Both version arms enforce
+///   the same set at 1 bit.
+///
+/// Upstream's own value semantics agree: `resolve_operand_bool` accepts 0 and
+/// 1, `resolve_operand_bits(_, Some(1))` accepts exactly the values whose bits
+/// above the first are zero. So the two constrain the same set and this pass
+/// treats them as one family: a `ConstrainToBoolean` after a
+/// `ConstrainBits(_, 1)` is dropped, and a `ConstrainBits(_, m >= 1)` after a
+/// `ConstrainToBoolean` is dropped. That is not cosmetic — `Bool`'s argument
+/// constraint IS `constrain_to_boolean` and its Borsh segment is one BYTE, so
+/// the checked serializer's `constrain_bits(_, 8)` is dropped only across the
+/// families.
+///
+/// # What it never touches
+///
+/// - An immediate operand. A constraint on a constant (possible after
+///   [`fold_immediate_copies`]) names no wire, so there is nothing to key on
+///   and it is left exactly where it is.
+/// - Anything else at all: no reordering, no renaming, no other instruction
+///   kind. Everything kept keeps its order.
+pub fn dedup_range_constraints(instructions: Vec<Instruction>) -> Vec<Instruction> {
+    // The tightest bound proven for each identifier so far, in bits.
+    let mut bound: HashMap<Identifier, u32> = HashMap::new();
+    let mut out = Vec::with_capacity(instructions.len());
+
+    for instruction in instructions {
+        let established = match &instruction {
+            Instruction::ConstrainBits { val: Operand::Variable(id), bits } => Some((id, *bits)),
+            Instruction::ConstrainToBoolean { val: Operand::Variable(id) } => Some((id, 1)),
+            _ => None,
+        };
+        if let Some((id, bits)) = established {
+            match bound.get(id) {
+                // Already proven at least this tight: the constraint is
+                // implied, so it carries no information the circuit lacks.
+                Some(&proven) if proven <= bits => continue,
+                // Tighter than anything proven (or the first): keep it, and
+                // it is the bound from here on.
+                _ => {
+                    bound.insert(id.clone(), bits);
+                }
+            }
+        }
+        out.push(instruction);
+    }
+    out
+}
+
 /// [`fold_immediate_copies`] over a whole [`IrSource`] — the form the
 /// instruction-for-instruction differentials need, because they must run the
 /// SAME normalisation over compactc's artifact as our builder runs over ours.

@@ -1773,11 +1773,50 @@ green on every differential the day before.
       No call site ported yet — the contracts still use `Uint`/raw wires,
       so this is API surface waiting for fix 3's constrained `from_field`
       before the settle-mint sites can adopt it.
-- [ ] Fix 2 (closes B3): constrain-on-construction, made free by
+- [X] Fix 2 (closes B3): constrain-on-construction, made free by
       ir-passes step 5's dedup pass. Turns every "PRECONDITION: already
       range-constrained" in the Borsh layer into a check — `hash.rs` says
       the consequence itself, "without that the packing is not injective
       and the digest binds nothing".
+      (DONE 2026-08-16, both halves, and they are only worth anything
+      together — notes/ir-passes.org §11.
+      THE PASS: `passes::dedup_range_constraints`, OPT-IN through
+      `Circuit3::dedup_range_constraints(true)` and off everywhere,
+      because it makes us strictly more deduplicated than compactc. Per
+      wire it keeps the tightest bound proven and drops a later
+      wider-or-equal one; a TIGHTER one is new information and stays.
+      `constrain_to_boolean` and `constrain_bits(_, 1)` are ONE family —
+      checked against upstream, not assumed (`ir_vm.rs:844-864`: one
+      converts to an `AssignedBit`, the other decomposes to one bit, and
+      both constrain `val ∈ {0,1}`) — which is what makes a `Bool` leaf
+      free, its entry constraint being booleanity and its Borsh segment a
+      BYTE. Fold first, then dedup: the fold rewrites operands, so
+      running it first means every dedup decision is about a name the
+      circuit ships.
+      THE CHECK: `Serializer::constrained()` emits each segment's
+      `constrain_bits` before packing (`to_bytes_constrained`,
+      `Split::constrained`, `WitnessCheck::constrained`). A MODE rather
+      than a checked `push_*` twin, because the precondition is about
+      EVERY segment and because `CircuitBorsh::push_segments` — the
+      derive included — cannot pass a checked spelling through.
+      THE PROOF THEY ARE FREE TOGETHER (`tests/v3_dedup.rs`): one record
+      built today's way (entry constraints, unchecked serializer, no
+      pass) and the checked way (same entry constraints, checked
+      serializer, flag on) is BYTE-IDENTICAL serialized ZKIR — the twelve
+      added constraints are exact duplicates and the pass drops precisely
+      them. Three tests keep it honest: the check is real when nothing
+      else constrained the leaves, the cost is real with the flag off,
+      and literal segments add nothing.
+      HONEST SCOPE: discharged only on the checked-and-flagged path, and
+      no artifact ships it — every corpus caller still uses
+      `Serializer::new`. B3 is now PREVENTABLE rather than prevented.
+      MEASURED, and it corrects ir-passes §1: scanning all 863 `.zkir`
+      files in the repo — our 167 dumps and every compactc fixture —
+      finds ZERO range constraints implied by an earlier one, so no
+      artifact we hold, ours or compactc's, re-emits. The divergence the
+      opt-profile framing rests on is prospective, not observed; the flag
+      stays off regardless. Gates: `cargo test --workspace` green, 162
+      byte-identical / 5 renumbered / 0 changed.)
 - [ ] Fix 3 (closes A1): `from_field` renamed to what it is, with a
       constrained twin taking the short name. It is an unaudited `unsafe`
       that every other soundness argument leaks through, and it does not

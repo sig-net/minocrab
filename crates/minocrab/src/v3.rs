@@ -1571,6 +1571,33 @@ impl Circuit3 {
         result
     }
 
+    // --- passes -----------------------------------------------------------------------------
+
+    /// Turn on constraint deduplication for this circuit — THE OPT PROFILE,
+    /// and the one pass that is not free.
+    ///
+    /// With it on, a later range constraint on a wire that an earlier one
+    /// already proved at least as tight is dropped at [`Circuit3::finish`]
+    /// (`minocrab_ir::v3::passes::dedup_range_constraints`, which states the
+    /// soundness argument). A repeated `constrain_bits` is two rows — the
+    /// most expensive redundancy in `tests/backend_folding.rs` — so this is
+    /// what lets a gadget CHECK the preconditions it currently documents:
+    /// `Serializer::constrained` and the checked Borsh readers emit the
+    /// range constraints their packing needs, and where the caller already
+    /// constrained those wires the pass removes exactly what was added.
+    ///
+    /// WHY IT IS NOT ON EVERYWHERE. Our primary correctness warrant is
+    /// differential equality with compactc, instruction for instruction, and
+    /// compactc RE-EMITS: this pass makes us strictly more deduplicated than
+    /// the artifact we are checked against. So a circuit that must stay
+    /// instruction-comparable to compactc leaves it off, and the M10
+    /// lineage — spec-anchored, warranted by symbolic-effect equivalence
+    /// rather than PI-equality — is where it may go on. No shipped artifact
+    /// flips it today (notes/ir-passes.org §1, §11).
+    pub fn dedup_range_constraints(&mut self, on: bool) {
+        self.b.dedup_range_constraints(on);
+    }
+
     // --- finish ------------------------------------------------------------------------------
 
     pub fn finish(mut self, communications_commitment: bool) -> Compiled3 {

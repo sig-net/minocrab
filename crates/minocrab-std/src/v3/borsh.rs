@@ -314,6 +314,34 @@ pub fn to_bytes<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     out.finish::<N>(c)
 }
 
+/// [`to_bytes`] through [`Serializer::constrained`]: the packing PROVES the
+/// leaves are in range instead of assuming it.
+///
+/// Same bytes, same packing, plus one `constrain_bits` per non-literal
+/// segment. Where the leaves were already constrained — circuit arguments
+/// through `CircuitArg::constrain`, which is every shipped caller — those
+/// constraints are exact duplicates and
+/// `Circuit3::dedup_range_constraints` removes precisely them, so the
+/// checked encoding is the unchecked one instruction for instruction
+/// (`tests/v3_dedup.rs`). With the flag off it is two rows per segment.
+///
+/// The obligation it discharges is the one in [`Serializer`]'s docs: the
+/// limb packing is injective only on in-range segments, and a non-injective
+/// packing is a digest that binds nothing.
+pub fn to_bytes_constrained<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
+    c: &mut Circuit3,
+    value: &T,
+) -> BytesN<V, N> {
+    assert!(
+        N >= T::LEN,
+        "Bytes<{N}> cannot hold a {}-byte Borsh encoding",
+        T::LEN
+    );
+    let mut out = Serializer::constrained();
+    value.push_segments(&mut out);
+    out.finish::<N>(c)
+}
+
 // ---- the deserializer ------------------------------------------------------------
 //
 // DELIBERATELY OFF THE CRITICAL PATH, and a library component: no vault
@@ -352,6 +380,13 @@ pub trait BorshReader<V: Vis3> {
     /// constrained to their byte widths — the same precondition
     /// [`Serializer`] states, and for the same reason (the packing is
     /// injective only on in-range limbs).
+    ///
+    /// It is a property of the BUFFER, not of any one `take`, so the seam
+    /// that discharges it is the reader's constructor:
+    /// [`Split::constrained`] and [`WitnessCheck::constrained`] emit the
+    /// buffer's own `constrain_input` before reading a byte. Where the
+    /// buffer was already constrained those are duplicates, which
+    /// `Circuit3::dedup_range_constraints` removes.
     fn take(&mut self, c: &mut Circuit3, width: usize) -> Wire3<FieldT, V>;
 }
 
@@ -368,13 +403,27 @@ pub struct Split<V: Vis3> {
 }
 
 impl<V: Vis3> Split<V> {
-    /// Read from a packed `Bytes<N>`.
+    /// Read from a packed `Bytes<N>`, whose limbs the caller declares are
+    /// already range-constrained ([`BorshReader::take`]'s precondition).
     pub fn new<const N: usize>(bytes: &BytesN<V, N>) -> Split<V> {
         let mut segments = std::collections::VecDeque::new();
         for (i, limb) in bytes.limbs().iter().enumerate().rev() {
             segments.push_back((*limb, BytesN::<V, N>::limb_len(i)));
         }
         Split { segments }
+    }
+
+    /// [`Split::new`] with the buffer's range constraints EMITTED rather
+    /// than assumed — the checked construction of a reader.
+    ///
+    /// The precondition is about the buffer the caller passes, so this is
+    /// the seam: one `constrain_bits` per limb, before the first `take`.
+    /// Free where the buffer was already constrained and
+    /// `Circuit3::dedup_range_constraints` is on; otherwise one range check
+    /// per 31 bytes, which is what the property costs to prove.
+    pub fn constrained<const N: usize>(c: &mut Circuit3, bytes: &BytesN<V, N>) -> Split<V> {
+        bytes.constrain_input(c);
+        Split::new(bytes)
     }
 
     /// Bytes not yet read.
@@ -470,6 +519,20 @@ impl<const N: usize> WitnessCheck<N> {
         }
     }
 
+    /// [`WitnessCheck::new`] with the buffer's range constraints emitted —
+    /// the same seam as [`Split::constrained`], and it matters MORE in this
+    /// mode: the read is sound because re-packing the witnessed leaves and
+    /// asserting limb equality pins them, and that argument needs the
+    /// buffer's limbs in range as much as the leaves.
+    ///
+    /// The repack itself needs no constrained [`Serializer`]: its segments
+    /// are the witnessed leaves, which [`read_canonical`] constrains through
+    /// [`CircuitBorsh::constrain_canonical`] before `finish` packs them.
+    pub fn constrained<W: Vis3>(c: &mut Circuit3, bytes: &BytesN<W, N>) -> WitnessCheck<N> {
+        bytes.constrain_input(c);
+        WitnessCheck::new(bytes)
+    }
+
     /// Re-pack the witnessed leaves and assert they are the buffer, limb for
     /// limb. WITHOUT THIS THE READ PROVES NOTHING.
     pub fn finish(self, c: &mut Circuit3) {
@@ -505,6 +568,10 @@ pub fn read_canonical<V: Vis3, T: CircuitBorsh<V>, R: BorshReader<V>>(
 /// Deserialize a whole `Bytes<N>` in [`Split`] mode: read the value,
 /// constrain it, and assert the padding is zero. The leaves keep the
 /// buffer's visibility.
+///
+/// The BUFFER's own range constraints are still [`BorshReader::take`]'s
+/// precondition: build the reader with [`Split::constrained`] and call
+/// [`read_canonical`] where they should be emitted here instead.
 pub fn read_split<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     bytes: &BytesN<V, N>,
@@ -523,6 +590,9 @@ pub fn read_split<const N: usize, V: Vis3, T: CircuitBorsh<V>>(
 /// Deserialize a whole `Bytes<N>` in [`WitnessCheck`] mode: witness the
 /// leaves, constrain them, re-pack and assert equality (which also asserts
 /// the padding is zero). The leaves are `Private`.
+///
+/// As with [`read_split`], the BUFFER's range constraints are the caller's
+/// unless the reader is built with [`WitnessCheck::constrained`].
 pub fn read_witness_checked<const N: usize, W: Vis3, T: CircuitBorsh<Private>>(
     c: &mut Circuit3,
     bytes: &BytesN<W, N>,

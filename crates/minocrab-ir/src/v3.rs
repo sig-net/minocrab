@@ -133,6 +133,9 @@ pub struct Builder3 {
     /// Set by [`Builder3::output`]; a v3 circuit has at most one Output
     /// terminator, whose operand types are the circuit's output signature.
     outputs: Option<Vec<IrType>>,
+    /// Set by [`Builder3::dedup_range_constraints`]; OFF by default, because
+    /// the pass diverges from compactc (notes/ir-passes.org §1).
+    dedup_constraints: bool,
 }
 
 impl Builder3 {
@@ -780,14 +783,49 @@ impl Builder3 {
         self.instructions.is_empty()
     }
 
+    /// Run [`passes::dedup_range_constraints`] in [`Builder3::finish`].
+    ///
+    /// OFF by default and left off by every shipped circuit: the pass makes
+    /// us strictly more deduplicated than compactc, which re-emits its own
+    /// range constraints, so turning it on costs the instruction-for-
+    /// instruction differentials (notes/ir-passes.org §1 — the opt profile,
+    /// with M10's warrant).
+    ///
+    /// What it buys where it is on: a gadget can constrain its own inputs
+    /// instead of documenting a precondition, because the constraint a
+    /// caller already emitted is removed rather than paid for twice (two
+    /// rows, the most expensive redundancy measured — §0b).
+    pub fn dedup_range_constraints(&mut self, on: bool) {
+        self.dedup_constraints = on;
+    }
+
     /// Finish into a v3 [`IrSource`].
+    ///
+    /// FOLD FIRST, THEN DEDUP, and the order is not arbitrary. The fold
+    /// substitutes immediates into operand positions, so a constraint on a
+    /// named constant becomes a constraint on an IMMEDIATE — which the dedup
+    /// pass deliberately leaves alone, having no wire to key on. Running the
+    /// fold first means the dedup pass sees the operands the circuit will
+    /// actually ship: every decision it makes is about a name that survives.
+    /// The other order would have it key on identifiers the fold is about to
+    /// remove, and reach a different (weaker) answer for the same circuit.
+    ///
+    /// The reverse dependency does not exist: the dedup pass only ever
+    /// DELETES constraints, which bind no names and produce no values, so it
+    /// cannot invalidate anything the fold established.
     pub fn finish(self, communications_commitment: bool) -> IrSource {
+        let instructions = passes::fold_immediate_copies(self.instructions);
+        let instructions = if self.dedup_constraints {
+            passes::dedup_range_constraints(instructions)
+        } else {
+            instructions
+        };
         IrSource {
             version: Default::default(),
             inputs: self.inputs,
             outputs: self.outputs.unwrap_or_default(),
             do_communications_commitment: communications_commitment,
-            instructions: Arc::new(passes::fold_immediate_copies(self.instructions)),
+            instructions: Arc::new(instructions),
         }
     }
 }

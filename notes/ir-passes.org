@@ -205,7 +205,8 @@ Instruction selection is not, and never will be.
    test against its threaded twin.
 4. Constant folding — DONE (§8). The five special cases are not deleted yet;
    the pass makes them inert first, and removing them is its own commit.
-5. Constraint dedup behind the opt profile.
+5. Constraint dedup behind the opt profile — DONE (§11), together with the
+   checked Borsh construction it exists to make free (M19 fix 2).
 
 * 6. GUARD SCOPING, as built
 
@@ -723,3 +724,148 @@ now entirely below the typed layer, guarded and unguarded alike.
 
 Zero movement: 162 of 167 circuits byte-identical, 5 identical modulo
 identifier numbering (inherited from §9's commit), 0 changed.
+
+* 11. CONSTRAINT DEDUP, as built (2026-08-16), and what it makes checkable
+
+=minocrab_ir::v3::passes::dedup_range_constraints=, run by =Builder3::finish=
+only when =Circuit3::dedup_range_constraints(true)= asks for it. Per
+IDENTIFIER it tracks the tightest bound proven so far and drops a later
+constraint whose bound is WIDER OR EQUAL; a TIGHTER one is new information and
+stays, becoming the bound from there on. Never the first. Never an immediate
+operand — a constraint on a folded constant names no wire, so there is nothing
+to key on. Nothing is reordered or renamed.
+
+The direction is =Uint::widen='s argument: =val < 2^n= implies =val < 2^m= for
+=m >= n=, and never the reverse. ZKIR v3 is SSA (upstream's synthesis
+memory is a push-only Vec — =mem_push= —,
+=ir_vm.rs= (=mem_push= — the synthesis memory is a push-only Vec, so rebinding is unrepresentable rather than rejected), rejects a second binding), so a bound proven anywhere in
+the stream holds everywhere in it and "earlier" only decides which of two
+identical constraints survives.
+
+** THE BOOLEAN QUESTION, checked rather than assumed
+
+=constrain_to_boolean= and =constrain_bits(w, 1)= are DIFFERENT GADGETS and
+the SAME PREDICATE, and a pass over a constraint system reasons about the
+predicate:
+
+- =ConstrainToBoolean= → =std.convert::<AssignedNative, AssignedBit>=
+  (=ir_vm.rs= (the ConstrainToBoolean arm, with upstream's own "Yes, this does insert a constraint"), carrying upstream's own "Yes, this does insert a
+  constraint"), which assigns a bit and asserts the wire equals it
+  (checked in the pinned =ir_vm.rs= itself; the supervisor re-verified the
+  arm and its comment verbatim). So =val ∈ {0,1}=.
+- =ConstrainBits { bits: 1 }= → =assigned_to_le_bits(x, Some(1), false)=
+  (=ir_vm.rs= (the V0-only arm; the CURRENT version's arm is =assert_lower_than_fixed(x, 2^bits)=)), one limb of one bit
+  (current-version arm: =assert_lower_than_fixed(x, 2^bits)=; the
+  decomposition is V0-only). So =val ∈ {0,1}=.
+
+Upstream's native semantics agree line for line: =resolve_operand_bool=
+accepts 0 and 1, =resolve_operand_bits(_, Some(1))= accepts exactly the values
+with no bit above the first. So they are ONE FAMILY here, in both directions.
+
+That is not a fine point, it is load-bearing: =Bool='s argument constraint IS
+=constrain_to_boolean= (compactc's table, =Prim::Uint { bits: 1 }=) while its
+Borsh segment is one BYTE, so the checked serializer's =constrain_bits(_, 8)=
+on a bool is dropped only ACROSS the families. Keep them separate and fix 2 is
+not free. =booleanity_and_a_one_bit_range_are_one_family= pins both directions
+and the asymmetry (booleanity AFTER an 8-bit range is real information and
+stays).
+
+** FOLD FIRST, THEN DEDUP
+
+=finish= runs =fold_immediate_copies= and then, if asked, the dedup. The order
+is forced in one direction and free in the other:
+
+- The fold changes OPERANDS. A constraint on a named constant becomes a
+  constraint on an immediate, which the dedup pass deliberately ignores.
+  Running the fold first means every decision the dedup makes is about a name
+  the circuit actually ships; the other order keys on identifiers the fold is
+  about to remove and reaches a different, weaker answer for the same circuit.
+- The reverse dependency does not exist. The dedup only DELETES constraints,
+  which bind no name and produce no value, so it cannot invalidate anything
+  the fold established.
+
+Same caveat as the fold, inherited rather than introduced: =AssertMessage= and
+region indices are recorded at BUILD time, so a pass that removes an
+instruction shifts them. Pre-existing since §8; the dedup does not make it
+worse and does not fix it.
+
+** WHAT FIX 2 BUILT ON TOP, and why it is a mode rather than a twin
+
+- =Serializer::constrained()= — the same serializer, which emits each
+  segment's =constrain_bits= at =8·len= before packing. A MODE, not a checked
+  =push_*= twin, for two reasons: the precondition is about EVERY segment (a
+  packing with three of four fields constrained is as non-injective as one
+  with none, so partial checking would discharge nothing while looking like it
+  did), and the pushes come from =CircuitBorsh::push_segments= — including the
+  derived ones — which cannot pass a checked spelling through. As a mode,
+  every existing impl becomes checked without changing a line.
+- =borsh::to_bytes_constrained= is =to_bytes= through it.
+- =Split::constrained= / =WitnessCheck::constrained= — the reader's
+  precondition is about the BUFFER the caller passes, so the seam is the
+  CONSTRUCTOR, and it emits the buffer's own =constrain_input=.
+- A LITERAL SEGMENT IS NOT RE-PROVEN. =push_literal= builds its own constant
+  limbs, in range by construction — and after the fold a constraint on one
+  names an immediate, which no pass can remove again. So constraining them
+  would be permanent cost for nothing.
+- =hash::persistent_hash= gets no twin, because there is nothing to wrap: the
+  check is =constrain_canonical= at the call site, which already exists. Its
+  doc now says that, plus the flag that makes it free, instead of stating the
+  precondition and stopping.
+
+** THE KEY TEST, which is the whole claim
+
+=crates/minocrab-std/tests/v3_dedup.rs=. One representative record (every leaf
+family, including the =Bool= whose entry constraint is booleanity and whose
+segment is a byte), built twice:
+
+(a) today's — arguments constrained at entry via =CircuitArg::constrain=,
+    =to_bytes= trusting them, no pass;
+(b) checked — the same entry constraints, =to_bytes_constrained=, dedup ON.
+
+*BYTE-IDENTICAL SERIALIZED ZKIR.* Not the same rows, not the same count: the
+same instructions in the same order with the same wire names. The checked
+path's twelve added constraints are exact duplicates of the entry ones and the
+pass drops precisely them.
+
+Three tests keep that honest: the check is REAL with the pass on but nothing
+else constraining the leaves (the twelve survive — a future widening of the
+dedup rule fails there); the COST is real with the flag off (the same twelve,
+two rows each); and literals add nothing.
+
+*A FINDING FROM THE READER SIDE*: the =Split= reader already contains a
+redundant constraint today. A leaf spanning exactly one limb comes back as
+that limb's OWN wire (=take= splits only where it must), so
+=constrain_canonical= re-constrains a wire the buffer's =constrain_input=
+already did. On that path the pass is a saving as well as a discharge, which
+is why the reader's tests hold the pass constant and vary only the
+constructor.
+
+** WHY NO SHIPPED ARTIFACT FLIPS THE FLAG — and a correction to §1
+
+Default OFF everywhere, and the gate was the usual one: 162 circuits
+byte-identical, 5 identical modulo numbering (inherited from §9), 0 changed.
+
+Better than that, MEASURED: scanning all 863 =.zkir= files in the repo — our
+167 dumps AND every compactc fixture artifact — for a range constraint implied
+by an earlier one on the same wire finds *ZERO*. So enabling the flag on
+everything we ship today would remove nothing at all.
+
+Two consequences, and the second corrects this note:
+
+1. The flag is not a latent behaviour change waiting to be tripped. It does
+   something only once a gadget starts constraining its own inputs, which is
+   exactly the API this pass exists to permit.
+2. *§1's table says the pass DIVERGES from compactc "which re-emits". No
+   compactc artifact we hold re-emits.* The divergence is therefore
+   PROSPECTIVE, not observed — which is a weaker case for the pass than §2(iii)
+   made, and a weaker case against it too. It stays opt-in regardless: the
+   claim would have to hold for artifacts we have not seen, and a differential
+   against a re-emitting compactc would need the SAME normalisation run on
+   both sides (as §8's four differentials already do for the fold) before it
+   could be turned on by default.
+
+*DEFERRED, with its own gate*: turning it on for the M10 lineage. Nothing
+argues for it yet — the measurement above says it would move zero
+instructions there — so the trigger is a gadget in that lineage adopting
+=Serializer::constrained= or the constrained readers, and the gate is the row
+snapshot plus that lineage's divergence ledger, not this note.
