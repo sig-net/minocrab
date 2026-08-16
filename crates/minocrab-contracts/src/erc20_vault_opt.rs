@@ -59,6 +59,7 @@ use minocrab_ledger::{
     LedgerValue, XcallCommitment, XcallEntryPointHash,
 };
 use minocrab_std::v3::kernel;
+use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::{
     circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
@@ -320,10 +321,10 @@ pub fn deposit(
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
-    let me = kernel::self_address(c).bytes();
+    let me = kernel::self_address(c);
     let sender = B32 {
-        hi: me.hi.private(),
-        lo: me.lo.private(),
+        hi: me.bytes().hi.private(),
+        lo: me.bytes().lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -406,7 +407,7 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
 fn notify_signet(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     request_id: &B32<Public>,
     notify_path: [u8; 4],
 ) {
@@ -417,7 +418,7 @@ fn notify_signet(
         // inside `call`, which is where Rust's argument-first evaluation
         // would otherwise land it.
         let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
-        let notification = construct_notification_v1::<Public>(c, &me, 1, notify_path);
+        let notification = construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
         signer.sign_bidirectional(c, one, *request_id, notification);
     });
 }
@@ -427,7 +428,7 @@ fn notify_signet(
 fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
     map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
     notify_path: [u8; 4],
@@ -561,8 +562,8 @@ pub fn withdraw(
     // THE kernel.self read of this circuit (rung i): the colour derivation,
     // the event's sender, the receive, the burn and the notification all
     // want the same address, and the port read it five times.
-    let me = kernel::self_address(c).bytes();
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
+    let me = kernel::self_address(c);
+    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
@@ -607,8 +608,8 @@ pub fn withdraw(
     // The event, keyed under the vault's OWN derivation path.
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     let sender = B32 {
-        hi: me.hi.private(),
-        lo: me.lo.private(),
+        hi: me.bytes().hi.private(),
+        lo: me.bytes().lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -752,8 +753,8 @@ pub fn swap(
     let domain_sep = vault_token_domain_separator(c, token_in);
     // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
     // port read the same address five times.
-    let me = kernel::self_address(c).bytes();
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
+    let me = kernel::self_address(c);
+    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
@@ -819,8 +820,8 @@ pub fn swap(
 
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     let sender = B32 {
-        hi: me.hi.private(),
-        lo: me.lo.private(),
+        hi: me.bytes().hi.private(),
+        lo: me.bytes().lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -967,10 +968,10 @@ pub fn approve_router(
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
-    let me = kernel::self_address(c).bytes();
+    let me = kernel::self_address(c);
     let sender = B32 {
-        hi: me.hi.private(),
-        lo: me.lo.private(),
+        hi: me.bytes().hi.private(),
+        lo: me.bytes().lo.private(),
     };
     let caip2 = cell_read(
         c,
@@ -1279,7 +1280,7 @@ pub fn complete_swap(
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
     // ONE kernel.self read for BOTH mints (rung i).
-    let me = kernel::self_address(c).bytes();
+    let me = kernel::self_address(c);
     let recipient = minocrab_std::v3::own_public_key(c);
     let recipient = recipient.disclose_as::<SwapRecipient>(c);
 
@@ -1455,7 +1456,7 @@ pub fn refund(
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
-    let me = kernel::self_address(c).bytes();
+    let me = kernel::self_address(c);
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
 
     // Withdrawal-route record consume (guarded): the VaultRecord and its

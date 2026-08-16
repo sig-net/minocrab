@@ -642,8 +642,8 @@ pub fn withdraw(
     // The coin must be the vault token for THIS erc20, of exactly amount.
     let erc20_address = erc20_address.disclose_as::<WithdrawnErc20>(c);
     let domain_sep = vault_token_domain_separator(c, erc20_address);
-    let me = kernel::self_address(c).bytes();
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
+    let me = kernel::self_address(c);
+    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
@@ -828,8 +828,8 @@ pub fn swap(
     // amountInMaximum.
     let token_in = token_in.disclose_as::<SoldErc20>(c);
     let domain_sep = vault_token_domain_separator(c, token_in);
-    let me = kernel::self_address(c).bytes();
-    let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
+    let me = kernel::self_address(c);
+    let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);

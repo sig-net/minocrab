@@ -260,10 +260,16 @@ pattern, and §0(a) is how to keep finding them.
   The residual cost is that the error arrives later than a =Bool<V>=
   parameter would make it.
 - The =_with= family (=mint_shielded_token_to_key_with=, =burn_coin_with=,
-  =receive_shielded_with=) takes a =me: B32<Public>= the caller promises is
-  =kernel.self()=. Nothing checks it is. Passing the WRONG address mints to
-  the wrong contract. (M18's note calls this memoization; it is memoization
+  =receive_shielded_with=) took a =me: B32<Public>= the caller promised was
+  =kernel.self()=. Nothing checked it. Passing the WRONG address mints to
+  the wrong contract. (M18's note calls this memoization; it was memoization
   with an unchecked key.)
+  *FIXED, and it needed no new type.* The parameter is now
+  =ContractAddress<Public>=, which only =kernel::self_address= and its
+  guarded twin produce — so an arbitrary =B32= no longer type-checks there.
+  The address flows typed through =record_and_notify= and =notify_signet= as
+  well, and =.bytes()= is the one place it becomes raw again. Zero rows (the
+  wrapper is =repr(transparent)= over the same limbs); dump unchanged.
 - =LedgerCell<T>::write= of a value wider than =T='s atoms: the atom list
   comes from the type (good) but the VALUE is not re-checked against it.
 - =Circuit3::copy= is documented as "not a way to make a value cheaper" —

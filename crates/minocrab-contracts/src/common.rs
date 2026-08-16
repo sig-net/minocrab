@@ -11,7 +11,7 @@ use minocrab_std::v3::kernel;
 use minocrab::v3::Guarded;
 use minocrab_std::v3::{
     coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
-    Secp256k1Point, ShieldedCoinInfo3, B32, STRAIGHT_LINE,
+    ContractAddress, Secp256k1Point, ShieldedCoinInfo3, B32, STRAIGHT_LINE,
 };
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
@@ -142,16 +142,16 @@ pub fn witness_sk(c: &mut Circuit3) -> B32<Private> {
 /// unused left arm `default<ZswapCoinPublicKey>`).
 fn self_recipient(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> CoinRecipient<Public> {
     let me = kernel::self_address_under(c, guard);
-    contract_recipient(c, me.bytes())
+    contract_recipient(c, me)
 }
 
 /// [`self_recipient`] against an address the caller already read.
-fn contract_recipient(c: &mut Circuit3, me: B32<Public>) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
         left: B32 { hi: zero, lo: zero },
-        right: me,
+        right: me.bytes(),
     }
 }
 
@@ -184,7 +184,7 @@ pub fn receive_shielded(
 pub fn receive_shielded_with(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
     c.region("coin: receive", |c| {
@@ -332,17 +332,23 @@ pub fn burn_coin(
 ) {
     c.region("coin: burn", |c| {
         // const selfAddr = kernel.self(); claimZswapNullifier(coinNullifier(...))
-        let me = kernel::self_address(c).bytes();
+        let me = kernel::self_address(c);
         burn_body(c, one, me, coin);
     });
 }
 
 /// [`burn_coin`] against a `kernel.self()` the caller already read — see
 /// [`receive_shielded_with`] for why the M10 artifact wants that.
+///
+/// `me` is a [`ContractAddress`], not a `B32`, and that is the point: this
+/// family is MEMOIZATION WITH A KEY, and the key used to be un-typed. Only
+/// `kernel::self_address` produces a `ContractAddress`, so a caller can no
+/// longer thread the wrong 32 bytes here and burn against another contract's
+/// identity (notes/api-safety-survey.org §A4).
 pub fn burn_coin_with(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
     c.region("coin: burn", |c| burn_body(c, one, me, coin));
@@ -352,11 +358,11 @@ pub fn burn_coin_with(
 fn burn_body(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
     {
-        let nul = coin_nullifier_contract(c, coin, &me);
+        let nul = coin_nullifier_contract(c, coin, &me.bytes());
         emit(c, one, &kernel_claim_zswap_nullifier(&b32_value(&nul)));
 
         // nonce' = upgradeFromTransient(transientHash([
@@ -499,7 +505,7 @@ fn assert_if_message<V: minocrab_std::v3::Vis3>(
 pub fn mint_shielded_token_to_key_with<G: Visibility>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
-    me: B32<Public>,
+    me: ContractAddress<Public>,
     domain_sep: &B32<Public>,
     value: Wire3<FieldT, Public>,
     nonce: &B32<Public>,
@@ -507,7 +513,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
 ) {
     let guard = guard.into();
     c.region("coin: mint", |c| {
-        let color = token_type(c, domain_sep, &me);
+        let color = token_type(c, domain_sep, &me.bytes());
 
         let ds_val = b32_value(domain_sep);
         let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
@@ -539,7 +545,7 @@ pub fn mint_shielded_token_to_key(
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
-    let me = kernel::self_address(c).bytes();
+    let me = kernel::self_address(c);
     mint_shielded_token_to_key_with(c, STRAIGHT_LINE, me, domain_sep, value, nonce, pk);
 }
 
@@ -554,7 +560,7 @@ pub fn mint_shielded_token_to_key_guarded(
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
-    let me = kernel::self_address_guarded(c, guard).or_default().bytes();
+    let me = kernel::self_address_guarded(c, guard).or_default();
     mint_shielded_token_to_key_with(c, guard, me, domain_sep, value, nonce, pk);
 }
 

@@ -1768,9 +1768,16 @@ green on every differential the day before.
       contracts-level helpers — `mint_shielded_token` takes a raw `Wire3`
       where Compact's takes `Uint<64>`. The typed kernel layer already
       gets this right; this is the older layer catching up.
-- [ ] Fix 5 (closes the sharpest edge of A4): a `SelfAddress` newtype so
-      the `_with` family cannot be handed an arbitrary `B32` — it is
-      memoization with an unchecked key, and a wrong address mints to the
-      wrong contract.
+- [X] Fix 5 (closes the sharpest edge of A4): the `_with` family cannot be
+      handed an arbitrary `B32` — it was memoization with an unchecked key,
+      and a wrong address mints to the wrong contract.
+      (DONE 2026-08-16, and the survey's proposed `SelfAddress` newtype was
+      NOT needed: `ContractAddress<Public>` already existed and only
+      `kernel::self_address` / `self_address_guarded` produce one. Typing
+      the parameter with it is the whole fix. The address now flows typed
+      through `record_and_notify` and `notify_signet` too, so the raw
+      `B32` appears only at `.bytes()`, which is the one conversion point.
+      Zero rows — a `repr(transparent)` wrapper over the same limbs — and
+      the ZKIR dump is unchanged across all four forks.)
 Exit criteria: every finding either fixed or refused in writing with a
 reason; no invariant left as prose that a pass or a type could hold.
