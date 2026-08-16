@@ -56,8 +56,7 @@ pub use ledger::{
 /// the module docs). The same comparisons are methods on the typed leaves
 /// (`amount.gt(0u64)`), delegating to these.
 pub use predicate::{
-    eq, ge, greater_than, guarded, guarded_all, if_else, is_true, le, less_than, ne, not, Check,
-    CheckOperand,
+    eq, ge, greater_than, guarded, if_else, is_true, le, less_than, ne, not, Check, CheckOperand,
 };
 
 /// Typed disclosure declarations: `label!` types, `.disclose_as::<L>(c)`,
@@ -83,7 +82,7 @@ pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint
 
 /// The if / else-if / else chain (`c.when(..).else_when(..).otherwise(..)`)
 /// and the trait that lets its arms be written as wires or as [`Check`]s.
-pub use minocrab::v3::{Branches, GuardCond};
+pub use minocrab::v3::{Branches, GuardCond, Select, ValueBranches};
 
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire
@@ -605,6 +604,47 @@ impl<V: Vis3> MerkleTreeDigest<V> {
     pub fn field(self) -> Wire3<FieldT, V> {
         self.0
     }
+}
+
+/// [`Select`] for the typed leaves, so a value-producing conditional works on
+/// whatever a branch actually returns.
+///
+/// Each is one `cond_select` per NATIVE SLOT — one for a scalar leaf, two for
+/// a `Bytes<32>`, and a `Maybe` selects its tag as well as its payload. The
+/// per-slot cost is the honest one: there is no cheaper way to choose between
+/// two values in a circuit that does not branch.
+macro_rules! select_via_field {
+    ($( $(#[$m:meta])* [$($gen:tt)*] $ty:ty => |$c:ident, $bit:ident, $a:ident, $b:ident| $body:expr ),* $(,)?) => {$(
+        $(#[$m])*
+        impl<$($gen)*> Select<V> for $ty {
+            fn select($c: &mut Circuit3, $bit: Wire3<FieldT, V>, $a: Self, $b: Self) -> Self {
+                $body
+            }
+        }
+    )*};
+}
+
+select_via_field! {
+    [V: Vis3] Bool<V> => |c, bit, a, b| Bool::from_field(c.cond_select(bit, a.field(), b.field())),
+    [const BITS: u32, V: Vis3] Uint<BITS, V> =>
+        |c, bit, a, b| Uint::from_field(c.cond_select(bit, a.field(), b.field())),
+    [const N: usize, V: Vis3] Bytes<N, V> =>
+        |c, bit, a, b| Bytes::from_field(c.cond_select(bit, a.field(), b.field())),
+    /// Two slots — the `[hi, lo]` pair.
+    [V: Vis3] B32<V> => |c, bit, a, b| B32 {
+        hi: c.cond_select(bit, a.hi, b.hi),
+        lo: c.cond_select(bit, a.lo, b.lo),
+    },
+    /// The address's inner `Bytes<32>`.
+    [V: Vis3] ContractAddress<V> =>
+        |c, bit, a, b| ContractAddress(Select::select(c, bit, a.0, b.0)),
+    [V: Vis3] UserAddress<V> => |c, bit, a, b| UserAddress(Select::select(c, bit, a.0, b.0)),
+    /// The TAG is selected too — a `Maybe` chosen from two branches takes the
+    /// chosen branch's `is_some`, not either one's.
+    [T: Select<V>, V: Vis3] Maybe<T, V> => |c, bit, a, b| Maybe {
+        is_some: Select::select(c, bit, a.is_some, b.is_some),
+        value: Select::select(c, bit, a.value, b.value),
+    },
 }
 
 /// Explode a limb into `nbytes` byte wires, least-significant first: a

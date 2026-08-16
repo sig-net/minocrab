@@ -542,48 +542,6 @@ impl<V: Vis3> minocrab::v3::GuardCond<V> for Check<V> {
     }
 }
 
-/// Compact's `&&` as a SEQUENCE — each conjunct evaluated under the
-/// conjunction of the ones before it, then `body` under all of them.
-///
-/// This is the flat spelling of nested [`Circuit3::guarded`] scopes, for the
-/// case the nesting exists to serve: a later conjunct that performs a
-/// transcript read, which must happen under the earlier ones. M17's
-/// `sendUnshielded` is the worked example —
-/// `recipient.is_left && recipient.left == kernel.self()` reads the
-/// contract's own address, and compactc guards that read by `is_left` alone.
-///
-/// ```ignore
-/// guarded_all(c, &[
-///     &|c| is_true(recipient.is_left),
-///     &|c| eq(kernel::self_address(c).bytes(), recipient.left.bytes()),
-/// ], |c| {
-///     kernel::inc_unshielded_inputs(c, &token, amount);
-/// });
-/// ```
-///
-/// Identical instructions to the nested form; one statement instead of two
-/// levels of indentation.
-pub fn guarded_all<R>(
-    c: &mut Circuit3,
-    conjuncts: &[&dyn Fn(&mut Circuit3) -> Check<Public>],
-    body: impl FnOnce(&mut Circuit3) -> R,
-) -> R {
-    fn go<R>(
-        c: &mut Circuit3,
-        conjuncts: &[&dyn Fn(&mut Circuit3) -> Check<Public>],
-        body: impl FnOnce(&mut Circuit3) -> R,
-    ) -> R {
-        match conjuncts.split_first() {
-            None => body(c),
-            Some((head, rest)) => {
-                let wire = head(c).into_wire(c);
-                c.guarded(wire, |c| go(c, rest, body))
-            }
-        }
-    }
-    go(c, conjuncts, body)
-}
-
 /// THE LOWERING, and the whole claim of this module: every node emits
 /// exactly the instructions the hand-written form emits, in the same order.
 fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {

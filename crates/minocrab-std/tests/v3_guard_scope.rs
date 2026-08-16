@@ -177,34 +177,6 @@ fn a_check_guards_exactly_as_its_wire_does() {
     assert_eq!(by_check, by_wire);
 }
 
-/// `guarded_all` is the FLAT spelling of nested scopes — same instructions,
-/// one statement. This is the shape M17's `sendUnshielded` needed: a read
-/// performed under the first conjunct, feeding the second.
-#[test]
-fn guarded_all_is_the_nested_form_flattened() {
-    use minocrab_std::v3::{guarded_all, is_true, Bool};
-
-    let nested = zkir(|c| {
-        let a = c.public_transcript_input::<FieldT>();
-        c.guarded(a, |c| {
-            let w = c.public_transcript_input::<FieldT>();
-            c.guarded(w, |c| c.impact_mixed(1u64, &op()));
-        });
-    });
-    let flat = zkir(|c| {
-        let a = c.public_transcript_input::<FieldT>();
-        guarded_all(
-            c,
-            &[
-                &|_c| is_true(Bool::from_field(a)),
-                &|c| is_true(Bool::from_field(c.public_transcript_input::<FieldT>())),
-            ],
-            |c| c.impact_mixed(1u64, &op()),
-        );
-    });
-    assert_eq!(flat, nested);
-}
-
 // ---- if / else-if / else chains ---------------------------------------------
 
 /// A two-arm chain IS `if_else` — same instructions, one negation.
@@ -296,4 +268,102 @@ fn a_chain_inside_a_guard_is_conjoined_with_it() {
         });
     });
     assert_eq!(scoped, by_hand);
+}
+
+// ---- the value form ----------------------------------------------------------
+
+/// A two-arm VALUE chain is the hand-written form: both arms emitted, one
+/// `cond_select` to choose. The abstraction costs nothing over doing it by
+/// hand — what it removes is the chance of selecting on the wrong guard.
+#[test]
+fn a_value_chain_is_the_hand_written_select() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let x = c.arg::<FieldT>("x");
+        let y = c.arg::<FieldT>("y");
+        let a = c.mul(x, y); // "then" arm
+        let not_g = c.cond_select(g, 0u64, 1u64);
+        let b = c.add(x, y); // "else" arm — emitted regardless
+        let chosen = c.cond_select(not_g, b, a);
+        c.assert(chosen);
+    });
+    let by_chain = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let x = c.arg::<FieldT>("x");
+        let y = c.arg::<FieldT>("y");
+        let chosen = c
+            .when_value(g, |c| c.mul(x, y))
+            .otherwise(|c| c.add(x, y));
+        c.assert(chosen);
+    });
+    assert_eq!(by_chain, by_hand);
+}
+
+/// The value form selects EVERY slot of a multi-slot leaf — a `Bytes<32>`
+/// costs two selects per arm, not one.
+#[test]
+fn a_value_chain_selects_every_slot() {
+    use minocrab_std::v3::B32;
+
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let a = B32 {
+            hi: c.arg::<FieldT>("ahi"),
+            lo: c.arg::<FieldT>("alo"),
+        };
+        let b = B32 {
+            hi: c.arg::<FieldT>("bhi"),
+            lo: c.arg::<FieldT>("blo"),
+        };
+        let not_g = c.cond_select(g, 0u64, 1u64);
+        let hi = c.cond_select(not_g, b.hi, a.hi);
+        let lo = c.cond_select(not_g, b.lo, a.lo);
+        c.assert(hi);
+        c.assert(lo);
+    });
+    let by_chain = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let a = B32 {
+            hi: c.arg::<FieldT>("ahi"),
+            lo: c.arg::<FieldT>("alo"),
+        };
+        let b = B32 {
+            hi: c.arg::<FieldT>("bhi"),
+            lo: c.arg::<FieldT>("blo"),
+        };
+        let chosen = c.when_value(g, |_c| a).otherwise(|_c| b);
+        c.assert(chosen.hi);
+        c.assert(chosen.lo);
+    });
+    assert_eq!(by_chain, by_hand);
+}
+
+/// A value chain still GUARDS its arms' effects — the value is selected and
+/// the effects are suppressed, by the same mechanism.
+#[test]
+fn a_value_chain_still_guards_effects() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let x = c.arg::<FieldT>("x");
+        c.impact_mixed(g, &op());
+        let not_g = c.cond_select(g, 0u64, 1u64);
+        c.impact_mixed(not_g, &op());
+        let chosen = c.cond_select(not_g, x, x);
+        c.assert(chosen);
+    });
+    let by_chain = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let x = c.arg::<FieldT>("x");
+        let chosen = c
+            .when_value(g, |c| {
+                c.impact_mixed(1u64, &op());
+                x
+            })
+            .otherwise(|c| {
+                c.impact_mixed(1u64, &op());
+                x
+            });
+        c.assert(chosen);
+    });
+    assert_eq!(by_chain, by_hand);
 }

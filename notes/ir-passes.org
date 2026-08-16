@@ -241,24 +241,28 @@ the setting, not a choice.
 
 ** …and the third question: can two nested guards become one statement?
 
-Yes, =predicate::guarded_all=, and the reason it needs closures rather than
-a flat expression is worth recording because it is not obvious.
+There WAS a =guarded_all(c, &[&|c| .., &|c| ..], body)= — a flat spelling of
+nested scopes, each conjunct evaluated under the ones before it. It is
+REMOVED (dmd, 2026-08-16), and the reason is better than "redundant".
 
-The nesting is not incidental — it IS the short-circuit structure of
-Compact's =&&=. In
+The flat list hides exactly the fact that matters. The nesting is not
+incidental: it IS the short-circuit structure of Compact's =&&=, and in
 =recipient.is_left && recipient.left == kernel.self()= the second conjunct
-performs a TRANSCRIPT READ, which compactc guards by the first conjunct. So
-the second cannot be evaluated before the first is known, and any
-single-statement spelling has to keep the later conjuncts as closures:
+performs a TRANSCRIPT READ that compactc guards by the first. Written
+nested, that is visible in the shape of the code. Written flat, it looks
+like a list of independent conditions and the evaluation order — the whole
+subtlety — is invisible.
 
-#+begin_src rust
-guarded_all(c, &[
-    &|c| is_true(recipient.is_left),
-    &|c| eq(kernel::self_address(c).bytes(), recipient.left.bytes()),
-], |c| { .. });
-#+end_src
+So: nest. Two lines and an indent, and the indent is carrying information.
 
-Flat syntax, nested semantics, byte-identical instructions.
+A GENUINELY flat conjunction — =guarded(c, a.and(b), ..)=, both sides
+evaluated up front — is available and correct whenever the conjuncts are
+PURE. For the self-address case it would mean reading =kernel.self()=
+UNGUARDED, which M10 rung i already established is sound (read count is
+"framing, not protocol"; every emitted read still reconciles through
+=process_read=). That costs the differential and therefore belongs in the
+opt profile — which is exactly the split §1 predicts, arriving from a
+direction nobody planned.
 
 ** …and the fourth: an if / else-if / else CHAIN
 
@@ -281,6 +285,38 @@ Arms return =()=, deliberately. A circuit does not branch, so every arm's
 instructions are emitted regardless and "the value of the branch that ran"
 is not something the stream can express; build it with =cond_select= on the
 arms' results, where the selection is visible and priced.
+
+** …and the fifth: the chain as an EXPRESSION
+
+=c.when_value(a, ..).else_when(b, ..).otherwise(..)= returns a value —
+Compact's =if= as an expression. dmd asked for it knowing it is expensive,
+and wanted the cost stated rather than the feature withheld. Both are done;
+the cost is in the method's own docs, where a caller will meet it.
+
+EXHAUSTIVE BY CONSTRUCTION, which the effectful form does not need and
+cannot have: =otherwise= is the only method that returns the value, so a
+value chain without a fallback does not compile. An arm that does not run
+simply has its effects guarded off; a value has to come from somewhere.
+
+THE COST, stated honestly in three parts:
+- Every arm's instructions are emitted regardless. An =if= costs the SUM of
+  its arms, never the maximum. That is the setting, not this API.
+- One =cond_select= per NATIVE SLOT of the result, per arm — so a
+  =Bytes<32>= is two, and a =Maybe<T>= selects its tag as well as its
+  payload. =Select= is the trait, implemented for the typed leaves.
+- The two selects the guard accumulator already costs.
+
+AND WHAT IT DOES NOT COST: anything over the hand-written form.
+=a_value_chain_is_the_hand_written_select= pins that — the selects are the
+ones a careful author writes anyway. What the abstraction removes is
+selecting on the wrong guard, and the temptation to skip guarding the arms'
+EFFECTS because only the value looked conditional
+(=a_value_chain_still_guards_effects=).
+
+So the recommendation is not "avoid it". It is: reach for it when the
+branches genuinely produce a value; reach for straight-line code and one
+=cond_select= at the end when one arm is much dearer than the other and you
+would rather pay for that arm once, unconditionally.
 
 NOT CLAIMED: that an /n/-arm chain matches compactc's lowering of an
 =else if= ladder. No fixture exercises one, so the two-arm case is checked

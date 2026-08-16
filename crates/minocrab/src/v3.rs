@@ -240,6 +240,74 @@ impl<V: Visibility> GuardCond<V> for Wire3<FieldT, V> {
     }
 }
 
+/// A value that a conditional can SELECT between: one `cond_select` per
+/// native slot.
+///
+/// Implemented in the frontend for a bare wire and in `minocrab-std` for the
+/// typed leaves, so [`Circuit3::when_value`] works on whatever a branch
+/// actually produces rather than only on field elements.
+pub trait Select<V: Visibility>: Sized {
+    /// `bit ? taken : fallback`, slotwise.
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, V>, taken: Self, fallback: Self) -> Self;
+}
+
+impl<V: Visibility> Select<V> for Wire3<FieldT, V> {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, V>, taken: Self, fallback: Self) -> Self {
+        Wire3::new(c.b.cond_select(bit.val, taken.val, fallback.val))
+    }
+}
+
+/// An if / else-if / else chain that produces a VALUE — see
+/// [`Circuit3::when_value`].
+#[must_use = "a value chain produces nothing until `otherwise` supplies the fallback"]
+pub struct ValueBranches<'a, V: Visibility, T> {
+    c: &'a mut Circuit3,
+    unmatched: Wire3<FieldT, V>,
+    /// The value chosen by the arms so far.
+    chosen: T,
+}
+
+impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
+    /// The next arm: its value wins where `cond` holds and no earlier arm
+    /// matched. Costs one `cond_select` per slot of `T`, plus the two the
+    /// guard accumulator costs.
+    pub fn else_when(
+        self,
+        cond: impl GuardCond<V>,
+        body: impl FnOnce(&mut Circuit3) -> T,
+    ) -> Self {
+        let ValueBranches {
+            c,
+            unmatched,
+            chosen,
+        } = self;
+        let cond = cond.into_guard(c);
+        let guard: Wire3<FieldT, V> =
+            Wire3::new(c.b.cond_select(unmatched.val, cond.val, Fr::from(0u64)));
+        let value = c.guarded(guard, body);
+        let chosen = T::select(c, guard, value, chosen);
+        let unmatched: Wire3<FieldT, V> =
+            Wire3::new(c.b.cond_select(cond.val, Fr::from(0u64), unmatched.val));
+        ValueBranches {
+            c,
+            unmatched,
+            chosen,
+        }
+    }
+
+    /// The fallback, and the only way to get the value out — so a value chain
+    /// is EXHAUSTIVE by construction. Costs one `cond_select` per slot.
+    pub fn otherwise(self, body: impl FnOnce(&mut Circuit3) -> T) -> T {
+        let ValueBranches {
+            c,
+            unmatched,
+            chosen,
+        } = self;
+        let value = c.guarded(unmatched, body);
+        T::select(c, unmatched, value, chosen)
+    }
+}
+
 /// An if / else-if / else chain in progress — see [`Circuit3::when`].
 ///
 /// Holds the "nothing has matched yet" wire, which is what makes the arms
@@ -1088,6 +1156,54 @@ impl Circuit3 {
         let unmatched: Wire3<FieldT, V> =
             Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
         Branches { c: self, unmatched }
+    }
+
+    /// The chain that produces a VALUE — Compact's `if`-as-an-expression.
+    ///
+    /// ```ignore
+    /// let fee = c.when_value(is_premium, |c| tier_a(c))
+    ///            .else_when(is_member, |c| tier_b(c))
+    ///            .otherwise(|c| standard(c));
+    /// ```
+    ///
+    /// EXHAUSTIVE BY CONSTRUCTION: `otherwise` is the only method that
+    /// returns the value, so a chain without a fallback does not type-check.
+    /// The effectful [`Circuit3::when`] needs no such rule — an arm that does
+    /// not run simply has its effects guarded off — but a value has to come
+    /// from somewhere.
+    ///
+    /// # What it costs, and what it does not
+    ///
+    /// Every arm's instructions are emitted whatever the conditions turn out
+    /// to be. A circuit does not branch: an `if` costs the SUM of its arms,
+    /// not the maximum, and that is the setting rather than a property of
+    /// this API. On top of that, one `cond_select` per slot of `T` per arm,
+    /// and the two the guard accumulator costs.
+    ///
+    /// What it does NOT cost is anything over the hand-written form. The
+    /// selects are the ones a careful author writes anyway; what this removes
+    /// is the chance of selecting on the wrong guard, and the temptation to
+    /// skip the guard on the arms' EFFECTS because only the value looked
+    /// conditional.
+    ///
+    /// So the advice is not "avoid it" — it is: reach for it when the
+    /// branches genuinely produce a value, and reach for straight-line code
+    /// with [`Circuit3::cond_select`] at the end when one arm is much dearer
+    /// than the other and you would rather pay for it once unconditionally.
+    pub fn when_value<V: Visibility, T: Select<V>>(
+        &mut self,
+        cond: impl GuardCond<V>,
+        body: impl FnOnce(&mut Self) -> T,
+    ) -> ValueBranches<'_, V, T> {
+        let cond = cond.into_guard(self);
+        let chosen = self.guarded(cond, body);
+        let unmatched: Wire3<FieldT, V> =
+            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
+        ValueBranches {
+            c: self,
+            unmatched,
+            chosen,
+        }
     }
 
     /// Both arms of a conditional: `then_body` under `cond`, `else_body`
