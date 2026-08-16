@@ -492,11 +492,39 @@ disclosure report read =<not computed>=. =Disclosure3= now carries
 the second directly. That is better than what it replaced: a constant's value
 was never in doubt, and the record now says so instead of pointing at a wire.
 
-** NOT DONE
+** THE FIVE SPECIAL CASES: what actually gets deleted, decided by looking
 
-The five special cases are inert but still present: M9 phase 7's operand
-positions, M9 phase 8's inlined guard, M16's =AnyWire3::immediate=, M17's
-=UnshieldedToken= and =token_type=. Deleting them is mechanical, touches the
-vault forks, and belongs in its own commit with its own dump diff — the
-=impl Into<Operand>= ergonomics stay either way (§2 ii), what goes is their
-NECESSITY.
+§2(ii) said the pass lets us delete all five. Scoped one by one, the answer is
+*the pass deletes the PRESSURE, not the mechanisms* — and one of the five was
+the only one that mattered:
+
+1. =impl Into<Operand>= (M9 phase 7) — STAYS, as §2(ii) already said. Writing
+   =c.add(x, 1u64)= is better than naming a constant whatever it lowers to.
+2. The inlined Impact guard / guard-free ledger methods (M9 phase 8) — STAYS.
+   The same thing: an API, not a workaround.
+3. =AnyWire3::immediate= (M16) — STAYS, and this is the one that changed my
+   mind. Deleting it would let =AnyWire3= carry a =Val= again, at eleven call
+   sites that all get MORE verbose (a constant hash operand would need =c= and
+   a visibility). Against that it introduces a latent conditional: a constant
+   emitted as a =copy= is inlined only if every use is foldable, so a hash
+   operand that is ALSO returned would silently keep its name. Today's
+   spelling is unconditional. Trading an unconditional guarantee for eleven
+   shorter lines is the wrong direction on this project's priority order.
+4. =UnshieldedToken='s own =ledger_value= (M17) — STAYS, with a BETTER reason
+   than it had. Routing its constants back through the general =Either=
+   =LedgerRepr= would emit them as WIRES, and =Circuit3::impact_mixed= records
+   a disclosure ("impact public input") per wire and none per immediate. So
+   the general path would add disclosure-report lines for values that are not
+   disclosures of anything. The type carrying its own constants is not a
+   workaround for the fold; it is the thing that keeps the report honest.
+5. The =LedgerRepr= change dmd approved on 2026-08-16 (the FIFTH, and the only
+   one not yet built) — NOT MADE, and now never needs to be. That was the
+   expensive one: a trait change all four vault forks depend on. The pass
+   costs it nothing and it is withdrawn.
+
+So the deletion the pass bought is the one that had not happened yet, plus the
+two in the TEST layer that did happen (=opaque_differential='s normaliser and
+the twin's divergence ledger). The four surviving mechanisms are each
+load-bearing for a reason recorded above, and none of them is pressure to add
+a sixth: a new operand position needs no special case now, which was the
+point.
