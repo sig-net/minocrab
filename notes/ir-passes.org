@@ -1,0 +1,195 @@
+#+title: IR passes — but only the ones that buy API
+
+Design of record for the pass work dmd asked for (2026-08-16): *"look at any
+optimisation pass (ours or theirs) that can make our API more ergonomic and
+composable"*, with the standing criterion from the same conversation —
+**only do this if it makes us able to write simpler code, higher up the
+stack, which then optimises in a composable way.**
+
+So rows are NOT the objective here. Rows are the constraint: a pass has to
+not cost any, and where it happens to save some that is a bonus rather than
+the case for it.
+
+* 0. THE MEASUREMENT, first, because it decides most of the argument
+
+"Are we duplicating ZKIR's work?" is not guessable and was not guessed. It
+is measured in [[file:../crates/minocrab-contracts/tests/backend_folding.rs][tests/backend_folding.rs]], against Midnight's own cost model
+— the same one =row_snapshot= and the benchmark harness use — and committed
+so a toolchain bump breaks it rather than silently invalidating this note.
+
+| pattern | rows each | backend folds it? |
+|---------+-----------+-------------------|
+| =copy= of an immediate | *0* | YES |
+| linear op with a constant operand (=add x, 0=) | *0* | YES |
+| unused pure instruction | 1 | no |
+| duplicated pure instruction | 1 | no |
+| repeated =constrain_bits= on the same wire | *2* | no |
+
+Three consequences, and they are most of the design:
+
+** (a) Constant folding above ZKIR buys ZERO rows
+
+Every contortion we have made to avoid emitting a =copy= of an immediate —
+M9 phase 7's operand positions, M9 phase 8's inlined guard, M16's
+=AnyWire3::immediate=, M17's =UnshieldedToken= — bought DIFFERENTIAL
+FIDELITY with compactc. Not cost. Nobody wrote that down at the time, and
+the fifth one (changing =LedgerRepr=, which dmd approved on 2026-08-16) was
+about to be paid for the same unstated reason.
+
+That does not make the pass worthless. It relocates the case for it: it is
+worth building because it lets us DELETE those five special cases, not
+because it makes anything faster. Which is exactly dmd's criterion.
+
+** (b) The costliest redundancy is the one that would buy the most safety
+
+A repeated range constraint costs TWO rows — twice a multiply, and more than
+any other redundancy measured. That is why the Borsh layer's docs say
+"PRECONDITION: the value's leaves are already range-constrained" instead of
+just constraining them, and why =Uint::widen= has a paragraph explaining
+that it deliberately does not re-constrain.
+
+Those are load-bearing comments standing in for a check, which is the least
+composable thing in the codebase: a gadget cannot defend itself, so every
+caller has to be right. A deduplicating pass turns that into "constrain
+whatever you like, the pass removes what is provably redundant" — safer
+code, simpler contracts, and it removes rows rather than adding them.
+
+** (c) Dead code and common subexpressions are real rows, and still not ours
+
+Neither is folded, so both leave rows on the table. Both are nonetheless
+rejected below, for reasons that are about correctness rather than value.
+
+* 1. THE CONSTRAINT NOBODY SHOULD FORGET
+
+Our primary correctness warrant is DIFFERENTIAL EQUALITY with compactc —
+instruction for instruction, for the M14/M15/M16/M17 fixtures. A pass that
+makes us *match* compactc more closely is free. A pass that makes us *beat*
+compactc costs us that test, and we know the price because M10 paid it: the
+optimised vault proves its own preimage and its warrant is symbolic-effect
+equivalence plus a nine-million-case harness instead of PI-equality.
+
+So passes divide cleanly:
+
+| pass | vs compactc | gate |
+|------+-------------+------|
+| constant folding | converges | always on |
+| guard scoping | neutral (same stream) | always on |
+| constraint dedup | DIVERGES | opt profile, M10 warrant |
+| dead code elimination | diverges | rejected, see §3 |
+| common subexpression elimination | diverges | rejected, see §3 |
+
+* 2. THE THREE TO BUILD
+
+** (i) Guard scoping — the biggest API win, and not the backend's job
+
+Every ledger and kernel operation takes a guard operand, so every method has
+an =_under= twin differing only in that argument. =minocrab-std/src/v3/
+kernel.rs= is about half boilerplate for this reason, and =ledger.rs= worse.
+
+It also does not COMPOSE, which is the real complaint. A helper called under
+a branch has to thread the guard through its entire call graph by hand;
+=send_unshielded= has to know that =is_self= needs a guard, and =is_self=
+has to know that =kernel_self_guarded= exists. Nesting two guarded regions
+means anding the conditions manually.
+
+What we want:
+
+#+begin_src rust
+c.guarded(cond, |c| {
+    kernel::inc_unshielded_inputs(c, &token, amount);   // the PLAIN form
+});
+#+end_src
+
+Implementation is a splice, not an optimisation: emit the body into a
+sub-buffer, then rewrite the guard operand on every Impact instruction and
+every =public_input= gate as it merges back, anding with any enclosing
+guard. The instruction stream is IDENTICAL to what the =_under= form
+produces today, which is what makes this safe to turn on everywhere — the
+differentials cannot tell the difference, and that is the point.
+
+Deletes: the =_under= half of the ledger and kernel APIs, and the
+=_guarded= variants beside them.
+
+** (ii) Constant folding — as normalisation, with the case restated
+
+Fold =copy= of an immediate into its consumers and drop the =copy=. Zero
+rows either way (§0a); the value is that it subsumes all five special cases
+and future operand positions get it for free.
+
+Consequence worth stating plainly: *the =LedgerRepr= change dmd approved
+should not be made.* The pass gives the same output with no trait change and
+no churn in the four vault forks. =UnshieldedToken= can go back to being an
+ordinary =Either=, and =AnyWire3= can go back to carrying a =Val=.
+
+The =impl Into<Operand>= ergonomics STAY — writing =c.add(x, 1u64)= is nicer
+than naming a constant regardless of what it lowers to. What goes away is
+its NECESSITY, and the pressure to add another one every milestone.
+
+** (iii) Constraint deduplication — the sleeper
+
+Track, per wire, the tightest =assert_bits= already emitted; drop a later
+=assert_bits(w, m)= when =m >= n= for an already-emitted =n=. Sound in that
+direction only: a wire constrained to =n= bits satisfies any wider bound,
+which is exactly the argument =Uint::widen= already makes for why widening
+needs no new constraint.
+
+This is the one that changes what code you can write. Gadgets become able to
+assert their own preconditions, so the Borsh layer's "PRECONDITION: already
+constrained" comments become checks, and getting it wrong becomes impossible
+rather than invisible.
+
+DIVERGES from compactc (which re-emits), so it goes behind the opt profile
+with M10's warrant. Rows go DOWN, which is the direction that profile
+already wants.
+
+* 3. THE TWO TO REJECT, and why
+
+** Dead code elimination — unsound here without care nobody will maintain
+
+=constrain_bits=, =assert=, =impact= and the transcript gates have no
+dataflow consumers. A pass that drops instructions "nothing uses" removes
+range checks, and a missing range check is invisible to every differential
+test on an honest preimage — the exact failure mode M12 stage 1 centralised
+=CircuitArg::constrain= to prevent.
+
+It is implementable with an effectful-op deny-list. It is not worth it: one
+row per dead instruction, and we do not emit dead instructions, because the
+eDSL only emits what a gadget asked for.
+
+** Common subexpression elimination — needs protocol arguments a pass cannot make
+
+M10 rung i is the proof. The optimised vault reads =kernel.self()= once and
+threads it, where compactc reads it at every call site. That IS legitimate —
+the address is constant for the transaction and every emitted read still
+reconciles through =ResultModeVerify::process_read=, so read count is
+"framing, not protocol" — but M10 made that argument explicitly, and still
+left =claim= and =completeWithdraw= alone.
+
+A mechanical CSE pass has none of that context. It would dedupe ledger reads
+and change the transcript. Where CSE is right it is a TYPED decision, made
+in a gadget by someone who can write the soundness paragraph.
+
+* 4. THE GENERAL SHAPE, since it keeps recurring
+
+The wins that actually moved the benchmark — 35-58% in the M10 fork, nine of
+twelve k-boundary crossings — came from INSTRUCTION SELECTION: native
+=ReverseBytes=, byte-aligned slices instead of per-byte div_mod chains, the
+segment-based serializer. Every one needed to know a value was a =Bytes<32>=
+with a known alignment.
+
+ZKIR is type-erased. A pass over it sees field elements, so for the
+optimisations that matter it is working with strictly less information than
+the eDSL has. That is the standing reason to keep OPTIMISATION in the typed
+layer and use passes only for things that are genuinely uniform.
+
+Guards are uniform. Constants are uniform. Range constraints are uniform.
+Instruction selection is not, and never will be.
+
+* 5. Staging
+
+1. =tests/backend_folding.rs= — DONE, and it is the evidence for all of the
+   above.
+2. Guard scoping, and delete the =_under= / =_guarded= API halves.
+3. Constant folding, and delete the five special cases (NOT the =LedgerRepr=
+   change).
+4. Constraint dedup behind the opt profile.
