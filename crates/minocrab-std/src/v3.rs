@@ -406,12 +406,271 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
             assert!(
                 BITS < 128 && (1u128 << BITS) >= BOUND,
                 "`.to_uint::<BITS>()` needs 2^BITS >= BOUND, so that every value the \
-                 bound allows is a BITS-bit value. A narrower BITS needs a real range \
-                 check: `Uint::<BITS>::from_field(x.field())` plus `constrain_input`"
+                 bound allows is a BITS-bit value. A narrower BITS is a REAL narrowing: \
+                 `.narrow::<BITS>(c)`, which emits the range check"
             )
         };
         Uint::from_field(self.0)
     }
+
+    /// `self + other`, with COMPACT'S MAX TRACKING — the bound of the result
+    /// is a fact about the types, not a promise the author makes
+    /// (notes/api-safety-survey.org §B2).
+    ///
+    /// compactc's rule (`infer-types.ss`, decoded in
+    /// notes/builtin-lowering.org §9) is that `+` is a plain field `add`
+    /// whose result type is `Uint<maxa + maxb>`, with **no overflow check at
+    /// the op itself** — the check happens later, at the downcast. This is
+    /// exactly that: ONE `add` instruction, no constraint, and the widened
+    /// bound in the type where compactc keeps its `maxval`. The downcast is
+    /// then [`Self::to_uint`] (free, when the bound fits) or
+    /// [`Self::narrow`] (checked, when it does not).
+    ///
+    /// `OUT` IS NAMED BY THE CALLER because `generic_const_exprs` is not
+    /// available on this toolchain — the compiler cannot write
+    /// `BoundedUint<BOUND + BOUND2 - 1>` for us. What it can do is REJECT a
+    /// bound that is too small, which is an inline-`const` assert here and so
+    /// an `error[E0080]` at the call site:
+    ///
+    /// ```compile_fail
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # use minocrab_std::v3::BoundedUint;
+    /// let mut c = Circuit3::new();
+    /// let a = BoundedUint::<300>::from_field(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<200>::from_field(c.arg::<FieldT>("b"));
+    /// // error[E0080]: `.add::<OUT>()` needs OUT >= BOUND + BOUND2 - 1 …
+    /// let _ = a.add::<498, 200>(&mut c, b);
+    /// ```
+    ///
+    /// `499` is accepted, and is the narrowest bound that is: the largest sum
+    /// is `299 + 199 = 498`, and the bound is exclusive.
+    ///
+    /// The two bounds may DIFFER — an addition needs no common width, unlike
+    /// [`Self::sub`], whose guard is a comparison.
+    /// Both operands at the same visibility, as [`Uint::sub`]: mixing them is
+    /// spelled by moving one with `.private()` first.
+    pub fn add<const OUT: u128, const BOUND2: u128>(
+        self,
+        c: &mut Circuit3,
+        other: BoundedUint<BOUND2, V>,
+    ) -> BoundedUint<OUT, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        const {
+            assert!(
+                OUT >= sum_bound(BOUND, BOUND2),
+                "`.add::<OUT>()` needs OUT >= BOUND + BOUND2 - 1: the largest sum is \
+                 (BOUND - 1) + (BOUND2 - 1), and the bound is EXCLUSIVE, so one more \
+                 than that is the narrowest type holding it. Name that bound at the \
+                 call site — the addition emits no check, exactly as compactc's does \
+                 not, so the type is the only thing tracking the max"
+            )
+        };
+        BoundedUint::from_field(c.add(self.field(), other.field()))
+    }
+
+    /// `self * other`, the same rule as [`Self::add`] with compactc's
+    /// multiplicative max: result type `Uint<maxa · maxb>`, one `mul`
+    /// instruction, no check at the op.
+    ///
+    /// `OUT` must be at least `(BOUND - 1) * (BOUND2 - 1) + 1`, and an
+    /// `error[E0080]` says so otherwise:
+    ///
+    /// ```compile_fail
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # use minocrab_std::v3::BoundedUint;
+    /// let mut c = Circuit3::new();
+    /// let a = BoundedUint::<300>::from_field(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<200>::from_field(c.arg::<FieldT>("b"));
+    /// // error[E0080]: `.mul::<OUT>()` needs OUT >= (BOUND - 1) * (BOUND2 - 1) + 1 …
+    /// let _ = a.mul::<59_400, 200>(&mut c, b);
+    /// ```
+    ///
+    /// (`299 * 199 = 59_501`, so `59_502` is the narrowest legal `OUT`.)
+    ///
+    /// A bound computation that OVERFLOWS a `u128` is itself a compile error
+    /// (`bound_or_overflow`), not a wrap: a wrapped bound would accept an
+    /// `OUT` the product cannot fit, which is the max tracking silently
+    /// telling a lie. Compact refuses the analogous case in its own units —
+    /// "error if result max > 2^248 − 1 (cast to Field)". Here that is:
+    ///
+    /// ```compile_fail
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # use minocrab_std::v3::BoundedUint;
+    /// let mut c = Circuit3::new();
+    /// let a = BoundedUint::<{ u128::MAX }>::from_field(c.arg::<FieldT>("a"));
+    /// let b = BoundedUint::<{ u128::MAX }>::from_field(c.arg::<FieldT>("b"));
+    /// // error[E0080]: the result's bound does not fit a u128 const parameter …
+    /// let _ = a.mul::<{ u128::MAX }, { u128::MAX }>(&mut c, b);
+    /// ```
+    pub fn mul<const OUT: u128, const BOUND2: u128>(
+        self,
+        c: &mut Circuit3,
+        other: BoundedUint<BOUND2, V>,
+    ) -> BoundedUint<OUT, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        const {
+            assert!(
+                OUT >= product_bound(BOUND, BOUND2),
+                "`.mul::<OUT>()` needs OUT >= (BOUND - 1) * (BOUND2 - 1) + 1: the \
+                 largest product is of the two largest values, and the bound is \
+                 EXCLUSIVE, so one more than that is the narrowest type holding it. \
+                 Name that bound at the call site — the multiplication emits no \
+                 check, exactly as compactc's does not"
+            )
+        };
+        BoundedUint::from_field(c.mul(self.field(), other.field()))
+    }
+
+    /// `self - other`, with COMPACT'S UNDERFLOW GUARD — [`Uint::sub`]'s
+    /// method for a bounded operand, and the same lowering:
+    /// `assert(a >= b)`, `neg(b)`, `add(a, neg)`, in that order, with the
+    /// comparison at the BOUND's own width (`max(1, intlen(BOUND - 1))`,
+    /// which is what the predicate layer reads off the type — not the
+    /// even-rounded width the range constraint runs at).
+    ///
+    /// Why the underflow matters, in one line (notes/api-safety-survey.org
+    /// §B1): field arithmetic has no sign, so `a - b` for `a < b` is
+    /// `a - b + p`, a value near 2^255 — the balance-underflow bug, invisible
+    /// to any differential on an honest preimage.
+    ///
+    /// BOTH BOUNDS ARE THE SAME, deliberately (dmd 2026-08-16, decision A
+    /// reaffirmed): the guard is a COMPARISON, and a comparison needs one
+    /// width, so a mixed-bound subtraction is spelled by widening the narrow
+    /// side first — `a.sub(c, b.widen::<BOUND>())`, free for a value already
+    /// range-constrained.
+    ///
+    /// The result keeps `BOUND`, which is compactc's rule (`Uint<maxa>`) and
+    /// is sound because the guard has established `a - b <= a < BOUND`.
+    pub fn sub(self, c: &mut Circuit3, other: BoundedUint<BOUND, V>) -> BoundedUint<BOUND, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        self.sub_with(c, other, "result of subtraction would be negative")
+    }
+
+    /// [`Self::sub`] with the caller's own message on the underflow guard.
+    ///
+    /// The message is METADATA — no instruction, no row — so this is the SAME
+    /// lowering as [`Self::sub`], and a contract with a domain-specific
+    /// message for its hand-written guard keeps it ([`Uint::sub_with`]'s
+    /// argument verbatim).
+    pub fn sub_with(
+        self,
+        c: &mut Circuit3,
+        other: BoundedUint<BOUND, V>,
+        message: &'static str,
+    ) -> BoundedUint<BOUND, V>
+    where
+        V: Meet<V, Out = V>,
+    {
+        c.assert(crate::v3::predicate::ge(self, other).message(message));
+        let negated = c.neg(other.field());
+        BoundedUint::from_field(c.add(self.field(), negated))
+    }
+
+    /// `x as Uint<BITS>` when the bound does NOT fit — the CHECKED
+    /// narrowing, and the one place this API is deliberately STRICTER THAN
+    /// COMPACT.
+    ///
+    /// Emits exactly the range constraint compactc emits for a `Uint<BITS>`
+    /// argument (`Prim::Uint { bits }`, so `constrain_bits BITS`, or
+    /// `constrain_to_boolean` at `BITS = 1` — the ONE table, as
+    /// [`Self::constrain_input`] uses), and nothing else. That is the whole
+    /// cost, and it is visible: ~BITS/4 rows.
+    ///
+    /// WHY IT IS STRICTER, and the discovery that made it a design decision
+    /// (notes/api-safety-survey.org §B4, "CORRECTED BY THE REVIEW",
+    /// artifact-verified 2026-08-16): **compactc emits NO check for a cast in
+    /// ARGUMENT position.** The vault's source writes `amount as Uint<64>` at
+    /// all four settle mints on a value locally bounded only to `< 2^128`,
+    /// and the artifacts contain no 64-bit constraint anywhere between the
+    /// decode and the mint. Compact's safety there rests on a WHOLE-CONTRACT
+    /// argument — every record in the map was written by a request circuit
+    /// that bounded it — which compactc neither makes nor checks. So the
+    /// downcast rule of notes/builtin-lowering.org §9 does not cover that
+    /// position, and a narrowing that looks checked is not. This method emits
+    /// the check compactc omits.
+    ///
+    /// For the FREE direction (`2^BITS >= BOUND`, where every legal value
+    /// already fits and a constraint would be a tautology) this is an
+    /// `error[E0080]` pointing at [`Self::to_uint`]:
+    ///
+    /// ```compile_fail
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # use minocrab_std::v3::BoundedUint;
+    /// let mut c = Circuit3::new();
+    /// let x = BoundedUint::<300>::from_field(c.arg::<FieldT>("x"));
+    /// // error[E0080]: `.narrow::<BITS>()` is the CHECKED narrowing … use `.to_uint`
+    /// let _ = x.narrow::<9>(&mut c);
+    /// ```
+    ///
+    /// so the two spellings partition the cases, and which one a call site
+    /// uses says whether it paid.
+    pub fn narrow<const BITS: u32>(self, c: &mut Circuit3) -> Uint<BITS, V> {
+        const {
+            assert!(
+                BITS < 128 && (1u128 << BITS) < BOUND,
+                "`.narrow::<BITS>()` is the CHECKED narrowing, for 2^BITS < BOUND — \
+                 the case that needs a range check. Here every value the bound allows \
+                 already fits BITS bits, so the check would be a tautology: use \
+                 `.to_uint::<BITS>()`, which is free"
+            )
+        };
+        let narrowed = Uint::<BITS, V>::from_field(self.0);
+        narrowed.constrain_input(c);
+        narrowed
+    }
+}
+
+/// The result bound of a tracked operation, or a COMPILE ERROR if it does not
+/// fit a `u128` const parameter.
+///
+/// Wrapping would be the worst possible answer: a wrapped bound is a small
+/// number, so it would accept an `OUT` the result cannot hold and the max
+/// tracking would be quietly lying. compactc refuses the analogous case in
+/// its own units — "error if result max > 2^248 − 1 (cast to Field)".
+const fn bound_or_overflow(bound: Option<u128>) -> u128 {
+    match bound {
+        Some(bound) => bound,
+        None => panic!(
+            "the result's bound does not fit a u128 const parameter, so no OUT can be \
+             wide enough: narrow an operand first with `.narrow::<BITS>(c)` (which \
+             range-checks), or leave the tracked world with `.field()` and raw field \
+             arithmetic"
+        ),
+    }
+}
+
+/// The narrowest bound holding every sum of a `Uint<0..A>` and a
+/// `Uint<0..B>`: the largest sum is `(A - 1) + (B - 1)` and the bound is
+/// exclusive, so `A + B - 1`.
+const fn sum_bound(a: u128, b: u128) -> u128 {
+    assert!(
+        a >= 1 && b >= 1,
+        "a bound of 0 admits no values at all (the range end is exclusive) — every \
+         operand's BOUND must be at least 1"
+    );
+    bound_or_overflow(match (a - 1).checked_add(b - 1) {
+        Some(max) => max.checked_add(1),
+        None => None,
+    })
+}
+
+/// The narrowest bound holding every product: `(A - 1) * (B - 1) + 1`.
+const fn product_bound(a: u128, b: u128) -> u128 {
+    assert!(
+        a >= 1 && b >= 1,
+        "a bound of 0 admits no values at all (the range end is exclusive) — every \
+         operand's BOUND must be at least 1"
+    );
+    bound_or_overflow(match (a - 1).checked_mul(b - 1) {
+        Some(max) => max.checked_add(1),
+        None => None,
+    })
 }
 
 impl<const BOUND: u128> BoundedUint<BOUND, Public> {

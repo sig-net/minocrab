@@ -17,11 +17,14 @@
 //! `crates/minocrab-contracts/tests/bounded_differential.rs`, which compares
 //! against the pinned compactc's own artifacts.
 
+use std::borrow::Cow;
+
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use minocrab::v3::{Circuit3, CircuitAbi, FieldT, Prim, Wire3};
-use minocrab::{AlignmentAtom, Private, Public};
+use minocrab::{AlignmentAtom, Fr, Private, Public};
 use minocrab_std::v3::borsh::{limbs_of, CircuitBorsh};
 use minocrab_std::v3::{less_than, BoundedUint, CircuitArg, Uint};
-use minocrab_zkir::v3::to_zkir_string;
+use minocrab_zkir::v3::{to_zkir_string, IrValue};
 
 /// The ZKIR a circuit body lowers to.
 fn ir_of(build: impl FnOnce(&mut Circuit3)) -> String {
@@ -34,6 +37,39 @@ fn instructions(build: impl FnOnce(&mut Circuit3)) -> usize {
     let mut c = Circuit3::new();
     build(&mut c);
     c.finish(false).ir.instructions.len()
+}
+
+/// Build and RUN a circuit over `inputs` (the argument slots `c.arg` reads),
+/// returning its native outputs — the arithmetic checked as arithmetic, not
+/// only as an instruction stream.
+fn run(build: impl FnOnce(&mut Circuit3), inputs: Vec<Fr>) -> Vec<Fr> {
+    run_result(build, inputs).expect("the circuit accepts the preimage")
+}
+
+/// [`run`], but keeping the rejection: an unsatisfied assert is an `Err`, and
+/// the underflow guard's whole job is to produce one.
+fn run_result(build: impl FnOnce(&mut Circuit3), inputs: Vec<Fr>) -> Result<Vec<Fr>, String> {
+    let mut c = Circuit3::new();
+    build(&mut c);
+    let compiled = c.finish(false);
+    let preimage = ProofPreimage {
+        inputs,
+        private_transcript: vec![],
+        public_transcript_inputs: vec![],
+        public_transcript_outputs: vec![],
+        binding_input: 0.into(),
+        communications_commitment: None,
+        key_location: KeyLocation(Cow::Borrowed("minocrab-std-v3-bounded")),
+    };
+    let run = minocrab_sim::v3::simulate(&compiled.ir, &preimage).map_err(|e| format!("{e:?}"))?;
+    Ok(run
+        .outputs
+        .iter()
+        .map(|v| match v {
+            IrValue::Native(fr) => *fr,
+            other => panic!("expected a native output, got {other:?}"),
+        })
+        .collect())
 }
 
 /// EVERY ARM of compactc's table, reached through the bound alone. The
@@ -251,6 +287,231 @@ fn borsh_serializes_at_the_next_primitive_width() {
     );
 }
 
+// ---- TRACKED ARITHMETIC (M19 fix 1, notes/api-safety-survey.org §B2) ------------
+//
+// Compact's rule, verbatim (notes/builtin-lowering.org §9): `+` and `*` are a
+// plain field `add` / `mul` with the max carried in the TYPE and no check at
+// the op; `-` inserts the underflow guard first. The claims below are all the
+// same claim — the instruction stream is compactc's, byte for byte, and the
+// only thing our const generics add is the bookkeeping compactc does in its
+// inference table.
+
+/// `+` is ONE `add` and nothing else — no range check, exactly as compactc
+/// emits none, because the result's bound is in the type.
+#[test]
+fn add_is_one_field_add_and_no_check() {
+    assert_eq!(
+        ir_of(|c| {
+            let a: Wire3<FieldT, Private> = c.arg("a");
+            let b: Wire3<FieldT, Private> = c.arg("b");
+            let sum = c.add(a, b);
+            let sum = c.disclose(sum, "sum");
+            c.output(sum, "sum");
+        }),
+        ir_of(|c| {
+            let a = BoundedUint::<300>::from_field(c.arg("a"));
+            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let sum: BoundedUint<499, Private> = a.add::<499, 200>(c, b);
+            let sum = c.disclose(sum.field(), "sum");
+            c.output(sum, "sum");
+        }),
+    );
+    assert_eq!(
+        instructions(|c| {
+            let a = BoundedUint::<300>::from_field(c.arg("a"));
+            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let _ = a.add::<499, 200>(c, b);
+        }),
+        1
+    );
+}
+
+/// `*` likewise: ONE `mul`, and the bound is `(BOUND-1)·(BOUND2-1) + 1`.
+#[test]
+fn mul_is_one_field_mul_and_no_check() {
+    assert_eq!(
+        ir_of(|c| {
+            let a: Wire3<FieldT, Private> = c.arg("a");
+            let b: Wire3<FieldT, Private> = c.arg("b");
+            let product = c.mul(a, b);
+            let product = c.disclose(product, "p");
+            c.output(product, "p");
+        }),
+        ir_of(|c| {
+            let a = BoundedUint::<300>::from_field(c.arg("a"));
+            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            // 299 * 199 = 59_501, so 59_502 is the narrowest legal OUT.
+            let product: BoundedUint<59_502, Private> = a.mul::<59_502, 200>(c, b);
+            let product = c.disclose(product.field(), "p");
+            c.output(product, "p");
+        }),
+    );
+    assert_eq!(
+        instructions(|c| {
+            let a = BoundedUint::<300>::from_field(c.arg("a"));
+            let b = BoundedUint::<200>::from_field(c.arg("b"));
+            let _ = a.mul::<59_502, 200>(c, b);
+        }),
+        1
+    );
+}
+
+/// `-` is compactc's GUARDED lowering — `assert(a >= b)`, `neg`, `add`, in
+/// that order — at the BOUND's comparison width (10 for `Uint<0..1000>`,
+/// not the 10-bit-even range-constraint width by coincidence; the point is
+/// that no number is typed at the call site).
+#[test]
+fn sub_is_compactcs_guarded_lowering() {
+    assert_eq!(
+        ir_of(|c| {
+            let a: Wire3<FieldT, Private> = c.arg("a");
+            let b: Wire3<FieldT, Private> = c.arg("b");
+            // the guard compactc emits, spelled out: !(a < b), then assert
+            let lt = c.less_than(a, b, 10);
+            let ge = c.not(lt);
+            c.assert(ge);
+            let negated = c.neg(b);
+            let diff = c.add(a, negated);
+            let diff = c.disclose(diff, "d");
+            c.output(diff, "d");
+        }),
+        ir_of(|c| {
+            let a = BoundedUint::<1000>::from_field(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let diff: BoundedUint<1000, Private> = a.sub(c, b);
+            let diff = c.disclose(diff.field(), "d");
+            c.output(diff, "d");
+        }),
+    );
+    // The message is metadata: `sub_with` is the SAME lowering.
+    assert_eq!(
+        ir_of(|c| {
+            let a = BoundedUint::<1000>::from_field(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let _ = a.sub(c, b);
+        }),
+        ir_of(|c| {
+            let a = BoundedUint::<1000>::from_field(c.arg("a"));
+            let b = BoundedUint::<1000>::from_field(c.arg("b"));
+            let _ = a.sub_with(c, b, "the vault's own words");
+        }),
+    );
+    // And the guard is not optional: the raw spelling emits no `assert`.
+    let raw = ir_of(|c| {
+        let a: Wire3<FieldT, Private> = c.arg("a");
+        let b: Wire3<FieldT, Private> = c.arg("b");
+        let negated = c.neg(b);
+        let diff = c.add(a, negated);
+        let diff = c.disclose(diff, "d");
+        c.output(diff, "d");
+    });
+    assert!(!raw.contains("\"assert\""), "the raw spelling has no guard: {raw}");
+}
+
+/// `narrow` emits THE RANGE CHECK COMPACTC OMITS (§B4's correction:
+/// `amount as Uint<64>` in argument position emits nothing at all), and
+/// nothing else — the same instruction `Uint<BITS>`'s own argument
+/// constraint emits, from the same table.
+#[test]
+fn narrow_emits_the_check_compactc_omits() {
+    assert_eq!(
+        ir_of(|c| {
+            let x: Wire3<FieldT, Private> = c.arg("x");
+            c.assert_bits(x, 8);
+        }),
+        ir_of(|c| {
+            let x = BoundedUint::<300>::from_field(c.arg("x"));
+            let _: Uint<8, Private> = x.narrow::<8>(c);
+        }),
+    );
+    // …and it is the SAME instruction `Uint<8>` constrains an argument with.
+    assert_eq!(
+        ir_of(|c| Uint::<8>::from_field(c.arg("x")).constrain_input(c)),
+        ir_of(|c| {
+            let _ = BoundedUint::<300>::from_field(c.arg("x")).narrow::<8>(c);
+        }),
+    );
+    assert_eq!(
+        instructions(|c| {
+            let _ = BoundedUint::<300>::from_field(c.arg("x")).narrow::<8>(c);
+        }),
+        1
+    );
+    // The free direction is `to_uint`, and it stays free (zero instructions).
+    assert_eq!(
+        instructions(|c| {
+            let _ = BoundedUint::<300>::from_field(c.arg("x")).to_uint::<9>();
+        }),
+        0
+    );
+}
+
+/// THE BOUND IS TRACKED, and the value is right: `Uint<0..300> +
+/// Uint<0..200>` types as `Uint<0..499>` (`299 + 199 = 498`, bound
+/// exclusive), and the arithmetic the type describes is the arithmetic the
+/// simulator performs.
+#[test]
+fn bounds_track_and_the_values_round_trip() {
+    fn sum(a: u64, b: u64) -> Fr {
+        run(
+            |c| {
+                let x = BoundedUint::<300, Private>::from_field(c.arg("a"));
+                let y = BoundedUint::<200, Private>::from_field(c.arg("b"));
+                x.constrain_input(c);
+                y.constrain_input(c);
+                let out: BoundedUint<499, Private> = x.add::<499, 200>(c, y);
+                let out = c.disclose(out.field(), "sum");
+                c.output(out, "sum");
+            },
+            vec![Fr::from(a), Fr::from(b)],
+        )[0]
+    }
+    assert_eq!(sum(0, 0), Fr::from(0u64));
+    assert_eq!(sum(150, 100), Fr::from(250u64));
+    // The extremes, which are exactly what `BoundedUint<499>::MAX` claims.
+    assert_eq!(sum(299, 199), Fr::from(498u64));
+    assert_eq!(BoundedUint::<499, Private>::MAX, 498);
+
+    // The product, at its own bound.
+    let product = run(
+        |c| {
+            let x = BoundedUint::<300, Private>::from_field(c.arg("a"));
+            let y = BoundedUint::<200, Private>::from_field(c.arg("b"));
+            x.constrain_input(c);
+            y.constrain_input(c);
+            let out: BoundedUint<59_502, Private> = x.mul::<59_502, 200>(c, y);
+            let out = c.disclose(out.field(), "product");
+            c.output(out, "product");
+        },
+        vec![Fr::from(299u64), Fr::from(199u64)],
+    );
+    assert_eq!(product[0], Fr::from(59_501u64));
+    assert_eq!(BoundedUint::<59_502, Private>::MAX, 59_501);
+
+    // The guarded subtraction: honest preimage passes with the right answer,
+    // and the underflowing one is REJECTED rather than yielding `a - b + p`.
+    let difference = |a: u64, b: u64| {
+        run_result(
+            |c| {
+                let x = BoundedUint::<1000, Private>::from_field(c.arg("a"));
+                let y = BoundedUint::<1000, Private>::from_field(c.arg("b"));
+                x.constrain_input(c);
+                y.constrain_input(c);
+                let out = x.sub(c, y);
+                let out = c.disclose(out.field(), "difference");
+                c.output(out, "difference");
+            },
+            vec![Fr::from(a), Fr::from(b)],
+        )
+    };
+    assert_eq!(difference(999, 1).expect("999 - 1 is honest")[0], Fr::from(998u64));
+    assert_eq!(difference(7, 7).expect("7 - 7 is honest")[0], Fr::from(0u64));
+    assert!(
+        difference(1, 7).is_err(),
+        "the underflow guard must reject 1 - 7, not produce 1 - 7 + p"
+    );
+}
+
 /// A public constant, and the one panic this leaf keeps: the magnitude of a
 /// runtime integer is not in the type system, so `BOUND` cannot check it at
 /// compile time (notes/contract-api.org §"Panics that could NOT become
@@ -318,4 +579,10 @@ fn the_largest_legal_constant_is_fine() {
 /// (Checked by hand, as the predicate module's pair is: there is no
 /// trybuild in the lock file and `compile_fail` doc-tests do not run for a
 /// test target. This block is the record of the four spellings.)
+///
+/// The TRACKED ARITHMETIC's rejections — a too-small `OUT` on `add` and on
+/// `mul`, an `OUT` whose computation overflows a `u128`, and a `narrow` in
+/// the free direction — are `compile_fail` doc-tests on the methods
+/// themselves in `minocrab-std/src/v3.rs`, where doc-tests DO run, so those
+/// four are checked by `cargo test` rather than by hand.
 const _COMPILE_ERRORS_NOT_PANICS: () = ();

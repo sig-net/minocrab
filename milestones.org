@@ -1731,7 +1731,7 @@ green on every differential the day before.
       value near 2^255 — a coin worth 2^255, or a Uint<64> ledger write of
       a 255-bit number. This is the balance-underflow bug and our API
       makes it EASIER to write than Compact does.)
-- [ ] Fix 1 (closes B1 + B2 + most of A2): typed arithmetic carrying
+- [X] Fix 1 (closes B1 + B2 + most of A2): typed arithmetic carrying
       Compact's guards.
       SUBTRACTION DONE 2026-08-16 — `Uint::sub(c, other)` /
       `Uint::sub_with(c, other, message)` emit exactly compactc's
@@ -1748,12 +1748,31 @@ green on every differential the day before.
       unit tests pin the rest, including that the raw spelling emits NO
       assert and the typed one does, so a future pass that drops the guard
       fails there.
-      REMAINING: `BoundedUint` add/mul computing the result's bound at the
-      type level (`BoundedUint<A> + BoundedUint<B> -> BoundedUint<A+B-1>`),
-      which IS Compact's max-tracking rule in const generics and is what
-      makes the downcast the place the range check appears (B2). Needs the
-      output bound as a caller-named const parameter with an E0080 that it
-      is wide enough, since `generic_const_exprs` is unstable.
+      MAX TRACKING DONE 2026-08-16 — `BoundedUint` gains five methods:
+      `add::<OUT, BOUND2>` and `mul::<OUT, BOUND2>` (ONE `add` resp. `mul`,
+      no check at the op, which IS Compact's rule — the max lives in the
+      type where compactc keeps its `maxval`; the two operand bounds may
+      differ), `sub`/`sub_with` (`Uint::sub`'s guard at the BOUND's
+      comparison width, SAME bound both sides because the guard is a
+      comparison and a comparison needs one width — decision A reaffirmed
+      by dmd), and `narrow::<BITS>`. `OUT` is caller-named since
+      `generic_const_exprs` is unstable, with inline-const E0080s at
+      `OUT >= BOUND + BOUND2 - 1` and `OUT >= (BOUND-1)*(BOUND2-1) + 1`;
+      the bound arithmetic is `checked_*`, so an OVERFLOWING bound is a
+      compile error, not a wrap that would accept an `OUT` too small.
+      STRICTER THAN COMPACT, which is §B4's correction cashed in:
+      `narrow::<BITS>` (the `2^BITS < BOUND` direction) emits the range
+      check compactc emits NOWHERE for a cast in argument position — the
+      free direction stays `to_uint`, and asking `narrow` for it is an
+      E0080 pointing there, so which spelling a call site uses says whether
+      it paid. Six lowering/round-trip tests in `v3_bounded.rs` (each op
+      byte-identical to the hand-written form; 299+199=498, 299·199=59501,
+      and 1-7 REJECTED rather than `1 - 7 + p`) plus four `compile_fail`
+      doc-tests in `src`, where doc-tests actually run. Zero circuit
+      movement: 162 byte-identical, 5 renumbered (pre-existing), 0 changed.
+      No call site ported yet — the contracts still use `Uint`/raw wires,
+      so this is API surface waiting for fix 3's constrained `from_field`
+      before the settle-mint sites can adopt it.
 - [ ] Fix 2 (closes B3): constrain-on-construction, made free by
       ir-passes step 5's dedup pass. Turns every "PRECONDITION: already
       range-constrained" in the Borsh layer into a check — `hash.rs` says

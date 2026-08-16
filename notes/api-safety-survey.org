@@ -130,6 +130,47 @@ carried through arithmetic, which is what =BoundedUint<BOUND>= already is.
 exactly, in const generics, and the downcast is then =to_uint= /
 =constrain_input=, which already range-checks.
 
+FIX — *BUILT, same session.* Five methods on =BoundedUint<BOUND>=, all of
+them one instruction or none beyond what compactc emits:
+- =add::<OUT, BOUND2>= and =mul::<OUT, BOUND2>= — ONE =add= resp. =mul=, *no
+  range check at the op*, which IS Compact's rule; the max lives in the type
+  where compactc keeps its =maxval=. The two operand bounds may differ.
+- =sub= / =sub_with= — =Uint::sub= for a bounded operand: the same
+  =assert(a >= b)= + =neg= + =add=, at the BOUND's comparison width
+  (=max(1, intlen(BOUND−1))=, read off the type by the predicate layer).
+  BOTH BOUNDS THE SAME, because the guard is a comparison and a comparison
+  needs one width; a mixed subtraction widens first (decision A, reaffirmed
+  by dmd 2026-08-16).
+- =narrow::<BITS>= — the checked downcast, and see below.
+
+=OUT= IS CALLER-NAMED because =generic_const_exprs= is unstable: rustc cannot
+write =BoundedUint<BOUND + BOUND2 - 1>= for us, but it can REJECT a bound too
+small to hold the result, and does — inline-=const= asserts giving
+=error[E0080]= at the call site, =OUT >= BOUND + BOUND2 − 1= for =add= and
+=OUT >= (BOUND−1)·(BOUND2−1) + 1= for =mul=. The bound arithmetic is
+=checked_*=, so a bound computation that OVERFLOWS a =u128= is itself a
+compile error rather than a wrap — a wrapped bound is a small number and
+would accept an =OUT= the result cannot hold, i.e. the max tracking lying.
+compactc refuses the analogous case in its own units ("error if result max >
+2^248 − 1").
+
+WHERE WE ARE STRICTER THAN COMPACT, which is the §B4 correction cashed in:
+=narrow::<BITS>= is the =2^BITS < BOUND= direction, and it EMITS THE RANGE
+CHECK COMPACTC OMITS (=Prim::Uint { bits }=, the same table
+=constrain_input= uses — one instruction, ~BITS/4 rows). The free direction
+stays =to_uint=, and asking =narrow= for it is an =E0080= pointing there, so
+the two spellings partition the cases and which one a call site uses says
+whether it paid.
+
+Six unit tests in =crates/minocrab-std/tests/v3_bounded.rs= (each op
+byte-identical against the hand-written form, =narrow= against
+=Uint::<8>::constrain_input=, and a simulator round trip: 299+199=498 at
+=BoundedUint<499>=, 299·199=59501 at =BoundedUint<59502>=, and 1−7
+*rejected* rather than yielding =1 − 7 + p=), plus four =compile_fail=
+doc-tests on the methods themselves — in =src=, where doc-tests actually run,
+unlike the record block in the test file. The existing 162+5 circuit dumps
+did not move.
+
 ** B3. THE BORSH LAYER'S INJECTIVITY IS A DOC COMMENT
 
 Three sites (=Serializer=, =BorshReader::take=, =hash::persistent_hash=) all
