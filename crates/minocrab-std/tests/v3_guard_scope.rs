@@ -398,3 +398,40 @@ fn a_three_arm_value_chain_costs_what_the_docs_say() {
     // each arm after the first).
     assert_eq!(chained - bodies_only, 7);
 }
+
+/// ...and it reaches WITNESSES, which is the fourth shape and the one with a
+/// semantic rather than a framing difference.
+///
+/// A guarded private input yields the default and does NOT consume the
+/// private transcript when its guard is false. So a witness read unguarded
+/// inside a branch consumes a value on the path that was not taken — the
+/// witness STREAM moves, which no differential on an honest preimage can see.
+/// The scope closes that the same way it closes the assertion case.
+#[test]
+fn a_scoped_guard_reaches_witnesses() {
+    let threaded = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let _ = c.witness_guarded::<FieldT, _>(g);
+    });
+    let scoped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        c.when(g, |c| {
+            let _ = c.witness::<FieldT>();
+        });
+    });
+    assert_eq!(threaded, scoped);
+}
+
+/// Outside every scope a witness is unguarded, which is what the 167
+/// pre-existing circuits emit — the ambient guard adds a gate, it does not
+/// impose one.
+#[test]
+fn an_unscoped_witness_carries_no_guard() {
+    let ir = zkir(|c| {
+        let _ = c.witness::<FieldT>();
+    });
+    assert!(
+        ir.contains("\"guard\":null"),
+        "an unscoped witness must have no guard: {ir}"
+    );
+}

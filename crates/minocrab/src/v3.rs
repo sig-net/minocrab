@@ -755,7 +755,16 @@ impl Circuit3 {
     /// Read the next witness value from the private transcript.
     pub fn witness<T: IrTy>(&mut self) -> Wire3<T, Private> {
         self.witnesses += 1;
-        Wire3::new(self.b.private_input(T::ir_type(), None))
+        // THE AMBIENT GUARD REACHES WITNESSES, and it has to: a guarded
+        // private input yields the default and does NOT consume the private
+        // transcript when its guard is false, so a witness read unguarded
+        // inside a branch would consume a value on the path that was not
+        // taken. That is a semantic difference, not a framing one — the
+        // witness stream itself moves — and it is invisible to a differential
+        // on an honest preimage, which is the failure mode guard scoping
+        // exists to close (`Circuit3::guarded`'s third bullet).
+        let guard = self.ambient().map(Arg::Val);
+        Wire3::new(self.b.private_input(T::ir_type(), guard))
     }
 
     /// Read the next witness value under a guard (false ⇒ default value,

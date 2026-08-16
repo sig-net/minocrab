@@ -190,9 +190,17 @@ Instruction selection is not, and never will be.
 1. =tests/backend_folding.rs= — DONE, and it is the evidence for all of the
    above.
 2. Guard scoping — DONE (additive). See §6.
-3. Delete the =_under= / =_guarded= API halves and migrate the 127 call
-   sites. NOT started, deliberately: the mechanism lands first and proves
-   itself, the churn in three vault ports comes after.
+3. Delete the =_under= / =_guarded= API halves and migrate the call sites
+   (88 definitions, 217 call sites — the count in the original note was low).
+   PREREQUISITE FOUND AND FIXED (2026-08-16): the ambient guard did not reach
+   WITNESSES. =Circuit3::witness= passed =None=, so a witness read inside a
+   scope would have consumed the private transcript on the branch that was
+   NOT taken — the witness stream moves, which no differential on an honest
+   preimage can see. It is the same failure class as the unguarded assertion
+   §6 exists to close, and it had to be closed before a single
+   =witness_sk_guarded= call site could move. Now four shapes are covered
+   (Impact, public reads, assertions, witnesses), each with a byte-identity
+   test against its threaded twin.
 4. Constant folding — DONE (§8). The five special cases are not deleted yet;
    the pass makes them inert first, and removing them is its own commit.
 5. Constraint dedup behind the opt profile.
@@ -206,7 +214,12 @@ a convenience:
 1. Impact instructions.
 2. Public-transcript reads — so a read inside a scope needs no =_guarded=
    variant.
-3. *Assertions.* =assert(x)= inside a scope lowers as
+3. *Witnesses* (added 2026-08-16). A guarded private input yields the
+   default and does NOT consume the private transcript when its guard is
+   false, so an unguarded witness inside a branch consumes a value on the
+   path not taken. Semantic, not framing — and invisible to a differential
+   on an honest preimage, like the assertion case below.
+4. *Assertions.* =assert(x)= inside a scope lowers as
    =assert(select(guard, x, 1))=. By hand this is the caller's job, recorded
    only in a doc comment ("asserts inside the branch are the caller's job"),
    and getting it wrong makes the assertion fire on the branch that was NOT
