@@ -21,9 +21,10 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{label, Fr, Private, Public};
 use minocrab_ledger::{
-    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded, kernel_self,
+    cell_write, emit, kernel_claim_zswap_coin_spend, kernel_mint_shielded,
     ImpactElem, LedgerValue,
 };
+use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
     ShieldedCoinInfo3, B32,
@@ -55,8 +56,7 @@ fn mint_shielded_token(
     let zero = c.constant(0u64);
 
     // color = tokenType(domain_sep, kernel.self())
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let domain_sep = B32::pad(c, DOMAIN_SEP);
     let color = token_type(c, &domain_sep, &me);
 

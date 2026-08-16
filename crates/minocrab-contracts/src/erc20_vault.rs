@@ -42,12 +42,13 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public};
 use minocrab_ledger::{
-    cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, ImpactElem,
+    cell_read, cell_write, counter_increment, counter_read, emit, ImpactElem,
     LedgerValue, XcallCommitment, XcallEntryPointHash,
 };
+use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
-    ContractAddress, Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerField,
+    Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerField,
     LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
 };
 
@@ -379,7 +380,7 @@ pub fn deposit(
 
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
-    let caller_priv = common::commitment(c, USER_PAD, &sk);
+    let caller_priv = common::commitment_padded_tag(c, USER_PAD, &sk);
     let caller = caller_priv.disclose_as::<DepositorCommitment>(c);
 
     // Contract-enforced calldata: transfer(vaultEvmAddress, amount).
@@ -423,11 +424,7 @@ pub fn deposit(
     // keyVersion, caller, ecdsa, unused, pad(64, ""), evmType2, txParams,
     // caip2Id, schema, schema)
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
-    let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
-    };
+    let sender = kernel::self_address(c).bytes().private();
     let caip2 = cell_read(
         c,
         one,
@@ -518,7 +515,7 @@ fn notify_signet(
         // inside `call`, which is where Rust's argument-first evaluation
         // would otherwise land it.
         let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
-        let me = ContractAddress::from_limbs(kernel_self(c, one));
+        let me = kernel::self_address(c);
         let notification =
             construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
         signer.sign_bidirectional(c, one, *request_id, notification);
@@ -645,8 +642,7 @@ pub fn withdraw(
     // The coin must be the vault token for THIS erc20, of exactly amount.
     let erc20_address = erc20_address.disclose_as::<WithdrawnErc20>(c);
     let domain_sep = vault_token_domain_separator(c, erc20_address);
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
@@ -691,11 +687,7 @@ pub fn withdraw(
 
     // The event, keyed under the vault's OWN derivation path.
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
-    let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
-    };
+    let sender = kernel::self_address(c).bytes().private();
     let caip2 = cell_read(
         c,
         one,
@@ -836,8 +828,7 @@ pub fn swap(
     // amountInMaximum.
     let token_in = token_in.disclose_as::<SoldErc20>(c);
     let domain_sep = vault_token_domain_separator(c, token_in);
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
@@ -903,11 +894,7 @@ pub fn swap(
     };
 
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
-    let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
-    };
+    let sender = kernel::self_address(c).bytes().private();
     let caip2 = cell_read(
         c,
         one,
@@ -1051,11 +1038,7 @@ pub fn approve_router(
 
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = kernel_self(c, one);
-    let sender = B32 {
-        hi: sender[0].private(),
-        lo: sender[1].private(),
-    };
+    let sender = kernel::self_address(c).bytes().private();
     let caip2 = cell_read(
         c,
         one,
@@ -1586,7 +1569,7 @@ pub fn claim(
     // Depositor gate: userCommitment(callerSecretKey()) == request.path.
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment(c, USER_PAD, &sk);
+        let caller = common::commitment_padded_tag(c, USER_PAD, &sk);
         let path = ev.path();
         let eq_hi = c.test_eq(caller.hi, path.hi.private());
         let eq_lo = c.test_eq(caller.lo, path.lo.private());

@@ -1,0 +1,217 @@
+#+title: M18 — the opt vocabulary, checked rather than trusted
+
+Design note for M18 (dmd, 2026-08-16): *"what optimisations would make the
+opt version of the erc-20 vault as ergonomic as the non-opt version?"*, with
+the governing constraint from the same day — *"correctness is the number one
+most important thing in this API"* — and the follow-up instruction
+(2026-08-16): unify the vocabulary as much as possible, and remove the forks
+if possible.
+
+=milestones.org= already corrects the premise: the optimised lineage is
+ALREADY the ergonomic one (=erc20_vault_modern= is the shortest of the four
+artifacts). What it costs is a PARALLEL VOCABULARY, and the milestone's first
+pass classified that vocabulary into four items *"to be checked rather than
+trusted"*. This note is the check. One of the four moves.
+
+* 0. THE HEADLINE: item (b) is item (d)
+
+M18 filed =commitment_short= / =assert_deployer_short= under (b),
+*"a one-block hash shape — instruction selection from the type, which §4
+keeps in the typed layer: the commitment builder picks the cheapest limbing"*.
+
+That is wrong, and the code says so in its own doc comment. (The two are
+named =commitment_padded_tag= / =commitment_packed_tag= since §4; this section
+uses the names as they stood, because the OLD names are half the finding.)
+The two functions do not compute the same value:
+
+| | preimage | SHA-256 blocks | digest |
+|---+---+---+---|
+| =commitment= | =[pad(32, "vault:user:"), sk]= — 64 bytes | 2 | /D₁/ |
+| =commitment_short= | =["vault:user:"(11), sk]= — 43 bytes | 1 | /D₂ ≠ D₁/ |
+
+The tag STRING is unchanged; the zero padding around it is not, and SHA-256
+of a different byte string is a different digest. That digest is the MPC's
+key-derivation PATH (=Signet.compact=:78-85), so the two artifacts derive
+DIFFERENT EVM accounts. =commitment_short='s own docs say it outright — *"The
+optimized vault's identity commitments differ from the port's, which is
+correct: it is a separate deployment whose MPC config carries this one-block
+layout"* — and =fork_status= has carried =USERCOMMIT= as a per-circuit
+DIVERGENCE since M10.
+
+So =_short= is not a cheaper spelling of the same commitment. It is item (d):
+a decision, not a spelling. *There are FOUR spec divergences between the port
+and opt, not the three M18 lists* — the missing one is the identity
+commitment, and it is the one that would have been quietly unified.
+
+Worth naming why the misfiling happened, because the fix is a naming fix: the
+suffix =_short= describes a COST, and every other =_short=/=_with= suffix in
+this vocabulary really is about cost. A reader — including the reader who
+wrote M18's first pass — generalises. The name has to say that the VALUE
+differs, not that the circuit is smaller.
+
+And the asymmetry that made it worse: =commitment_short= documents its twin,
+=commitment= does not document its. Someone arriving at the port's spelling
+has no way to learn a divergent twin exists.
+
+* 1. THE FOUR ITEMS, checked
+
+** (a) =_with= — MEMOIZATION, and the one genuine profile
+
+=mint_shielded_token_to_key_with=, =burn_coin_with=, =receive_shielded_with=:
+the same operation against a =kernel.self()= the CALLER already read. Manual
+common-subexpression elimination, spelled in the callee's name.
+
+Soundness is already written (M10 rung i): read count is framing, not
+protocol — every emitted read still reconciles through =process_read=. And it
+is already priced: 12 rows per read, 144 across the artifact.
+
+This is the item that can become ambient, and it is the typed CSE
+notes/ir-passes.org §3 says belongs in a gadget rather than in a pass. It
+needs a PROFILE, because =fork_status= lists rung (i) as a divergence on six
+of the nine circuits: caching would change the port's stream and cost it
+PI-equality with compactc. Under an opt profile =kernel::self_address=
+returns the cached read and all three =_with= twins disappear.
+
+*A free half of it exists today, and it is what this note builds.* The
+contracts reach for =minocrab_ledger::kernel_self(c, guard)= — the raw op,
+with the guard operand in the call — where =minocrab_std::v3::kernel::
+self_address(c)= has existed since M17 and says the same thing with no guard
+and a typed result. =erc20_vault_modern= already wraps the raw call in a
+local =self_address= helper of its own, which is the same discovery made
+once and not lifted. Lifting it unifies 26 call sites across four forks and
+five other contracts onto ONE spelling, changes no instruction (the fold
+inlines the guard either way), and leaves the caching question exactly where
+it is.
+
+** (b) =_short= — RECLASSIFIED to (d). See §0.
+
+** (c) =burn_spend= vs =burn_coin= — NOT ergonomics, and M18 is right
+
+Checked against both bodies. =burn_coin= reads =kernel.self()=, claims a
+nullifier, evolves the nonce, commits to the zero key and claims the spend.
+=burn_spend= keeps the evolved nonce and the output commitment and drops the
+receive commitment and the nullifier — two SHA-256 pair hashes, ~11,280 rows
+— and reads no =kernel.self()= at all, because the burn recipient is
+=left(default)= rather than self.
+
+Different protocol shape, different well-formedness warrant
+(=tests/erc20_vault_opt_burn_wellformed.rs=, which had to be proved against
+the pinned ledger before rung (vi) could land). Two names is right.
+
+The names are still poor: =burn_coin= vs =burn_spend= says which one is which
+only to someone who already knows. What differs is whether the burn claims a
+NULLIFIER — i.e. whether the contract is spending a coin it owns or merely
+emitting a spend claim.
+
+** (d) The spec decisions — not candidates, and now four
+
+Derived =changeNonce=, injective domain separator, Poseidon refund
+commitments, *and the one-block identity commitment* (§0). Each changes a
+value the chain or the MPC sees. None can be a profile.
+
+* 2. THE FORK VERDICT
+
+Three links, and exactly one is lexical. This is the answer to *"remove the
+forks if possible"*, and it is decided by the ledgers rather than by reading
+the sources:
+
+| link | ledger | status | collapsible? |
+|---+---+---+---|
+| compactc ≡ =erc20_vault= | the differentials | PI-equal | *never* — it IS the warrant |
+| =erc20_vault= ≡ =_opt= | =fork_status= | =Diverged=, all 9, four spec changes | *no* |
+| =_opt= ≡ =_borsh= | =borsh_fork_status= | =Diverged= on the 4 settle circuits (kind-tagged attested outputs) | *no* |
+| =_borsh= ≡ =_modern= | =modern_fork_status= | =Identical=, ALL NINE, since the constant fold | *yes, lexically* |
+
+The last row is the only fork in this repo whose divergence is purely a
+SPELLING, and it became so only in §8 of notes/ir-passes.org: before the fold
+the twin differed by the =Copy=s that named constants, and the ledger said
+=PiEqual=. The pass inlines those on both sides, so =modern_fork_status= now
+returns =Twin::Identical= unconditionally — it ignores its =circuit=
+argument, which is the shape of a ledger with nothing left to record.
+
+*The recommendation is nonetheless NOT to collapse it, and the reason is
+dmd's own constraint.* =tests/erc20_vault_modern_fork.rs= is what proves the
+claim M9 phase 8 exists to make: that the ergonomic vocabulary lowers to the
+same stream as the plain one. Delete either source and the claim stops being
+checkable — not because it becomes false, but because it loses its subject.
+That is precisely *"trading a correctness instrument for line count"*.
+
+So the honest answer to M18's prize is the one the milestone anticipated:
+*the vocabulary unifies, the forks do not.* Three of the four artifacts are
+pinned by spec divergences that a profile cannot express, and the fourth is
+pinned by the instrument that measures the thing this milestone is about.
+
+What CAN be reduced is the lockstep cost itself, and the leverage is not fork
+count but the size of the shared vocabulary: every call site that moves from
+a fork-local spelling to a stdlib one is a line that no longer has to be
+edited four times. §1(a) is the first of those.
+
+* 3. WHAT THIS MILESTONE BUILDS
+
+1. =kernel::self_address(c)= as the ONE spelling of =kernel.self()= in
+   contract code — 26 call sites, five contracts and all four vault forks,
+   zero instruction movement. §1(a).
+2. The diverging pairs documented from BOTH sides, so neither spelling can be
+   read as a cheaper version of the other. §0's asymmetry is the bug.
+3. The naming fix §0 asks for, on the pair whose suffix says "cost" and means
+   "different value".
+4. NOT BUILT, and stated so it is not rediscovered: the =_with= caching
+   profile (§1a), which is an optimisation with a ledger consequence, not a
+   vocabulary change. It wants its own gate and its own re-run of the 9M
+   harness.
+
+* 4. AS BUILT (2026-08-16)
+
+Three of the four items in §3, all gated on the zkir dump: 162 of 167
+circuits byte-identical, 5 identical modulo identifier numbering (inherited
+from the guard-scope commit earlier the same session, not caused here), 0
+changed. =cargo test --workspace= green.
+
+** 1. =kernel.self()= has ONE spelling in contract code
+
+26 call sites across four vault forks and three other contracts moved from
+=minocrab_ledger::kernel_self(c, guard)= to
+=minocrab_std::v3::kernel::self_address(c)=. The contracts no longer import
+=kernel_self= at all — the raw op is back below the typed layer where the
+rest of the ledger vocabulary already lives.
+
+Two things this found rather than assumed:
+
+- =erc20_vault_modern= had written its OWN =self_address= wrapper, with a
+  doc comment explaining the guard is the immediate =1=. The stdlib function
+  it duplicates has existed since M17. That is the lockstep tax in miniature:
+  the discovery was made in one fork and never lifted, so three forks kept
+  the raw call and a fourth kept a private copy of the fix.
+- The typed result removes a shape as well as an argument. =kernel_self=
+  hands back =[Wire3; 2]=, which every call site immediately rebuilt as
+  =B32 { hi: me[0], lo: me[1] }= — two lines and an index that could be
+  transposed. =self_address= returns =ContractAddress<Public>=, and
+  =.bytes()= is the whole conversion.
+
+** 2 + 3. The diverging pairs are named for their PREIMAGE, and documented
+   from both sides
+
+=commitment= / =commitment_short= are now =commitment_padded_tag= /
+=commitment_packed_tag=. The suffix names what actually differs — whether the
+domain tag occupies a full 32-byte limb or only its significant bytes — so
+neither reads as a cheaper version of the other, which is the misreading §0
+caught. Both docs now open with *A DIFFERENT VALUE FROM …* and say why the
+two can never be unified (the digest is the MPC's derivation path).
+
+=commitment_padded_tag= had NO reference to its twin at all before this,
+which is the asymmetry that let the misfiling stand: a reader arriving at the
+compat spelling had no way to learn a divergent one existed. Both directions
+are now written.
+
+=burn_coin= / =burn_spend= keep their names — M18's item (c) is right — but
+each now states in its first line what it does that the other does not
+(claims a nullifier / does not), and points at the twin. The old first lines
+described the compactc lowering, which tells a reader what the function emits
+and not which of the two they want.
+
+** NOT BUILT, deliberately
+
+The =_with= caching profile (§1a). It is an optimisation with a ledger
+consequence — =fork_status= lists rung (i) as a divergence on six of nine
+circuits — so it moves instructions, needs its own gate and its own re-run of
+the 9M harness. Nothing here depends on it.

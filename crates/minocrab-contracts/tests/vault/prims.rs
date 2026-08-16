@@ -101,7 +101,7 @@ pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
 /// - Opt (rung 5(i-userCommit), avenue 1): SHA-256 over
 ///   `[Bytes<11> "vault:user:", sk]` — 43 bytes, ONE block. Same domain tag,
 ///   the zero padding dropped: −1,880 rows at each of initialize, deposit,
-///   claim. Layout tabulated in `common::commitment_short`.
+///   claim. Layout tabulated in `common::commitment_packed_tag`.
 pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
     match art {
         Art::Compat => {

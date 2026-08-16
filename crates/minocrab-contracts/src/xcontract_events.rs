@@ -38,9 +38,10 @@
 use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
 use minocrab_ledger::{
-    cell_write, counter_increment, counter_read, emit, emit_event, kernel_self, set_insert,
+    cell_write, counter_increment, counter_read, emit, emit_event, set_insert,
     ImpactElem, LedgerValue, XcallCommitment, XcallEntryPointHash, XcallResult,
 };
+use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     circuit, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
 };
@@ -90,7 +91,7 @@ pub fn deposit_via_vault(
     let one = c.constant(1u64);
 
     emit(c, one, &counter_increment(VAULT_CALL_COUNT, 1));
-    let me = ContractAddress::from_limbs(kernel_self(c, one));
+    let me = kernel::self_address(c);
     // eventHash = token.deposit(a, me) — the Bytes<32> return type gives
     // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
     // `token` cell is read inside the call, as compactc reads it.

@@ -55,9 +55,10 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Private, Public};
 use minocrab_ledger::{
-    cell_read, cell_write, counter_increment, counter_read, emit, kernel_self, ImpactElem,
+    cell_read, cell_write, counter_increment, counter_read, emit, ImpactElem,
     LedgerValue, XcallCommitment, XcallEntryPointHash,
 };
+use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
@@ -273,7 +274,7 @@ pub fn deposit(
     // const caller = disclose(userCommitment(callerSecretKey())) — the SHORT
     // one-block userCommitment (rung 5(i-userCommit), avenue 1).
     let sk = common::witness_sk(c);
-    let caller_priv = common::commitment_short(c, &sk);
+    let caller_priv = common::commitment_packed_tag(c, &sk);
     let caller = caller_priv.disclose_as::<DepositorCommitment>(c);
 
     // Contract-enforced calldata: transfer(vaultEvmAddress, amount).
@@ -319,8 +320,7 @@ pub fn deposit(
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let sender = B32 {
         hi: me.hi.private(),
         lo: me.lo.private(),
@@ -561,8 +561,7 @@ pub fn withdraw(
     // THE kernel.self read of this circuit (rung i): the colour derivation,
     // the event's sender, the receive, the burn and the notification all
     // want the same address, and the port read it five times.
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
@@ -753,8 +752,7 @@ pub fn swap(
     let domain_sep = vault_token_domain_separator(c, token_in);
     // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
     // port read the same address five times.
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
     let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
@@ -969,8 +967,7 @@ pub fn approve_router(
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let sender = B32 {
         hi: me.hi.private(),
         lo: me.lo.private(),
@@ -1282,8 +1279,7 @@ pub fn complete_swap(
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
     // ONE kernel.self read for BOTH mints (rung i).
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let recipient = minocrab_std::v3::own_public_key(c);
     let recipient = recipient.disclose_as::<SwapRecipient>(c);
 
@@ -1457,8 +1453,7 @@ pub fn refund(
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
-    let me = kernel_self(c, one);
-    let me = B32 { hi: me[0], lo: me[1] };
+    let me = kernel::self_address(c).bytes();
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
 
     // Withdrawal-route record consume (guarded): the VaultRecord and its
@@ -1662,7 +1657,7 @@ pub fn claim(
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_short(c, &sk);
+        let caller = common::commitment_packed_tag(c, &sk);
         let path = ev.path();
         let eq_hi = c.test_eq(caller.hi, path.hi.private());
         let eq_lo = c.test_eq(caller.lo, path.lo.private());

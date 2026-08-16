@@ -61,9 +61,10 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
 // The ONLY ledger import: `kernel.self()` is a context read, not a field of
 // this contract's ledger block, so it has no typed slot to live on.
-use minocrab_ledger::{kernel_self, XcallCommitment, XcallEntryPointHash};
+use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
+use minocrab_std::v3::kernel;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
     circuit, eq, is_true, label, not, own_public_key, own_public_key_guarded, Bool, Bytes, BytesN,
@@ -209,7 +210,7 @@ fn assert_initialized(c: &mut Circuit3) {
 /// the read and the predicate.
 fn assert_deployer(c: &mut Circuit3) {
     let sk = common::witness_sk(c);
-    let digest = common::commitment_short(c, &sk);
+    let digest = common::commitment_packed_tag(c, &sk);
     let stored = VAULT.deployer.read(c);
     c.assert(b32_eq(&digest, &stored.private()).message("Not the deployer"));
 }
@@ -287,7 +288,7 @@ pub fn deposit(
     // const caller = disclose(userCommitment(callerSecretKey())) — the SHORT
     // one-block userCommitment (rung 5(i-userCommit), avenue 1).
     let sk = common::witness_sk(c);
-    let caller_priv = common::commitment_short(c, &sk);
+    let caller_priv = common::commitment_packed_tag(c, &sk);
     let caller = caller_priv.disclose_as::<DepositorCommitment>(c);
 
     // Contract-enforced calldata: transfer(vaultEvmAddress, amount).
@@ -324,7 +325,7 @@ pub fn deposit(
     let request_nonce = VAULT.signet_request_nonce.read(c);
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let caip2 = VAULT.caip2_id.read(c);
     let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
     let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
@@ -355,17 +356,6 @@ pub fn deposit(
 /// to hang off, since it reads the transaction CONTEXT rather than a field of
 /// this contract.
 ///
-/// The guard is the immediate `1`: this contract reads its own address only
-/// in straight-line positions (M10 rung (i) threads ONE read per circuit, and
-/// `refund`'s dominates both of its branches).
-fn self_address(c: &mut Circuit3) -> B32<Public> {
-    let me = kernel_self(c, 1u64);
-    B32 {
-        hi: me[0],
-        lo: me[1],
-    }
-}
-
 /// The gas limit of a vault-signed ERC-20 call (`transfer`, `approve`).
 const ERC20_CALL_GAS: u64 = 100_000;
 
@@ -601,7 +591,7 @@ pub fn withdraw(
     // THE kernel.self read of this circuit (rung i): the colour derivation,
     // the event's sender, the receive, the burn and the notification all
     // want the same address, and the port read it five times.
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     c.assert(b32_eq(&coin.color, &color.private()));
     c.assert(eq(coin.value.field(), amount));
@@ -740,7 +730,7 @@ pub fn swap(
     let domain_sep = vault_token_domain_separator(c, token_in);
     // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
     // port read the same address five times.
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me);
     c.assert(b32_eq(&coin.color, &color.private()));
     c.assert(eq(coin.value.field(), amount_in_max));
@@ -896,7 +886,7 @@ pub fn approve_router(
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = VAULT.signet_request_nonce.read(c);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let caip2 = VAULT.caip2_id.read(c);
     let path = B32::pad(c, VAULT_PATH).private();
     let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
@@ -1195,7 +1185,7 @@ pub fn complete_swap(
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
     // ONE kernel.self read for BOTH mints (rung i).
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let recipient = own_public_key(c).disclose_as::<SwapRecipient>(c);
 
     // Mint the EXACT amountOut of tokenOut: word 4 of tokenOut (word 1).
@@ -1369,7 +1359,7 @@ pub fn refund(
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
-    let me = self_address(c);
+    let me = kernel::self_address(c).bytes();
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
 
     // Withdrawal-route record consume (guarded): the VaultRecord and its
@@ -1551,7 +1541,7 @@ pub fn claim(
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_short(c, &sk);
+        let caller = common::commitment_packed_tag(c, &sk);
         c.assert(b32_eq(&caller, &ev.path().private()).message("Not the depositor"));
     });
 
