@@ -222,6 +222,59 @@ impl<V: Visibility> AnyWire3<V> {
     }
 }
 
+/// A condition usable as a GUARD: a wire, or (in `minocrab-std`) a `Check`
+/// from the predicate vocabulary.
+///
+/// The trait exists so that [`Circuit3::when`] and [`Branches`] read the same
+/// whether the condition is already a wire or is written as
+/// `eq(a, b).and(..)` — a condition is a condition, and where it lands should
+/// not change how it is spelled.
+pub trait GuardCond<V: Visibility> {
+    /// Lower to the wire the guard operand takes.
+    fn into_guard(self, c: &mut Circuit3) -> Wire3<FieldT, V>;
+}
+
+impl<V: Visibility> GuardCond<V> for Wire3<FieldT, V> {
+    fn into_guard(self, _c: &mut Circuit3) -> Wire3<FieldT, V> {
+        self
+    }
+}
+
+/// An if / else-if / else chain in progress — see [`Circuit3::when`].
+///
+/// Holds the "nothing has matched yet" wire, which is what makes the arms
+/// EXCLUSIVE: arm `n`'s guard is its own condition conjoined with the
+/// negation of every earlier one, so at most one arm's effects are live even
+/// though every arm's instructions are emitted.
+#[must_use = "a chain with no `otherwise` is a plain if/else-if — bind it or end the statement"]
+pub struct Branches<'a, V: Visibility> {
+    c: &'a mut Circuit3,
+    unmatched: Wire3<FieldT, V>,
+}
+
+impl<V: Visibility> Branches<'_, V> {
+    /// The next arm: runs where `cond` holds and no earlier arm matched.
+    pub fn else_when(self, cond: impl GuardCond<V>, body: impl FnOnce(&mut Circuit3)) -> Self {
+        let Branches { c, unmatched } = self;
+        let cond = cond.into_guard(c);
+        // `unmatched && cond`
+        let guard: Wire3<FieldT, V> =
+            Wire3::new(c.b.cond_select(unmatched.val, cond.val, Fr::from(0u64)));
+        c.guarded(guard, body);
+        // `unmatched && !cond`, in one select rather than a negate and an and.
+        let unmatched: Wire3<FieldT, V> =
+            Wire3::new(c.b.cond_select(cond.val, Fr::from(0u64), unmatched.val));
+        Branches { c, unmatched }
+    }
+
+    /// The final arm: runs where NO earlier arm matched. Free — its guard is
+    /// the accumulator itself.
+    pub fn otherwise(self, body: impl FnOnce(&mut Circuit3)) {
+        let Branches { c, unmatched } = self;
+        c.guarded(unmatched, body);
+    }
+}
+
 /// One element of an Impact public-input block: an inline constant or a
 /// circuit-computed (necessarily public) native value.
 #[derive(Clone, Copy)]
@@ -999,6 +1052,42 @@ impl Circuit3 {
         let result = body(self);
         self.guards.pop();
         result
+    }
+
+    /// Start an if / else-if / else CHAIN — arms are mutually exclusive, and
+    /// each one runs where its condition holds and no earlier one matched.
+    ///
+    /// ```ignore
+    /// c.when(a, |c| { .. })
+    ///  .else_when(b, |c| { .. })
+    ///  .otherwise(|c| { .. });
+    /// ```
+    ///
+    /// `otherwise` is optional: a chain without it is a plain `if / else if`,
+    /// and dropping the builder just ends it.
+    ///
+    /// COST is two `cond_select`s per arm after the first — one to and the
+    /// condition with "nothing matched yet", one to update it — and the first
+    /// arm and the `otherwise` arm are free, because their guards are already
+    /// to hand. A two-arm `when(..).otherwise(..)` is therefore exactly
+    /// [`Circuit3::if_else`], one negation and no more.
+    ///
+    /// Arms return `()`. A circuit does not branch, so every arm's
+    /// instructions are emitted regardless and "the value of the branch that
+    /// ran" is not a thing the stream can express — build it with
+    /// [`Circuit3::cond_select`] on the arms' results instead, where the
+    /// selection is visible.
+    pub fn when<V: Visibility>(
+        &mut self,
+        cond: impl GuardCond<V>,
+        body: impl FnOnce(&mut Self),
+    ) -> Branches<'_, V> {
+        let cond = cond.into_guard(self);
+        self.guarded(cond, body);
+        // Nothing has matched yet iff this arm did not: `!cond`.
+        let unmatched: Wire3<FieldT, V> =
+            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
+        Branches { c: self, unmatched }
     }
 
     /// Both arms of a conditional: `then_body` under `cond`, `else_body`

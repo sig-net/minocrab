@@ -204,3 +204,96 @@ fn guarded_all_is_the_nested_form_flattened() {
     });
     assert_eq!(flat, nested);
 }
+
+// ---- if / else-if / else chains ---------------------------------------------
+
+/// A two-arm chain IS `if_else` — same instructions, one negation.
+#[test]
+fn a_two_arm_chain_is_if_else() {
+    let by_if_else = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        c.if_else(
+            g,
+            |c| c.impact_mixed(1u64, &op()),
+            |c| c.impact_mixed(1u64, &op()),
+        );
+    });
+    let by_chain = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        c.when(g, |c| c.impact_mixed(1u64, &op()))
+            .otherwise(|c| c.impact_mixed(1u64, &op()));
+    });
+    assert_eq!(by_chain, by_if_else);
+}
+
+/// THE CLAIM that makes a chain a chain: arm two runs where its own condition
+/// holds AND arm one did not match, and the final arm where NEITHER did.
+#[test]
+fn chain_arms_are_exclusive() {
+    let by_hand = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        // arm 1: a
+        c.impact_mixed(a, &op());
+        // arm 2: !a && b
+        let not_a = c.cond_select(a, 0u64, 1u64);
+        let arm2 = c.cond_select(not_a, b, 0u64);
+        c.impact_mixed(arm2, &op());
+        // otherwise: !a && !b
+        let rest = c.cond_select(b, 0u64, not_a);
+        c.impact_mixed(rest, &op());
+    });
+    let by_chain = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(a, |c| c.impact_mixed(1u64, &op()))
+            .else_when(b, |c| c.impact_mixed(1u64, &op()))
+            .otherwise(|c| c.impact_mixed(1u64, &op()));
+    });
+    assert_eq!(by_chain, by_hand);
+}
+
+/// A chain arm can be written in the predicate vocabulary too.
+#[test]
+fn chain_arms_take_checks() {
+    use minocrab_std::v3::{eq, Uint};
+
+    let by_wire = zkir(|c| {
+        let x = c.arg::<FieldT>("x");
+        let y = c.arg::<FieldT>("y");
+        let same = c.test_eq(x, y);
+        c.when(same, |c| c.impact_mixed(1u64, &op()))
+            .otherwise(|c| c.impact_mixed(1u64, &op()));
+    });
+    let by_check = zkir(|c| {
+        let x: Uint<64> = Uint::from_field(c.arg::<FieldT>("x"));
+        let y: Uint<64> = Uint::from_field(c.arg::<FieldT>("y"));
+        c.when(eq(x, y), |c| c.impact_mixed(1u64, &op()))
+            .otherwise(|c| c.impact_mixed(1u64, &op()));
+    });
+    assert_eq!(by_check, by_wire);
+}
+
+/// A chain nests inside a guard, and its arms pick that up — so an
+/// if/else-if inside a branch needs no threading either.
+#[test]
+fn a_chain_inside_a_guard_is_conjoined_with_it() {
+    let by_hand = zkir(|c| {
+        let outer = c.arg::<FieldT>("outer");
+        let a = c.arg::<FieldT>("a");
+        let arm1 = c.cond_select(outer, a, 0u64);
+        c.impact_mixed(arm1, &op());
+        let not_a = c.cond_select(a, 0u64, 1u64);
+        let arm2 = c.cond_select(outer, not_a, 0u64);
+        c.impact_mixed(arm2, &op());
+    });
+    let scoped = zkir(|c| {
+        let outer = c.arg::<FieldT>("outer");
+        let a = c.arg::<FieldT>("a");
+        c.guarded(outer, |c| {
+            c.when(a, |c| c.impact_mixed(1u64, &op()))
+                .otherwise(|c| c.impact_mixed(1u64, &op()));
+        });
+    });
+    assert_eq!(scoped, by_hand);
+}

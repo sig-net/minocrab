@@ -81,6 +81,10 @@ pub use minocrab::v3::{
 /// visibility-specific halves of one schema.
 pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint, Prim};
 
+/// The if / else-if / else chain (`c.when(..).else_when(..).otherwise(..)`)
+/// and the trait that lets its arms be written as wires or as [`Check`]s.
+pub use minocrab::v3::{Branches, GuardCond};
+
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire
 /// contract). Named the same as the trait it implements, the way

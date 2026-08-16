@@ -534,6 +534,14 @@ pub fn if_else<V: Vis3, R>(
     c.if_else(wire, then_body, else_body)
 }
 
+/// A [`Check`] used as a guard, so `when(..)` / `else_when(..)` read the
+/// same whether the condition is a wire or the predicate vocabulary.
+impl<V: Vis3> minocrab::v3::GuardCond<V> for Check<V> {
+    fn into_guard(self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+        self.into_wire(c)
+    }
+}
+
 /// Compact's `&&` as a SEQUENCE — each conjunct evaluated under the
 /// conjunction of the ones before it, then `body` under all of them.
 ///

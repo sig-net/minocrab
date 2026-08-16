@@ -234,7 +234,7 @@ free, and a comparison's WIDTH is resolved from its operand types in one
 place rather than two. A condition is a condition; whether it lands in an
 =assert= or in an Impact guard operand is the caller's business.
 
-*IF/ELSE EXISTS*, =Circuit3::if_else=, with the negation
+*IF/ELSE EXISTS*, =Circuit3::if_else= (and the chain below), with the negation
 (=select(cond, 0, 1)=, compactc's own =!=) computed once. Both arms emit all
 their instructions — a circuit does not branch, so cost is the sum. That is
 the setting, not a choice.
@@ -259,6 +259,33 @@ guarded_all(c, &[
 #+end_src
 
 Flat syntax, nested semantics, byte-identical instructions.
+
+** …and the fourth: an if / else-if / else CHAIN
+
+=c.when(a, ..).else_when(b, ..).otherwise(..)=, arms MUTUALLY EXCLUSIVE —
+arm /n/ runs where its own condition holds and no earlier one matched.
+
+The mechanism is one accumulator wire, "nothing has matched yet". Arm /n/'s
+guard is =unmatched && cond=; the accumulator then becomes
+=unmatched && !cond=, which is ONE =cond_select= rather than a negate and an
+and (=select(cond, 0, unmatched)=). So two selects per arm after the first,
+and BOTH ends are free: the first arm's guard is its condition, and
+=otherwise='s guard is the accumulator itself.
+
+Falls out of that: a two-arm chain is EXACTLY =if_else=, one negation and no
+more (=a_two_arm_chain_is_if_else= pins it). And a chain nests inside a
+guard — its arms conjoin with the ambient one, so an if/else-if inside a
+branch needs no threading either.
+
+Arms return =()=, deliberately. A circuit does not branch, so every arm's
+instructions are emitted regardless and "the value of the branch that ran"
+is not something the stream can express; build it with =cond_select= on the
+arms' results, where the selection is visible and priced.
+
+NOT CLAIMED: that an /n/-arm chain matches compactc's lowering of an
+=else if= ladder. No fixture exercises one, so the two-arm case is checked
+against =if_else= and the /n/-arm case against a hand-written expansion.
+That gap is worth a fixture when a corpus contract needs it.
 
 A GENUINELY flat conjunction — =guarded(c, a.and(b), ..)= with both sides
 evaluated up front — is available and correct whenever the conjuncts are
