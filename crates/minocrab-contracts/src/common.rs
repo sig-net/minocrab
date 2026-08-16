@@ -11,7 +11,7 @@ use minocrab_std::v3::kernel;
 use minocrab::v3::Guarded;
 use minocrab_std::v3::{
     coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
-    ContractAddress, Secp256k1Point, ShieldedCoinInfo3, B32, STRAIGHT_LINE,
+    ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32, STRAIGHT_LINE,
 };
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
@@ -272,7 +272,7 @@ pub fn mint_shielded_token(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     domain_sep: &B32<Public>,
-    value: Wire3<FieldT, Public>,
+    value: Uint<64, Public>,
     nonce: &B32<Public>,
     recipient: &CoinRecipient<Public>,
 ) {
@@ -283,14 +283,14 @@ pub fn mint_shielded_token(
 
         // kernel.mintShielded(domain_sep, value)
         let ds_val = b32_value(domain_sep);
-        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
+        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value.field())]);
         emit(c, one, &kernel_mint_shielded(&ds_val, &amount_val));
 
         // cm = coinCommitment({nonce, color, value}, recipient)
         let coin = ShieldedCoinInfo3 {
             nonce: *nonce,
             color,
-            value,
+            value: value.field(),
         };
         let cm = coin_commitment(c, &coin, recipient);
         let cm_val = b32_value(&cm);
@@ -507,7 +507,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
     guard: impl Into<Operand<FieldT, G>>,
     me: ContractAddress<Public>,
     domain_sep: &B32<Public>,
-    value: Wire3<FieldT, Public>,
+    value: Uint<64, Public>,
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
@@ -516,7 +516,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
         let color = token_type(c, domain_sep, &me.bytes());
 
         let ds_val = b32_value(domain_sep);
-        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value)]);
+        let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value.field())]);
         emit(c, guard, &kernel_mint_shielded(&ds_val, &amount_val));
 
         let one = c.constant(1u64);
@@ -524,7 +524,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
         let coin = ShieldedCoinInfo3 {
             nonce: *nonce,
             color,
-            value,
+            value: value.field(),
         };
         let left = CoinRecipient {
             is_left: one,
@@ -541,7 +541,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
 pub fn mint_shielded_token_to_key(
     c: &mut Circuit3,
     domain_sep: &B32<Public>,
-    value: Wire3<FieldT, Public>,
+    value: Uint<64, Public>,
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
@@ -556,7 +556,7 @@ pub fn mint_shielded_token_to_key_guarded(
     c: &mut Circuit3,
     guard: Wire3<FieldT, Public>,
     domain_sep: &B32<Public>,
-    value: Wire3<FieldT, Public>,
+    value: Uint<64, Public>,
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {

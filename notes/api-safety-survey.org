@@ -175,8 +175,21 @@ only thing standing there.
 
 Note the typed kernel layer gets this RIGHT — =kernel::mint_shielded= takes
 =Uint<64, Public>=. The raw-wire signatures are the contracts-level helpers
-in =minocrab-contracts::common=, i.e. the older layer. Fix is mechanical:
-give them the types the Compact signatures have.
+in =minocrab-contracts::common=, i.e. the older layer.
+
+*FIXED same session*, against Compact's own declaration rather than an
+inferred one: =standard-library.compact:122-125= says
+=mintShieldedToken(domain_sep: Bytes<32>, value: Uint<64>, nonce: Bytes<32>,
+..)=, and all four =value: Wire3<FieldT, Public>= parameters are now
+=Uint<64, Public>=.
+
+WHAT IT DOES NOT BUY, said plainly: the narrowing is still not CHECKED. The
+caller writes =Uint::<64, Public>::from_field(amount)=, which is A1's
+unchecked assertion wearing its own name. What changed is that the claim is
+now WRITTEN at the call site instead of a 128-bit wire sliding into a 64-bit
+parameter in silence — and in the vault the =assert(amount <= u64::MAX)= is
+a few lines above it, so the claim is justified where it is made. Making it
+checked is A1's fix.
 
 * 2. FOOTGUNS (question 1)
 

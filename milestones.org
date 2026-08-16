@@ -1764,10 +1764,23 @@ green on every differential the day before.
       that every other soundness argument leaks through, and it does not
       look different from the escape hatches that ARE enforced
       (`disclose`, visibility, `Guarded`). Zero rows for the rename.
-- [ ] Fix 4 (closes B4): the Compact signature types on the
-      contracts-level helpers — `mint_shielded_token` takes a raw `Wire3`
-      where Compact's takes `Uint<64>`. The typed kernel layer already
-      gets this right; this is the older layer catching up.
+- [X] Fix 4 (closes B4): the Compact signature types on the
+      contracts-level helpers — `mint_shielded_token` took a raw `Wire3`
+      where Compact's takes `Uint<64>`. The typed kernel layer already got
+      this right; this is the older layer catching up.
+      (DONE 2026-08-16. The signature is read off Compact's OWN standard
+      library, not inferred: `standard-library.compact:122-125` declares
+      `mintShieldedToken(domain_sep: Bytes<32>, value: Uint<64>, nonce:
+      Bytes<32>, ..)`. All four `value: Wire3<FieldT, Public>` parameters
+      in `common.rs` are now `Uint<64, Public>`.
+      WHAT IT BUYS, stated honestly: the narrowing does not become CHECKED
+      — the caller writes `Uint::<64, Public>::from_field(amount)`, which
+      is still A1's unchecked assertion. What changes is that it becomes
+      VISIBLE and greppable at the call site, where before a 128-bit wire
+      slid into a 64-bit parameter with nothing written down. In the vault
+      the `assert(amount <= u64::MAX)` sits a few lines above, so the claim
+      is justified where it is made. Making it checked is A1's fix, not
+      this one. Zero rows; dump unchanged.)
 - [X] Fix 5 (closes the sharpest edge of A4): the `_with` family cannot be
       handed an arbitrary `B32` — it was memoization with an unchecked key,
       and a wrong address mints to the wrong contract.

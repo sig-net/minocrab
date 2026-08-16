@@ -1188,7 +1188,7 @@ fn refund_surrendered_value(
     let domain_sep = vault_token_domain_separator(c, ev.to());
     let own_pk = minocrab_std::v3::own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, &own_pk);
+    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field(amount), mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1320,7 +1320,7 @@ pub fn complete_swap(
     let token_out = signet::abi_word_low20(c, &word1);
     let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = args.mint_nonce.disclose_as::<SwapMintNonce>(c);
-    common::mint_shielded_token_to_key(c, &ds_out, amount_out, &mint_nonce, &recipient);
+    common::mint_shielded_token_to_key(c, &ds_out, Uint::<64, Public>::from_field(amount_out), &mint_nonce, &recipient);
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
@@ -1353,7 +1353,7 @@ pub fn complete_swap(
         ],
     );
     let change_nonce = B32::from_typed(c, change_nonce);
-    common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
+    common::mint_shielded_token_to_key(c, &ds_in, Uint::<64, Public>::from_field(change), &change_nonce, &recipient);
 
     Discloses::of(())
 }
@@ -1452,7 +1452,7 @@ pub fn refund(
         let ds_in = vault_token_domain_separator(c, token_in);
         let own_pk = minocrab_std::v3::own_public_key(c);
         let own_pk = own_pk.disclose_as::<SwapRefundRecipient>(c);
-        common::mint_shielded_token_to_key(c, &ds_in, amount_in_max, &mint_nonce, &own_pk);
+        common::mint_shielded_token_to_key(c, &ds_in, Uint::<64, Public>::from_field(amount_in_max), &mint_nonce, &own_pk);
     });
 
     Discloses::of(())
@@ -1614,7 +1614,7 @@ pub fn claim(
     // mintShieldedToken(domainSep, amount as Uint<64>, disclose(mintNonce),
     //   claimRecipient)
     let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-    common::mint_shielded_token(c, one, &domain_sep, amount, &mint_nonce, &recipient);
+    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field(amount), &mint_nonce, &recipient);
 
     Discloses::of(())
 }
