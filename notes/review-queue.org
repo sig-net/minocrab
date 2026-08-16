@@ -486,3 +486,38 @@ reviewer should look at.
       that disclose nothing rather than circuits whose disclosure was
       dropped — the generated test proves the SET matches the code, not
       that the code is right.
+- [ ] M16 (the ledger ADTs): the differential is instruction-for-
+      instruction over all 31 circuits, so the LOWERINGS check themselves
+      — what deserves eyes is the three places a human decision was made.
+      (1) `AnyWire3` now carries an `Arg` rather than a `Val`, which
+      changes a type in the FRONTEND for a reason found in M16. The
+      argument is that it closes M9 phase 8's rule at the last operand
+      position that lacked it, the field was private, `Wire3::erase` is
+      the only other constructor, and all 112 pre-existing circuits are
+      byte-identical. That last claim is MEASURED, not inferred:
+      tests/zkir_dump.rs at HEAD against HEAD+M16 gives `0 files differ,
+      31 files added`, and both frozen snapshots regenerate to insertions
+      only. What is left to check by eye is whether any caller wanted
+      `Val` back — `AnyWire3` is used by borsh.rs's `Limbs`, hash.rs's
+      `persistent_hash_compact`, and attest.rs — and whether
+      `AnyWire3::immediate`'s visibility parameter (the LIST's, not the
+      value's) is the right reading of the lattice.
+      (2) `LedgerSet` and `LedgerMap` now delegate five methods each to
+      the same `minocrab_ledger` functions, on the claim that compactc
+      emits identical streams for Set and Map. The fixture proves it for
+      remove/size/isEmpty/resetToDefault; what to check is that the
+      DELEGATION is stated where a reader will meet it and not just in
+      the note (`LedgerSet`'s doc says it).
+      (3) The `history_append` asymmetry — an insert closes `ins 1;
+      insc 2`, a reset `insc 2; ins 1` — is now a comment plus two call
+      sites rather than a parameter. Worth reading against
+      midnight-ledger.ss:1183-1190 and :1211-1228, since it is the one
+      thing in M16 that was wrong on the first pass.
+      Lower priority, self-checking: the fourteen op sequences (31 of 31
+      byte-identical to compactc), the `MerkleTreeDigest` leaf (its ABI
+      is checked against contract-info.json), the `Maybe` `CircuitOut`
+      (same), and the DEPTH const assert (compile_fail doctest beside a
+      passing twin).
+      NOT DONE, documented: the three `insertCoin`/`pushFrontCoin` arms
+      and nested ADTs — both in the milestone and in the README's gap
+      list, both with a reason rather than a shrug.

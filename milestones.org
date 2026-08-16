@@ -1392,11 +1392,117 @@ confirmed against the M15 fixture's opSet). What M16 owes it is
 than sit beside a second one. Also inherited: =LedgerRepr= for
 =Opaque<T, Public>= and for =Maybe<T, Public>=, so an ADT with opaque
 or optional elements needs no element-type work.
-- [ ] Per-ADT: Impact-op lowering via the real Op types (M4's
+- [X] Per-ADT: Impact-op lowering via the real Op types (M4's
       ledger-op method), differential per corpus contract that uses it.
-- [ ] Rusty API per M9 phase 7's #[derive(Ledger)] conventions.
+      (2026-08-16, notes/ledger-adts.org. DESIGN NOTE FIRST, and it
+      reframed the work: M16 reads as four ADTs' worth of new machinery
+      and is not — every one of the thirty-one operations is the same
+      descend/act/write-back shape the crate already emits, and what is
+      genuinely new is SEVEN OPCODES (type, neg, root, pop, branch, jmp,
+      concat), all of which upstream's `Op` already has and
+      `ImpactOp::constant` already encodes. FOUR FINDINGS, each with an
+      artifact behind it: (a) the opcode list above; (b) `List.head` and
+      the four `insert*Index*` contain Impact-level `branch`/`jmp` —
+      TRANSCRIPT control flow, not circuit control flow, so a `head`
+      inside a conditional is the same fifteen constant instructions
+      under a wire guard and its cost is fixed whether the list is empty
+      or not; (c) a "default value" is ALL-ZERO LIMBS for every Compact
+      type (compactc's `VMnull` is `(make-list count 0)`), so no
+      per-type default table exists anywhere below the API — M15 had
+      recorded that for `Opaque` alone; (d) `resetToDefault` at a
+      top-level field is `cell_write` with an ADT constant, because the
+      wrapping `idx`/`insc` are both SUPPRESSED for a one-element path
+      and a suppressed operand emits no instruction at all.
+      Three helpers and fourteen op sequences in minocrab-ledger:
+      `idx_one` (the general one-key idx, with idx_field/idxp_field
+      rewritten as its two cases), `push_array` + `LedgerElem` (the ONE
+      mixed StateValue push, `List.pushFront`'s node), and
+      `default_value`. Every other constant push goes through the real
+      `StateValue` — `Map`, `Array`, `MerkleTree::blank(depth)` — so the
+      crate's never-hand-encode rule holds without exception. Two op
+      sequences serve FIVE methods each: `mtInsert` and `mtInsertHash`
+      are identical instruction for instruction, as are the three
+      `insertIndex*`, and what differs is only where the leaf came from.
+      THE BUG THE FIXTURE FOUND, and only an instruction-for-instruction
+      differential would have: `history_append` was written to take its
+      closing `insc` depth as an argument, on the reading that every
+      HistoricMerkleTree mutation closes the same way. It does not — an
+      insert ends `ins 1; insc 2`, a reset `insc 2; ins 1`. One circuit
+      failed, by one instruction.)
+- [X] Rusty API per M9 phase 7's #[derive(Ledger)] conventions.
+      (2026-08-16, notes/ledger-adts.org §5. `LedgerList<T>`,
+      `LedgerMerkleTree<DEPTH, T>`, `LedgerHistoricMerkleTree<DEPTH, T>`,
+      `LedgerSet` COMPLETED rather than duplicated (remove/size/isEmpty/
+      resetToDefault, all delegating to the Map ops the fixture proves
+      are byte-identical), and `LedgerMap` completed too — insertDefault
+      and resetToDefault were missing and the fixture found them. The
+      derive needed NO change: it emits `<#ty>::at(i)`, so a
+      `LedgerMerkleTree<10, B32<Public>>` field just works. DEPTH's
+      `2 <= n <= 32` is an inline-const assert per the hard rule, with a
+      compile_fail doctest beside a passing twin.
+      ONE NEW LEAF: `MerkleTreeDigest`, one `field` atom and
+      `Prim::Field` — which like `Prim::Opaque` before M15 had never been
+      reachable from a typed leaf. Deliberately a NAMED type rather than
+      a bare `Field`, so "an unconstrained field argument" does not
+      become an idiom. Plus `CircuitOut` for `Maybe<T, Public>`, which was
+      declarable as an argument and as a ledger value but not RETURNABLE
+      until `listHead` returned one.
+      THE ONE API CHANGE OUTSIDE M16's SCOPE, and it CLOSES a recorded
+      gap rather than adding one: `AnyWire3<V>` now carries an `Arg`
+      rather than a `Val`, with `AnyWire3::immediate` the constant arm.
+      The leaf hash's `"mdn:lh"` separator and `insertIndexDefault`'s
+      zeros are inline immediates in compactc's `persistent_hash` operand
+      list and were `copy`s in ours — the M9-phase-7/M15 named-immediate
+      gap reaching the last operand position that lacked M9 phase 8's
+      rule. The field was private and `Wire3::erase` its only other
+      constructor, so the change is contained, and all 112 pre-existing
+      circuits are byte-identical after it. M15's gap (a ledger VALUE
+      position) is untouched and still dmd's call.
+      THE RESULT IS STRONGER THAN M14's AND M15's: serialized ZKIR EQUAL
+      to compactc's up to identifier renaming for ALL 31 circuits, with
+      NO substitution — the gaps that forced one in M14 and M15 were
+      closed here instead of recorded. Plus the corpus provenance the
+      fixture route costs, recovered: `push_front_matches_the_corpus`
+      checks the thirteen Impact instructions
+      test-caller-contract's `submitSignatureRequest` emits for
+      `requestLog.pushFront(requestId)` against ours, differing only in
+      the field key and the wire carrying the value. Plus
+      `compactc_s_abi_agrees_with_the_leaves` (contract-info.json,
+      flattened, against every argument type and `listHead`'s `Maybe`
+      result — the ABI reader needed no change and this says so from the
+      artifact), and `the_tree_reads_are_accepted_by_upstream` (a
+      preimage built from the REFERENCE Impact program, not read back off
+      either artifact, accepted by both and by upstream's `check()`,
+      covering every opcode a write does not exercise: lt+neg, root+eq,
+      member-on-history).
+      Zero movement, MEASURED rather than inferred, which matters
+      because `AnyWire3` is a frontend type every circuit goes through:
+      tests/zkir_dump.rs (M15's instrument, used for the first time by a
+      later session) run at HEAD and again with M16 applied gives
+      `0 files differ, 31 files added` — all 112 pre-existing circuits
+      BYTE-IDENTICAL. Both frozen snapshots agree: regenerated,
+      insertions only (+201 interface, +31 rows, zero deletions either
+      side). `cargo test --workspace` 568 passed / 0 failed, --release
+      row_snapshot green.)
 Exit criteria: corpus contracts using each ADT port with differentials
 green; fairness bullet retired.
+ASSESSMENT (2026-08-16): MET, with M14's and M15's substitution and one
+addition. The substitution is "corpus contracts": under the v3 filter the
+corpus's 88 ADT declarations collapse to Set.insert, Set.member and
+List.pushFront, so the differential runs against a fixture compiled by the
+same pinned compactc — and the corpus provenance that costs is recovered
+where the corpus does have it (`push_front_matches_the_corpus`, against
+production code). The addition is that this milestone CLOSED the
+named-immediate gap for hash operands rather than recording a third
+deviation, which is why its 31-for-31 equality needs no asterisk. M16
+CLOSED.
+NOT DONE, documented and scoped: the three `insertCoin`/`pushFrontCoin`
+arms (they exist only for `QualifiedShieldedCoinInfo`, their shape is
+`cell_write_coin`'s, and they belong with M17's token work where a coin is
+at hand); nested ADTs (every operation here assumes a TOP-LEVEL field,
+which is what the suppression rules rest on, and no ported contract uses a
+nested one). The `root`/`pathForLeaf`/`iter` families are `js-only` in
+compactc — no vm-code, nothing to port.
 
 * M17 — Kernel + token stdlib remainder
 Fairness-list gap; this IS M4's REMAINING bullet, promoted: kernel.checkpoint,

@@ -28,6 +28,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 - Per-region cost profiler attributing rows, with calibrated primitive costs ([profile()](crates/minocrab-sim/src/lib.rs), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs), [opcost.rs](crates/minocrab-sim/examples/opcost.rs))
 - Bounded integers at any bound — `BoundedUint<70000>` *is* Compact's `Uint<0..70000>`, range end exclusive, lowered by compactc's own table; non-power-of-two `enum`s are the same leaf ([v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs))
 - TypeScript-side values bridge in: `Opaque<ts::Str>` is Compact's `Opaque<"string">` — argument, result, witness, any ledger slot, either side of a cross-contract call. The ts-type is part of the Rust type, so mixing two is a compile error ([compile_fail doctest](crates/minocrab-std/src/v3.rs)), and the slot is a *binding commitment* to the value, not a handle ([opaque_differential.rs](crates/minocrab-contracts/tests/opaque_differential.rs))
+- Every ledger ADT with Compact's own method names — `Set`, `List`, `MerkleTree<10, T>`, `HistoricMerkleTree<10, T>`, `Map`, `Cell`, `Counter`. Field indices come from `#[derive(Ledger)]` declaration order and the FAB atoms from the element type; a tree's depth is a const parameter checked at compile time. All 31 operations lower to compactc's exact instruction stream ([adts_differential.rs](crates/minocrab-contracts/tests/adts_differential.rs))
 - Circuit families as const generics, allowing you to encode invariants using the rust type system, monomorphized and unrolled by rustc ([notes/const-generics.org](notes/const-generics.org))
 - Macros are thin decorators — `#[circuit]` moves your body, it does not rewrite it; the expansion calls no `Circuit3` method ([circuit.rs](crates/minocrab-macros/src/circuit.rs)), and every derive has a hand-written twin that must lower to byte-identical ZKIR ([v3_derive.rs](crates/minocrab-std/tests/v3_derive.rs), [interface_macro.rs](crates/minocrab-contracts/tests/interface_macro.rs))
 - Rust: modules, generics, `pub(crate)`, cargo, rust-analyzer, `#[test]`, crates.io
@@ -207,7 +208,8 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- Ledger ADTs beyond Cell / Counter / Map / `Set::{insert, member}` ([ledger](crates/minocrab-ledger/src/lib.rs)). No `List`, `MerkleTree`, `HistoricMerkleTree`; the Merkle *path* circuits are ported ([merkle.rs](crates/minocrab-std/src/merkle.rs)), the ledger ops on those trees are not.
+- The three `insertCoin` / `pushFrontCoin` arms — `Set`, `Map` and `List` grow an extra method when the element type is `QualifiedShieldedCoinInfo`. Everything else in `Set` / `List` / `MerkleTree` / `HistoricMerkleTree` is ported ([ledger](crates/minocrab-ledger/src/lib.rs)) with a 31-circuit differential.
+- Nested ADTs. Every ledger op assumes a top-level field, which is what compactc's path suppression rests on; a `Map<K, List<V>>` would need the general path.
 - Part of the kernel and token stdlib. Missing: `kernel.checkpoint`, the block-time family, all unshielded tokens, `kernel.balance*`, `sendShielded`, `mergeCoin*`. Tracked in [milestones.org](milestones.org).
 - A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing. Not formal-verification parity.
 
