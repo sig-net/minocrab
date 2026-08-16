@@ -262,7 +262,8 @@ impl<V: Visibility> Select<V> for Wire3<FieldT, V> {
 #[must_use = "a value chain produces nothing until `otherwise` supplies the fallback"]
 pub struct ValueBranches<'a, V: Visibility, T> {
     c: &'a mut Circuit3,
-    unmatched: Wire3<FieldT, V>,
+    last: Wire3<FieldT, V>,
+    prior: Option<Wire3<FieldT, V>>,
     /// The value chosen by the arms so far.
     chosen: T,
 }
@@ -278,19 +279,19 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     ) -> Self {
         let ValueBranches {
             c,
-            unmatched,
+            last,
+            prior,
             chosen,
         } = self;
+        let prior = unmatched_after(c, last, prior);
         let cond = cond.into_guard(c);
-        let guard: Wire3<FieldT, V> =
-            Wire3::new(c.b.cond_select(unmatched.val, cond.val, Fr::from(0u64)));
+        let guard = arm_guard(c, cond, Some(prior));
         let value = c.guarded(guard, body);
         let chosen = T::select(c, guard, value, chosen);
-        let unmatched: Wire3<FieldT, V> =
-            Wire3::new(c.b.cond_select(cond.val, Fr::from(0u64), unmatched.val));
         ValueBranches {
             c,
-            unmatched,
+            last: cond,
+            prior: Some(prior),
             chosen,
         }
     }
@@ -300,46 +301,76 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     pub fn otherwise(self, body: impl FnOnce(&mut Circuit3) -> T) -> T {
         let ValueBranches {
             c,
-            unmatched,
+            last,
+            prior,
             chosen,
         } = self;
-        let value = c.guarded(unmatched, body);
-        T::select(c, unmatched, value, chosen)
+        let guard = unmatched_after(c, last, prior);
+        let value = c.guarded(guard, body);
+        T::select(c, guard, value, chosen)
     }
 }
 
 /// An if / else-if / else chain in progress — see [`Circuit3::when`].
 ///
-/// Holds the "nothing has matched yet" wire, which is what makes the arms
-/// EXCLUSIVE: arm `n`'s guard is its own condition conjoined with the
-/// negation of every earlier one, so at most one arm's effects are live even
-/// though every arm's instructions are emitted.
-#[must_use = "a chain with no `otherwise` is a plain if/else-if — bind it or end the statement"]
+/// Holds the condition of the arm just run and the "nothing had matched"
+/// accumulator from BEFORE it. The new accumulator is computed only when
+/// another arm actually arrives, so a bare `c.when(cond, ..)` — a plain `if`
+/// with no `else` — emits nothing beyond the arm itself. (An unused
+/// instruction is a real row; `tests/backend_folding.rs` measures it.)
 pub struct Branches<'a, V: Visibility> {
     c: &'a mut Circuit3,
-    unmatched: Wire3<FieldT, V>,
+    last: Wire3<FieldT, V>,
+    /// `None` is the constant 1 — no arm before this one.
+    prior: Option<Wire3<FieldT, V>>,
+}
+
+/// `prior && !last`, the accumulator after an arm. Split out because both
+/// chain kinds need it and neither should compute it early.
+fn unmatched_after<V: Visibility>(
+    c: &mut Circuit3,
+    last: Wire3<FieldT, V>,
+    prior: Option<Wire3<FieldT, V>>,
+) -> Wire3<FieldT, V> {
+    let fallback = match prior {
+        Some(p) => Arg::Val(p.val),
+        None => Arg::Imm(Fr::from(1u64)),
+    };
+    Wire3::new(c.b.cond_select(last.val, Fr::from(0u64), fallback))
+}
+
+/// `prior && cond`, the guard of an arm.
+fn arm_guard<V: Visibility>(
+    c: &mut Circuit3,
+    cond: Wire3<FieldT, V>,
+    prior: Option<Wire3<FieldT, V>>,
+) -> Wire3<FieldT, V> {
+    match prior {
+        None => cond,
+        Some(p) => Wire3::new(c.b.cond_select(p.val, cond.val, Fr::from(0u64))),
+    }
 }
 
 impl<V: Visibility> Branches<'_, V> {
     /// The next arm: runs where `cond` holds and no earlier arm matched.
     pub fn else_when(self, cond: impl GuardCond<V>, body: impl FnOnce(&mut Circuit3)) -> Self {
-        let Branches { c, unmatched } = self;
+        let Branches { c, last, prior } = self;
+        let prior = unmatched_after(c, last, prior);
         let cond = cond.into_guard(c);
-        // `unmatched && cond`
-        let guard: Wire3<FieldT, V> =
-            Wire3::new(c.b.cond_select(unmatched.val, cond.val, Fr::from(0u64)));
+        let guard = arm_guard(c, cond, Some(prior));
         c.guarded(guard, body);
-        // `unmatched && !cond`, in one select rather than a negate and an and.
-        let unmatched: Wire3<FieldT, V> =
-            Wire3::new(c.b.cond_select(cond.val, Fr::from(0u64), unmatched.val));
-        Branches { c, unmatched }
+        Branches {
+            c,
+            last: cond,
+            prior: Some(prior),
+        }
     }
 
-    /// The final arm: runs where NO earlier arm matched. Free — its guard is
-    /// the accumulator itself.
+    /// The final arm: runs where NO earlier arm matched.
     pub fn otherwise(self, body: impl FnOnce(&mut Circuit3)) {
-        let Branches { c, unmatched } = self;
-        c.guarded(unmatched, body);
+        let Branches { c, last, prior } = self;
+        let guard = unmatched_after(c, last, prior);
+        c.guarded(guard, body);
     }
 }
 
@@ -1073,9 +1104,16 @@ impl Circuit3 {
 
     // --- guard scoping ---------------------------------------------------------------------
 
-    /// Run `body` with `cond` as the AMBIENT GUARD: every ledger operation,
-    /// transcript read and assertion inside it is guarded by `cond`, without
-    /// any of them naming it.
+    /// THE MECHANISM behind [`Circuit3::when`]: run `body` with `cond` as the
+    /// AMBIENT GUARD, so every ledger operation, transcript read and
+    /// assertion inside it is guarded by `cond` without naming it.
+    ///
+    /// Private on purpose. `when` is the one public spelling of a guard —
+    /// this returned the body's VALUE, which invites the reading that the
+    /// value came from a conditional when in fact it was computed
+    /// unconditionally and only its EFFECTS were guarded. A value that
+    /// depends on a branch has to be selected, which is
+    /// [`Circuit3::when_value`].
     ///
     /// This is the scoped form of the `_under` / `_guarded` argument every
     /// ledger and kernel method carries, and it exists because that argument
@@ -1106,7 +1144,7 @@ impl Circuit3 {
     /// reproduces exactly the shape compactc emits for `if (a && b)`: the
     /// reads between the two scopes are guarded by `a` alone, and everything
     /// in the inner scope by the conjunction.
-    pub fn guarded<V: Visibility, R>(
+    fn guarded<V: Visibility, R>(
         &mut self,
         cond: Wire3<FieldT, V>,
         body: impl FnOnce(&mut Self) -> R,
@@ -1152,10 +1190,11 @@ impl Circuit3 {
     ) -> Branches<'_, V> {
         let cond = cond.into_guard(self);
         self.guarded(cond, body);
-        // Nothing has matched yet iff this arm did not: `!cond`.
-        let unmatched: Wire3<FieldT, V> =
-            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
-        Branches { c: self, unmatched }
+        Branches {
+            c: self,
+            last: cond,
+            prior: None,
+        }
     }
 
     /// The chain that produces a VALUE — Compact's `if`-as-an-expression.
@@ -1197,33 +1236,12 @@ impl Circuit3 {
     ) -> ValueBranches<'_, V, T> {
         let cond = cond.into_guard(self);
         let chosen = self.guarded(cond, body);
-        let unmatched: Wire3<FieldT, V> =
-            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
         ValueBranches {
             c: self,
-            unmatched,
+            last: cond,
+            prior: None,
             chosen,
         }
-    }
-
-    /// Both arms of a conditional: `then_body` under `cond`, `else_body`
-    /// under its negation.
-    ///
-    /// The negation is `select(cond, 0, 1)` — compactc's own lowering of `!`
-    /// — and is computed ONCE. Note that BOTH bodies emit all their
-    /// instructions: a circuit does not branch, so the cost is the sum of the
-    /// two arms. That is inherent to the setting, not a choice made here.
-    pub fn if_else<V: Visibility, R>(
-        &mut self,
-        cond: Wire3<FieldT, V>,
-        then_body: impl FnOnce(&mut Self) -> R,
-        else_body: impl FnOnce(&mut Self) -> R,
-    ) -> (R, R) {
-        let taken = self.guarded(cond, then_body);
-        let negated: Wire3<FieldT, V> =
-            Wire3::new(self.b.cond_select(cond.val, Fr::from(0u64), Fr::from(1u64)));
-        let not_taken = self.guarded(negated, else_body);
-        (taken, not_taken)
     }
 
     /// The effective ambient guard, if any.

@@ -226,6 +226,36 @@ OUTER one alone — which is exactly the shape M17's =sendUnshielded= needed
 and which I had to reverse-engineer from compactc's artifact to write by
 hand. It now falls out of writing the code in the shape of the source.
 
+** ONE SPELLING (dmd, 2026-08-16)
+
+The API arrived at six entry points for one concept — =Circuit3::guarded=,
+=if_else=, =when=, =when_value=, =predicate::guarded=,
+=predicate::if_else= — which is exactly the sprawl this work exists to
+remove. It is now TWO:
+
+| =c.when(cond, body)= | effects. Chain with =.else_when= / =.otherwise= |
+| =c.when_value(cond, body)= | a value. =.otherwise= is mandatory and returns it |
+
+- =guarded= is PRIVATE plumbing. It returned the body's value, which invites
+  the reading that the value came from a conditional — when in fact it was
+  computed unconditionally and only its EFFECTS were guarded. A value that
+  depends on a branch has to be SELECTED, which is =when_value=.
+- =if_else= is gone: =when(a, ..).otherwise(..)= is byte-identical to it,
+  proven before the removal, so it was sugar for a two-arm chain.
+- The =predicate::= pair is gone because =Check= implements =GuardCond=, so
+  =c.when(eq(x, y), ..)= already works.
+
+AND THE CONSOLIDATION FOUND A BUG. With =when= as the plain-guard spelling,
+=c.when(cond, body);= is a statement — and the chain builder was computing
+its "nothing matched yet" accumulator eagerly, so a plain =if= with no
+=else= emitted a =cond_select= nobody used. Per =backend_folding.rs= an
+unused instruction is a REAL ROW and the backend does not drop it. The
+accumulator is now computed only when another arm actually arrives, and
+=a_bare_when_emits_no_accumulator= pins it.
+
+Worth noting how that was caught: not by review, by the measurement table
+from §0 being close at hand.
+
 ** dmd's two questions, both yes
 
 *THE PREDICATE VOCABULARY IS THE GUARD VOCABULARY.* =predicate::guarded(c,

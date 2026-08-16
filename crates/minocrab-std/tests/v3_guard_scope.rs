@@ -39,7 +39,7 @@ fn a_scoped_guard_is_the_threaded_guard() {
     });
     let scoped = zkir(|c| {
         let g = c.arg::<FieldT>("g");
-        c.guarded(g, |c| {
+        c.when(g, |c| {
             c.impact_mixed(1u64, &op());
             c.impact_mixed(1u64, &op());
         });
@@ -56,7 +56,7 @@ fn a_scoped_guard_reaches_transcript_reads() {
     });
     let scoped = zkir(|c| {
         let g = c.arg::<FieldT>("g");
-        c.guarded(g, |c| {
+        c.when(g, |c| {
             let w = c.public_transcript_input::<FieldT>();
             c.impact_mixed(1u64, &[ImpactElem::Wire(w)]);
         });
@@ -79,7 +79,7 @@ fn a_scoped_guard_reaches_assertions() {
     let scoped = zkir(|c| {
         let g = c.arg::<FieldT>("g");
         let cond = c.arg::<FieldT>("cond");
-        c.guarded(g, |c| c.assert(cond));
+        c.when(g, |c| c.assert(cond));
     });
     assert_eq!(scoped, by_hand);
 }
@@ -99,11 +99,11 @@ fn nesting_is_a_single_conjunction() {
     let scoped = zkir(|c| {
         let a = c.arg::<FieldT>("a");
         let b = c.arg::<FieldT>("b");
-        c.guarded(a, |c| {
-            c.guarded(b, |c| {
+        c.when(a, |c| {
+            c.when(b, |c| {
                 c.impact_mixed(1u64, &op());
                 c.impact_mixed(1u64, &op());
-            })
+            });
         });
     });
     assert_eq!(scoped, by_hand);
@@ -123,17 +123,17 @@ fn a_read_between_two_scopes_is_guarded_by_the_outer_one() {
     });
     let scoped = zkir(|c| {
         let a = c.arg::<FieldT>("a");
-        c.guarded(a, |c| {
+        c.when(a, |c| {
             let w = c.public_transcript_input::<FieldT>();
-            c.guarded(w, |c| c.impact_mixed(1u64, &op()));
+            c.when(w, |c| c.impact_mixed(1u64, &op()));
         });
     });
     assert_eq!(scoped, by_hand);
 }
 
-/// `if_else` runs the second arm under the negation, computed once.
+/// `otherwise` runs under the negation, computed once.
 #[test]
-fn if_else_negates_once() {
+fn a_chain_negates_once() {
     let by_hand = zkir(|c| {
         let g = c.arg::<FieldT>("g");
         c.impact_mixed(g, &op());
@@ -143,14 +143,10 @@ fn if_else_negates_once() {
     });
     let scoped = zkir(|c| {
         let g = c.arg::<FieldT>("g");
-        c.if_else(
-            g,
-            |c| c.impact_mixed(1u64, &op()),
-            |c| {
-                c.impact_mixed(1u64, &op());
-                c.impact_mixed(1u64, &op());
-            },
-        );
+        c.when(g, |c| c.impact_mixed(1u64, &op())).otherwise(|c| {
+            c.impact_mixed(1u64, &op());
+            c.impact_mixed(1u64, &op());
+        });
     });
     assert_eq!(scoped, by_hand);
 }
@@ -161,41 +157,38 @@ fn if_else_negates_once() {
 /// the guard layer are one language.
 #[test]
 fn a_check_guards_exactly_as_its_wire_does() {
-    use minocrab_std::v3::{eq, guarded, Uint};
+    use minocrab_std::v3::{eq, Uint};
 
     let by_wire = zkir(|c| {
         let x = c.arg::<FieldT>("x");
         let y = c.arg::<FieldT>("y");
         let same = c.test_eq(x, y);
-        c.guarded(same, |c| c.impact_mixed(1u64, &op()));
+        c.when(same, |c| c.impact_mixed(1u64, &op()));
     });
     let by_check = zkir(|c| {
         let x: Uint<64> = Uint::from_field(c.arg::<FieldT>("x"));
         let y: Uint<64> = Uint::from_field(c.arg::<FieldT>("y"));
-        guarded(c, eq(x, y), |c| c.impact_mixed(1u64, &op()));
+        c.when(eq(x, y), |c| c.impact_mixed(1u64, &op()));
     });
     assert_eq!(by_check, by_wire);
 }
 
 // ---- if / else-if / else chains ---------------------------------------------
 
-/// A two-arm chain IS `if_else` — same instructions, one negation.
+/// A bare `when` — a plain `if` with no `else` — emits NOTHING beyond the
+/// arm. The accumulator is only computed when another arm arrives, which
+/// matters because an unused instruction is a real row (backend_folding.rs).
 #[test]
-fn a_two_arm_chain_is_if_else() {
-    let by_if_else = zkir(|c| {
+fn a_bare_when_emits_no_accumulator() {
+    let threaded = zkir(|c| {
         let g = c.arg::<FieldT>("g");
-        c.if_else(
-            g,
-            |c| c.impact_mixed(1u64, &op()),
-            |c| c.impact_mixed(1u64, &op()),
-        );
+        c.impact_mixed(g, &op());
     });
-    let by_chain = zkir(|c| {
+    let bare = zkir(|c| {
         let g = c.arg::<FieldT>("g");
-        c.when(g, |c| c.impact_mixed(1u64, &op()))
-            .otherwise(|c| c.impact_mixed(1u64, &op()));
+        c.when(g, |c| c.impact_mixed(1u64, &op()));
     });
-    assert_eq!(by_chain, by_if_else);
+    assert_eq!(bare, threaded);
 }
 
 /// THE CLAIM that makes a chain a chain: arm two runs where its own condition
@@ -262,7 +255,7 @@ fn a_chain_inside_a_guard_is_conjoined_with_it() {
     let scoped = zkir(|c| {
         let outer = c.arg::<FieldT>("outer");
         let a = c.arg::<FieldT>("a");
-        c.guarded(outer, |c| {
+        c.when(outer, |c| {
             c.when(a, |c| c.impact_mixed(1u64, &op()))
                 .otherwise(|c| c.impact_mixed(1u64, &op()));
         });

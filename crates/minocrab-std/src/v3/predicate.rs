@@ -496,44 +496,6 @@ impl<V: Vis3> Check<V> {
     }
 }
 
-/// Run `body` under `cond` as the ambient guard, with `cond` written in the
-/// same vocabulary as an assertion: `guarded(c, eq(a, b), ..)`,
-/// `guarded(c, is_true(flag).and(less_than(x, y, 64)), ..)`.
-///
-/// The predicate layer and the guard layer are the same language on purpose.
-/// A condition is a condition, and whether it ends up in an `assert` or in an
-/// Impact instruction's guard operand is the caller's business — so `Check`'s
-/// combinators (`and`, `or`, `not`) compose into guards for free, and there
-/// is one place where a comparison's WIDTH is resolved from its operand
-/// types rather than two.
-///
-/// PURE CONJUNCTS ONLY. `and` evaluates both sides unconditionally, which is
-/// right for arithmetic and wrong for anything that READS: Compact's `&&`
-/// short-circuits, so `a && f()` guards `f`'s reads by `a`. Where the second
-/// conjunct reads, nest the scopes instead — that is what
-/// [`Circuit3::guarded`]'s nesting is for, and it reproduces compactc's shape
-/// exactly.
-pub fn guarded<V: Vis3, R>(
-    c: &mut Circuit3,
-    cond: Check<V>,
-    body: impl FnOnce(&mut Circuit3) -> R,
-) -> R {
-    let wire = cond.into_wire(c);
-    c.guarded(wire, body)
-}
-
-/// Both arms, with the condition in the predicate vocabulary — the
-/// [`Circuit3::if_else`] twin of [`guarded`].
-pub fn if_else<V: Vis3, R>(
-    c: &mut Circuit3,
-    cond: Check<V>,
-    then_body: impl FnOnce(&mut Circuit3) -> R,
-    else_body: impl FnOnce(&mut Circuit3) -> R,
-) -> (R, R) {
-    let wire = cond.into_wire(c);
-    c.if_else(wire, then_body, else_body)
-}
-
 /// A [`Check`] used as a guard, so `when(..)` / `else_when(..)` read the
 /// same whether the condition is a wire or the predicate vocabulary.
 impl<V: Vis3> minocrab::v3::GuardCond<V> for Check<V> {
