@@ -240,6 +240,84 @@ impl<V: Visibility> GuardCond<V> for Wire3<FieldT, V> {
     }
 }
 
+/// A value that came out of a conditional — [`ValueBranches::otherwise`]'s
+/// result, wrapped.
+///
+/// `#[repr(transparent)]` around the value and carrying nothing at run time,
+/// so it costs no instruction and no byte. What it carries is a
+/// `#[must_use]` that TRAVELS: a function-level attribute fires only where
+/// the call is written, but a must-use TYPE fires wherever a value of it is
+/// dropped — including one step removed, which is where the waste actually
+/// happens:
+///
+/// ```compile_fail
+/// # #![deny(unused_must_use)]
+/// # use minocrab::v3::{Circuit3, FieldT, Selected, Wire3};
+/// # use minocrab::Private;
+/// fn fee(c: &mut Circuit3, g: Wire3<FieldT, Private>, x: Wire3<FieldT, Private>)
+///     -> Selected<Wire3<FieldT, Private>> {
+///     c.when_value(g, |_c| x).otherwise(|_c| x)   // fine: it is returned
+/// }
+/// # let mut c = Circuit3::new();
+/// # let g = c.arg::<FieldT>("g");
+/// # let x = c.arg::<FieldT>("x");
+/// fee(&mut c, g, x);   // …and THIS is the mistake the wrapper catches
+/// ```
+///
+/// It is deliberately thin: [`Deref`](std::ops::Deref) to the value, `Copy`
+/// where the value is, and [`Selected::into_inner`] to be rid of it. Field
+/// access needs no ceremony — a `Selected<B32>` still has `.hi` and `.lo`.
+///
+/// THE TENSION, stated because it decides how much the wrapper is worth: the
+/// more eagerly it is unwrapped, the less it propagates. Kept in a helper's
+/// SIGNATURE it catches the dropped-result mistake a caller away; unwrapped
+/// at the first opportunity it degrades to exactly the function-level
+/// `#[must_use]` it replaced. Both are fine — the type also reads as
+/// documentation ("this came from a branch, so every arm was paid for") — but
+/// the lint only pays if signatures keep it.
+#[repr(transparent)]
+#[must_use = "this value came from a conditional; dropping it means every arm was emitted \
+              for nothing"]
+pub struct Selected<T>(T);
+
+impl<T> Selected<T> {
+    /// Unwrap. No instruction, no cost — the wrapper is compile-time only.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> std::ops::Deref for Selected<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: Clone> Clone for Selected<T> {
+    fn clone(&self) -> Self {
+        Selected(self.0.clone())
+    }
+}
+
+impl<T: Copy> Copy for Selected<T> {}
+
+/// A selected value guards as the value does, so a conditional's result can
+/// be the condition of the next one without ceremony.
+impl<V: Visibility> GuardCond<V> for Selected<Wire3<FieldT, V>> {
+    fn into_guard(self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+        self.0.into_guard(c)
+    }
+}
+
+/// …and it can itself be selected between, so chains nest.
+impl<V: Visibility, T: Select<V>> Select<V> for Selected<T> {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, V>, taken: Self, fallback: Self) -> Self {
+        Selected(T::select(c, bit, taken.0, fallback.0))
+    }
+}
+
 /// A value that a conditional can SELECT between: one `cond_select` per
 /// native slot.
 ///
@@ -330,11 +408,9 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// # let g = c.arg::<FieldT>("g");
     /// # let x = c.arg::<FieldT>("x");
     /// let chosen = c.when_value(g, |_c| x).otherwise(|_c| x);
-    /// c.assert(chosen);
+    /// c.assert(chosen.into_inner());
     /// ```
-    #[must_use = "this is the value the chain selected; dropping it means every arm \
-                  was emitted for nothing"]
-    pub fn otherwise(self, body: impl FnOnce(&mut Circuit3) -> T) -> T {
+    pub fn otherwise(self, body: impl FnOnce(&mut Circuit3) -> T) -> Selected<T> {
         let ValueBranches {
             c,
             last,
@@ -343,7 +419,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
         } = self;
         let guard = unmatched_after(c, last, prior);
         let value = c.guarded(guard, body);
-        T::select(c, guard, value, chosen)
+        Selected(T::select(c, guard, value, chosen))
     }
 }
 

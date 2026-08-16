@@ -82,7 +82,7 @@ pub use minocrab::v3::{CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint
 
 /// The if / else-if / else chain (`c.when(..).else_when(..).otherwise(..)`)
 /// and the trait that lets its arms be written as wires or as [`Check`]s.
-pub use minocrab::v3::{Branches, GuardCond, Select, ValueBranches};
+pub use minocrab::v3::{Branches, GuardCond, Select, Selected, ValueBranches};
 
 /// `#[derive(CircuitArg)]` — the struct impls of [`CircuitArg`] and
 /// [`CircuitArgs`], generated from the fields (field order is the wire

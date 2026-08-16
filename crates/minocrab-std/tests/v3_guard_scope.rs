@@ -287,7 +287,7 @@ fn a_value_chain_is_the_hand_written_select() {
         let chosen = c
             .when_value(g, |c| c.mul(x, y))
             .otherwise(|c| c.add(x, y));
-        c.assert(chosen);
+        c.assert(chosen.into_inner());
     });
     assert_eq!(by_chain, by_hand);
 }
@@ -356,7 +356,7 @@ fn a_value_chain_still_guards_effects() {
                 c.impact_mixed(1u64, &op());
                 x
             });
-        c.assert(chosen);
+        c.assert(chosen.into_inner());
     });
     assert_eq!(by_chain, by_hand);
 }
