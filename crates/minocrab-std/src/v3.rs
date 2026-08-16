@@ -48,7 +48,7 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// method, `c` and the guard visible at every call site.
 pub use ledger::{
     leaf_hash, LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList,
-    LedgerMap, LedgerMerkleTree, LedgerRepr, LedgerSet,
+    LedgerMap, LedgerMerkleTree, LedgerRepr, LedgerSet, STRAIGHT_LINE,
 };
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,

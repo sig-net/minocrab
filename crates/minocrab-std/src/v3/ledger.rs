@@ -489,10 +489,14 @@ impl<K, V> LedgerMap<K, V> {
     }
 }
 
-/// The guard of a STRAIGHT-LINE ledger operation: the immediate `1`, inlined
-/// into the Impact instruction rather than named by a `Copy` (see
-/// [`LedgerMap`]).
-const STRAIGHT_LINE: u64 = 1;
+/// The guard of a STRAIGHT-LINE Impact operation: the immediate `1`, inlined
+/// into the instruction rather than named by a `Copy` (see [`LedgerMap`]).
+///
+/// It is also what makes an op inside [`Circuit3::when`] pick the scope up —
+/// `Circuit3::resolve_guard` lets the immediate `1` YIELD to the ambient
+/// guard. So a helper that emits below the typed layer passes this and needs
+/// no guard parameter of its own; naming a guard is what `when` replaced.
+pub const STRAIGHT_LINE: u64 = 1;
 
 /// `export ledger s: Set<T>` — a `Map` with `Null` values, which is what
 /// Compact's `Set` IS.

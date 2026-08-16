@@ -192,6 +192,8 @@ Instruction selection is not, and never will be.
 2. Guard scoping — DONE (additive). See §6.
 3. Delete the =_under= / =_guarded= API halves and migrate the call sites
    (88 definitions, 217 call sites — the count in the original note was low).
+   PARTLY DONE, and the word /delete/ turns out to be wrong — see §9, which
+   corrects this line rather than summarising it.
    PREREQUISITE FOUND AND FIXED (2026-08-16): the ambient guard did not reach
    WITNESSES. =Circuit3::witness= passed =None=, so a witness read inside a
    scope would have consumed the private transcript on the branch that was
@@ -541,3 +543,106 @@ the twin's divergence ledger). The four surviving mechanisms are each
 load-bearing for a reason recorded above, and none of them is pressure to add
 a sixth: a new operand position needs no special case now, which was the
 point.
+
+* 9. STEP 3, as built (2026-08-16): what the scope replaced, and the two
+  things it cannot
+
+** The straight-line half went completely, and for free
+
+54 of the call sites spelled an UNCONDITIONAL ledger operation as
+=x_under(c, one, ..)=, where =one= is =c.constant(1u64)= — a =Copy= of the
+immediate =1= that §8's fold now substitutes into the Impact instruction and
+drops. So =x_under(c, one, ..)= and =x(c, ..)= emit the same operand, and the
+migration is a rename: ALL 167 CIRCUITS BYTE-IDENTICAL. Two helpers
+(=assert_initialized=, =check_fresh_request=) then carried a dead parameter
+and lost it, which is how the three port forks reached the spelling
+=erc20_vault_modern= has had since M9 phase 8.
+
+Worth naming because it is the fold paying a second time: before §8 this
+rename would have MOVED every one of those instructions, from a named wire to
+an immediate.
+
+** The BLOCK-shaped guard went too, and this is where the scope pays
+
+=refund_surrendered_value= threaded =guard: Wire3= through its signature to
+feed seven guarded callees — a witness pair, a map lookup, two asserts, an ABI
+decode, an =ownPublicKey= witness pair and a mint. It now takes no guard at
+all and its caller writes =c.when(refunding, |c| refund_surrendered_value(..))=.
+The port's =refund= went the same way: its two routes were already two
+consecutive blocks, so each became one scope, and the twelve =_guarded= /
+=_under= calls inside them became plain ones.
+
+MEASURED, on the criterion the differentials use: 162 of 167 circuits
+byte-identical, 5 identical MODULO IDENTIFIER NUMBERING, 0 changed. The five
+are the circuits whose in-branch asserts went through
+=common::assert_if_message=, which named its =1= with a =Copy= that the fold
+removed — the removed =Copy= had still consumed a number. Same class as §8's
+own 28 circuits. =cargo test --workspace= green, row_snapshot and
+interface_snapshot untouched.
+
+** WHAT THE SCOPE CANNOT REPLACE (1): a guarded value that escapes its block
+
+27 of the 39 remaining call sites are one shape: a guarded READ or WITNESS
+whose VALUE is consumed OUTSIDE the guarded block. =erc20_vault_opt='s merged
+=refund= is the clearest — the withdrawal route's record and the swap route's
+record are each read under their own guard, and then both feed ONE
+=cond_select= in a shared claimant gate. There is no block that contains the
+read and its consumer.
+
+=when= returns =()= by decision (§6: a value that depends on a branch has to
+be SELECTED, which is =when_value=), and =when_value= is the wrong shape here:
+it needs an =otherwise= and emits a =cond_select= per slot, which a guarded
+read does not. So the value cannot come out of the scope.
+
+The decision to re-examine is narrow, and it is dmd's:
+
+  A GUARDED READ IS NOT A CONDITIONAL VALUE — it is a value that is the
+  type's DEFAULT when the guard is off, with no select emitted. §6 rejected a
+  value-returning =guarded= because it "invites the reading that the value
+  came from a conditional, when in fact it was computed unconditionally and
+  only its EFFECTS were guarded". For a transcript read that reading is not
+  wrong, it is exactly right — which is why the objection may not reach this
+  case.
+
+Until that is settled the 27 sites keep naming their guard, and the four
+=_guarded= read helpers stay. Nothing is worse than it was; the API just has
+two spellings where one was intended.
+
+The other 12 remaining sites are effect-only =remove_under=s, and they COULD
+move — as twelve one-statement scopes, interleaved between the reads above
+that cannot. They are left alone deliberately, for the reason in the last
+subsection: a scope per statement is ceremony, not structure. They move when
+the 27 beside them do, or not at all.
+
+** WHAT THE SCOPE CANNOT REPLACE (2): the halves ARE the equivalence proof
+
+The bigger correction, and it is why /delete/ is the wrong verb in step 3.
+
+=tests/v3_guard_scope.rs= proves the scope is a way of WRITING a guard down
+rather than a different lowering, and it does so by building the same circuit
+twice: once with =guarded(g, plain)= and once with the hand-threaded
+=plain_under(g)= / =witness_guarded(g)= / =public_transcript_input_guarded(g)=,
+then comparing bytes. =tests/v3_ledger.rs= does the same for the typed ledger
+layer against raw =minocrab_ledger= calls. Delete the halves and there is no
+twin left to compare against — the test would have to hand-roll a duplicate of
+the thing it is checking, which is not a proof of anything.
+
+So the halves are not dead API to remove; they are the REFERENCE
+IMPLEMENTATION the gate compares to. The right move is to DEMOTE rather than
+delete: they stop being how a contract spells a guard (done — 85 of the contracts'
+124 call sites moved), and they stay as the threaded twin the equivalence tests need.
+Whether they should also stop being =pub= is a separate and smaller question,
+answerable only after the 27 above are settled.
+
+** Where the boundary actually falls, stated so the next session does not
+   re-derive it
+
+A scope pays when a whole BLOCK shares one guard: the guard is named once, and
+the reads, witnesses and asserts inside stop being able to get it wrong. That
+is =refund_surrendered_value= and both routes of the port's =refund=.
+
+A scope does NOT pay when guards alternate statement by statement, which is
+what the merged =refund= of the opt lineage is — the withdrawal route's and
+the swap route's reads interleaved so their results can be selected. One-statement scopes there would
+be more ceremony than the named guard they replace, and would say something
+false besides: that the statements form a block.

@@ -303,8 +303,8 @@ pub fn initialize(
 
 /// `assert(initialized >= 1, "Not initialized")` — a Counter read + `0 <
 /// initialized`.
-fn assert_initialized(c: &mut Circuit3, one: Wire3<FieldT, Public>) {
-    let init = VAULT.initialized.read_under(c, one);
+fn assert_initialized(c: &mut Circuit3) {
+    let init = VAULT.initialized.read(c);
     c.assert(init.gt(0u64).message("Not initialized"));
 }
 
@@ -358,7 +358,7 @@ pub fn deposit(
 
     // assert(initialized >= 1, "Not initialized")
     c.region("guards", |c| {
-        assert_initialized(c, one);
+        assert_initialized(c);
 
         // assert(erc20Address as Field != 0)
         c.assert(erc20_address.ne(zero.private()));
@@ -470,14 +470,13 @@ pub fn deposit(
 /// disclosed id and its ledger-value form.
 fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
     c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
     map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
 ) -> B32<Public> {
     let request_id_priv = signet::calculate_request_id(c, request);
     c.region("record: freshness", |c| {
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
-        let exists = map.member_under(c, one, &request_id);
+        let exists = map.member(c, &request_id);
         let fresh = c.not(exists.field());
         c.assert_with(fresh, Some("Request already exists"));
         request_id
@@ -498,7 +497,7 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
         // The record's atoms come from its TYPE — there is no atom list here
         // to disagree with the one the settle circuits look it up with.
         let record = signet::EventRecord::from_limbs(request.limbs().disclose_as::<RequestRecord>(c));
-        map.insert_under(c, one, request_id, &record);
+        map.insert(c, request_id, &record);
     });
 }
 
@@ -535,7 +534,7 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
     map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
     notify_path: [u8; 4],
 ) -> B32<Public> {
-    let request_id = check_fresh_request(c, one, request, map);
+    let request_id = check_fresh_request(c, request, map);
     insert_request(c, one, request, map, &request_id);
     notify_signet(c, one, &request_id, notify_path);
     request_id
@@ -634,7 +633,7 @@ pub fn withdraw(
     let zero = c.constant(0u64);
 
     c.region("guards", |c| {
-        assert_initialized(c, one);
+        assert_initialized(c);
         c.assert(erc20_address.ne(zero.private()));
         c.assert(amount.gt(zero.private()));
         c.assert(le(amount, u64::MAX));
@@ -725,7 +724,7 @@ pub fn withdraw(
         schema,
     );
 
-    let request_id = check_fresh_request(c, one, &request, &VAULT.sign_bidirectional_event_map);
+    let request_id = check_fresh_request(c, &request, &VAULT.sign_bidirectional_event_map);
 
     // The surrendered value is BURNED: receiveShielded (custody) then
     // sendImmediateShielded to the burn address.
@@ -754,7 +753,7 @@ pub fn withdraw(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<WithdrawerRefundCommitment>(c);
-    VAULT.refund_commitment.insert_under(c, one, &request_id, &rc);
+    VAULT.refund_commitment.insert(c, &request_id, &rc);
 
     notify_signet(c, one, &request_id, [0, 0, 0, 0]);
 
@@ -818,7 +817,7 @@ pub fn swap(
     let zero = c.constant(0u64);
 
     c.region("guards", |c| {
-        assert_initialized(c, one);
+        assert_initialized(c);
         // `tokenIn`/`tokenOut` are already wires here (the body discloses
         // them next), and an EQUALITY needs no width — so these two are the
         // free-function surface rather than the method one.
@@ -938,7 +937,7 @@ pub fn swap(
         respond_schema,
     );
 
-    let request_id = check_fresh_request(c, one, &request, &VAULT.swap_event_map);
+    let request_id = check_fresh_request(c, &request, &VAULT.swap_event_map);
 
     // Burn the surrendered amountInMaximum of tokenIn.
     let coin = minocrab_std::v3::ShieldedCoinInfo3 {
@@ -959,7 +958,7 @@ pub fn swap(
     };
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<SwapperRefundCommitment>(c);
-    VAULT.swap_refund_commitment.insert_under(c, one, &request_id, &rc);
+    VAULT.swap_refund_commitment.insert(c, &request_id, &rc);
 
     notify_signet(c, one, &request_id, [11, 0, 0, 0]);
 
@@ -995,7 +994,7 @@ pub fn approve_router(
     let zero = c.constant(0u64);
 
     c.region("guards", |c| {
-        assert_initialized(c, one);
+        assert_initialized(c);
         c.assert(erc20_address.ne(zero.private()));
     });
 
@@ -1150,7 +1149,7 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
     output_limbs: &[Wire3<FieldT, Private>],
 ) -> B32<Public> {
     let request_id = args.request_id.disclose_as::<SettleRequestId>(c);
-    assert_initialized(c, one);
+    assert_initialized(c);
     let mpc_key = common::cell_read_point(c, one, MPC_RESPONSE_KEY);
     let rid_priv = B32 {
         hi: request_id.hi.private(),
@@ -1175,7 +1174,6 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
 /// to `left(ownPublicKey())`.
 fn refund_surrendered_value(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
     request_id: &B32<Public>,
     ev: &VaultRecord,
     mint_nonce: &B32<Public>,
@@ -1183,31 +1181,31 @@ fn refund_surrendered_value(
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
     c.region("withdrawer gate", |c| {
-        let sk = common::witness_sk_guarded(c, guard);
+        let sk = common::witness_sk(c);
         let rid_priv = B32 {
             hi: request_id.hi.private(),
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = VAULT.refund_commitment.lookup_guarded(c, guard, request_id);
+        let stored = VAULT.refund_commitment.lookup(c, request_id);
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
         let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_withdrawer = c.mul(eq_hi, eq_lo);
-        common::assert_if_with(c, guard.private(), is_withdrawer, "Not the withdrawer");
+        c.assert_with(is_withdrawer, Some("Not the withdrawer"));
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
-    common::assert_if(c, guard, ev.calldata_is_some());
+    c.assert(ev.calldata_is_some());
 
     // const amount = abiWordToUint128(calldata.words[1])
     let word1 = ev.word(1);
-    let amount = signet::abi_word_to_uint128_guarded(c, guard, &word1);
+    let amount = signet::abi_word_to_uint128(c, &word1);
 
     // Re-mint to the withdrawer's own wallet key.
     let domain_sep = vault_token_domain_separator(c, ev.to());
-    let own_pk = minocrab_std::v3::own_public_key_guarded(c, guard);
+    let own_pk = minocrab_std::v3::own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key_guarded(c, guard, &domain_sep, amount, mint_nonce, &own_pk);
+    common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1244,14 +1242,14 @@ pub fn complete_withdraw(
     // const signatureRequest = signBidirectionalEventMap.lookup(requestId);
     // signBidirectionalEventMap.remove(requestId)
     let ev = c.region("event map consume", |c| {
-        let pending = VAULT.refund_commitment.member_under(c, one, &request_id);
+        let pending = VAULT.refund_commitment.member(c, &request_id);
         c.assert_with(pending.field(), Some("Withdrawal not found"));
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup_under(c, one, &request_id);
+            .lookup(c, &request_id);
         VAULT
             .sign_bidirectional_event_map
-            .remove_under(c, one, &request_id);
+            .remove(c, &request_id);
         ev
     });
 
@@ -1262,10 +1260,12 @@ pub fn complete_withdraw(
     // if (!succeeded) { refundSurrenderedValue(...) }
     let refunding = c.not(succeeded);
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
-    refund_surrendered_value(c, refunding, &request_id, &ev, &mint_nonce);
+    c.when(refunding, |c| {
+        refund_surrendered_value(c, &request_id, &ev, &mint_nonce)
+    });
 
     // refundCommitment.remove(requestId)
-    VAULT.refund_commitment.remove_under(c, one, &request_id);
+    VAULT.refund_commitment.remove(c, &request_id);
 
     Discloses::of(())
 }
@@ -1302,10 +1302,10 @@ pub fn complete_swap(
     // assert(swapRefundCommitment.member(requestId), "Swap not found")
     // const signatureRequest = swapEventMap.lookup(requestId); remove.
     let ev = c.region("event map consume", |c| {
-        let pending = VAULT.swap_refund_commitment.member_under(c, one, &request_id);
+        let pending = VAULT.swap_refund_commitment.member(c, &request_id);
         c.assert_with(pending.field(), Some("Swap not found"));
-        let ev = VAULT.swap_event_map.lookup_under(c, one, &request_id);
-        VAULT.swap_event_map.remove_under(c, one, &request_id);
+        let ev = VAULT.swap_event_map.lookup(c, &request_id);
+        VAULT.swap_event_map.remove(c, &request_id);
         ev
     });
 
@@ -1317,12 +1317,12 @@ pub fn complete_swap(
             lo: request_id.lo.private(),
         };
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = VAULT.swap_refund_commitment.lookup_under(c, one, &request_id);
+        let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
         let eq_lo = c.test_eq(rc.lo, stored.lo.private());
         let is_swapper = c.mul(eq_hi, eq_lo);
         c.assert(is_swapper);
-        VAULT.swap_refund_commitment.remove_under(c, one, &request_id);
+        VAULT.swap_refund_commitment.remove(c, &request_id);
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
@@ -1337,7 +1337,7 @@ pub fn complete_swap(
     let token_out = signet::abi_word_low20(c, &word1);
     let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = args.mint_nonce.disclose_as::<SwapMintNonce>(c);
-    common::mint_shielded_token_to_key(c, one, &ds_out, amount_out, &mint_nonce, &recipient);
+    common::mint_shielded_token_to_key(c, &ds_out, amount_out, &mint_nonce, &recipient);
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
@@ -1368,7 +1368,7 @@ pub fn complete_swap(
         ],
     );
     let change_nonce = B32::from_typed(c, change_nonce);
-    common::mint_shielded_token_to_key(c, one, &ds_in, change, &change_nonce, &recipient);
+    common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
 
     Discloses::of(())
 }
@@ -1418,73 +1418,57 @@ pub fn refund(
     // explicit `disclose(...)` on the branch condition, a no-op here.
     let is_withdrawal = VAULT
         .refund_commitment
-        .member_under(c, one, &request_id)
+        .member(c, &request_id)
         .field();
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
 
-    // Withdrawal branch: completeWithdraw's failure path verbatim.
-    let ev = c.region("event map consume", |c| {
-        let ev = VAULT
-            .sign_bidirectional_event_map
-            .lookup_guarded(c, is_withdrawal, &request_id);
-        VAULT
-            .sign_bidirectional_event_map
-            .remove_under(c, is_withdrawal, &request_id);
-        ev
+    // Withdrawal branch: completeWithdraw's failure path verbatim. The whole
+    // branch is ONE scope, so the reads, the witnesses and the asserts inside
+    // it carry `is_withdrawal` without any of them naming it.
+    c.when(is_withdrawal, |c| {
+        let ev = c.region("event map consume", |c| {
+            let ev = VAULT.sign_bidirectional_event_map.lookup(c, &request_id);
+            VAULT.sign_bidirectional_event_map.remove(c, &request_id);
+            ev
+        });
+        refund_surrendered_value(c, &request_id, &ev, &mint_nonce);
+        VAULT.refund_commitment.remove(c, &request_id);
     });
-    refund_surrendered_value(c, is_withdrawal, &request_id, &ev, &mint_nonce);
-    VAULT
-        .refund_commitment
-        .remove_under(c, is_withdrawal, &request_id);
 
     // Swap branch: re-mint the surrendered amountInMaximum of tokenIn.
     let swapping = c.not(is_withdrawal);
-    let ev7 = c.region("event map consume", |c| {
-        let swap_pending = VAULT
-            .swap_refund_commitment
-            .member_guarded(c, swapping, &request_id)
-            .field();
-        common::assert_if(c, swapping, swap_pending);
-        let ev7 = VAULT
-            .swap_event_map
-            .lookup_guarded(c, swapping, &request_id);
-        VAULT.swap_event_map.remove_under(c, swapping, &request_id);
-        ev7
+    c.when(swapping, |c| {
+        let ev7 = c.region("event map consume", |c| {
+            let swap_pending = VAULT.swap_refund_commitment.member(c, &request_id);
+            c.assert(swap_pending);
+            let ev7 = VAULT.swap_event_map.lookup(c, &request_id);
+            VAULT.swap_event_map.remove(c, &request_id);
+            ev7
+        });
+        c.region("swapper gate", |c| {
+            let sk = common::witness_sk(c);
+            let rid_priv = B32 {
+                hi: request_id.hi.private(),
+                lo: request_id.lo.private(),
+            };
+            let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
+            let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
+            let eq_hi = c.test_eq(rc.hi, stored.hi.private());
+            let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+            let is_swapper = c.mul(eq_hi, eq_lo);
+            c.assert(is_swapper);
+            VAULT.swap_refund_commitment.remove(c, &request_id);
+        });
+        c.assert(ev7.calldata_is_some());
+        let word5 = ev7.word(5);
+        let amount_in_max = signet::abi_word_to_uint128(c, &word5);
+        let word0 = ev7.word(0);
+        let token_in = signet::abi_word_low20(c, &word0);
+        let ds_in = vault_token_domain_separator(c, token_in);
+        let own_pk = minocrab_std::v3::own_public_key(c);
+        let own_pk = own_pk.disclose_as::<SwapRefundRecipient>(c);
+        common::mint_shielded_token_to_key(c, &ds_in, amount_in_max, &mint_nonce, &own_pk);
     });
-    c.region("swapper gate", |c| {
-        let sk = common::witness_sk_guarded(c, swapping);
-        let rid_priv = B32 {
-            hi: request_id.hi.private(),
-            lo: request_id.lo.private(),
-        };
-        let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
-        let stored = VAULT
-            .swap_refund_commitment
-            .lookup_guarded(c, swapping, &request_id);
-        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
-        let is_swapper = c.mul(eq_hi, eq_lo);
-        common::assert_if(c, swapping.private(), is_swapper);
-        VAULT
-            .swap_refund_commitment
-            .remove_under(c, swapping, &request_id);
-    });
-    common::assert_if(c, swapping, ev7.calldata_is_some());
-    let word5 = ev7.word(5);
-    let amount_in_max = signet::abi_word_to_uint128_guarded(c, swapping, &word5);
-    let word0 = ev7.word(0);
-    let token_in = signet::abi_word_low20(c, &word0);
-    let ds_in = vault_token_domain_separator(c, token_in);
-    let own_pk = minocrab_std::v3::own_public_key_guarded(c, swapping);
-    let own_pk = own_pk.disclose_as::<SwapRefundRecipient>(c);
-    common::mint_shielded_token_to_key_guarded(
-        c,
-        swapping,
-        &ds_in,
-        amount_in_max,
-        &mint_nonce,
-        &own_pk,
-    );
 
     Discloses::of(())
 }
@@ -1560,7 +1544,7 @@ pub fn claim(
     let request_id = request_id.disclose_as::<ClaimRequestId>(c);
 
     // assert(initialized >= 1, "Not initialized")
-    assert_initialized(c, one);
+    assert_initialized(c);
 
     // const response = deserialize<VaultResponse, 1>(serializedOutput);
     // assert(response.success) — the packed Boolean is (byte == 1).
@@ -1588,14 +1572,14 @@ pub fn claim(
     let ev = c.region("event map consume", |c| {
         let found = VAULT
             .sign_bidirectional_event_map
-            .member_under(c, one, &request_id);
+            .member(c, &request_id);
         c.assert(found.field());
         let ev = VAULT
             .sign_bidirectional_event_map
-            .lookup_under(c, one, &request_id);
+            .lookup(c, &request_id);
         VAULT
             .sign_bidirectional_event_map
-            .remove_under(c, one, &request_id);
+            .remove(c, &request_id);
         ev
     });
 

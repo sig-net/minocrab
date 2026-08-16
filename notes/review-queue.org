@@ -634,3 +634,15 @@ reviewer should look at.
       `#[contract]` block that DERIVES the set, so the list stops being
       hand-written. Until then this is a known hole, written down rather
       than assumed away.
+- [ ] ir-passes step 3 (guard scopes replace the `_under`/`_guarded` call
+      sites): the reviewable part is NOT the 54 straight-line renames (the
+      dump is byte-identical) but the five circuits that moved to
+      `identical modulo identifier numbering`, and the two whole-branch
+      scopes behind them — `refund_surrendered_value` and the port's
+      `refund`, where a block of reads, witnesses and asserts stopped
+      naming its guard and started inheriting it. What a reviewer should
+      check is that each such block contains everything the guard used to
+      cover and nothing it did not: an instruction that moved INSIDE a
+      scope by accident would now be guarded, and the dump comparison
+      cannot tell that apart from the intended change because both show up
+      as a renumbering. notes/ir-passes.org §9 names the boundary.

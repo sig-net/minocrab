@@ -9,7 +9,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::{
     coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
-    Secp256k1Point, ShieldedCoinInfo3, B32,
+    Secp256k1Point, ShieldedCoinInfo3, B32, STRAIGHT_LINE,
 };
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
@@ -500,15 +500,14 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
 /// (completeSwap's two mints).
 pub fn mint_shielded_token_to_key(
     c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
     domain_sep: &B32<Public>,
     value: Wire3<FieldT, Public>,
     nonce: &B32<Public>,
     pk: &B32<Public>,
 ) {
-    let me = kernel_self(c, one);
+    let me = kernel_self(c, STRAIGHT_LINE);
     let me = B32 { hi: me[0], lo: me[1] };
-    mint_shielded_token_to_key_with(c, one, me, domain_sep, value, nonce, pk);
+    mint_shielded_token_to_key_with(c, STRAIGHT_LINE, me, domain_sep, value, nonce, pk);
 }
 
 /// `mintShieldedToken(domain_sep, value, nonce, left(pk))` under a branch

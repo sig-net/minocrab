@@ -1055,7 +1055,6 @@ fn verify_attestation<T: CircuitBorsh<Private>>(
 /// an answer in the transcript on the success path, which needs none.
 fn refund_surrendered_value(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, Public>,
     request_id: &B32<Public>,
     ev: &VaultRecord,
     mint_nonce: &B32<Public>,
@@ -1063,31 +1062,27 @@ fn refund_surrendered_value(
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
     c.region("withdrawer gate", |c| {
-        let sk = common::witness_sk_guarded(c, guard);
+        let sk = common::witness_sk(c);
         let rc = withdraw_refund_commitment(c, &sk, &request_id.private());
-        let stored = VAULT.refund_commitment.lookup_guarded(c, guard, request_id);
-        // `.when(guard)` IS the in-branch assert (M9 phase 8): the condition
-        // binds only where the branch is taken, which the ports have to
-        // spell as `common::assert_if_with`.
-        c.assert(
-            b32_eq(&rc, &stored.private())
-                .when(guard)
-                .message("Not the withdrawer"),
-        );
+        let stored = VAULT.refund_commitment.lookup(c, request_id);
+        // The AMBIENT guard is the in-branch assert: this whole function runs
+        // inside `c.when(refunding, ..)`, so the condition binds only where
+        // the branch is taken and nothing here names the guard.
+        c.assert(b32_eq(&rc, &stored.private()).message("Not the withdrawer"));
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
-    c.assert(is_true(Bool::from_field(ev.calldata_is_some())).when(guard));
+    c.assert(is_true(Bool::from_field(ev.calldata_is_some())));
 
     // const amount = abiWordToUint128(calldata.words[1])
     let word1 = ev.word(1);
-    let amount = signet::abi_word_to_uint128_guarded(c, guard, &word1);
+    let amount = signet::abi_word_to_uint128(c, &word1);
 
     // Re-mint to the withdrawer's own wallet key.
     let domain_sep = vault_token_domain_separator(c, ev.to());
-    let own_pk = own_public_key_guarded(c, guard);
+    let own_pk = own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key_guarded(c, guard, &domain_sep, amount, mint_nonce, &own_pk);
+    common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1140,7 +1135,9 @@ pub fn complete_withdraw(
     // if (!succeeded) { refundSurrenderedValue(...) }
     let refunding = c.not(succeeded);
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
-    refund_surrendered_value(c, refunding, &request_id, &ev, &mint_nonce);
+    c.when(refunding, |c| {
+        refund_surrendered_value(c, &request_id, &ev, &mint_nonce)
+    });
 
     // refundCommitment.remove(requestId)
     VAULT.refund_commitment.remove(c, &request_id);
