@@ -13,7 +13,7 @@
 use minocrab::v3::{Circuit3, Compiled3, FieldT};
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
-    eq, ge, greater_than, is_true, le, less_than, ne, not, Bool, Bytes, Uint,
+    eq, ge, greater_than, is_true, le, less_than, ne, not, Bool, BoundedUint, Bytes, Uint,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -384,4 +384,50 @@ fn widen_is_free_and_compares_at_the_wider_width() {
     let before = c.instruction_count();
     let _wide: Uint<128, Private> = narrow.widen();
     assert_eq!(c.instruction_count(), before);
+}
+
+// --- a literal outside the operand's BOUND (dmd, 2026-08-16) ---------------
+//
+// The width check above is not enough once bounded integers are in play: a
+// `BoundedUint<300>` COMPARES at 9 bits, so `500` fits the width and is still
+// a value the operand can never take. The comparison is then a constant, which
+// is a bug in every case we can construct.
+
+/// dmd's own example: `b.lt(500u64)` on a `BoundedUint<300>` used to compile
+/// and be always true.
+#[test]
+#[should_panic(expected = "is larger than the largest value the operand it is compared with can hold (299)")]
+fn a_literal_above_the_bound_is_rejected() {
+    let mut c = Circuit3::new();
+    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    c.assert(less_than(b, 500u64));
+}
+
+/// The bound is EXCLUSIVE, so the largest legal value is `BOUND - 1` and a
+/// literal AT it is fine: `b < 299` is a real question.
+#[test]
+fn a_literal_at_the_bound_is_accepted() {
+    let mut c = Circuit3::new();
+    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    c.assert(less_than(b, 299u64));
+}
+
+/// The check reads the OTHER operand's type, so it fires with the literal on
+/// either side.
+#[test]
+#[should_panic(expected = "is larger than the largest value the operand it is compared with can hold (299)")]
+fn a_literal_above_the_bound_is_rejected_on_the_left() {
+    let mut c = Circuit3::new();
+    let b = BoundedUint::<300, Private>::from_field(c.arg::<FieldT>("b"));
+    c.assert(greater_than(500u64, b));
+}
+
+/// It applies to plain widths too, where it agrees with the width check
+/// rather than replacing it: 300 is not a value a `Uint<8>` can take.
+#[test]
+#[should_panic(expected = "does not fit the 8 bits")]
+fn a_literal_above_a_plain_width_is_still_rejected() {
+    let mut c = Circuit3::new();
+    let byte = Uint::<8, Private>::from_field(c.arg::<FieldT>("byte"));
+    c.assert(less_than(byte, 300u64));
 }

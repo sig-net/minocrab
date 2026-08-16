@@ -109,6 +109,18 @@ pub trait CheckOperand {
     /// and for a literal.
     const BITS: Option<u32>;
 
+    /// The LARGEST VALUE this operand's type admits, if the type says.
+    /// `None` for a raw wire, for a literal, and wherever the answer does
+    /// not fit a `u128` (a width that wide constrains nothing a literal
+    /// could violate).
+    ///
+    /// Distinct from [`CheckOperand::BITS`], and the distinction is the
+    /// whole point: a `BoundedUint<300>` is COMPARED at 9 bits, so a literal
+    /// `500` fits the width and is still a value the operand can never take.
+    /// Comparing against it is a constant, and constants written as
+    /// comparisons are bugs — see [`check_literal_within`].
+    const MAX: Option<u128> = None;
+
     /// The value, if it is a literal — what the range check looks at.
     fn literal(&self) -> Option<Fr> {
         None
@@ -130,6 +142,11 @@ impl<V: Vis3> CheckOperand for Wire3<FieldT, V> {
 impl<const BITS: u32, V: Vis3> CheckOperand for Uint<BITS, V> {
     type Vis = V;
     const BITS: Option<u32> = Some(BITS);
+    const MAX: Option<u128> = if BITS >= 128 {
+        None
+    } else {
+        Some((1u128 << BITS) - 1)
+    };
 
     fn operand(self) -> Operand<FieldT, V> {
         self.field().into()
@@ -147,6 +164,10 @@ impl<const BITS: u32, V: Vis3> CheckOperand for Uint<BITS, V> {
 impl<const BOUND: u128, V: Vis3> CheckOperand for BoundedUint<BOUND, V> {
     type Vis = V;
     const BITS: Option<u32> = Some(uint_compare_bits(BOUND - 1));
+    /// The bound is EXCLUSIVE (`Uint<0..BOUND>`), so the largest legal value
+    /// is `BOUND - 1` — the correction M14 had to make to three of our own
+    /// records (notes/bounded-integers.org).
+    const MAX: Option<u128> = Some(BOUND - 1);
 
     fn operand(self) -> Operand<FieldT, V> {
         self.field().into()
@@ -156,6 +177,11 @@ impl<const BOUND: u128, V: Vis3> CheckOperand for BoundedUint<BOUND, V> {
 impl<const N: usize, V: Vis3> CheckOperand for Bytes<N, V> {
     type Vis = V;
     const BITS: Option<u32> = Some(8 * N as u32);
+    const MAX: Option<u128> = if N >= 16 {
+        None
+    } else {
+        Some((1u128 << (8 * N)) - 1)
+    };
 
     fn operand(self) -> Operand<FieldT, V> {
         self.field().into()
@@ -165,6 +191,7 @@ impl<const N: usize, V: Vis3> CheckOperand for Bytes<N, V> {
 impl<V: Vis3> CheckOperand for Bool<V> {
     type Vis = V;
     const BITS: Option<u32> = Some(1);
+    const MAX: Option<u128> = Some(1);
 
     fn operand(self) -> Operand<FieldT, V> {
         self.field().into()
@@ -329,6 +356,10 @@ where
         check_literal_fits(first.literal(), bits);
         check_literal_fits(second.literal(), bits);
     }
+    // …and the narrower check the width alone cannot make: a literal outside
+    // what the OTHER operand's type can hold makes the comparison a constant.
+    check_literal_within(first.literal(), S::MAX, S::BITS);
+    check_literal_within(second.literal(), F::MAX, F::BITS);
     Check {
         node: Node::Compare {
             cmp,
@@ -360,6 +391,62 @@ fn width(cmp: Cmp, a: Option<u32>, b: Option<u32>) -> Option<u32> {
             None
         }
     }
+}
+
+
+/// A literal compared against a typed operand has to be a value that operand
+/// can actually TAKE.
+///
+/// [`check_literal_fits`] above asks whether the literal fits the comparison
+/// WIDTH, which is a weaker question and misses the case bounded integers make
+/// common: a `BoundedUint<300>` compares at 9 bits, so `b.lt(500u64)` fits the
+/// width and is nonetheless always true, because `b` is at most 299. A
+/// comparison whose answer is fixed at build time is a bug in every case we
+/// can construct — the author meant a different constant, or a different type.
+///
+/// BUILD-TIME PANIC, and recorded as one (per dmd's compile-errors-over-panics
+/// rule, notes/contract-api.org §"Panics"): a literal's MAGNITUDE is not a
+/// type, so there is nothing for an inline `const` assert to look at. dmd
+/// authorised this position explicitly on 2026-08-16 — "definitely catch if
+/// the literal you're using is larger than the bound if you can, you can fail
+/// at compile time or test/IR generation time". Closing it at compile time
+/// needs the literal as a const generic (`lit::<500>()`), which is the open
+/// API-shape question in the same section and a bigger change than the bug is
+/// worth today.
+fn check_literal_within(literal: Option<Fr>, max: Option<u128>, bits: Option<u32>) {
+    let (Some(value), Some(max)) = (literal, max) else {
+        return;
+    };
+    let Some(as_u128) = fr_as_u128(value) else {
+        // Wider than a u128 and therefore wider than any `max` we hold; the
+        // width check above already rejected it if the width was known.
+        return;
+    };
+    assert!(
+        as_u128 <= max,
+        "the literal {as_u128} is larger than the largest value the operand it \
+         is compared with can hold ({max}), so this comparison has the same \
+         answer for every input — fix: compare against a constant in 0..={max}, \
+         or widen the operand's type if it should be able to reach {as_u128}\
+         {}",
+        match bits {
+            Some(bits) => format!(" (the comparison itself runs at {bits} bits, which is why the width check above accepts it)"),
+            None => String::new(),
+        }
+    );
+}
+
+/// A field element as a `u128`, or `None` if it does not fit one.
+fn fr_as_u128(value: Fr) -> Option<u128> {
+    let bytes = value.as_le_bytes();
+    if bytes.iter().skip(16).any(|&b| b != 0) {
+        return None;
+    }
+    let mut buf = [0u8; 16];
+    for (i, &b) in bytes.iter().take(16).enumerate() {
+        buf[i] = b;
+    }
+    Some(u128::from_le_bytes(buf))
 }
 
 /// A literal compared at `bits` has to fit in `bits`.

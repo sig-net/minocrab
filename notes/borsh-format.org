@@ -648,8 +648,11 @@ path: MidnightPublisher::publish_signature bails (cli/mod.rs:537-542)
   per-caller-address (sender_string = hex(caller addr) → epsilon), so
   per-deployment format follows the same seam if ever needed. LIKELY
   MOOT: since the publisher bails, no old vault ever settled — stage 5
-  is GREENFIELD, flip Midnight => Borsh unconditionally (confirm with
-  dmd that no Midnight deployment is live-settling).
+  is GREENFIELD, flip Midnight => Borsh unconditionally.
+  CONFIRMED (dmd, 2026-08-16): "Nothing is settled on midnight, this
+  hasn't been deployed yet." So there is no migration path to build and no
+  old format to keep working: stages 5 and 7 may change the record and the
+  response format outright.
 - Q3 0x02 emission: closed for "bool" schemas (every path launders
   through a Rust bool; borsh bool writes 0|1; ABI writes canonical
   word). Would reopen if a schema said bytes1. assert_boolean is
@@ -671,6 +674,26 @@ path: MidnightPublisher::publish_signature bails (cli/mod.rs:537-542)
 - Q4 (version byte): their decoder fails closed on unknown shapes
   (rejects leftover atoms) but silently ("record-undecodable") — a
   format_version byte turns that into a named drop. Recommend yes.
+  ANSWERED (dmd, 2026-08-16): *YES, and the value is 128 (0x80)*, chosen
+  so it cannot collide with a Compact/Midnight version byte now or later —
+  dmd: "just make sure it doesn't clash with any format version bytes that
+  Compact uses or will use (if they're on 1 don't use 2, use something like
+  100)". THE EVIDENCE for 100 being safe, since the point is headroom
+  rather than taste: every version number anywhere in the pinned stack is
+  small — ZKIR envelope major 2 and 3 (both appear in the corpus), Impact
+  =TranscriptVersion { major: 2, minor: 3 }=, Compact =pragma
+  language_version= 0.12 through 0.23 across the corpus, compactc release
+  0.33.0-rc.2. The largest number in any position is 33. dmd picked *128*
+  over the 100 first proposed — "pick 128, so it seems like we thought about
+  it more" — and it is the better number for a reason worth writing down:
+  0x80 is the byte with only the HIGH BIT set, so "this is not a small
+  version number" is a single bit test rather than a magnitude comparison,
+  and every value below it stays available to them. A decoder reading 0x80
+  where it expected a Compact version knows immediately which format it is
+  holding.
+  Placement is unchanged: record/log payload only, NOT attested outputs
+  (the kind tag suffices there and the digest is signed). Lands with stage
+  7, since it is part of the record.
 - Key derivation: path = hex::encode(record.path), full-width, never
   trimmed; requester = the READ address (asserted == record.sender).
   Confirms the Q4-userCommitment stranding hazard and the M10

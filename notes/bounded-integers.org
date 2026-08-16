@@ -458,14 +458,36 @@ cost. (Reference: `less_than` is 8 rows at ≤32 bits, 11 at 64, 17 at 128;
    `Uint<0..1000>` at 10) do not compare. Compact code that mixes bounds
    freely will hit this a lot. `.widen::<1000>()` is the free fix and the
    error names it.
+   *SETTLED (dmd, 2026-08-16): KEEP THE STRICT FORM.* "I'm fine with the cost
+   of these fixed width comparisons, if you're using a bounded integer, you
+   probably have a good reason to do it, so you'd convert 99% of the time."
+   So the E0080 stands and we do NOT follow compactc's silent widening. The
+   candidate is closed, not deferred.
 2. A LITERAL COMPARED AGAINST A BOUNDED VALUE is range-checked against the
    COMPARISON WIDTH, not against the bound: `b.lt(500u64)` on a
    `BoundedUint<300>` compiles (500 fits 9 bits) and is a comparison that is
-   always true. Catching it needs the literal as a const generic
-   (`lit::<500>()`) — the same open question as `check_literal_fits`
-   (notes/contract-api.org §"Panics", item 1), still dmd's call, still not
-   this milestone's.
-   COST: zero rows either way; it is an API shape question.
+   always true.
+   *FIXED (dmd, 2026-08-16): "definitely catch if the literal you're using is
+   larger than the bound if you can, you can fail at compile time or
+   test/IR generation time."* Built as `predicate::check_literal_within`:
+   `CheckOperand` gained `MAX` — the largest value the operand's TYPE admits,
+   which is `BOUND - 1` for a bounded integer (the bound is exclusive, the
+   correction M14 made to three of our own records), `2^BITS - 1` for a
+   `Uint`, `2^(8N) - 1` for `Bytes<N>`, `1` for `Bool`, and `None` for a raw
+   wire or an answer too wide for a `u128`. A literal is now checked against
+   the OTHER operand's `MAX`, on either side, in ADDITION to the existing
+   width check rather than instead of it.
+   Position: IR-GENERATION-TIME PANIC, recorded as one per the
+   compile-errors-over-panics rule. A literal's magnitude is not a type, so
+   there is nothing for an inline `const` assert to look at; closing it at
+   compile time still needs `lit::<500>()`, which remains the open API-shape
+   question. dmd authorised this position explicitly.
+   The message is prescriptive and names both fixes (a constant in range, or
+   a wider type) and explains why the width check let it through.
+   COST: zero rows — it is a build-time check over a literal.
+   Gate: four tests in `tests/v3_predicates.rs`, including dmd's own example
+   and the exclusive-bound edge (`b.lt(299)` on a `BoundedUint<300>` is a real
+   question and is accepted).
 3. `BoundedUint<256>` AND `Uint<8>` ARE DIFFERENT RUST TYPES that emit the
    same instruction. `to_uint`/`widen` bridge them explicitly. A `From` impl
    would make the bridge implicit.
