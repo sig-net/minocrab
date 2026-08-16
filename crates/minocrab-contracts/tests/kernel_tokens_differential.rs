@@ -14,7 +14,7 @@
 //! header quotes the failure.
 
 use minocrab::v3::Compiled3;
-use minocrab_contracts::kernel_tokens as kt;
+use minocrab_contracts::kernel_tokens::{self as kt, KernelTokens};
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 /// compactc's artifact for one fixture circuit.
@@ -67,33 +67,33 @@ fn canonical(ir: &IrSource) -> String {
 fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     vec![
         // the nine kernel primitives that have vm-code and can be compiled
-        ("kMintUnshielded", kt::k_mint_unshielded as fn() -> Compiled3),
-        ("kClaimUnshieldedCoinSpend", kt::k_claim_unshielded_coin_spend),
-        ("kIncUnshieldedOutputs", kt::k_inc_unshielded_outputs),
-        ("kIncUnshieldedInputs", kt::k_inc_unshielded_inputs),
-        ("kBalance", kt::k_balance),
-        ("kBalanceLessThan", kt::k_balance_less_than),
-        ("kBalanceGreaterThan", kt::k_balance_greater_than),
-        ("kBlockTimeLessThan", kt::k_block_time_less_than),
-        ("kBlockTimeGreaterThan", kt::k_block_time_greater_than),
+        ("kMintUnshielded", KernelTokens::k_mint_unshielded as fn() -> Compiled3),
+        ("kClaimUnshieldedCoinSpend", KernelTokens::k_claim_unshielded_coin_spend),
+        ("kIncUnshieldedOutputs", KernelTokens::k_inc_unshielded_outputs),
+        ("kIncUnshieldedInputs", KernelTokens::k_inc_unshielded_inputs),
+        ("kBalance", KernelTokens::k_balance),
+        ("kBalanceLessThan", KernelTokens::k_balance_less_than),
+        ("kBalanceGreaterThan", KernelTokens::k_balance_greater_than),
+        ("kBlockTimeLessThan", KernelTokens::k_block_time_less_than),
+        ("kBlockTimeGreaterThan", KernelTokens::k_block_time_greater_than),
         // the stdlib circuits composed from them
-        ("sBlockTimeLt", kt::s_block_time_lt),
-        ("sBlockTimeGte", kt::s_block_time_gte),
-        ("sBlockTimeGt", kt::s_block_time_gt),
-        ("sBlockTimeLte", kt::s_block_time_lte),
-        ("sUnshieldedBalance", kt::s_unshielded_balance),
-        ("sUnshieldedBalanceLt", kt::s_unshielded_balance_lt),
-        ("sUnshieldedBalanceGte", kt::s_unshielded_balance_gte),
-        ("sUnshieldedBalanceGt", kt::s_unshielded_balance_gt),
-        ("sUnshieldedBalanceLte", kt::s_unshielded_balance_lte),
-        ("sReceiveUnshielded", kt::s_receive_unshielded),
+        ("sBlockTimeLt", KernelTokens::s_block_time_lt),
+        ("sBlockTimeGte", KernelTokens::s_block_time_gte),
+        ("sBlockTimeGt", KernelTokens::s_block_time_gt),
+        ("sBlockTimeLte", KernelTokens::s_block_time_lte),
+        ("sUnshieldedBalance", KernelTokens::s_unshielded_balance),
+        ("sUnshieldedBalanceLt", KernelTokens::s_unshielded_balance_lt),
+        ("sUnshieldedBalanceGte", KernelTokens::s_unshielded_balance_gte),
+        ("sUnshieldedBalanceGt", KernelTokens::s_unshielded_balance_gt),
+        ("sUnshieldedBalanceLte", KernelTokens::s_unshielded_balance_lte),
+        ("sReceiveUnshielded", KernelTokens::s_receive_unshielded),
         // the two with a conditional auto-receive
-        ("sSendUnshielded", kt::s_send_unshielded),
-        ("sMintUnshieldedToken", kt::s_mint_unshielded_token),
+        ("sSendUnshielded", KernelTokens::s_send_unshielded),
+        ("sMintUnshieldedToken", KernelTokens::s_mint_unshielded_token),
         // the shielded compositions
-        ("sMergeCoin", kt::s_merge_coin),
-        ("sMergeCoinImmediate", kt::s_merge_coin_immediate),
-        ("sSendShielded", kt::s_send_shielded),
+        ("sMergeCoin", KernelTokens::s_merge_coin),
+        ("sMergeCoinImmediate", KernelTokens::s_merge_coin_immediate),
+        ("sSendShielded", KernelTokens::s_send_shielded),
     ]
 }
 
@@ -114,6 +114,34 @@ fn identical_instruction_streams() {
             "{name}: our lowering differs from compactc's"
         );
     }
+}
+
+/// EVERY CIRCUIT THE CONTRACT EXPORTS IS IN THE DIFFERENTIAL — the check the
+/// hand-written lists could never make.
+///
+/// `KernelTokens::CIRCUITS` is derived by `#[contract]` from the file itself,
+/// so this compares the differential's cases against the contract rather than
+/// against another hand-written list. Add a circuit to the contract and forget
+/// this file, and the assertion names it.
+///
+/// Compared by FUNCTION POINTER, not by count: the two lists name circuits
+/// differently (compactc's `sMergeCoin` against our `s_merge_coin`), and a
+/// count would pass while two entries silently swapped.
+#[test]
+fn every_exported_circuit_is_in_the_differential() {
+    let ported: std::collections::HashSet<usize> =
+        cases().iter().map(|(_, build)| *build as usize).collect();
+    let missing: Vec<&str> = KernelTokens::CIRCUITS
+        .iter()
+        .filter(|(_, build)| !ported.contains(&(*build as usize)))
+        .map(|(name, _)| *name)
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "these circuits are exported by the contract and compared against \
+         nothing: {missing:?} — add them to `cases()`, or to `NOT_YET_PORTED` \
+         with the reason"
+    );
 }
 
 /// What the fixture compiles that is NOT yet ported, named so the gap is a

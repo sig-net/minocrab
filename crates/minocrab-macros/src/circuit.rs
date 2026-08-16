@@ -42,6 +42,7 @@ use syn::{FnArg, Ident, ItemFn, LitStr, Pat, ReturnType, Signature, Type};
 use crate::circuit_arg::{arg_label, impl_arg_traits, ArgField};
 
 /// `#[circuit]` / `#[circuit(output = "…")]`.
+#[derive(Default)]
 pub struct CircuitAttr {
     /// The label the returned value is disclosed under. Required exactly
     /// when the function returns something (see [`expand`]).
@@ -75,7 +76,35 @@ impl Parse for CircuitAttr {
     }
 }
 
+/// A circuit's expansion, in the two pieces that land in DIFFERENT places.
+///
+/// `entry` is the constructor — a free item today, an associated item inside
+/// `#[contract]`'s `impl`. `tests` is the generated disclosure set-equality
+/// check, which is a `mod` and therefore can NEVER go inside an `impl`; the
+/// caller places it beside. That split is the whole reason this function
+/// exists separately from [`expand`].
+pub struct Expansion {
+    pub entry: TokenStream,
+    pub tests: Option<TokenStream>,
+}
+
 pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
+    let Expansion { entry, tests } = expand_parts(attr, item)?;
+    Ok(quote! { #entry #tests })
+}
+
+pub fn expand_parts(attr: CircuitAttr, item: ItemFn) -> syn::Result<Expansion> {
+    expand_in(attr, item, None)
+}
+
+/// [`expand_parts`] for a circuit that lives in a `#[contract]` block: `owner`
+/// is the impl's self type, which the generated test needs in order to name
+/// the constructor (`super::Vault::deposit`, not `super::deposit`).
+pub fn expand_in(
+    attr: CircuitAttr,
+    item: ItemFn,
+    owner: Option<&syn::Type>,
+) -> syn::Result<Expansion> {
     check_signature(&item.sig)?;
     check_circuit_param(&item.sig)?;
     let fields = arg_fields(&item.sig)?;
@@ -134,9 +163,9 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
     let call = quote! {
         #entry_fn(#label_arg |__c, __args: #args_ty| #body_fn(__c #(, __args.#idents)*))
     };
-    let declaration_test = discloses_test(&item.sig, name, &bare, &root);
+    let declaration_test = discloses_test(&item.sig, name, &bare, &root, owner);
 
-    Ok(quote! {
+    let entry = quote! {
         #(#attrs)*
         #vis fn #name() -> #root::__private::Compiled3 {
             #[allow(non_camel_case_types)]
@@ -151,8 +180,11 @@ pub fn expand(attr: CircuitAttr, item: ItemFn) -> syn::Result<TokenStream> {
 
             #call
         }
+    };
 
-        #declaration_test
+    Ok(Expansion {
+        entry,
+        tests: declaration_test,
     })
 }
 
@@ -171,6 +203,7 @@ fn discloses_test(
     name: &Ident,
     bare: &str,
     root: &TokenStream,
+    owner: Option<&syn::Type>,
 ) -> Option<TokenStream> {
     let ReturnType::Type(_, ty) = &sig.output else {
         return None;
@@ -179,6 +212,12 @@ fn discloses_test(
         return None;
     }
     let module = format_ident!("__{bare}_discloses", span = name.span());
+    // The constructor's path from inside the generated module: an associated
+    // function of the contract, or a free function beside it.
+    let build = match owner {
+        Some(owner) => quote!(super::#owner::#name),
+        None => quote!(super::#name),
+    };
     let circuit = name.to_string();
     let circuit = circuit.strip_prefix("r#").unwrap_or(&circuit).to_string();
     Some(quote! {
@@ -190,7 +229,7 @@ fn discloses_test(
 
             #[test]
             fn the_declared_disclosures_are_the_ones_the_circuit_makes() {
-                #root::__private::assert_declared_disclosures::<#ty>(#circuit, &super::#name());
+                #root::__private::assert_declared_disclosures::<#ty>(#circuit, &#build());
             }
         }
     })

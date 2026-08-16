@@ -98,6 +98,7 @@ pub use minocrab_macros::CircuitArg;
 /// `fn name() -> Compiled3` built through [`entry`] / [`entry_out`].
 #[cfg(feature = "macros")]
 pub use minocrab_macros::circuit;
+pub use minocrab_macros::contract;
 
 /// `#[derive(Ledger)]` — a struct mirroring Compact's `export ledger` block
 /// becomes the contract's ledger handle, each field at its declaration-order

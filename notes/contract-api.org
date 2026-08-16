@@ -1595,3 +1595,93 @@ entry point the sweep can call — an M13-shaped API question (const-generic
 - row_snapshot bit-identical (release), interface_snapshot unchanged,
   `cargo test --workspace` 469 passed / 0 failed, the disclosure-report
   golden included.
+
+* The contract block (dmd, 2026-08-16)
+
+dmd asked what happens if contracts are defined as =impl=s of their state
+that derive the circuit methods, and how far that hurts the tooling. The
+answer split cleanly in two, and only one half survived contact with the
+code.
+
+** THE QUESTION THAT DECIDED IT: what constitutes a contract?
+
+Before this, nothing did. A contract was a Rust MODULE by convention;
+=#[circuit]= generated a nullary =pub fn deposit() -> Compiled3= and each
+circuit compiled itself. The only statement anywhere of which circuits exist
+was =support::circuits()= — 170 hand-written entries in a TEST-support
+module, feeding both snapshots, the dump instrument and the adversarial
+suite — and *nothing asserted it was complete*. 156 =#[circuit]= attributes
+against 170 entries (the gap is the =entry()=-built families), and a circuit
+added and not listed is covered by nothing at all.
+
+Meanwhile the CALLER side has had the answer since M12: =#[interface] pub
+trait SignetSigner= IS a contract's circuit set — order-significant, frozen
+in =interface-schema.txt=, checked against the callee's artifact. So we knew
+what circuits constituted a contract only when the contract was someone
+else's.
+
+=#[contract]= closes that: =KernelTokens::CIRCUITS= is =[(name, fn() ->
+Compiled3); N]= in declaration order, derived from the file.
+
+** THE BLOCK YES, THE RECEIVER NO
+
+=&mut self= was declined, and the reasons are worth keeping because they are
+about this eDSL rather than about taste:
+
+- A contract's state is a LAYOUT, not a value. =#[derive(Ledger)]= makes
+  declaration order the field index; a read is a transcript gate and a write
+  is an Impact op. =&mut self= says "I own mutable data", and a Rust
+  programmer will reasonably try =self.counter += 1= or branch on a read.
+  Neither exists — a circuit does not branch. The =c: &mut Circuit3= in
+  every signature is a standing reminder of which of the two you are doing.
+- The borrow checker says no, or says yes at a price. =self.balances= and the
+  circuit cannot both be =&mut=-borrowed through sibling fields, so the
+  handles would have to be methods returning a borrowing view — workable —
+  or the circuit goes behind a =RefCell=, which converts a borrow ERROR into
+  a runtime panic. That is against the standing compile-errors-over-panics
+  rule.
+- Composability gets worse where it matters most. Every gadget below the
+  contract takes =&mut Circuit3=: all of =minocrab-ledger=,
+  =minocrab_std::v3::kernel=, and =common.rs= — which four vault forks share
+  and which therefore cannot be a method of any one contract. A =&mut self=
+  method would call =kernel::mint_shielded(self.circuit(), ..)=, so the
+  codebase would gain a SECOND calling convention, one commit after this
+  session collapsed six guard spellings into two.
+
+So the methods are ASSOCIATED FUNCTIONS taking =c=, and a =self= parameter is
+a compile error carrying that reason.
+
+** As built
+
+=#[contract]= on an inherent =impl=. Each =#[circuit]= inside expands exactly
+as on a free function — same argument struct, same labels, same disclosure
+declaration — with one structural difference forced by rustc: the generated
+set-equality test is a =mod=, and a =mod= cannot live inside an =impl=, so
+=circuit::expand= was split into =Expansion { entry, tests }= and the tests
+are emitted BESIDE the block. They name the constructor through the contract
+(=super::KernelTokens::deposit=), which is why =expand_in= takes the owner.
+
+FIRST CONTRACT PORTED: =kernel_tokens=, all 24 circuits, chosen because its
+differential is instruction-for-instruction so the gate is the strongest in
+the tree. =support::circuits()= now DERIVES those 24 entries from
+=KernelTokens::CIRCUITS= instead of listing them, and the differential gained
+=every_exported_circuit_is_in_the_differential=, which compares FUNCTION
+POINTERS (the two sides name circuits differently — compactc's =sMergeCoin=
+against our =s_merge_coin= — so a count would pass while two entries
+silently swapped).
+
+ZERO MOVEMENT: row_snapshot and interface_snapshot bit-identical, the
+instruction-for-instruction differential unchanged, =cargo test --workspace=
+green. One SOURCE reorder was needed and no table changed: the derived order
+is declaration order, and =s_receive_unshielded= was declared after the pair
+that follows it in the fixture, so the function moved up twelve lines.
+
+** REMAINING, and why it is not "just roll it out"
+
+Five modules have a =#[derive(Ledger)]= state type (=adts=, =bounded=,
+=erc20_vault=, =erc20_vault_modern=, =kernel_tokens=). The rest — including
+=test_caller=, =xcall=, =events=, =hashing= — declare their ledger fields as
+raw index constants (=pub const INITIALISED: u8 = 6;=), so they have no type
+to hang an =impl= on. Giving them one is a real change (it moves the field
+indices into the derive), not a mechanical wrap, and it should be done per
+contract with its own gate rather than in one sweep.

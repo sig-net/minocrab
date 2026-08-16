@@ -9,6 +9,7 @@
 use proc_macro::TokenStream;
 
 mod circuit;
+mod contract;
 mod circuit_arg;
 mod circuit_borsh;
 mod interface;
@@ -157,6 +158,51 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 /// wire shape); silence the warning the way Rust always does, with a leading
 /// underscore — the label is unaffected, since `_recovery_id` and
 /// `recovery_id` both map to `recoveryId`.
+/// A contract: its state type, and the circuits it exports.
+///
+/// ```ignore
+/// #[derive(Ledger)]
+/// pub struct Vault { pub balances: LedgerMap<B32<Public>, Uint<128, Public>> }
+///
+/// #[contract]
+/// impl Vault {
+///     #[circuit]
+///     pub fn deposit(c: &mut Circuit3, amount: Uint<128>) -> Discloses<(Amount,)> { … }
+/// }
+/// ```
+///
+/// The circuits are ASSOCIATED FUNCTIONS taking `c: &mut Circuit3` — there is
+/// no receiver, and a `self` parameter is a compile error with the reason. A
+/// contract's state is a layout rather than a value: a ledger read is a
+/// transcript gate and a write is an Impact op, so there is nothing in `self`
+/// to borrow, and putting the circuit inside the state value would force
+/// either interior mutability or a second calling convention beside the
+/// `&mut Circuit3` every gadget below already takes.
+///
+/// What the block buys is that the LANGUAGE knows the circuit set:
+/// `Vault::CIRCUITS` is `[(name, fn() -> Compiled3); N]` in declaration
+/// order, derived from the file. Before it, a contract was a module by
+/// convention and its circuits were a hand-written list in a test-support
+/// module that nothing checked for completeness.
+///
+/// Each `#[circuit]` inside expands exactly as it does on a free function —
+/// same argument struct, same labels, same disclosure declaration — except
+/// that its generated set-equality test is emitted BESIDE the `impl`, since a
+/// `mod` cannot live inside one.
+#[proc_macro_attribute]
+pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        let attr = proc_macro2::TokenStream::from(attr);
+        return syn::Error::new_spanned(attr, "#[contract] takes no arguments")
+            .to_compile_error()
+            .into();
+    }
+    let item = syn::parse_macro_input!(item as syn::ItemImpl);
+    contract::expand(item)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 #[proc_macro_attribute]
 pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = syn::parse_macro_input!(attr as circuit::CircuitAttr);

@@ -74,7 +74,7 @@ pub fn circuits() -> Vec<Circuit> {
             ($name, { $f } as fn() -> Compiled3)
         };
     }
-    vec![
+    let mut listed: Vec<Circuit> = vec![
         c!("erc20_vault::initialize", || erc20_vault::initialize()),
         c!("erc20_vault::deposit", || erc20_vault::deposit()),
         c!("erc20_vault::claim", || erc20_vault::claim()),
@@ -271,75 +271,28 @@ pub fn circuits() -> Vec<Circuit> {
         // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
         // has the scan). `kernel.checkpoint()` is absent because compactc's
         // v3 backend cannot compile it at all.
-        c!("kernel_tokens::k_mint_unshielded", || {
-            kernel_tokens::k_mint_unshielded()
-        }),
-        c!("kernel_tokens::k_claim_unshielded_coin_spend", || {
-            kernel_tokens::k_claim_unshielded_coin_spend()
-        }),
-        c!("kernel_tokens::k_inc_unshielded_outputs", || {
-            kernel_tokens::k_inc_unshielded_outputs()
-        }),
-        c!("kernel_tokens::k_inc_unshielded_inputs", || {
-            kernel_tokens::k_inc_unshielded_inputs()
-        }),
-        c!("kernel_tokens::k_balance", || kernel_tokens::k_balance()),
-        c!("kernel_tokens::k_balance_less_than", || {
-            kernel_tokens::k_balance_less_than()
-        }),
-        c!("kernel_tokens::k_balance_greater_than", || {
-            kernel_tokens::k_balance_greater_than()
-        }),
-        c!("kernel_tokens::k_block_time_less_than", || {
-            kernel_tokens::k_block_time_less_than()
-        }),
-        c!("kernel_tokens::k_block_time_greater_than", || {
-            kernel_tokens::k_block_time_greater_than()
-        }),
-        c!("kernel_tokens::s_block_time_lt", || {
-            kernel_tokens::s_block_time_lt()
-        }),
-        c!("kernel_tokens::s_block_time_gte", || {
-            kernel_tokens::s_block_time_gte()
-        }),
-        c!("kernel_tokens::s_block_time_gt", || {
-            kernel_tokens::s_block_time_gt()
-        }),
-        c!("kernel_tokens::s_block_time_lte", || {
-            kernel_tokens::s_block_time_lte()
-        }),
-        c!("kernel_tokens::s_unshielded_balance", || {
-            kernel_tokens::s_unshielded_balance()
-        }),
-        c!("kernel_tokens::s_unshielded_balance_lt", || {
-            kernel_tokens::s_unshielded_balance_lt()
-        }),
-        c!("kernel_tokens::s_unshielded_balance_gte", || {
-            kernel_tokens::s_unshielded_balance_gte()
-        }),
-        c!("kernel_tokens::s_unshielded_balance_gt", || {
-            kernel_tokens::s_unshielded_balance_gt()
-        }),
-        c!("kernel_tokens::s_unshielded_balance_lte", || {
-            kernel_tokens::s_unshielded_balance_lte()
-        }),
-        c!("kernel_tokens::s_receive_unshielded", || {
-            kernel_tokens::s_receive_unshielded()
-        }),
-        c!("kernel_tokens::s_send_unshielded", || {
-            kernel_tokens::s_send_unshielded()
-        }),
-        c!("kernel_tokens::s_mint_unshielded_token", || {
-            kernel_tokens::s_mint_unshielded_token()
-        }),
-        c!("kernel_tokens::s_merge_coin", || kernel_tokens::s_merge_coin()),
-        c!("kernel_tokens::s_merge_coin_immediate", || {
-            kernel_tokens::s_merge_coin_immediate()
-        }),
-        c!("kernel_tokens::s_send_shielded", || {
-            kernel_tokens::s_send_shielded()
-        }),
-    ]
+    ];
+    // DERIVED, not listed (the `#[contract]` block): every circuit
+    // `KernelTokens` exports, named the way this list names things. A circuit
+    // added to that contract appears here without anyone editing this file,
+    // which is the completeness the hand-written entries never had.
+    listed.extend(of(
+        "kernel_tokens",
+        &kernel_tokens::KernelTokens::CIRCUITS,
+    ));
+    listed
+}
+
+/// A contract's derived circuit set, named `module::circuit` the way the
+/// snapshots key their tables.
+fn of(module: &str, circuits: &[(&'static str, fn() -> Compiled3)]) -> Vec<Circuit> {
+    circuits
+        .iter()
+        .map(|(name, build)| {
+            let name: &'static str = Box::leak(format!("{module}::{name}").into_boxed_str());
+            (name, *build)
+        })
+        .collect()
 }
 
 /// Dump a differential test's honest, corpus-verified preimage for the
