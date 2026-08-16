@@ -9,7 +9,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    adts, attest, bounded, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt,
+    adts, attest, bounded, kernel_tokens, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt,
     events, events_borsh, hashing, mint_tokens, opaque, serde_builtin, signet_contract,
     test_caller, xcall, xcall_with_payment, xcontract_events, xcontract_events_borsh,
 };
@@ -265,6 +265,67 @@ pub fn circuits() -> Vec<Circuit> {
         c!("adts::hmt_is_full", || adts::hmt_is_full()),
         c!("adts::hmt_reset_history", || adts::hmt_reset_history()),
         c!("adts::hmt_reset", || adts::hmt_reset()),
+        // `kernel.compact` (M17): the kernel primitives and the token-stdlib
+        // circuits built on them. Ours rather than the corpus's for the fourth
+        // time and the same measured reason — the v3 corpus's kernel/token
+        // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
+        // has the scan). `kernel.checkpoint()` is absent because compactc's
+        // v3 backend cannot compile it at all.
+        c!("kernel_tokens::k_mint_unshielded", || {
+            kernel_tokens::k_mint_unshielded()
+        }),
+        c!("kernel_tokens::k_claim_unshielded_coin_spend", || {
+            kernel_tokens::k_claim_unshielded_coin_spend()
+        }),
+        c!("kernel_tokens::k_inc_unshielded_outputs", || {
+            kernel_tokens::k_inc_unshielded_outputs()
+        }),
+        c!("kernel_tokens::k_inc_unshielded_inputs", || {
+            kernel_tokens::k_inc_unshielded_inputs()
+        }),
+        c!("kernel_tokens::k_balance", || kernel_tokens::k_balance()),
+        c!("kernel_tokens::k_balance_less_than", || {
+            kernel_tokens::k_balance_less_than()
+        }),
+        c!("kernel_tokens::k_balance_greater_than", || {
+            kernel_tokens::k_balance_greater_than()
+        }),
+        c!("kernel_tokens::k_block_time_less_than", || {
+            kernel_tokens::k_block_time_less_than()
+        }),
+        c!("kernel_tokens::k_block_time_greater_than", || {
+            kernel_tokens::k_block_time_greater_than()
+        }),
+        c!("kernel_tokens::s_block_time_lt", || {
+            kernel_tokens::s_block_time_lt()
+        }),
+        c!("kernel_tokens::s_block_time_gte", || {
+            kernel_tokens::s_block_time_gte()
+        }),
+        c!("kernel_tokens::s_block_time_gt", || {
+            kernel_tokens::s_block_time_gt()
+        }),
+        c!("kernel_tokens::s_block_time_lte", || {
+            kernel_tokens::s_block_time_lte()
+        }),
+        c!("kernel_tokens::s_unshielded_balance", || {
+            kernel_tokens::s_unshielded_balance()
+        }),
+        c!("kernel_tokens::s_unshielded_balance_lt", || {
+            kernel_tokens::s_unshielded_balance_lt()
+        }),
+        c!("kernel_tokens::s_unshielded_balance_gte", || {
+            kernel_tokens::s_unshielded_balance_gte()
+        }),
+        c!("kernel_tokens::s_unshielded_balance_gt", || {
+            kernel_tokens::s_unshielded_balance_gt()
+        }),
+        c!("kernel_tokens::s_unshielded_balance_lte", || {
+            kernel_tokens::s_unshielded_balance_lte()
+        }),
+        c!("kernel_tokens::s_receive_unshielded", || {
+            kernel_tokens::s_receive_unshielded()
+        }),
     ]
 }
 

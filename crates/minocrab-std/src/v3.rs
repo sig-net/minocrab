@@ -16,6 +16,11 @@ mod call;
 mod disclose;
 mod entry;
 mod ledger;
+
+/// Compact's `kernel` ADT and the token stdlib built on it (M17) — always
+/// written module-qualified (`kernel::balance(c, &t)`), because a kernel
+/// operation is an EFFECT on the transaction and the call site should say so.
+pub mod kernel;
 mod predicate;
 
 /// Canonical Borsh, restricted to the fixed-width subset a circuit can emit
@@ -521,6 +526,36 @@ impl<V: Vis3> ContractAddress<V> {
     /// From the `[hi, lo]` limbs a ledger read or `kernel.self()` hands back.
     pub fn from_limbs(limbs: [Wire3<FieldT, V>; 2]) -> Self {
         ContractAddress(B32 {
+            hi: limbs[0],
+            lo: limbs[1],
+        })
+    }
+
+    /// The underlying `Bytes<32>`.
+    pub fn bytes(self) -> B32<V> {
+        self.0
+    }
+}
+
+/// Compact's `UserAddress` — a struct of one `Bytes<32>`, and the non-contract
+/// half of an [`UnshieldedRecipient`](kernel::UnshieldedRecipient).
+///
+/// The twin of [`ContractAddress`] in every respect including its FAB shape,
+/// and a separate type for the same reason: a user and a contract are not
+/// interchangeable recipients, and `Either<ContractAddress, UserAddress>`
+/// would say nothing if both arms were the same type.
+#[derive(Clone, Copy)]
+pub struct UserAddress<V: Vis3>(pub B32<V>);
+
+impl<V: Vis3> UserAddress<V> {
+    /// The address's FAB limbs, `[hi, lo]`.
+    pub fn limbs(self) -> [Wire3<FieldT, V>; 2] {
+        [self.0.hi, self.0.lo]
+    }
+
+    /// From the `[hi, lo]` limbs a ledger read hands back.
+    pub fn from_limbs(limbs: [Wire3<FieldT, V>; 2]) -> Self {
+        UserAddress(B32 {
             hi: limbs[0],
             lo: limbs[1],
         })

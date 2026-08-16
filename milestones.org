@@ -1511,8 +1511,59 @@ Gt/Gte), the unshielded-token family (mintUnshielded, sendUnshielded,
 receiveUnshielded, claimUnshieldedCoinSpend, incUnshieldedInputs/
 Outputs, unshieldedBalance*), kernel.balance/balanceLessThan/
 balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
-- [ ] Port via the established route: compactc's vm-code lowering →
+- [-] Port via the established route: compactc's vm-code lowering →
       minocrab-ledger ops → stdlib circuits, each with a corpus (or
       tiny.compact-style) differential.
+      (IN PROGRESS 2026-08-16, notes/kernel-tokens.org. DESIGN NOTE FIRST,
+      and it reframed the milestone twice over.
+      (a) `kernel.checkpoint()` CANNOT BE COMPILED for our IR version.
+      compactc's v2 backend assembles `ckpt` to 255
+      (zkir-passes/print-zkir.ss:546); the v3 backend has no `ckpt` case,
+      so `--feature-zkir-v3` on a contract calling it dies with `failed
+      assertion not-implemented`. A v2-only feature and a compactc gap,
+      not one of ours. NOT PORTED, with the failure quoted in the
+      fixture's header.
+      (b) The milestone's list is TWO LAYERS wearing one name.
+      sendShielded, sendUnshielded, receiveUnshielded, mergeCoin*,
+      unshieldedBalance* and blockTimeLt/Lte/Gt/Gte are ordinary
+      `export circuit`s written IN COMPACT (standard-library.compact),
+      not kernel vm-code. Only nine things in the list have vm-code.
+      (c) Those nine are THREE instruction shapes: one nineteen-
+      instruction effect accumulator (four callers differing only in an
+      effects slot, a key type and an amount width), one balance read
+      (three callers differing only in a comparison tail), one five-
+      instruction block-time read (two callers differing only in OPERAND
+      ORDER — compactc has no `gt` opcode, so a `>` is a `<` with the
+      pushes swapped).
+      (d) And the accumulator ALREADY EXISTED: `kernel_mint_shielded`
+      has emitted it since M4 with the slot, key and amount hard-coded.
+      It grew three parameters and four callers; not one instruction
+      changed. Second milestone running whose "new machinery" was an
+      existing lowering with different arguments, and both times the note
+      found it before any code.
+      DONE SO FAR: the emission layer (the generalized accumulator, plus
+      `kernel_balance` and `kernel_block_time`), the `minocrab_std::v3::
+      kernel` module, the `UserAddress` leaf, `Either`'s LedgerRepr and
+      Disclose, and NINETEEN of the fixture's 24 circuits — the nine
+      compilable kernel primitives and the ten non-conditional stdlib
+      compositions — all BYTE-EQUAL to compactc up to identifier
+      renaming. Zero movement measured with tests/zkir_dump.rs: 0 files
+      differ, 19 added.
+      THE NAMED-IMMEDIATE GAP, third appearance and third local close:
+      `left<Bytes<32>,Bytes<32>>(color)` is four constant FAB limbs, and
+      routing them through LedgerRepr names each with a `copy`. M15's
+      general fix (a LedgerRepr change all four vault forks depend on) is
+      STILL dmd's call and is not taken; instead `UnshieldedToken` is its
+      own type that knows its own constants, which needs no trait change.
+      The pattern is now nameable: a local close is legitimate exactly
+      when the constants belong to the TYPE rather than to a value.
+      REMAINING, each named in the differential's `NOT_YET_PORTED` so the
+      gap cannot widen silently: `sendUnshielded` and
+      `mintUnshieldedToken` (both end in a conditional self-transfer
+      whose guard feeds a guarded `kernel.self()` read and a guarded
+      effect — every piece exists, the port does not), and `sendShielded`
+      / `mergeCoin` / `mergeCoinImmediate` (the shielded compositions,
+      whose pieces exist in ad-hoc form inside the ported vault
+      contracts and want lifting into the stdlib).)
 Exit criteria: the README fairness bullet shrinks to nothing in this
 class; M4's stdlib bullet finally ticks.

@@ -13,8 +13,9 @@ use minocrab::{Private, Public};
 
 use super::entry::CircuitOut;
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, MerkleTreeDigest, Opaque,
-    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, B32,
+    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, MerkleTreeDigest,
+    Opaque,
+    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
 impl<const BITS: u32> Disclose for Uint<BITS, Private> {
@@ -65,6 +66,29 @@ impl Disclose for ContractAddress<Private> {
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> ContractAddress<Public> {
         ContractAddress(self.0.disclose_as::<L>(c))
+    }
+}
+
+/// `Either<A, B>`: the tag and BOTH arms, each under the same label — the
+/// disclosure is of the whole value, because both arms occupy their slots
+/// whichever way the tag points.
+impl<A: Disclose, B: Disclose> Disclose for Either<A, B, Private> {
+    type Public = Either<A::Public, B::Public, Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Self::Public {
+        Either {
+            is_left: self.is_left.disclose_as::<L>(c),
+            left: self.left.disclose_as::<L>(c),
+            right: self.right.disclose_as::<L>(c),
+        }
+    }
+}
+
+impl Disclose for UserAddress<Private> {
+    type Public = UserAddress<Public>;
+
+    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> UserAddress<Public> {
+        UserAddress(self.0.disclose_as::<L>(c))
     }
 }
 

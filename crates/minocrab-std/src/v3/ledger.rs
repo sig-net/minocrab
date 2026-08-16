@@ -45,8 +45,8 @@ use minocrab_ledger::{
 };
 
 use super::{
-    hash, Bool, BoundedUint, Bytes, BytesN, ContractAddress, JubjubPoint, Maybe, MerkleTreeDigest,
-    Opaque, Secp256k1Point, TsType, Uint, B32,
+    hash, Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
+    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, UserAddress, B32,
 };
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
@@ -159,6 +159,12 @@ ledger_repr_via_abi! {
     [] B32<Public>,
     [const N: usize] BytesN<Public, N>,
     [] ContractAddress<Public>,
+    [] UserAddress<Public>,
+    /// `Either<A, B>` in a ledger or effects slot — the tag's limb then BOTH
+    /// arms', whichever way the tag points. Reached by M17's `TokenType` and
+    /// `UnshieldedRecipient`, which are `Either`s in Compact's own signatures.
+    [A: CircuitAbi + CallArg + CallResult, B: CircuitAbi + CallArg + CallResult]
+        Either<A, B, Public>,
     /// `Opaque<'ts-type'>` in a ledger slot — one limb under a `compress`
     /// atom, which is the ordinary delegation. It is a `Cell` type, a `Map`
     /// KEY type, a `Map` VALUE type and a `Set` element type, all four of

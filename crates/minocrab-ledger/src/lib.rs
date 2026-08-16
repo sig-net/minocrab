@@ -102,6 +102,16 @@ impl LedgerValue {
     pub fn bytes(n: u32, elems: Vec<ImpactElem>) -> LedgerValue {
         Self::new(vec![AlignmentAtom::Bytes { length: n }], elems)
     }
+
+    /// The alignment atoms, in slot order.
+    pub fn atoms(&self) -> &[AlignmentAtom] {
+        &self.atoms
+    }
+
+    /// The limbs, in slot order.
+    pub fn elems(&self) -> &[ImpactElem] {
+        &self.elems
+    }
 }
 
 /// `Fr` for an alignment atom, per `AlignmentAtom::field_repr`

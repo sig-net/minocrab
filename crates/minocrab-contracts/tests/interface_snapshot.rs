@@ -1740,6 +1740,163 @@ out full: Scalar<BLS12-381>
         "\
 ",
     ),
+    (
+        "kernel_tokens::k_mint_unshielded",
+        "\
+in  ds_hi: Scalar<BLS12-381>
+in  ds_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_claim_unshielded_coin_spend",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  addr_is_left: Scalar<BLS12-381>
+in  addr_left_hi: Scalar<BLS12-381>
+in  addr_left_lo: Scalar<BLS12-381>
+in  addr_right_hi: Scalar<BLS12-381>
+in  addr_right_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_inc_unshielded_outputs",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_inc_unshielded_inputs",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_balance",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+out balance: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_balance_less_than",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+out less: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_balance_greater_than",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+out greater: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_block_time_less_than",
+        "\
+in  t: Scalar<BLS12-381>
+out before: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::k_block_time_greater_than",
+        "\
+in  t: Scalar<BLS12-381>
+out after: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_block_time_lt",
+        "\
+in  t: Scalar<BLS12-381>
+out lt: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_block_time_gte",
+        "\
+in  t: Scalar<BLS12-381>
+out gte: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_block_time_gt",
+        "\
+in  t: Scalar<BLS12-381>
+out gt: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_block_time_lte",
+        "\
+in  t: Scalar<BLS12-381>
+out lte: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_unshielded_balance",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+out balance: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_unshielded_balance_lt",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+out lt: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_unshielded_balance_gte",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+out gte: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_unshielded_balance_gt",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+out gt: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_unshielded_balance_lte",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+out lte: Scalar<BLS12-381>
+",
+    ),
+    (
+        "kernel_tokens::s_receive_unshielded",
+        "\
+in  color_hi: Scalar<BLS12-381>
+in  color_lo: Scalar<BLS12-381>
+in  a: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

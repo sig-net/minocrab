@@ -45,7 +45,7 @@ use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
     Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
-    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, Vis3, B32,
+    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, UserAddress, Vis3, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -418,6 +418,31 @@ impl<V: Vis3> CircuitAbi for ContractAddress<V> {
 impl CircuitArg for ContractAddress<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         ContractAddress(B32::declare(c, path))
+    }
+
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.0.push_slots(slots);
+    }
+}
+
+/// Compact's `UserAddress`: a struct of one `Bytes<32>`, which flattens to
+/// exactly that `Bytes<32>`'s slots — the same shape [`ContractAddress`] has,
+/// and a separate type for the reason its own docs give.
+impl<V: Vis3> CircuitAbi for UserAddress<V> {
+    const SLOTS: usize = <B32<V> as CircuitAbi>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <B32<V> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <B32<V> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for UserAddress<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        UserAddress(B32::declare(c, path))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {

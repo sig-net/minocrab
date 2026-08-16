@@ -151,3 +151,69 @@ fourth time with the same recorded reason.
 3. The fixture differential at the M16 bar — serialized ZKIR equal to
    compactc's up to identifier renaming, for all 24.
 4. Zero-movement check via =tests/zkir_dump.rs=.
+
+* 2. AS BUILT
+
+** The emission layer, and the shape that was already there
+
+=kernel_mint_shielded= became =kernel_effect_add(slot, key, amount)= with
+FIVE callers, per finding (d) — =mintShielded= (4), =mintUnshielded= (5),
+=incUnshieldedInputs= (6), =incUnshieldedOutputs= (7),
+=claimUnshieldedCoinSpend= (8). Not one instruction of it changed; it grew
+three parameters and four callers.
+
+Genuinely new: =kernel_balance= (one emitter, three comparison tails through
+a =BalanceCmp=) and =kernel_block_time=. Both carry a detail worth stating,
+because it is the same detail twice: compactc has NO =gt= opcode, so
+=balanceGreaterThan= and =blockTimeGreaterThan= are the =lt= streams with the
+OPERANDS PUSHED IN THE OTHER ORDER — which is why each takes a =greater= flag
+that moves a =push= to the front and turns =dup 2= into =dup 3=, rather than
+selecting a different opcode.
+
+** The named-immediate gap, closed a third time — and only where it can be
+
+=left<Bytes<32>, Bytes<32>>(color)= is four constant FAB limbs and two wires:
+the =is_left= tag and the unused right arm are statically 1, 0, 0. compactc
+inlines all four into the Impact =push=; routing them through =LedgerRepr=
+names each with a =copy=, and the differential saw it immediately.
+
+M15 recorded exactly this for ledger VALUE positions and left the fix — a
+change to =LedgerRepr= that all four vault forks depend on — as dmd's call.
+That call is still dmd's and is NOT taken here. What is taken instead is
+narrower and needs no trait change: =UnshieldedToken= is its own type,
+=left(colour)= is the only =TokenType= Compact's stdlib ever builds, and it
+knows its own constants, so it constructs its =LedgerValue= with
+=ImpactElem::Imm= directly. The general =Either= =LedgerRepr= impl is
+untouched and still wires everything, which is right — a =TokenType= whose
+tag is COMPUTED has no constants to inline.
+
+Worth naming as a pattern, since it is now three milestones old: the
+named-immediate gap has a general fix (dmd's call, still open) and a series
+of local ones, and each local one is legitimate exactly when the constants
+belong to the TYPE rather than to a value.
+
+** What is ported, and what is not
+
+PORTED, and byte-equal to compactc up to identifier renaming for all
+nineteen: the nine kernel primitives that have vm-code and can be compiled,
+and the ten stdlib circuits that are compositions without a conditional —
+=blockTimeLt/Gte/Gt/Lte=, =unshieldedBalance{,Lt,Gte,Gt,Lte}=,
+=receiveUnshielded=.
+
+NOT PORTED, and each for a stated reason rather than an absence
+(=NOT_YET_PORTED= in the differential names them, and
+=every_fixture_circuit_is_accounted_for= fails if the list drifts):
+
+- =kernel.checkpoint()= — finding (a). Cannot be compiled for our IR
+  version at all. Not a gap of ours.
+- =sendUnshielded= and =mintUnshieldedToken= — both end in a CONDITIONAL
+  self-transfer (=if (recipient.is_left && recipient.left == kernel.self())=)
+  whose guard is a computed wire feeding both a guarded =kernel.self()= read
+  and a guarded effect. Every piece exists (=kernel_self_guarded=, the
+  =_under= forms, =cond_select=); what is missing is the port, and the
+  fixture pins the target stream (=sSendUnshielded= is 65 instructions).
+- =sendShielded=, =mergeCoin=, =mergeCoinImmediate= — the SHIELDED
+  compositions, which are much larger (nonce evolution, coin commitments,
+  nullifiers, a change-coin branch) and whose pieces already exist in
+  ad-hoc form inside the ported vault contracts. Lifting them into the
+  stdlib is worth doing and is the natural next stage; it is not started.
