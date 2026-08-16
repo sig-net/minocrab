@@ -116,6 +116,20 @@ anyone doing instruction-level comparison a normalisation pass (ours:
 Evidence: notes/ir-passes.org §8 ("§1's table was WRONG, and the fixture
 that proved it").
 
+* 8. LATENT — the coin-arm `dup` reach overflows its nibble past depth 5
+
+The `insertCoin`/`pushFrontCoin` lowering computes its `dup` reach from the
+field path length, and the encoding has room for a nibble; a source comment at
+=midnight-ledger.ss:576-577= notes the overflow rather than checking it, so a
+coin collection nested deeper than 5 would miscompile silently. Unreachable
+today (compactc's own kind-checking permits nesting only through =Map=, and no
+corpus contract nests coin collections at all), so latent rather than live —
+but it is a comment where a compile error should be.
+
+Impact: none observed; a check would cost one line. Evidence:
+notes/coin-arms-nested-adts.org (the 2026-08-16 investigation; the scheme
+source is in corpus/src/compact).
+
 * Adjacent findings recorded elsewhere (sig-net repos, not for this list)
 
 - The MPC tree's =serialize_dynsol= width bug, the unchecked notification

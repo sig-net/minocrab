@@ -1,0 +1,542 @@
+#+title: The two remaining ledger-ADT gaps — the coin arms, and nested ADTs
+
+Investigation of record for the two bullets the README's fairness section
+still carries after M16/M17 ([[file:../README.md][README.md:374-375]]). Written to answer one
+question each: can it be done, and what does it cost. No code, no fixture
+compiled — every claim below is read off a compactc source or a pinned
+corpus artifact, and the artifact is named, per the house method of
+[[file:ledger-adts.org][ledger-adts.org]] and [[file:kernel-tokens.org][kernel-tokens.org]].
+
+* 0. THE ANSWER, BEFORE THE EVIDENCE
+
+| gap | is it real? | new opcodes | new emitters | fixture | recommendation |
+|-----+-------------+-------------+--------------+---------+----------------|
+| coin arms | YES, and small | 0 | 3 | 3 circuits | BUILD ON DEMAND — one stage, whenever a coin collection is wanted |
+| nested ADTs | YES, and narrower than stated | 0 | 1 encoder + a path parameter | ~10 circuits | LEAVE DOCUMENTED, with the correction below |
+
+Both are genuinely missing (unlike =kernel.checkpoint()=, which
+[[file:kernel-tokens.org][kernel-tokens.org]] finding (a) demoted to "compactc cannot compile it for our
+IR version"). Neither needs an Impact opcode we do not already emit.
+
+TWO CORRECTIONS TO THE README, both from this investigation:
+
+1. "Nested ADTs — e.g. =Map<K, List<V>>=" is right by example and wrong by
+   implication. =Map= is the ONLY ADT whose type argument may be an ADT;
+   =Set<List<T>>=, =List<Map<K,V>>=, =MerkleTree<Set<T>>= are rejected by
+   compactc's own front end (§2.1). So the general path is
+   "=Map= of =Map= of … of anything", never a tree of arbitrary ADTs.
+2. Both gaps have REAL third-party demand in the corpus — OpenZeppelin's
+   Compact contracts use both — where every previous milestone's fairness
+   count came back empty outside compactc's own test suite. That does not
+   change the recommendation (§4) but it does change the reason.
+
+* 1. GAP ONE — =Set.insertCoin= / =Map.insertCoin= / =List.pushFrontCoin=
+
+** 1.1 What they are at the instruction level
+
+They exist only under =(when (= value_type QualifiedShieldedCoinInfo))=,
+which is why the three collection ADTs "grow a method" for one element type:
+
+- =Set.insertCoin(coin, recipient)= — [[file:../corpus/src/compact/compiler/midnight-ledger.ss][midnight-ledger.ss:670-696]]
+- =Map.insertCoin(key, coin, recipient)= — midnight-ledger.ss:769-795
+- =List.pushFrontCoin(coin, recipient)= — midnight-ledger.ss:918-968
+
+and the fourth member of the family, already ported in M5, is
+=Cell.writeCoin= at midnight-ledger.ss:567-585.
+
+All four share ONE six-instruction subsequence — call it the QUALIFY DANCE.
+It turns a =ShieldedCoinInfo= into a =QualifiedShieldedCoinInfo= by looking
+its Merkle-tree index up in the transaction context's commitment-index map
+and concatenating that index onto the coin:
+
+: dup   n                       ; reach the CONTEXT down the stack
+: push  (cell rt-coin-commit(coin, recipient))
+: idxc  [(align 1 1), stack]    ; context[1][cm]  →  the coin's mt_index
+: push  (cell coin)             ; the 3-atom ShieldedCoinInfo
+: swap  0
+: concatc 91                    ; [nonce, color, value] ++ [mt_index]
+
+=91= is =2 + rt-max-sizeof(QualifiedShieldedCoinInfo)= and is a literal in
+the source — the same =91= the crate already emits. =rt-coin-commit= is
+=VMcoin-commit= ([[file:../corpus/src/compact/compiler/vm.ss][vm.ss:252-253]]), reduced in v3 to a =persistent_hash= over
+=["midnight:zswap-cc[v1]", nonce, color, value, recipient_tag,
+recipient_addr]= (reduce-to-zkir.ss:381-403).
+
+The ONLY thing that differs between the four methods is where the dance sits
+and what surrounds it. Each coin arm is its plain twin with ONE push
+replaced by the dance:
+
+| method | its plain twin | the substitution |
+|--------+----------------+------------------|
+| =Set.insertCoin= | =Set.insert= | =push elem= → the dance (=dup 4=) |
+| =Map.insertCoin= | =Map.insert= | =pushs value= → the dance (=dup 5=) |
+| =List.pushFrontCoin= | =List.pushFront= | the =pushs [cell v, null, null]= becomes =pushs [null,null,null]; push 0u8; <dance>; insc 1= |
+| =Cell.writeCoin= (ported) | =Cell.write= | =pushs value= → the dance (=dup 3=) |
+
+The =dup n= is the one part that is not constant across the family:
+=n = 2 + 2·len(f)= for =Set=, =3 + 2·len(f)= for =Map=, =5 + 2·len(f)= for
+=List=, =3 + 2·(len(f)−1)= for =Cell= — it reaches past the pushes, the
+result slot, the =2n= path items the =idx= left, and the effects. compactc's
+own comment at midnight-ledger.ss:576-577 notes that =len(f) > 5= overflows
+the =dup= nibble; a top-level field is =len(f) = 1= and none of this bites.
+
+=List.pushFrontCoin= is the only one that is not a one-for-one swap, because
+=pushFront= builds its new node with the value already in it and
+=pushFrontCoin= cannot — the qualified coin does not exist until the dance
+has run against a node that is already on the stack. So it pushes
+=[null, null, null]=, pushes the position key =0u8=, runs the dance, and
+=insc 1= to put the coin at =node[0]=; four instructions longer than
+=pushFront='s, otherwise identical.
+
+VERIFIED ON THE WIRE. =Set.insertCoin= compiled by the pinned compactc,
+[[file:../corpus/zkir/compact/examples/adt/exports/set_qualified_coin_info/zkir/insert_coin.zkir][insert_coin.zkir]], decodes instruction for instruction to the source above:
+
+: 0x70 …          idxp [field 0]
+: 0x34            dup 4                        ← 2 + 2·1, as derived
+: 0x10 20 …       push (cell bytes<32> cm)
+: 0x61 … -01      idxc [(1), stack]
+: 0x10 03 …       push (cell [b32,b32,b16] coin)
+: 0x40            swap 0
+: 0x17 5B         concatc 91
+: 0x11 00         pushs null                   ← the Set's Null value
+: 0x91            ins 1
+: 0xA1            insc 1
+
+with the =cm= wires produced by a =persistent_hash= whose separator limb is
+=6D69646E696768743A7A737761702D63635B76315D= ("midnight:zswap-cc[v1]") and
+whose recipient arm is selected by two =cond_select=s on the =Either= tag —
+which is exactly =minocrab-std='s =coin_commitment=.
+
+CAVEAT ON THAT ARTIFACT: it is ZKIR **v2** (=version: {major: 2}=), like
+every non-sig-net corpus artifact. It is evidence for the SHAPE, not a
+differential target. See §1.4.
+
+** 1.2 What already exists
+
+Effectively all of it. [[file:../crates/minocrab-ledger/src/lib.rs][=cell_write_coin=]] (lib.rs:317-336) IS the qualify
+dance, written out, unit-tested against upstream's =Op= encodings
+(=cell_write_coin_matches_field_repr=, lib.rs:2153) and differential-checked
+against =xcall-with-payment='s =notify.zkir=. Its caller
+[[file:../crates/minocrab-contracts/src/common.rs][=write_coin_to_self=]] (common.rs:191-216) already builds the =cm= from
+=coin_commitment= and the =coin= =LedgerValue= from the three atoms.
+
+So the three arms are:
+
+- =set_insert= (lib.rs:367) with its =push_cell(false, elem)= replaced by the
+  dance, and =dup 4= instead of =dup 3=;
+- =map_insert= (lib.rs:340) with its =push_cell(true, value)= replaced, =dup 5=;
+- =list_push_front= (lib.rs:469) with its =push_array= given three =Null=s
+  and four instructions spliced after it, =dup 7=.
+
+Nothing else. Zero new opcodes: =Dup=, =Push=, =Idx= (2-element path with
+=Key::Stack=), =Swap=, =Concat=, =Ins= are all already emitted, and the one
+non-obvious encoder (=idx [(1), stack]=) is already written and tested.
+
+The right refactor is the one M16 made for the two Merkle-insert streams and
+M17 made for =kernel_effect_add=: lift the six instructions out of
+=cell_write_coin= into a private =qualify_coin(dup_n, cm, coin) -> [ImpactOp; 6]=
+and give it four callers. That is a strict reduction in duplicated bytes.
+
+On the =minocrab-std= side each arm is one method on an existing handle
+(=LedgerSet=, =LedgerMap=, =LedgerList= — [[file:../crates/minocrab-std/src/v3/ledger.rs][ledger.rs:519, 311, 647]]), in the
+=plain= / =_under= pair the crate's convention requires, plus the
+=CoinRecipient= select that =common.rs='s =self_recipient= /
+=coin_commitment= already provide. Note that =LedgerCell= does NOT expose
+=write_coin= today — =write_coin_to_self= lives in =minocrab-contracts= —
+so a tidy version of this stage also promotes that one into =minocrab-std=
+and makes the family four methods on four handles instead of one loose
+helper plus three holes.
+
+** 1.3 Demand evidence
+
+Call sites of the three arms across the 478 =.compact= sources in the
+corpus, excluding compactc's own compiler tree:
+
+| source | calls | which |
+|--------+-------+-------|
+| =oz-compact-contracts/…/multisig/ShieldedTreasury.compact:88,90,155= | 3 | =Map.insertCoin= |
+| =compact/examples/camelCase/{old,new,all}/ledger.compact= | 3 each | all three arms (one file, three camelCase variants) |
+| =compact/examples/adt/{tests,exports}/set_qualified_coin_info.compact= | 3 | =Set.insertCoin= |
+| =compact/examples/types/examples.compact:203-204= | 2 | =Set.insertCoin= |
+| =compact/examples/wpp/pm_16723.compact:62,84= | 2 | =Set.insertCoin=, =List.pushFrontCoin= |
+
+Everything outside the first row is compactc's own test suite. The first row
+is REAL: OpenZeppelin's =ShieldedTreasury= keeps its coins in a
+=Map<Bytes<32>, QualifiedShieldedCoinInfo>= (ShieldedTreasury.compact:44)
+and inserts into it on deposit, on merge, and on change from a send. It
+compiles (compile-report.tsv:381 =ok=) and has artifacts under
+=corpus/zkir/oz-compact-contracts/…/MockShieldedTreasury/=.
+
+Against that, the twelve =writeCoin= call sites (coracle ×4, micro-dao ×4,
+their camelCase twins, and xcall-with-payment's =target.compact:16,31=) are
+the ALREADY-PORTED Cell arm, and the last of those is the only coin write in
+a =--feature-zkir-v3= source at all.
+
+*** The v3 filter, for the fifth milestone running
+
+=--feature-zkir-v3= is carried by exactly three corpus sources
+([[file:../corpus/sources.json][sources.json]]: signet-midnight-{integration,examples,experiments}). Uses of
+the three coin arms in those three sources: **ZERO**. Uses of
+=Cell.writeCoin=: two, both in xcall-with-payment, both ported.
+
+So the demand is real but it is OpenZeppelin's, not sig-net's, and it
+arrives through a v2 artifact.
+
+** 1.4 The fixture story
+
+There is a corpus artifact to mirror — three of them, in fact
+(=adt/exports/set_qualified_coin_info=, =adt/exports/list_qualified_coin_info=,
+=MockShieldedTreasury=) — and they are all ZKIR v2. Under the standing rule
+that our IR is v3 and only v3 artifacts are differential targets
+([[file:ledger-adts.org][ledger-adts.org]] finding (e)), they are corroboration and not a gate.
+
+So: a =tiny.compact=-style fixture, exactly as M14/M15/M16/M17 each did.
+=crates/minocrab-contracts/tests/fixtures/coins/coins.compact=:
+
+#+begin_src compact
+export ledger s: Set<QualifiedShieldedCoinInfo>;
+export ledger m: Map<Field, QualifiedShieldedCoinInfo>;
+export ledger l: List<QualifiedShieldedCoinInfo>;
+export circuit setInsertCoin(coin: ShieldedCoinInfo, r: Either<…>): [] { s.insertCoin(disclose(coin), disclose(r)); }
+export circuit mapInsertCoin(k: Field, coin: ShieldedCoinInfo, r: Either<…>): [] { m.insertCoin(disclose(k), disclose(coin), disclose(r)); }
+export circuit listPushFrontCoin(coin: ShieldedCoinInfo, r: Either<…>): [] { l.pushFrontCoin(disclose(coin), disclose(r)); }
+#+end_src
+
+THREE circuits, compiled with the pinned compactc under =--feature-zkir-v3=,
+and the M16 bar (serialized ZKIR equal up to identifier renaming). The
+=camelCase/new/ledger.compact= source is the model for the declarations; the
+=adt/exports/= ones are the model for the circuit signatures.
+
+ONE THING TO CHECK FIRST, and it is one command: that the v3 backend
+assembles all three. The v3 =assemble1= ([[file:../corpus/src/compact/compiler/zkir-v3-passes/reduce-to-zkir.ss][reduce-to-zkir.ss:485-617]]) has cases
+for every opcode the three streams use — =idx= at :590-601 with a general
+path, =ins= at :603-609, =push= at :549, =concat= at :568, =dup= at :581,
+=swap= at :584 — and =VMcoin-commit= is reduced at :395-403, so there is no
+=ckpt=-shaped hole visible in the source. But M17 finding (a) is the reason
+to compile before designing, not after.
+
+** 1.5 Effort
+
+In the units M16 and M17 used:
+
+| | coin arms | M16 (for scale) |
+|-+-----------+-----------------|
+| new Impact opcodes | 0 | 7 |
+| new emission helpers | 1 (=qualify_coin=, lifted from existing code) | 3 |
+| new op sequences in =minocrab-ledger= | 3 | 14 |
+| new =minocrab-std= methods | 3 (+1 if =LedgerCell::write_coin= is promoted) | ~40 |
+| fixture circuits | 3 | 31 |
+
+ONE STAGE of a milestone, not a milestone. The estimate is confident
+because the substitution is mechanical and the substituted piece is already
+written, tested, and corpus-verified. The residual risk is entirely in the
+=dup= depths (three different constants, none of them the one already in the
+crate) and in =List.pushFrontCoin='s four extra instructions — both of which
+an instruction-for-instruction differential catches immediately, which is
+the M16 lesson about =history_append=.
+
+* 2. GAP TWO — nested ADTs
+
+** 2.1 FIRST: what compactc actually allows, which is less than "nested ADTs"
+
+=declare-ledger-adt='s formals are typed, and there are three kinds
+([[file:../corpus/src/compact/compiler/ledger.ss][ledger.ss:206-211]]): =Nat= → =nat-valued=, =Type= → =non-adt-type-valued=,
+=ADT/Type= → =type-valued=. Across all six ADTs, exactly ONE formal is
+=ADT/Type=:
+
+| ADT | formals | midnight-ledger.ss |
+|-----+---------+--------------------|
+| =Cell= | =[Type value_type]= | :544 |
+| =Set= | =[Type value_type]= | :622 |
+| =Map= | =[Type key_type] [ADT/Type value_type]= | :699 |
+| =List= | =[Type value_type]= | :798 |
+| =MerkleTree= | =[Nat nat] [Type value_type]= | :971 |
+| =HistoricMerkleTree= | =[Nat nat] [Type value_type]= | :1127 |
+
+and =non-adt-type-valued= is enforced in
+[[file:../corpus/src/compact/compiler/analysis-passes/expand-modules-and-types.ss][expand-modules-and-types.ss:256-263]] — =(when (public-adt? type) (oops … "non-ADT type" …))=.
+
+So THE ONLY NESTING COMPACT HAS IS =Map<K, ADT>=, recursively. =Set<List<T>>=,
+=List<Map<K,V>>=, =MerkleTree<Set<T>>=, =List<Counter>= are all compile
+errors. The README's example (=Map<K, List<V>>=) is the right shape; the
+general statement it implies is not. This is a MISSING FEATURE, not a
+non-gap — compactc compiles the nested declarations happily (§2.3) — but it
+is a materially smaller feature than "the general path over arbitrary ADTs".
+
+** 2.2 What "path suppression" is, and why it is not the hard part
+
+=f= is the field path. For a top-level field it is a one-element list of a
+=bytes<1>= key; for =Map<K, V>='s inner =V= at key =k= it is =[field_key, k]=,
+and so on down.
+
+The suppression is two three-line functions ([[file:../corpus/src/compact/compiler/vm.ss][vm.ss:192-194]]):
+
+: (suppress-null x) = (if (null? x) (VMsuppress) x)
+: (suppress-zero x) = (if (zero? x) (VMsuppress) x)
+
+and =assemble1= turns a =VMsuppress= operand into the EMPTY operand list,
+which =assemble= then drops entirely (reduce-to-zkir.ss:590-601 for =idx= and
+:603-609 for =ins=; :627-632 for the drop). That is all it is.
+
+It is used by exactly NINE of the operations, and they are all the same
+kind: the ones that REPLACE the whole field rather than reach inside it —
+=Cell.write=, =Cell.resetToDefault=, =Cell.writeCoin=, =Counter.resetToDefault=,
+and the five collections' =resetToDefault= (midnight-ledger.ss:554, 561, 573,
+616, 627, 715, 821, 1015, 1178). Those split =f= into "the path to the
+container" and "the key to write", hence =idx (reverse (cdr (reverse f)))=
+and =insc (sub1 (length f))=, both of which vanish at depth 1
+([[file:ledger-adts.org][ledger-adts.org]] finding (d)).
+
+Every INCREMENTAL op — =insert=, =remove=, =pushFront=, =popFront=, the two
+trees' inserts, and all the reads — never suppresses: its leading =idx=
+takes =path f= whole and its trailing =insc= is =(length f)=. So for those,
+"the general path" is not a suppression question at all — it is literally
+"the same instruction with more operands", and for the nine it is "the
+branch that is dead today becomes live".
+
+The wire encoding makes that concrete. =idx= is
+=0x5n [path]= with =n = length(path) − 1= and the high nibble selecting
+cached/pushPath (reduce-to-zkir.ss:586-601); =ins= is =0x9n=/=0xan= with
+=n= the depth. Each path element is encoded by the same
+=assemble-operand-acc= fold that encodes any value (=assemble-path=,
+reduce-to-zkir.ss:468-470) — so a path key that is a CIRCUIT WIRE is
+alignment header plus input vars, exactly like =idx_key='s operand today.
+Nothing in the v3 backend is depth-1-specific.
+
+** 2.3 The general path, on the wire, from a real contract
+
+OpenZeppelin's =ShieldedMultiSig= declares
+=Map<Uint<64>, Map<Either<ZswapCoinPublicKey, ContractAddress>, Boolean>>=
+(ShieldedMultiSig.compact:36) and writes through it at :133 and :140. Its
+compiled circuits carry exactly the predicted shape — scanning
+=corpus/zkir/oz-compact-contracts/…/ShieldedMultiSig/zkir/= for =idx=/=ins=
+opcodes with a nonzero low nibble:
+
+| circuit | opcodes |
+|---------+---------|
+| =approveProposal= | =0x51= (idx, 2-key), =0x71= (idxp, 2-key), =0xa2= (insc 2) |
+| =revokeApproval= | =0x51=, =0x71=, =0xa2= |
+| =isProposalApprovedBySigner= | =0x51= |
+
+compactc's own =map_boolean_map_field_counter= test
+([[file:../corpus/zkir/compact/examples/adt/tests/map_boolean_map_field_counter/zkir/test.zkir][test.zkir]]) says the same for a three-level write —
+=0x70 … 0x91 0xa1= for the outer insert, then =0x71 …= with seven path
+operands and =0xa2= for the inner one, and a =Counter.increment= reached
+through a 3-key path.
+
+Read that table the other way and it is the whole finding: a nested access
+is ONE =idx= instruction with a longer path and ONE =insc= with a bigger =n=.
+=lookup= on a nested =Map= emits NO instruction of its own — it extends the
+path at compile time. There is no new opcode, no new instruction shape, and
+no branch.
+
+** 2.4 Demand evidence
+
+Nested ledger declarations across the corpus — all five of them:
+
+| source | declaration |
+|--------+-------------|
+| =compact/examples/adt/tests/map_boolean_map_field_counter.compact:18= | =Map<Boolean, Map<Field, Counter>>= |
+| =compact/examples/adt/tests/map_field_list_field.compact:19= | =Map<Field, List<Field>>= |
+| =oz-compact-contracts/…/token/ConfidentialFungibleToken.compact:270= | =Map<Bytes<32>, List<EcdhMask_Ciphertext>>= |
+| =oz-compact-contracts/…/token/ConfidentialFungibleToken.compact:271= | =Map<Bytes<32>, Map<Bytes<32>, EscrowEntry>>= |
+| =oz-compact-contracts/…/multisig/presets/ShieldedMultiSig.compact:36= | =Map<Uint<64>, Map<Either<…>, Boolean>>= |
+
+Two are compactc's own tests. Three are OpenZeppelin's, and two of those
+sit in =ConfidentialFungibleToken=, which does not even compile in our
+pinned corpus (compile-report.tsv:407, an =ElGamal.compact= failure
+unrelated to the nesting). =ShieldedMultiSig= compiles (:385) and is the
+usable specimen.
+
+In the three =--feature-zkir-v3= sources: **ZERO**. Same answer as every
+fairness count since M14.
+
+** 2.5 What minocrab would need — a parameter change plus a handle redesign
+
+*** =minocrab-ledger=: a parameter change, and an additive one
+
+The crate has forty-odd public builders taking =index: u8= (=grep -c
+"index: u8"= is 47 over 81 =pub fn=s). The change is:
+
+#+begin_src rust
+pub enum LedgerKey { Field(u8), Value(LedgerValue), Stack }
+pub fn idx_path(cached: bool, push_path: bool, keys: &[LedgerKey]) -> ImpactOp;
+#+end_src
+
+=idx_path= is =idx_key= (lib.rs:271-276) with the fold moved outward:
+=[0x50 | hi | (keys.len()-1)]= then, per key, =alignment_header(atoms)= ++
+=limbs=. That is ONE new encoder. Every builder then takes
+=path: &[LedgerKey]= where it took =index: u8=, and its trailing
+=Ins { cached: true, n }= takes =n = path.len()= where it hard-codes =1=.
+
+Three things make this smaller than the count suggests:
+
+1. Multi-element paths already exist in the crate. =cell_write_coin=
+   (lib.rs:323-327) builds =vec![Key::Value(field_key(1)), Key::Stack]= and
+   the encoding is unit-tested. The general case is that, with the constant
+   restriction lifted.
+2. The =u8= builders can STAY, as one-line wrappers over the path ones. That
+   makes the change purely ADDITIVE and the zero-movement check trivial —
+   every existing call site keeps emitting the bytes it emits today.
+3. The suppression branch (=if path.len() == 1 { … } else { … }=) is needed
+   by only the nine whole-field ops of §2.2, and in the crate those are
+   =cell_write=, =cell_write_coin=, the single shared =reset_to=
+   (lib.rs:408-420) that five of the six =resetToDefault=s go through, and
+   =historic_merkle_tree_reset= (lib.rs:692-712), which open-codes its own
+   because its closing pair is asymmetric — so FOUR places, not nine.
+
+So: ONE new encoder, one enum, four suppression branches, and a mechanical
+signature widening. This is a parameter change, not a structural rewrite.
+
+*** =minocrab-std=: this is the real cost
+
+Handles are =const=-constructible newtypes over a =u8= (=LedgerMap::at=,
+ledger.rs:318-323) and =#[derive(Ledger)]= emits =<#ty>::at(#index)=
+([[file:../crates/minocrab-macros/src/ledger.rs][ledger.rs:87]]). A nested handle cannot be that, for two reasons:
+
+- Its path contains a KEY, and a key is generally a circuit wire. So
+  =map.lookup(c, k)= on an ADT-valued =Map= must return a handle carrying a
+  runtime =Vec<LedgerKey>=, not a =const=. The handle types split into
+  "rooted at a field" (=const=, what exists) and "reached through a key"
+  (owned path, new).
+- =LedgerMap<K, V>='s value methods are bounded =V: LedgerRepr=, and
+  =LedgerList<T>= is not a =LedgerRepr= and must not become one. Nesting
+  needs a second impl block bounded on a new =LedgerAdt= trait
+  (=fn rooted_at(path: Vec<LedgerKey>) -> Self=), with =lookup= returning
+  =V= there instead of witnessing a =popeq=. The two impls are disjoint by
+  trait bound, which is the project's preferred rejection spelling
+  (missing impl beats a panic) and gives =Map<K, Set<T>>= — which Compact
+  ALSO allows, since =Set= is a public ADT — the same treatment for free.
+
+The derive needs to recognise =LedgerMap<K, SomeAdt>= as a field type, which
+it already does structurally (it only writes =<#ty>::at(i)=); it is the
+BOUNDS on =LedgerMap='s methods that decide whether the resulting type
+compiles.
+
+Every =Guarded= / =_under= variant multiplies through this, which is why the
+88 =pub fn=s in =ledger.rs= are the number that matters rather than the 40 in
+=minocrab-ledger=.
+
+** 2.6 The fixture story
+
+There IS a corpus artifact to mirror, and unusually there are two kinds:
+compactc's own =map_boolean_map_field_counter= / =map_field_list_field=
+(one =test= circuit each, exercising the full method surface through a
+nested path) and a real contract, =ShieldedMultiSig=. Both are ZKIR v2.
+
+The fixture is therefore
+=crates/minocrab-contracts/tests/fixtures/nested/nested.compact=, modelled
+on those two sources but split one-op-per-circuit in the M16 style:
+=Map<Field, Map<Field, Uint<64>>>= (insert / lookup / member / remove / size
+through the inner path), =Map<Field, List<Field>>= (pushFront / popFront /
+length / isEmpty), =Map<Field, Counter>= (increment / read), and a
+three-level =Map<Field, Map<Field, Map<Field, Uint<64>>>>= to pin that the
+opcode nibble and the =insc= depth both track =len(f)=. Call it TEN to
+TWELVE circuits at the M16 bar, plus a corpus corroboration against
+=ShieldedMultiSig='s v2 =approveProposal= for the =0x71 / 0xa2= pair — the
+same "recover the provenance where the corpus has coverage" move
+=push_front_matches_the_corpus= makes.
+
+** 2.7 Effort
+
+| | nested ADTs | M16 (for scale) |
+|-+-------------+-----------------|
+| new Impact opcodes | 0 | 7 |
+| new emission helpers | 1 (=idx_path=) + =LedgerKey= | 3 |
+| =minocrab-ledger= signatures widened | ~40 (mechanical, additive) | — |
+| =minocrab-std= | a handle-rooting split across ~88 methods, + a =LedgerAdt= trait | ~40 new methods |
+| fixture circuits | 10-12 | 31 |
+
+A FULL MILESTONE, comparable to M16 in size but not in kind: M16's cost was
+in the vm-code (four ADTs, seven opcodes, a branchy =head=), and this one's
+is entirely in the Rust API, which is the part the differential does not
+help with. The emission layer is a day; the handle redesign is the rest.
+
+Risk to existing work is LOW if the =u8= builders are kept as wrappers
+(§2.5.2) — the zero-movement check should come back byte-identical for all
+143+ pre-existing circuits, with the new fixture's files the only additions.
+
+* 3. WHAT THE SCHEME SOURCES REVEALED THAT THE MILESTONES DID NOT
+
+Three things, in descending order of how much they change the picture.
+
+** (a) =Map= is the only nestable ADT
+
+§2.1. This was assumed to be general and is not, and the README says so in a
+way that reads more general than the truth. It also means the general path
+is always "a chain of =Map= keys ending at one ADT", which is a much easier
+thing to type in Rust than an arbitrary ADT tree — the recursive case has
+exactly one shape.
+
+** (b) The coin arms are ONE subsequence with four callers, and we have written it
+
+§1.1. This is the third milestone running where a "missing lowering" turned
+out to be an existing one with different arguments (M16's two Merkle-insert
+streams, M17's =kernel_effect_add=, now the qualify dance). The pattern is
+strong enough to be worth stating as a rule: BEFORE estimating a Compact
+ledger operation, diff its vm-code against the operation it is named after.
+midnight-ledger.ss is written so that the coin arm sits textually adjacent
+to its plain twin, and every one of the four differs by a substitution.
+
+** (c) The corpus's third-party half has demand the sig-net half does not
+
+Every fairness count from M14 through M17 asked "do the three v3 sources use
+this?", got "no", and took the fixture route. Both of this note's gaps get
+"no" to the same question — and "yes" from OpenZeppelin's Compact contracts,
+which are a pinned, compiling, artifact-bearing part of the corpus that no
+milestone has yet used as a demand signal. =ShieldedTreasury= wants
+=Map.insertCoin=; =ShieldedMultiSig= wants a nested =Map=. If MinoCrab is
+ever to compile an OZ-shaped contract, these two gaps are the wall it hits,
+and they are the ONLY two.
+
+That is a fairness argument the milestones have not been making, and it is
+the reason gap 1's recommendation is "on demand" rather than "never".
+
+** (d) Two smaller things, recorded so they are not rediscovered
+
+- =assemble-path= (reduce-to-zkir.ss:468-470) is a fold of the ORDINARY
+  operand encoder over the path. There is no separate path encoding and no
+  depth limit in the v3 backend beyond the opcode nibble's 16.
+- compactc's own =dup= reach for the coin arms overflows its nibble at
+  =len(f) > 5= (midnight-ledger.ss:576-577, a source comment rather than a
+  check). A =Map<K, Map<K, Map<K, Map<K, Set<QSCI>>>>>= would miscompile in
+  compactc before it troubled us. Not our problem; worth knowing before
+  copying the formula.
+
+* 4. RECOMMENDATION
+
+** Coin arms — BUILD ON DEMAND
+
+Not now, because nothing in the ported corpus needs them and the fixture
+would be three circuits testing a substitution we already trust. Not never,
+because the cost is one stage, the machinery is written, and OpenZeppelin's
+=ShieldedTreasury= is a concrete contract that cannot be ported without
+them. The trigger is any contract wanting a COLLECTION of coins rather than
+a single =Cell= — at which point it is a day's work, not a milestone's, and
+this note is the design.
+
+If it is built, build all three at once: they share =qualify_coin=, and
+building one means writing the fixture and the differential harness anyway.
+
+** Nested ADTs — LEAVE DOCUMENTED, with the README corrected
+
+The honest position is that this is a real missing feature with a clear,
+low-risk implementation path in =minocrab-ledger= and an expensive one in
+=minocrab-std=, and that nothing we have ported or intend to port declares
+one. The cost is a milestone; the demand is one third-party library. That is
+the wrong trade today.
+
+What SHOULD change now is the README bullet, which overstates the gap: it
+should say =Map= is the only nestable ADT, and it should say that the
+emission layer's obstacle is a parameter (a path where a field index is) and
+the API's obstacle is that a handle reached through a key cannot be =const=.
+A reader comparing MinoCrab to Compact deserves to know it is one shape and
+not a family.
+
+** Neither is a "not a real gap"
+
+Unlike =kernel.checkpoint()=, both compile under the pinned compactc and
+both have artifacts. Gap 1 has three; gap 2 has three. The v3 backend
+assembles the instructions each needs — checked in =assemble1=, not assumed
+— so neither is blocked on compactc the way M17's =ckpt= was. They are
+unbuilt, not unbuildable, and the README's list is correct to carry them.
