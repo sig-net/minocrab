@@ -540,3 +540,41 @@ both have artifacts. Gap 1 has three; gap 2 has three. The v3 backend
 assembles the instructions each needs — checked in =assemble1=, not assumed
 — so neither is blocked on compactc the way M17's =ckpt= was. They are
 unbuilt, not unbuildable, and the README's list is correct to carry them.
+
+* Design of record — the nested-ADT API (dmd reviewed 2026-08-17)
+
+Approved in-session; M22 builds THIS, iteration later is expected.
+
+#+begin_src rust
+#[derive(Ledger)]
+struct Treasury {
+    balances: LedgerMap<B32<Public>, LedgerMap<Bytes<20, Public>, Uint<64, Public>>>,
+    approvals: LedgerMap<B32<Public>, LedgerSet<B32<Public>>>,
+}
+
+let user_bal = TREASURY.balances.at_key(c, &user); // NO instructions — path building
+let bal = user_bal.lookup(c, &token);              // ONE op: dup 0; idx [field, user]; idx token; popeq
+TREASURY.deep.at_key(c, &a).at_key(c, &b).lookup(c, &k);
+#+end_src
+
+The decisions, each with its reason:
+1. =at_key= is FREE and documented as such (the =.field()= convention);
+   the cost stays at the leaf method — one Impact op per Compact
+   operation, path re-encoded per op, which is compactc's own shape, so
+   the differential stays instruction-for-instruction.
+2. Inner handles are runtime VALUES holding CLONED key limbs (wires are
+   Copy; no lifetimes in circuit signatures — this codebase has none and
+   is keeping it that way). Outer declarations stay =const=.
+3. The value-position bound splits: sealed =LedgerSlot= with two
+   families — plain values (today's =LedgerRepr= world, unchanged
+   spelling) and ADT handles (the new impl block). This is where the
+   ~88-method ripple lives.
+4. NO one-shot =lookup2(c, &k1, &k2)= family — chaining covers any depth
+   with one concept. No row claim from handle reuse (the path re-emits);
+   it is spelling, not caching.
+5. Map-only nesting, matching compactc's kind-checker
+   (=expand-modules-and-types.ss:256-263=); =LedgerSet<LedgerList<..>>=
+   must not type.
+6. A DEPTH bound as an E0080 on the handle type — stricter than
+   upstream's unchecked =dup= nibble (findings log #8), in exactly the
+   way the rest of the API is already stricter.

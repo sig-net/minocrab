@@ -1986,3 +1986,36 @@ instruments without them knowing the instruments exist.
       crates.io at 2026-08-17.
 Exit criteria: when upstream publishes, `cargo publish` in PUBLISHING.md's
 order with no repo changes beyond removing the git pins.
+
+* M22 — The last two ADT gaps: coin arms + nested ADTs (dmd, 2026-08-17)
+dmd: "implement those bullets, don't wait for the people, we can always
+iterate later." The two remaining bullets of the README's fairness list,
+scoped by notes/coin-arms-nested-adts.org (the 2026-08-16 investigation)
+and — for the nested API — the design dmd reviewed in-session
+2026-08-17, now recorded as the design of record in that note's
+"Design of record" section: `at_key` builds a path and emits NOTHING,
+every leaf method emits the ONE Impact op Compact's operation names with
+the path re-encoded per op (compactc's own shape), inner handles are
+runtime values holding cloned key limbs (outer declarations stay const),
+the value-position bound splits into a sealed `LedgerSlot` with plain
+values and ADT handles as the two families, no one-shot `lookup2`
+methods, Map-only nesting per compactc's own kind-checker, and a depth
+bound as an E0080 stricter than upstream's unchecked nibble.
+- [ ] Stage A — the three coin arms (`Set.insertCoin`, `Map.insertCoin`,
+      `List.pushFrontCoin`): lift `cell_write_coin`'s qualify dance into
+      a shared `qualify_coin`, four callers; three op sequences, three
+      typed std methods; tiny.compact-style fixture compiled with the
+      pinned compactc, instruction-for-instruction differential (the
+      M17 route); zero movement on every existing circuit.
+- [ ] Stage B1 — nested lowering: `LedgerKey` + the general-path
+      encoder (`idx_path`), the `u8 → path` widening kept purely
+      additive (existing builders become wrappers); nested fixture
+      compiled with pinned compactc; raw-ledger differential proving
+      the encoding instruction for instruction.
+- [ ] Stage B2 — the typed surface: `LedgerSlot` split, `at_key`
+      handles, the method ripple; typed differentials; the README
+      fairness bullets rewritten to what remains true (Map-only
+      nesting is compactc's bound, not ours).
+Exit criteria: both README bullets gone or reduced to upstream's own
+limits; every new circuit in the frozen snapshots; zero movement
+outside the declared fixture set; notes as-built per stage.
