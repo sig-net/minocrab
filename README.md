@@ -139,7 +139,7 @@ c.assert(deposit_request.amount.gt(0u64).message("Amount must be positive"));
 const change = amountInMaximum - amountIn;
 ```
 ```rust
-let change = amount_in_max.sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
+let change = amount_in_max.sub(c, amount_in);
 ```
 
 **Disclose** — the label must appear in the circuit's return type, or a generated set-equality test fails.
