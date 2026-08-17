@@ -153,7 +153,7 @@ contracts, 618 circuit names) through the entry-point hash rule;
   vault's calls to the Signet singleton — so fix it here before reading any
   other failure.
 
-** 5. The differential suites — 14 test targets named =*differential*=
+** 5. The differential suites — the test targets named =*differential*= (18 at 2026-08-17; count with =ls crates/*/tests/*differential*.rs= rather than trusting this line)
 Our circuit vs compactc's artifact for the same contract: same typed I/O
 schema, equal =Preprocessed::pis= / =pi_skips= on a shared =ProofPreimage=
 (=notes/ledger-abi.org=). Instruction streams are free to differ.
