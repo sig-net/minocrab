@@ -286,6 +286,7 @@ macro_rules! comparison {
         $name:ident($a:ident, $b:ident): $kind:ident => $cmp:expr, negated: $neg:expr, order: ($first:ident, $second:ident)
     );* $(;)?) => {$(
         $(#[$m])*
+        #[track_caller]
         pub fn $name<A: CheckOperand, B: CheckOperand>($a: A, $b: B) -> Check<Joined<A, B>>
         where
             A::Vis: Meet<B::Vis>,
@@ -340,6 +341,7 @@ comparison! {
 /// range-check a literal against it, and build the descriptor. `first` and
 /// `second` are the operands in the order the INSTRUCTION takes them, which
 /// is why `greater_than` is `less_than` with them swapped.
+#[track_caller]
 fn compare<F: CheckOperand, S: CheckOperand>(
     cmp: Cmp,
     negated: bool,
@@ -413,6 +415,7 @@ fn width(cmp: Cmp, a: Option<u32>, b: Option<u32>) -> Option<u32> {
 /// needs the literal as a const generic (`lit::<500>()`), which is the open
 /// API-shape question in the same section and a bigger change than the bug is
 /// worth today.
+#[track_caller]
 fn check_literal_within(literal: Option<Fr>, max: Option<u128>, bits: Option<u32>) {
     let (Some(value), Some(max)) = (literal, max) else {
         return;
@@ -450,6 +453,13 @@ fn fr_as_u128(value: Fr) -> Option<u128> {
 }
 
 /// A literal compared at `bits` has to fit in `bits`.
+///
+/// `#[track_caller]` all the way up — this function, `check_literal_within`,
+/// `compare`, the six constructors the `comparison!` macro generates and the
+/// six methods `comparison_methods!` generates — so that `amount.lt(300u64)`
+/// is blamed on the line that wrote it. A link added to that chain without
+/// the attribute silently moves the blame back here.
+#[track_caller]
 fn check_literal_fits(literal: Option<Fr>, bits: u32) {
     let Some(value) = literal else { return };
     let bytes = value.as_le_bytes();
@@ -648,6 +658,7 @@ macro_rules! comparison_methods {
         impl<$($gen)*> $self_ty {
             $(
                 #[doc = $doc]
+                #[track_caller]
                 pub fn $name<B: CheckOperand>(self, other: B) -> Check<<$vis as Meet<B::Vis>>::Out>
                 where
                     $vis: Meet<B::Vis>,

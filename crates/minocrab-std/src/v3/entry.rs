@@ -119,6 +119,17 @@ impl std::fmt::Display for ArgPath {
 /// data, so [`Circuit3::arg`] can only hand back private wires.
 ///
 /// See the module docs for the three laws an impl must satisfy.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be a circuit argument",
+    label = "not an argument type",
+    note = "circuit arguments are witness data, so the leaves are implemented \
+            at `Private` ONLY: write `Uint<64>` / `B32<Private>` / \
+            `Bytes<20>`, not their `Public` spellings (`Uint<64>`'s \
+            visibility already defaults to `Private`)",
+    note = "a struct becomes an argument type with `#[derive(CircuitArg)]`, \
+            which needs every field to be one in turn — field order is the \
+            wire contract"
+)]
 pub trait CircuitArg: CircuitAbi + Sized {
     /// Declare the slots — `Circuit3::arg` calls and nothing else.
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self;
@@ -658,6 +669,17 @@ impl CircuitArgs for () {
 /// cannot leak (this trait is implemented for public values only), so the
 /// declared set is the `Disclosed` records and an output label has nothing
 /// to agree with.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be returned from a circuit",
+    label = "not a returnable value",
+    note = "returning a value DISCLOSES it, so `CircuitOut` is implemented at \
+            `Public` only. If this is the `Private` spelling of a leaf, send \
+            it through the gate first — `value.disclose_as::<SomeLabel>(c)` — \
+            and name the label in the circuit's `Discloses<..>` return type",
+    note = "`()` is Compact's `: []` circuit, and `Discloses<D, R>` returns \
+            whatever `R` returns; a circuit that returns anything at all also \
+            needs `#[circuit(output = \"…\")]`"
+)]
 pub trait CircuitOut {
     /// Output slots this value occupies.
     const SLOTS: usize;
@@ -769,6 +791,7 @@ impl<T: CircuitOut> CircuitOut for Maybe<T, Public> {
 /// The body may return anything that occupies no output slot — `()`, or a
 /// [`Discloses<D>`](super::Discloses) declaration over it. Returning a
 /// value means naming it, which is [`entry_out`].
+#[track_caller]
 pub fn entry<A: CircuitArgs, O: CircuitOut>(
     body: impl FnOnce(&mut Circuit3, A) -> O,
 ) -> Compiled3 {
@@ -783,6 +806,12 @@ pub fn entry<A: CircuitArgs, O: CircuitOut>(
 
 /// [`entry`] for a circuit that returns a value: `label` names the returned
 /// value in the disclosure record (see [`CircuitOut`]).
+///
+/// Both this and [`entry`] are `#[track_caller]`: their three law checks are
+/// properties of a BUILT circuit rather than of a type, so they stayed panics
+/// (notes/contract-api.org §Panics) and the location that matters is the
+/// `#[circuit]` whose argument list broke the law, not this function.
+#[track_caller]
 pub fn entry_out<A: CircuitArgs, O: CircuitOut>(
     label: &str,
     body: impl FnOnce(&mut Circuit3, A) -> O,

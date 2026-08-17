@@ -37,42 +37,61 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, LitStr, Pat, ReturnType, Signature, Type};
+use syn::{FnArg, Ident, ItemFn, LitInt, LitStr, Pat, ReturnType, Signature, Type};
 
 use crate::circuit_arg::{arg_label, impl_arg_traits, ArgField};
 
-/// `#[circuit]` / `#[circuit(output = "…")]`.
+/// `#[circuit]` / `#[circuit(output = "…", max_k = N)]`.
 #[derive(Default)]
 pub struct CircuitAttr {
     /// The label the returned value is disclosed under. Required exactly
     /// when the function returns something (see [`expand`]).
     output: Option<LitStr>,
+    /// The circuit's declared cost ceiling, in `k` (log2 of the proving-table
+    /// rows). Generates one more test; see [`max_k_test`].
+    max_k: Option<LitInt>,
 }
 
 impl Parse for CircuitAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut output = None;
+        let expected = "expected `output = \"…\"` or `max_k = N` inside #[circuit(..)]";
+        let mut attr = CircuitAttr::default();
         while !input.is_empty() {
-            let key: Ident = input.parse().map_err(|e| {
-                syn::Error::new(e.span(), "expected `output = \"…\"` inside #[circuit(..)]")
-            })?;
-            if key != "output" {
-                return Err(syn::Error::new(
-                    key.span(),
-                    format!("unsupported #[circuit] argument `{key}`; expected `output = \"…\"`"),
-                ));
-            }
-            if output.is_some() {
-                return Err(syn::Error::new(key.span(), "`output` is given twice"));
-            }
+            let key: Ident = input
+                .parse()
+                .map_err(|e| syn::Error::new(e.span(), expected))?;
             input.parse::<syn::Token![=]>()?;
-            output = Some(input.parse()?);
+            match &key {
+                k if k == "output" => {
+                    if attr.output.is_some() {
+                        return Err(syn::Error::new(key.span(), "`output` is given twice"));
+                    }
+                    attr.output = Some(input.parse()?);
+                }
+                k if k == "max_k" => {
+                    if attr.max_k.is_some() {
+                        return Err(syn::Error::new(key.span(), "`max_k` is given twice"));
+                    }
+                    let budget: LitInt = input.parse()?;
+                    // A `u8` because that is what the cost model's `k` is;
+                    // parsing it here means a typo is a macro error at the
+                    // attribute rather than a type error in the expansion.
+                    budget.base10_parse::<u8>()?;
+                    attr.max_k = Some(budget);
+                }
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unsupported #[circuit] argument `{key}`; {expected}"),
+                    ))
+                }
+            }
             if input.is_empty() {
                 break;
             }
             input.parse::<syn::Token![,]>()?;
         }
-        Ok(CircuitAttr { output })
+        Ok(attr)
     }
 }
 
@@ -164,6 +183,7 @@ pub fn expand_in(
         #entry_fn(#label_arg |__c, __args: #args_ty| #body_fn(__c #(, __args.#idents)*))
     };
     let declaration_test = discloses_test(&item.sig, name, &bare, &root, owner);
+    let budget_test = max_k_test(attr.max_k.as_ref(), name, &bare, owner);
 
     let entry = quote! {
         #(#attrs)*
@@ -182,10 +202,11 @@ pub fn expand_in(
         }
     };
 
-    Ok(Expansion {
-        entry,
-        tests: declaration_test,
-    })
+    let tests = match (declaration_test, budget_test) {
+        (None, None) => None,
+        (a, b) => Some(quote! { #a #b }),
+    };
+    Ok(Expansion { entry, tests })
 }
 
 /// The generated set-equality test, for a circuit that declares what it
@@ -230,6 +251,44 @@ fn discloses_test(
             #[test]
             fn the_declared_disclosures_are_the_ones_the_circuit_makes() {
                 #root::__private::assert_declared_disclosures::<#ty>(#circuit, &#build());
+            }
+        }
+    })
+}
+
+/// The generated cost-budget test, for `#[circuit(max_k = N)]`: build the
+/// circuit and price it against the declared ceiling through minocrab-sim's
+/// cost model, which is Midnight's own.
+///
+/// A module beside the entry point for the same reason [`discloses_test`]'s
+/// is, and it names `::minocrab_sim` directly — so a crate that declares a
+/// budget needs minocrab-sim among its `[dev-dependencies]`. That is the
+/// only crate a `#[circuit]` expansion can require beyond minocrab-std, and
+/// only when the author asks for it.
+fn max_k_test(
+    budget: Option<&LitInt>,
+    name: &Ident,
+    bare: &str,
+    owner: Option<&syn::Type>,
+) -> Option<TokenStream> {
+    let budget = budget?;
+    let module = format_ident!("__{bare}_max_k", span = name.span());
+    let build = match owner {
+        Some(owner) => quote!(super::#owner::#name),
+        None => quote!(super::#name),
+    };
+    let circuit = name.to_string();
+    let circuit = circuit.strip_prefix("r#").unwrap_or(&circuit).to_string();
+    Some(quote! {
+        #[cfg(test)]
+        #[allow(non_snake_case)]
+        mod #module {
+            #[allow(unused_imports)]
+            use super::*;
+
+            #[test]
+            fn the_circuit_is_within_its_declared_cost_budget() {
+                ::minocrab_sim::v3::assert_max_k(#circuit, &#build(), #budget);
             }
         }
     })
@@ -657,6 +716,64 @@ mod tests {
             fn deposit(#[arg(name = "c")] c: &mut Circuit3) {}
         });
         assert!(err.contains("not an argument"), "{err}");
+    }
+
+    /// `max_k` generates a second test module, beside the entry point and
+    /// beside the disclosure one when both are asked for.
+    #[test]
+    fn a_cost_budget_generates_its_own_test() {
+        let expanded = expand(
+            attr(quote!(max_k = 14)),
+            syn::parse_quote! { pub fn deposit(c: &mut Circuit3, a: Uint<64>) {} },
+        )
+        .expect("expands")
+        .to_string();
+        assert!(expanded.contains("mod __deposit_max_k"), "{expanded}");
+        assert!(
+            expanded.contains(
+                ":: minocrab_sim :: v3 :: assert_max_k (\"deposit\" , & super :: deposit () , 14)"
+            ),
+            "{expanded}"
+        );
+
+        let expanded = expand(
+            attr(quote!(output = "event hash", max_k = 9)),
+            syn::parse_quote! {
+                fn hash(c: &mut Circuit3) -> Discloses<(EventHash,), B32<Public>> {
+                    unimplemented!()
+                }
+            },
+        )
+        .expect("expands")
+        .to_string();
+        assert!(expanded.contains(r#"entry_out ("event hash" ,"#), "{expanded}");
+        assert!(expanded.contains("mod __hash_discloses"), "{expanded}");
+        assert!(expanded.contains("mod __hash_max_k"), "{expanded}");
+    }
+
+    #[test]
+    fn a_circuit_without_a_budget_gets_no_budget_test() {
+        let expanded = expansion(syn::parse_quote! {
+            pub fn deposit(c: &mut Circuit3, a: Uint<64>) {}
+        });
+        assert!(!expanded.contains("max_k"), "{expanded}");
+    }
+
+    /// `k` is a `u8` in the cost model, so a budget that is not one is an
+    /// error at the attribute rather than in the expansion.
+    #[test]
+    fn a_budget_outside_a_u8_is_rejected() {
+        let err = syn::parse2::<CircuitAttr>(quote!(max_k = 300))
+            .err()
+            .expect("k does not fit a u8")
+            .to_string();
+        assert!(err.contains("too large"), "{err}");
+
+        let err = syn::parse2::<CircuitAttr>(quote!(max_k = "14"))
+            .err()
+            .expect("a budget is a number")
+            .to_string();
+        assert!(err.contains("expected integer literal"), "{err}");
     }
 
     #[test]

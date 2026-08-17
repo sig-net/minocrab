@@ -18,7 +18,8 @@
 //! # Start here
 //!
 //! - [`macro@circuit`] — a `fn` becomes a circuit; the return type is its
-//!   disclosure manifest, and a generated test checks the manifest is honest
+//!   disclosure manifest, and a generated test checks the manifest is honest.
+//!   `max_k = N` declares a cost budget and generates a second test
 //! - [`macro@contract`] — the block that makes a contract's circuit set
 //!   derivable
 //! - [`macro@interface`] — declare somebody else's deployed contract, so a
@@ -181,6 +182,37 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 /// wire shape); silence the warning the way Rust always does, with a leading
 /// underscore — the label is unaffected, since `_recovery_id` and
 /// `recovery_id` both map to `recoveryId`.
+///
+/// # `max_k` — a declared cost budget
+///
+/// ```ignore
+/// #[circuit(max_k = 14)]
+/// pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) { .. }
+/// ```
+///
+/// generates one more test beside the entry point: build the circuit, price
+/// it with minocrab-sim's cost model (Midnight's own), and fail if its `k` —
+/// log2 of the proving-table rows — is above the number declared here. `k` is
+/// what sets the proving key, the prover's RAM and the wall clock, so a
+/// budget is the guard against a change that is free in rows and expensive in
+/// powers of two. A circuit UNDER budget passes and says by how much.
+///
+/// `max_k` combines with `output`, in either order:
+/// `#[circuit(output = "event hash", max_k = 9)]`.
+///
+/// The generated test names `::minocrab_sim`, so a crate that declares a
+/// budget needs `minocrab-sim` among its `[dev-dependencies]`. It is the one
+/// crate a `#[circuit]` expansion can require beyond minocrab-std, and only
+/// when the author asks for a budget.
+#[proc_macro_attribute]
+pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = syn::parse_macro_input!(attr as circuit::CircuitAttr);
+    let item = syn::parse_macro_input!(item as syn::ItemFn);
+    circuit::expand(attr, item)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 /// A contract: its state type, and the circuits it exports.
 ///
 /// ```text
@@ -209,9 +241,9 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 /// module that nothing checked for completeness.
 ///
 /// Each `#[circuit]` inside expands exactly as it does on a free function —
-/// same argument struct, same labels, same disclosure declaration — except
-/// that its generated set-equality test is emitted BESIDE the `impl`, since a
-/// `mod` cannot live inside one.
+/// same argument struct, same labels, same disclosure declaration, same
+/// `max_k` budget — except that its generated tests are emitted BESIDE the
+/// `impl`, since a `mod` cannot live inside one.
 #[proc_macro_attribute]
 pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
@@ -222,15 +254,6 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
     let item = syn::parse_macro_input!(item as syn::ItemImpl);
     contract::expand(item)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
-
-#[proc_macro_attribute]
-pub fn circuit(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attr = syn::parse_macro_input!(attr as circuit::CircuitAttr);
-    let item = syn::parse_macro_input!(item as syn::ItemFn);
-    circuit::expand(attr, item)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

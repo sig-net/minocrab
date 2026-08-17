@@ -122,6 +122,16 @@ export circuit deposit(evmNonce: Uint<64>, gasLimit: Uint<64>): [] { /* ... */ }
 pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Discloses<()> { /* ... */ }
 ```
 
+**Cost budget** — `max_k` declares the circuit's ceiling in `k` (log2 of the proving-table rows, which is what sets the proving key, the prover's RAM and the wall clock); a generated test prices the circuit with Midnight's own cost model and fails when it goes over. Compact has no equivalent. Needs `minocrab-sim` as a dev-dependency.
+
+```compact
+// no equivalent: cost is discovered by compiling and looking
+```
+```rust
+#[circuit(max_k = 14)]
+pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* ... */ }
+```
+
 **Assert** — the comparison width comes from the operand's type, never typed at the call site.
 
 ```compact

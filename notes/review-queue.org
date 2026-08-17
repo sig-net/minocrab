@@ -724,3 +724,36 @@ strictness bonus). FOUND AND FIXED, four things:
    of WHY a circuit left its predecessor's coverage.
 Also pending, not a review item: BENCHMARK.md is stale — swap moved k16
 → k15 and nothing has re-benched.
+
+* [ ] M23 R1 — "M23 R1: five zero-movement instruments, and the rustc
+limit one of them found" (diagnostics, cost budgets, self-explaining
+snapshots, track_caller, the fold's exhaustiveness). Named by subject
+rather than hash: the entry is amended INTO the commit it describes, so
+a hash written here can never be that commit's. Zero-movement,
+proven at the ZKIR level (200 of 200 circuits byte-identical against a
+pre-edit dump), so what wants eyes is the JUDGEMENT, not the movement:
+1. THE COIN-ARM RESHAPE, the one API change in the stage. Three inherent
+   impls on `LedgerMap/Set/List<QualifiedShieldedCoinInfo3<Public>>`
+   became `impl<V: CoinArm>` bounds over a new sealed marker trait, so
+   that the rejection could carry a message. The claim being made is that
+   this is a pure rename of the constraint — the bodies never mentioned
+   the value type — and the orphan+sealed argument is what keeps the
+   implementor set at one. Both directions are doctests; what a reviewer
+   can add is whether the extra generality is genuinely unreachable.
+2. THE SEVEN DIAGNOSTIC MESSAGES themselves. They are PROSE ASSERTIONS
+   about the type system that no test can check — "the ledger is public",
+   "arguments are witness data", "the two point types are Cell-only" —
+   and a wrong one misdirects a reader at exactly the moment they are
+   stuck. Read them as documentation, against the impls they describe.
+3. THE ROW-SNAPSHOT BASELINE, which is a new way to be misled. It is
+   written on every passing run and read on the next failure, so it is
+   correct only because it is written from a state the frozen table
+   agrees with. Check that argument, and that no path writes it from a
+   failing or partial run.
+4. THE NINE BUDGETS. They are today's k, verified at-not-under, but the
+   numbers are a policy: a ceiling that equals the current cost leaves no
+   headroom for an honest change, which is deliberate and is dmd's call
+   to confirm.
+Not in this queue because an instrument covers it fully: the
+zero-movement claim itself, the `#[track_caller]` blame lines (probed),
+and the terminator exhaustiveness (it is rustc's own check).

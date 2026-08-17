@@ -8,6 +8,7 @@
 use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
+use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
     adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
     erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, mint_tokens, nested,
@@ -65,6 +66,168 @@ pub fn rewrite_generated_region(path: &std::path::Path, body: &str) {
     out.push_str(&text[to..]);
     std::fs::write(path, out).unwrap_or_else(|e| panic!("{} is not writable: {e}", path.display()));
     println!("wrote {}", path.display());
+}
+
+// ---- the ZKIR dump, and the diff that reads it ------------------------------
+
+/// A circuit's serialized ZKIR, ONE INSTRUCTION PER LINE.
+///
+/// Exactly [`to_zkir_string`]'s JSON, split: the first line is the object
+/// without its `instructions` (version, input schema, output types, the
+/// communications-commitment flag), then one line per instruction in order.
+/// Nothing is dropped, so equality of these lines is equality of the IR —
+/// which is what lets the same rendering serve the byte-comparison instrument
+/// (`zkir_dump`) and the line diff a snapshot failure prints.
+pub fn zkir_lines(ir: &IrSource) -> Vec<String> {
+    let text = to_zkir_string(ir).expect("the IR serializes");
+    let mut value: serde_json::Value =
+        serde_json::from_str(&text).expect("its own output parses back");
+    let object = value
+        .as_object_mut()
+        .expect("a serialized IrSource is a JSON object");
+    let instructions = object
+        .remove("instructions")
+        .expect("a serialized IrSource carries its instructions");
+    let mut lines = vec![serde_json::to_string(&value).expect("the header re-serializes")];
+    lines.extend(
+        instructions
+            .as_array()
+            .expect("`instructions` is an array")
+            .iter()
+            .map(|i| serde_json::to_string(i).expect("an instruction re-serializes")),
+    );
+    lines
+}
+
+/// A circuit's file name in a dump directory: the name with `::` as `__`, so
+/// a `diff -rq` names the circuit directly.
+pub fn zkir_dump_name(circuit: &str) -> String {
+    format!("{}.zkir", circuit.replace("::", "__"))
+}
+
+/// Write every circuit's [`zkir_lines`] into `dir`, one file each.
+pub fn write_zkir_dump(dir: &std::path::Path) -> usize {
+    std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("creating {}: {e}", dir.display()));
+    let circuits = circuits();
+    for (name, build) in &circuits {
+        let mut text = zkir_lines(&build().ir).join("\n");
+        text.push('\n');
+        let path = dir.join(zkir_dump_name(name));
+        std::fs::write(&path, text).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+    }
+    circuits.len()
+}
+
+/// Where `row_snapshot` looks for the previous run's dump: `$MINOCRAB_ZKIR_
+/// BASELINE` if it is set (a directory `zkir_dump` produced at a chosen
+/// commit), otherwise the copy the row snapshot keeps for itself under the
+/// target directory.
+pub fn zkir_baseline_dir() -> std::path::PathBuf {
+    match std::env::var_os("MINOCRAB_ZKIR_BASELINE") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("zkir-baseline"),
+    }
+}
+
+/// The longest-common-subsequence table of two line lists.
+fn lcs_table(a: &[&str], b: &[&str]) -> Vec<Vec<usize>> {
+    let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for i in (0..a.len()).rev() {
+        for j in (0..b.len()).rev() {
+            lcs[i][j] = if a[i] == b[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+    lcs
+}
+
+/// A unified-style diff: `-` expected, `+` actual, ` ` unchanged.
+///
+/// One definition, used by `interface_snapshot`'s failure path (over
+/// interface lines) and `row_snapshot`'s (over [`zkir_lines`]).
+pub fn diff(expected: &[&str], actual: &[&str]) -> String {
+    let lcs = lcs_table(expected, actual);
+    let (mut i, mut j) = (0, 0);
+    let mut out = String::new();
+    while i < expected.len() && j < actual.len() {
+        if expected[i] == actual[j] {
+            out.push_str(&format!("      {}\n", expected[i]));
+            i += 1;
+            j += 1;
+        } else if lcs[i + 1][j] >= lcs[i][j + 1] {
+            out.push_str(&format!("    - {}\n", expected[i]));
+            i += 1;
+        } else {
+            out.push_str(&format!("    + {}\n", actual[j]));
+            j += 1;
+        }
+    }
+    for line in &expected[i..] {
+        out.push_str(&format!("    - {line}\n"));
+    }
+    for line in &actual[j..] {
+        out.push_str(&format!("    + {line}\n"));
+    }
+    out
+}
+
+/// Beyond this many lines on either side, [`changed_lines`] stops using
+/// [`diff`]: the LCS table is `(n+1)·(m+1)` `usize`s, which is nothing at the
+/// ~300-instruction streams this workspace builds and gigabytes at a stream a
+/// hundred times longer. A failing instrument must not exhaust memory, so the
+/// fallback is a positional comparison — cruder (an insertion misaligns
+/// everything after it) but bounded.
+const LCS_LIMIT: usize = 5_000;
+
+/// [`diff`] with the unchanged lines dropped and the result capped.
+///
+/// An instruction-level diff is mostly unchanged lines; what a failure needs
+/// is the movement, so only the `-`/`+` lines survive and only the first
+/// `max` of them are printed.
+pub fn changed_lines(expected: &[&str], actual: &[&str], max: usize) -> String {
+    let full = if expected.len().max(actual.len()) > LCS_LIMIT {
+        positional_diff(expected, actual)
+    } else {
+        diff(expected, actual)
+    };
+    let changed: Vec<&str> = full
+        .lines()
+        .filter(|l| l.starts_with("    -") || l.starts_with("    +"))
+        .collect();
+    let mut out = String::new();
+    for line in changed.iter().take(max) {
+        out.push_str(line);
+        out.push('\n');
+    }
+    if changed.len() > max {
+        out.push_str(&format!(
+            "    … {} more changed lines\n",
+            changed.len() - max
+        ));
+    }
+    out
+}
+
+/// [`diff`]'s shape without its table: index against index.
+fn positional_diff(expected: &[&str], actual: &[&str]) -> String {
+    let mut out = String::new();
+    for i in 0..expected.len().max(actual.len()) {
+        match (expected.get(i), actual.get(i)) {
+            (Some(a), Some(b)) if a == b => out.push_str(&format!("      {a}\n")),
+            (a, b) => {
+                if let Some(a) = a {
+                    out.push_str(&format!("    - {a}\n"));
+                }
+                if let Some(b) = b {
+                    out.push_str(&format!("    + {b}\n"));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Every circuit the workspace builds, in snapshot order. Shared by the

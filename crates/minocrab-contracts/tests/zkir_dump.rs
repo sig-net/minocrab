@@ -23,7 +23,13 @@
 //! ```
 //!
 //! Files are named after the circuit with `::` as `__`, so a diff names the
-//! circuit directly.
+//! circuit directly, and each holds `support::zkir_lines` — the same JSON
+//! `to_zkir_string` produces, split one instruction per line, so `diff -u` on
+//! a pair is legible and `diff -rq` is exactly as strong as before.
+//!
+//! A dump directory produced here is also what `row_snapshot` will read as
+//! `MINOCRAB_ZKIR_BASELINE` when its own failure path prints an
+//! instruction-level diff.
 
 mod support;
 
@@ -33,13 +39,7 @@ mod support;
 fn dump_every_circuits_zkir() {
     let dir = std::env::var("MINOCRAB_ZKIR_DUMP")
         .expect("set MINOCRAB_ZKIR_DUMP=<dir> — see this file's docs");
-    std::fs::create_dir_all(&dir).expect("the dump directory is creatable");
-
-    let circuits = support::circuits();
-    for (name, build) in &circuits {
-        let text = minocrab_zkir::v3::to_zkir_string(&build().ir).expect("serializes");
-        let path = format!("{dir}/{}.zkir", name.replace("::", "__"));
-        std::fs::write(&path, text).unwrap_or_else(|e| panic!("writing {path}: {e}"));
-    }
-    println!("dumped {} circuits to {dir}", circuits.len());
+    let dir = std::path::PathBuf::from(dir);
+    let n = support::write_zkir_dump(&dir);
+    println!("dumped {n} circuits to {}", dir.display());
 }

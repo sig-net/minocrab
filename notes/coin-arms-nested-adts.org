@@ -1024,6 +1024,15 @@ is then E0599 "the method exists but its trait bounds were not
 satisfied: =KeyPath<11>: KeyedPath=", with a
 =#[diagnostic::on_unimplemented]= note carrying the arithmetic.
 
+CORRECTION (M23 R1, 2026-08-17, measured on rustc 1.97.1): the note is
+WRITTEN but rustc does not PRINT it here. =#[diagnostic::on_unimplemented]=
+is consulted on the E0277 path only; the E0599 "method exists but its trait
+bounds were not satisfied" path prints just =KeyPath<11>: KeyedPath=. The
+rejection and the named trait stand; the prose is reachable from the
+trait's rustdoc rather than from the error. Same finding applies to the
+coin-arm bound added in R1 — notes/contract-api.org §"As built — M23 R1"
+(a).
+
 WHY, measured rather than assumed. The first cut was the inline const
 
 : const { assert!(P::KEYS + 1 + MAX_FIELD_PATH <= MAX_LEDGER_PATH, ..) }

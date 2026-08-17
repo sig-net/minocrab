@@ -812,6 +812,14 @@ between "the pass is incomplete" and "the pass is wrong".
 (=notes/review-queue.org= tracks the sibling hazard for the hand-written
 circuit list.)
 
+*DONE, M23 R1 (2026-08-17).* =returned_identifiers= now delegates to
+=returned_operands=, a wildcard-free match over all 34 =Instruction=
+variants: =Output= yields its =vals=, the other 33 yield =&[]=. A new
+terminator breaks the build. =dedup_range_constraints='s =_ => None= is
+LEFT as it is, deliberately — its failure direction is conservative (fewer
+bounds recorded, fewer constraints dropped), which is the incomplete-but-
+not-wrong side. See notes/contract-api.org §"As built — M23 R1" (e).
+
 * 11. WHAT FV DOES NOT BUY, SAID PLAINLY
 
 - *Lowering fidelity to compactc is empirical by nature.* Our primary warrant

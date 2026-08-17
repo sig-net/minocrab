@@ -1344,6 +1344,10 @@ changes that MOVE their streams.
    last declare) — phase 2's, unchanged: both are properties of a built
    circuit, not of a type.
 
+All four are `#[track_caller]` as of M23 R1, so they blame the line that
+wrote the literal / built the circuit rather than the check — see the
+"As built — M23 R1" section at the end of this file, item (d).
+
 **** Stage-1 gates
 All 78 circuits' serialized ZKIR dumped at HEAD and after the stage:
 78 of 78 BYTE-IDENTICAL. row_snapshot bit-identical, interface_snapshot
@@ -1685,3 +1689,165 @@ raw index constants (=pub const INITIALISED: u8 = 6;=), so they have no type
 to hang an =impl= on. Giving them one is a real change (it moves the field
 indices into the derive), not a mechanical wrap, and it should be done per
 contract with its own gate rather than in one sweep.
+
+* As built — M23 R1 (2026-08-17)
+The five zero-movement review-readiness items of milestones.org's M23 R1,
+in one commit. ZERO MOVEMENT held: row_snapshot and interface_snapshot
+bit-identical, =cargo test --workspace= and =cargo test --workspace
+--release= green.
+
+** (a) =#[diagnostic::on_unimplemented]= on the rejection traits
+
+Seven traits, each carrying a domain message, a label and one or two
+notes:
+
+| trait | file | what it now says |
+|-------+------+------------------|
+| =Meet= | minocrab/src/lib.rs | visibility is a two-point lattice; bound the generic |
+| =Disclose= | minocrab/src/v3/disclose.rs | implemented at =Private= only; a record has no impl by design |
+| =Vis3= | minocrab-std/src/v3.rs | two impls; the leaves take visibility LAST, =B32=/=BytesN= first |
+| =CircuitArg= | minocrab-std/src/v3/entry.rs | arguments are witness data: =Private= leaves only |
+| =CircuitOut= | minocrab-std/src/v3/entry.rs | returning DISCLOSES: =Public= only, so =disclose_as= first |
+| =LedgerRepr= | minocrab-std/src/v3/ledger.rs | the ledger is public; the two point types are =Cell=-only |
+| =CoinArm= | minocrab-std/src/v3/ledger.rs | NEW — see below |
+
+THE COIN ARM NEEDED A TRAIT TO EXIST. The gate was three inherent impls on
+=LedgerMap<K, QualifiedShieldedCoinInfo3<Public>>= /
+=LedgerSet<…>= / =LedgerList<…>=, and an inherent impl has nothing to hang
+a diagnostic on. So =CoinArm= is a new sealed marker trait with exactly one
+implementor (=QualifiedShieldedCoinInfo3<Public>=, sealed through the
+module's existing =mod sealed=), and the three impls became
+=impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V>=,
+=impl<T: CoinArm> LedgerSet<T>=, =impl<T: CoinArm> LedgerList<T>=. The
+bodies never mentioned the value type, so this is a rename of the
+constraint and nothing else; both directions are doctests on =CoinArm= (a
+=LedgerSet<B32<Public>>= =compile_fail=, a =LedgerSet<QualifiedShielded…>=
+compiling).
+
+*** THE DEVIATION, MEASURED: rustc does NOT render on_unimplemented on E0599
+
+Probed on rustc 1.97.1, and it applies to B2's =KeyedPath= note as well as
+to =CoinArm=:
+
+- Where the bound appears as a BOUND (=fn f<T: CoinArm>=, a =CircuitArg=
+  parameter, a =CircuitOut= return, a =LedgerRepr= argument), the failure is
+  E0277 and the message, label and notes are all printed. Verified for all
+  seven traits.
+- Where the bound is only reachable through METHOD RESOLUTION
+  (=set.insert_coin(..)= on the wrong set, the eleventh =at_key=), rustc
+  emits E0599 "the method exists but its trait bounds were not satisfied"
+  and prints only =B32<Public>: CoinArm= — the attribute is not consulted
+  on that path.
+
+So the E0599 sites gain the CONCEPT (a named trait the reader can look up)
+but not the prose. notes/coin-arms-nested-adts.org's stage-B1 sentence "with
+a =#[diagnostic::on_unimplemented]= note carrying the arithmetic" describes
+what is written, not what rustc currently shows; corrected there. Nothing
+was reshaped to force E0277 — the only way would be to move the coin arms
+off inherent impls onto a trait the caller must import, which trades a
+better message for a worse API.
+
+** (b) =#[circuit(max_k = N)]= — declared cost budgets
+
+The attribute grew a second argument (=CircuitAttr::max_k=, a =LitInt=
+=base10_parse=d to =u8= at parse time so a typo is an attribute error, not
+an expansion error) and generates a second test module beside the entry
+point, alongside the disclosure one: =mod __<name>_max_k= calling
+=minocrab_sim::v3::assert_max_k(name, &build(), N)=.
+
+The assertion itself lives in minocrab-sim, not in the expansion, so the
+wording is one string: k is a CEILING (under budget passes and prints the
+headroom), and the message says a k regression is a proving-key / RAM /
+wall-clock regression rather than a snapshot drift. =assert_max_k= is
+=#[track_caller]=, so the failure is blamed on the =#[circuit(max_k = …)]=
+line itself.
+
+COST: the expansion names =::minocrab_sim=, so a crate declaring a budget
+needs minocrab-sim among its dev-dependencies. That is the only crate a
+=#[circuit]= expansion can require beyond minocrab-std, and only when the
+author asks for it. minocrab-contracts already had it.
+
+ADOPTED ON THE NINE BORSH VAULT CIRCUITS at today's k, MEASURED first (the
+row_snapshot table, re-derived independently by the nine generated tests,
+which print nothing — meaning every one is exactly AT its budget, not
+under):
+
+| circuit | max_k | rows today |
+|---------+-------+------------|
+| initialize | 13 | 2412 |
+| deposit | 14 | 15614 |
+| claim | 16 | 42053 |
+| approve_router | 14 | 13314 |
+| withdraw | 15 | 23689 |
+| complete_withdraw | 16 | 40159 |
+| refund | 16 | 40789 |
+| swap | 15 | 28625 |
+| complete_swap | 16 | 50259 |
+
+DOCUMENTED in the README feature list ("Cost budget", the one entry whose
+Compact column is "no equivalent") and in the attribute's rustdoc — which
+required fixing a docs bug found while doing it: =#[circuit]='s entire
+rustdoc block was attached to =#[contract]= (one unbroken =///= run from
+"Turn a plain typed function into a circuit entry point" through the
+contract block's prose, with =pub fn circuit= undocumented below it). The
+block is now split at the right place and =pub fn circuit= carries its own
+docs plus the =max_k= section.
+
+** (c) row_snapshot says WHICH INSTRUCTIONS MOVED
+
+=(k, rows)= is a number and a number is not a diagnosis. The dump
+comparison is now run inline:
+
+- =support::zkir_lines(&IrSource)= renders a circuit as exactly
+  =to_zkir_string='s JSON SPLIT one instruction per line — first line the
+  object without =instructions= (version, input schema, output types, the
+  comms-commitment flag), then the stream. Lossless, so line equality is IR
+  equality.
+- =zkir_dump= writes that instead of the one-line blob. =diff -rq= is
+  exactly as strong as before and =diff -u= is now legible.
+- The LCS =diff= renderer moved out of =interface_snapshot= into =support=
+  (one definition, two callers; its reorder/rename/insertion unit test
+  stays where it was), joined by =changed_lines=, which drops the unchanged
+  lines and caps the rest at 60 per circuit — a k16 stream is tens of
+  thousands of lines and the movement is what is wanted.
+- Every PASSING row_snapshot run refreshes a baseline dump under
+  =CARGO_TARGET_TMPDIR/zkir-baseline= (=target/tmp/zkir-baseline=), so the
+  baseline is only ever written from a state the frozen table agrees with.
+  A failing run diffs each moved circuit against it and prints the
+  instructions, =-= baseline / =+= this build.
+  =MINOCRAB_ZKIR_BASELINE=<dir>= overrides it with a =zkir_dump= directory
+  from a chosen commit; with neither, the failure names the two commands.
+
+Cost of the always-on baseline write, measured: serializing all 200
+circuits is 0.08s against the test's ~86s (the cost MODEL is what is
+expensive, not the IR). Verified end to end by perturbing =bounded::b10=
+with a second =increment=: the failure printed the three new =impact=
+instructions and nothing else.
+
+** (d) =#[track_caller]= on the recorded build-time panics
+
+The four entries of §"Panics that could NOT become compile errors" now
+blame the user's line:
+
+1. =predicate::check_literal_fits= / =check_literal_within= — and the whole
+   chain above them, because =#[track_caller]= only propagates if every
+   link has it: the two checks, =compare=, the six constructors
+   =comparison!= generates and the six methods =comparison_methods!=
+   generates. Verified: =byte.lt(300u64)= is blamed on the call site.
+2. =Uint::<BITS>::constant= and =BoundedUint::<BOUND>::constant=.
+3. =LedgerRepr::from_limbs= — both point types' =unreachable!= and the
+   =ledger_repr_via_abi= macro's limb-count =debug_assert=.
+4. =entry= / =entry_out= — the three law checks (=O::SLOTS == 0= for
+   =entry=, =arg_count == SLOTS=, no instruction before the last declare).
+
+** (e) the fold's =returned_identifiers= is terminator-exhaustive
+
+=passes.rs='s =returned_identifiers= inspected only =Instruction::Output=
+through an =if let=. An upstream terminator carrying values would have been
+invisible to it, so the fold would fold a constant that must stay named —
+the UNSOUND direction (notes/formal-verification-options.org §10). It now
+goes through =returned_operands=, a wildcard-free match over all 34
+variants: =Output= yields its =vals=, the other 33 yield =&[]=, and a new
+variant breaks the build the way =operands_mut= already does. Zero
+behaviour change (=Output= is still the only value-carrying terminator in
+ZKIR 3.0); the point is that the next one cannot arrive silently.

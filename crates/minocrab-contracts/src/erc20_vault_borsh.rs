@@ -168,7 +168,7 @@ pub const SWAP_EVENT_MAP_V2: LedgerMap<B32<Public>, SwapRecordV2> =
 /// order — which is the wire contract. `responseKey` is the corpus's only
 /// curve-point argument: one slot, no range constraint (see
 /// [`minocrab_std::v3::Secp256k1Point`]).
-#[circuit]
+#[circuit(max_k = 13)]
 pub fn initialize(
     c: &mut Circuit3,
     vault_evm: Bytes<20>,
@@ -268,7 +268,7 @@ struct DepositRequest {
 ///
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract.
-#[circuit]
+#[circuit(max_k = 14)]
 pub fn deposit(
     c: &mut Circuit3,
     evm_nonce: Uint<64>,
@@ -554,7 +554,7 @@ struct ShieldedCoinArg {
 ///
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract.
-#[circuit]
+#[circuit(max_k = 15)]
 pub fn withdraw(
     c: &mut Circuit3,
     evm_nonce: Uint<64>,
@@ -730,7 +730,7 @@ struct SwapRequest {
 ///
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract.
-#[circuit]
+#[circuit(max_k = 15)]
 pub fn swap(
     c: &mut Circuit3,
     evm_nonce: Uint<64>,
@@ -922,7 +922,7 @@ pub fn swap(
 ///
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract.
-#[circuit]
+#[circuit(max_k = 14)]
 pub fn approve_router(
     c: &mut Circuit3,
     erc20_address: Bytes<20>,
@@ -1331,7 +1331,7 @@ fn refund_surrendered_value(
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract, with `#[arg(name = "respond")]`
 /// keeping the abbreviation the interface snapshot froze (see [`claim`]).
-#[circuit]
+#[circuit(max_k = 16)]
 pub fn complete_withdraw(
     c: &mut Circuit3,
     request_id: B32<Private>,
@@ -1392,7 +1392,7 @@ pub fn complete_withdraw(
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract (see [`complete_withdraw`] for the
 /// `respond` abbreviation).
-#[circuit]
+#[circuit(max_k = 16)]
 pub fn complete_swap(
     c: &mut Circuit3,
     request_id: B32<Private>,
@@ -1586,7 +1586,7 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 /// The parameters after `c` are the Compact parameter list, in declaration
 /// order — which is the wire contract (see [`complete_withdraw`] for the
 /// `respond` abbreviation).
-#[circuit]
+#[circuit(max_k = 16)]
 pub fn refund(
     c: &mut Circuit3,
     request_id: B32<Private>,
@@ -1747,7 +1747,7 @@ struct RespondSignature {
 /// keeps the hand-written abbreviation the interface snapshot froze
 /// (`respond_bigR_x_hi`, …). Renaming is a phase-5 decision, not this
 /// port's.
-#[circuit]
+#[circuit(max_k = 16)]
 pub fn claim(
     c: &mut Circuit3,
     request_id: B32<Private>,

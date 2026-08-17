@@ -198,6 +198,16 @@ label_set_tuples! {
 /// arguments or none (E0107), so the design's `c.disclose_as::<RequestId>(v)`
 /// is only spellable as `c.disclose_as::<RequestId, _>(v)`. Putting the
 /// label on a method of the value leaves exactly one parameter to name.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has nothing to disclose",
+    label = "not a private value",
+    note = "`disclose_as` is the private→public gate, so it is implemented at \
+            `Private` only: bare wires here, every typed leaf in \
+            minocrab-std's `v3::disclose`. A value that is already `Public` \
+            has crossed the gate and needs no call; a RECORD type has no impl \
+            by design — disclose the fields that actually leave, so the \
+            disclosure record names them one by one"
+)]
 pub trait Disclose: Sized {
     /// The same shape with public wires.
     type Public;

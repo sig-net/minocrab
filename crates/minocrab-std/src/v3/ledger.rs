@@ -80,6 +80,20 @@ use super::{
 /// `CallArg` makes: what the ledger holds is public, so a private value has
 /// to pass `disclose` before it can be written — forgetting is a compile
 /// error rather than a leak.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot sit in a ledger slot",
+    label = "not a ledger representation",
+    note = "what the ledger holds is PUBLIC — an Impact op writes into the \
+            public transcript — so `LedgerRepr` is implemented at `Public` \
+            only. A private value has to pass `disclose_as` before it can be \
+            written, and forgetting is this error rather than a leak",
+    note = "a record type gets its impl from `#[derive(CircuitArg)]`'s \
+            `Public` instantiation, or by delegating to the ABI traits the \
+            way the leaf table in this module does; `Secp256k1Point` and \
+            `JubjubPoint` are `Cell`-only (their limbs come out of `encode`, \
+            which has no inverse, so a `Map` value or `Set` element cannot be \
+            rebuilt from a read)"
+)]
 pub trait LedgerRepr: Sized {
     /// This type's FAB atoms, in slot order.
     fn atoms() -> Vec<AlignmentAtom>;
@@ -148,6 +162,7 @@ macro_rules! ledger_repr_via_abi {
                 <$ty as CallArg>::push_call_slots(self, limbs)
             }
 
+            #[track_caller]
             fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
                 debug_assert_eq!(
                     limbs.len(),
@@ -221,6 +236,7 @@ impl LedgerRepr for Secp256k1Point<Public> {
     /// lookup does go through `from_limbs`, is not supported: store the
     /// point in a CELL (which is the only shape Compact's `Secp256k1Point`
     /// ledger fields take) or store the encoded limbs as a record type.
+    #[track_caller]
     fn from_limbs(_limbs: Vec<Wire3<FieldT, Public>>) -> Self {
         unreachable!(
             "a Secp256k1Point is read through its typed gate, not rebuilt from \
@@ -266,6 +282,7 @@ impl LedgerRepr for JubjubPoint<Public> {
 
     /// UNREACHABLE by construction — see [`Secp256k1Point`]'s impl, which
     /// carries the argument in full.
+    #[track_caller]
     fn from_limbs(_limbs: Vec<Wire3<FieldT, Public>>) -> Self {
         unreachable!(
             "a JubjubPoint is read through its typed gate, not rebuilt from \
@@ -293,6 +310,64 @@ impl LedgerRepr for JubjubPoint<Public> {
 }
 
 // ---- the coin arms' shared operands -----------------------------------------
+
+/// What a collection must hold before it grows a COIN ARM: compactc declares
+/// `insertCoin` / `pushFrontCoin` under
+/// `(when (= value_type QualifiedShieldedCoinInfo))` (midnight-ledger.ss:669
+/// for `Set`, :768 for `Map`, :917 for `List`), so there is exactly one
+/// implementor and no second one is reachable — the trait is sealed.
+///
+/// It is a BOUND rather than three impls on the concrete type for the sake of
+/// the diagnostic: reaching for a coin arm on the wrong collection is then a
+/// trait bound carrying the note below, which is the project's preferred
+/// rejection spelling (the same shape as [`KeyedPath`]'s depth bound).
+///
+/// ```compile_fail
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_std::v3::{CoinRecipient, LedgerSet, ShieldedCoinInfo3, B32};
+///
+/// const S: LedgerSet<B32<Public>> = LedgerSet::at(0);
+///
+/// fn f(c: &mut Circuit3, coin: &ShieldedCoinInfo3<Public>, r: &CoinRecipient<Public>) {
+///     S.insert_coin(c, coin, r);
+/// }
+/// ```
+///
+/// while the same call on a set of coins compiles:
+///
+/// ```
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_std::v3::{
+///     CoinRecipient, LedgerSet, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3,
+/// };
+///
+/// const S: LedgerSet<QualifiedShieldedCoinInfo3<Public>> = LedgerSet::at(0);
+///
+/// fn f(c: &mut Circuit3, coin: &ShieldedCoinInfo3<Public>, r: &CoinRecipient<Public>) {
+///     S.insert_coin(c, coin, r);
+/// }
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a shielded coin, so this collection has no coin arm",
+    label = "expected `QualifiedShieldedCoinInfo3<Public>`",
+    note = "compactc declares `insertCoin`/`pushFrontCoin` under \
+            `(when (= value_type QualifiedShieldedCoinInfo))` \
+            (midnight-ledger.ss:669, :768, :917) — a collection of any other \
+            element type has no such method at all. The coin arms live on \
+            `LedgerSet<QualifiedShieldedCoinInfo3<Public>>`, \
+            `LedgerMap<K, QualifiedShieldedCoinInfo3<Public>>` and \
+            `LedgerList<QualifiedShieldedCoinInfo3<Public>>`",
+    note = "DECLARED SLOTS ONLY: a coin arm on a handle reached through \
+            `at_key` is deliberately not offered — the lowering handles any \
+            depth, but no differential covers a nested one \
+            (notes/coin-arms-nested-adts.org, stage B1 \"not covered\")"
+)]
+pub trait CoinArm: sealed::Coin {}
+
+impl sealed::Coin for QualifiedShieldedCoinInfo3<Public> {}
+impl CoinArm for QualifiedShieldedCoinInfo3<Public> {}
 
 /// The two operands the QUALIFY DANCE takes, shared by the three coin arms
 /// below (`Set.insertCoin`, `Map.insertCoin`, `List.pushFrontCoin`; the
@@ -375,6 +450,8 @@ mod sealed {
     /// Sealing [`super::LedgerSlot`]: the two families that may sit in a
     /// `Map`'s value position.
     pub trait Slot {}
+    /// Sealing [`super::CoinArm`]: one impl, and no downstream second one.
+    pub trait Coin {}
 }
 
 /// Sealed: where a ledger slot sits. [`FieldPath`] (a declaration) or
@@ -931,15 +1008,15 @@ impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
 /// `Map<K, QualifiedShieldedCoinInfo>` — the ONE value type that grows a
 /// method, because compactc declares `insertCoin` under
 /// `(when (= value_type QualifiedShieldedCoinInfo))` (midnight-ledger.ss:768).
-/// A map of any other value type has no such method, and here that is a
-/// missing impl rather than a runtime complaint.
+/// A map of any other value type has no such method, and here that is an
+/// unsatisfied [`CoinArm`] bound rather than a runtime complaint.
 ///
 /// DECLARED SLOTS ONLY (`P = FieldPath`). The lowering handles a coin arm at
 /// any depth — the four `dup` reaches are functions of `len(f)` and
 /// `minocrab_ledger` pins them — but no NESTED coin arm has a differential
 /// behind it, so the typed surface does not offer one
 /// (notes/coin-arms-nested-adts.org, stage B1 "not covered").
-impl<K: LedgerRepr> LedgerMap<K, QualifiedShieldedCoinInfo3<Public>> {
+impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
     /// `map.insertCoin(key, coin, recipient)` — `idxp [field]; push key;
     /// dup 5; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91;
     /// ins 1; insc 1`.
@@ -1164,7 +1241,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
 ///
 /// DECLARED SLOTS ONLY — see [`LedgerMap::insert_coin`] for why the nested
 /// coin arms are not offered.
-impl LedgerSet<QualifiedShieldedCoinInfo3<Public>> {
+impl<T: CoinArm> LedgerSet<T> {
     /// `set.insertCoin(coin, recipient)` — `idxp [field]; dup 4; push cm;
     /// idxc [(1), stack]; push coin; swap 0; concatc 91; pushs null; ins 1;
     /// insc 1`.
@@ -1413,7 +1490,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
 /// the type would have to hand limbs for.
 ///
 /// DECLARED SLOTS ONLY — see [`LedgerMap::insert_coin`].
-impl LedgerList<QualifiedShieldedCoinInfo3<Public>> {
+impl<T: CoinArm> LedgerList<T> {
     /// `list.pushFrontCoin(coin, recipient)` — twenty-one instructions, and
     /// the one coin arm that is not a one-for-one swap on its plain twin.
     ///

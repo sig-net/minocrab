@@ -53,9 +53,10 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// [`LedgerAdt`] that splits the value position into plain values and ADT
 /// handles.
 pub use ledger::{
-    leaf_hash, FieldPath, KeyPath, KeyedPath, LedgerAdt, LedgerCell, LedgerCounter, LedgerField,
-    LedgerHistoricMerkleTree, LedgerList, LedgerMap, LedgerMerkleTree, LedgerPath, LedgerRepr,
-    LedgerSet, LedgerSlot, MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING, STRAIGHT_LINE,
+    leaf_hash, CoinArm, FieldPath, KeyPath, KeyedPath, LedgerAdt, LedgerCell, LedgerCounter,
+    LedgerField, LedgerHistoricMerkleTree, LedgerList, LedgerMap, LedgerMerkleTree, LedgerPath,
+    LedgerRepr, LedgerSet, LedgerSlot, MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING,
+    STRAIGHT_LINE,
 };
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
@@ -109,6 +110,8 @@ pub use minocrab_macros::CircuitArg;
 /// parameters after `c: &mut Circuit3` are the arguments (declaration order
 /// is the wire contract), and the function itself becomes
 /// `fn name() -> Compiled3` built through [`entry`] / [`entry_out`].
+/// `#[circuit(max_k = N)]` additionally declares a cost budget, checked by a
+/// generated test against minocrab-sim's cost model.
 #[cfg(feature = "macros")]
 pub use minocrab_macros::circuit;
 pub use minocrab_macros::contract;
@@ -142,6 +145,17 @@ pub mod __private {
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
 /// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a visibility a v3 gadget can be generic over",
+    label = "expected `Public` or `Private`",
+    note = "`Vis3` has exactly two impls — `minocrab::Public` and \
+            `minocrab::Private` — and every typed leaf (`Uint<BITS, V>`, \
+            `B32<V>`, `Bytes<N, V>`, …) is generic over it. If this is your \
+            own type parameter, bound it `V: Vis3`; if it is a concrete type, \
+            it is a VALUE type in the visibility position — the leaves take \
+            visibility last (`Uint<64, Private>`), and `B32`/`BytesN` take it \
+            first (`B32<Public>`, `BytesN<Public, 20>`)"
+)]
 pub trait Vis3: Visibility + Meet<Self, Out = Self> + Meet<Public, Out = Self> + Sized + Copy {
     fn from_public<T: IrTy>(w: Wire3<T, Public>) -> Wire3<T, Self>;
 }
@@ -330,6 +344,12 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
 impl<const BITS: u32> Uint<BITS, Public> {
     /// A `Uint<BITS>` constant from a native Rust value; panics at
     /// circuit-build time if `v` does not fit in `BITS` bits.
+    ///
+    /// `#[track_caller]` because the magnitude of a runtime integer is not a
+    /// type, so this is one of the value-dependent checks that could not
+    /// become a compile error (notes/contract-api.org §Panics): the least it
+    /// can do is blame the line that wrote the literal.
+    #[track_caller]
     pub fn constant(c: &mut Circuit3, v: u64) -> Self {
         assert!(
             BITS >= 64 || v >> BITS == 0,
@@ -731,7 +751,9 @@ impl<const BOUND: u128> BoundedUint<BOUND, Public> {
     /// A PANIC and not a compile error, for the reason recorded in
     /// notes/contract-api.org §"Panics that could NOT become compile
     /// errors": the magnitude of a runtime integer is not in the type
-    /// system.
+    /// system. `#[track_caller]` so it at least names the line that wrote
+    /// the literal rather than this function.
+    #[track_caller]
     pub fn constant(c: &mut Circuit3, v: u128) -> Self {
         assert!(
             v < BOUND,

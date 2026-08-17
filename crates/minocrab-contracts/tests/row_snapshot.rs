@@ -16,10 +16,22 @@
 //!      --ignored regenerate_row_snapshot`, or `./bump.sh accept` to run
 //! every regenerator at once. It rewrites the table below in place, so the
 //! new baseline arrives as a reviewable diff.
+//!
+//! WHEN IT FIRES it says WHICH INSTRUCTIONS MOVED, not just that the rows
+//! did. `(k, rows)` is a number, and a number is not a diagnosis; the
+//! instruction-level answer is one dump comparison away, so this test runs it
+//! itself. Every PASSING run refreshes a ZKIR baseline under the target
+//! directory (`support::zkir_lines`, the `zkir_dump` rendering), and a
+//! failing run diffs each moved circuit against it. Point
+//! `MINOCRAB_ZKIR_BASELINE=<dir>` at a `zkir_dump` directory to diff against
+//! a chosen commit instead.
 
 mod support;
 
-use support::{circuits, rewrite_generated_region, test_source};
+use support::{
+    changed_lines, circuits, rewrite_generated_region, test_source, write_zkir_dump,
+    zkir_baseline_dir, zkir_dump_name, zkir_lines, Circuit,
+};
 
 /// `(circuit, k, rows)` — frozen at "M7: freeze per-circuit (k, rows) in a
 /// row-snapshot guard test".
@@ -241,6 +253,7 @@ fn every_circuit_matches_its_frozen_cost() {
     );
 
     let mut failures = Vec::new();
+    let mut moved: Vec<Circuit> = Vec::new();
     for ((name, build), &(snap_name, k, rows)) in circuits.iter().zip(SNAPSHOT) {
         assert_eq!(*name, snap_name, "snapshot table out of order");
         let (got_k, got_rows) = minocrab_sim::v3::cost(&build().ir);
@@ -250,12 +263,89 @@ fn every_circuit_matches_its_frozen_cost() {
                  ({:+})",
                 got_rows as i64 - rows as i64
             ));
+            moved.push((name, *build));
         }
     }
-    assert!(
-        failures.is_empty(),
-        "circuit cost changed — this refactor must be type-level only:\n{}",
-        failures.join("\n")
+
+    let baseline = zkir_baseline_dir();
+    if failures.is_empty() {
+        // The baseline is only ever written from a state the frozen table
+        // agrees with, so a diff against it is a diff against a green tree.
+        write_zkir_dump(&baseline);
+        return;
+    }
+    panic!(
+        "circuit cost changed — this refactor must be type-level only:\n{}\n\n{}",
+        failures.join("\n"),
+        instruction_diffs(&moved, &baseline)
+    );
+}
+
+/// The instruction-level answer for every circuit whose cost moved: the ZKIR
+/// this build produces against the baseline dump, `-` baseline, `+` now.
+///
+/// Per circuit at most [`MAX_DIFF_LINES`] changed lines, because a k16
+/// circuit's stream is tens of thousands and the movement is what is wanted.
+fn instruction_diffs(moved: &[Circuit], baseline: &std::path::Path) -> String {
+    let mut out = String::new();
+    let mut missing = Vec::new();
+    for (name, build) in moved {
+        let path = baseline.join(zkir_dump_name(name));
+        let Ok(before) = std::fs::read_to_string(&path) else {
+            missing.push(*name);
+            continue;
+        };
+        let before: Vec<&str> = before.lines().collect();
+        let after = zkir_lines(&build().ir);
+        let after: Vec<&str> = after.iter().map(String::as_str).collect();
+        out.push_str(&format!("  {name} — `-` baseline, `+` this build:\n"));
+        out.push_str(&changed_lines(&before, &after, MAX_DIFF_LINES));
+    }
+    if out.is_empty() {
+        out.push_str("No ZKIR baseline to diff against");
+    } else if !missing.is_empty() {
+        out.push_str(&format!("\nNo baseline for: {}", missing.join(", ")));
+    }
+    out.push_str(&format!(
+        "\n(baseline: {}. It is written by every PASSING run of this test, so \
+         a first-run failure has none. For a diff against a chosen commit: \
+         `MINOCRAB_ZKIR_DUMP=/tmp/before cargo test -p minocrab-contracts \
+         --test zkir_dump -- --ignored dump_every_circuits_zkir` at that \
+         commit, then re-run this test with \
+         `MINOCRAB_ZKIR_BASELINE=/tmp/before`.)\n",
+        baseline.display()
+    ));
+    out
+}
+
+/// Changed lines printed per moved circuit before the rest are counted.
+const MAX_DIFF_LINES: usize = 60;
+
+/// The failure renderer is the whole value of this instrument when it fires,
+/// so the part `interface_snapshot`'s diff test does not cover — dropping the
+/// unchanged lines and capping the rest — gets its own check.
+#[test]
+fn the_instruction_diff_keeps_only_the_movement_and_caps_it() {
+    let before = ["a", "b", "c", "d"];
+    let after = ["a", "x", "c", "d"];
+    assert_eq!(changed_lines(&before, &after, 60), "    - b\n    + x\n");
+    assert_eq!(
+        changed_lines(&before, &after, 1),
+        "    - b\n    … 1 more changed lines\n"
+    );
+    assert_eq!(changed_lines(&before, &before, 60), "");
+
+    // Past the LCS limit it falls back to a positional comparison, which
+    // still reports the movement — this is the path that must not allocate
+    // a table.
+    let long_before: Vec<String> = (0..6000).map(|i| i.to_string()).collect();
+    let mut long_after = long_before.clone();
+    long_after[4711] = "moved".to_string();
+    let long_before: Vec<&str> = long_before.iter().map(String::as_str).collect();
+    let long_after: Vec<&str> = long_after.iter().map(String::as_str).collect();
+    assert_eq!(
+        changed_lines(&long_before, &long_after, 60),
+        "    - 4711\n    + moved\n"
     );
 }
 

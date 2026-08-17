@@ -37,7 +37,7 @@ mod support;
 use minocrab::v3::Compiled3;
 use minocrab::DisclosureKind;
 use minocrab_zkir::v3::{Instruction, IrType};
-use support::{circuits, rewrite_generated_region, test_source};
+use support::{circuits, diff, rewrite_generated_region, test_source};
 
 /// `(circuit, interface)` — frozen at "M9 phase 0: freeze every circuit's
 /// ordered interface in a snapshot guard test".
@@ -2366,49 +2366,6 @@ fn interface(c: &Compiled3) -> Vec<String> {
     );
 
     lines
-}
-
-/// Longest-common-subsequence table of `a` and `b` (`lcs[i][j]` = length of
-/// the LCS of `a[i..]` and `b[j..]`), for the failure diff.
-fn lcs_table(a: &[&str], b: &[&str]) -> Vec<Vec<usize>> {
-    let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for i in (0..a.len()).rev() {
-        for j in (0..b.len()).rev() {
-            lcs[i][j] = if a[i] == b[j] {
-                lcs[i + 1][j + 1] + 1
-            } else {
-                lcs[i + 1][j].max(lcs[i][j + 1])
-            };
-        }
-    }
-    lcs
-}
-
-/// A unified-style diff: `-` expected, `+` actual, ` ` unchanged.
-fn diff(expected: &[&str], actual: &[&str]) -> String {
-    let lcs = lcs_table(expected, actual);
-    let (mut i, mut j) = (0, 0);
-    let mut out = String::new();
-    while i < expected.len() && j < actual.len() {
-        if expected[i] == actual[j] {
-            out.push_str(&format!("      {}\n", expected[i]));
-            i += 1;
-            j += 1;
-        } else if lcs[i + 1][j] >= lcs[i][j + 1] {
-            out.push_str(&format!("    - {}\n", expected[i]));
-            i += 1;
-        } else {
-            out.push_str(&format!("    + {}\n", actual[j]));
-            j += 1;
-        }
-    }
-    for line in &expected[i..] {
-        out.push_str(&format!("    - {line}\n"));
-    }
-    for line in &actual[j..] {
-        out.push_str(&format!("    + {line}\n"));
-    }
-    out
 }
 
 #[test]

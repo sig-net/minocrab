@@ -2089,7 +2089,12 @@ deliberately opens the NEXT cycle — new surface should not land days
 before a deep review. Each stage: one agent against this spec, supervisor
 verifies (independent gate re-run + diff read), zero movement unless the
 stage declares movement, notes as-built.
-- [ ] R1 — small batch, all zero-movement:
+- [X] R1 — small batch, all zero-movement:
+      LANDED 2026-08-17, notes/contract-api.org §"As built — M23 R1".
+      One deviation, measured and recorded: rustc renders
+      `#[diagnostic::on_unimplemented]` on the E0277 path only, so the
+      two METHOD-resolution gates (the coin arms, the eleventh `at_key`)
+      gain a named trait in their E0599 but not its prose.
       (a) `#[diagnostic::on_unimplemented]` across the rejection traits —
       the missing-impl rejections gain domain-specific messages (the
       Vis3/disclose gate, LedgerRepr's Public-only bound, the

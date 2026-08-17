@@ -980,6 +980,38 @@ pub fn cost(ir: &IrSource) -> (u8, usize) {
     (model.k(), model.rows())
 }
 
+/// The body of the test `#[circuit(max_k = N)]` generates: the circuit's
+/// `k` against the budget its author declared.
+///
+/// A CEILING, not an equality. `k` is `log2` of the proving-table rows, so it
+/// is what decides the proving key, the prover's RAM and the wall clock —
+/// crossing a power of two is the event a budget exists to catch, and it is
+/// invisible to `row_snapshot` for any circuit not in that table. Coming in
+/// UNDER budget is a win and passes; the message says by how much, so the
+/// declaration can be tightened deliberately rather than drifting.
+///
+/// Lives here rather than in the macro's expansion so that the wording is
+/// one string with one place to fix, and so the expansion stays a call.
+#[track_caller]
+pub fn assert_max_k(circuit: &str, compiled: &minocrab::v3::Compiled3, budget: u8) {
+    let (k, rows) = cost(&compiled.ir);
+    assert!(
+        k <= budget,
+        "{circuit}: k={k} ({rows} rows) is over the declared budget of \
+         max_k = {budget}. A circuit's k sets its proving key, its prover RAM \
+         and its wall clock, so this is a cost REGRESSION, not a snapshot \
+         drift: either take the rows back out, or raise the budget in the \
+         same commit that explains why it moved."
+    );
+    if k < budget {
+        println!(
+            "{circuit}: k={k} ({rows} rows), {} under the declared budget of \
+             max_k = {budget} — tighten it when the headroom is meant to stay",
+            budget - k
+        );
+    }
+}
+
 /// Attribute each instruction to its innermost region and price the circuit
 /// — the v3 twin of [`crate::profile`]. Instructions outside every region
 /// land in "(top level)".

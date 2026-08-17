@@ -208,15 +208,63 @@ fn immediate_copies(instructions: &[Instruction]) -> HashMap<Identifier, Operand
 fn returned_identifiers(instructions: &[Instruction]) -> HashSet<Identifier> {
     let mut returned = HashSet::new();
     for instruction in instructions {
-        if let Instruction::Output { vals } = instruction {
-            for val in vals {
-                if let Operand::Variable(id) = val {
-                    returned.insert(id.clone());
-                }
+        for val in returned_operands(instruction) {
+            if let Operand::Variable(id) = val {
+                returned.insert(id.clone());
             }
         }
     }
     returned
+}
+
+/// The operand positions through which a value LEAVES the circuit named.
+///
+/// Exhaustive by construction, the same way [`operands_mut`] is, and for a
+/// sharper reason: this list is what stops [`fold_immediate_copies`] folding
+/// a constant compactc keeps named, so an upstream terminator this function
+/// did not know about would make the fold do MORE, not less — the unsound
+/// direction (notes/formal-verification-options.org §10). A new
+/// output-carrying variant therefore has to break this match rather than fall
+/// through a wildcard into silence.
+fn returned_operands(instruction: &Instruction) -> &[Operand] {
+    match instruction {
+        Instruction::Output { vals } => vals,
+        // Everything else: an ordinary instruction, whose operands are
+        // consumed in-circuit and are the fold's whole business.
+        Instruction::Encode { .. }
+        | Instruction::Assert { .. }
+        | Instruction::CondSelect { .. }
+        | Instruction::ConstrainBits { .. }
+        | Instruction::ConstrainEq { .. }
+        | Instruction::ConstrainToBoolean { .. }
+        | Instruction::Copy { .. }
+        | Instruction::Impact { .. }
+        | Instruction::EcMul { .. }
+        | Instruction::EcMulGenerator { .. }
+        | Instruction::HashToCurve { .. }
+        | Instruction::IntoCoordinates { .. }
+        | Instruction::FromCoordinates { .. }
+        | Instruction::IntoBytes32 { .. }
+        | Instruction::FromBytes32 { .. }
+        | Instruction::Bytes32IntoLowHigh { .. }
+        | Instruction::ReverseBytes { .. }
+        | Instruction::Bytes32FromLowHigh { .. }
+        | Instruction::DivModPowerOfTwo { .. }
+        | Instruction::ReconstituteField { .. }
+        | Instruction::TransientHash { .. }
+        | Instruction::PersistentHash { .. }
+        | Instruction::Keccak256 { .. }
+        | Instruction::TestEq { .. }
+        | Instruction::Add { .. }
+        | Instruction::Mul { .. }
+        | Instruction::Neg { .. }
+        | Instruction::Inv { .. }
+        | Instruction::Not { .. }
+        | Instruction::LessThan { .. }
+        | Instruction::JubjubScalarFromNative { .. }
+        | Instruction::PublicInput { .. }
+        | Instruction::PrivateInput { .. } => &[],
+    }
 }
 
 /// Every operand position of an instruction, mutably.

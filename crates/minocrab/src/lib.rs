@@ -98,6 +98,15 @@ impl Visibility for Private {
 }
 
 /// Visibility join: public only if both sides are public.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a wire visibility, so it has no meet with `{B}`",
+    label = "expected `Public` or `Private`",
+    note = "visibility is a two-point lattice: `Public` and `Private` are its \
+            only inhabitants and `Meet` is implemented for all four pairs, so \
+            a failure here is a GENERIC parameter that has not been told it is \
+            one. Bound it — `V: Meet<Public, Out = V>`, or `V: Vis3`, which \
+            carries that plus the rest of what a stdlib gadget needs"
+)]
 pub trait Meet<B: Visibility>: Visibility {
     type Out: Visibility;
 }
