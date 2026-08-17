@@ -6,8 +6,8 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 
 That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these two documents:
 
-- [VERIFICATION.md](VERIFICATION.md) — the complete warrant chain: what proves what, which command re-checks it, which instrument catches which failure class, and the honest limits. Includes a one-day audit route.
-- [BENCHMARK.md](BENCHMARK.md) — reproducible from a clean checkout (`nix run .#bench`): rows −18..−58% against compactc on the vault, prove time −46..−97% where `k` crosses, with the losses stated beside the wins.
+- [VERIFICATION.md](VERIFICATION.md) — the steps we take to ensure that this compiler behaves correctly.
+- [BENCHMARK.md](BENCHMARK.md) — the performance of this eDSL, rows −18..−58% against compactc on the vault, prove time −46..−97% amortized.
  
 ## Why use this
 
