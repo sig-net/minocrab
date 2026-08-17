@@ -4,40 +4,23 @@ Rust eDSL for Midnight contracts, replacing Compact. Same target (ZKIR, never be
 
 This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose it, and neither you nor I will know why.
 
-That said: every claim below is instrumented, and the instruments are the product. If you are evaluating this stack seriously, start with these three documents —
+That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these three documents:
 
 - [VERIFICATION.md](VERIFICATION.md) — the complete warrant chain: what proves what, which command re-checks it, which instrument catches which failure class, and the honest limits. Includes a one-day audit route.
 - [BENCHMARK.md](BENCHMARK.md) — reproducible from a clean checkout (`nix run .#bench`): rows −18..−58% against compactc on the vault, prove time −46..−97% where `k` crosses, with the losses stated beside the wins.
 - The supply chain is pinned by hash, not by version string: compactc by release hash, all `midnight-*` crates to one 40-character rev, the corpus deterministic (recompiling moves zero of 788 artifacts), and every generated file regenerated between markers into reviewable diffs.
 
-## Safety
+## Why use this
 
-- Leaking a `Wire<Private>` is a compile error until `c.disclose(w, label)` ([compile_fail doctest](crates/minocrab/src/lib.rs))
-- Argument types are the range constraints — `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own `emit-constraints-for` table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs), [v3_entry.rs](crates/minocrab-std/tests/v3_entry.rs))
-- Drift is a test failure: `(k, rows)` and the ordered interface of all 167 circuits are frozen ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs), [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs))
-- 9,000,000 property cases against a Rust spec of every vault circuit, accepted runs replayed through the reference VM and the pinned ledger's `run_program` ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs))
-- Adversarial sweeps: `2^128 − 1`, zero addresses, malformed witnesses, witness malleability, injectivity ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs))
-- Bijective serialization — Borsh `bool` is `0|1`, so the `0x02` attestation hazard is unprovable, not refunded ([erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs))
-- Every simulator run cross-checked against Midnight's reference VM `IrSource::check`
-- Differential against compactc's own artifacts — see [porting kit](#porting-kit)
+**Catch many more errors at compile time.** A `Wire<Private>` cannot reach a public output unless you `disclose(w, label)` and name the label in the circuit's signature; a generated test enforces the signature, which caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard ([`sub`](crates/minocrab-std/src/v3.rs)). A guarded-off read must say what its default means ([`Guarded<T>`](crates/minocrab/src/v3.rs)). A literal outside its operand's bound doesn't build. Argument types are the range constraints: `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
 
-## Features
+**Use Rust testing, benchmarking and verification tools.** Circuits compile natively and run under `cargo test` — no proving, no keys ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes 9,000,000 property cases against a Rust spec affordable, each accepted run replayed through Midnight's reference VM and the pinned ledger ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)), plus adversarial sweeps that found real bugs ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs)). Every ported circuit is differential-tested against compactc's own artifacts ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 167 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The benchmark reproduces from a clean checkout with a per-region cost profiler and calibrated primitive costs ([BENCHMARK.md](BENCHMARK.md), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs)).
 
-- [Borsh](https://borsh.io) subset encoding/decoding — a safety feature, not a convenience: the wire format is a published, stable spec with independent implementations in other languages, so both ends are auditable separately ([spec](spec/borsh-subset.md), [vectors](spec/vectors), [conformance](crates/minocrab-contracts/tests/serialization_conformance.rs)), with Rust and TypeScript parser generation ([spec/ts](spec/ts), [vectors.test.ts](spec/ts/vectors.test.ts), [ts_codegen.rs](crates/minocrab-contracts/tests/serialization/ts_codegen.rs))
-- FAB Compact too, named at the call site: `persistent_hash_compact` / `transient_hash_compact` ([v3_borsh.rs](crates/minocrab-std/tests/v3_borsh.rs))
-- Hashing a Borsh value is free — the hash chips pack in-chip, zero extra rows
-- Interfaces for contracts have to be explicitly altered ([spec_doc.rs](crates/minocrab-contracts/tests/serialization/spec_doc.rs))
-- x-contract call interfaces are exported/imported as cargo crates
-- Interface crates and disclosures are automatically checked against the callee's compiled artifact ([signet-signer-interface](crates/signet-signer-interface/tests/artifact_agreement.rs), [xcall-target-interface](crates/xcall-target-interface/tests/artifact_agreement.rs))
-- Any deployed Midnight contract is importable: `minocrab-interface-gen --crate <dir>` ([regenerate.rs](crates/minocrab-interface-gen/tests/regenerate.rs))
-- Native compilation of circuits for testing — `cargo test`, fast, no proving, no keys ([minocrab-sim](crates/minocrab-sim/src/lib.rs))
-- Per-region cost profiler attributing rows, with calibrated primitive costs ([profile()](crates/minocrab-sim/src/lib.rs), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs), [opcost.rs](crates/minocrab-sim/examples/opcost.rs))
-- Bounded integers at any bound — `BoundedUint<70000>` *is* Compact's `Uint<0..70000>`, range end exclusive, lowered by compactc's own table; non-power-of-two `enum`s are the same leaf ([v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs))
-- TypeScript-side values bridge in: `Opaque<ts::Str>` is Compact's `Opaque<"string">` — argument, result, witness, any ledger slot, either side of a cross-contract call. The ts-type is part of the Rust type, so mixing two is a compile error ([compile_fail doctest](crates/minocrab-std/src/v3.rs)), and the slot is a *binding commitment* to the value, not a handle ([opaque_differential.rs](crates/minocrab-contracts/tests/opaque_differential.rs))
-- Every ledger ADT with Compact's own method names — `Set`, `List`, `MerkleTree<10, T>`, `HistoricMerkleTree<10, T>`, `Map`, `Cell`, `Counter`. Field indices come from `#[derive(Ledger)]` declaration order and the FAB atoms from the element type; a tree's depth is a const parameter checked at compile time. All 31 operations lower to compactc's exact instruction stream ([adts_differential.rs](crates/minocrab-contracts/tests/adts_differential.rs))
-- Circuit families as const generics, allowing you to encode invariants using the rust type system, monomorphized and unrolled by rustc ([notes/const-generics.org](notes/const-generics.org))
-- Macros are thin decorators — `#[circuit]` moves your body, it does not rewrite it; the expansion calls no `Circuit3` method ([circuit.rs](crates/minocrab-macros/src/circuit.rs)), and every derive has a hand-written twin that must lower to byte-identical ZKIR ([v3_derive.rs](crates/minocrab-std/tests/v3_derive.rs), [interface_macro.rs](crates/minocrab-contracts/tests/interface_macro.rs))
-- Rust: modules, generics, `pub(crate)`, cargo, rust-analyzer, `#[test]`, crates.io
+**Low level circuit generation.** MinoCrab emits ZKIR directly, so the lowering is ours to choose: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Measured against compactc on the same contracts: rows −18..−58%, prove time −46..−97% where `k` crosses, and the write-up states the circuits where nothing moved ([BENCHMARK.md](BENCHMARK.md)).
+
+**Use standard serialisation formats — or write your own.** Records are a [Borsh](https://borsh.io) subset: a published, stable spec with implementations in other languages, so both ends of the wire are auditable separately. The spec and TypeScript parsers are generated with golden vectors ([spec](spec/borsh-subset.md), [spec/ts](spec/ts)), and a Borsh `bool` is `0|1`, so the `0x02` attestation hazard is unprovable rather than misrouted. Compact's FAB encoding is still there, named at the call site, and the same `Serializer` takes custom layouts ([v3_borsh.rs](crates/minocrab-std/tests/v3_borsh.rs)).
+
+**It's all just Rust.** A mature toolchain: cargo, crates.io, rust-analyzer, `#[test]`, modules and visibility. Circuit families are const generics, monomorphized by rustc ([notes/const-generics.org](notes/const-generics.org)). A deployed contract imports as a typed crate and is checked against the callee's compiled artifact ([interface-gen](crates/minocrab-interface-gen)). Macros stay thin: every derive has a hand-written twin that must lower to byte-identical ZKIR ([v3_derive.rs](crates/minocrab-std/tests/v3_derive.rs)).
 
 ## Side by side
 
