@@ -4,12 +4,11 @@ Rust eDSL for Midnight contracts, which can be used instead of Compact.
 
 This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose it, and neither you nor I will know why.
 
-That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these three documents:
+That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these two documents:
 
 - [VERIFICATION.md](VERIFICATION.md) — the complete warrant chain: what proves what, which command re-checks it, which instrument catches which failure class, and the honest limits. Includes a one-day audit route.
 - [BENCHMARK.md](BENCHMARK.md) — reproducible from a clean checkout (`nix run .#bench`): rows −18..−58% against compactc on the vault, prove time −46..−97% where `k` crosses, with the losses stated beside the wins.
-- The supply chain is pinned by hash, not by version string: compactc by release hash, all `midnight-*` crates to one 40-character rev, the corpus deterministic (recompiling moves zero of 788 artifacts), and every generated file regenerated between markers into reviewable diffs.
-
+ 
 ## Why use this
 
 **Catch many more errors at compile time.** A `Wire<Private>` cannot reach a public output unless you `disclose(w, label)` and name the label in the circuit's signature; a generated test enforces the signature, which caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard ([`sub`](crates/minocrab-std/src/v3.rs)). A guarded-off read must say what its default means ([`Guarded<T>`](crates/minocrab/src/v3.rs)). A literal outside its operand's bound doesn't build. Argument types are the range constraints: `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
