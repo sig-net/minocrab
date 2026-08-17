@@ -355,7 +355,7 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- Nested ADTs — narrower than it sounds: Compact's own kind system nests through `Map` alone (`Map<K, Map<..>>` / `Map<K, List<V>>`; `Set` and `List` take only plain types). Every ledger op here assumes a top-level field; the vm-code half of the general path is small, the Rust-API half is a real milestone, and the corpus demand is three OpenZeppelin declarations ([the investigation](notes/coin-arms-nested-adts.org)).
+- Nested **coin arms** — `insertCoin` / `pushFrontCoin` reached *through* a nested path, e.g. `ms.lookup(k).insertCoin(coin, r)`. Nesting itself landed at M22: `TREASURY.balances.at_key(c, &user).lookup(c, &token)` chains to any depth, over every shape Compact accepts — `Map<K, Map<..>>`, `Map<K, List<V>>`, `Map<K, Set<T>>`, `Map<K, Counter>` and both Merkle trees — with all thirty circuits byte-equal to compactc. (`Map` is the only nestable ADT, and that is *compactc's* kind-checker, not ours: `Set<List<T>>` is its own compile error.) What is missing is only the coin arms at depth: the lowering has them and the `dup` reach is pinned as a function of path length, but no fixture circuit compiles one, so the typed methods stop at declared slots ([the investigation](notes/coin-arms-nested-adts.org)).
 - A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing — laid out end to end in [VERIFICATION.md](VERIFICATION.md), honest limits included. Not formal-verification parity.
 
 ## Layout

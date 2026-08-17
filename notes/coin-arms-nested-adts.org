@@ -923,3 +923,206 @@ by the leaf =persistentHash= as it already was.
 
 STAGE B2 (the typed surface) is untouched. The design of record above is
 still the plan for it, and the README keeps its bullet until B2 lands.
+
+* AS BUILT — STAGE B2, the TYPED surface (M22, 2026-08-17)
+
+The design of record, built as approved, with one thing it did not
+anticipate (=Vec= in a =const= item is E0493) forcing the shape of the
+answer, and one correctness item (correction (ii), the fifteen-field
+segmentation) closed on the DERIVE side with its own compactc fixture.
+
+All thirty circuits — the twenty-eight of B1 plus the two nested resets
+this stage added — lower BYTE-IDENTICALLY from the typed spelling and
+the raw one. First run, no iteration.
+
+** The shape, and the constraint that chose it
+
+A handle used to be a =u8=. It is now a PATH, and the path has two halves
+that differ in when they are known:
+
+#+begin_src rust
+pub struct FieldPath { elems: [u8; MAX_FIELD_PATH], len: u8 }   // const, Copy
+pub struct KeyPath<const KEYS: usize> { path: Vec<LedgerKey> }  // runtime
+pub trait LedgerPath { const KEYS: usize; type Deeper: KeyedPath;
+                       fn to_path(&self) -> Vec<LedgerKey>; }
+pub struct LedgerMap<K, V, P = FieldPath> { path: P, .. }
+#+end_src
+
+THE CONSTRAINT: a declared handle must be DROP-FREE. §2.5 said inner
+handles carry a =Vec<LedgerKey>=, and that is right for the inner ones —
+but if the outer struct could hold one too, then
+=const SIGNER: u8 = VAULT.signet_signer.index();= stops compiling with
+E0493, "destructor of `Vault` cannot be evaluated at compile-time", and
+=erc20_vault= has twelve of those. Hence two path types rather than one,
+and hence the =P= parameter, which is DEFAULTED so that every existing
+declaration — =LedgerMap<B32<Public>, VaultRecord>= — is unchanged text.
+
+The =P= parameter is also what kept the ~88-method ripple from being a
+ripple at all: the methods are written ONCE, generic in =P=, and their
+bodies moved from =foo(self.index, ..)= to =foo_at(&self.ledger_path(),
+..)= by script. B1's =the_u8_builders_are_the_one_element_path= is what
+makes that a no-op on the wire, and the dump comparison confirmed it.
+
+=at_key= is one method and one inline-const:
+
+#+begin_src rust
+impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
+    pub fn at_key(&self, c: &mut Circuit3, key: &K) -> A::Rooted<P::Deeper>
+}
+#+end_src
+
+=A::Rooted<Q>= is a GAT, so the returned handle is the ORDINARY handle
+type at a deeper path (=LedgerMap<K2, V, KeyPath<1>>=) and its methods
+are the ordinary surface — no second family of methods anywhere.
+
+** The =LedgerSlot= split, and the coherence question that decided it
+
+Sealed =LedgerSlot=, two families, exactly as approved. What was not
+obvious is that the two families can be written as a BLANKET over the
+value family plus concrete impls for the handles:
+
+#+begin_src rust
+impl<T: LedgerRepr> LedgerSlot for T { .. }
+impl<K, V, P> LedgerSlot for LedgerMap<K, V, P> { .. }
+#+end_src
+
+and rustc ACCEPTS it. Both traits are local and =LedgerMap= is local, so
+the orphan rule closes the set of possible =LedgerRepr= impls and the
+overlap check can see the two are disjoint. Probed before committing to
+it, because the fallback (enumerating the value family by macro, and
+dropping user record types out of the trait) was materially worse.
+
+The trait earns its keep rather than documenting: =insert_default_ops= is
+its one method, and it is where correction (iii) lives. =insertDefault=
+is ONE typed method whose emission — zeros, or the ADT's
+=(initial-value …)= — is chosen by the value type's family, and the call
+site says nothing about it. Two initial values were not reachable before
+(=empty_merkle_tree_value=, =empty_historic_merkle_tree_value= are now
+public, read off midnight-ledger.ss:973 and :1129, and the =reset= paths
+were refactored onto them so there is still one table).
+
+Loosened while passing: =member=, =remove=, =size=, =is_empty=,
+=reset_to_default= no longer need =V: LedgerRepr=, because they do not
+touch the value. So an ADT-valued map's reads work, which is what
+Compact allows.
+
+** The DEPTH bound (design of record decision 6), and ONE DEVIATION
+
+The NUMBER first. =MAX_LEDGER_PATH = 13=, not 16. =idx='s low nibble
+takes sixteen elements, but =insc='s takes fifteen and
+=HistoricMerkleTree.resetHistory= closes with =insc len(f) + 2= — so
+thirteen is the real bound, and it is the tighter of B1's two runtime
+asserts. A field path may take three of those (=batch= is three levels
+deep at the 256 fields a byte index allows), so =MAX_NESTING = 10= keys.
+
+THE DEVIATION: the design said E0080, and it is a MISSING IMPL instead —
+one rung HIGHER on the project's own compile-errors ladder, and adopted
+because the E0080 turned out not to fire reliably. =KeyPath<n>= has a
+=KeyedPath= impl for n ≤ 10 only, =KeyPath<10>::Deeper= is =KeyPath<11>=,
+and =at_key= carries =where P::Deeper: KeyedPath=. The eleventh =at_key=
+is then E0599 "the method exists but its trait bounds were not
+satisfied: =KeyPath<11>: KeyedPath=", with a
+=#[diagnostic::on_unimplemented]= note carrying the arithmetic.
+
+WHY, measured rather than assumed. The first cut was the inline const
+
+: const { assert!(P::KEYS + 1 + MAX_FIELD_PATH <= MAX_LEDGER_PATH, ..) }
+
+and a probe showed it does NOT fire on a too-deep chain in an uncalled
+function: an inline const is evaluated at MONOMORPHIZATION, so dead code
+escapes it. (=check_depth='s tree-depth assert has the same caveat; it
+matters less there because a declared tree is reached by the derive.) The
+where-clause is checked at TYPE-CHECK time and cannot be escaped. The
+inline const is kept behind it as a second statement of the arithmetic —
+unreachable while the impls stop at ten, and a tripwire if anyone adds
+an eleventh.
+
+Both directions are doctests on =at_key=: eleven keys =compile_fail=, ten
+keys compile, on the same twelve-deep type.
+** CORRECTION (ii) CLOSED: the derive learned the segmentation
+
+=field_paths(n)= in =minocrab-macros/src/ledger.rs= is
+=determine-ledger-paths.ss='s =batch= transcribed: fields fold into a
+tree of segments no wider than fifteen, the REMAINDER segment leads, and
+each leaf gets the indices from the root down. Fifteen or fewer → =[i]=,
+the old behavior, byte for byte. Sixteen → =[0,0]= then =[1,0]..[1,14]=.
+225 is still two levels; 226 is three; 256 (the derive's own limit) is
+three.
+
+The derive now emits =at_path(&[..])= for every field, and every slot
+type has a =const fn at_path=. =index()= survives for the =const IDX: u8=
+call sites and ASSERTS the path is one element — a segmented block has no
+such number, so it is E0080 rather than a wrong answer.
+
+PINNED WITH A COMPACTC FIXTURE, not an emission-level test:
+=tests/fixtures/wide/wide.compact=, sixteen =Uint<64>= cells and one
+circuit writing =f0= and =f15=, compiled with the pinned compactc.
+=tests/wide_differential.rs= builds the same circuit from a
+=#[derive(Ledger)]= block of sixteen fields and compares — identical.
+Both fields matter: =f0= proves the remainder segment exists and leads,
+=f15= proves the full segment renumbers from zero.
+
+** What the fixture grew, and the two gaps that closed
+
+TWO circuits added to =nested.compact=: =setReset= and =mtReset=, the
+nested =Set.resetToDefault= and =MerkleTree.resetToDefault= B1 recorded
+as not covered. They are one pushed constant each, as predicted, and the
+typed surface made them spellable at no cost. Thirty circuits now.
+
+Still NOT covered, and named honestly in the README: the three nested
+COIN ARMS. The lowering has them (=map_insert_coin_at= &c. take a path,
+and the four =dup= formulas are unit-pinned at every depth), but no
+fixture circuit compiles one, so the typed methods are declared-slot only
+— =impl<K: LedgerRepr> LedgerMap<K, QSCI>= with =P= at its default. That
+is a deliberate stop: the typed surface does not offer an emission no
+differential has seen.
+
+=LedgerCounter::reset_to_default= is new — B1 built =counter_reset= and
+the typed layer had no method for it at any depth.
+
+** The differentials
+
+- =tests/nested_typed.rs= — the thirty circuits SPELLED TYPED, asserted
+  byte-identical to =nested::Nested='s raw spelling (no canonicalization:
+  both sides are ours). Plus two completeness tests by function pointer,
+  in both directions. Transitively the typed surface is compactc's,
+  because =nested_differential.rs= already says the raw side is.
+- =tests/wide_differential.rs= — the derive's segmentation against
+  compactc, as above.
+
+Both contract blocks live in =tests/= rather than =src/=. They are
+duplicates by construction (that is the claim), and listing them in
+=support::circuits()= would double thirty snapshot rows to say what the
+files already say.
+
+** The numbers
+
+| | estimated (§2.5, §2.7) | as built |
+|-+------------------------+----------|
+| =minocrab-std= | "the real cost", ~88 methods rippled | ONE =P= parameter; 43 call sites rewritten by script, no method duplicated |
+| new traits | =LedgerAdt= | =LedgerPath= + =KeyedPath= + =LedgerSlot= + =LedgerAdt= |
+| new handle types | "rooted at a key" | =FieldPath= / =KeyPath<n>=, and the handles stayed one type each |
+| fixture circuits | — | +2 nested (=setReset=, =mtReset=), +1 derive probe (=wide=) |
+| =minocrab-ledger= | — | +2 public initial-value constants, no builder changed |
+
+Zero movement: 198 circuits byte-identical in the =MINOCRAB_ZKIR_DUMP=
+comparison against the post-B1 baseline, the two new nested resets the
+only additions (k8/125 and k8/130 — a reset is cheap at any depth).
+Both frozen snapshots regenerated in =--release=, two rows added, none
+moved.
+
+** M22 exit criteria, assessed
+
+"Both README bullets gone or reduced to upstream's own limits": the coin
+bullet went at stage A; the nested bullet is REDUCED, not gone, and the
+remainder is ours rather than upstream's — nested coin arms, unbuilt
+because no differential covers them. The Map-only restriction inside the
+bullet IS upstream's own limit and is now stated as such.
+
+"Every new circuit in the frozen snapshots": yes for the two fixture
+additions. The typed twins and the sixteen-field probe are deliberately
+NOT in them, argued above.
+
+"Zero movement outside the declared fixture set": yes, 198/198.
+
+"Notes as-built per stage": this section, and B1's above it.

@@ -1,13 +1,18 @@
 //! `nested.compact` — NESTED LEDGER ADTs at the RAW op layer (M22 stage B1,
 //! notes/coin-arms-nested-adts.org §2).
 //!
-//! DELIBERATELY UNTYPED. Stage B1 builds the LOWERING — [`LedgerKey`], the
-//! general-path encoder, and the `_at` twin of every op builder — and stage
-//! B2 builds the surface that makes it pleasant (`at_key` handles, the
-//! `LedgerSlot` split, the method ripple). So every circuit here reaches into
-//! `minocrab_ledger` and hands it a `&[LedgerKey]` by hand. That is the
-//! point: it proves the encoding is right BEFORE any API is committed to,
-//! and it is the harness B2's typed differential will be compared against.
+//! DELIBERATELY UNTYPED, and kept that way. Stage B1 built the LOWERING —
+//! [`LedgerKey`], the general-path encoder, and the `_at` twin of every op
+//! builder — and every circuit here reaches into `minocrab_ledger` and hands
+//! it a `&[LedgerKey]` by hand. That proved the encoding before any API was
+//! committed to.
+//!
+//! Stage B2 then built the surface (`at_key` handles, the `LedgerSlot` split)
+//! and re-expressed every circuit below through it in
+//! `tests/nested_typed.rs`, asserted BYTE-IDENTICAL to these. This module is
+//! what that comparison is against, so it stays raw: it is the only place in
+//! the workspace where the nested path is written out rather than derived,
+//! and a typed-layer bug that moved the path would move only one side.
 //!
 //! WHAT A NESTED ACCESS ACTUALLY IS. compactc's `propagate-ledger-paths.ss`
 //! walks the accessor chain `mm.lookup(k).insert(k2, v)`, folds every
@@ -30,7 +35,8 @@ use minocrab_ledger::{
     list_is_empty_at, list_length_at, list_pop_front_at, list_push_front_at, list_reset_at,
     map_insert_adt_default_at, map_insert_at, map_insert_default_at, map_is_empty_at,
     map_lookup_at, map_member_at, map_remove_at, map_reset_at, map_size_at,
-    merkle_tree_check_root_at, merkle_tree_insert_at, set_insert_at, set_remove_at, LedgerKey,
+    merkle_tree_check_root_at, merkle_tree_insert_at, merkle_tree_reset_at, set_insert_at,
+    set_remove_at, set_reset_at, LedgerKey,
 };
 use minocrab_std::v3::{
     contract, label, leaf_hash, Bool, Disclose, Discloses, LedgerRepr, Maybe,
@@ -382,6 +388,20 @@ impl Nested {
         )))
     }
 
+    /// `ms.lookup(disclose(k)).resetToDefault();`
+    ///
+    /// The seventh whole-field-replace op, and stage B1 left it uncovered
+    /// (its depth-1 twin is in the `adts` fixture). It is [`Nested::map_reset`]
+    /// instruction for instruction — a `Set`'s initial value IS the empty map
+    /// — which is why `set_reset_at` delegates.
+    #[circuit]
+    pub fn set_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        let k = k.disclose_as::<Key>(c);
+        let path = under(c, MS, &k);
+        emit(c, STRAIGHT_LINE, &set_reset_at(&path));
+        Discloses::of(())
+    }
+
     // ---- Map<K, Counter> ----------------------------------------------------
 
     /// `mc.lookup(disclose(k)).increment(1);`
@@ -455,6 +475,19 @@ impl Nested {
             &path,
             &rt,
         )))
+    }
+
+    /// `mt.lookup(disclose(k)).resetToDefault();`
+    ///
+    /// The eighth, uncovered by stage B1 for the same reason and the same one
+    /// pushed constant apart: a blank tree of this depth and index 0, where
+    /// [`Nested::map_reset`] pushes the empty map.
+    #[circuit]
+    pub fn mt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        let k = k.disclose_as::<Key>(c);
+        let path = under(c, MT, &k);
+        emit(c, STRAIGHT_LINE, &merkle_tree_reset_at(&path, DEPTH));
+        Discloses::of(())
     }
 
     /// `mh.lookup(disclose(k)).insert(disclose(item));`

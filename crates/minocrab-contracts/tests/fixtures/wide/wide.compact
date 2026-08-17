@@ -1,0 +1,54 @@
+pragma language_version >= 0.25;
+
+// M22 stage B2 fixture — A SIXTEEN-FIELD LEDGER BLOCK, which is a NESTED
+// contract whether or not it says so (notes/coin-arms-nested-adts.org,
+// stage B1 correction (ii)).
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/wide/wide.compact \
+//       crates/minocrab-contracts/tests/fixtures/wide/out
+//
+// `determine-ledger-paths.ss` BATCHES a block's fields into segments of
+// `maximum-ledger-segment-length` = 15 (langs.ss:851) and hands each field
+// the list of segment indices from the root down. At fifteen fields or fewer
+// the tree is one level and a field's path is its declaration index — which
+// is what every other fixture here has, and what `#[derive(Ledger)]` assumed
+// unconditionally until M22 stage B2.
+//
+// At SIXTEEN it is two levels: the remainder segment leads, so `f0`'s path is
+// `[0, 0]` and `f1`..`f15` are `[1, 0]`..`[1, 14]`. Every `Cell` write in
+// this contract is therefore a NESTED write, with the leading `idxp` and the
+// closing `insc` that compactc suppresses at depth 1 both live:
+//
+//   f0 = v   ->   idxp [0]; push (cell 0); pushs v; ins 1; insc 1
+//   f15 = v  ->   idxp [1]; push (cell 14); pushs v; ins 1; insc 1
+//
+// TWO fields are written rather than one because the two are what separate
+// the segmentation from any other numbering: `f0` proves the remainder
+// segment exists and is FIRST, and `f15` proves the full segment's fields are
+// renumbered from zero inside it.
+
+import CompactStandardLibrary;
+
+export ledger f0: Uint<64>;
+export ledger f1: Uint<64>;
+export ledger f2: Uint<64>;
+export ledger f3: Uint<64>;
+export ledger f4: Uint<64>;
+export ledger f5: Uint<64>;
+export ledger f6: Uint<64>;
+export ledger f7: Uint<64>;
+export ledger f8: Uint<64>;
+export ledger f9: Uint<64>;
+export ledger f10: Uint<64>;
+export ledger f11: Uint<64>;
+export ledger f12: Uint<64>;
+export ledger f13: Uint<64>;
+export ledger f14: Uint<64>;
+export ledger f15: Uint<64>;
+
+export circuit w(v: Uint<64>): [] {
+  f0 = disclose(v);
+  f15 = disclose(v);
+}

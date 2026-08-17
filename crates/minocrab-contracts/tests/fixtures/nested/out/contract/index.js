@@ -840,6 +840,41 @@ export class Contract {
         __compactRuntime.finalizeCallProofData(context, partialProofData);
         return { result: result_0, context: context, gasCost: context.callContext.currentGasCost };
       },
+      setReset: async (...args_1) => {
+        if (args_1.length !== 2) {
+          throw new __compactRuntime.CompactError(`setReset: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
+        }
+        const contextOrig_0 = args_1[0];
+        const k_0 = args_1[1];
+        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
+          __compactRuntime.typeError('setReset',
+                                     'argument 1 (as invoked from Typescript)',
+                                     'nested.compact line 135 char 1',
+                                     'CircuitContext',
+                                     contextOrig_0)
+        }
+        if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
+          __compactRuntime.typeError('setReset',
+                                     'argument 1 (argument 2 as invoked from Typescript)',
+                                     'nested.compact line 135 char 1',
+                                     'Bytes<32>',
+                                     k_0)
+        }
+        const context = __compactRuntime.copyCircuitContext(contextOrig_0);
+        const partialProofData = {
+          input: {
+            value: _descriptor_0.toValue(k_0),
+            alignment: _descriptor_0.alignment()
+          },
+          output: undefined,
+          publicTranscript: [],
+          privateTranscriptOutputs: []
+        };
+        const result_0 = await this._setReset_0(context, partialProofData, k_0);
+        partialProofData.output = { value: [], alignment: [] };
+        __compactRuntime.finalizeCallProofData(context, partialProofData);
+        return { result: result_0, context: context, gasCost: context.callContext.currentGasCost };
+      },
       counterIncrement: async (...args_1) => {
         if (args_1.length !== 2) {
           throw new __compactRuntime.CompactError(`counterIncrement: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
@@ -849,14 +884,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('counterIncrement',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 133 char 1',
+                                     'nested.compact line 141 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('counterIncrement',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 133 char 1',
+                                     'nested.compact line 141 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
@@ -886,14 +921,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('counterRead',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 137 char 1',
+                                     'nested.compact line 145 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('counterRead',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 137 char 1',
+                                     'nested.compact line 145 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
@@ -923,14 +958,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('counterReset',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 141 char 1',
+                                     'nested.compact line 149 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('counterReset',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 141 char 1',
+                                     'nested.compact line 149 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
@@ -961,21 +996,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('mtInsert',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 150 char 1',
+                                     'nested.compact line 158 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('mtInsert',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 150 char 1',
+                                     'nested.compact line 158 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
         if (!(item_0.buffer instanceof ArrayBuffer && item_0.BYTES_PER_ELEMENT === 1 && item_0.length === 32)) {
           __compactRuntime.typeError('mtInsert',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nested.compact line 150 char 1',
+                                     'nested.compact line 158 char 1',
                                      'Bytes<32>',
                                      item_0)
         }
@@ -1007,21 +1042,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('mtCheckRoot',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 154 char 1',
+                                     'nested.compact line 162 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('mtCheckRoot',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 154 char 1',
+                                     'nested.compact line 162 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
         if (!(typeof(rt_0) === 'object' && typeof(rt_0.field) === 'bigint' && rt_0.field >= 0 && rt_0.field <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('mtCheckRoot',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nested.compact line 154 char 1',
+                                     'nested.compact line 162 char 1',
                                      'struct MerkleTreeDigest<field: Field>',
                                      rt_0)
         }
@@ -1043,6 +1078,41 @@ export class Contract {
         __compactRuntime.finalizeCallProofData(context, partialProofData);
         return { result: result_0, context: context, gasCost: context.callContext.currentGasCost };
       },
+      mtReset: async (...args_1) => {
+        if (args_1.length !== 2) {
+          throw new __compactRuntime.CompactError(`mtReset: expected 2 arguments (as invoked from Typescript), received ${args_1.length}`);
+        }
+        const contextOrig_0 = args_1[0];
+        const k_0 = args_1[1];
+        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
+          __compactRuntime.typeError('mtReset',
+                                     'argument 1 (as invoked from Typescript)',
+                                     'nested.compact line 169 char 1',
+                                     'CircuitContext',
+                                     contextOrig_0)
+        }
+        if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
+          __compactRuntime.typeError('mtReset',
+                                     'argument 1 (argument 2 as invoked from Typescript)',
+                                     'nested.compact line 169 char 1',
+                                     'Bytes<32>',
+                                     k_0)
+        }
+        const context = __compactRuntime.copyCircuitContext(contextOrig_0);
+        const partialProofData = {
+          input: {
+            value: _descriptor_0.toValue(k_0),
+            alignment: _descriptor_0.alignment()
+          },
+          output: undefined,
+          publicTranscript: [],
+          privateTranscriptOutputs: []
+        };
+        const result_0 = await this._mtReset_0(context, partialProofData, k_0);
+        partialProofData.output = { value: [], alignment: [] };
+        __compactRuntime.finalizeCallProofData(context, partialProofData);
+        return { result: result_0, context: context, gasCost: context.callContext.currentGasCost };
+      },
       hmtInsert: async (...args_1) => {
         if (args_1.length !== 3) {
           throw new __compactRuntime.CompactError(`hmtInsert: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
@@ -1053,21 +1123,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('hmtInsert',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 158 char 1',
+                                     'nested.compact line 173 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('hmtInsert',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 158 char 1',
+                                     'nested.compact line 173 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
         if (!(item_0.buffer instanceof ArrayBuffer && item_0.BYTES_PER_ELEMENT === 1 && item_0.length === 32)) {
           __compactRuntime.typeError('hmtInsert',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nested.compact line 158 char 1',
+                                     'nested.compact line 173 char 1',
                                      'Bytes<32>',
                                      item_0)
         }
@@ -1098,14 +1168,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('hmtResetHistory',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 162 char 1',
+                                     'nested.compact line 177 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('hmtResetHistory',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 162 char 1',
+                                     'nested.compact line 177 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
@@ -1135,14 +1205,14 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('hmtReset',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 166 char 1',
+                                     'nested.compact line 181 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('hmtReset',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 166 char 1',
+                                     'nested.compact line 181 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
@@ -1173,35 +1243,35 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('deepInsert',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 175 char 1',
+                                     'nested.compact line 190 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('deepInsert',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 175 char 1',
+                                     'nested.compact line 190 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
         if (!(k2_0.buffer instanceof ArrayBuffer && k2_0.BYTES_PER_ELEMENT === 1 && k2_0.length === 32)) {
           __compactRuntime.typeError('deepInsert',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nested.compact line 175 char 1',
+                                     'nested.compact line 190 char 1',
                                      'Bytes<32>',
                                      k2_0)
         }
         if (!(k3_0.buffer instanceof ArrayBuffer && k3_0.BYTES_PER_ELEMENT === 1 && k3_0.length === 32)) {
           __compactRuntime.typeError('deepInsert',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nested.compact line 175 char 1',
+                                     'nested.compact line 190 char 1',
                                      'Bytes<32>',
                                      k3_0)
         }
         if (!(typeof(v_0) === 'bigint' && v_0 >= 0n && v_0 <= 18446744073709551615n)) {
           __compactRuntime.typeError('deepInsert',
                                      'argument 4 (argument 5 as invoked from Typescript)',
-                                     'nested.compact line 175 char 1',
+                                     'nested.compact line 190 char 1',
                                      'Uint<0..18446744073709551616>',
                                      v_0)
         }
@@ -1236,28 +1306,28 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.callContext.currentQueryContext != undefined)) {
           __compactRuntime.typeError('deepLookup',
                                      'argument 1 (as invoked from Typescript)',
-                                     'nested.compact line 179 char 1',
+                                     'nested.compact line 194 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(k_0.buffer instanceof ArrayBuffer && k_0.BYTES_PER_ELEMENT === 1 && k_0.length === 32)) {
           __compactRuntime.typeError('deepLookup',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'nested.compact line 179 char 1',
+                                     'nested.compact line 194 char 1',
                                      'Bytes<32>',
                                      k_0)
         }
         if (!(k2_0.buffer instanceof ArrayBuffer && k2_0.BYTES_PER_ELEMENT === 1 && k2_0.length === 32)) {
           __compactRuntime.typeError('deepLookup',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'nested.compact line 179 char 1',
+                                     'nested.compact line 194 char 1',
                                      'Bytes<32>',
                                      k2_0)
         }
         if (!(k3_0.buffer instanceof ArrayBuffer && k3_0.BYTES_PER_ELEMENT === 1 && k3_0.length === 32)) {
           __compactRuntime.typeError('deepLookup',
                                      'argument 3 (argument 4 as invoked from Typescript)',
-                                     'nested.compact line 179 char 1',
+                                     'nested.compact line 194 char 1',
                                      'Bytes<32>',
                                      k3_0)
         }
@@ -1300,11 +1370,13 @@ export class Contract {
       setInsert: this.circuits.setInsert,
       setRemove: this.circuits.setRemove,
       setMember: this.circuits.setMember,
+      setReset: this.circuits.setReset,
       counterIncrement: this.circuits.counterIncrement,
       counterRead: this.circuits.counterRead,
       counterReset: this.circuits.counterReset,
       mtInsert: this.circuits.mtInsert,
       mtCheckRoot: this.circuits.mtCheckRoot,
+      mtReset: this.circuits.mtReset,
       hmtInsert: this.circuits.hmtInsert,
       hmtResetHistory: this.circuits.hmtResetHistory,
       hmtReset: this.circuits.hmtReset,
@@ -1330,11 +1402,13 @@ export class Contract {
       setInsert: this.circuits.setInsert,
       setRemove: this.circuits.setRemove,
       setMember: this.circuits.setMember,
+      setReset: this.circuits.setReset,
       counterIncrement: this.circuits.counterIncrement,
       counterRead: this.circuits.counterRead,
       counterReset: this.circuits.counterReset,
       mtInsert: this.circuits.mtInsert,
       mtCheckRoot: this.circuits.mtCheckRoot,
+      mtReset: this.circuits.mtReset,
       hmtInsert: this.circuits.hmtInsert,
       hmtResetHistory: this.circuits.hmtResetHistory,
       hmtReset: this.circuits.hmtReset,
@@ -1384,11 +1458,13 @@ export class Contract {
     state_0.setOperation('setInsert', new __compactRuntime.ContractOperation());
     state_0.setOperation('setRemove', new __compactRuntime.ContractOperation());
     state_0.setOperation('setMember', new __compactRuntime.ContractOperation());
+    state_0.setOperation('setReset', new __compactRuntime.ContractOperation());
     state_0.setOperation('counterIncrement', new __compactRuntime.ContractOperation());
     state_0.setOperation('counterRead', new __compactRuntime.ContractOperation());
     state_0.setOperation('counterReset', new __compactRuntime.ContractOperation());
     state_0.setOperation('mtInsert', new __compactRuntime.ContractOperation());
     state_0.setOperation('mtCheckRoot', new __compactRuntime.ContractOperation());
+    state_0.setOperation('mtReset', new __compactRuntime.ContractOperation());
     state_0.setOperation('hmtInsert', new __compactRuntime.ContractOperation());
     state_0.setOperation('hmtResetHistory', new __compactRuntime.ContractOperation());
     state_0.setOperation('hmtReset', new __compactRuntime.ContractOperation());
@@ -1923,6 +1999,27 @@ export class Contract {
                                                                       { popeq: { cached: true,
                                                                                  result: undefined } }]).value);
   }
+  async _setReset_0(context, partialProofData, k_0) {
+    __compactRuntime.queryLedgerState(context,
+                                      partialProofData,
+                                      [
+                                       { idx: { cached: false,
+                                                pushPath: true,
+                                                path: [
+                                                       { tag: 'value',
+                                                         value: { value: _descriptor_10.toValue(2n),
+                                                                  alignment: _descriptor_10.alignment() } }] } },
+                                       { push: { storage: false,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_0.toValue(k_0),
+                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
+                                       { push: { storage: true,
+                                                 value: __compactRuntime.StateValue.newMap(
+                                                          new __compactRuntime.StateMap()
+                                                        ).encode() } },
+                                       { ins: { cached: false, n: 1 } },
+                                       { ins: { cached: true, n: 1 } }]);
+    return [];
+  }
   async _counterIncrement_0(context, partialProofData, k_0) {
     const tmp_0 = 1n;
     __compactRuntime.queryLedgerState(context,
@@ -2052,6 +2149,30 @@ export class Contract {
                                                                       'eq',
                                                                       { popeq: { cached: true,
                                                                                  result: undefined } }]).value);
+  }
+  async _mtReset_0(context, partialProofData, k_0) {
+    __compactRuntime.queryLedgerState(context,
+                                      partialProofData,
+                                      [
+                                       { idx: { cached: false,
+                                                pushPath: true,
+                                                path: [
+                                                       { tag: 'value',
+                                                         value: { value: _descriptor_10.toValue(4n),
+                                                                  alignment: _descriptor_10.alignment() } }] } },
+                                       { push: { storage: false,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_0.toValue(k_0),
+                                                                                              alignment: _descriptor_0.alignment() }).encode() } },
+                                       { push: { storage: true,
+                                                 value: __compactRuntime.StateValue.newArray()
+                                                          .arrayPush(__compactRuntime.StateValue.newBoundedMerkleTree(
+                                                                       new __compactRuntime.StateBoundedMerkleTree(8)
+                                                                     )).arrayPush(__compactRuntime.StateValue.newCell({ value: _descriptor_1.toValue(0n),
+                                                                                                                        alignment: _descriptor_1.alignment() }))
+                                                          .encode() } },
+                                       { ins: { cached: false, n: 1 } },
+                                       { ins: { cached: true, n: 1 } }]);
+    return [];
   }
   async _hmtInsert_0(context, partialProofData, k_0, item_0) {
     __compactRuntime.queryLedgerState(context,

@@ -46,9 +46,16 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// [`LedgerHistoricMerkleTree`], [`LedgerCell`], [`LedgerCounter`],
 /// [`LedgerField`]) over `minocrab_ledger`'s ops — one Impact operation per
 /// method, `c` and the guard visible at every call site.
+/// Nesting (M22 stage B2) adds [`LedgerMap::at_key`] and the types it needs:
+/// [`FieldPath`] (a declared slot's const path — one element, or the segment
+/// path a block of sixteen fields or more forces), [`KeyPath`] (the runtime
+/// path an `at_key` chain builds), and the sealed pair [`LedgerSlot`] /
+/// [`LedgerAdt`] that splits the value position into plain values and ADT
+/// handles.
 pub use ledger::{
-    leaf_hash, LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList,
-    LedgerMap, LedgerMerkleTree, LedgerRepr, LedgerSet, STRAIGHT_LINE,
+    leaf_hash, FieldPath, KeyPath, KeyedPath, LedgerAdt, LedgerCell, LedgerCounter, LedgerField,
+    LedgerHistoricMerkleTree, LedgerList, LedgerMap, LedgerMerkleTree, LedgerPath, LedgerRepr,
+    LedgerSet, LedgerSlot, MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING, STRAIGHT_LINE,
 };
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,

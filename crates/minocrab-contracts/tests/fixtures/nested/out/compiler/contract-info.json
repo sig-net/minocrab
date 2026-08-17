@@ -419,6 +419,25 @@
       }
     },
     {
+      "name": "setReset",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
       "name": "counterIncrement",
       "pure": false,
       "proof": true,
@@ -530,6 +549,25 @@
       ],
       "result-type": {
         "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "mtReset",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
       }
     },
     {

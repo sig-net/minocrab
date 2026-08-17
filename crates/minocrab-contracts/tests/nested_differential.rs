@@ -110,11 +110,13 @@ fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
         ("setInsert", Nested::set_insert),
         ("setRemove", Nested::set_remove),
         ("setMember", Nested::set_member),
+        ("setReset", Nested::set_reset),
         ("counterIncrement", Nested::counter_increment),
         ("counterRead", Nested::counter_read),
         ("counterReset", Nested::counter_reset),
         ("mtInsert", Nested::mt_insert),
         ("mtCheckRoot", Nested::mt_check_root),
+        ("mtReset", Nested::mt_reset),
         ("hmtInsert", Nested::hmt_insert),
         ("hmtResetHistory", Nested::hmt_reset_history),
         ("hmtReset", Nested::hmt_reset),
@@ -246,6 +248,8 @@ fn the_depth_is_the_opcode_nibble_and_the_ins_operand() {
     assert_eq!(ins, vec![0x91, 0xa1]);
     assert_eq!(opcodes("listReset").0, 0x70);
     assert_eq!(opcodes("counterReset").0, 0x70);
+    assert_eq!(opcodes("setReset").0, 0x70);
+    assert_eq!(opcodes("mtReset").0, 0x70);
     assert_eq!(opcodes("hmtReset").1, vec![0xa2, 0x91, 0xa1]);
 }
 

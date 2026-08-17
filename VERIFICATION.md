@@ -67,8 +67,11 @@ make specific error classes unwritable rather than merely untested.
   streams are explicitly free ([notes/ledger-abi.org §6](notes/ledger-abi.org)).
 - **Instrument** — 19 test targets named `*differential*` across
   `minocrab-contracts`, `minocrab-ledger` and `minocrab-std`.
-- **Stronger, for five fixtures** — `adts` (31 circuits), `bounded`, `opaque`
-  (14 circuits), `kernel` (24 circuits) and `coins` (3 circuits) compare
+- **Stronger, for seven fixtures** — `adts` (31 circuits), `bounded`, `opaque`
+  (14 circuits), `kernel` (24 circuits), `coins` (3 circuits), `nested`
+  (30 circuits, NESTED ledger ADTs) and `wide` (the sixteen-field ledger block,
+  which is where `#[derive(Ledger)]`'s segmentation is checked against
+  compactc's) compare
   **instruction for instruction**: every opcode, immediate, `ins` depth and
   branch skip, up to identifier renaming
   ([adts_differential.rs](crates/minocrab-contracts/tests/adts_differential.rs),
@@ -224,8 +227,8 @@ what it **cannot** see and which instrument covers that.
 
 | instrument | freezes | cannot see | covered by |
 |---|---|---|---|
-| [row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs) | `(k, rows)` for **167 circuits** | a removed `Copy` of an immediate (measured at 0 rows); an argument reorder (a reorder costs nothing) | the ZKIR dump; the interface snapshot |
-| [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs) | the ordered `in`/`out`/`wit` `(label, type)` list of the same 167 circuits | a constraint added or removed; anything inside the instruction stream | the row snapshot; the differentials |
+| [row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs) | `(k, rows)` for **200 circuits** | a removed `Copy` of an immediate (measured at 0 rows); an argument reorder (a reorder costs nothing) | the ZKIR dump; the interface snapshot |
+| [interface_snapshot.rs](crates/minocrab-contracts/tests/interface_snapshot.rs) | the ordered `in`/`out`/`wit` `(label, type)` list of the same 200 circuits | a constraint added or removed; anything inside the instruction stream | the row snapshot; the differentials |
 | [zkir_dump.rs](crates/minocrab-contracts/tests/zkir_dump.rs) | nothing by itself — it is an **instrument**, ignored by default: it dumps every circuit's serialized ZKIR for byte-comparison across a change | anything about *meaning*; it says the stream moved, not whether the move was sound | the differentials and the spec harness |
 | the differentials | statement identity on **honest** preimages | a **missing guard or range check** — invisible on well-formed input | the type-level constructions in (g), and the survey method in §5 |
 
@@ -344,13 +347,13 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   under different entry points, asserted by a test. What protects the verifier
   is the ledger's `(address, entry point, commitment)` match.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
-  (`Set`, `Map`, `List` when the element type is `QualifiedShieldedCoinInfo`);
-  nested ADTs (every ledger op assumes a top-level field, which is what path
-  suppression rests on); `kernel.checkpoint()`, which is outside our ZKIR-v3
-  target; and the hashing sweep family, whose WIDTH is a Rust parameter the
+  reached through a NESTED path (the arms themselves landed at M22 stage A and
+  nesting at stage B, but no fixture circuit compiles the combination, so the
+  typed methods stop at declared slots); `kernel.checkpoint()`, which is
+  outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
 - **The circuit list is hand-written, and nothing yet checks it is complete.**
-  `support::circuits()` — 167 entries — is the only statement of which circuits
+  `support::circuits()` — 200 entries — is the only statement of which circuits
   exist, and it feeds both snapshots, the dump instrument and the adversarial
   suite. Nothing asserts that every `#[circuit]` in the workspace appears in it;
   the snapshots guard the opposite direction only. A circuit added and not

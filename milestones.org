@@ -2037,10 +2037,46 @@ bound as an E0080 stricter than upstream's unchecked nibble.
       now four functions. 170 pre-existing circuits byte-identical,
       28 new files. notes/coin-arms-nested-adts.org "AS BUILT —
       STAGE B1".)
-- [ ] Stage B2 — the typed surface: `LedgerSlot` split, `at_key`
+- [X] Stage B2 — the typed surface: `LedgerSlot` split, `at_key`
       handles, the method ripple; typed differentials; the README
       fairness bullets rewritten to what remains true (Map-only
       nesting is compactc's bound, not ours).
+      (Done: a handle is a PATH, not a `u8` — `FieldPath` (const,
+      Copy, because a `Vec` in a declared handle makes
+      `const I: u8 = VAULT.f.index();` E0493) and `KeyPath<KEYS>`
+      (runtime, cloned key limbs), behind a sealed `LedgerPath` and a
+      DEFAULTED `P` parameter, so every existing declaration is
+      unchanged text and the ~88 methods stayed ONE copy each.
+      `at_key` is one method returning `A::Rooted<P::Deeper>` (a GAT),
+      and the depth bound is `MAX_LEDGER_PATH = 13` — `insc`'s nibble,
+      not `idx`'s, because `resetHistory` closes at `len(f) + 2` — less
+      the three a field path may take, so ten keys. ONE DEVIATION from
+      the design of record: the bound is a MISSING IMPL rather than an
+      E0080 (a rung higher on our own ladder), because a probe showed an
+      inline-const assert does not fire in dead code — it is evaluated
+      at monomorphization, while a where-clause is not. Both directions
+      are doctests. Sealed `LedgerSlot`
+      with a BLANKET over `LedgerRepr` plus concrete impls for the
+      handles, which rustc accepts because both traits are local; its
+      one method is `insertDefault`'s pushed constant, so correction
+      (iii) is a type-level fact rather than a call-site choice.
+      CORRECTION (ii) CLOSED: the derive transcribes
+      `determine-ledger-paths.ss`'s `batch` and emits `at_path(&[..])`,
+      pinned by a NEW compactc fixture (`wide.compact`, sixteen cells)
+      whose circuit our derive reproduces byte for byte. All THIRTY
+      nested circuits — 28 of B1 plus `setReset`/`mtReset`, the two
+      nested resets B1 recorded as uncovered — lower byte-identically
+      from the typed spelling and the raw one, first run. Nested COIN
+      ARMS remain unbuilt and are the README's remaining bullet: the
+      lowering has them, no differential does.
+      notes/coin-arms-nested-adts.org "AS BUILT — STAGE B2".)
 Exit criteria: both README bullets gone or reduced to upstream's own
 limits; every new circuit in the frozen snapshots; zero movement
 outside the declared fixture set; notes as-built per stage.
+ASSESSED (B2): the coin bullet is gone (stage A); the nested bullet is
+REDUCED to nested coin arms — ours, not upstream's, and the Map-only
+restriction inside it is stated as compactc's own kind-checker. The two
+new fixture circuits are in both frozen snapshots (additions only, no
+row moved); the typed twins and the sixteen-field probe are `#[contract]`
+blocks in `tests/`, deliberately outside the snapshots because they are
+duplicates by construction. Zero movement: 198/198 byte-identical.

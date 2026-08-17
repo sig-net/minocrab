@@ -128,6 +128,14 @@ export circuit setMember(k: Bytes<32>, e: Bytes<32>): Boolean {
   return ms.lookup(disclose(k)).member(disclose(e));
 }
 
+// The seventh of the nine whole-field-replace ops at depth 2 — the same
+// `reset_to_at` shape `mapReset` has, with a `Set`'s initial value, which IS
+// a `Map`'s (midnight-ledger.ss:624). Added at M22 stage B2, when the typed
+// surface made it spellable.
+export circuit setReset(k: Bytes<32>): [] {
+  ms.lookup(disclose(k)).resetToDefault();
+}
+
 // --- Map<K, Counter> ----------------------------------------------------------
 
 export circuit counterIncrement(k: Bytes<32>): [] {
@@ -153,6 +161,13 @@ export circuit mtInsert(k: Bytes<32>, item: Bytes<32>): [] {
 
 export circuit mtCheckRoot(k: Bytes<32>, rt: MerkleTreeDigest): Boolean {
   return mt.lookup(disclose(k)).checkRoot(disclose(rt));
+}
+
+// The eighth, and the one whose pushed constant is not a map at all: the
+// blank tree of this depth and index 0. Added at M22 stage B2 with
+// `setReset`.
+export circuit mtReset(k: Bytes<32>): [] {
+  mt.lookup(disclose(k)).resetToDefault();
 }
 
 export circuit hmtInsert(k: Bytes<32>, item: Bytes<32>): [] {

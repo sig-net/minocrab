@@ -1031,6 +1031,28 @@ fn empty_merkle_tree(depth: u8) -> [StateValue<InMemoryDB>; 2] {
     ]
 }
 
+/// A `MerkleTree`'s initial value as one `StateValue`
+/// (midnight-ledger.ss:973): `[merkle-tree nat (), cell 0u64]`.
+///
+/// The constant `resetToDefault` writes AND the one an ADT-valued
+/// `insertDefault` pushes — `VMstate-value-ADT` expands the declared
+/// `(initial-value …)` in both cases, which is why there is one function
+/// rather than two tables (see [`map_insert_adt_default_at`]).
+pub fn empty_merkle_tree_value(depth: u8) -> StateValue<InMemoryDB> {
+    StateValue::Array(empty_merkle_tree(depth).into_iter().collect())
+}
+
+/// A `HistoricMerkleTree`'s initial value (midnight-ledger.ss:1129):
+/// [`empty_merkle_tree_value`] plus an empty history map.
+///
+/// NOTE the asymmetry with [`historic_merkle_tree_reset_at`], which pushes
+/// this and then APPENDS the blank tree's root to the history; the declared
+/// initial value itself has the history empty.
+pub fn empty_historic_merkle_tree_value(depth: u8) -> StateValue<InMemoryDB> {
+    let [tree, next] = empty_merkle_tree(depth);
+    StateValue::Array([tree, next, empty_map()].into_iter().collect())
+}
+
 /// `mt.resetToDefault()` on field `index`.
 pub fn merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
     merkle_tree_reset_at(&field_path(index), depth)
@@ -1038,10 +1060,7 @@ pub fn merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
 
 /// [`merkle_tree_reset`] on a general path.
 pub fn merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
-    reset_to_at(
-        path,
-        StateValue::Array(empty_merkle_tree(depth).into_iter().collect()),
-    )
+    reset_to_at(path, empty_merkle_tree_value(depth))
 }
 
 /// `mt.insert(item)` / `mt.insertHash(hash)` on field `index`
@@ -1238,8 +1257,7 @@ pub fn historic_merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
 /// rather than going through [`reset_to_at`] because its closing pair is
 /// `insc 2; ins 1` where every other reset's is `ins 1; insc len(f)-1`.
 pub fn historic_merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
-    let [tree, next] = empty_merkle_tree(depth);
-    let initial = StateValue::Array([tree, next, empty_map()].into_iter().collect());
+    let initial = empty_historic_merkle_tree_value(depth);
     let mut ops = idxp_container(path);
     ops.push(path[path.len() - 1].push_as_cell());
     ops.push(ImpactOp::constant(&Op::Push {

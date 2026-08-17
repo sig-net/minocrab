@@ -2199,6 +2199,13 @@ out member: Scalar<BLS12-381>
 ",
     ),
     (
+        "nested::set_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
         "nested::counter_increment",
         "\
 in  k_hi: Scalar<BLS12-381>
@@ -2236,6 +2243,13 @@ in  k_hi: Scalar<BLS12-381>
 in  k_lo: Scalar<BLS12-381>
 in  rt: Scalar<BLS12-381>
 out ok: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::mt_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
 ",
     ),
     (

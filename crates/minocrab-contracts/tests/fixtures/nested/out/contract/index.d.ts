@@ -44,6 +44,7 @@ export type ImpureCircuits<PS> = {
   setMember(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             e_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  setReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterIncrement(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterRead(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, bigint>>;
   counterReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
@@ -53,6 +54,7 @@ export type ImpureCircuits<PS> = {
   mtCheckRoot(context: __compactRuntime.CircuitContext<PS>,
               k_0: Uint8Array,
               rt_0: { field: bigint }): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  mtReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   hmtInsert(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             item_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
@@ -110,6 +112,7 @@ export type ProvableCircuits<PS> = {
   setMember(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             e_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  setReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterIncrement(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterRead(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, bigint>>;
   counterReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
@@ -119,6 +122,7 @@ export type ProvableCircuits<PS> = {
   mtCheckRoot(context: __compactRuntime.CircuitContext<PS>,
               k_0: Uint8Array,
               rt_0: { field: bigint }): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  mtReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   hmtInsert(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             item_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
@@ -179,6 +183,7 @@ export type Circuits<PS> = {
   setMember(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             e_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  setReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterIncrement(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   counterRead(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, bigint>>;
   counterReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
@@ -188,6 +193,7 @@ export type Circuits<PS> = {
   mtCheckRoot(context: __compactRuntime.CircuitContext<PS>,
               k_0: Uint8Array,
               rt_0: { field: bigint }): Promise<__compactRuntime.CircuitResults<PS, boolean>>;
+  mtReset(context: __compactRuntime.CircuitContext<PS>, k_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;
   hmtInsert(context: __compactRuntime.CircuitContext<PS>,
             k_0: Uint8Array,
             item_0: Uint8Array): Promise<__compactRuntime.CircuitResults<PS, []>>;

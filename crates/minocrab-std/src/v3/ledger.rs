@@ -24,6 +24,15 @@
 //! in the signature — a ledger operation is a cost, and the call site says so.
 //! `map[k]` sugar, `Deref`, `entry()` and iterators are REJECTED for the same
 //! reason.
+//!
+//! NESTING (M22 stage B2) keeps that invariant exactly. `at_key` is the one
+//! method that emits NOTHING — it builds compactc's path `f`, which is what
+//! an intermediate `Map.lookup` is at compile time — and the leaf method
+//! still emits the ONE operation it names, with the path re-encoded into it.
+//! A slot is therefore a PATH rather than a field index: see [`FieldPath`]
+//! (const, from the declaration, and more than one element as soon as a block
+//! declares sixteen fields) and [`KeyPath`] (runtime, one element per
+//! `at_key`).
 
 use std::marker::PhantomData;
 
@@ -33,16 +42,19 @@ use minocrab::v3::{
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public, Visibility};
 use minocrab_ledger::{
-    atom_limbs, cell_read_embedded, cell_write, counter_increment, counter_less_than, counter_read,
-    counter_read_guarded, emit, historic_merkle_tree_check_root, historic_merkle_tree_insert,
-    historic_merkle_tree_insert_index, historic_merkle_tree_reset,
-    historic_merkle_tree_reset_history, list_head, list_is_empty, list_length, list_pop_front,
-    list_push_front, list_push_front_coin, list_reset, map_insert, map_insert_coin,
-    map_insert_default, map_is_empty, map_lookup, map_lookup_guarded, map_member,
-    map_member_guarded, map_remove, map_reset, map_size, merkle_tree_check_root,
-    merkle_tree_insert, merkle_tree_insert_index, merkle_tree_is_full, merkle_tree_reset,
-    mint_read_with, set_insert, set_insert_coin, set_is_empty, set_remove, set_reset, set_size,
-    ImpactElem, LedgerValue,
+    atom_limbs, cell_read_embedded_at, cell_write_at, counter_increment_at, counter_less_than_at,
+    counter_read_at, counter_read_guarded_at, counter_reset_at, emit, empty_counter, empty_historic_merkle_tree_value,
+    empty_list, empty_map, empty_merkle_tree_value, historic_merkle_tree_check_root_at,
+    historic_merkle_tree_insert_at, historic_merkle_tree_insert_index_at,
+    historic_merkle_tree_reset_at, historic_merkle_tree_reset_history_at, list_head_at,
+    list_is_empty_at, list_length_at, list_pop_front_at, list_push_front_at,
+    list_push_front_coin_at, list_reset_at, map_insert_adt_default_at, map_insert_at,
+    map_insert_coin_at, map_insert_default_at, map_is_empty_at, map_lookup_at,
+    map_lookup_guarded_at, map_member_at, map_member_guarded_at, map_remove_at, map_reset_at,
+    map_size_at, merkle_tree_check_root_at, merkle_tree_insert_at, merkle_tree_insert_index_at,
+    merkle_tree_is_full_at, merkle_tree_reset_at, mint_read_with, set_insert_at,
+    set_insert_coin_at, set_is_empty_at, set_remove_at, set_reset_at, set_size_at, ImpactElem,
+    ImpactOp, LedgerKey, LedgerValue,
 };
 
 use super::{
@@ -314,11 +326,275 @@ fn coin_operands(
     )
 }
 
+// ---- WHERE A SLOT LIVES: the path ------------------------------------------
+//
+// compactc calls it `f`, "the path to the field being operated on"
+// (midnight-ledger.ss:133-138), and every ledger operation's vm-code is
+// written against it. It has TWO halves, and they differ in when they are
+// known:
+//
+//   - the FIELD path, const, from the declaration. Usually one element — the
+//     field index — but `determine-ledger-paths.ss` BATCHES a block's fields
+//     into segments of fifteen (`maximum-ledger-segment-length`, langs.ss:851),
+//     so a sixteen-field block gives every field a TWO-element path and
+//     `#[derive(Ledger)]` hands each slot the path rather than an index;
+//   - the KEYS, runtime, one per `at_key` — a map key is generally a circuit
+//     wire, so a nested handle is a VALUE holding cloned limbs where a
+//     declared handle is a `const`.
+//
+// Hence two path types and one sealed trait over them. Keeping them apart is
+// not tidiness: a declared handle must stay DROP-FREE or
+// `const I: u8 = VAULT.field.index();` stops compiling (E0493), and a nested
+// handle must own a `Vec` because that is what a key is.
+
+/// The most elements a FIELD path can have: `batch`'s tree is one level deep
+/// at fifteen fields, two at 225, three at the 256 a `u8` index allows, and
+/// `#[derive(Ledger)]` rejects a wider block than that.
+pub const MAX_FIELD_PATH: usize = 3;
+
+/// The deepest `f` any ledger operation can ENCODE, and the reason the depth
+/// bound below is what it is.
+///
+/// `idx`'s low nibble takes sixteen elements, but `insc`'s takes fifteen and
+/// `HistoricMerkleTree.resetHistory` closes with `insc len(f) + 2`
+/// (midnight-ledger.ss:1338) — so thirteen is the real bound, and it is the
+/// tighter of the two asserts `minocrab_ledger` makes at run time.
+pub const MAX_LEDGER_PATH: usize = 13;
+
+/// The most `at_key` steps a handle may carry: [`MAX_LEDGER_PATH`] less the
+/// widest field path, so that the bound holds whatever block the slot was
+/// declared in. Checked as an inline-const assert (E0080) at `at_key`, which
+/// is STRICTER than upstream — compactc has the same nibble bound as a source
+/// comment and no check at all (midnight-ledger.ss:576-577).
+pub const MAX_NESTING: usize = MAX_LEDGER_PATH - MAX_FIELD_PATH;
+
+mod sealed {
+    /// Sealing [`super::LedgerPath`]: the two path halves are the two the
+    /// wire format has.
+    pub trait Path {}
+    /// Sealing [`super::LedgerSlot`]: the two families that may sit in a
+    /// `Map`'s value position.
+    pub trait Slot {}
+}
+
+/// Sealed: where a ledger slot sits. [`FieldPath`] (a declaration) or
+/// [`KeyPath`] (an `at_key` chain).
+pub trait LedgerPath: Clone + sealed::Path {
+    /// How many MAP KEYS this path carries — zero for a declared slot. The
+    /// depth bound is stated on this, not on the runtime length.
+    const KEYS: usize;
+
+    /// The path one key deeper, which is what `at_key` returns a handle at.
+    ///
+    /// UNBOUNDED here on purpose: `KeyPath<MAX_NESTING>`'s `Deeper` names a
+    /// type with NO [`KeyedPath`] impl, so `at_key`'s `where P::Deeper:
+    /// KeyedPath` is the depth bound and it fires at TYPE-CHECK time —
+    /// eagerly, in dead code too, which an inline-const assert would not.
+    type Deeper;
+
+    /// compactc's `f`, built afresh per operation.
+    ///
+    /// Per the design of record the path is RE-ENCODED for every op rather
+    /// than cached — that is compactc's own shape, and it is what keeps the
+    /// differential instruction-for-instruction. It costs allocation at
+    /// build time and nothing at all in the circuit.
+    fn to_path(&self) -> Vec<LedgerKey>;
+}
+
+/// A [`LedgerPath`] that ends in a KEY — the target of `at_key`, and the
+/// half a handle owns rather than declares.
+#[diagnostic::on_unimplemented(
+    message = "a ledger path this deep does not fit the Impact opcodes' nibbles",
+    label = "at most ten `at_key` steps (MAX_NESTING)",
+    note = "`insc len(f) + 2` is the deepest closing any ledger operation has \
+            (HistoricMerkleTree.resetHistory), and `insc`'s operand is a \
+            nibble — so `f` may hold at most thirteen elements, of which a \
+            field path may take three"
+)]
+pub trait KeyedPath: LedgerPath {
+    /// Root a handle at an already-built path. Not for call sites: `at_key`
+    /// is the only caller.
+    #[doc(hidden)]
+    fn rooted(path: Vec<LedgerKey>) -> Self;
+}
+
+/// The const half: a declared field's path, from `#[derive(Ledger)]`.
+///
+/// An inline array rather than a `Vec` because a declared handle is a `const`
+/// item, and a `const` item holding a `Vec` cannot be used in a `const`
+/// expression at all (E0493, "destructor cannot be evaluated at
+/// compile-time") — which `const SIGNER: u8 = VAULT.signet_signer.index();`
+/// is.
+#[derive(Clone, Copy)]
+pub struct FieldPath {
+    elems: [u8; MAX_FIELD_PATH],
+    len: u8,
+}
+
+impl FieldPath {
+    /// The one-element path of a field in a block of fifteen fields or fewer.
+    pub const fn field(index: u8) -> Self {
+        FieldPath::of(&[index])
+    }
+
+    /// A field's full path, as `determine-ledger-paths.ss` computes it.
+    pub const fn of(path: &[u8]) -> Self {
+        assert!(
+            !path.is_empty(),
+            "a ledger field's path has at least one element"
+        );
+        assert!(
+            path.len() <= MAX_FIELD_PATH,
+            "a ledger field's path is at most three elements — compactc's \
+             `batch` is three levels deep at the 256 fields a byte index \
+             allows (determine-ledger-paths.ss, langs.ss:851)"
+        );
+        let mut elems = [0u8; MAX_FIELD_PATH];
+        let mut i = 0;
+        while i < path.len() {
+            elems[i] = path[i];
+            i += 1;
+        }
+        FieldPath {
+            elems,
+            len: path.len() as u8,
+        }
+    }
+
+    /// The field INDEX, for a slot whose path is one element.
+    ///
+    /// A block of sixteen fields or more has no such number — its fields are
+    /// segmented and each carries a path — so this asserts, which is E0080
+    /// wherever it is used (its call sites are all `const` items).
+    pub const fn index(&self) -> u8 {
+        assert!(
+            self.len == 1,
+            "this field's path has more than one element: the block declares \
+             sixteen fields or more, so compactc segments it and the field \
+             has no single index (notes/coin-arms-nested-adts.org, stage B1 \
+             correction (ii))"
+        );
+        self.elems[0]
+    }
+}
+
+impl sealed::Path for FieldPath {}
+
+impl LedgerPath for FieldPath {
+    const KEYS: usize = 0;
+    type Deeper = KeyPath<1>;
+
+    fn to_path(&self) -> Vec<LedgerKey> {
+        self.elems[..self.len as usize]
+            .iter()
+            .map(|i| LedgerKey::Field(*i))
+            .collect()
+    }
+}
+
+/// The runtime half: a field path with `KEYS` map keys appended, one per
+/// `at_key`.
+///
+/// The keys are CLONED limbs (wires are `Copy`), which is what lets a nested
+/// handle be an ordinary value with no lifetime in sight.
+#[derive(Clone)]
+pub struct KeyPath<const KEYS: usize> {
+    path: Vec<LedgerKey>,
+}
+
+macro_rules! key_paths {
+    ($( $keys:literal => $deeper:literal ),* $(,)?) => {$(
+        impl sealed::Path for KeyPath<$keys> {}
+
+        impl LedgerPath for KeyPath<$keys> {
+            const KEYS: usize = $keys;
+            type Deeper = KeyPath<$deeper>;
+
+            fn to_path(&self) -> Vec<LedgerKey> {
+                self.path.clone()
+            }
+        }
+
+        impl KeyedPath for KeyPath<$keys> {
+            fn rooted(path: Vec<LedgerKey>) -> Self {
+                KeyPath { path }
+            }
+        }
+    )*};
+}
+
+// One per legal depth. `KeyPath<11>` is DELIBERATELY not among them: it is a
+// type with no `KeyedPath` impl, so `at_key` on a ten-key handle fails its
+// where-clause — the project's preferred rejection spelling (a missing impl
+// beats an assert), with the arithmetic in the `on_unimplemented` note.
+key_paths! {
+    1 => 2, 2 => 3, 3 => 4, 4 => 5, 5 => 6,
+    6 => 7, 7 => 8, 8 => 9, 9 => 10, 10 => 11,
+}
+
+// ---- WHAT MAY SIT IN A SLOT: the two families ------------------------------
+
+/// Sealed: what a `Map`'s VALUE position may hold. There are exactly two
+/// families and no third.
+///
+/// | family | bound | what `insertDefault` pushes |
+/// |--------|-------|------------------------------|
+/// | plain VALUES | [`LedgerRepr`] | a cell of zeros, one limb per FAB limb |
+/// | ADT HANDLES | [`LedgerAdt`] | the ADT's own `(initial-value …)` |
+///
+/// That second column is the whole reason this is a trait rather than a
+/// comment. `Map.insert` / `insertDefault` push `(state-value 'ADT value
+/// value_type)`, and `assemble-operand-acc`'s `VMstate-value-ADT` case
+/// (reduce-to-zkir.ss:424-433) DISCARDS the value and expands the ADT's
+/// declared initial value whenever the type is an ADT — the empty map for
+/// `Map`/`Set`, `[null, null, 0]` for `List`, `cell 0u64` for `Counter`, the
+/// blank pair for the trees. So `insertDefault` is ONE method whose emission
+/// is decided by the value type's family, and the fixture circuit
+/// `outerInsertDefault` is the differential that pins it.
+///
+/// The two impls are disjoint by construction: no ADT handle is a
+/// [`LedgerRepr`], and the orphan rule stops anything downstream making one.
+pub trait LedgerSlot: sealed::Slot {
+    /// `map.insertDefault(key)` at `path`, for a map whose value type is
+    /// `Self` — the ONE Impact operation, either way.
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp>;
+}
+
+impl<T: LedgerRepr> sealed::Slot for T {}
+
+/// The VALUE family: a stored value's default is zeros in every limb
+/// (notes/ledger-adts.org finding (c)).
+impl<T: LedgerRepr> LedgerSlot for T {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_default_at(path, key, T::atoms())
+    }
+}
+
+/// The ADT family: the handle types Compact's `Map` may hold, which is `Map`
+/// itself and the five other ADTs (`expand-modules-and-types.ss:256-263` —
+/// `Map`'s value formal is the ONE `ADT/Type` across all six declarations, so
+/// `Set<List<T>>` and `List<Map<K,V>>` are compactc's own compile errors and
+/// must not type here either).
+///
+/// `at_key` is the whole of it: it builds the path and emits NOTHING, exactly
+/// as `.field()` does, and the cost stays at the leaf method where Compact
+/// puts it.
+pub trait LedgerAdt: LedgerSlot {
+    /// The same handle, rooted at a runtime path.
+    type Rooted<Q: KeyedPath>;
+
+    /// Root it. `at_key`'s only job past building the path.
+    #[doc(hidden)]
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q>;
+}
+
 // ---- the ledger slots -------------------------------------------------------
 //
-// Each is a `u8` index and the phantom types of what it holds, constructed by
-// the `at(index)` the derive calls. They are `const`-constructible so a
-// contract's ledger block is a `const` item and costs nothing at run time.
+// Each is a PATH and the phantom types of what it holds, constructed by the
+// `at(index)` / `at_path(path)` the derive calls. The declared form is
+// `const`-constructible, so a contract's ledger block is a `const` item and
+// costs nothing at run time; the nested form (`P = KeyPath<n>`) is an
+// ordinary value carrying its keys' limbs.
 
 /// `export ledger m: Map<K, V>` — Compact's `Map` methods, one Impact
 /// operation each.
@@ -344,8 +620,8 @@ fn coin_operands(
 /// byte-identical to compactc's stream, whose guard operand is that named
 /// wire — which is why the three direct-port forks use `_under` throughout
 /// and only the showcase twin uses the plain names.
-pub struct LedgerMap<K, V> {
-    index: u8,
+pub struct LedgerMap<K, V, P = FieldPath> {
+    path: P,
     _kv: PhantomData<fn() -> (K, V)>,
 }
 
@@ -353,18 +629,169 @@ impl<K, V> LedgerMap<K, V> {
     /// The map held in ledger field `index` (the derive supplies it).
     pub const fn at(index: u8) -> Self {
         LedgerMap {
-            index,
+            path: FieldPath::field(index),
+            _kv: PhantomData,
+        }
+    }
+
+    /// The map held at ledger field PATH `path` — what `#[derive(Ledger)]`
+    /// emits, and the only spelling a block of sixteen fields or more has
+    /// (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerMap {
+            path: FieldPath::of(path),
             _kv: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
     }
 }
 
-impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
+impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
+    }
+}
+
+impl<K, V, P> sealed::Slot for LedgerMap<K, V, P> {}
+
+/// A `Map` in a `Map`'s value position: `insertDefault` pushes the EMPTY MAP,
+/// not a cell of zeros (see [`LedgerSlot`]).
+impl<K, V, P> LedgerSlot for LedgerMap<K, V, P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_map())
+    }
+}
+
+impl<K, V, P> LedgerAdt for LedgerMap<K, V, P> {
+    type Rooted<Q: KeyedPath> = LedgerMap<K, V, Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerMap {
+            path,
+            _kv: PhantomData,
+        }
+    }
+}
+
+impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
+    /// `map.lookup(key)` where the value is an ADT — the INTERMEDIATE lookup,
+    /// which emits NOTHING.
+    ///
+    /// compactc's `propagate-ledger-paths.ss` folds every non-final accessor
+    /// into the path `f` at compile time and runs only the LAST accessor's
+    /// vm-code, so this is path building and not an operation: it costs no
+    /// Impact instruction, no gate and no row, exactly like `.field()`. What
+    /// it costs is the key's limbs, which the leaf op would have pushed
+    /// anyway — and it takes `c` only because a repr may compute its limbs
+    /// ([`LedgerRepr::push_limbs`]).
+    ///
+    /// The returned handle carries the key's limbs and is an ordinary value;
+    /// its methods are the ADT's ordinary surface, each emitting the ONE
+    /// Impact operation Compact names, with this path re-encoded into it.
+    /// Chaining is the only depth mechanism there is — there is deliberately
+    /// no `lookup2(c, &k1, &k2)` family.
+    ///
+    /// ```ignore
+    /// let user = TREASURY.balances.at_key(c, &user_id);  // no instructions
+    /// let bal = user.lookup(c, &token);                  // ONE op, path [field, user, ..]
+    /// TREASURY.deep.at_key(c, &a).at_key(c, &b).lookup(c, &k);
+    /// ```
+    ///
+    /// Nesting past [`MAX_NESTING`] keys does not compile: `KeyPath<10>`'s
+    /// `Deeper` has no [`KeyedPath`] impl, so the eleventh `at_key` fails
+    /// this method's where-clause — at TYPE-CHECK time, in dead code too.
+    ///
+    /// ```compile_fail
+    /// use minocrab::v3::Circuit3;
+    /// use minocrab::Public;
+    /// use minocrab_std::v3::{LedgerMap, Uint, B32};
+    ///
+    /// type K = B32<Public>;
+    /// type L0 = Uint<64, Public>;
+    /// type L1 = LedgerMap<K, L0>;
+    /// type L2 = LedgerMap<K, L1>;
+    /// type L3 = LedgerMap<K, L2>;
+    /// type L4 = LedgerMap<K, L3>;
+    /// type L5 = LedgerMap<K, L4>;
+    /// type L6 = LedgerMap<K, L5>;
+    /// type L7 = LedgerMap<K, L6>;
+    /// type L8 = LedgerMap<K, L7>;
+    /// type L9 = LedgerMap<K, L8>;
+    /// type L10 = LedgerMap<K, L9>;
+    /// type L11 = LedgerMap<K, L10>;
+    /// type L12 = LedgerMap<K, L11>;
+    ///
+    /// const DEEP: L12 = LedgerMap::at(0);
+    ///
+    /// fn f(c: &mut Circuit3, k: &K) {
+    ///     DEEP.at_key(c, k).at_key(c, k).at_key(c, k).at_key(c, k)
+    ///         .at_key(c, k).at_key(c, k).at_key(c, k).at_key(c, k)
+    ///         .at_key(c, k).at_key(c, k).at_key(c, k).lookup(c, k);
+    /// }
+    /// ```
+    ///
+    /// while TEN keys — the deepest `f` an `insc` nibble can close over a
+    /// field path of the maximum width — compiles, on the same types:
+    ///
+    /// ```
+    /// # use minocrab::v3::Circuit3;
+    /// # use minocrab::Public;
+    /// # use minocrab_std::v3::{LedgerMap, Uint, B32};
+    /// # type K = B32<Public>;
+    /// # type L0 = Uint<64, Public>;
+    /// # type L1 = LedgerMap<K, L0>;
+    /// # type L2 = LedgerMap<K, L1>;
+    /// # type L3 = LedgerMap<K, L2>;
+    /// # type L4 = LedgerMap<K, L3>;
+    /// # type L5 = LedgerMap<K, L4>;
+    /// # type L6 = LedgerMap<K, L5>;
+    /// # type L7 = LedgerMap<K, L6>;
+    /// # type L8 = LedgerMap<K, L7>;
+    /// # type L9 = LedgerMap<K, L8>;
+    /// # type L10 = LedgerMap<K, L9>;
+    /// # type L11 = LedgerMap<K, L10>;
+    /// # type L12 = LedgerMap<K, L11>;
+    /// const DEEP: L12 = LedgerMap::at(0);
+    ///
+    /// fn f(c: &mut Circuit3, k: &K) {
+    ///     DEEP.at_key(c, k).at_key(c, k).at_key(c, k).at_key(c, k)
+    ///         .at_key(c, k).at_key(c, k).at_key(c, k).at_key(c, k)
+    ///         .at_key(c, k).at_key(c, k).size(c);
+    /// }
+    /// # let _: fn(&mut Circuit3, &K) = f;
+    /// ```
+    pub fn at_key(&self, c: &mut Circuit3, key: &K) -> A::Rooted<P::Deeper>
+    where
+        P::Deeper: KeyedPath,
+    {
+        // BELT AND BRACES, and unreachable while the impls above stop at
+        // `MAX_NESTING`: the where-clause has already rejected anything this
+        // could catch. It states the arithmetic in code so that adding a
+        // `KeyPath` impl cannot quietly move the bound.
+        const {
+            assert!(
+                P::KEYS + 1 + MAX_FIELD_PATH <= MAX_LEDGER_PATH,
+                "a ledger path this deep does not fit the Impact opcodes' \
+                 nibbles: `insc len(f) + 2` is the deepest closing any \
+                 operation has, so `f` may hold at most thirteen elements, \
+                 and a field path may take three of them"
+            )
+        };
+        let mut path = self.ledger_path();
+        path.push(LedgerKey::Value(key.ledger_value(c)));
+        A::rooted_at(<P::Deeper as KeyedPath>::rooted(path))
+    }
+}
+
+/// The operations that do not touch the VALUE, so the value type is
+/// unconstrained: they read or remove a key, and an ADT-valued map has them
+/// exactly as a plain one does.
+impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.member(key)` — `dup 0; idx [field]; push key; member; popeqc`.
     pub fn member(&self, c: &mut Circuit3, key: &K) -> Bool<Public> {
         self.member_under(c, STRAIGHT_LINE, key)
@@ -378,7 +805,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         key: &K,
     ) -> Bool<Public> {
         let key = key.ledger_value(c);
-        Bool::from_field_unchecked(map_member(c, guard, self.index, &key))
+        Bool::from_field_unchecked(map_member_at(c, guard, &self.ledger_path(), &key))
     }
 
     /// [`LedgerMap::member`] inside a conditional branch.
@@ -390,13 +817,37 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
     ) -> Guarded<Bool<Public>, G> {
         let key = key.ledger_value(c);
         Guarded::new(
-            Bool::from_field_unchecked(map_member_guarded(c, guard, self.index, &key)),
+            Bool::from_field_unchecked(map_member_guarded_at(c, guard, &self.ledger_path(), &key)),
             guard,
         )
     }
 
+    /// `map.remove(key)` — `idxp [field]; push key; rem; insc 1`.
+    pub fn remove(&self, c: &mut Circuit3, key: &K) {
+        self.remove_under(c, STRAIGHT_LINE, key)
+    }
+
+    /// [`LedgerMap::remove`] under a branch condition.
+    pub fn remove_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        key: &K,
+    ) {
+        let key = key.ledger_value(c);
+        emit(c, guard, &map_remove_at(&self.ledger_path(), &key));
+    }
+}
+
+impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.lookup(key)` — `dup 0; idx [field]; idx {key}; popeq`. The value
     /// atoms come from `V`.
+    ///
+    /// A LEAF lookup, and it is TWO `idx` instructions: the path reaches the
+    /// map and the key descends with its own one-element `idx`
+    /// (midnight-ledger.ss:741-747). Only an INTERMEDIATE lookup —
+    /// [`at_key`](LedgerMap::at_key), whose value type is an ADT — folds into
+    /// the path and emits nothing at all.
     pub fn lookup(&self, c: &mut Circuit3, key: &K) -> V {
         self.lookup_under(c, STRAIGHT_LINE, key)
     }
@@ -409,7 +860,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         key: &K,
     ) -> V {
         let key = key.ledger_value(c);
-        V::from_limbs(map_lookup(c, guard, self.index, &key, V::atoms()))
+        V::from_limbs(map_lookup_at(c, guard, &self.ledger_path(), &key, V::atoms()))
     }
 
     /// [`LedgerMap::lookup`] inside a conditional branch.
@@ -420,10 +871,10 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         key: &K,
     ) -> Guarded<V, G> {
         let key = key.ledger_value(c);
-        let value = V::from_limbs(map_lookup_guarded(
+        let value = V::from_limbs(map_lookup_guarded_at(
             c,
             guard,
-            self.index,
+            &self.ledger_path(),
             &key,
             V::atoms(),
         ));
@@ -446,56 +897,21 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
     ) {
         let key = key.ledger_value(c);
         let value = value.ledger_value(c);
-        emit(c, guard, &map_insert(self.index, &key, &value));
+        emit(c, guard, &map_insert_at(&self.ledger_path(), &key, &value));
     }
+}
 
-    /// `map.remove(key)` — `idxp [field]; push key; rem; insc 1`.
-    pub fn remove(&self, c: &mut Circuit3, key: &K) {
-        self.remove_under(c, STRAIGHT_LINE, key)
-    }
-
-    /// [`LedgerMap::remove`] under a branch condition.
-    pub fn remove_under<G: Visibility>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-    ) {
-        let key = key.ledger_value(c);
-        emit(c, guard, &map_remove(self.index, &key));
-    }
-
-    /// `map.size()` — `dup 0; idx [field]; size; popeqc`.
-    pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
-        self.size_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMap::size`] under a branch condition.
-    pub fn size_under<G: Visibility>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(map_size(c, guard, self.index))
-    }
-
-    /// `map.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
-    pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_empty_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMap::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(map_is_empty(c, guard, self.index))
-    }
-
+/// `insertDefault` is the ONE method whose emission depends on which family
+/// the value type belongs to — see [`LedgerSlot`].
+impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.insertDefault(key)` — `idxp [field]; push key; pushs default;
-    /// ins 1; insc 1`. The stored value is `V`'s default, which is zeros in
-    /// every one of its limbs (notes/ledger-adts.org finding (c)).
+    /// ins 1; insc 1`.
+    ///
+    /// The pushed default is `V`'s: zeros in every limb for a stored VALUE
+    /// (notes/ledger-adts.org finding (c)), and the ADT's own
+    /// `(initial-value …)` — the empty map, `[null, null, 0]`, `cell 0u64`,
+    /// the blank tree — when the value type is an ADT
+    /// (notes/coin-arms-nested-adts.org, stage B1 correction (iii)).
     pub fn insert_default(&self, c: &mut Circuit3, key: &K) {
         self.insert_default_under(c, STRAIGHT_LINE, key)
     }
@@ -508,7 +924,7 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
         key: &K,
     ) {
         let key = key.ledger_value(c);
-        emit(c, guard, &map_insert_default(self.index, &key, V::atoms()));
+        emit(c, guard, &V::insert_default_ops(&self.ledger_path(), &key));
     }
 }
 
@@ -517,6 +933,12 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
 /// `(when (= value_type QualifiedShieldedCoinInfo))` (midnight-ledger.ss:768).
 /// A map of any other value type has no such method, and here that is a
 /// missing impl rather than a runtime complaint.
+///
+/// DECLARED SLOTS ONLY (`P = FieldPath`). The lowering handles a coin arm at
+/// any depth — the four `dup` reaches are functions of `len(f)` and
+/// `minocrab_ledger` pins them — but no NESTED coin arm has a differential
+/// behind it, so the typed surface does not offer one
+/// (notes/coin-arms-nested-adts.org, stage B1 "not covered").
 impl<K: LedgerRepr> LedgerMap<K, QualifiedShieldedCoinInfo3<Public>> {
     /// `map.insertCoin(key, coin, recipient)` — `idxp [field]; push key;
     /// dup 5; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91;
@@ -549,13 +971,47 @@ impl<K: LedgerRepr> LedgerMap<K, QualifiedShieldedCoinInfo3<Public>> {
     ) {
         let key = key.ledger_value(c);
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &map_insert_coin(self.index, &key, &cm, &coin));
+        emit(c, guard, &map_insert_coin_at(&self.ledger_path(), &key, &cm, &coin));
     }
 }
 
-impl<K, V> LedgerMap<K, V> {
+/// The operations that touch neither the key nor the value type.
+impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
+    /// `map.size()` — `dup 0; idx [field]; size; popeqc`.
+    pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
+        self.size_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerMap::size`] under a branch condition.
+    pub fn size_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Uint<64, Public> {
+        Uint::from_field_unchecked(map_size_at(c, guard, &self.ledger_path()))
+    }
+
+    /// `map.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
+    pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
+        self.is_empty_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerMap::is_empty`] under a branch condition.
+    pub fn is_empty_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) -> Bool<Public> {
+        Bool::from_field_unchecked(map_is_empty_at(c, guard, &self.ledger_path()))
+    }
+
     /// `map.resetToDefault()` — `push key; pushs (empty map); ins 1`. Needs
     /// no bound on `K`/`V`: an empty map is empty whatever it held.
+    ///
+    /// At depth 1 that is three instructions; NESTED it is five — the leading
+    /// `idxp` over the container's path and the closing `insc len(f) − 1`
+    /// that compactc suppresses away at depth 1 both come back
+    /// (`suppress-null` / `suppress-zero`, vm.ss:192-194).
     pub fn reset_to_default(&self, c: &mut Circuit3) {
         self.reset_to_default_under(c, STRAIGHT_LINE)
     }
@@ -566,7 +1022,7 @@ impl<K, V> LedgerMap<K, V> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &map_reset(self.index));
+        emit(c, guard, &map_reset_at(&self.ledger_path()));
     }
 }
 
@@ -593,8 +1049,8 @@ pub const STRAIGHT_LINE: u64 = 1;
 ///
 /// Landed at M15 with `insert` and `member` (M15's fixture stores an
 /// [`Opaque`] in a `Set`); M16 completed it rather than adding a second `Set`.
-pub struct LedgerSet<T> {
-    index: u8,
+pub struct LedgerSet<T, P = FieldPath> {
+    path: P,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -602,18 +1058,55 @@ impl<T> LedgerSet<T> {
     /// The set held in ledger field `index` (the derive supplies it).
     pub const fn at(index: u8) -> Self {
         LedgerSet {
-            index,
+            path: FieldPath::field(index),
+            _t: PhantomData,
+        }
+    }
+
+    /// The set held at ledger field PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerSet {
+            path: FieldPath::of(path),
             _t: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
     }
 }
 
-impl<T: LedgerRepr> LedgerSet<T> {
+impl<T, P: LedgerPath> LedgerSet<T, P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
+    }
+}
+
+impl<T, P> sealed::Slot for LedgerSet<T, P> {}
+
+/// A `Set` in a `Map`'s value position: `insertDefault` pushes the EMPTY MAP,
+/// which is a `Set`'s initial value as much as a `Map`'s
+/// (midnight-ledger.ss:624).
+impl<T, P> LedgerSlot for LedgerSet<T, P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_map())
+    }
+}
+
+impl<T, P> LedgerAdt for LedgerSet<T, P> {
+    type Rooted<Q: KeyedPath> = LedgerSet<T, Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerSet {
+            path,
+            _t: PhantomData,
+        }
+    }
+}
+
+impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     /// `set.insert(elem)` — `idxp [field]; push elem; pushs null; ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, elem: &T) {
         self.insert_under(c, STRAIGHT_LINE, elem)
@@ -627,7 +1120,7 @@ impl<T: LedgerRepr> LedgerSet<T> {
         elem: &T,
     ) {
         let elem = elem.ledger_value(c);
-        emit(c, guard.into(), &set_insert(self.index, &elem));
+        emit(c, guard.into(), &set_insert_at(&self.ledger_path(), &elem));
     }
 
     /// `set.member(elem)` — `dup 0; idx [field]; push elem; member; popeqc`.
@@ -646,7 +1139,7 @@ impl<T: LedgerRepr> LedgerSet<T> {
         elem: &T,
     ) -> Bool<Public> {
         let elem = elem.ledger_value(c);
-        Bool::from_field_unchecked(map_member(c, guard, self.index, &elem))
+        Bool::from_field_unchecked(map_member_at(c, guard, &self.ledger_path(), &elem))
     }
 
     /// `set.remove(elem)` — `idxp [field]; push elem; rem; insc 1`.
@@ -662,12 +1155,15 @@ impl<T: LedgerRepr> LedgerSet<T> {
         elem: &T,
     ) {
         let elem = elem.ledger_value(c);
-        emit(c, guard, &set_remove(self.index, &elem));
+        emit(c, guard, &set_remove_at(&self.ledger_path(), &elem));
     }
 }
 
 /// `Set<QualifiedShieldedCoinInfo>` — the element type compactc gates
 /// `insertCoin` on (midnight-ledger.ss:669).
+///
+/// DECLARED SLOTS ONLY — see [`LedgerMap::insert_coin`] for why the nested
+/// coin arms are not offered.
 impl LedgerSet<QualifiedShieldedCoinInfo3<Public>> {
     /// `set.insertCoin(coin, recipient)` — `idxp [field]; dup 4; push cm;
     /// idxc [(1), stack]; push coin; swap 0; concatc 91; pushs null; ins 1;
@@ -694,11 +1190,11 @@ impl LedgerSet<QualifiedShieldedCoinInfo3<Public>> {
         recipient: &CoinRecipient<Public>,
     ) {
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &set_insert_coin(self.index, &cm, &coin));
+        emit(c, guard, &set_insert_coin_at(&self.ledger_path(), &cm, &coin));
     }
 }
 
-impl<T> LedgerSet<T> {
+impl<T, P: LedgerPath> LedgerSet<T, P> {
     /// `set.size()` — `dup 0; idx [field]; size; popeqc`.
     pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
         self.size_under(c, STRAIGHT_LINE)
@@ -710,7 +1206,7 @@ impl<T> LedgerSet<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(set_size(c, guard, self.index))
+        Uint::from_field_unchecked(set_size_at(c, guard, &self.ledger_path()))
     }
 
     /// `set.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
@@ -724,7 +1220,7 @@ impl<T> LedgerSet<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field_unchecked(set_is_empty(c, guard, self.index))
+        Bool::from_field_unchecked(set_is_empty_at(c, guard, &self.ledger_path()))
     }
 
     /// `set.resetToDefault()` — `push key; pushs (empty map); ins 1`.
@@ -738,7 +1234,7 @@ impl<T> LedgerSet<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &set_reset(self.index));
+        emit(c, guard, &set_reset_at(&self.ledger_path()));
     }
 }
 
@@ -753,8 +1249,8 @@ impl<T> LedgerSet<T> {
 /// does that with Impact-level `branch`/`jmp`, which the CIRCUIT does not see.
 /// Its cost is fifteen constant instructions and a `Maybe<T>`'s worth of
 /// witnessed limbs, whether the list is empty or not.
-pub struct LedgerList<T> {
-    index: u8,
+pub struct LedgerList<T, P = FieldPath> {
+    path: P,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -762,14 +1258,50 @@ impl<T> LedgerList<T> {
     /// The list held in ledger field `index` (the derive supplies it).
     pub const fn at(index: u8) -> Self {
         LedgerList {
-            index,
+            path: FieldPath::field(index),
+            _t: PhantomData,
+        }
+    }
+
+    /// The list held at ledger field PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerList {
+            path: FieldPath::of(path),
             _t: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+}
+
+impl<T, P> sealed::Slot for LedgerList<T, P> {}
+
+/// A `List` in a `Map`'s value position: `insertDefault` pushes a `List`'s
+/// initial value, `[null, null, cell 0u64]` (midnight-ledger.ss:800).
+impl<T, P> LedgerSlot for LedgerList<T, P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_list())
+    }
+}
+
+impl<T, P> LedgerAdt for LedgerList<T, P> {
+    type Rooted<Q: KeyedPath> = LedgerList<T, Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerList {
+            path,
+            _t: PhantomData,
+        }
+    }
+}
+
+impl<T, P: LedgerPath> LedgerList<T, P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 
     /// `list.popFront()` — `idxp [field]; idx [1]; insc 1`. Needs no bound on
@@ -784,7 +1316,7 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &list_pop_front(self.index));
+        emit(c, guard, &list_pop_front_at(&self.ledger_path()));
     }
 
     /// `list.length()` — `dup 0; idx [field]; idx [2]; popeqc`. A stored
@@ -799,7 +1331,7 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(list_length(c, guard, self.index))
+        Uint::from_field_unchecked(list_length_at(c, guard, &self.ledger_path()))
     }
 
     /// `list.isEmpty()` — `dup 0; idx [field]; idx [1]; type; push 1; eq;
@@ -814,7 +1346,7 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field_unchecked(list_is_empty(c, guard, self.index))
+        Bool::from_field_unchecked(list_is_empty_at(c, guard, &self.ledger_path()))
     }
 
     /// `list.resetToDefault()` — `push key; pushs [null, null, 0]; ins 1`.
@@ -828,11 +1360,11 @@ impl<T> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &list_reset(self.index));
+        emit(c, guard, &list_reset_at(&self.ledger_path()));
     }
 }
 
-impl<T: LedgerRepr> LedgerList<T> {
+impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
     /// `list.pushFront(value)` — thirteen instructions building a new
     /// `[value, old list, len + 1]` node (notes/ledger-adts.org §1).
     ///
@@ -850,7 +1382,7 @@ impl<T: LedgerRepr> LedgerList<T> {
         value: &T,
     ) {
         let value = value.ledger_value(c);
-        emit(c, guard, &list_push_front(self.index, &value));
+        emit(c, guard, &list_push_front_at(&self.ledger_path(), &value));
     }
 
     /// `list.head()` — the first element, or `None` on the empty list.
@@ -864,7 +1396,7 @@ impl<T: LedgerRepr> LedgerList<T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Maybe<T, Public> {
-        let mut limbs = list_head(c, guard, self.index, T::atoms());
+        let mut limbs = list_head_at(c, guard, &self.ledger_path(), T::atoms());
         let value = T::from_limbs(limbs.split_off(1));
         Maybe {
             is_some: Bool::from_field_unchecked(limbs[0]),
@@ -879,6 +1411,8 @@ impl<T: LedgerRepr> LedgerList<T> {
 /// No [`LedgerRepr`] bound, and that is the point of the arm: what the node
 /// holds is built ON CHAIN by the qualify dance, so nothing is pushed that
 /// the type would have to hand limbs for.
+///
+/// DECLARED SLOTS ONLY — see [`LedgerMap::insert_coin`].
 impl LedgerList<QualifiedShieldedCoinInfo3<Public>> {
     /// `list.pushFrontCoin(coin, recipient)` — twenty-one instructions, and
     /// the one coin arm that is not a one-for-one swap on its plain twin.
@@ -909,7 +1443,7 @@ impl LedgerList<QualifiedShieldedCoinInfo3<Public>> {
         recipient: &CoinRecipient<Public>,
     ) {
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &list_push_front_coin(self.index, &cm, &coin));
+        emit(c, guard, &list_push_front_coin_at(&self.ledger_path(), &cm, &coin));
     }
 }
 
@@ -945,8 +1479,8 @@ impl LedgerList<QualifiedShieldedCoinInfo3<Public>> {
 /// `insert_index_default` share the other. What differs between the members of
 /// a pair is only where the 32-byte leaf came from — hashed from the item
 /// ([`leaf_hash`]), handed over directly, or hashed from `T`'s default.
-pub struct LedgerMerkleTree<const DEPTH: u8, T> {
-    index: u8,
+pub struct LedgerMerkleTree<const DEPTH: u8, T, P = FieldPath> {
+    path: P,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -965,14 +1499,51 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
     pub const fn at(index: u8) -> Self {
         const { check_depth(DEPTH) };
         LedgerMerkleTree {
-            index,
+            path: FieldPath::field(index),
+            _t: PhantomData,
+        }
+    }
+
+    /// The tree held at ledger field PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        const { check_depth(DEPTH) };
+        LedgerMerkleTree {
+            path: FieldPath::of(path),
             _t: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+}
+
+impl<const DEPTH: u8, T, P> sealed::Slot for LedgerMerkleTree<DEPTH, T, P> {}
+
+/// A `MerkleTree` in a `Map`'s value position: `insertDefault` pushes the
+/// blank tree of this depth and index 0 (midnight-ledger.ss:973).
+impl<const DEPTH: u8, T, P> LedgerSlot for LedgerMerkleTree<DEPTH, T, P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_merkle_tree_value(DEPTH))
+    }
+}
+
+impl<const DEPTH: u8, T, P> LedgerAdt for LedgerMerkleTree<DEPTH, T, P> {
+    type Rooted<Q: KeyedPath> = LedgerMerkleTree<DEPTH, T, Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerMerkleTree {
+            path,
+            _t: PhantomData,
+        }
+    }
+}
+
+impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 
     /// `t.isFull()` — `!(next < 2^DEPTH)`.
@@ -986,7 +1557,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field_unchecked(merkle_tree_is_full(c, guard, self.index, DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full_at(c, guard, &self.ledger_path(), DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is the tree's CURRENT root.
@@ -1002,7 +1573,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         root: MerkleTreeDigest<Public>,
     ) -> Bool<Public> {
         let root = root.ledger_value(c);
-        Bool::from_field_unchecked(merkle_tree_check_root(c, guard, self.index, &root))
+        Bool::from_field_unchecked(merkle_tree_check_root_at(c, guard, &self.ledger_path(), &root))
     }
 
     /// `t.insertHash(hash)` — insert a leaf whose digest is already known, at
@@ -1019,7 +1590,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         hash: &B32<Public>,
     ) {
         let leaf = hash.ledger_value(c);
-        emit(c, guard, &merkle_tree_insert(self.index, &leaf));
+        emit(c, guard, &merkle_tree_insert_at(&self.ledger_path(), &leaf));
     }
 
     /// `t.insertHashIndex(hash, at)` — insert a known digest at a specific
@@ -1046,7 +1617,7 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         emit(
             c,
             guard,
-            &merkle_tree_insert_index(self.index, &leaf, &at),
+            &merkle_tree_insert_index_at(&self.ledger_path(), &leaf, &at),
         );
     }
 
@@ -1061,11 +1632,11 @@ impl<const DEPTH: u8, T> LedgerMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &merkle_tree_reset(self.index, DEPTH));
+        emit(c, guard, &merkle_tree_reset_at(&self.ledger_path(), DEPTH));
     }
 }
 
-impl<const DEPTH: u8, T: LedgerRepr> LedgerMerkleTree<DEPTH, T> {
+impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)` — hash the item into a leaf and insert it at the
     /// first free index.
     pub fn insert(&self, c: &mut Circuit3, item: &T) {
@@ -1128,8 +1699,8 @@ impl<const DEPTH: u8, T: LedgerRepr> LedgerMerkleTree<DEPTH, T> {
 /// difference between the two tree types, and the reason a contract picks this
 /// one: a proof against a root that was current when the prover built it stays
 /// valid.
-pub struct LedgerHistoricMerkleTree<const DEPTH: u8, T> {
-    index: u8,
+pub struct LedgerHistoricMerkleTree<const DEPTH: u8, T, P = FieldPath> {
+    path: P,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -1138,14 +1709,53 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
     pub const fn at(index: u8) -> Self {
         const { check_depth(DEPTH) };
         LedgerHistoricMerkleTree {
-            index,
+            path: FieldPath::field(index),
+            _t: PhantomData,
+        }
+    }
+
+    /// The tree held at ledger field PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        const { check_depth(DEPTH) };
+        LedgerHistoricMerkleTree {
+            path: FieldPath::of(path),
             _t: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+}
+
+impl<const DEPTH: u8, T, P> sealed::Slot for LedgerHistoricMerkleTree<DEPTH, T, P> {}
+
+/// A `HistoricMerkleTree` in a `Map`'s value position: `insertDefault` pushes
+/// the blank tree, index 0 and an EMPTY history (midnight-ledger.ss:1129 —
+/// the declared initial value, which is what `resetToDefault` pushes before
+/// it appends the blank root).
+impl<const DEPTH: u8, T, P> LedgerSlot for LedgerHistoricMerkleTree<DEPTH, T, P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_historic_merkle_tree_value(DEPTH))
+    }
+}
+
+impl<const DEPTH: u8, T, P> LedgerAdt for LedgerHistoricMerkleTree<DEPTH, T, P> {
+    type Rooted<Q: KeyedPath> = LedgerHistoricMerkleTree<DEPTH, T, Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerHistoricMerkleTree {
+            path,
+            _t: PhantomData,
+        }
+    }
+}
+
+impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 
     /// `t.isFull()` — the same stream [`LedgerMerkleTree::is_full`] emits;
@@ -1160,7 +1770,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Bool<Public> {
-        Bool::from_field_unchecked(merkle_tree_is_full(c, guard, self.index, DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full_at(c, guard, &self.ledger_path(), DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is one of the tree's PAST roots.
@@ -1176,8 +1786,8 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         root: MerkleTreeDigest<Public>,
     ) -> Bool<Public> {
         let root = root.ledger_value(c);
-        Bool::from_field_unchecked(historic_merkle_tree_check_root(
-            c, guard, self.index, &root,
+        Bool::from_field_unchecked(historic_merkle_tree_check_root_at(
+            c, guard, &self.ledger_path(), &root,
         ))
     }
 
@@ -1195,7 +1805,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         hash: &B32<Public>,
     ) {
         let leaf = hash.ledger_value(c);
-        emit(c, guard, &historic_merkle_tree_insert(self.index, &leaf));
+        emit(c, guard, &historic_merkle_tree_insert_at(&self.ledger_path(), &leaf));
     }
 
     /// `t.insertHashIndex(hash, at)`.
@@ -1222,7 +1832,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         emit(
             c,
             guard,
-            &historic_merkle_tree_insert_index(self.index, &leaf, &at),
+            &historic_merkle_tree_insert_index_at(&self.ledger_path(), &leaf, &at),
         );
     }
 
@@ -1237,7 +1847,7 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &historic_merkle_tree_reset_history(self.index));
+        emit(c, guard, &historic_merkle_tree_reset_history_at(&self.ledger_path()));
     }
 
     /// `t.resetToDefault()` — the blank tree of this depth, index 0, and a
@@ -1253,11 +1863,11 @@ impl<const DEPTH: u8, T> LedgerHistoricMerkleTree<DEPTH, T> {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) {
-        emit(c, guard, &historic_merkle_tree_reset(self.index, DEPTH));
+        emit(c, guard, &historic_merkle_tree_reset_at(&self.ledger_path(), DEPTH));
     }
 }
 
-impl<const DEPTH: u8, T: LedgerRepr> LedgerHistoricMerkleTree<DEPTH, T> {
+impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)`.
     pub fn insert(&self, c: &mut Circuit3, item: &T) {
         self.insert_under(c, STRAIGHT_LINE, item)
@@ -1358,7 +1968,7 @@ const LEAF_HASH_SEP_LEN: usize = 6;
 
 /// `export ledger x: T` — a Cell.
 pub struct LedgerCell<T> {
-    index: u8,
+    path: FieldPath,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -1366,14 +1976,29 @@ impl<T> LedgerCell<T> {
     /// The cell held in ledger field `index`.
     pub const fn at(index: u8) -> Self {
         LedgerCell {
-            index,
+            path: FieldPath::field(index),
+            _t: PhantomData,
+        }
+    }
+
+    /// The cell held at ledger field PATH `path` (see [`FieldPath`]) — a
+    /// sixteen-field block makes EVERY cell write a nested one, both
+    /// suppressions live.
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerCell {
+            path: FieldPath::of(path),
             _t: PhantomData,
         }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 }
 
@@ -1390,7 +2015,7 @@ impl<T: LedgerRepr> LedgerCell<T> {
         guard: impl Into<Operand<FieldT, G>>,
     ) -> T {
         let (value, embed) = T::witness_read::<Public>(c, None);
-        cell_read_embedded(c, guard, self.index, &embed);
+        cell_read_embedded_at(c, guard, &self.ledger_path(), &embed);
         value
     }
 
@@ -1401,7 +2026,7 @@ impl<T: LedgerRepr> LedgerCell<T> {
         guard: Wire3<FieldT, G>,
     ) -> Guarded<T, G> {
         let (value, embed) = T::witness_read(c, Some(guard));
-        cell_read_embedded(c, guard, self.index, &embed);
+        cell_read_embedded_at(c, guard, &self.ledger_path(), &embed);
         Guarded::new(value, guard)
     }
 
@@ -1418,24 +2043,58 @@ impl<T: LedgerRepr> LedgerCell<T> {
         value: &T,
     ) {
         let value = value.ledger_value(c);
-        emit(c, guard, &cell_write(self.index, &value));
+        emit(c, guard, &cell_write_at(&self.ledger_path(), &value));
     }
 }
 
 /// `export ledger n: Counter`.
-pub struct LedgerCounter {
-    index: u8,
+pub struct LedgerCounter<P = FieldPath> {
+    path: P,
 }
 
 impl LedgerCounter {
     /// The counter held in ledger field `index`.
     pub const fn at(index: u8) -> Self {
-        LedgerCounter { index }
+        LedgerCounter {
+            path: FieldPath::field(index),
+        }
+    }
+
+    /// The counter held at ledger field PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerCounter {
+            path: FieldPath::of(path),
+        }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+}
+
+impl<P> sealed::Slot for LedgerCounter<P> {}
+
+/// A `Counter` in a `Map`'s value position: `insertDefault` pushes
+/// `cell 0u64` (midnight-ledger.ss:589).
+impl<P> LedgerSlot for LedgerCounter<P> {
+    fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
+        map_insert_adt_default_at(path, key, empty_counter())
+    }
+}
+
+impl<P> LedgerAdt for LedgerCounter<P> {
+    type Rooted<Q: KeyedPath> = LedgerCounter<Q>;
+
+    fn rooted_at<Q: KeyedPath>(path: Q) -> Self::Rooted<Q> {
+        LedgerCounter { path }
+    }
+}
+
+impl<P: LedgerPath> LedgerCounter<P> {
+    /// compactc's `f` for this slot.
+    fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 
     /// `n` (a Counter read) — `dup 0; idx [field]; popeqc`.
@@ -1449,7 +2108,7 @@ impl LedgerCounter {
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
     ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(counter_read(c, guard, self.index))
+        Uint::from_field_unchecked(counter_read_at(c, guard, &self.ledger_path()))
     }
 
     /// [`LedgerCounter::read`] inside a conditional branch.
@@ -1459,9 +2118,28 @@ impl LedgerCounter {
         guard: Wire3<FieldT, G>,
     ) -> Guarded<Uint<64, Public>, G> {
         Guarded::new(
-            Uint::from_field_unchecked(counter_read_guarded(c, guard, self.index)),
+            Uint::from_field_unchecked(counter_read_guarded_at(c, guard, &self.ledger_path())),
             guard,
         )
+    }
+
+    /// `n.resetToDefault()` — `push key; pushs (cell 0u64); ins 1`, the
+    /// fourth of the nine whole-field-replace ops.
+    ///
+    /// Landed at M22 stage B2: the builder is B1's `counter_reset`, which a
+    /// nested `Map<K, Counter>` needed and which the typed layer had no
+    /// method for at any depth.
+    pub fn reset_to_default(&self, c: &mut Circuit3) {
+        self.reset_to_default_under(c, STRAIGHT_LINE)
+    }
+
+    /// [`LedgerCounter::reset_to_default`] under a branch condition.
+    pub fn reset_to_default_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+    ) {
+        emit(c, guard, &counter_reset_at(&self.ledger_path()));
     }
 
     /// `n.increment(amount)` — `idxp [field]; addi amount; insc 1`.
@@ -1476,7 +2154,7 @@ impl LedgerCounter {
         guard: impl Into<Operand<FieldT, G>>,
         amount: u32,
     ) {
-        emit(c, guard, &counter_increment(self.index, amount));
+        emit(c, guard, &counter_increment_at(&self.ledger_path(), amount));
     }
 
     /// `n.lessThan(threshold)` — `dup 0; idx [field]; push threshold; lt;
@@ -1496,7 +2174,7 @@ impl LedgerCounter {
             8,
             vec![ImpactElem::Imm(minocrab::Fr::from(threshold))],
         );
-        Bool::from_field_unchecked(counter_less_than(c, guard, self.index, &threshold))
+        Bool::from_field_unchecked(counter_less_than_at(c, guard, &self.ledger_path(), &threshold))
     }
 }
 
@@ -1506,17 +2184,32 @@ impl LedgerCounter {
 /// `export ledger` block. It carries its index and nothing else; the
 /// operations stay explicit `minocrab_ledger` calls at the call site.
 pub struct LedgerField {
-    index: u8,
+    path: FieldPath,
 }
 
 impl LedgerField {
     /// The field at ledger index `index`.
     pub const fn at(index: u8) -> Self {
-        LedgerField { index }
+        LedgerField {
+            path: FieldPath::field(index),
+        }
+    }
+
+    /// The field at ledger PATH `path` (see [`FieldPath`]).
+    pub const fn at_path(path: &[u8]) -> Self {
+        LedgerField {
+            path: FieldPath::of(path),
+        }
     }
 
     /// The ledger field index.
     pub const fn index(&self) -> u8 {
-        self.index
+        self.path.index()
+    }
+
+    /// compactc's `f` for this slot — for the call sites that still build
+    /// their own ops below this layer.
+    pub fn ledger_path(&self) -> Vec<LedgerKey> {
+        self.path.to_path()
     }
 }
