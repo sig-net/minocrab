@@ -2080,3 +2080,78 @@ new fixture circuits are in both frozen snapshots (additions only, no
 row moved); the typed twins and the sixteen-field probe are `#[contract]`
 blocks in `tests/`, deliberately outside the snapshots because they are
 duplicates by construction. Zero movement: 198/198 byte-identical.
+
+* M23 — Review-readiness: instruments and ergonomics before the super review
+(dmd, 2026-08-17.) The sequence to the deep review, approved in-session:
+R1 → R2 → R3 → R4, then the M11 hardening stage and the BENCHMARK.md
+refresh, then the super review. e2e-on-node (the expert-audience roadmap)
+deliberately opens the NEXT cycle — new surface should not land days
+before a deep review. Each stage: one agent against this spec, supervisor
+verifies (independent gate re-run + diff read), zero movement unless the
+stage declares movement, notes as-built.
+- [ ] R1 — small batch, all zero-movement:
+      (a) `#[diagnostic::on_unimplemented]` across the rejection traits —
+      the missing-impl rejections gain domain-specific messages (the
+      Vis3/disclose gate, LedgerRepr's Public-only bound, the
+      QualifiedShieldedCoinInfo3 coin-arm bound, CircuitArg's leaves,
+      Meet). B2's KeyedPath bound already carries one; that is the
+      pattern.
+      (b) `#[circuit(max_k = N)]` cost budgets: the attribute generates
+      one more test asserting the circuit's k against the declared budget
+      via minocrab_sim's cost model; DOCUMENT it (README feature list +
+      the attribute's rustdoc). Adopt on the nine vault circuits of the
+      borsh lineage with today's k values as the budgets.
+      (c) Self-explaining snapshot failures: when row_snapshot fires,
+      print the instruction-level diff for the moved circuit by running
+      the dump comparison inline (the machinery exists in zkir_dump.rs +
+      the cmp idiom; wire it into the failure path).
+      (d) `#[track_caller]` on the recorded build-time panics (the
+      value-dependent checks listed in notes/contract-api.org §Panics)
+      so they blame the user's line.
+      (e) The fold's `returned_identifiers` made terminator-exhaustive
+      the way `operands_mut` is (notes/formal-verification-options.org
+      §10) — a new upstream terminator must break the build, since the
+      unsound direction is the fold doing MORE.
+- [ ] R2 — the newtype sweep (dmd: "use newtypes wherever you can to
+      make the API safer"). SURVEY FIRST, implement second, own commit
+      each: every same-shaped-different-meaning value family. Obvious
+      four: RequestId, the commitment families (userCommitment,
+      refund/swap-refund commitments), nonces (mintNonce, changeNonce,
+      coin nonces), domain separators. repr(transparent) phantom-tagged
+      or distinct B32 newtypes; zero instructions; dump-gated. The
+      survey names each family, its sites, and the cross-assignment
+      hazard it closes; families where the ripple exceeds the safety win
+      are refused in writing.
+- [ ] R3 — THE TAINT LINT, a new instrument (dmd approved 2026-08-17):
+      ~150-line pass over Vec<Instruction> per circuit — mark every
+      range-constrained wire (constrain_bits/boolean directly;
+      intrinsically-bounded instruction outputs: div_mod, byte
+      decompositions, encode limbs), then every hash-preimage operand
+      (keccak256/persistent_hash/transient_hash) whose atom is narrower
+      than the field must be constrained-or-constant, failing with
+      circuit+instruction+wire named. Run over support::circuits() so
+      all 200 present and every future circuit is audited. This
+      mechanizes api-safety-survey §B3 — the class no test on honest
+      preimages can see. IF IT FIRES ON AN EXISTING CIRCUIT: that goes
+      to dmd before any allowlist entry is written; extending the taint
+      rules (provably-bounded sources) is preferred over allowlisting.
+- [ ] R4 — KANI on the passes (dmd approved, conditional on not
+      bloating test times — satisfied by construction: #[cfg(kani)]
+      harnesses that plain cargo test never compiles, run as an opt-in
+      instrument `cargo kani -p minocrab-ir`, a separate job when CI
+      exists). Targets: fold_immediate_copies (folded streams
+      semantics-preserving: no dropped non-copy instruction, every
+      substituted operand equals the copy's immediate, output/disclosure
+      names preserved), dedup_range_constraints (only implied
+      constraints dropped; tightest bound kept), and R3's taint pass
+      itself. Bounds stated per property; MEASURED RUNTIMES in the
+      report; a property that cannot close at a useful bound is scoped
+      down honestly, never ground.
+- [ ] NOTED, NOT YET (dmd): cargo-semver-checks on the interface crates
+      in CI — waits for CI (M20 item 2).
+Exit criteria: R1-R4 landed with their gates; the taint lint green over
+all 200 circuits or its findings resolved through dmd; Kani properties
+proved at stated bounds with runtimes recorded; then the M11 hardening
+stage and BENCHMARK refresh clear the last known-open items and the
+super review runs against a tree with no known-open defects and no
+stale published claims.
