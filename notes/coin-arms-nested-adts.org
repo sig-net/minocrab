@@ -541,6 +541,103 @@ assembles the instructions each needs — checked in =assemble1=, not assumed
 — so neither is blocked on compactc the way M17's =ckpt= was. They are
 unbuilt, not unbuildable, and the README's list is correct to carry them.
 
+* AS BUILT — STAGE A, the three coin arms (M22, 2026-08-17)
+
+Built exactly as §4 said to build it: all three at once, one stage, no new
+opcodes. The estimate in §1.5 held in every line but one (below).
+
+** The dance became a function, and the estimate was right about that
+
+=qualify_coin(dup_n, cm, coin) -> [ImpactOp; 6]= in
+[[file:../crates/minocrab-ledger/src/lib.rs][minocrab-ledger]], with FOUR callers: =cell_write_coin= (which keeps its
+byte-identical stream and its =notify.zkir= differential), =set_insert_coin=,
+=map_insert_coin=, =list_push_front_coin=. The four =dup= reaches are named
+constants — =CELL_COIN_DUP= 3, =SET_COIN_DUP= 4, =MAP_COIN_DUP= 5,
+=LIST_COIN_DUP= 7 — because they are the ONE thing that differs and the one
+thing §1.5 called the residual risk. Each of the three new builders is its
+plain twin's =vec![]= with the six spliced in; nothing else moved.
+
+The residual risk did not materialise. The first compile of the fixture and
+the first run of the differential agreed instruction for instruction — the
+scheme decode was right the first time, which is what §3(b)'s rule (diff the
+coin arm against the operation it is named after) buys.
+
+** ONE CORRECTION to §1.1, and it is this note's own arithmetic
+
+§1.1 says =List.pushFrontCoin= is "four instructions longer than
+=pushFront='s". It is EIGHT: =push 0u8= (the head-slot key) + the six-
+instruction dance + the =insc 1= that puts the coin at =node[0]=. Thirteen
+instructions become twenty-one. The =[null,null,null]= reading and the
+=dup 7= were both correct; only the count was wrong.
+
+Verified against the compiled artifact — =listPushFrontCoin.zkir= is
+twenty-one =impact= instructions, and the crate's unit test asserts
+=ops.len() == list_push_front(..).len() + 8= rather than a literal, so the
+relationship is what is pinned rather than the number.
+
+** The typed layer: three methods, gated by the ELEMENT TYPE
+
+=LedgerSet::insert_coin=, =LedgerMap::insert_coin=,
+=LedgerList::push_front_coin=, each with its =_under= twin, on impl blocks
+bounded at =QualifiedShieldedCoinInfo3<Public>= — compactc's
+=(when (= value_type QualifiedShieldedCoinInfo))= expressed as a MISSING
+IMPL, which is the project's preferred rejection spelling. A
+=LedgerSet<B32>= has no =insert_coin= to call and the error says so at the
+call site.
+
+All three take =(coin: &ShieldedCoinInfo3<Public>, recipient:
+&CoinRecipient<Public>)= — Compact's own signature — and share a private
+=coin_operands= that computes =coinCommitment(coin, recipient)= and builds
+the two =LedgerValue=s. That helper is where the ONE-OP INVARIANT is argued:
+=coin_commitment= is a =persistentHash= plus the recipient =cond_select=
+pair and emits no Impact instruction, so each method still issues exactly
+the one operation it names.
+
+NOT DONE, and deliberately: =LedgerCell::write_coin= was NOT promoted out of
+=minocrab-contracts='s =write_coin_to_self=. §1.2 suggested it as a tidiness
+move; it is not part of the stage's deliverable, it would move a caller that
+carries a differential, and it can be done any time. The family is three
+methods on three handles plus one loose helper, still.
+
+** The fixture, and what it cost
+
+=tests/fixtures/coins/coins.compact= — three =export circuit=s on a
+=Set= / =Map<Bytes<32>, ..>= / =List= of =QualifiedShieldedCoinInfo=,
+compiled with the pinned compactc under =--feature-zkir-v3=. §1.4's ONE
+THING TO CHECK FIRST came back clean on the first invocation: the v3
+backend assembles all three, no =ckpt=-shaped hole.
+
+=tests/coins_differential.rs= is the M17 harness with the shared
+=canonical= / folded idiom: =identical_instruction_streams= (the headline),
+=every_exported_circuit_is_in_the_differential= (against
+=Coins::CIRCUITS=, by function pointer), =every_fixture_circuit_is_covered=,
+and an ABI claim against =contract-info.json=.
+
+=Coins= is a =#[contract]= block, so =support::circuits()= extends from
+=Coins::CIRCUITS= rather than listing three names — the second contract to
+do so after =KernelTokens=, and the shape review-queue's "the circuit list
+is hand-written" entry wants.
+
+** The numbers
+
+| | estimated (§1.5) | as built |
+|-+------------------+----------|
+| new Impact opcodes | 0 | 0 |
+| new emission helpers | 1 | 1 (=qualify_coin=) |
+| new op sequences in =minocrab-ledger= | 3 | 3 |
+| new =minocrab-std= methods | 3 (+1) | 6 (three plus their =_under= twins), no promotion |
+| fixture circuits | 3 | 3 |
+
+Rows, from the frozen snapshot: =set_insert_coin= k13/6106,
+=map_insert_coin= k13/6198, =list_push_front_coin= k13/6136 — all three
+dominated by the =persistentHash= in =coinCommitment=, not by the ledger op.
+
+Zero movement: 167 pre-existing circuits byte-identical in the
+=MINOCRAB_ZKIR_DUMP= comparison, the three new files the only additions.
+
+STAGE B (nested ADTs) is untouched; §2 and the design of record below are
+still the plan for it, and the README keeps that bullet.
+
 * Design of record — the nested-ADT API (dmd reviewed 2026-08-17)
 
 Approved in-session; M22 builds THIS, iteration later is expected.

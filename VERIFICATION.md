@@ -65,16 +65,16 @@ make specific error classes unwritable rather than merely untested.
 - **Criterion** — same typed I/O schema, identical `pis`/`pi_skips` on a shared
   preimage, agreement on guard rejections and on tampered inputs. Instruction
   streams are explicitly free ([notes/ledger-abi.org §6](notes/ledger-abi.org)).
-- **Instrument** — 18 test targets named `*differential*` across
+- **Instrument** — 19 test targets named `*differential*` across
   `minocrab-contracts`, `minocrab-ledger` and `minocrab-std`.
-- **Stronger, for four fixtures** — `adts` (31 circuits), `bounded`, `opaque`
-  (14 circuits) and `kernel` (24 circuits) compare **instruction for
-  instruction**: every opcode, immediate, `ins` depth and branch skip, up to
-  identifier renaming
+- **Stronger, for five fixtures** — `adts` (31 circuits), `bounded`, `opaque`
+  (14 circuits), `kernel` (24 circuits) and `coins` (3 circuits) compare
+  **instruction for instruction**: every opcode, immediate, `ins` depth and
+  branch skip, up to identifier renaming
   ([adts_differential.rs](crates/minocrab-contracts/tests/adts_differential.rs),
   [kernel_tokens_differential.rs](crates/minocrab-contracts/tests/kernel_tokens_differential.rs)).
 - **The normalisation, stated** — since our `fold_immediate_copies` pass runs on
-  every circuit, those four differentials run the **same pass over compactc's
+  every circuit, those five differentials run the **same pass over compactc's
   artifact** before comparing. Their criterion is therefore "identical
   instruction for instruction, **modulo the naming of constants**". compactc's
   choice to name a constant rather than inline it is frontend-driven and carries

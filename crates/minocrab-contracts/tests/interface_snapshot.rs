@@ -1996,6 +1996,53 @@ out result sent color (lo): Scalar<BLS12-381>
 out result sent value: Scalar<BLS12-381>
 ",
     ),
+    (
+        "coins::set_insert_coin",
+        "\
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "coins::map_insert_coin",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "coins::list_push_front_coin",
+        "\
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+in  r_is_left: Scalar<BLS12-381>
+in  r_left_hi: Scalar<BLS12-381>
+in  r_left_lo: Scalar<BLS12-381>
+in  r_right_hi: Scalar<BLS12-381>
+in  r_right_lo: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

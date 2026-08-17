@@ -1,0 +1,43 @@
+pragma language_version >= 0.25;
+
+// M22 stage A fixture — the three COIN ARMS of the collection ADTs, one
+// circuit each (notes/coin-arms-nested-adts.org §1).
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/coins/coins.compact \
+//       crates/minocrab-contracts/tests/fixtures/coins/out
+//
+// The three exist only under `(when (= value_type QualifiedShieldedCoinInfo))`
+// in midnight-ledger.ss, which is why each is declared on a collection of
+// that one element type. `Cell.writeCoin`, the fourth member of the family,
+// is NOT here: it is M5's, ported, and differential-checked against
+// xcall-with-payment's `notify.zkir`.
+
+import CompactStandardLibrary;
+
+export ledger s: Set<QualifiedShieldedCoinInfo>;              // 0
+export ledger m: Map<Bytes<32>, QualifiedShieldedCoinInfo>;   // 1
+export ledger l: List<QualifiedShieldedCoinInfo>;             // 2
+
+export circuit setInsertCoin(
+  coin: ShieldedCoinInfo,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): [] {
+  s.insertCoin(disclose(coin), disclose(recipient));
+}
+
+export circuit mapInsertCoin(
+  k: Bytes<32>,
+  coin: ShieldedCoinInfo,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): [] {
+  m.insertCoin(disclose(k), disclose(coin), disclose(recipient));
+}
+
+export circuit listPushFrontCoin(
+  coin: ShieldedCoinInfo,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): [] {
+  l.pushFrontCoin(disclose(coin), disclose(recipient));
+}

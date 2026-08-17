@@ -355,7 +355,6 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- The three `insertCoin` / `pushFrontCoin` arms — `Set`, `Map` and `List` grow an extra method when the element type is `QualifiedShieldedCoinInfo`. Everything else in `Set` / `List` / `MerkleTree` / `HistoricMerkleTree` is ported ([ledger](crates/minocrab-ledger/src/lib.rs)) with a 31-circuit differential. Scoped at one stage of work — the shared lowering already exists as `cell_write_coin` — and built on demand; the one real-world caller found in the corpus is OpenZeppelin's `ShieldedTreasury` ([the investigation](notes/coin-arms-nested-adts.org)).
 - Nested ADTs — narrower than it sounds: Compact's own kind system nests through `Map` alone (`Map<K, Map<..>>` / `Map<K, List<V>>`; `Set` and `List` take only plain types). Every ledger op here assumes a top-level field; the vm-code half of the general path is small, the Rust-API half is a real milestone, and the corpus demand is three OpenZeppelin declarations ([the investigation](notes/coin-arms-nested-adts.org)).
 - A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing — laid out end to end in [VERIFICATION.md](VERIFICATION.md), honest limits included. Not formal-verification parity.
 

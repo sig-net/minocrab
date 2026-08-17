@@ -9,6 +9,7 @@
 pub mod adts;
 pub mod attest;
 pub mod bounded;
+pub mod coins;
 pub mod common;
 pub mod erc20_vault;
 pub mod erc20_vault_borsh;

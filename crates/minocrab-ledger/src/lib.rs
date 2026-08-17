@@ -337,11 +337,51 @@ pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
 /// reaches the context past the key push, the result slot, and effects.
 /// `cm` is the runtime coin commitment (`rt-coin-commit`, a `bytes<32>`);
 /// `coin` the 3-atom `[bytes<32>, bytes<32>, bytes<16>]` ShieldedCoinInfo.
+///
+/// The middle six are [`qualify_coin`], shared with the three collection
+/// arms; this is `cell_write` with its value push replaced by them.
 pub fn cell_write_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
     let key = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(u64::from(index)))]);
-    vec![
-        push_cell(false, &key),
-        dup(3),
+    let mut ops = vec![push_cell(false, &key)];
+    ops.extend(qualify_coin(CELL_COIN_DUP, cm, coin));
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops
+}
+
+/// THE QUALIFY DANCE — the six instructions all four coin arms share
+/// (`Cell.writeCoin`, `Set.insertCoin`, `Map.insertCoin`,
+/// `List.pushFrontCoin`; midnight-ledger.ss:567-583, :670-696, :769-795,
+/// :918-968).
+///
+/// It turns a `ShieldedCoinInfo` into the `QualifiedShieldedCoinInfo` the
+/// four store, by resolving the coin's Merkle-tree index on chain and
+/// concatenating it on:
+///
+/// ```text
+/// dup dup_n                   // reach the CONTEXT down the stack
+/// push (cell cm)              // the runtime coin commitment
+/// idxc [(1), stack]           // context[1][cm] → the coin's mt_index
+/// push (cell coin)            // the 3-atom ShieldedCoinInfo
+/// swap 0
+/// concatc 91                  // [nonce, color, value] ++ [mt_index]
+/// ```
+///
+/// `91` is `2 + rt-max-sizeof(QualifiedShieldedCoinInfo)` and is a literal in
+/// compactc's source. `cm` is the runtime coin commitment (`rt-coin-commit`,
+/// a `bytes<32>`); `coin` the 3-atom `[bytes<32>, bytes<32>, bytes<16>]`
+/// `ShieldedCoinInfo`.
+///
+/// THE ONLY THING THAT DIFFERS between the four arms is `dup_n` and what
+/// surrounds the six — each arm is its plain twin with one push replaced by
+/// this. The reach is past the pushes the arm has already made, the result
+/// slot, the `2n` path items the leading `idx` left, and the effects, so it
+/// is a per-arm constant at depth 1 (the four `*_COIN_DUP` below).
+fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6] {
+    [
+        dup(dup_n),
         push_cell(false, cm),
         ImpactOp::constant(&Op::Idx {
             cached: true,
@@ -351,12 +391,18 @@ pub fn cell_write_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<I
         push_cell(false, coin),
         ImpactOp::constant(&Op::Swap { n: 0 }),
         ImpactOp::constant(&Op::Concat { cached: true, n: 91 }),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
     ]
 }
+
+/// The four coin arms' [`qualify_coin`] reaches, at the ONE field-path depth
+/// Compact fields have (`len(f) = 1`). compactc's formulas, with `f`
+/// substituted: `3 + 2·(len(f) − 1)` for `Cell`, `2 + 2·len(f)` for `Set`,
+/// `3 + 2·len(f)` for `Map`, `5 + 2·len(f)` for `List` — each counting the
+/// arm's own pushes before the dance.
+const CELL_COIN_DUP: u8 = 3;
+const SET_COIN_DUP: u8 = 4;
+const MAP_COIN_DUP: u8 = 5;
+const LIST_COIN_DUP: u8 = 7;
 
 /// `map.insert(key, value)` on ledger field `index`:
 /// `idxp [field]; push key; pushs value; ins 1; insc 1`.
@@ -371,6 +417,34 @@ pub fn map_insert(index: u8, key: &LedgerValue, value: &LedgerValue) -> Vec<Impa
         }),
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
     ]
+}
+
+/// `Map<K, QualifiedShieldedCoinInfo>.insertCoin(key, coin, recipient)` on
+/// ledger field `index` (midnight-ledger.ss:769-795) — [`map_insert`] with
+/// its `pushs value` replaced by [`qualify_coin`]:
+///
+/// ```text
+/// idxp [field]; push key
+/// dup 5; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91
+/// ins 1; insc 1
+/// ```
+///
+/// The `dup 5` reaches the context past the key push, the map, the two path
+/// items the `idxp` left, and the effects.
+pub fn map_insert_coin(
+    index: u8,
+    key: &LedgerValue,
+    cm: &LedgerValue,
+    coin: &LedgerValue,
+) -> Vec<ImpactOp> {
+    let mut ops = vec![idxp_field(index), push_cell(false, key)];
+    ops.extend(qualify_coin(MAP_COIN_DUP, cm, coin));
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 1 }));
+    ops
 }
 
 /// `map.remove(key)` on ledger field `index` (midnight-ledger.ss Map
@@ -401,6 +475,34 @@ pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
         }),
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
     ]
+}
+
+/// `Set<QualifiedShieldedCoinInfo>.insertCoin(coin, recipient)` on ledger
+/// field `index` (midnight-ledger.ss:670-696) — [`set_insert`] with its
+/// `push elem` replaced by [`qualify_coin`]:
+///
+/// ```text
+/// idxp [field]
+/// dup 4; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91
+/// pushs null; ins 1; insc 1
+/// ```
+///
+/// The qualified coin is the KEY the `Null` is stored under, so the dance
+/// runs BEFORE the `pushs null` — the `dup 4` reaches the context past the
+/// set, the two path items the `idxp` left, and the effects.
+pub fn set_insert_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = vec![idxp_field(index)];
+    ops.extend(qualify_coin(SET_COIN_DUP, cm, coin));
+    ops.push(ImpactOp::constant(&Op::Push {
+        storage: true,
+        value: midnight_onchain_state::state::StateValue::Null,
+    }));
+    ops.push(ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    }));
+    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 1 }));
+    ops
 }
 
 /// `set.remove(elem)` on ledger field `index` — the SAME instruction stream
@@ -512,6 +614,49 @@ pub fn list_push_front(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
         swap(0),
         ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
     ]
+}
+
+/// `List<QualifiedShieldedCoinInfo>.pushFrontCoin(coin, recipient)` on field
+/// `index` (midnight-ledger.ss:918-968) — the one arm that is NOT a
+/// one-for-one swap, because [`list_push_front`] builds its new node with the
+/// value already in it and this cannot: the qualified coin does not exist
+/// until the dance has run against a node that is already on the stack.
+///
+/// So the node is pushed BLANK, the position key `0u8` goes on, the dance
+/// runs, and an `insc 1` puts the coin at `node[0]`. Eight instructions
+/// longer than `pushFront`'s thirteen; the tail is identical.
+///
+/// ```text
+/// idxp [field]; dup 0; idx [2]; addi 1        // len + 1
+/// pushs [null, null, null]                    // the BLANK new node
+/// push 0u8                                    // node[0], the head slot
+/// dup 7; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91
+/// insc 1                                      // node[0] = the qualified coin
+/// swap 0; push 2u8; swap 0; insc 1            // node[2] = len + 1
+/// swap 0; push 1u8; swap 0; insc 2            // node[1] = the old list
+/// ```
+pub fn list_push_front_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = vec![
+        idxp_field(index),
+        dup(0),
+        idx_one(false, false, LIST_LENGTH),
+        ImpactOp::constant(&Op::Addi { immediate: 1 }),
+        push_array(true, &[LedgerElem::Null, LedgerElem::Null, LedgerElem::Null]),
+        push_cell(false, &field_index_value(LIST_HEAD)),
+    ];
+    ops.extend(qualify_coin(LIST_COIN_DUP, cm, coin));
+    ops.extend([
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        swap(0),
+        push_cell(false, &field_index_value(LIST_LENGTH)),
+        swap(0),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        swap(0),
+        push_cell(false, &field_index_value(LIST_TAIL)),
+        swap(0),
+        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+    ]);
+    ops
 }
 
 /// `list.popFront()` on field `index`: `idxp [field]; idx [1]; insc 1` — the
@@ -2233,6 +2378,168 @@ mod tests {
         assert_eq!(imms(&ops[5]), repr(&Op::Swap { n: 0 }));
         assert_eq!(imms(&ops[6]), vec![Fr::from(0x17u64), Fr::from(0x5bu64)]);
         assert_eq!(imms(&ops[7]), vec![Fr::from(0x91u64)]);
+    }
+
+    /// A `bytes<32>` commitment and a 3-atom `ShieldedCoinInfo`, the two
+    /// operands every coin arm takes.
+    fn coin_operands() -> (LedgerValue, LedgerValue) {
+        (
+            LedgerValue::bytes(
+                32,
+                vec![ImpactElem::Imm(Fr::from(3u64)), ImpactElem::Imm(Fr::from(4u64))],
+            ),
+            LedgerValue::new(
+                vec![
+                    AlignmentAtom::Bytes { length: 32 },
+                    AlignmentAtom::Bytes { length: 32 },
+                    AlignmentAtom::Bytes { length: 16 },
+                ],
+                (5u64..10).map(|n| ImpactElem::Imm(Fr::from(n))).collect(),
+            ),
+        )
+    }
+
+    /// The six shared instructions, in the encodings all four arms embed:
+    /// dup `n` = 0x30 | n, push cm, idxc [(1), stack] = [0x61, 1, 1, 1, −1],
+    /// push coin (three atoms: 0x20, 0x20, 0x10), swap 0, concatc 91 =
+    /// [0x17, 0x5b].
+    fn assert_qualify_dance(ops: &[ImpactOp], dup_n: u64) {
+        assert_eq!(imms(&ops[0]), repr(&Op::Dup { n: dup_n as u8 }));
+        assert_eq!(imms(&ops[0]), vec![Fr::from(0x30u64 + dup_n)]);
+        assert_eq!(
+            imms(&ops[1])[..4],
+            [Fr::from(0x10u64), 1u64.into(), 1u64.into(), 0x20u64.into()]
+        );
+        assert_eq!(
+            imms(&ops[2]),
+            repr(&Op::Idx {
+                cached: true,
+                push_path: false,
+                path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+            })
+        );
+        assert_eq!(
+            imms(&ops[2]),
+            vec![
+                Fr::from(0x61u64),
+                1u64.into(),
+                1u64.into(),
+                1u64.into(),
+                Fr::from(0u64) - Fr::from(1u64),
+            ]
+        );
+        assert_eq!(
+            imms(&ops[3])[..6],
+            [
+                Fr::from(0x10u64),
+                1u64.into(),
+                3u64.into(),
+                0x20u64.into(),
+                0x20u64.into(),
+                0x10u64.into(),
+            ]
+        );
+        assert_eq!(imms(&ops[4]), repr(&Op::Swap { n: 0 }));
+        assert_eq!(imms(&ops[5]), vec![Fr::from(0x17u64), Fr::from(0x5bu64)]);
+    }
+
+    /// `set_insert_coin` against real Op encodings and the fixture's
+    /// `setInsertCoin.zkir`: `idxp [field]` then the dance at `dup 4`
+    /// (0x34), then `pushs null` (0x11 0x00), `ins 1` (0x91), `insc 1`
+    /// (0xa1) — `set_insert`'s tail with the element push replaced.
+    #[test]
+    fn set_insert_coin_matches_field_repr() {
+        use midnight_onchain_state::state::StateValue;
+
+        let (cm, coin) = coin_operands();
+        let ops = set_insert_coin(0, &cm, &coin);
+        assert_eq!(ops.len(), 10);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![Fr::from(0x70u64), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+        assert_qualify_dance(&ops[1..7], 4);
+        assert_eq!(
+            imms(&ops[7]),
+            repr(&Op::Push {
+                storage: true,
+                value: StateValue::Null,
+            })
+        );
+        assert_eq!(imms(&ops[7]), vec![Fr::from(0x11u64), Fr::from(0u64)]);
+        assert_eq!(imms(&ops[8]), vec![Fr::from(0x91u64)]);
+        assert_eq!(imms(&ops[9]), vec![Fr::from(0xa1u64)]);
+    }
+
+    /// `map_insert_coin` against real Op encodings and the fixture's
+    /// `mapInsertCoin.zkir`: the KEY push comes before the dance, which is
+    /// why the reach is `dup 5` (0x35) and not the `Set`'s 4.
+    #[test]
+    fn map_insert_coin_matches_field_repr() {
+        let (cm, coin) = coin_operands();
+        let key = LedgerValue::bytes(
+            32,
+            vec![ImpactElem::Imm(Fr::from(1u64)), ImpactElem::Imm(Fr::from(2u64))],
+        );
+        let ops = map_insert_coin(1, &key, &cm, &coin);
+        assert_eq!(ops.len(), 10);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![Fr::from(0x70u64), 1u64.into(), 1u64.into(), 1u64.into()]
+        );
+        assert_eq!(
+            imms(&ops[1]),
+            vec![
+                Fr::from(0x10u64),
+                1u64.into(),
+                1u64.into(),
+                0x20u64.into(),
+                1u64.into(),
+                2u64.into(),
+            ]
+        );
+        assert_qualify_dance(&ops[2..8], 5);
+        assert_eq!(imms(&ops[8]), vec![Fr::from(0x91u64)]);
+        assert_eq!(imms(&ops[9]), vec![Fr::from(0xa1u64)]);
+    }
+
+    /// `list_push_front_coin` against real Op encodings and the fixture's
+    /// `listPushFrontCoin.zkir`: eight instructions longer than
+    /// [`list_push_front`], and the pushed node is BLANK — `[0x11, 0x33,
+    /// 0x00, 0x00, 0x00]`, an `Array[3]` of three `Null`s — with the coin
+    /// put at `node[0]` by the `insc 1` that closes the dance.
+    #[test]
+    fn list_push_front_coin_matches_field_repr() {
+        let (cm, coin) = coin_operands();
+        let ops = list_push_front_coin(2, &cm, &coin);
+        let plain = list_push_front(2, &coin);
+        assert_eq!(ops.len(), plain.len() + 8);
+
+        // The head — identical to `pushFront`'s, up to the node push.
+        for (i, (mine, twin)) in ops.iter().zip(&plain).take(4).enumerate() {
+            assert_eq!(imms(mine), imms(twin), "instruction {i}");
+        }
+        assert_eq!(
+            imms(&ops[4]),
+            vec![
+                Fr::from(0x11u64),
+                Fr::from(0x33u64),
+                Fr::from(0u64),
+                Fr::from(0u64),
+                Fr::from(0u64),
+            ]
+        );
+        // push 0u8 — the head slot the qualified coin is inserted at.
+        assert_eq!(
+            imms(&ops[5]),
+            vec![Fr::from(0x10u64), 1u64.into(), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+        assert_qualify_dance(&ops[6..12], 7);
+        assert_eq!(imms(&ops[12]), vec![Fr::from(0xa1u64)]);
+        // …and the tail is `pushFront`'s, instruction for instruction.
+        for (i, (mine, twin)) in ops[13..].iter().zip(&plain[5..]).enumerate() {
+            assert_eq!(imms(mine), imms(twin), "tail instruction {i}");
+        }
     }
 
     /// `set_insert` against real Op encodings (depositViaVault.zkir:

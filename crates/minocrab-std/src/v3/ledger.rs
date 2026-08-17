@@ -37,16 +37,18 @@ use minocrab_ledger::{
     counter_read_guarded, emit, historic_merkle_tree_check_root, historic_merkle_tree_insert,
     historic_merkle_tree_insert_index, historic_merkle_tree_reset,
     historic_merkle_tree_reset_history, list_head, list_is_empty, list_length, list_pop_front,
-    list_push_front, list_reset, map_insert, map_insert_default, map_is_empty, map_lookup,
-    map_lookup_guarded, map_member, map_member_guarded, map_remove, map_reset, map_size,
-    merkle_tree_check_root, merkle_tree_insert, merkle_tree_insert_index, merkle_tree_is_full,
-    merkle_tree_reset, mint_read_with, set_insert, set_is_empty, set_remove, set_reset, set_size,
+    list_push_front, list_push_front_coin, list_reset, map_insert, map_insert_coin,
+    map_insert_default, map_is_empty, map_lookup, map_lookup_guarded, map_member,
+    map_member_guarded, map_remove, map_reset, map_size, merkle_tree_check_root,
+    merkle_tree_insert, merkle_tree_insert_index, merkle_tree_is_full, merkle_tree_reset,
+    mint_read_with, set_insert, set_insert_coin, set_is_empty, set_remove, set_reset, set_size,
     ImpactElem, LedgerValue,
 };
 
 use super::{
-    hash, Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
-    MerkleTreeDigest, Opaque, Secp256k1Point, TsType, Uint, UserAddress, B32,
+    coin_commitment, hash, Bool, BoundedUint, Bytes, BytesN, CoinRecipient, ContractAddress,
+    Either, JubjubPoint, Maybe, MerkleTreeDigest, Opaque, QualifiedShieldedCoinInfo3,
+    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
 /// What a ledger slot's key or value type must be able to do: name its FAB
@@ -278,6 +280,40 @@ impl LedgerRepr for JubjubPoint<Public> {
     }
 }
 
+// ---- the coin arms' shared operands -----------------------------------------
+
+/// The two operands the QUALIFY DANCE takes, shared by the three coin arms
+/// below (`Set.insertCoin`, `Map.insertCoin`, `List.pushFrontCoin`; the
+/// family's fourth member, `Cell.writeCoin`, still builds them at its call
+/// site in `minocrab-contracts`): the runtime coin COMMITMENT the
+/// transaction context's commitment-index map is indexed by, and the 3-atom
+/// `ShieldedCoinInfo` — `[nonce: Bytes<32>, color: Bytes<32>,
+/// value: Uint<128>]` — the resolved tree index is concatenated onto.
+///
+/// `coinCommitment(coin, recipient)` is a CIRCUIT computation, a
+/// `persistentHash` over the coin preimage plus the recipient's
+/// `cond_select` pair, and emits no Impact instruction. So the three methods
+/// below still issue exactly the one Impact operation each names — the
+/// module's invariant — and the gates they mint are the ones the call site
+/// would have minted itself by calling [`coin_commitment`] before the op,
+/// which is what compactc's own `rt-coin-commit` expands to.
+fn coin_operands(
+    c: &mut Circuit3,
+    coin: &ShieldedCoinInfo3<Public>,
+    recipient: &CoinRecipient<Public>,
+) -> (LedgerValue, LedgerValue) {
+    let cm = coin_commitment(c, coin, recipient);
+    let mut slots = Vec::new();
+    coin.push_call_slots(&mut slots);
+    (
+        LedgerValue::bytes(32, vec![ImpactElem::Wire(cm.hi), ImpactElem::Wire(cm.lo)]),
+        LedgerValue::new(
+            <ShieldedCoinInfo3<Public> as CircuitAbi>::atoms(),
+            slots.into_iter().map(ImpactElem::Wire).collect(),
+        ),
+    )
+}
+
 // ---- the ledger slots -------------------------------------------------------
 //
 // Each is a `u8` index and the phantom types of what it holds, constructed by
@@ -476,6 +512,47 @@ impl<K: LedgerRepr, V: LedgerRepr> LedgerMap<K, V> {
     }
 }
 
+/// `Map<K, QualifiedShieldedCoinInfo>` — the ONE value type that grows a
+/// method, because compactc declares `insertCoin` under
+/// `(when (= value_type QualifiedShieldedCoinInfo))` (midnight-ledger.ss:768).
+/// A map of any other value type has no such method, and here that is a
+/// missing impl rather than a runtime complaint.
+impl<K: LedgerRepr> LedgerMap<K, QualifiedShieldedCoinInfo3<Public>> {
+    /// `map.insertCoin(key, coin, recipient)` — `idxp [field]; push key;
+    /// dup 5; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91;
+    /// ins 1; insc 1`.
+    ///
+    /// [`insert`](LedgerMap::insert) with its value push replaced by the
+    /// qualify dance: the `ShieldedCoinInfo` is turned into the
+    /// `QualifiedShieldedCoinInfo` the map stores by looking its Merkle-tree
+    /// index up in the transaction context, ON CHAIN. The index must have
+    /// been allocated within the current transaction or the insert fails —
+    /// that is upstream's rule, enforced by the VM, not by this signature.
+    pub fn insert_coin(
+        &self,
+        c: &mut Circuit3,
+        key: &K,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        self.insert_coin_under(c, STRAIGHT_LINE, key, coin, recipient)
+    }
+
+    /// [`LedgerMap::insert_coin`] under a branch condition.
+    pub fn insert_coin_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        key: &K,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        let key = key.ledger_value(c);
+        let (cm, coin) = coin_operands(c, coin, recipient);
+        emit(c, guard, &map_insert_coin(self.index, &key, &cm, &coin));
+    }
+}
+
 impl<K, V> LedgerMap<K, V> {
     /// `map.resetToDefault()` — `push key; pushs (empty map); ins 1`. Needs
     /// no bound on `K`/`V`: an empty map is empty whatever it held.
@@ -586,6 +663,38 @@ impl<T: LedgerRepr> LedgerSet<T> {
     ) {
         let elem = elem.ledger_value(c);
         emit(c, guard, &set_remove(self.index, &elem));
+    }
+}
+
+/// `Set<QualifiedShieldedCoinInfo>` — the element type compactc gates
+/// `insertCoin` on (midnight-ledger.ss:669).
+impl LedgerSet<QualifiedShieldedCoinInfo3<Public>> {
+    /// `set.insertCoin(coin, recipient)` — `idxp [field]; dup 4; push cm;
+    /// idxc [(1), stack]; push coin; swap 0; concatc 91; pushs null; ins 1;
+    /// insc 1`.
+    ///
+    /// [`insert`](LedgerSet::insert) with its element push replaced by the
+    /// qualify dance. The qualified coin is the KEY the `Null` is stored
+    /// under, which is why the dance runs before the `pushs null`.
+    pub fn insert_coin(
+        &self,
+        c: &mut Circuit3,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        self.insert_coin_under(c, STRAIGHT_LINE, coin, recipient)
+    }
+
+    /// [`LedgerSet::insert_coin`] under a branch condition.
+    pub fn insert_coin_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        let (cm, coin) = coin_operands(c, coin, recipient);
+        emit(c, guard, &set_insert_coin(self.index, &cm, &coin));
     }
 }
 
@@ -761,6 +870,46 @@ impl<T: LedgerRepr> LedgerList<T> {
             is_some: Bool::from_field_unchecked(limbs[0]),
             value,
         }
+    }
+}
+
+/// `List<QualifiedShieldedCoinInfo>` — the element type compactc gates
+/// `pushFrontCoin` on (midnight-ledger.ss:917).
+///
+/// No [`LedgerRepr`] bound, and that is the point of the arm: what the node
+/// holds is built ON CHAIN by the qualify dance, so nothing is pushed that
+/// the type would have to hand limbs for.
+impl LedgerList<QualifiedShieldedCoinInfo3<Public>> {
+    /// `list.pushFrontCoin(coin, recipient)` — twenty-one instructions, and
+    /// the one coin arm that is not a one-for-one swap on its plain twin.
+    ///
+    /// [`push_front`](LedgerList::push_front) builds its new node with the
+    /// value already in it and this cannot: the qualified coin does not
+    /// exist until the dance has run against a node that is already on the
+    /// stack. So the node goes on BLANK (`[null, null, null]`), the head
+    /// slot's key `0u8` goes on, the dance runs at `dup 7`, and an `insc 1`
+    /// puts the coin at `node[0]`. The tail — `node[2] = len + 1`,
+    /// `node[1] = the old list` — is `pushFront`'s, instruction for
+    /// instruction.
+    pub fn push_front_coin(
+        &self,
+        c: &mut Circuit3,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        self.push_front_coin_under(c, STRAIGHT_LINE, coin, recipient)
+    }
+
+    /// [`LedgerList::push_front_coin`] under a branch condition.
+    pub fn push_front_coin_under<G: Visibility>(
+        &self,
+        c: &mut Circuit3,
+        guard: impl Into<Operand<FieldT, G>>,
+        coin: &ShieldedCoinInfo3<Public>,
+        recipient: &CoinRecipient<Public>,
+    ) {
+        let (cm, coin) = coin_operands(c, coin, recipient);
+        emit(c, guard, &list_push_front_coin(self.index, &cm, &coin));
     }
 }
 

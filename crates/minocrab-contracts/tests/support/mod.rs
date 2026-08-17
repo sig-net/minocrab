@@ -9,9 +9,10 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
-    adts, attest, bounded, kernel_tokens, erc20_vault, erc20_vault_borsh, erc20_vault_modern, erc20_vault_opt,
-    events, events_borsh, hashing, mint_tokens, opaque, serde_builtin, signet_contract,
-    test_caller, xcall, xcall_with_payment, xcontract_events, xcontract_events_borsh,
+    adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
+    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, mint_tokens, opaque,
+    serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
+    xcontract_events_borsh,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -280,6 +281,13 @@ pub fn circuits() -> Vec<Circuit> {
         "kernel_tokens",
         &kernel_tokens::KernelTokens::CIRCUITS,
     ));
+    // `coins.compact` (M22 stage A): the three COIN ARMS of the collection
+    // ADTs — `Set.insertCoin`, `Map.insertCoin`, `List.pushFrontCoin`. Ours
+    // rather than the corpus's for the fifth time, and here because the
+    // demand is OpenZeppelin's and OZ's artifacts are ZKIR v2
+    // (tests/coins_differential.rs has the scan). Derived, like
+    // `kernel_tokens` above.
+    listed.extend(of("coins", &coins::Coins::CIRCUITS));
     listed
 }
 

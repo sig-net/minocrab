@@ -1,0 +1,50 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 9872,
+      "hash": "de14cbd9c8489cf0ffffbc612ad5012ce7da6a4cffcbe184bb5cf922b61f0764"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 6163,
+      "hash": "db8f1e71da8c323691b24bc1ea5deaf0c457ef40f2a387644fe82ff3d85f96b3"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 70349,
+      "hash": "cb2a3fe89357911f838c1dd378d7e72e0a246fdd7de02731dcf6dcf6f91ac464"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 1877,
+      "hash": "0e7c39e4c43883df69e7f261462a4bc965d683f3ea964f6359bf94c165e84c71"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "listPushFrontCoin.zkir": {
+      "type": "file",
+      "size": 3947,
+      "hash": "24fd2d5c31b9657fe4fc13dae30e959ea27c261ab2f34106354e905d15f0c3c6"
+    },
+    "mapInsertCoin.zkir": {
+      "type": "file",
+      "size": 3386,
+      "hash": "7b2ef12b1c58222bd188cb6c1a8b772ff75b0108602265aba0e9b72ba6c798c0"
+    },
+    "setInsertCoin.zkir": {
+      "type": "file",
+      "size": 3124,
+      "hash": "47da946d8bb2718651a857a74f002355d7fb7411d0d534a896e6b905eb7fcbd1"
+    }
+  }
+}

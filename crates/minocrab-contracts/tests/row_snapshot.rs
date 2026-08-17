@@ -192,6 +192,9 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("kernel_tokens::s_merge_coin", 15, 17751),
     ("kernel_tokens::s_merge_coin_immediate", 15, 17733),
     ("kernel_tokens::s_send_shielded", 15, 23615),
+    ("coins::set_insert_coin", 13, 6106),
+    ("coins::map_insert_coin", 13, 6198),
+    ("coins::list_push_front_coin", 13, 6136),
     // GENERATED END
 ];
 
