@@ -1444,7 +1444,7 @@ impl Circuit3 {
     /// condition with "nothing matched yet", one to update it — and the first
     /// arm and the `otherwise` arm are free, because their guards are already
     /// to hand. A two-arm `when(..).otherwise(..)` is therefore exactly
-    /// [`Circuit3::if_else`], one negation and no more.
+    /// [`Circuit3::cond_select`], one negation and no more.
     ///
     /// Arms return `()`. A circuit does not branch, so every arm's
     /// instructions are emitted regardless and "the value of the branch that

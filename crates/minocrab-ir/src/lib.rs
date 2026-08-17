@@ -6,6 +6,25 @@
 //! to one memory slot; [`Builder`] tracks the arity of every instruction so
 //! indices can never dangle. Optimisation passes (L4) will operate on this
 //! layer. Semantics reference: `zkir/src/ir_vm.rs` in midnight-ledger.
+//!
+//! # Where this sits
+//!
+//! Directly above [`minocrab_zkir`] (L0), whose types it re-exports, and
+//! directly below the `minocrab` eDSL (L2), which is what contract code is
+//! written against. Nothing here knows about wires, visibility or disclosure
+//! — this layer's whole job is that an emitted instruction stream is
+//! well-formed. Most users want L2; reach for this crate to build ZKIR
+//! directly, or to run a pass over it.
+//!
+//! # Start here
+//!
+//! - [`Builder`] and [`Val`] — the v2 builder and its memory-slot handles
+//! - [`v3::Builder3`] and [`v3::Arg`] — the v3 builder, over *named, typed*
+//!   values with inline immediates
+//! - [`v3::IrType`] — the v3 value types the builder checks operands against
+//! - [`v3::passes`] — the normalisation passes both sides of a differential
+//!   are run through
+//! - [`IrSource`] — what a finished build hands to L0 for writing
 
 use std::sync::Arc;
 

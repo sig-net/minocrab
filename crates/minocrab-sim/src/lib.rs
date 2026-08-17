@@ -11,6 +11,35 @@
 //!
 //! Crypto primitives (hashes, embedded curve) are Midnight's own — never
 //! reimplemented here.
+//!
+//! # Where this sits
+//!
+//! The top of the stack and off to the side of it: a dev-dependency, not
+//! something a contract links. It takes the [`minocrab::Compiled`] that the
+//! eDSL produces (or a bare [`IrSource`] from `minocrab-zkir`) and runs it.
+//! `minocrab-std`, `minocrab-ledger` and the contract crates all use it the
+//! same way — build a circuit, simulate it, assert on the disclosure report
+//! and the row cost.
+//!
+//! # v2 and v3
+//!
+//! [`simulate`] is the v2 simulator. **[`v3::simulate`] is the current one**,
+//! and it mirrors v3's reference semantics rather than v2's: it *verifies* a
+//! complete `ProofPreimage` instead of generating the transcript.
+//!
+//! # Start here
+//!
+//! - [`simulate_compiled`] — run a compiled circuit, get a [`Run`] and a
+//!   [`Report`]
+//! - [`Report`] and [`DisclosedValue`] — what the run actually published,
+//!   label by label
+//! - [`Run::preimage`] — package a run as a `ProofPreimage`, so it can be
+//!   cross-checked against the reference VM (the simulator is never trusted
+//!   alone)
+//! - [`cost`] and [`profile`] — `(k, rows)` for a circuit, and [`Profile`],
+//!   the per-region breakdown the benchmark charts
+//! - [`v3::simulate`] and [`v3::Run3`] — the v3 pair
+//! - [`v3::rowcost`] — the calibrated primitive costs behind [`cost`]
 
 pub mod v3;
 

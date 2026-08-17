@@ -1,13 +1,23 @@
 [package]
 name = "minocrab-sim"
-version = "0.1.0"
-description = "L5: native ZKIR simulator with disclosure reports and cost metrics, for cargo test"
+description = "MinoCrab L5: native ZKIR simulator with disclosure reports and row-cost metrics, so circuits run under cargo test"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "simulator", "zero-knowledge", "testing"]
+categories = [
+    "cryptography::cryptocurrencies",
+    "simulation",
+    "development-tools::testing",
+]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab = { path = "../minocrab" }
-minocrab-zkir = { path = "../minocrab-zkir" }
+minocrab.workspace = true
+minocrab-zkir.workspace = true
 midnight-zkir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
 # crypto crates its interpreter calls (see src/v3.rs).

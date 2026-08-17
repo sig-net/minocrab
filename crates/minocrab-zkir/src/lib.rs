@@ -10,6 +10,24 @@
 //! minor number. `IrSource::load` handles the inward rewrite; [`write_zkir`]
 //! is its exact inverse (the crate has no JSON writer of its own — compactc
 //! produces these files, `zkir` only consumes them).
+//!
+//! # Where this sits
+//!
+//! The bottom of the MinoCrab stack (repository README, "Layout"). `minocrab-ir`
+//! builds typed instruction streams over the types re-exported here,
+//! `minocrab` is the eDSL above that, and `minocrab-sim` executes the result;
+//! `minocrab-abi` reads compactc's own `.zkir` through this crate to check an
+//! interface against its artifact. This layer knows about files and JSON so
+//! that no layer above it has to.
+//!
+//! # Start here
+//!
+//! - [`read_any`] / [`AnyIr`] — parse a `.zkir` of either major version
+//! - [`read_zkir`] and [`write_zkir`] — the v2 pair, exact inverses
+//! - [`v3::read_zkir`] and [`v3::write_zkir`] — the v3 pair (what the sig-net
+//!   contracts and anything built with `--feature-zkir-v3` emit)
+//! - [`IrSource`] — Midnight's own v2 IR type, re-exported not redefined
+//! - [`Error`] — the one error type, always carrying the path it failed on
 
 use std::io::{Read, Write};
 use std::path::Path;

@@ -1,9 +1,15 @@
 [package]
 name = "minocrab"
-version = "0.1.0"
-description = "L2: Rust eDSL for Midnight circuits with type-level disclosure tracking"
+description = "Rust eDSL for Midnight circuits with type-level disclosure tracking — a Wire<Private> cannot reach a public output"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zero-knowledge", "circuit", "dsl", "zk-snark"]
+categories = ["cryptography::cryptocurrencies", "compilers", "rust-patterns"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab-ir = { path = "../minocrab-ir" }
+minocrab-ir.workspace = true

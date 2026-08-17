@@ -1588,7 +1588,7 @@ impl<V: Vis3> JubjubPoint<V> {
 /// compiler: `expected right-hand side of = to have type Opaque<"string"> but
 /// received Opaque<"Uint8Array">`).
 ///
-/// Declare your own with [`ts_type!`].
+/// Declare your own with [`crate::ts_type!`].
 pub trait TsType {
     /// The name as it appears inside Compact's `Opaque<"…">` and as
     /// `contract-info.json`'s `tsType`.
@@ -1619,7 +1619,8 @@ pub mod ts {
         /// Compact's `Opaque<"string">` — 55 of the corpus's 74 `Opaque`
         /// nodes. Named `Str` and not `String` deliberately: a generated
         /// crate that shadows `std::string::String` is a nasty import, and
-        /// [`TsType::TS_NAME`] still carries `"string"` verbatim.
+        /// [`TsType::TS_NAME`](super::TsType::TS_NAME) still carries
+        /// `"string"` verbatim.
         Str = "string";
         /// Compact's `Opaque<"Uint8Array">`.
         Uint8Array = "Uint8Array"
@@ -1646,7 +1647,7 @@ pub mod ts {
 /// - **[`Opaque::eq`] is sound.** Comparing two opaques compares their
 ///   commitments, so it decides equality of the TS-side values up to Poseidon
 ///   collision resistance. It is not pointer identity.
-/// - **[`Opaque::default`] is the field element zero**, because the empty byte
+/// - **[`Opaque::default_value`] is the field element zero**, because the empty byte
 ///   string is special-cased upstream — which is why compactc lowers
 ///   `default<Opaque<"string">>` to the immediate `0x00` with no ceremony.
 /// - **There is nothing else to offer.** The commitment is one-way
@@ -2023,7 +2024,7 @@ impl<V: Vis3> CircuitAbi for QualifiedShieldedCoinInfo3<V> {
 }
 
 /// `struct ShieldedSendResult { change: Maybe<ShieldedCoinInfo>, sent:
-/// ShieldedCoinInfo }` — what [`kernel::send_shielded`](super::v3::kernel::send_shielded)
+/// ShieldedCoinInfo }` — what [`kernel::send_shielded`]
 /// hands back: the coin that went to the recipient, and the change coin the
 /// contract paid back to itself, if there was any.
 #[derive(Clone, Copy)]

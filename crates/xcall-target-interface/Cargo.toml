@@ -1,6 +1,9 @@
 [package]
 name = "xcall-target-interface"
-version = "0.1.0"
+# An EXAMPLE generated interface crate (the `--check` regeneration fixture);
+# same reason as signet-signer-interface, plus it is machine-written output.
+publish = false
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "The xcall experiment's target contract, imported from its compactc artifact — a Compact-only contract with no MinoCrab port"

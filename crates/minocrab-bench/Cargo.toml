@@ -1,6 +1,9 @@
 [package]
 name = "minocrab-bench"
-version = "0.1.0"
+# The head-to-head proving harness: it shells out to the pinned compactc and
+# resolves paths against the workspace root, so it only runs in this checkout.
+publish = false
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "M6 baseline benchmark: erc20-vault + Signet singleton under MinoCrab vs compactc"

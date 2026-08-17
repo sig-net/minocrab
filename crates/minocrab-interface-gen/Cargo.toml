@@ -1,9 +1,19 @@
 [package]
 name = "minocrab-interface-gen"
-version = "0.1.0"
+description = "Generate a MinoCrab interface crate from a compactc artifact, so any deployed Midnight contract becomes an importable Rust crate"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Generate a MinoCrab interface crate from a compactc artifact — any deployed Midnight contract becomes importable"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "codegen", "interface", "contract", "abi"]
+categories = [
+    "cryptography::cryptocurrencies",
+    "command-line-utilities",
+    "development-tools::build-utils",
+]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [[bin]]
 name = "minocrab-interface-gen"
@@ -13,6 +23,6 @@ path = "src/main.rs"
 # The artifact model (contract-info.json, the Compact type tree) is the
 # checker's; the generator reads the same parse the agreement test does, so
 # the two cannot disagree about what the artifact says.
-minocrab-abi = { path = "../minocrab-abi" }
+minocrab-abi.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true

@@ -7,8 +7,8 @@
 //!
 //! | flavor | preimage | use it for |
 //! |---|---|---|
-//! | [`persistent_hash`] / [`transient_hash`] | the value's canonical **Borsh** encoding ([`CircuitBorsh`], the fixed-width subset) | everything you write yourself |
-//! | [`persistent_hash_compact`] / [`transient_hash_compact`] | Compact's **FAB** representation — `binary_repr` for the persistent flavor, `field_repr` slots for the transient one | digest agreement with a Compact contract, and nothing else |
+//! | [`persistent_hash`](crate::v3::hash::persistent_hash) / [`transient_hash`](crate::v3::hash::transient_hash) | the value's canonical **Borsh** encoding ([`CircuitBorsh`](crate::v3::borsh::CircuitBorsh), the fixed-width subset) | everything you write yourself |
+//! | [`persistent_hash_compact`](crate::v3::hash::persistent_hash_compact) / [`transient_hash_compact`](crate::v3::hash::transient_hash_compact) | Compact's **FAB** representation — `binary_repr` for the persistent flavor, `field_repr` slots for the transient one | digest agreement with a Compact contract, and nothing else |
 //!
 //! # When `_compact` is needed — and when it is not
 //!

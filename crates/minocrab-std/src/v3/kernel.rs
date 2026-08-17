@@ -6,8 +6,8 @@
 //!
 //! | layer | what it is | here |
 //! |---|---|---|
-//! | KERNEL PRIMITIVES | `declare-ledger-adt Kernel` functions with vm-code | [`mint_unshielded`] … [`block_time_greater_than`] |
-//! | STDLIB CIRCUITS | ordinary `export circuit`s written IN COMPACT, composed from those | [`send_unshielded`] … [`unshielded_balance_lte`] |
+//! | KERNEL PRIMITIVES | `declare-ledger-adt Kernel` functions with vm-code | [`mint_unshielded`](crate::v3::kernel::mint_unshielded) … [`block_time_greater_than`](crate::v3::kernel::block_time_greater_than) |
+//! | STDLIB CIRCUITS | ordinary `export circuit`s written IN COMPACT, composed from those | [`send_unshielded`](crate::v3::kernel::send_unshielded) … [`unshielded_balance_lte`](crate::v3::kernel::unshielded_balance_lte) |
 //!
 //! The second layer is `standard-library.compact:113-350` transcribed. Each
 //! function below carries the Compact it is a port of, and the bodies are
@@ -65,7 +65,7 @@ pub type UnshieldedRecipient<V = Public> = Either<ContractAddress<V>, UserAddres
 /// instruction stream. Four of the five FAB limbs of `left(color)` are
 /// CONSTANT — the `is_left` tag and the unused right arm's two — and compactc
 /// inlines all four into the Impact `push`. Routing them through
-/// [`LedgerRepr`](super::LedgerRepr) would name each with a `copy`, which is
+/// [`LedgerRepr`] would name each with a `copy`, which is
 /// the named-immediate gap M15 recorded for ledger VALUE positions and left
 /// as dmd's call.
 ///
@@ -131,7 +131,7 @@ pub fn self_address_guarded<G: Visibility + Copy>(
     )
 }
 
-/// `kernel.mintShielded(domain_sep, amount)` — effects[4].
+/// `kernel.mintShielded(domain_sep, amount)` — effects\[4\].
 pub fn mint_shielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<64, Public>) {
     mint_shielded_under(c, STRAIGHT_LINE, domain_sep, amount)
 }
@@ -147,7 +147,7 @@ pub fn mint_shielded_under<G: Visibility>(
     emit(c, guard, &kernel_mint_shielded(&ds, &amt));
 }
 
-/// `kernel.mintUnshielded(domain_sep, amount)` — effects[5], and the same
+/// `kernel.mintUnshielded(domain_sep, amount)` — effects\[5\], and the same
 /// accumulator shape [`mint_shielded`] is.
 pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<64, Public>) {
     mint_unshielded_under(c, STRAIGHT_LINE, domain_sep, amount)
@@ -164,7 +164,7 @@ pub fn mint_unshielded_under<G: Visibility>(
     emit(c, guard, &kernel_mint_unshielded(&ds, &amt));
 }
 
-/// `kernel.incUnshieldedInputs(token_type, amount)` — effects[6]. Called when
+/// `kernel.incUnshieldedInputs(token_type, amount)` — effects\[6\]. Called when
 /// the contract RECEIVES an unshielded token.
 pub fn inc_unshielded_inputs(
     c: &mut Circuit3,
@@ -185,7 +185,7 @@ pub fn inc_unshielded_inputs_under<G: Visibility>(
     emit(c, guard, &kernel_inc_unshielded_inputs(&t, &amt));
 }
 
-/// `kernel.incUnshieldedOutputs(token_type, amount)` — effects[7]. Called when
+/// `kernel.incUnshieldedOutputs(token_type, amount)` — effects\[7\]. Called when
 /// the contract SENDS one.
 pub fn inc_unshielded_outputs(
     c: &mut Circuit3,
@@ -207,7 +207,7 @@ pub fn inc_unshielded_outputs_under<G: Visibility>(
 }
 
 /// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
-/// effects[8]. Authorizes a transfer; the key is the token type and the
+/// effects\[8\]. Authorizes a transfer; the key is the token type and the
 /// recipient TOGETHER, so the two travel as one six-atom value.
 pub fn claim_unshielded_coin_spend(
     c: &mut Circuit3,
@@ -522,7 +522,7 @@ pub fn mint_unshielded_token(
 //     is how every derived nonce is made; the tag is inline and the two
 //     `Copy`s are the casts (`hash::degrade_to_transient`).
 
-/// `kernel.claimZswapNullifier(nul)` — effects[0]. Says this contract spent
+/// `kernel.claimZswapNullifier(nul)` — effects\[0\]. Says this contract spent
 /// the coin that nullifier names.
 pub fn claim_zswap_nullifier(c: &mut Circuit3, nullifier: &B32<Public>) {
     claim_zswap_nullifier_under(c, STRAIGHT_LINE, nullifier)
@@ -538,7 +538,7 @@ pub fn claim_zswap_nullifier_under<G: Visibility>(
     emit(c, guard, &kernel_claim_zswap_nullifier(&nul));
 }
 
-/// `kernel.claimZswapCoinSpend(cm)` — effects[2]. Says this contract
+/// `kernel.claimZswapCoinSpend(cm)` — effects\[2\]. Says this contract
 /// AUTHORIZED the output that commitment names.
 pub fn claim_zswap_coin_spend(c: &mut Circuit3, commitment: &B32<Public>) {
     claim_zswap_coin_spend_under(c, STRAIGHT_LINE, commitment)
@@ -554,7 +554,7 @@ pub fn claim_zswap_coin_spend_under<G: Visibility>(
     emit(c, guard, &kernel_claim_zswap_coin_spend(&cm));
 }
 
-/// `kernel.claimZswapCoinReceive(cm)` — effects[1]. Says this contract now
+/// `kernel.claimZswapCoinReceive(cm)` — effects\[1\]. Says this contract now
 /// OWNS the coin that commitment names. Separate from the spend claim because
 /// a contract paying itself makes both.
 pub fn claim_zswap_coin_receive(c: &mut Circuit3, commitment: &B32<Public>) {

@@ -36,6 +36,30 @@
 //! WHAT IT DOES NOT DO: bind an artifact to a deployed ADDRESS. That needs
 //! the verifier key (keygen), which is out of M12's scope — see
 //! notes/interface-crates.org §"Honest limits" #3.
+//!
+//! # Where this sits
+//!
+//! Off to the side of the stack, at the top: a dev-dependency of an interface
+//! crate, never something a contract links. It reads compactc's artifacts
+//! through `minocrab-zkir` (L0) and speaks the ABI vocabulary of [`minocrab`]
+//! (L2) and [`minocrab_ledger`] (L2.5), so the types it checks against are
+//! exactly the ones the call sites use. `minocrab-interface-gen` reads the
+//! same parse to *write* interface crates, which is why the generator and the
+//! test that validates its output cannot disagree.
+//!
+//! # Start here
+//!
+//! - [`Artifact`] — open a crate's pinned artifact; the entry point for every
+//!   check
+//! - [`Artifact::verify_pin`] and [`Pin`] — the hash-pinned distillation an
+//!   interface crate commits instead of megabytes of `.zkir`
+//! - [`Artifact::assert_interface_matches`] — the declared Rust types against
+//!   the artifact's typed signature
+//! - [`ContractInfo`] and [`Flattened`] — `contract-info.json`, and the
+//!   flattening of Compact's typed tree into native slots
+//! - [`circuit_schema`] — the frozen published-ABI rendering whose diff is
+//!   the semver decision
+//! - [`Problems`] and [`Error`] — what a disagreement reads like
 
 pub mod check;
 pub mod info;

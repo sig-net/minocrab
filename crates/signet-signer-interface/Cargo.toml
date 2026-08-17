@@ -1,6 +1,10 @@
 [package]
 name = "signet-signer-interface"
-version = "0.1.0"
+# An EXAMPLE interface crate, in-tree so the mechanism has a worked case; its
+# agreement suite reads the artifact under ../../corpus. A real interface
+# crate is published by whoever owns the contract, not by us.
+publish = false
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "The Sig Network Signet singleton's cross-contract interface, as an importable MinoCrab crate"

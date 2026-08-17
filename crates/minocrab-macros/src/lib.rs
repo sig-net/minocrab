@@ -5,6 +5,29 @@
 //! expansions are exactly what phase 2 wrote by hand — impls a reader could
 //! have written — and, by the THINNESS RULE, contain no `Circuit3` method
 //! call at all: everything goes through `CircuitArg` and `ArgPath`.
+//!
+//! # Where this sits
+//!
+//! A leaf of the build graph, off to the side of the stack: it depends on
+//! `syn`/`quote` and nothing of ours, and every path it emits is fully
+//! qualified into `minocrab-std` and `minocrab-ledger`. Do not depend on this
+//! crate directly — `minocrab-std`'s default `macros` feature re-exports each
+//! macro next to the trait it implements, which is where they are documented
+//! in context.
+//!
+//! # Start here
+//!
+//! - [`macro@circuit`] — a `fn` becomes a circuit; the return type is its
+//!   disclosure manifest, and a generated test checks the manifest is honest
+//! - [`macro@contract`] — the block that makes a contract's circuit set
+//!   derivable
+//! - [`macro@interface`] — declare somebody else's deployed contract, so a
+//!   cross-contract call is a typed method
+//! - [`macro@CircuitArg`] — arguments as a struct; field order is the wire
+//!   contract
+//! - [`macro@CircuitBorsh`] — the same, plus canonical Borsh over the
+//!   fixed-width subset
+//! - [`macro@Ledger`] — the ledger block's declaration-order slot indices
 
 use proc_macro::TokenStream;
 
@@ -160,7 +183,7 @@ pub fn derive_ledger(input: TokenStream) -> TokenStream {
 /// `recovery_id` both map to `recoveryId`.
 /// A contract: its state type, and the circuits it exports.
 ///
-/// ```ignore
+/// ```text
 /// #[derive(Ledger)]
 /// pub struct Vault { pub balances: LedgerMap<B32<Public>, Uint<128, Public>> }
 ///

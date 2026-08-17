@@ -1,9 +1,17 @@
 [package]
 name = "minocrab-zkir"
-version = "0.1.0"
-description = "L0: ZKIR bindings — read/write/round-trip Midnight ZKIR, reusing midnight-zkir types"
+description = "MinoCrab L0: read, write and round-trip Midnight ZKIR (v2 and v3), reusing midnight-zkir's own types"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "zero-knowledge", "zk-snark", "bindings"]
+categories = ["cryptography::cryptocurrencies", "api-bindings", "encoding"]
+# src + the round-trip fixture the unit test embeds. `tests/` proper walks
+# ../../corpus, which no downstream checkout has.
+include = ["src/**/*.rs", "tests/fixtures/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 midnight-zkir.workspace = true

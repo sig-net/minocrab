@@ -26,6 +26,26 @@
 //! exactly how it was produced — the interface name, the source artifact,
 //! the one-sentence summary, and any HAND-WRITTEN modules the crate also
 //! carries (a constructor is Compact source, and no artifact has one).
+//!
+//! # Where this sits
+//!
+//! Off to the side of the stack, at the top, and the only crate in the
+//! workspace that ships a binary. Its one dependency is [`minocrab_abi`], the
+//! agreement checker: the generator emits an interface crate, and that
+//! crate's own `tests/` prove — through `minocrab-abi` — that what was
+//! emitted still matches the artifact. The generated crate depends on
+//! `minocrab`, `minocrab-std` and `minocrab-ledger`; this one does not.
+//!
+//! # Start here
+//!
+//! - [`Options`] — `artifact/generator.json`, the committed record of how a
+//!   crate was produced
+//! - [`generate`] — artifact plus [`Options`] to Rust source
+//! - [`write_crate`] and [`check_crate`] — write a crate's `src/`, or
+//!   regenerate and diff, which is how drift becomes a test failure
+//! - [`render_crate`] — the generated source, without touching the disk
+//! - [`names`] — the `snake_case` / `lowerCamelCase` mapping, shared with the
+//!   derives so a label never disagrees
 
 use std::collections::BTreeSet;
 use std::path::Path;

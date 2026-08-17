@@ -31,6 +31,34 @@
 //! let public = c.disclose(secret, "intentionally published");
 //! c.declare_public(public, "value");
 //! ```
+//!
+//! # Where this sits
+//!
+//! The middle of the MinoCrab stack: it builds on [`minocrab_ir`] (L1, the
+//! typed instruction builder) and is what `minocrab-std` (L3, the ports of
+//! Compact's standard library), `minocrab-ledger` (L2.5, Impact ledger ops)
+//! and `minocrab-macros` (`#[circuit]`, `#[contract]`) are all written
+//! against. `minocrab-sim` runs what [`Circuit::finish`] produces under
+//! `cargo test`. Contract authors normally depend on `minocrab-std`, which
+//! re-exports what is needed from here.
+//!
+//! # v2 and v3
+//!
+//! [`Circuit`] targets ZKIR v2. **[`v3::Circuit3`] is the current frontend**
+//! — same discipline, but wires also carry their ZKIR value type, so an
+//! unsupported operand is a Rust type error rather than a build-time panic.
+//! Every contract in this workspace is v3.
+//!
+//! # Start here
+//!
+//! - [`v3::Circuit3`] — the typed frontend, and [`v3::Wire3`], its wires
+//! - [`Wire`] and [`Visibility`] ([`Public`] / [`Private`]) — visibility in
+//!   the type; [`Meet`] is the taint rule for combining two wires
+//! - [`Circuit::disclose`] — the single Private→Public gate, and the thing to
+//!   grep for in an audit
+//! - [`v3::Discloses`] — a circuit's disclosure manifest, checked against
+//!   what it actually disclosed (see [`v3::assert_declared_disclosures`])
+//! - [`Compiled`] — a finished circuit: the IR plus its disclosure record
 
 use std::marker::PhantomData;
 

@@ -1,17 +1,23 @@
 [package]
 name = "minocrab-abi"
-version = "0.1.0"
+description = "Artifact agreement: check a MinoCrab interface crate against the callee contract's compiled compactc artifact, as a test"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Artifact agreement: check a MinoCrab interface crate against the callee's compiled compactc artifact"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "abi", "interface", "contract", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies", "development-tools::testing"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab = { path = "../minocrab" }
-minocrab-ledger = { path = "../minocrab-ledger" }
+minocrab.workspace = true
+minocrab-ledger.workspace = true
 # The `.zkir` reader. compactc's v3 output is parsed through Midnight's own
 # `IrSource` rather than by poking at JSON, so the constraint-prefix check
 # reads the same typed instruction stream the prover does.
-minocrab-zkir = { path = "../minocrab-zkir" }
+minocrab-zkir.workspace = true
 midnight-zkir-v3.workspace = true
 serde = { workspace = true }
 # `raw_value` for ONE field: a Compact `Uint`'s `maxval` can be 2^128 − 1,

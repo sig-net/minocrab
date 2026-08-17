@@ -385,6 +385,12 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
+## Crates
+
+Nine of those are library crates meant for crates.io: `minocrab-zkir`, `minocrab-ir`, `minocrab`, `minocrab-macros`, `minocrab-std`, `minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-interface-gen`. A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. The rest — the corpus rewrite, the bench harness and the two example interface crates — are `publish = false`.
+
+Nothing is published yet: crates.io rejects git dependencies, and every `midnight-*` crate is pinned to a rev the registry does not carry. The plan is to wait for upstream to publish that line. [PUBLISHING.md](PUBLISHING.md) states the blocker, the publish order, and why no fake version keys were added to sneak past it.
+
 ## Deeper
 
 `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).

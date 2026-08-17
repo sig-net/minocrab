@@ -1,9 +1,18 @@
 [package]
 name = "minocrab-macros"
-version = "0.1.0"
+description = "The thin decorators for the MinoCrab eDSL: #[circuit], #[contract], #[interface] and the CircuitArg/CircuitBorsh/Ledger derives"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Derives for the MinoCrab contract API — #[derive(CircuitArg)]"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "macros", "derive", "circuit", "zero-knowledge"]
+categories = [
+    "cryptography::cryptocurrencies",
+    "development-tools::procedural-macro-helpers",
+]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [lib]
 proc-macro = true

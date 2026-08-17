@@ -19,10 +19,35 @@ members = [
 ]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/sig-net/minocrab"
+# THE FLOOR IS THE DEPENDENCIES', NOT OURS. Our own code needs 1.79 (inline
+# `const { assert!(..) }` blocks — minocrab-std/src/v3.rs and the contract
+# suites). Every pinned `midnight-*` crate is edition 2024 (base-crypto,
+# transient-crypto, zkir, serialize, onchain-vm, storage, …), which rustc
+# accepts from 1.85, so nothing here can build below that. Declaring 1.79
+# would be a claim we cannot honour.
+rust-version = "1.85"
 
 [workspace.dependencies]
+# --- our own crates -------------------------------------------------------
+# path AND version, in one place: a path-only dependency cannot be published
+# (crates.io resolves the version requirement, the path is only used for the
+# local build). Regular dependencies only — DEV-dependencies deliberately stay
+# plain `{ path = … }`, because cargo strips a versionless dev-dependency when
+# it publishes, and that is what breaks the minocrab-std ↔ minocrab-sim dev
+# cycle open for a first publish.
+minocrab = { path = "crates/minocrab", version = "0.1.0" }
+minocrab-abi = { path = "crates/minocrab-abi", version = "0.1.0" }
+minocrab-ir = { path = "crates/minocrab-ir", version = "0.1.0" }
+minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
+minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }
+minocrab-std = { path = "crates/minocrab-std", version = "0.1.0" }
+minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
+
+# --- upstream -------------------------------------------------------------
 # ZKIR v2 — Midnight's own IR definition; we re-export rather than redefine.
 # Pinned to the same midnight-ledger tag the official compact flake uses for
 # the zkir binaries bundled with our pinned compactc (zkir 2.2.0), so what we

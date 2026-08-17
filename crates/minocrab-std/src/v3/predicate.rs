@@ -118,7 +118,7 @@ pub trait CheckOperand {
     /// whole point: a `BoundedUint<300>` is COMPARED at 9 bits, so a literal
     /// `500` fits the width and is still a value the operand can never take.
     /// Comparing against it is a constant, and constants written as
-    /// comparisons are bugs — see [`check_literal_within`].
+    /// comparisons are bugs — see `check_literal_within`.
     const MAX: Option<u128> = None;
 
     /// The value, if it is a literal — what the range check looks at.
@@ -577,7 +577,7 @@ impl<V: Vis3> Assertion for Bool<V> {
 
 impl<V: Vis3> Check<V> {
     /// Lower this predicate to its wire, for use as a GUARD rather than as
-    /// an assertion — see [`guarded`].
+    /// an assertion — see [`Guarded`](crate::v3::Guarded).
     pub fn into_wire(self, c: &mut Circuit3) -> Wire3<FieldT, V> {
         lower(c, self.node)
     }

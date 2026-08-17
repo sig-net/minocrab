@@ -614,7 +614,7 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
 /// Written by hand for now; phase 3's `#[derive(CircuitArg)]` /
 /// `#[circuit]` generate exactly these impls.
 pub trait CircuitArgs: Sized {
-    /// Total argument slots — the sum of the fields' [`CircuitArg::SLOTS`].
+    /// Total argument slots — the sum of the fields' [`CircuitAbi::SLOTS`].
     const SLOTS: usize;
 
     /// Declare every field, in declaration order.

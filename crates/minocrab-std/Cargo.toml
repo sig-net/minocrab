@@ -1,17 +1,23 @@
 [package]
 name = "minocrab-std"
-version = "0.1.0"
+description = "MinoCrab L3: the standard library — ports of Compact's standard-library.compact, each differential-tested against compactc"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "L3 — MinoCrab standard library: ports of Compact's standard-library.compact"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zero-knowledge", "circuit", "stdlib", "borsh"]
+categories = ["cryptography::cryptocurrencies", "cryptography"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab = { path = "../minocrab" }
+minocrab.workspace = true
 # The typed ledger block (M9 phase 7): `v3::ledger`'s LedgerMap/LedgerCell/
 # LedgerCounter are one-line wrappers over this crate's op emission, so the
 # ADTs sit ABOVE the ops — minocrab-ledger stays the pure op layer its module
 # docs describe and gains no dependency of its own.
-minocrab-ledger = { path = "../minocrab-ledger" }
+minocrab-ledger.workspace = true
 # The Borsh SCHEMA walk (v3::borsh::schema) only, behind the off-by-default
 # `borsh-schema` feature: nothing shipping links borsh, and a test build turns
 # the feature on from its own [dev-dependencies] entry (see
@@ -19,12 +25,18 @@ minocrab-ledger = { path = "../minocrab-ledger" }
 borsh = { workspace = true, optional = true }
 # `#[derive(CircuitArg)]`, re-exported next to the trait it implements
 # (v3::CircuitArg names both, as serde's does).
-minocrab-macros = { path = "../minocrab-macros", optional = true }
+minocrab-macros = { workspace = true, optional = true }
 
 [features]
 default = ["macros"]
 macros = ["dep:minocrab-macros"]
 borsh-schema = ["dep:borsh"]
+
+[package.metadata.docs.rs]
+# The only featured crate in the workspace. `borsh-schema` is off by default
+# (nothing shipping links borsh) but it is what documents `v3::borsh::schema`,
+# so docs.rs gets the full surface.
+all-features = true
 
 [dev-dependencies]
 minocrab-sim = { path = "../minocrab-sim" }

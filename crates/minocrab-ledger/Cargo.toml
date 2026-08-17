@@ -1,13 +1,19 @@
 [package]
 name = "minocrab-ledger"
-version = "0.1.0"
+description = "MinoCrab L2.5: Impact ledger-op emission, with a public-input encoding bit-identical to compactc's"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "L2.5 — ledger-op emission: Impact public-input encoding, bit-identical to compactc"
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "ledger", "impact", "circuit", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies", "encoding"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab = { path = "../minocrab" }
-minocrab-ir = { path = "../minocrab-ir" }
+minocrab.workspace = true
+minocrab-ir.workspace = true
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true

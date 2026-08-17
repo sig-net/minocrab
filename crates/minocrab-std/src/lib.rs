@@ -12,11 +12,39 @@
 //! with the type's FAB alignment atoms — exactly compactc's
 //! flatten-datatypes view of Compact values.
 //!
-//! Not yet here: the `kernel.*`-calling circuits (mint/send/receive/claim,
-//! blockTime*, unshieldedBalance*) — they need ledger-op emission in the
-//! eDSL (notes/ledger-abi.org) — and the ZKIR v3-only pieces
-//! (`secp256k1EcdsaVerify`, `secp256k1EthereumAddress`, keccak256), which
-//! land with the eDSL's v3 backend.
+//! # v2 and v3
+//!
+//! The items at this crate's root target ZKIR v2, where values above a single
+//! field element are [`bundle::Bundle`]s. **[`v3`] is the current surface**
+//! and is where contract code lives: the `zkir-v3-library.compact` ports, the
+//! typed leaves ([`v3::Uint`], [`v3::Bytes`], [`v3::B32`]), the ledger block,
+//! the kernel ADT, Borsh, and the `secp256k1`/keccak circuits that exist only
+//! on v3. Every contract in this workspace is v3.
+//!
+//! # Where this sits
+//!
+//! The top of the library stack: [`minocrab`] (L2) supplies the eDSL and
+//! [`minocrab_ledger`] (L2.5) the Impact op emission that [`v3::LedgerMap`]
+//! and [`v3::kernel`] wrap, and with the default `macros` feature the
+//! `minocrab-macros` decorators are re-exported from here beside the traits
+//! they implement. A contract crate normally depends on this crate alone, and
+//! on `minocrab-sim` as a dev-dependency to run its circuits under
+//! `cargo test`.
+//!
+//! # Start here
+//!
+//! - [`v3::Uint`], [`v3::Bytes`], [`v3::B32`], [`v3::Bool`] — the typed
+//!   leaves; an argument's type *is* its range constraint
+//! - [`v3::hash`] — the two hash flavors, always called module-qualified
+//!   because which bytes get hashed is a decision
+//! - [`v3::borsh`] — canonical Borsh over the fixed-width subset a circuit
+//!   can emit
+//! - [`v3::LedgerMap`], [`v3::LedgerCell`], [`v3::LedgerCounter`] — the
+//!   ledger block as types, carrying Compact's own method names
+//! - [`v3::kernel`] — mint/send/receive/claim, `blockTime*`,
+//!   `unshieldedBalance*`
+//! - [`macro@v3::circuit`] and [`macro@v3::CircuitArg`] — the decorators
+//!   (default `macros` feature)
 
 pub mod bundle;
 pub mod coin;

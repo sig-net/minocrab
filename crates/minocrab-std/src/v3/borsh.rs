@@ -15,9 +15,9 @@
 //! | excluded | why | replacement |
 //! |---|---|---|
 //! | `Vec<T>`, `String`, maps | `u32` length prefix ⇒ value-dependent offsets | `[T; K]` plus a separate count field |
-//! | `Option<T>` | Borsh omits the payload on `None` | [`Flagged<T>`] — a `bool` tag and an ALWAYS-PRESENT payload, which is an ordinary Borsh struct (and is what Compact's `Maybe` already compiles to) |
+//! | `Option<T>` | Borsh omits the payload on `None` | [`Flagged<T>`](crate::v3::borsh::Flagged) — a `bool` tag and an ALWAYS-PRESENT payload, which is an ordinary Borsh struct (and is what Compact's `Maybe` already compiles to) |
 //! | data-carrying enums | payload width follows the tag | one record type per kind, or `{tag, widest payload}` |
-//! | `Uint<BITS>` off a Borsh width | `u24` is not a Borsh primitive | the next width up plus a range constraint ([`CircuitBorsh`] is implemented only at 8/16/32/64/128) |
+//! | `Uint<BITS>` off a Borsh width | `u24` is not a Borsh primitive | the next width up plus a range constraint ([`CircuitBorsh`](crate::v3::borsh::CircuitBorsh) is implemented only at 8/16/32/64/128) |
 //!
 //! Fieldless enums are `Tag<K>` here — ONE byte, range-checked `< K`, which
 //! is exactly Borsh's own 1-byte discriminant. The SPEC-side declaration of
@@ -28,28 +28,28 @@
 //! Trailing zero padding — what a fixed envelope like the singleton's
 //! `Bytes<256>` `Misc` payload needs — is NOT Borsh and is not claimed to be:
 //! the rule the spec states is "bytes `0..LEN` are the Borsh encoding, bytes
-//! `LEN..N` MUST be zero". [`to_bytes`] writes exactly that (the pad is
+//! `LEN..N` MUST be zero". [`to_bytes`](crate::v3::borsh::to_bytes) writes exactly that (the pad is
 //! constant zero limbs), and a decoder is required to check it.
 //!
 //! # What the layer buys
 //!
-//! [`CircuitBorsh`] is a strict extension of [`CircuitArg`]: the same type
+//! [`CircuitBorsh`](crate::v3::borsh::CircuitBorsh) is a strict extension of [`CircuitArg`]: the same type
 //! that declares and range-constrains a circuit argument also states its
 //! Borsh width, its hash-preimage limbs, its packed segments, its canonicity
 //! constraints and its offset table, so those cannot drift apart. Two
 //! encoders, because the two consumers are different:
 //!
-//! - [`CircuitBorsh::push_limbs`] feeds the ALIGNMENT-AWARE hash instructions
-//!   ([`Limbs::keccak256`] / [`Limbs::persistent_hash`]). The chips do the
+//! - [`CircuitBorsh::push_limbs`](crate::v3::borsh::CircuitBorsh::push_limbs) feeds the ALIGNMENT-AWARE hash instructions
+//!   ([`Limbs::keccak256`](crate::v3::borsh::Limbs::keccak256) / [`Limbs::persistent_hash`](crate::v3::borsh::Limbs::persistent_hash)). The chips do the
 //!   byte packing in-chip, so this path costs ZERO extra rows — choosing the
 //!   atom widths to be the Borsh widths gets the Borsh encoding for free
 //!   (notes/borsh-format.org, finding #2).
-//! - [`CircuitBorsh::push_segments`] feeds the packed [`Serializer`], for the
+//! - [`CircuitBorsh::push_segments`](crate::v3::borsh::CircuitBorsh::push_segments) feeds the packed [`Serializer`], for the
 //!   places that need the bytes as a value (log payloads, `Bytes<N>` fields).
 //!   This one costs the M7 segment packing, which is what it already cost.
 //!
-//! And one decoder, in two modes ([`BorshReader`], [`Split`],
-//! [`WitnessCheck`]) — deliberately off the critical path: no vault circuit
+//! And one decoder, in two modes ([`BorshReader`](crate::v3::borsh::BorshReader), [`Split`](crate::v3::borsh::Split),
+//! [`WitnessCheck`](crate::v3::borsh::WitnessCheck)) — deliberately off the critical path: no vault circuit
 //! uses it, because an attested output arrives as typed circuit ARGUMENTS and
 //! running the serializer forwards over declared fields is already a complete
 //! sound deserialization. The reader is for packed state and future formats.
@@ -64,7 +64,7 @@
 //! 3. `constrain_canonical` emits every constraint that makes the encoding
 //!    canonical and the packing injective: the leaf range checks, booleanity
 //!    for `bool`, `tag < K` for a tag. For every leaf that is also a
-//!    [`CircuitArg`] it equals `CircuitArg::constrain` — except [`Tag`],
+//!    [`CircuitArg`] it equals `CircuitArg::constrain` — except [`Tag`](crate::v3::borsh::Tag),
 //!    which adds the bound compactc does not emit (`constrain_canonical_is_
 //!    the_argument_constraint` in `tests/v3_borsh.rs` pins both halves).
 //! 4. `push_layout` walks the same fields in the same order with the same
@@ -80,8 +80,8 @@
 //!    bytes produced natively by `borsh::to_vec`.
 //!
 //! Laws 1, 2 and 4 are checked mechanically for every leaf: the layout widths
-//! must sum to `LEN` ([`CircuitBorsh::layout`] asserts it), the limbs must sum
-//! to `LEN` ([`limbs_of`] asserts it), and the tests compare simulated
+//! must sum to `LEN` ([`CircuitBorsh::layout`](crate::v3::borsh::CircuitBorsh::layout) asserts it), the limbs must sum
+//! to `LEN` ([`limbs_of`](crate::v3::borsh::limbs_of) asserts it), and the tests compare simulated
 //! in-circuit bytes against `borsh::to_vec`.
 
 use minocrab::v3::{AnyWire3, Bytes32T, Circuit3, FieldT, Prim, Wire3};

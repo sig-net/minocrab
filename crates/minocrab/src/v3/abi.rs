@@ -128,7 +128,7 @@ pub enum LimbConstraint {
 impl LimbConstraint {
     /// Emit this constraint on `w`, in the shape compactc emits it.
     ///
-    /// The bounds are INLINE IMMEDIATES ([`Operand`]), not named constants,
+    /// The bounds are INLINE IMMEDIATES ([`Operand`](crate::v3::Operand)), not named constants,
     /// so the instruction stream matches compactc's slot for slot.
     pub fn emit<V: Visibility + Meet<Public, Out = V>>(
         self,

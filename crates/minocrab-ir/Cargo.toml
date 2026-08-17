@@ -1,12 +1,18 @@
 [package]
 name = "minocrab-ir"
-version = "0.1.0"
-description = "L1: typed circuit builder over ZKIR instructions"
+description = "MinoCrab L1: typed circuit builder over ZKIR instructions, with statically-tracked value handles"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "zkir", "circuit", "zero-knowledge", "compiler"]
+categories = ["cryptography::cryptocurrencies", "compilers"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab-zkir = { path = "../minocrab-zkir" }
+minocrab-zkir.workspace = true
 midnight-zkir.workspace = true
 midnight-base-crypto.workspace = true
 # For constructing zkir-v3's TypedIdentifier through its serde form (its

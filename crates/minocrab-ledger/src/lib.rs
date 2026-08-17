@@ -15,6 +15,29 @@
 //! zkir-v3-passes/reduce-to-zkir.ss:484-633), with its suppression rules:
 //! top-level Cell writes lose their idxp/insc wrapper; the first fetch of
 //! a field is always the *uncached* idx variant.
+//!
+//! # Where this sits
+//!
+//! L2.5: above the [`minocrab`] eDSL (L2), whose wires it splices into op
+//! element streams, and below `minocrab-std` (L3), whose `v3::ledger` and
+//! `v3::kernel` types are one-line wrappers over the functions here. That
+//! layering is deliberate — the ADTs sit *above* the ops, so this crate stays
+//! the pure op layer and gains no dependency of its own. Contract code should
+//! use the typed slots in `minocrab-std`; reach for this crate to emit an
+//! operation those do not cover, or to read what the encoding actually is.
+//!
+//! # Start here
+//!
+//! - [`ImpactOp`] and [`ImpactElem`] — one Impact instruction, as the element
+//!   stream `Op::field_repr` would produce
+//! - [`LedgerValue`] — a FAB-aligned value whose limbs may be
+//!   circuit-computed
+//! - [`cell_write`], [`map_insert`], [`counter_increment`] — writes, as
+//!   compactc's vm-code sequences them
+//! - [`cell_read`], [`map_lookup`], [`counter_read`] — reads, which return
+//!   wires and record their disclosure
+//! - [`contract_call`] — a cross-contract call, and the labels it discloses
+//!   ([`XcallEntryPointHash`], [`XcallCommitment`], [`XcallResult`])
 
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
@@ -306,7 +329,7 @@ pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
 /// `Cell<QualifiedShieldedCoinInfo>.writeCoin(coin, recipient)` on the
 /// top-level field `index` (midnight-ledger.ss:567-583): the coin's
 /// Merkle-tree index is resolved by indexing the context's
-/// commitment-index map (context[1]) with the coin's commitment (from the
+/// commitment-index map (context\[1\]) with the coin's commitment (from the
 /// stack) and concatenated onto the coin, writing the resulting
 /// QualifiedShieldedCoinInfo. `push key; dup 3; push cm; idxc [1, stack];
 /// push coin; swap 0; concatc 91; ins 1` — the leading idx (empty path)
@@ -1192,7 +1215,7 @@ pub enum BalanceCmp {
 /// `kernel.balance*(token_type[, amount])` (midnight-ledger.ss:427-540).
 ///
 /// One shape for all three: fetch the context's unshielded-balances map
-/// (context[5]), yield `map[token_type]` or ZERO if the key is absent, then
+/// (context\[5\]), yield `map[token_type]` or ZERO if the key is absent, then
 /// compare or not.
 ///
 /// ```text
@@ -1488,18 +1511,18 @@ fn kernel_effect_add(slot: u8, key: &LedgerValue, amount: &LedgerValue) -> Vec<I
     ]
 }
 
-/// `kernel.mintShielded(domain_sep, amount)` — [`kernel_effect_add`] at
-/// effects[4]. This was the shape's only caller until M17 found it was five.
+/// `kernel.mintShielded(domain_sep, amount)` — `kernel_effect_add` at
+/// effects\[4\]. This was the shape's only caller until M17 found it was five.
 pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
     kernel_effect_add(4, domain_sep, amount)
 }
 
-/// `kernel.mintUnshielded(domain_sep, amount)` — effects[5], `Uint<64>`.
+/// `kernel.mintUnshielded(domain_sep, amount)` — effects\[5\], `Uint<64>`.
 pub fn kernel_mint_unshielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
     kernel_effect_add(5, domain_sep, amount)
 }
 
-/// `kernel.incUnshieldedInputs(token_type, amount)` — effects[6],
+/// `kernel.incUnshieldedInputs(token_type, amount)` — effects\[6\],
 /// `Uint<128>`. Called when RECEIVING an unshielded token.
 pub fn kernel_inc_unshielded_inputs(
     token_type: &LedgerValue,
@@ -1508,7 +1531,7 @@ pub fn kernel_inc_unshielded_inputs(
     kernel_effect_add(6, token_type, amount)
 }
 
-/// `kernel.incUnshieldedOutputs(token_type, amount)` — effects[7],
+/// `kernel.incUnshieldedOutputs(token_type, amount)` — effects\[7\],
 /// `Uint<128>`. Called when SENDING one.
 pub fn kernel_inc_unshielded_outputs(
     token_type: &LedgerValue,
@@ -1518,7 +1541,7 @@ pub fn kernel_inc_unshielded_outputs(
 }
 
 /// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
-/// effects[8]. The key is the CONCATENATION of the token type and the
+/// effects\[8\]. The key is the CONCATENATION of the token type and the
 /// recipient, which is why the caller passes one `LedgerValue` of six atoms
 /// rather than two of three.
 pub fn kernel_claim_unshielded_coin_spend(
@@ -1546,24 +1569,24 @@ fn kernel_claim(effect_index: u8, note: &LedgerValue) -> Vec<ImpactOp> {
     ]
 }
 
-/// `kernel.claimZswapNullifier(nul)` — effects[0].
+/// `kernel.claimZswapNullifier(nul)` — effects\[0\].
 pub fn kernel_claim_zswap_nullifier(nul: &LedgerValue) -> Vec<ImpactOp> {
     kernel_claim(0, nul)
 }
 
-/// `kernel.claimZswapCoinReceive(note)` — effects[1].
+/// `kernel.claimZswapCoinReceive(note)` — effects\[1\].
 pub fn kernel_claim_zswap_coin_receive(note: &LedgerValue) -> Vec<ImpactOp> {
     kernel_claim(1, note)
 }
 
-/// `kernel.claimZswapCoinSpend(note)` — effects[2].
+/// `kernel.claimZswapCoinSpend(note)` — effects\[2\].
 pub fn kernel_claim_zswap_coin_spend(note: &LedgerValue) -> Vec<ImpactOp> {
     kernel_claim(2, note)
 }
 
 /// `kernel.claimContractCall(addr, entry_point, comm)`
 /// (midnight-ledger.ss:195-215): insert `size(claims) ‖ addr ‖ ep ‖ comm →
-/// Null` into the claimed-contract-calls map at effects[3]. `addr_ep_comm`
+/// Null` into the claimed-contract-calls map at effects\[3\]. `addr_ep_comm`
 /// is the single 3-atom `[bytes<32>, bytes<32>, field]` concatenation
 /// (`rt-aligned-concat`); the size prefix (via `dup 0; size; concatc 160`)
 /// keys repeated identical calls apart.
@@ -1727,7 +1750,8 @@ impl Callee {
 /// vectors and a hand-written result-constraint list; this takes the
 /// callee's declared argument and result TYPES and derives both — the limb
 /// order from [`CallArgs::push_call_slots`], the result constraints from
-/// [`CircuitAbi::prims`] run through compactc's own table. A caller can no
+/// [`CircuitAbi::prims`](minocrab::v3::CircuitAbi::prims) run through
+/// compactc's own table. A caller can no
 /// longer flatten a struct in the wrong order or forget a result's range
 /// check, because it never writes either down.
 ///
@@ -2036,7 +2060,7 @@ mod tests {
 
     /// `kernel_claim_contract_call`'s constant ops and mixed push header
     /// against real Op encodings and the callOnce.zkir annotated stream:
-    /// swap = 0x40, idxpc effects[3] = [0x80,1,1,3], dup 0 = 0x30,
+    /// swap = 0x40, idxpc effects\[3\] = [0x80,1,1,3], dup 0 = 0x30,
     /// size = 0x04, push cell = [0x10, 1, 3, 0x20, 0x20, −2, limbs…],
     /// concatc 160 = [0x17, 0xa0], push null = [0x10, 0x00], insc 2 = 0xa2.
     #[test]
