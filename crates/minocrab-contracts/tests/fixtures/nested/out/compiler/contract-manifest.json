@@ -1,0 +1,175 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 15049,
+      "hash": "be90439e0ced8082121661f8aedd67151f83eae73d65c2ff8f79fc80583b27fc"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 17461,
+      "hash": "051b984c69583b558406ebf9cc7595e2d2dd84703faeb36845e8010b9d9ff6cc"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 273092,
+      "hash": "cc37c653372a1fee8a813b3402f792c3803848c61415efece3a9f012170e3f80"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 8996,
+      "hash": "9c1579979ee0c881b0b36b7dec9562cdfa574fe350eee705649fc35ee308c411"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "counterIncrement.zkir": {
+      "type": "file",
+      "size": 617,
+      "hash": "57bd86b09c993984990870e3bf6301ebbc2ebfb57bce7af31f968cdd7d570969"
+    },
+    "counterRead.zkir": {
+      "type": "file",
+      "size": 791,
+      "hash": "f88e6a8ee19bd3dfa079d6f454da8ee01b971e67675d4dd5a33630eb49c547e3"
+    },
+    "counterReset.zkir": {
+      "type": "file",
+      "size": 771,
+      "hash": "537fa531f2faceae686d27b2672c3501851434cc3987df27a5265bb742008a2b"
+    },
+    "deepInsert.zkir": {
+      "type": "file",
+      "size": 1407,
+      "hash": "7cd6a966be1ee3ecf0a2a18ef4f2685299b8c2a5b707bf7aba1e42f83227213d"
+    },
+    "deepLookup.zkir": {
+      "type": "file",
+      "size": 1376,
+      "hash": "4313ae39d72dd0f66905a03bdb0c72e393367e28dfda285a3e266149290cd634"
+    },
+    "hmtInsert.zkir": {
+      "type": "file",
+      "size": 2221,
+      "hash": "12cec723ea605518d4255777f4e28c4b122b924089794b3fc15fafde53b0095a"
+    },
+    "hmtReset.zkir": {
+      "type": "file",
+      "size": 1217,
+      "hash": "396f656546402965b2dd89505f2e7466786501c66ed0f260f60341a33fae02d6"
+    },
+    "hmtResetHistory.zkir": {
+      "type": "file",
+      "size": 986,
+      "hash": "94e9b65a310477d9e6ecdfc9deea14418a54d780a6e78f3c744805913ed45607"
+    },
+    "listHead.zkir": {
+      "type": "file",
+      "size": 1965,
+      "hash": "4abce00e38dade6bf44dec88bf755a6e141e3b6a62230386885a2b5274d09be5"
+    },
+    "listIsEmpty.zkir": {
+      "type": "file",
+      "size": 1091,
+      "hash": "a03a3b1ad66510e86ed026e4b94d66c6b513fc7c690a5957de088cb018c1c9bb"
+    },
+    "listLength.zkir": {
+      "type": "file",
+      "size": 876,
+      "hash": "db8c20c928a2578c7550b1490edfcd49dfa9271cf3df32e18b0c673eeac482f9"
+    },
+    "listPopFront.zkir": {
+      "type": "file",
+      "size": 633,
+      "hash": "27a72960b81a0b1ab51e96924bec7e78aabf5937301f21b267fc3d989f9c8884"
+    },
+    "listPushFront.zkir": {
+      "type": "file",
+      "size": 1603,
+      "hash": "b6fa5339adee4dc9acc7aceaec93eca15026f831901c6014566fe5f856309fc8"
+    },
+    "listReset.zkir": {
+      "type": "file",
+      "size": 795,
+      "hash": "2fc78e7e1d4093186327d7fdf7a4d482ecfe9bdaf6bcc591e20bd1f53f88e1e0"
+    },
+    "mapInsert.zkir": {
+      "type": "file",
+      "size": 1145,
+      "hash": "fb5bf819b5d7206d606da194ea4d07fb71b2abf4af0c0f681eba3fdbd68fe56b"
+    },
+    "mapInsertDefault.zkir": {
+      "type": "file",
+      "size": 1033,
+      "hash": "59b2f6e828098de452442ae00259909acfc186e232ed708909f7352c3db3ff62"
+    },
+    "mapIsEmpty.zkir": {
+      "type": "file",
+      "size": 1006,
+      "hash": "a0f1757ec6d53be9a5cb37160fdee5cad901c1754ac58bca4f8bb01f6a64660e"
+    },
+    "mapLookup.zkir": {
+      "type": "file",
+      "size": 1114,
+      "hash": "b62bd0d182648484cf2f3da4fe3dc21bbcb755698ef98b0e88ce15e0d63983be"
+    },
+    "mapMember.zkir": {
+      "type": "file",
+      "size": 1183,
+      "hash": "8dbbbf3bc97636447e4ca61876e8932d6deb91661ed430030ca2be32f8122570"
+    },
+    "mapRemove.zkir": {
+      "type": "file",
+      "size": 940,
+      "hash": "27c9cc26939c9c499d3ad7eaf94198a4e1731d5d9e7893353bb36f1b5cc640b0"
+    },
+    "mapReset.zkir": {
+      "type": "file",
+      "size": 747,
+      "hash": "afd9a8c0fb966a4e100c4df85dbc0b871edf260d4fa98a042319312f53b32ab9"
+    },
+    "mapSize.zkir": {
+      "type": "file",
+      "size": 852,
+      "hash": "bacca1a644c752f0802f9818dff27b5e0480132e92e4a26c2f3e2b414f14681f"
+    },
+    "mtCheckRoot.zkir": {
+      "type": "file",
+      "size": 1147,
+      "hash": "6a1fdd5a1d8de16d9ee05b993b4acb84d45af7e556bf28d25daae7d85c5d71bc"
+    },
+    "mtInsert.zkir": {
+      "type": "file",
+      "size": 1738,
+      "hash": "9719a1adeaeaa8c2f2fc0863e379e3eed130d520c4e9fe8b01ac5bacebe971af"
+    },
+    "outerInsertDefault.zkir": {
+      "type": "file",
+      "size": 747,
+      "hash": "afd9a8c0fb966a4e100c4df85dbc0b871edf260d4fa98a042319312f53b32ab9"
+    },
+    "setInsert.zkir": {
+      "type": "file",
+      "size": 1003,
+      "hash": "98a8ff8eb98104d94eca99ca70684af2ea680452631359cf8589ab26c45e77cd"
+    },
+    "setMember.zkir": {
+      "type": "file",
+      "size": 1177,
+      "hash": "ce10c7bf16c86ca644e7c8c4b3bc4751c794ba08aa7bcc17f5c10ffb70ff5ba5"
+    },
+    "setRemove.zkir": {
+      "type": "file",
+      "size": 934,
+      "hash": "897bb71fa8bb0d2bad9e9ac465a7a1891e2a639b0380ea3df5d424fc75f8e327"
+    }
+  }
+}

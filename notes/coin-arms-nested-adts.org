@@ -675,3 +675,251 @@ The decisions, each with its reason:
 6. A DEPTH bound as an E0080 on the handle type — stricter than
    upstream's unchecked =dup= nibble (findings log #8), in exactly the
    way the rest of the API is already stricter.
+
+* AS BUILT — STAGE B1, the nested LOWERING (M22, 2026-08-17)
+
+The encoder half of gap 2, stopping at the raw =minocrab-ledger= layer.
+§2.5's estimate held: ONE new encoder, one enum, four suppression sites,
+a mechanical additive widening. The differential came back
+instruction-for-instruction on the first run, for all twenty-eight
+circuits, like stage A's.
+
+** What the scheme sources say, decoded op by op
+
+Every claim below was read off the pinned compactc's sources AND
+confirmed against a =.zkir= it produced. The scheme is the authority;
+where it disagreed with §2, the corrections are in the next section.
+
+The path =f= is built in [[file:../corpus/src/compact/compiler/analysis-passes/propagate-ledger-paths.ss][propagate-ledger-paths.ss]] (a file §2 never
+named). It walks the accessor chain =mm.lookup(k).insert(k2, v)= and, for
+every accessor that is NOT the last, asserts four things and folds it
+into the path:
+
+: (assert (eq? adt-name 'Map))                  ; only Map nests
+: (assert (and (eq? ledger-op 'lookup) (fx= (length expr*) 1)))
+: (assert (not (public-adt? (car type*))))      ; the KEY is a base type
+: (assert (public-adt? type))                   ; the RESULT is an ADT
+
+then emits =(public-ledger … (path-index* … (path-src* path-type*
+path-expr*) …) … adt-op …)= — the declaration's field index(es) followed
+by one entry per intermediate key. =Path-Element= (reduce-to-zkir.ss:1012)
+maps a field index to =(VMalign i 1)= and a key to a typed
+alignment/operand pair, and =assemble-path= (:469-470) is a plain fold of
+the ORDINARY operand encoder over the list. So a path element is encoded
+exactly as any value is, and =f-cached= is =#f= at every call site in the
+v3 backend (reduce-to-zkir.ss:622 passes it literally).
+
+*** The arithmetic, which is the whole of the lowering
+
+| closing =insc= | operations |
+|----------------+------------|
+| =(length f)= | Map/Set =insert=, =insertDefault=, =remove=; =Counter.increment=/=decrement=; =List.popFront=; both trees' =insertIndex= family; =Map.insertCoin=, =Set.insertCoin= |
+| =(add1 (length f))= | =List.pushFront=, =List.pushFrontCoin=, =MerkleTree.insert=/=insertHash=, all four =HistoricMerkleTree= inserts |
+| =(+ (length f) 2)= | =HistoricMerkleTree.resetHistory= — alone |
+| =(suppress-zero (sub1 (length f)))= | the NINE whole-field-replace ops |
+| a literal 1 or 2 | the =insc= in the MIDDLE of a tree insert or an =hmt= reset, at every depth |
+
+and the leading =idx= is =[path f]= for everything except those nine,
+which take =(suppress-null (reverse (cdr (reverse f))))= and push
+=(car (reverse f))= as a cell.
+
+Exact streams at depth 2, decoded and then confirmed on the wire
+(=idxp [field, k]= is =0x71= plus the two elements' encodings):
+
+| Compact | instructions |
+|---------+--------------|
+| =mm.lookup(k).insert(k2,v)= | =0x71 f k; 0x10 k2; 0x11 v; 0x91; 0xa2= |
+| =mm.lookup(k).insertDefault(k2)= | same, =0x11= of the value type's zeros |
+| =mm.lookup(k).lookup(k2)= | =0x30; 0x51 f k; 0x50 k2; 0x0c= |
+| =mm.lookup(k).member(k2)= | =0x30; 0x51 f k; 0x10 k2; 0x18; 0x0d= |
+| =mm.lookup(k).remove(k2)= | =0x71 f k; 0x10 k2; 0x19; 0xa2= |
+| =mm.lookup(k).size()= | =0x30; 0x51 f k; 0x04; 0x0d= |
+| =mm.lookup(k).resetToDefault()= | =0x70 f; 0x10 k; 0x11 02; 0x91; 0xa1= |
+| =ml.lookup(k).pushFront(v)= | =0x71 f k; 0x30; 0x50 [2]; 0x0e 01; 0x11 array; 0x40; 0x10 [2]; 0x40; 0xa1; 0x40; 0x10 [1]; 0x40; 0xa3= |
+| =ml.lookup(k).popFront()= | =0x71 f k; 0x50 [1]; 0xa2= |
+| =ml.lookup(k).length()= | =0x30; 0x51 f k; 0x50 [2]; 0x0d= |
+| =ml.lookup(k).head()= | =0x30; 0x51 f k; 0x50 [0]=, then =head='s branchy tail UNCHANGED |
+| =mc.lookup(k).increment(1)= | =0x71 f k; 0x0e 01; 0xa2= |
+| =mt.lookup(k).insert(x)= | =0x71 f k; 0x70 [0]; 0x32; 0x50 [1]; 0x11 h; 0x91; 0xa1; 0x70 [1]; 0x0e 01; 0xa3= |
+| =mh.lookup(k).resetHistory()= | =0x71 f k; 0x10 [2]; 0x11 02; 0x32; 0x50 [0]; 0x0a; 0x11 00; 0xa4= |
+| =mh.lookup(k).resetToDefault()= | =0x70 f; 0x10 k; 0x11 array; 0x70 [2]; 0x32; 0x50 [0]; 0x0a; 0x11 00; 0xa2; 0x91; 0xa1= |
+| =mmm.lookup(k).lookup(k2).insert(k3,v)= | =0x72 f k k2; 0x10 k3; 0x11 v; 0x91; 0xa3= |
+
+** FOUR CORRECTIONS to §2, all from the scheme source
+
+*** (i) =Map.lookup= at a LEAF is still two =idx=, and §2.3 read it wrong
+
+§2.3 says "=lookup= on a nested =Map= emits NO instruction of its own —
+it extends the path at compile time". Half right, and the half that is
+wrong matters. An INTERMEDIATE =lookup= (one whose result is an ADT) is
+free and folds into =f=. A LEAF =lookup= is =Map.lookup='s own vm-code,
+which is =(idx [path f]) (idx [path (list key)]) (popeq)= — TWO =idx=
+instructions, the second a one-element path carrying the key
+(midnight-ledger.ss:741-747). So =mm.lookup(k).lookup(k2)= is =0x51= over
+=[field, k]= and then =0x50= over =[k2]=, not a single =0x52=. The crate's
+=map_lookup_at= says so in its doc comment because it is the one place a
+reader will guess wrong.
+
+*** (ii) =Map= is not the only nesting route — the FIELD path can be long too
+
+=determine-ledger-paths.ss= BATCHES a contract's ledger fields into
+segments of =maximum-ledger-segment-length= = 15 ([[file:../corpus/src/compact/compiler/langs.ss][langs.ss:851]]). A
+contract with sixteen fields therefore gives EVERY field a two-element
+path, and every top-level =Cell= write becomes a nested one with both
+suppressions live. Verified: a 16-field probe compiles =f0 = v= to
+=0x70 [1,1,0]; 0x10 [1,1,1,0]; 0x11 v; 0x91; 0xa1=.
+
+This is a REAL pre-existing bug in MinoCrab, not merely a missing
+feature: =#[derive(Ledger)]= emits =at(index)= and every builder assumed
+a one-element path, so a 16-field contract would have diverged from
+compactc silently. Nothing has hit it — the widest ledger block in the
+workspace is =Vault='s THIRTEEN fields — and stage B1's general path is
+the fix at the emission layer. The DERIVE still has to learn it; that is
+stage B2's, and it is now a correctness item rather than an ergonomics
+one. Pinned by =a_sixteen_field_contract_makes_every_cell_write_nested=.
+
+*** (iii) An ADT-valued =insertDefault= pushes the ADT's INITIAL VALUE
+
+Not in §2 at all, and it is the one place the crate was WRONG rather than
+merely unable. =Map.insert= / =insertDefault= push
+=(state-value 'ADT value value_type)=, and =assemble-operand-acc='s
+=VMstate-value-ADT= case (reduce-to-zkir.ss:424-433) DISCARDS the value
+and expands the ADT's own =(initial-value …)= whenever the type is an
+ADT — the empty map for =Map=/=Set=, =[null,null,cell 0u64]= for =List=,
+=cell 0u64= for =Counter=, the blank pair for the trees. Only for a
+non-ADT value type does it fall through to =(cons 1 val)=.
+
+So =mm.insertDefault(k)= on =Map<K, Map<K2,V>>= emits =0x11 0x02= where
+the crate's =map_insert_default= would have emitted =0x11 [1,1,8,0]=.
+New builder =map_insert_adt_default_at=, fed by the same =empty_map= /
+=empty_list= / =empty_counter= / =empty_merkle_tree= constants
+=resetToDefault= writes, so there is no second table of initial values.
+Fixture circuit =outerInsertDefault=.
+
+*** (iv) The coin arms' =dup= is path-dependent, and stage A's constants were the depth-1 case
+
+§1.5 called the four =dup= reaches "the residual risk" and stage A froze
+them as constants. They are compactc's formulas evaluated at
+=len(f) = 1=; the general forms are =3 + 2·(len(f) − 1)= for =Cell=,
+=2 + 2·len(f)= for =Set=, =3 + 2·len(f)= for =Map=, =5 + 2·len(f)= for
+=List=. At depth 2 that is 5 / 6 / 7 / 9, and a probe declaring
+=Map<K, Set<QSCI>>=, =Map<K, Map<K, QSCI>>= and =Map<K, List<QSCI>>=
+compiles to =dup 6=, =dup 7= and =dup 9= exactly. The four constants are
+now four functions; nothing at depth 1 moved.
+
+** The one place our encoding must DIVERGE from =Op::field_repr=
+
+=suppress-zero= has no counterpart upstream. =Op::Ins { n: 0 }= writes
+=0xa0=; compactc writes NOTHING. So a suppressed =insc= has to be OMITTED
+from the op list rather than encoded as zero — which is why the two
+suppression helpers return =Vec<ImpactOp>= and not =ImpactOp=. The other
+half agrees for free: =Op::Idx= with an empty path already writes nothing
+(ops.rs:510-524), the same way =assemble1= drops a =VMsuppress= path.
+
+Stated here because it is the only asymmetry in a crate whose standing
+rule is "never hand-encode a constant op".
+
+** What was built
+
+=LedgerKey= — =Field(u8)= | =Value(LedgerValue)= | =Stack=. Upstream's
+=Key::Value(AlignedValue)= split in two, because a field index is
+const-known and a map key generally is not, plus =Key::Stack=. All three
+encode as =Key::field_repr= does, pinned by
+=key_encoding_matches_field_repr= against the real type. §2.5 proposed
+this enum verbatim; it survived contact unchanged.
+
+=idx_path(cached, push_path, &[LedgerKey])= — THE one new encoder, six
+lines, =0x50|hi|(len−1)= then the fold. Pinned against =Op::Idx= at
+depths 1, 2 and 3 in all four cached/pushPath corners.
+
+Two suppression helpers (=idxp_container=, =insc_container=) and two
+constant helpers (=insc=, =ins1=), and then a mechanical widening: every
+op builder that took =index: u8= gained a =_at(path: &[LedgerKey], ..)=
+twin, and the =u8= form became a one-line wrapper over
+=field_path(index)=. §2.5.2's ADDITIVITY is the whole zero-movement
+argument and it is CHECKED rather than asserted —
+=the_u8_builders_are_the_one_element_path= compares twenty builders'
+streams op for op.
+
+Two builders that did not exist before, both required by the fixture and
+both genuine gaps: =counter_reset= (=Counter.resetToDefault=, the fourth
+of the nine) and =map_insert_adt_default_at= (correction (iii)).
+
+=dup= grew an assert on the nibble — compactc has the same bound as a
+SOURCE COMMENT (midnight-ledger.ss:576-577) and no check. =idx_path=
+asserts the path fits its nibble for the same reason. Both are
+genuinely value-dependent, which is the one case the project's
+compile-errors-over-panics rule allows a panic for.
+
+** The fixture, and what the kind-checker actually accepts
+
+=tests/fixtures/nested/nested.compact=, TWENTY-EIGHT circuits, compiled
+first try under =--feature-zkir-v3=.
+
+TESTED rather than assumed, per §2.1's claim. Rejected by the pinned
+compactc:
+
+: export ledger a: Set<List<Field>>;
+:   expected non-ADT type but received ledger ADT type for generic
+:   parameter value_type declared at <standard library>
+: export ledger a: List<Map<Field, Field>>;
+:   (the same error)
+: export ledger d: Map<Field, Cell<Field>>;
+:   unbound identifier Cell
+
+ACCEPTED, and all seven are declared in the fixture: =Map<K, Map<K2,V>>=,
+=Map<K, List<T>>=, =Map<K, Set<T>>=, =Map<K, Counter>=,
+=Map<K, MerkleTree<n,T>>=, =Map<K, HistoricMerkleTree<n,T>>=, and
+=Map<K, Map<K2, Map<K3, V>>>=. So §2.1 is right that =Map= is the only
+nestable ADT and slightly UNDERSTATES what it may hold: the note's
+examples are Map/List/Counter, and the trees nest too. =Kernel= is
+excluded by a second check in =propagate-ledger-paths.ss=
+("cannot nest Kernel ADTs within another ADT").
+
+The Rust side is =src/nested.rs=, a =#[contract]= block whose circuits
+call =minocrab_ledger= directly with a hand-built =&[LedgerKey]=. NO
+TYPED SURFACE — that is stage B2, and building the differential without
+it is the point: the encoding is proven before any API is committed to,
+and B2's typed differential has this to be compared against.
+
+=tests/nested_differential.rs= is stage A's harness plus one test the
+coin differential had no need of: =the_depth_is_the_opcode_nibble_and_
+the_ins_operand= reads the opcode bytes out of compactc's OWN artifacts
+and asserts the five arithmetic rules above. The headline alone would
+pass if depth were uniformly wrong in the same direction on both sides.
+
+Not covered, and recorded so it is not rediscovered: nested
+=Set.resetToDefault= and =MerkleTree.resetToDefault= (both are
+=reset_to_at= with a different pushed constant, and their depth-1 forms
+are in the =adts= fixture), and the three nested COIN arms (probed and
+decoded above, but a fixture circuit for each would have cost three more
+=ShieldedCoinInfo= signatures for a =dup= nibble the unit test already
+pins).
+
+** The numbers
+
+| | estimated (§2.7) | as built |
+|-+------------------+----------|
+| new Impact opcodes | 0 | 0 |
+| new emission helpers | 1 (=idx_path=) + =LedgerKey= | exactly that, + 4 small shared helpers |
+| =minocrab-ledger= signatures widened | ~40, mechanical, additive | 45 =_at= twins, additive |
+| fixture circuits | 10-12 | 28 |
+| =minocrab-std= | the handle redesign | UNTOUCHED — that is stage B2 |
+
+Zero movement: 170 pre-existing circuits byte-identical in the
+=MINOCRAB_ZKIR_DUMP= comparison, the twenty-eight new files the only
+additions. Both frozen snapshots regenerated in =--release=, additions
+only.
+
+Rows worth noting, against the =adts= fixture's flat twins: nested
+=map_insert_default= is k8/220 against flat's k8/128, nested =set_insert=
+k8/217 against k8/125, nested =list_push_front= k8/239 against k8/147,
+nested =mt_insert= k13/2118 against k13/2026 — each exactly 92 rows
+dearer, which is the =Bytes<32>= key's two limbs going through the
+argument constraints, NOT the path. Depth itself is free: it is operand
+bytes in an =impact= instruction, and an =impact= instruction costs no
+gates. The one big pair, =mt_insert= / =hmt_insert= at k13, is dominated
+by the leaf =persistentHash= as it already was.
+
+STAGE B2 (the typed surface) is untouched. The design of record above is
+still the plan for it, and the README keeps its bullet until B2 lands.

@@ -2015,11 +2015,28 @@ bound as an E0080 stricter than upstream's unchecked nibble.
       `pushFrontCoin` is EIGHT instructions longer than `pushFront`,
       not four. `LedgerCell::write_coin` deliberately NOT promoted.
       notes/coin-arms-nested-adts.org "AS BUILT — STAGE A".)
-- [ ] Stage B1 — nested lowering: `LedgerKey` + the general-path
+- [X] Stage B1 — nested lowering: `LedgerKey` + the general-path
       encoder (`idx_path`), the `u8 → path` widening kept purely
       additive (existing builders become wrappers); nested fixture
       compiled with pinned compactc; raw-ledger differential proving
       the encoding instruction for instruction.
+      (Done: `LedgerKey` = `Field | Value | Stack`, encoding-identical
+      to upstream's `Key`; `idx_path` the one new encoder; 45 `_at`
+      twins with the `u8` forms as wrappers, additivity CHECKED not
+      asserted. `nested.compact` — 28 circuits over all seven shapes
+      the kind-checker accepts — compiled first try and byte-equal to
+      compactc for every one. FOUR corrections to the note: a LEAF
+      `Map.lookup` is still two `idx` (only an INTERMEDIATE one folds
+      into the path); a 16-field ledger block makes every `Cell` write
+      nested by itself (`maximum-ledger-segment-length` = 15) — a real
+      pre-existing bug the general path fixes at the emission layer,
+      with the derive still to learn it in B2; an ADT-valued
+      `insertDefault` pushes the ADT's INITIAL VALUE, not zeros (the
+      one place the crate was wrong rather than unable); the coin arms'
+      four `dup` constants are compactc's formulas at depth 1 and are
+      now four functions. 170 pre-existing circuits byte-identical,
+      28 new files. notes/coin-arms-nested-adts.org "AS BUILT —
+      STAGE B1".)
 - [ ] Stage B2 — the typed surface: `LedgerSlot` split, `at_key`
       handles, the method ripple; typed differentials; the README
       fairness bullets rewritten to what remains true (Map-only

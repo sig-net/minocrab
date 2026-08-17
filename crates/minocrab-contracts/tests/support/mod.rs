@@ -10,7 +10,8 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::v3::Compiled3;
 use minocrab_contracts::{
     adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
-    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, mint_tokens, opaque,
+    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, mint_tokens, nested,
+    opaque,
     serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
     xcontract_events_borsh,
 };
@@ -288,6 +289,12 @@ pub fn circuits() -> Vec<Circuit> {
     // (tests/coins_differential.rs has the scan). Derived, like
     // `kernel_tokens` above.
     listed.extend(of("coins", &coins::Coins::CIRCUITS));
+    // `nested.compact` (M22 stage B1): NESTED ledger ADTs — `Map<K, Map>`,
+    // `Map<K, List>`, `Map<K, Set>`, `Map<K, Counter>`, the two trees, and a
+    // three-level `Map`. Built at the RAW op layer (`&[LedgerKey]` by hand),
+    // because the typed surface is stage B2 and the encoding had to be
+    // proven first. Derived, like `coins` above.
+    listed.extend(of("nested", &nested::Nested::CIRCUITS));
     listed
 }
 

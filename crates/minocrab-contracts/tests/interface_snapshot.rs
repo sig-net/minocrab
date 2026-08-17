@@ -2043,6 +2043,248 @@ in  r_right_hi: Scalar<BLS12-381>
 in  r_right_lo: Scalar<BLS12-381>
 ",
     ),
+    (
+        "nested::map_insert",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+in  v: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_insert_default",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_lookup",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+out value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_member",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+out member: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_remove",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_size",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out size: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_is_empty",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out empty: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::map_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::outer_insert_default",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_push_front",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  v_hi: Scalar<BLS12-381>
+in  v_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_pop_front",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_length",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out length: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_head",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out head (is_some): Scalar<BLS12-381>
+out head (hi): Scalar<BLS12-381>
+out head (lo): Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_is_empty",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out empty: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::list_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::set_insert",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  e_hi: Scalar<BLS12-381>
+in  e_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::set_remove",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  e_hi: Scalar<BLS12-381>
+in  e_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::set_member",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  e_hi: Scalar<BLS12-381>
+in  e_lo: Scalar<BLS12-381>
+out member: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::counter_increment",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::counter_read",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+out count: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::counter_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::mt_insert",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  item_hi: Scalar<BLS12-381>
+in  item_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::mt_check_root",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  rt: Scalar<BLS12-381>
+out ok: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::hmt_insert",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  item_hi: Scalar<BLS12-381>
+in  item_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::hmt_reset_history",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::hmt_reset",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::deep_insert",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+in  k3_hi: Scalar<BLS12-381>
+in  k3_lo: Scalar<BLS12-381>
+in  v: Scalar<BLS12-381>
+",
+    ),
+    (
+        "nested::deep_lookup",
+        "\
+in  k_hi: Scalar<BLS12-381>
+in  k_lo: Scalar<BLS12-381>
+in  k2_hi: Scalar<BLS12-381>
+in  k2_lo: Scalar<BLS12-381>
+in  k3_hi: Scalar<BLS12-381>
+in  k3_lo: Scalar<BLS12-381>
+out value: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

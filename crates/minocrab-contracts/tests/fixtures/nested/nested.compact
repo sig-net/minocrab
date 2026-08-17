@@ -1,0 +1,181 @@
+pragma language_version >= 0.25;
+
+// M22 stage B1 fixture — NESTED LEDGER ADTs, one circuit per operation
+// (notes/coin-arms-nested-adts.org §2 and "AS BUILT — STAGE B1").
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/nested/nested.compact \
+//       crates/minocrab-contracts/tests/fixtures/nested/out
+//
+// `Map` is the ONLY nestable ADT, and that is compactc's bound rather than
+// ours: `Map`'s value formal is the one `ADT/Type` across all six ADTs
+// (ledger.ss:206-211), and every other formal is `Type`, checked as
+// `non-adt-type-valued`. `Set<List<Field>>` and `List<Map<Field, Field>>`
+// are rejected by the pinned compactc with
+//
+//   expected non-ADT type but received ledger ADT type for generic
+//   parameter value_type declared at <standard library>
+//
+// so the declarations below are every shape the kind-checker accepts: a
+// `Map` of each of the five other ADTs, plus `Map` of `Map` at two and
+// three levels. (`Cell` is not spellable at all — `unbound identifier
+// Cell` — it is implicit in a plain value type.)
+//
+// WHAT THE FIXTURE IS FOR. A nested access is not a new instruction: it is
+// ONE `idx` with a longer path and ONE `insc` with a bigger `n`. The
+// intermediate `lookup` emits nothing — compactc folds it into the path at
+// compile time (propagate-ledger-paths.ss). So what these circuits pin is
+// the ARITHMETIC: which closing `insc` is `len(f)`, which is `len(f) + 1`,
+// which is `len(f) + 2`, and which of the nine whole-field-replace ops has
+// its suppressed `idxp`/`insc` pair come back to life at depth 2.
+//
+// Ours rather than the corpus's, for the sixth milestone running: the two
+// specimens (OpenZeppelin's `ShieldedMultiSig`, compactc's own
+// `map_boolean_map_field_counter`) are both ZKIR v2, and across the three
+// `--feature-zkir-v3` corpus sources nested declarations are used ZERO
+// times.
+
+import CompactStandardLibrary;
+
+export ledger mm: Map<Bytes<32>, Map<Bytes<32>, Uint<64>>>;                  // 0
+export ledger ml: Map<Bytes<32>, List<Bytes<32>>>;                           // 1
+export ledger ms: Map<Bytes<32>, Set<Bytes<32>>>;                            // 2
+export ledger mc: Map<Bytes<32>, Counter>;                                   // 3
+export ledger mt: Map<Bytes<32>, MerkleTree<8, Bytes<32>>>;                  // 4
+export ledger mh: Map<Bytes<32>, HistoricMerkleTree<8, Bytes<32>>>;          // 5
+export ledger mmm: Map<Bytes<32>, Map<Bytes<32>, Map<Bytes<32>, Uint<64>>>>; // 6
+
+// --- Map<K, Map<K2, V>> — the shape the README names --------------------------
+
+export circuit mapInsert(k: Bytes<32>, k2: Bytes<32>, v: Uint<64>): [] {
+  mm.lookup(disclose(k)).insert(disclose(k2), disclose(v));
+}
+
+export circuit mapInsertDefault(k: Bytes<32>, k2: Bytes<32>): [] {
+  mm.lookup(disclose(k)).insertDefault(disclose(k2));
+}
+
+export circuit mapLookup(k: Bytes<32>, k2: Bytes<32>): Uint<64> {
+  return mm.lookup(disclose(k)).lookup(disclose(k2));
+}
+
+export circuit mapMember(k: Bytes<32>, k2: Bytes<32>): Boolean {
+  return mm.lookup(disclose(k)).member(disclose(k2));
+}
+
+export circuit mapRemove(k: Bytes<32>, k2: Bytes<32>): [] {
+  mm.lookup(disclose(k)).remove(disclose(k2));
+}
+
+export circuit mapSize(k: Bytes<32>): Uint<64> {
+  return mm.lookup(disclose(k)).size();
+}
+
+export circuit mapIsEmpty(k: Bytes<32>): Boolean {
+  return mm.lookup(disclose(k)).isEmpty();
+}
+
+export circuit mapReset(k: Bytes<32>): [] {
+  mm.lookup(disclose(k)).resetToDefault();
+}
+
+// The OUTER `insertDefault`, at depth 1 — the value type is an ADT, so what
+// is pushed is the ADT's own initial value (the empty map) and not a cell of
+// zeros. This is the one place the crate would have been WRONG rather than
+// merely unable.
+export circuit outerInsertDefault(k: Bytes<32>): [] {
+  mm.insertDefault(disclose(k));
+}
+
+// --- Map<K, List<V>> ----------------------------------------------------------
+
+export circuit listPushFront(k: Bytes<32>, v: Bytes<32>): [] {
+  ml.lookup(disclose(k)).pushFront(disclose(v));
+}
+
+export circuit listPopFront(k: Bytes<32>): [] {
+  ml.lookup(disclose(k)).popFront();
+}
+
+export circuit listLength(k: Bytes<32>): Uint<64> {
+  return ml.lookup(disclose(k)).length();
+}
+
+export circuit listHead(k: Bytes<32>): Maybe<Bytes<32>> {
+  return ml.lookup(disclose(k)).head();
+}
+
+export circuit listIsEmpty(k: Bytes<32>): Boolean {
+  return ml.lookup(disclose(k)).isEmpty();
+}
+
+export circuit listReset(k: Bytes<32>): [] {
+  ml.lookup(disclose(k)).resetToDefault();
+}
+
+// --- Map<K, Set<T>> -----------------------------------------------------------
+
+export circuit setInsert(k: Bytes<32>, e: Bytes<32>): [] {
+  ms.lookup(disclose(k)).insert(disclose(e));
+}
+
+export circuit setRemove(k: Bytes<32>, e: Bytes<32>): [] {
+  ms.lookup(disclose(k)).remove(disclose(e));
+}
+
+export circuit setMember(k: Bytes<32>, e: Bytes<32>): Boolean {
+  return ms.lookup(disclose(k)).member(disclose(e));
+}
+
+// --- Map<K, Counter> ----------------------------------------------------------
+
+export circuit counterIncrement(k: Bytes<32>): [] {
+  mc.lookup(disclose(k)).increment(1);
+}
+
+export circuit counterRead(k: Bytes<32>): Uint<64> {
+  return mc.lookup(disclose(k)).read();
+}
+
+export circuit counterReset(k: Bytes<32>): [] {
+  mc.lookup(disclose(k)).resetToDefault();
+}
+
+// --- Map<K, MerkleTree> / Map<K, HistoricMerkleTree> --------------------------
+//
+// These carry the two closings that are NOT `len(f)`: `insert` closes at
+// `len(f) + 1` and `resetHistory` at `len(f) + 2`.
+
+export circuit mtInsert(k: Bytes<32>, item: Bytes<32>): [] {
+  mt.lookup(disclose(k)).insert(disclose(item));
+}
+
+export circuit mtCheckRoot(k: Bytes<32>, rt: MerkleTreeDigest): Boolean {
+  return mt.lookup(disclose(k)).checkRoot(disclose(rt));
+}
+
+export circuit hmtInsert(k: Bytes<32>, item: Bytes<32>): [] {
+  mh.lookup(disclose(k)).insert(disclose(item));
+}
+
+export circuit hmtResetHistory(k: Bytes<32>): [] {
+  mh.lookup(disclose(k)).resetHistory();
+}
+
+export circuit hmtReset(k: Bytes<32>): [] {
+  mh.lookup(disclose(k)).resetToDefault();
+}
+
+// --- three levels -------------------------------------------------------------
+//
+// The opcode's low nibble and the closing `insc` both track `len(f)`, so a
+// three-element path is `0x72 … 0xa3` where two is `0x71 … 0xa2`.
+
+export circuit deepInsert(k: Bytes<32>, k2: Bytes<32>, k3: Bytes<32>, v: Uint<64>): [] {
+  mmm.lookup(disclose(k)).lookup(disclose(k2)).insert(disclose(k3), disclose(v));
+}
+
+export circuit deepLookup(k: Bytes<32>, k2: Bytes<32>, k3: Bytes<32>): Uint<64> {
+  return mmm.lookup(disclose(k)).lookup(disclose(k2)).lookup(disclose(k3));
+}

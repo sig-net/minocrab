@@ -284,6 +284,12 @@ pub fn idx_field(index: u8) -> ImpactOp {
 
 /// `dup n`.
 pub fn dup(n: u8) -> ImpactOp {
+    assert!(
+        n <= 15,
+        "dup {n}: the reach does not fit the opcode's low nibble — a coin arm \
+         at this path depth would miscompile in compactc too \
+         (midnight-ledger.ss:576-577)"
+    );
     ImpactOp::constant(&Op::Dup { n })
 }
 
@@ -298,15 +304,195 @@ pub fn idx_key(key: &LedgerValue) -> ImpactOp {
     ImpactOp(elems)
 }
 
+// --- the ledger PATH (`f`) --------------------------------------------------
+//
+// Every ledger operation's vm-code is written against `f`, "the path to the
+// field being operated on" (midnight-ledger.ss:133-138), and `f` is "a list of
+// either aligned value instances, or the symbol 'stack". For a top-level
+// field it is one `bytes<1>` key; nesting appends map keys.
+//
+// A NESTED ACCESS IS NOT A NEW INSTRUCTION. compactc's
+// `propagate-ledger-paths.ss` walks a chain of accessors, folds every
+// intermediate `Map.lookup(k)` into `f` as one more path element, and emits
+// nothing for it; only the LAST accessor's vm-code runs, with a longer `f`.
+// So `m.lookup(k).insert(k2, v)` is `map_insert`'s five instructions with a
+// two-element path — `idxp` gains a low nibble and the closing `insc` a
+// bigger `n`. See notes/coin-arms-nested-adts.org "AS BUILT — STAGE B1".
+
+/// One element of a ledger path — compactc's `f` entry.
+///
+/// [`LedgerKey::Field`] and [`LedgerKey::Value`] are the two halves of
+/// upstream's `Key::Value(AlignedValue)`, split because a field index is
+/// const-known and a map key generally is not; [`LedgerKey::Stack`] is
+/// upstream's `Key::Stack` (`'stack` in the vm-code). All three encode
+/// exactly as `Key::field_repr` does — `key_encoding_matches_field_repr`
+/// pins it.
+#[derive(Clone)]
+pub enum LedgerKey {
+    /// A constant `bytes<1>` key — a ledger field index, or a position inside
+    /// an ADT's `Array` (compactc's `(align i 1)`). Encodes as `[1, 1, i]`.
+    Field(u8),
+    /// A FAB-aligned key whose limbs may be circuit-computed: a `Map` key.
+    /// Encodes as its alignment header followed by its limbs.
+    Value(LedgerValue),
+    /// The top of the Impact stack, `-1` — the coin arms' `idxc [(1), stack]`
+    /// and nothing else.
+    Stack,
+}
+
+impl LedgerKey {
+    /// This element's `Key::field_repr` elements, appended to `out`.
+    fn push_elems(&self, out: &mut Vec<ImpactElem>) {
+        match self {
+            LedgerKey::Field(index) => {
+                out.extend(alignment_header(&[AlignmentAtom::Bytes { length: 1 }]));
+                out.push(ImpactElem::Imm(Fr::from(u64::from(*index))));
+            }
+            LedgerKey::Value(value) => {
+                out.extend(alignment_header(&value.atoms));
+                out.extend(value.elems.iter().copied());
+            }
+            LedgerKey::Stack => out.push(ImpactElem::Imm(Fr::from(0u64) - Fr::from(1u64))),
+        }
+    }
+
+    /// This element pushed as a `Cell` — compactc's
+    /// `(push [storage #f] [value (state-value 'cell (car (reverse f)))])`,
+    /// the key the whole-field-replace ops write the new value under.
+    fn push_as_cell(&self) -> ImpactOp {
+        match self {
+            LedgerKey::Field(index) => push_cell(false, &field_index_value(*index)),
+            LedgerKey::Value(value) => push_cell(false, value),
+            LedgerKey::Stack => panic!("a whole-field replace cannot write under a stack key"),
+        }
+    }
+}
+
+/// The ONE new encoder of stage B1: `idx` over a whole path.
+///
+/// `[0x50 | hi | (path.len() − 1)]` then each element's encoding, which is
+/// `assemble1`'s `idx` case (reduce-to-zkir.ss:586-601) and upstream's
+/// `Op::Idx` field_repr (ops.rs:510-524) at once. The low nibble is the
+/// ONLY thing depth changes.
+pub fn idx_path(cached: bool, push_path: bool, path: &[LedgerKey]) -> ImpactOp {
+    assert!(
+        !path.is_empty(),
+        "idx_path: an empty path emits no instruction — the callers that can \
+         produce one go through the suppression helpers"
+    );
+    assert!(
+        path.len() <= 16,
+        "idx_path: a {}-element path does not fit the opcode's low nibble \
+         (compactc has the same bound, unchecked)",
+        path.len()
+    );
+    let hi = match (cached, push_path) {
+        (false, false) => 0x50u8,
+        (true, false) => 0x60,
+        (false, true) => 0x70,
+        (true, true) => 0x80,
+    };
+    let mut elems = vec![ImpactElem::Imm(Fr::from(u64::from(
+        hi | (path.len() as u8 - 1),
+    )))];
+    for key in path {
+        key.push_elems(&mut elems);
+    }
+    ImpactOp(elems)
+}
+
+/// The one-element path of a top-level ledger field — what every `u8`
+/// builder widens into, and the reason the widening is purely ADDITIVE.
+fn field_path(index: u8) -> [LedgerKey; 1] {
+    [LedgerKey::Field(index)]
+}
+
+/// `insc n`, with compactc's own nibble bound stated.
+fn insc(n: usize) -> ImpactOp {
+    assert!(
+        n <= 15,
+        "insc {n}: the depth does not fit the opcode's low nibble"
+    );
+    ImpactOp::constant(&Op::Ins {
+        cached: true,
+        n: n as u8,
+    })
+}
+
+/// `ins 1` — the uncached insert every write closes its inner slot with.
+fn ins1() -> ImpactOp {
+    ImpactOp::constant(&Op::Ins {
+        cached: false,
+        n: 1,
+    })
+}
+
+// --- PATH SUPPRESSION -------------------------------------------------------
+//
+// Nine operations REPLACE a whole field rather than reach inside it —
+// `Cell.write`, `Cell.writeCoin`, `Cell.resetToDefault`,
+// `Counter.resetToDefault`, and the five collections' `resetToDefault`
+// (midnight-ledger.ss:554, 561, 573, 616, 627, 715, 821, 1015, 1178). They
+// alone split `f` into "the path to the container" and "the key to write":
+//
+//   (idx [pushPath #t] [path (suppress-null (reverse (cdr (reverse f))))])
+//   (push [storage #f] [value (state-value 'cell (car (reverse f)))])
+//   …
+//   (ins [cached #t] [n (suppress-zero (sub1 (length f)))])
+//
+// `suppress-null` / `suppress-zero` (vm.ss:192-194) turn the degenerate
+// operand into `VMsuppress`, which `assemble1` maps to the EMPTY operand list
+// and `assemble` then drops — the instruction disappears. At depth 1 both
+// vanish, which is why a top-level `Cell` write is three instructions. At
+// depth 2 BOTH become live: `idxp [field]` and `insc 1` reappear, exactly as
+// the probe of `a.lookup(k).resetToDefault()` shows.
+//
+// This is the one place our encoding must diverge from `Op::field_repr`:
+// upstream's `Op::Ins { n: 0 }` writes `0xa0` rather than nothing, so the
+// suppressed `insc` has to be OMITTED here and not encoded as zero.
+// (`Op::Idx` with an empty path already writes nothing, so that half agrees.)
+
+/// The leading `idxp` of a whole-field-replace op: the path MINUS its last
+/// element, suppressed away entirely when that leaves nothing.
+fn idxp_container(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    let head = &path[..path.len() - 1];
+    if head.is_empty() {
+        Vec::new()
+    } else {
+        vec![idx_path(false, true, head)]
+    }
+}
+
+/// The closing `insc` of a whole-field-replace op: `len(f) − 1`, suppressed
+/// away entirely at zero.
+fn insc_container(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    if path.len() == 1 {
+        Vec::new()
+    } else {
+        vec![insc(path.len() - 1)]
+    }
+}
+
 // --- compactc's vm-code per ledger operation (midnight-ledger.ss) -----------
+//
+// Every builder comes in two forms: `foo(index: u8, ..)` for a top-level
+// field and `foo_at(path: &[LedgerKey], ..)` for the general case. The `u8`
+// form is a one-line wrapper over the one-element path, so the widening adds
+// a capability without moving a single byte of what the crate already emits
+// (M22 stage B1's zero-movement gate).
 
 /// `Counter.increment(amount)` on ledger field `index`
 /// (midnight-ledger.ss:605-609): `idxp [field]; addi amount; insc 1`.
 pub fn counter_increment(index: u8, amount: u32) -> Vec<ImpactOp> {
+    counter_increment_at(&field_path(index), amount)
+}
+
+/// [`counter_increment`] on a general path: `idxp f; addi amount; insc len(f)`.
+pub fn counter_increment_at(path: &[LedgerKey], amount: u32) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         ImpactOp::constant(&Op::Addi { immediate: amount }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        insc(path.len()),
     ]
 }
 
@@ -315,15 +501,23 @@ pub fn counter_increment(index: u8, amount: u32) -> Vec<ImpactOp> {
 /// top-level fields, reduce-to-zkir.ss:595-608): `push key; pushs value;
 /// ins 1`.
 pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
-    let key = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(u64::from(index)))]);
-    vec![
-        push_cell(false, &key),
-        push_cell(true, value),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
-    ]
+    cell_write_at(&field_path(index), value)
+}
+
+/// [`cell_write`] on a general path — one of the NINE whole-field-replace ops
+/// (see "PATH SUPPRESSION" above), so the leading `idxp` and closing `insc`
+/// are live at depth 2 and suppressed at depth 1:
+///
+/// ```text
+/// idxp f[..len-1];  push f[len-1];  pushs value;  ins 1;  insc len(f)-1
+/// ```
+pub fn cell_write_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = idxp_container(path);
+    ops.push(path[path.len() - 1].push_as_cell());
+    ops.push(push_cell(true, value));
+    ops.push(ins1());
+    ops.extend(insc_container(path));
+    ops
 }
 
 /// `Cell<QualifiedShieldedCoinInfo>.writeCoin(coin, recipient)` on the
@@ -341,13 +535,18 @@ pub fn cell_write(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
 /// The middle six are [`qualify_coin`], shared with the three collection
 /// arms; this is `cell_write` with its value push replaced by them.
 pub fn cell_write_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
-    let key = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(u64::from(index)))]);
-    let mut ops = vec![push_cell(false, &key)];
-    ops.extend(qualify_coin(CELL_COIN_DUP, cm, coin));
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
+    cell_write_coin_at(&field_path(index), cm, coin)
+}
+
+/// [`cell_write_coin`] on a general path — [`cell_write_at`] with its value
+/// push replaced by [`qualify_coin`], and the `dup` reach growing with the
+/// path ([`cell_coin_dup`]).
+pub fn cell_write_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = idxp_container(path);
+    ops.push(path[path.len() - 1].push_as_cell());
+    ops.extend(qualify_coin(cell_coin_dup(path.len()), cm, coin));
+    ops.push(ins1());
+    ops.extend(insc_container(path));
     ops
 }
 
@@ -394,28 +593,49 @@ fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6
     ]
 }
 
-/// The four coin arms' [`qualify_coin`] reaches, at the ONE field-path depth
-/// Compact fields have (`len(f) = 1`). compactc's formulas, with `f`
-/// substituted: `3 + 2·(len(f) − 1)` for `Cell`, `2 + 2·len(f)` for `Set`,
-/// `3 + 2·len(f)` for `Map`, `5 + 2·len(f)` for `List` — each counting the
-/// arm's own pushes before the dance.
-const CELL_COIN_DUP: u8 = 3;
-const SET_COIN_DUP: u8 = 4;
-const MAP_COIN_DUP: u8 = 5;
-const LIST_COIN_DUP: u8 = 7;
+/// The four coin arms' [`qualify_coin`] reaches, as compactc writes them —
+/// each counting the arm's own pushes, the result slot, the `2·len(f)` path
+/// items the leading `idx` left, and the effects. At `len(f) = 1` they are
+/// 3, 4, 5 and 7, which is what M22 stage A pinned.
+///
+/// compactc notes at midnight-ledger.ss:576-577 that a long `f` overflows the
+/// `dup` nibble; [`dup`] asserts what compactc only comments.
+fn cell_coin_dup(len: usize) -> u8 {
+    (3 + 2 * (len - 1)) as u8
+}
+
+/// See [`cell_coin_dup`].
+fn set_coin_dup(len: usize) -> u8 {
+    (2 + 2 * len) as u8
+}
+
+/// See [`cell_coin_dup`].
+fn map_coin_dup(len: usize) -> u8 {
+    (3 + 2 * len) as u8
+}
+
+/// See [`cell_coin_dup`].
+fn list_coin_dup(len: usize) -> u8 {
+    (5 + 2 * len) as u8
+}
 
 /// `map.insert(key, value)` on ledger field `index`:
 /// `idxp [field]; push key; pushs value; ins 1; insc 1`.
 pub fn map_insert(index: u8, key: &LedgerValue, value: &LedgerValue) -> Vec<ImpactOp> {
+    map_insert_at(&field_path(index), key, value)
+}
+
+/// [`map_insert`] on a general path: `idxp f; push key; pushs value; ins 1;
+/// insc len(f)`. The nested form of `m.lookup(k).insert(k2, v)`, and the
+/// stream OpenZeppelin's `ShieldedMultiSig.approveProposal` compiles to
+/// (`0x71 … 0x91 0xa2`).
+pub fn map_insert_at(path: &[LedgerKey], key: &LedgerValue, value: &LedgerValue) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         push_cell(false, key),
         push_cell(true, value),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        ins1(),
+        insc(path.len()),
     ]
 }
 
@@ -437,24 +657,36 @@ pub fn map_insert_coin(
     cm: &LedgerValue,
     coin: &LedgerValue,
 ) -> Vec<ImpactOp> {
-    let mut ops = vec![idxp_field(index), push_cell(false, key)];
-    ops.extend(qualify_coin(MAP_COIN_DUP, cm, coin));
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
-    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 1 }));
+    map_insert_coin_at(&field_path(index), key, cm, coin)
+}
+
+/// [`map_insert_coin`] on a general path.
+pub fn map_insert_coin_at(
+    path: &[LedgerKey],
+    key: &LedgerValue,
+    cm: &LedgerValue,
+    coin: &LedgerValue,
+) -> Vec<ImpactOp> {
+    let mut ops = vec![idx_path(false, true, path), push_cell(false, key)];
+    ops.extend(qualify_coin(map_coin_dup(path.len()), cm, coin));
+    ops.push(ins1());
+    ops.push(insc(path.len()));
     ops
 }
 
 /// `map.remove(key)` on ledger field `index` (midnight-ledger.ss Map
 /// `remove`; claim.zkir:287-291): `idxp [field]; push key; rem; insc 1`.
 pub fn map_remove(index: u8, key: &LedgerValue) -> Vec<ImpactOp> {
+    map_remove_at(&field_path(index), key)
+}
+
+/// [`map_remove`] on a general path.
+pub fn map_remove_at(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         push_cell(false, key),
         ImpactOp::constant(&Op::Rem { cached: false }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        insc(path.len()),
     ]
 }
 
@@ -462,18 +694,20 @@ pub fn map_remove(index: u8, key: &LedgerValue) -> Vec<ImpactOp> {
 /// value (midnight-ledger.ss's Set vm-code; xcontract-events
 /// depositViaVault): `idxp [field]; push elem; pushs null; ins 1; insc 1`.
 pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
+    set_insert_at(&field_path(index), elem)
+}
+
+/// [`set_insert`] on a general path.
+pub fn set_insert_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         push_cell(false, elem),
         ImpactOp::constant(&Op::Push {
             storage: true,
             value: midnight_onchain_state::state::StateValue::Null,
         }),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        ins1(),
+        insc(path.len()),
     ]
 }
 
@@ -491,17 +725,19 @@ pub fn set_insert(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
 /// runs BEFORE the `pushs null` — the `dup 4` reaches the context past the
 /// set, the two path items the `idxp` left, and the effects.
 pub fn set_insert_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
-    let mut ops = vec![idxp_field(index)];
-    ops.extend(qualify_coin(SET_COIN_DUP, cm, coin));
+    set_insert_coin_at(&field_path(index), cm, coin)
+}
+
+/// [`set_insert_coin`] on a general path.
+pub fn set_insert_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = vec![idx_path(false, true, path)];
+    ops.extend(qualify_coin(set_coin_dup(path.len()), cm, coin));
     ops.push(ImpactOp::constant(&Op::Push {
         storage: true,
         value: midnight_onchain_state::state::StateValue::Null,
     }));
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
-    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 1 }));
+    ops.push(ins1());
+    ops.push(insc(path.len()));
     ops
 }
 
@@ -514,6 +750,11 @@ pub fn set_remove(index: u8, elem: &LedgerValue) -> Vec<ImpactOp> {
     map_remove(index, elem)
 }
 
+/// [`set_remove`] on a general path — see [`map_remove_at`].
+pub fn set_remove_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
+    map_remove_at(path, elem)
+}
+
 /// `map.insertDefault(key)` / a `Map` whose value type's default is written
 /// (midnight-ledger.ss Map `insertDefault`): `idxp [field]; push key;
 /// pushs default; ins 1; insc 1`. `value_atoms` is the VALUE type's
@@ -522,26 +763,69 @@ pub fn map_insert_default(index: u8, key: &LedgerValue, value_atoms: Vec<Alignme
     map_insert(index, key, &default_value(value_atoms))
 }
 
-/// The shared shape of every `resetToDefault` on a TOP-LEVEL field:
-/// `push key; pushs initial; ins 1`.
+/// [`map_insert_default`] on a general path.
+pub fn map_insert_default_at(
+    path: &[LedgerKey],
+    key: &LedgerValue,
+    value_atoms: Vec<AlignmentAtom>,
+) -> Vec<ImpactOp> {
+    map_insert_at(path, key, &default_value(value_atoms))
+}
+
+/// `map.insertDefault(key)` where the VALUE TYPE IS AN ADT — a different
+/// instruction from [`map_insert_default`], and the one place stage B1 found
+/// the crate would have been wrong rather than merely unable.
 ///
-/// compactc's vm-code wraps this in `idx [pushPath] (all but the last path
-/// element)` and a trailing `insc (len(path) - 1)`, both of which are
-/// SUPPRESSED for a one-element path and so emit no instruction at all
-/// (notes/ledger-adts.org finding (d)) — the same suppression a top-level
-/// `Cell` write already gets.
-fn reset_to(index: u8, initial: StateValue<InMemoryDB>) -> Vec<ImpactOp> {
+/// compactc's `insert`/`insertDefault` push `(state-value 'ADT value
+/// value_type)`, and `assemble-operand-acc`'s `VMstate-value-ADT` case
+/// (reduce-to-zkir.ss:424-433) DISCARDS the value and emits the ADT's own
+/// `(initial-value …)` whenever the type is an ADT — the empty map for
+/// `Map`/`Set`, `[null, null, cell 0u64]` for `List`, `cell 0u64` for
+/// `Counter`, the blank tree pair for the two trees. Only when the type is
+/// NOT an ADT does it fall through to `(cons 1 val)`, the plain cell
+/// [`map_insert_default`] pushes.
+///
+/// So an ADT-valued `insertDefault` is `idxp f; push key; pushs <the ADT's
+/// initial value>; ins 1; insc len(f)` — verified against compactc for
+/// `Map<K, Map<..>>`, `Map<K, List<..>>` and `Map<K, Counter>`. The initial
+/// values are the same constants `resetToDefault` writes, so they come from
+/// [`empty_map`], [`empty_list`], [`empty_counter`] and [`empty_merkle_tree`]
+/// rather than a second table.
+pub fn map_insert_adt_default_at(
+    path: &[LedgerKey],
+    key: &LedgerValue,
+    initial: StateValue<InMemoryDB>,
+) -> Vec<ImpactOp> {
     vec![
-        push_cell(false, &field_index_value(index)),
+        idx_path(false, true, path),
+        push_cell(false, key),
         ImpactOp::constant(&Op::Push {
             storage: true,
             value: initial,
         }),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
+        ins1(),
+        insc(path.len()),
     ]
+}
+
+/// The shared shape of every `resetToDefault`: `idxp f[..len-1];
+/// push f[len-1]; pushs initial; ins 1; insc len(f)-1`, the first and last
+/// suppressed at depth 1.
+///
+/// One of the NINE whole-field-replace ops — see "PATH SUPPRESSION" above and
+/// notes/ledger-adts.org finding (d). Five of the six `resetToDefault`s go
+/// through here; `HistoricMerkleTree`'s open-codes its own because its
+/// closing pair is asymmetric.
+fn reset_to_at(path: &[LedgerKey], initial: StateValue<InMemoryDB>) -> Vec<ImpactOp> {
+    let mut ops = idxp_container(path);
+    ops.push(path[path.len() - 1].push_as_cell());
+    ops.push(ImpactOp::constant(&Op::Push {
+        storage: true,
+        value: initial,
+    }));
+    ops.push(ins1());
+    ops.extend(insc_container(path));
+    ops
 }
 
 /// The field index as a pushable `bytes<1>` value — the key half of
@@ -553,7 +837,12 @@ fn field_index_value(index: u8) -> LedgerValue {
 /// `map.resetToDefault()` on field `index`: `push key; pushs (empty map);
 /// ins 1`.
 pub fn map_reset(index: u8) -> Vec<ImpactOp> {
-    reset_to(index, StateValue::Map(StorageHashMap::new()))
+    map_reset_at(&field_path(index))
+}
+
+/// [`map_reset`] on a general path.
+pub fn map_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    reset_to_at(path, empty_map())
 }
 
 /// `set.resetToDefault()` — [`map_reset`], since a `Set`'s initial value is
@@ -562,10 +851,37 @@ pub fn set_reset(index: u8) -> Vec<ImpactOp> {
     map_reset(index)
 }
 
+/// [`set_reset`] on a general path.
+pub fn set_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    map_reset_at(path)
+}
+
+/// A `Map`'s (and a `Set`'s) initial value: the empty map.
+pub fn empty_map() -> StateValue<InMemoryDB> {
+    StateValue::Map(StorageHashMap::new())
+}
+
+/// A `Counter`'s initial value: `cell 0u64`.
+pub fn empty_counter() -> StateValue<InMemoryDB> {
+    StateValue::Cell(Sp::new(u64_aligned(0)))
+}
+
+/// `counter.resetToDefault()` on field `index` (midnight-ledger.ss:614-620) —
+/// the fourth of the nine whole-field-replace ops, and the one the crate had
+/// no builder for until a NESTED `Map<K, Counter>` needed it.
+pub fn counter_reset(index: u8) -> Vec<ImpactOp> {
+    counter_reset_at(&field_path(index))
+}
+
+/// [`counter_reset`] on a general path.
+pub fn counter_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    reset_to_at(path, empty_counter())
+}
+
 // --- List: an `Array[3]` of `{head cell, tail list, length}` ----------------
 
 /// A `List`'s initial value: `[null, null, cell 0u64]`.
-fn empty_list() -> StateValue<InMemoryDB> {
+pub fn empty_list() -> StateValue<InMemoryDB> {
     StateValue::Array(
         [
             StateValue::Null,
@@ -578,7 +894,12 @@ fn empty_list() -> StateValue<InMemoryDB> {
 
 /// `list.resetToDefault()` on field `index`.
 pub fn list_reset(index: u8) -> Vec<ImpactOp> {
-    reset_to(index, empty_list())
+    list_reset_at(&field_path(index))
+}
+
+/// [`list_reset`] on a general path.
+pub fn list_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
+    reset_to_at(path, empty_list())
 }
 
 /// `list.pushFront(value)` on field `index` (midnight-ledger.ss List
@@ -592,8 +913,15 @@ pub fn list_reset(index: u8) -> Vec<ImpactOp> {
 /// swap 0; push 1u8; swap 0; insc 2            // node[1] = the old list
 /// ```
 pub fn list_push_front(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
+    list_push_front_at(&field_path(index), value)
+}
+
+/// [`list_push_front`] on a general path. The closing `insc` is
+/// `len(f) + 1` — the only op family whose depth arithmetic is not
+/// `len(f)` — and the `insc 1` in the middle is a literal 1 at every depth.
+pub fn list_push_front_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         dup(0),
         idx_one(false, false, LIST_LENGTH),
         ImpactOp::constant(&Op::Addi { immediate: 1 }),
@@ -612,7 +940,7 @@ pub fn list_push_front(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
         swap(0),
         push_cell(false, &field_index_value(LIST_TAIL)),
         swap(0),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        insc(path.len() + 1),
     ]
 }
 
@@ -636,15 +964,24 @@ pub fn list_push_front(index: u8, value: &LedgerValue) -> Vec<ImpactOp> {
 /// swap 0; push 1u8; swap 0; insc 2            // node[1] = the old list
 /// ```
 pub fn list_push_front_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
+    list_push_front_coin_at(&field_path(index), cm, coin)
+}
+
+/// [`list_push_front_coin`] on a general path.
+pub fn list_push_front_coin_at(
+    path: &[LedgerKey],
+    cm: &LedgerValue,
+    coin: &LedgerValue,
+) -> Vec<ImpactOp> {
     let mut ops = vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         dup(0),
         idx_one(false, false, LIST_LENGTH),
         ImpactOp::constant(&Op::Addi { immediate: 1 }),
         push_array(true, &[LedgerElem::Null, LedgerElem::Null, LedgerElem::Null]),
         push_cell(false, &field_index_value(LIST_HEAD)),
     ];
-    ops.extend(qualify_coin(LIST_COIN_DUP, cm, coin));
+    ops.extend(qualify_coin(list_coin_dup(path.len()), cm, coin));
     ops.extend([
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
         swap(0),
@@ -654,7 +991,7 @@ pub fn list_push_front_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> 
         swap(0),
         push_cell(false, &field_index_value(LIST_TAIL)),
         swap(0),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        insc(path.len() + 1),
     ]);
     ops
 }
@@ -662,10 +999,15 @@ pub fn list_push_front_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> 
 /// `list.popFront()` on field `index`: `idxp [field]; idx [1]; insc 1` — the
 /// list becomes its own tail.
 pub fn list_pop_front(index: u8) -> Vec<ImpactOp> {
+    list_pop_front_at(&field_path(index))
+}
+
+/// [`list_pop_front`] on a general path.
+pub fn list_pop_front_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         idx_one(false, false, LIST_TAIL),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        insc(path.len()),
     ]
 }
 
@@ -691,8 +1033,13 @@ fn empty_merkle_tree(depth: u8) -> [StateValue<InMemoryDB>; 2] {
 
 /// `mt.resetToDefault()` on field `index`.
 pub fn merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
-    reset_to(
-        index,
+    merkle_tree_reset_at(&field_path(index), depth)
+}
+
+/// [`merkle_tree_reset`] on a general path.
+pub fn merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
+    reset_to_at(
+        path,
         StateValue::Array(empty_merkle_tree(depth).into_iter().collect()),
     )
 }
@@ -710,20 +1057,23 @@ pub fn merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
 /// idxp [1]; addi 1; insc 2                    // next += 1
 /// ```
 pub fn merkle_tree_insert(index: u8, leaf: &LedgerValue) -> Vec<ImpactOp> {
+    merkle_tree_insert_at(&field_path(index), leaf)
+}
+
+/// [`merkle_tree_insert`] on a general path — the closing `insc` is
+/// `len(f) + 1`; the two in the middle are literal 1s at every depth.
+pub fn merkle_tree_insert_at(path: &[LedgerKey], leaf: &LedgerValue) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         idx_one(false, true, TREE),
         dup(2),
         idx_one(false, false, TREE_NEXT),
         push_cell(true, leaf),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
+        ins1(),
         ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
         idx_one(false, true, TREE_NEXT),
         ImpactOp::constant(&Op::Addi { immediate: 1 }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 2 }),
+        insc(path.len() + 1),
     ]
 }
 
@@ -747,8 +1097,17 @@ pub fn merkle_tree_insert_index(
     leaf: &LedgerValue,
     at: &LedgerValue,
 ) -> Vec<ImpactOp> {
+    merkle_tree_insert_index_at(&field_path(index), leaf, at)
+}
+
+/// [`merkle_tree_insert_index`] on a general path.
+pub fn merkle_tree_insert_index_at(
+    path: &[LedgerKey],
+    leaf: &LedgerValue,
+    at: &LedgerValue,
+) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         idx_one(false, true, TREE),
         push_cell(false, at),
         push_cell(true, leaf),
@@ -767,11 +1126,8 @@ pub fn merkle_tree_insert_index(
         ImpactOp::constant(&Op::Jmp { skip: 2 }),
         swap(0),
         ImpactOp::constant(&Op::Pop),
-        ImpactOp::constant(&Op::Ins {
-            cached: false,
-            n: 1,
-        }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 1 }),
+        ins1(),
+        insc(path.len()),
     ]
 }
 
@@ -801,15 +1157,19 @@ fn history_append() -> Vec<ImpactOp> {
 /// the history append spliced in, and the `insc 2` that closed it demoted to
 /// `insc 1` because the append now closes the operation.
 pub fn historic_merkle_tree_insert(index: u8, leaf: &LedgerValue) -> Vec<ImpactOp> {
-    let mut ops = merkle_tree_insert(index, leaf);
+    historic_merkle_tree_insert_at(&field_path(index), leaf)
+}
+
+/// [`historic_merkle_tree_insert`] on a general path. The `insc` the plain
+/// tree closed with is demoted to a LITERAL 1 (midnight-ledger.ss:1222) at
+/// every depth; only the new closing `insc` tracks `len(f) + 1`.
+pub fn historic_merkle_tree_insert_at(path: &[LedgerKey], leaf: &LedgerValue) -> Vec<ImpactOp> {
+    let mut ops = merkle_tree_insert_at(path, leaf);
     let last = ops.len() - 1;
     ops[last] = ImpactOp::constant(&Op::Ins { cached: true, n: 1 });
     ops.extend(history_append());
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
-    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
+    ops.push(ins1());
+    ops.push(insc(path.len() + 1));
     ops
 }
 
@@ -821,14 +1181,20 @@ pub fn historic_merkle_tree_insert_index(
     leaf: &LedgerValue,
     at: &LedgerValue,
 ) -> Vec<ImpactOp> {
-    let mut ops = merkle_tree_insert_index(index, leaf, at);
+    historic_merkle_tree_insert_index_at(&field_path(index), leaf, at)
+}
+
+/// [`historic_merkle_tree_insert_index`] on a general path.
+pub fn historic_merkle_tree_insert_index_at(
+    path: &[LedgerKey],
+    leaf: &LedgerValue,
+    at: &LedgerValue,
+) -> Vec<ImpactOp> {
+    let mut ops = merkle_tree_insert_index_at(path, leaf, at);
     ops.pop();
     ops.extend(history_append());
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
-    ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
+    ops.push(ins1());
+    ops.push(insc(path.len() + 1));
     ops
 }
 
@@ -836,12 +1202,18 @@ pub fn historic_merkle_tree_insert_index(
 /// HistoricMerkleTree `resetHistory`): replace the history with a one-entry
 /// map holding the CURRENT root.
 pub fn historic_merkle_tree_reset_history(index: u8) -> Vec<ImpactOp> {
+    historic_merkle_tree_reset_history_at(&field_path(index))
+}
+
+/// [`historic_merkle_tree_reset_history`] on a general path — the ONE
+/// operation whose closing depth is `len(f) + 2` (midnight-ledger.ss:1338).
+pub fn historic_merkle_tree_reset_history_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
     vec![
-        idxp_field(index),
+        idx_path(false, true, path),
         push_cell(false, &field_index_value(TREE_HISTORY)),
         ImpactOp::constant(&Op::Push {
             storage: true,
-            value: StateValue::Map(StorageHashMap::new()),
+            value: empty_map(),
         }),
         dup(2),
         idx_one(false, false, TREE),
@@ -850,7 +1222,7 @@ pub fn historic_merkle_tree_reset_history(index: u8) -> Vec<ImpactOp> {
             storage: true,
             value: StateValue::Null,
         }),
-        ImpactOp::constant(&Op::Ins { cached: true, n: 3 }),
+        insc(path.len() + 2),
     ]
 }
 
@@ -858,25 +1230,26 @@ pub fn historic_merkle_tree_reset_history(index: u8) -> Vec<ImpactOp> {
 /// not three instructions, because the fresh history has to be seeded with
 /// the blank tree's root.
 pub fn historic_merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
+    historic_merkle_tree_reset_at(&field_path(index), depth)
+}
+
+/// [`historic_merkle_tree_reset`] on a general path — the ninth and last of
+/// the whole-field-replace ops, and the one that open-codes the suppression
+/// rather than going through [`reset_to_at`] because its closing pair is
+/// `insc 2; ins 1` where every other reset's is `ins 1; insc len(f)-1`.
+pub fn historic_merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
     let [tree, next] = empty_merkle_tree(depth);
-    let initial = StateValue::Array(
-        [tree, next, StateValue::Map(StorageHashMap::new())]
-            .into_iter()
-            .collect(),
-    );
-    let mut ops = vec![
-        push_cell(false, &field_index_value(index)),
-        ImpactOp::constant(&Op::Push {
-            storage: true,
-            value: initial,
-        }),
-    ];
+    let initial = StateValue::Array([tree, next, empty_map()].into_iter().collect());
+    let mut ops = idxp_container(path);
+    ops.push(path[path.len() - 1].push_as_cell());
+    ops.push(ImpactOp::constant(&Op::Push {
+        storage: true,
+        value: initial,
+    }));
     ops.extend(history_append());
     ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));
-    ops.push(ImpactOp::constant(&Op::Ins {
-        cached: false,
-        n: 1,
-    }));
+    ops.push(ins1());
+    ops.extend(insc_container(path));
     ops
 }
 
@@ -950,9 +1323,19 @@ pub fn cell_read<V: Visibility>(
     index: u8,
     atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    cell_read_at(c, guard, &field_path(index), atoms)
+}
+
+/// [`cell_read`] on a general path.
+pub fn cell_read_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, atoms);
-    cell_read_embedded(c, guard, index, &value);
+    cell_read_embedded_at(c, guard, path, &value);
     wires
 }
 
@@ -972,7 +1355,21 @@ pub fn cell_read_embedded<V: Visibility>(
     index: u8,
     value: &LedgerValue,
 ) {
-    emit(c, guard, &[dup(0), idx_field(index), popeq(false, value)]);
+    cell_read_embedded_at(c, guard, &field_path(index), value)
+}
+
+/// [`cell_read_embedded`] on a general path.
+pub fn cell_read_embedded_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    value: &LedgerValue,
+) {
+    emit(
+        c,
+        guard,
+        &[dup(0), idx_path(false, false, path), popeq(false, value)],
+    );
 }
 
 /// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
@@ -983,9 +1380,22 @@ pub fn counter_read<V: Visibility>(
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    counter_read_at(c, guard, &field_path(index))
+}
+
+/// [`counter_read`] on a general path.
+pub fn counter_read_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
-    emit(c, guard, &[dup(0), idx_field(index), popeq(true, &value)]);
+    emit(
+        c,
+        guard,
+        &[dup(0), idx_path(false, false, path), popeq(true, &value)],
+    );
     wires[0]
 }
 
@@ -997,6 +1407,16 @@ pub fn counter_less_than<V: Visibility>(
     index: u8,
     threshold: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    counter_less_than_at(c, guard, &field_path(index), threshold)
+}
+
+/// [`counter_less_than`] on a general path.
+pub fn counter_less_than_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    threshold: &LedgerValue,
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -1004,7 +1424,7 @@ pub fn counter_less_than<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             push_cell(false, threshold),
             ImpactOp::constant(&Op::Lt),
             popeq(true, &value),
@@ -1021,6 +1441,16 @@ pub fn map_member<V: Visibility>(
     index: u8,
     key: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    map_member_at(c, guard, &field_path(index), key)
+}
+
+/// [`map_member`] on a general path.
+pub fn map_member_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    key: &LedgerValue,
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -1028,7 +1458,7 @@ pub fn map_member<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             push_cell(false, key),
             ImpactOp::constant(&Op::Member),
             popeq(true, &value),
@@ -1048,12 +1478,34 @@ pub fn map_lookup<V: Visibility>(
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    map_lookup_at(c, guard, &field_path(index), key, value_atoms)
+}
+
+/// [`map_lookup`] on a general path.
+///
+/// NOTE THE TWO `idx`: the path reaches the MAP, and the key descent is a
+/// SECOND one-element `idx` (`(idx … [path (list key)])`,
+/// midnight-ledger.ss:745-746). A leaf lookup does not append its key to
+/// `f`; only an INTERMEDIATE `lookup` — the one whose result is another ADT —
+/// does, and that one emits nothing at all.
+pub fn map_lookup_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    key: &LedgerValue,
+    value_atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, value_atoms);
     emit(
         c,
         guard,
-        &[dup(0), idx_field(index), idx_key(key), popeq(false, &value)],
+        &[
+            dup(0),
+            idx_path(false, false, path),
+            idx_key(key),
+            popeq(false, &value),
+        ],
     );
     wires
 }
@@ -1065,6 +1517,15 @@ pub fn map_size<V: Visibility>(
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    map_size_at(c, guard, &field_path(index))
+}
+
+/// [`map_size`] on a general path.
+pub fn map_size_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
@@ -1072,7 +1533,7 @@ pub fn map_size<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             ImpactOp::constant(&Op::Size),
             popeq(true, &value),
         ],
@@ -1087,6 +1548,15 @@ pub fn map_is_empty<V: Visibility>(
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    map_is_empty_at(c, guard, &field_path(index))
+}
+
+/// [`map_is_empty`] on a general path.
+pub fn map_is_empty_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let zero = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(0u64))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
@@ -1095,7 +1565,7 @@ pub fn map_is_empty<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             ImpactOp::constant(&Op::Size),
             push_cell(false, &zero),
             ImpactOp::constant(&Op::Eq),
@@ -1115,6 +1585,15 @@ pub fn set_size<V: Visibility>(
     map_size(c, guard, index)
 }
 
+/// [`set_size`] on a general path.
+pub fn set_size_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
+    map_size_at(c, guard, path)
+}
+
 /// See [`set_size`].
 pub fn set_is_empty<V: Visibility>(
     c: &mut Circuit3,
@@ -1122,6 +1601,15 @@ pub fn set_is_empty<V: Visibility>(
     index: u8,
 ) -> Wire3<FieldT, Public> {
     map_is_empty(c, guard, index)
+}
+
+/// [`set_is_empty`] on a general path.
+pub fn set_is_empty_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
+    map_is_empty_at(c, guard, path)
 }
 
 // --- List reads --------------------------------------------------------------
@@ -1133,6 +1621,15 @@ pub fn list_length<V: Visibility>(
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    list_length_at(c, guard, &field_path(index))
+}
+
+/// [`list_length`] on a general path.
+pub fn list_length_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
@@ -1140,7 +1637,7 @@ pub fn list_length<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, LIST_LENGTH),
             popeq(true, &value),
         ],
@@ -1161,6 +1658,15 @@ pub fn list_is_empty<V: Visibility>(
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    list_is_empty_at(c, guard, &field_path(index))
+}
+
+/// [`list_is_empty`] on a general path.
+pub fn list_is_empty_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -1168,7 +1674,7 @@ pub fn list_is_empty<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, LIST_TAIL),
             ImpactOp::constant(&Op::Type),
             push_cell(false, &field_index_value(TYPE_NULL)),
@@ -1204,6 +1710,16 @@ pub fn list_head<V: Visibility>(
     index: u8,
     elem_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    list_head_at(c, guard, &field_path(index), elem_atoms)
+}
+
+/// [`list_head`] on a general path.
+pub fn list_head_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    elem_atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
     let guard = guard.into();
     let mut maybe_atoms = vec![BOOL_ATOM];
     maybe_atoms.extend(elem_atoms.iter().copied());
@@ -1214,7 +1730,7 @@ pub fn list_head<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, LIST_HEAD),
             dup(0),
             ImpactOp::constant(&Op::Type),
@@ -1267,6 +1783,16 @@ pub fn merkle_tree_is_full<V: Visibility>(
     index: u8,
     depth: u8,
 ) -> Wire3<FieldT, Public> {
+    merkle_tree_is_full_at(c, guard, &field_path(index), depth)
+}
+
+/// [`merkle_tree_is_full`] on a general path.
+pub fn merkle_tree_is_full_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    depth: u8,
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let capacity = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(1u64 << depth))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
@@ -1275,7 +1801,7 @@ pub fn merkle_tree_is_full<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, TREE_NEXT),
             push_cell(false, &capacity),
             ImpactOp::constant(&Op::Lt),
@@ -1295,6 +1821,16 @@ pub fn merkle_tree_check_root<V: Visibility>(
     index: u8,
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    merkle_tree_check_root_at(c, guard, &field_path(index), root)
+}
+
+/// [`merkle_tree_check_root`] on a general path.
+pub fn merkle_tree_check_root_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    root: &LedgerValue,
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -1302,7 +1838,7 @@ pub fn merkle_tree_check_root<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, TREE),
             ImpactOp::constant(&Op::Root),
             push_cell(false, root),
@@ -1323,6 +1859,16 @@ pub fn historic_merkle_tree_check_root<V: Visibility>(
     index: u8,
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    historic_merkle_tree_check_root_at(c, guard, &field_path(index), root)
+}
+
+/// [`historic_merkle_tree_check_root`] on a general path.
+pub fn historic_merkle_tree_check_root_at<V: Visibility>(
+    c: &mut Circuit3,
+    guard: impl Into<Operand<FieldT, V>>,
+    path: &[LedgerKey],
+    root: &LedgerValue,
+) -> Wire3<FieldT, Public> {
     let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
@@ -1330,7 +1876,7 @@ pub fn historic_merkle_tree_check_root<V: Visibility>(
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             idx_one(false, false, TREE_HISTORY),
             push_cell(false, root),
             ImpactOp::constant(&Op::Member),
@@ -1517,8 +2063,22 @@ pub fn cell_read_guarded<V: Visibility + Copy>(
     index: u8,
     atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    cell_read_guarded_at(c, guard, &field_path(index), atoms)
+}
+
+/// [`cell_read_guarded`] on a general path.
+pub fn cell_read_guarded_at<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    path: &[LedgerKey],
+    atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
     let (wires, value) = mint_read_with(c, Some(guard), atoms);
-    emit(c, guard, &[dup(0), idx_field(index), popeq(false, &value)]);
+    emit(
+        c,
+        guard,
+        &[dup(0), idx_path(false, false, path), popeq(false, &value)],
+    );
     wires
 }
 
@@ -1528,8 +2088,21 @@ pub fn counter_read_guarded<V: Visibility + Copy>(
     guard: Wire3<FieldT, V>,
     index: u8,
 ) -> Wire3<FieldT, Public> {
+    counter_read_guarded_at(c, guard, &field_path(index))
+}
+
+/// [`counter_read_guarded`] on a general path.
+pub fn counter_read_guarded_at<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    path: &[LedgerKey],
+) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read_with(c, Some(guard), vec![U64_ATOM]);
-    emit(c, guard, &[dup(0), idx_field(index), popeq(true, &value)]);
+    emit(
+        c,
+        guard,
+        &[dup(0), idx_path(false, false, path), popeq(true, &value)],
+    );
     wires[0]
 }
 
@@ -1540,13 +2113,23 @@ pub fn map_member_guarded<V: Visibility + Copy>(
     index: u8,
     key: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
+    map_member_guarded_at(c, guard, &field_path(index), key)
+}
+
+/// [`map_member_guarded`] on a general path.
+pub fn map_member_guarded_at<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    path: &[LedgerKey],
+    key: &LedgerValue,
+) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read_with(c, Some(guard), vec![BOOL_ATOM]);
     emit(
         c,
         guard,
         &[
             dup(0),
-            idx_field(index),
+            idx_path(false, false, path),
             push_cell(false, key),
             ImpactOp::constant(&Op::Member),
             popeq(true, &value),
@@ -1563,11 +2146,27 @@ pub fn map_lookup_guarded<V: Visibility + Copy>(
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
+    map_lookup_guarded_at(c, guard, &field_path(index), key, value_atoms)
+}
+
+/// [`map_lookup_guarded`] on a general path.
+pub fn map_lookup_guarded_at<V: Visibility + Copy>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    path: &[LedgerKey],
+    key: &LedgerValue,
+    value_atoms: Vec<AlignmentAtom>,
+) -> Vec<Wire3<FieldT, Public>> {
     let (wires, value) = mint_read_with(c, Some(guard), value_atoms);
     emit(
         c,
         guard,
-        &[dup(0), idx_field(index), idx_key(key), popeq(false, &value)],
+        &[
+            dup(0),
+            idx_path(false, false, path),
+            idx_key(key),
+            popeq(false, &value),
+        ],
     );
     wires
 }
@@ -2585,6 +3184,456 @@ mod tests {
                 path: vec![Key::Value(field_key(0))].into(),
             })),
             vec![Fr::from(0x60u64), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+    }
+
+    // --- M22 stage B1: the general path -------------------------------------
+
+    /// A `Bytes<32>` map key as both a real `AlignedValue` (for `Op`) and a
+    /// [`LedgerValue`] (for ours), with the same limbs.
+    fn b32_key() -> (AlignedValue, LedgerValue) {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0x2a; // lo limb
+        bytes[31] = 0x01; // hi byte
+        let av = AlignedValue::new(
+            Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
+            Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes {
+                length: 32,
+            })]),
+        )
+        .unwrap();
+        let lv = LedgerValue::bytes(
+            32,
+            vec![
+                ImpactElem::Imm(Fr::from(1u64)),
+                ImpactElem::Imm(Fr::from(0x2au64)),
+            ],
+        );
+        (av, lv)
+    }
+
+    /// EVERY [`LedgerKey`] variant encodes as upstream's `Key::field_repr`.
+    ///
+    /// This is the whole soundness claim of `LedgerKey`: the enum splits
+    /// `Key::Value(AlignedValue)` into a const-known field index and a
+    /// possibly-wire-bearing value, and adds nothing. If the split were
+    /// wrong, every nested path would be wrong in the same way.
+    #[test]
+    fn key_encoding_matches_field_repr() {
+        fn ours(key: &LedgerKey) -> Vec<Fr> {
+            let mut out = Vec::new();
+            key.push_elems(&mut out);
+            out.into_iter()
+                .map(|e| match e {
+                    ImpactElem::Imm(f) => f,
+                    ImpactElem::Wire(_) => panic!("expected constant"),
+                })
+                .collect()
+        }
+        fn real(key: &Key) -> Vec<Fr> {
+            let mut out = Vec::new();
+            key.field_repr(&mut out);
+            out
+        }
+
+        for index in [0u8, 1, 7, 255] {
+            assert_eq!(
+                ours(&LedgerKey::Field(index)),
+                real(&Key::Value(field_key(index))),
+                "field {index}"
+            );
+        }
+        let (av, lv) = b32_key();
+        assert_eq!(ours(&LedgerKey::Value(lv)), real(&Key::Value(av)));
+        assert_eq!(ours(&LedgerKey::Stack), real(&Key::Stack));
+    }
+
+    /// [`idx_path`] is `Op::Idx`'s encoding at every depth and in all four
+    /// cached/pushPath corners — the opcode's low nibble is `len − 1`
+    /// (ops.rs:510-524, reduce-to-zkir.ss:586-601).
+    #[test]
+    fn idx_path_matches_field_repr() {
+        let (av, lv) = b32_key();
+        let cases: Vec<(Vec<LedgerKey>, Vec<Key>)> = vec![
+            (vec![LedgerKey::Field(3)], vec![Key::Value(field_key(3))]),
+            (
+                vec![LedgerKey::Field(0), LedgerKey::Value(lv.clone())],
+                vec![Key::Value(field_key(0)), Key::Value(av.clone())],
+            ),
+            (
+                vec![
+                    LedgerKey::Field(6),
+                    LedgerKey::Value(lv.clone()),
+                    LedgerKey::Value(lv),
+                ],
+                vec![
+                    Key::Value(field_key(6)),
+                    Key::Value(av.clone()),
+                    Key::Value(av),
+                ],
+            ),
+            (
+                vec![LedgerKey::Field(1), LedgerKey::Stack],
+                vec![Key::Value(field_key(1)), Key::Stack],
+            ),
+        ];
+        for (ours, theirs) in cases {
+            for (cached, push_path) in [(false, false), (true, false), (false, true), (true, true)] {
+                assert_eq!(
+                    imms(&idx_path(cached, push_path, &ours)),
+                    repr(&Op::Idx {
+                        cached,
+                        push_path,
+                        path: theirs.clone().into(),
+                    }),
+                    "depth {} cached={cached} pushPath={push_path}",
+                    ours.len()
+                );
+            }
+        }
+    }
+
+    /// THE ADDITIVITY CLAIM, checked rather than asserted: every `u8` builder
+    /// is its `_at` twin on the one-element path, byte for byte. This is what
+    /// makes the widening free of movement for all 167 pre-existing circuits.
+    #[test]
+    fn the_u8_builders_are_the_one_element_path() {
+        fn same(a: &[ImpactOp], b: &[ImpactOp], what: &str) {
+            assert_eq!(a.len(), b.len(), "{what}: length");
+            for (i, (x, y)) in a.iter().zip(b).enumerate() {
+                assert_eq!(imms(x), imms(y), "{what}: op {i}");
+            }
+        }
+        let (_, key) = b32_key();
+        let one = [LedgerKey::Field(2)];
+        same(&cell_write(2, &key), &cell_write_at(&one, &key), "cell_write");
+        same(
+            &counter_increment(2, 5),
+            &counter_increment_at(&one, 5),
+            "counter_increment",
+        );
+        same(
+            &map_insert(2, &key, &key),
+            &map_insert_at(&one, &key, &key),
+            "map_insert",
+        );
+        same(&map_remove(2, &key), &map_remove_at(&one, &key), "map_remove");
+        same(&set_insert(2, &key), &set_insert_at(&one, &key), "set_insert");
+        same(&map_reset(2), &map_reset_at(&one), "map_reset");
+        same(&list_reset(2), &list_reset_at(&one), "list_reset");
+        same(
+            &list_push_front(2, &key),
+            &list_push_front_at(&one, &key),
+            "list_push_front",
+        );
+        same(&list_pop_front(2), &list_pop_front_at(&one), "list_pop_front");
+        same(
+            &merkle_tree_insert(2, &key),
+            &merkle_tree_insert_at(&one, &key),
+            "merkle_tree_insert",
+        );
+        same(
+            &merkle_tree_insert_index(2, &key, &key),
+            &merkle_tree_insert_index_at(&one, &key, &key),
+            "merkle_tree_insert_index",
+        );
+        same(
+            &merkle_tree_reset(2, 8),
+            &merkle_tree_reset_at(&one, 8),
+            "merkle_tree_reset",
+        );
+        same(
+            &historic_merkle_tree_insert(2, &key),
+            &historic_merkle_tree_insert_at(&one, &key),
+            "historic_merkle_tree_insert",
+        );
+        same(
+            &historic_merkle_tree_insert_index(2, &key, &key),
+            &historic_merkle_tree_insert_index_at(&one, &key, &key),
+            "historic_merkle_tree_insert_index",
+        );
+        same(
+            &historic_merkle_tree_reset_history(2),
+            &historic_merkle_tree_reset_history_at(&one),
+            "historic_merkle_tree_reset_history",
+        );
+        same(
+            &historic_merkle_tree_reset(2, 8),
+            &historic_merkle_tree_reset_at(&one, 8),
+            "historic_merkle_tree_reset",
+        );
+        same(
+            &cell_write_coin(2, &key, &key),
+            &cell_write_coin_at(&one, &key, &key),
+            "cell_write_coin",
+        );
+        same(
+            &set_insert_coin(2, &key, &key),
+            &set_insert_coin_at(&one, &key, &key),
+            "set_insert_coin",
+        );
+        same(
+            &map_insert_coin(2, &key, &key, &key),
+            &map_insert_coin_at(&one, &key, &key, &key),
+            "map_insert_coin",
+        );
+        same(
+            &list_push_front_coin(2, &key, &key),
+            &list_push_front_coin_at(&one, &key, &key),
+            "list_push_front_coin",
+        );
+    }
+
+    /// A two-element path against the stream compactc actually emits for
+    /// `mm.lookup(k).insert(k2, v)` — the `0x71 … 0x91 0xa2` the note
+    /// predicted from `ShieldedMultiSig`, decoded here from a probe compiled
+    /// with the pinned compactc:
+    ///
+    /// ```text
+    /// 0x71 [1,1,0] [1,-2,k]    idxp [field 0, k]
+    /// 0x10 [1,1,-2,k2]         push k2
+    /// 0x11 [1,1,8,7]           pushs (cell u64 7)
+    /// 0x91                     ins 1
+    /// 0xa2                     insc 2
+    /// ```
+    #[test]
+    fn nested_map_insert_matches_compactc() {
+        let key = LedgerValue::new(
+            vec![AlignmentAtom::Field],
+            vec![ImpactElem::Imm(Fr::from(11u64))],
+        );
+        let value = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(7u64))]);
+        let path = [LedgerKey::Field(0), LedgerKey::Value(key.clone())];
+        let ops = map_insert_at(&path, &key, &value);
+        assert_eq!(ops.len(), 5);
+        let field = Fr::from(0u64) - Fr::from(2u64);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![
+                Fr::from(0x71u64),
+                1u64.into(),
+                1u64.into(),
+                0u64.into(),
+                1u64.into(),
+                field,
+                11u64.into()
+            ]
+        );
+        assert_eq!(
+            imms(&ops[1]),
+            vec![Fr::from(0x10u64), 1u64.into(), 1u64.into(), field, 11u64.into()]
+        );
+        assert_eq!(
+            imms(&ops[2]),
+            vec![Fr::from(0x11u64), 1u64.into(), 1u64.into(), 8u64.into(), 7u64.into()]
+        );
+        assert_eq!(imms(&ops[3]), vec![Fr::from(0x91u64)]);
+        assert_eq!(imms(&ops[4]), vec![Fr::from(0xa2u64)]);
+    }
+
+    /// A THREE-element path: the opcode nibble and the closing `insc` both
+    /// track `len(f)`, which is what a `Map<K, Map<K, Map<K, V>>>` write
+    /// compiles to (`0x72 … 0xa3`).
+    #[test]
+    fn three_level_path_tracks_the_depth() {
+        let key = LedgerValue::new(
+            vec![AlignmentAtom::Field],
+            vec![ImpactElem::Imm(Fr::from(3u64))],
+        );
+        let path = [
+            LedgerKey::Field(6),
+            LedgerKey::Value(key.clone()),
+            LedgerKey::Value(key.clone()),
+        ];
+        let ops = map_insert_at(&path, &key, &key);
+        assert_eq!(imms(&ops[0])[0], Fr::from(0x72u64));
+        assert_eq!(imms(&ops[4]), vec![Fr::from(0xa3u64)]);
+    }
+
+    /// PATH SUPPRESSION, both halves, at the depth where they come alive.
+    ///
+    /// `map_reset(0)` is three instructions because `(suppress-null …)` and
+    /// `(suppress-zero …)` both fire; `map_reset_at([field, k])` is FIVE —
+    /// the `idxp [field 0]` and the `insc 1` reappear around the same middle.
+    /// Verified against compactc's own `a.lookup(k).resetToDefault()`.
+    #[test]
+    fn reset_suppression_comes_alive_at_depth_two() {
+        let key = LedgerValue::new(
+            vec![AlignmentAtom::Field],
+            vec![ImpactElem::Imm(Fr::from(11u64))],
+        );
+        let field = Fr::from(0u64) - Fr::from(2u64);
+
+        let flat = map_reset(0);
+        assert_eq!(flat.len(), 3);
+        assert_eq!(imms(&flat[0])[0], Fr::from(0x10u64));
+
+        let ops = map_reset_at(&[LedgerKey::Field(0), LedgerKey::Value(key)]);
+        assert_eq!(ops.len(), 5);
+        assert_eq!(
+            imms(&ops[0]),
+            vec![Fr::from(0x70u64), 1u64.into(), 1u64.into(), 0u64.into()]
+        );
+        assert_eq!(
+            imms(&ops[1]),
+            vec![Fr::from(0x10u64), 1u64.into(), 1u64.into(), field, 11u64.into()],
+            "the LAST path element is what gets pushed, not the field index"
+        );
+        assert_eq!(imms(&ops[2]), vec![Fr::from(0x11u64), 2u64.into()]);
+        assert_eq!(imms(&ops[3]), vec![Fr::from(0x91u64)]);
+        assert_eq!(imms(&ops[4]), vec![Fr::from(0xa1u64)]);
+    }
+
+    /// The two op families whose closing depth is NOT `len(f)`:
+    /// `List.pushFront` and `MerkleTree.insert` close at `len(f) + 1`, and
+    /// `HistoricMerkleTree.resetHistory` at `len(f) + 2`.
+    #[test]
+    fn the_off_by_one_closings_track_the_depth() {
+        let key = LedgerValue::new(
+            vec![AlignmentAtom::Field],
+            vec![ImpactElem::Imm(Fr::from(1u64))],
+        );
+        let path = [LedgerKey::Field(1), LedgerKey::Value(key.clone())];
+
+        let push = list_push_front_at(&path, &key);
+        assert_eq!(*imms(&push[push.len() - 1]).last().unwrap(), Fr::from(0xa3u64));
+        let pop = list_pop_front_at(&path);
+        assert_eq!(imms(&pop[pop.len() - 1]), vec![Fr::from(0xa2u64)]);
+
+        let mt = merkle_tree_insert_at(&path, &key);
+        assert_eq!(imms(&mt[mt.len() - 1]), vec![Fr::from(0xa3u64)]);
+        let mti = merkle_tree_insert_index_at(&path, &key, &key);
+        assert_eq!(imms(&mti[mti.len() - 1]), vec![Fr::from(0xa2u64)]);
+
+        let hmt = historic_merkle_tree_insert_at(&path, &key);
+        assert_eq!(imms(&hmt[hmt.len() - 1]), vec![Fr::from(0xa3u64)]);
+        let hist = historic_merkle_tree_reset_history_at(&path);
+        assert_eq!(imms(&hist[hist.len() - 1]), vec![Fr::from(0xa4u64)]);
+    }
+
+    /// A NESTED `Cell` WRITE, which Compact reaches by a route that has
+    /// nothing to do with `Map` nesting.
+    ///
+    /// `determine-ledger-paths.ss` BATCHES a contract's ledger fields into
+    /// segments of `maximum-ledger-segment-length` = 15 (langs.ss:851), so a
+    /// contract with sixteen fields gives every field a TWO-element path and
+    /// every top-level `Cell` write becomes a nested one. Compiled with the
+    /// pinned compactc, a 16-field contract's `f0 = v` is
+    ///
+    /// ```text
+    /// 0x70 [1,1,0]        idxp [segment 0]
+    /// 0x10 [1,1,1,0]      push the field index
+    /// 0x11 [1,1,8,v]      pushs v
+    /// 0x91                ins 1
+    /// 0xa1                insc 1
+    /// ```
+    ///
+    /// and `f15 = v` is the same with `[1, 14]`. Both suppressions are live.
+    /// No MinoCrab contract declares more than thirteen fields today, which
+    /// is why nothing had noticed; the general path is the fix, and the
+    /// derive's `at(index)` is what still has to learn it (stage B2).
+    #[test]
+    fn a_sixteen_field_contract_makes_every_cell_write_nested() {
+        let v = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(9u64))]);
+        for (segment, index) in [(0u8, 0u8), (1, 14)] {
+            let ops = cell_write_at(&[LedgerKey::Field(segment), LedgerKey::Field(index)], &v);
+            assert_eq!(ops.len(), 5);
+            assert_eq!(
+                imms(&ops[0]),
+                vec![
+                    Fr::from(0x70u64),
+                    1u64.into(),
+                    1u64.into(),
+                    u64::from(segment).into()
+                ]
+            );
+            assert_eq!(
+                imms(&ops[1]),
+                vec![
+                    Fr::from(0x10u64),
+                    1u64.into(),
+                    1u64.into(),
+                    1u64.into(),
+                    u64::from(index).into()
+                ]
+            );
+            assert_eq!(
+                imms(&ops[2]),
+                vec![Fr::from(0x11u64), 1u64.into(), 1u64.into(), 8u64.into(), 9u64.into()]
+            );
+            assert_eq!(imms(&ops[3]), vec![Fr::from(0x91u64)]);
+            assert_eq!(imms(&ops[4]), vec![Fr::from(0xa1u64)]);
+        }
+    }
+
+    /// The four coin arms' `dup` reaches are compactc's formulas in `len(f)`,
+    /// and they agree with stage A's four constants at depth 1.
+    ///
+    /// The depth-2 row is compactc's, not arithmetic: a probe declaring
+    /// `Map<K, Set<QSCI>>`, `Map<K, Map<K, QSCI>>` and `Map<K, List<QSCI>>`
+    /// compiles to `dup 6` / `dup 7` / `dup 9`.
+    #[test]
+    fn the_coin_reaches_are_compactcs_formulas() {
+        assert_eq!(
+            [
+                cell_coin_dup(1),
+                set_coin_dup(1),
+                map_coin_dup(1),
+                list_coin_dup(1)
+            ],
+            [3, 4, 5, 7],
+            "stage A's CELL/SET/MAP/LIST_COIN_DUP"
+        );
+        assert_eq!(
+            [
+                cell_coin_dup(2),
+                set_coin_dup(2),
+                map_coin_dup(2),
+                list_coin_dup(2)
+            ],
+            [5, 6, 7, 9]
+        );
+        let (_, key) = b32_key();
+        let path = [LedgerKey::Field(0), LedgerKey::Value(key.clone())];
+        // `dup 7` is the second instruction of a nested Map.insertCoin (after
+        // the idxp and the key push it is the third).
+        let ops = map_insert_coin_at(&path, &key, &key, &key);
+        assert_eq!(imms(&ops[2]), vec![Fr::from(0x37u64)]);
+    }
+
+    /// AN ADT-VALUED `insertDefault` PUSHES THE ADT'S INITIAL VALUE, not a
+    /// zero cell — `VMstate-value-ADT` discards the value and expands the
+    /// ADT's `(initial-value …)` (reduce-to-zkir.ss:424-433). Against
+    /// compactc's `a.insertDefault(k)` on `Map<Field, Map<Field, Uint<64>>>`,
+    /// which emits `0x11 0x02` (the empty map) where the flat form emits
+    /// `0x11 [1,1,8,0]`.
+    #[test]
+    fn adt_valued_insert_default_pushes_the_initial_value() {
+        let key = LedgerValue::new(
+            vec![AlignmentAtom::Field],
+            vec![ImpactElem::Imm(Fr::from(11u64))],
+        );
+        let flat = map_insert_default_at(&field_path(0), &key, vec![U64_ATOM]);
+        assert_eq!(
+            imms(&flat[2]),
+            vec![Fr::from(0x11u64), 1u64.into(), 1u64.into(), 8u64.into(), 0u64.into()]
+        );
+
+        let nested = map_insert_adt_default_at(&field_path(0), &key, empty_map());
+        assert_eq!(imms(&nested[2]), vec![Fr::from(0x11u64), 2u64.into()]);
+        assert_eq!(
+            imms(&nested[2]),
+            imms(&map_reset(0)[1]),
+            "the initial value is the one resetToDefault writes"
+        );
+
+        let list = map_insert_adt_default_at(&field_path(1), &key, empty_list());
+        assert_eq!(imms(&list[2]), imms(&list_reset(1)[1]));
+
+        let counter = map_insert_adt_default_at(&field_path(2), &key, empty_counter());
+        assert_eq!(
+            imms(&counter[2]),
+            vec![Fr::from(0x11u64), 1u64.into(), 1u64.into(), 8u64.into(), 0u64.into()]
         );
     }
 }

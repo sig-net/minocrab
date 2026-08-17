@@ -21,6 +21,7 @@ pub mod hashing;
 pub mod interfaces;
 pub mod kernel_tokens;
 pub mod mint_tokens;
+pub mod nested;
 pub mod opaque;
 pub mod serde_builtin;
 pub mod signet;
