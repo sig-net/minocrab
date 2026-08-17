@@ -96,8 +96,6 @@ pub fn deposit(
 
 ## Feature by feature
 
-Every pair is real code in this repo, not a sketch. Compact first, then the MinoCrab spelling.
-
 **Argument struct**
 
 ```compact
