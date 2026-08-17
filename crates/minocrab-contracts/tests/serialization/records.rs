@@ -11,14 +11,17 @@
 //! field, in the same order, they must say the same thing.
 
 use minocrab::Public;
-use minocrab_contracts::erc20_vault;
-use minocrab_contracts::signet::SignBidirectionalEvent;
+use minocrab_contracts::signet::{SignBidirectionalEvent, SignBidirectionalEventV2};
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
 
+use crate::serialization::spec_types;
 use crate::serialization::spec_types::{
     ByteArray, EvmCalldata2, EvmCalldata7, EvmType2TxParams2, EvmType2TxParams7, Flagged,
-    SwapEvent, VaultEvent,
+    SwapEvent, SwapEventV2, VaultEvent, VaultEventV2,
 };
-use crate::vault::model::{ApproveScenario, DepositScenario, SwapScenario, WithdrawScenario};
+use crate::vault::model::{
+    kind, ApproveScenario, DepositScenario, SwapScenario, WithdrawScenario,
+};
 use crate::vault::prims::{abi_addr_word, abi_num_word, pad32, user_commitment};
 
 /// The FAB atoms of the deployed 2-word record — the SHIPPING definition
@@ -202,3 +205,78 @@ pub fn swap_event(s: &SwapScenario) -> SwapEvent {
 /// The deployed records' limb counts, so a shape change here is loud.
 pub const VAULT_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 2, 34, 34>::LIMBS;
 pub const SWAP_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 7, 38, 37>::LIMBS;
+
+// ---- M11 stage 7: the same records, versioned and kind-tagged ----------------
+
+/// The FAB atoms of the stage-7 2-word record, from the SHIPPING definition.
+pub fn vault_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
+    erc20_vault_borsh::VaultEventV2::<Public>::atoms()
+}
+
+/// The FAB atoms of the stage-7 7-word swap record.
+pub fn swap_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
+    erc20_vault_borsh::SwapEventV2::<Public>::atoms()
+}
+
+/// The stage-7 records' limb counts (31 and 41, where the deployed pair is 33
+/// and 43 — one limb gained at the head, four schema limbs traded for one).
+pub const VAULT_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 2>::LIMBS;
+pub const SWAP_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 7>::LIMBS;
+
+/// The stage-7 twin of a deployed 2-word record: the same middle, a format
+/// version in front, a response kind instead of the two schema strings.
+///
+/// Written as a field-for-field rebuild of the deployed value rather than as a
+/// third statement of the middle — the middle is what stage 7 does NOT change,
+/// and saying it twice would let the two drift while both stayed green.
+fn vault_v2(e: VaultEvent, response_kind: u32) -> VaultEventV2 {
+    VaultEventV2 {
+        format_version: spec_types::RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: kind(response_kind),
+    }
+}
+
+/// `deposit`'s stage-7 record — response kind CLAIM.
+pub fn deposit_event_v2(d: &DepositScenario) -> VaultEventV2 {
+    vault_v2(deposit_event(d), erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+}
+
+/// `approveRouter`'s stage-7 record — response kind APPROVE, the one kind no
+/// settle circuit accepts.
+pub fn approve_event_v2(a: &ApproveScenario) -> VaultEventV2 {
+    vault_v2(approve_event(a), erc20_vault_borsh::RESPONSE_KIND_APPROVE)
+}
+
+/// `withdraw`'s stage-7 record — response kind WITHDRAW.
+pub fn withdraw_event_v2(w: &WithdrawScenario) -> VaultEventV2 {
+    vault_v2(withdraw_event(w), erc20_vault_borsh::RESPONSE_KIND_WITHDRAW)
+}
+
+/// `swap`'s stage-7 record — response kind SWAP.
+pub fn swap_event_v2(s: &SwapScenario) -> SwapEventV2 {
+    let e = swap_event(s);
+    SwapEventV2 {
+        format_version: spec_types::RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_SWAP),
+    }
+}

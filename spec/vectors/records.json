@@ -2,7 +2,7 @@
   "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
   "format": "borsh-subset-vectors/1",
   "spec": "spec/borsh-subset.md",
-  "about": "The two request-record instantiations. keccak256 of these bytes IS the request id the vault stores and the MPC recomputes (it drops the request on mismatch).",
+  "about": "The request-record instantiations, DEPLOYED and M11 stage 7. keccak256 of these bytes IS the request id the vault stores and the MPC recomputes (it drops the request on mismatch). The V2 pair carries the same values as its deployed twin, so the diff is exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte responseKind where the two in-band ABI-JSON schema strings were (404 → 338 and 571 → 498 bytes).",
   "vectors": [
     {
       "type": "VaultEvent",
@@ -418,6 +418,427 @@
           "offset": 534,
           "width": 37,
           "hex": "5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e743634227d5d"
+        }
+      ]
+    },
+    {
+      "type": "VaultEventV2 (M11 stage 7, kind 0 CLAIM)",
+      "len": 338,
+      "hex": "80101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f070000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002a0000000000000000ca9a3b00000000000000000000000000ac23fc060000000000000000000000a086010000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b30000000000000000000000000000000001a9059cbb0200b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000000000000000000000000000000000000000000ff0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f00",
+      "sha256": "a0b3c7a532ebaebb962f9a8cdefe645abf7ad1726883cda3c24270cd4243dc99",
+      "keccak256": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a",
+      "fields": [
+        {
+          "path": "format_version",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "80",
+          "number": 128
+        },
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 1,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "0700000000000000",
+          "number": 7
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 41,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 42,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 75,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 76,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 140,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 141,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 149,
+          "width": 8,
+          "hex": "2a00000000000000",
+          "number": 42
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 157,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 173,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 189,
+          "width": 8,
+          "hex": "a086010000000000",
+          "number": 100000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 197,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 217,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 233,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 234,
+          "width": 4,
+          "hex": "a9059cbb"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 238,
+          "width": 2,
+          "hex": "0200",
+          "number": 2
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 240,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 272,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000ff"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 304,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 305,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "response_kind",
+          "type": "u8",
+          "offset": 337,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        }
+      ]
+    },
+    {
+      "type": "SwapEventV2 (M11 stage 7, kind 2 SWAP)",
+      "len": 498,
+      "hex": "80101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f090000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002b0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000060ae0a0000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000000000000000000000000000015023b4df0700000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000000000000000000006c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f02",
+      "sha256": "3e6bf02c56ffe6f32f5a7457a119abb04e539239213806f37c0265bf8e4a0b2a",
+      "keccak256": "24c6f313d3474a1ecccb1334a842e5ff270932e9286a08baf6d452b661cebfdc",
+      "fields": [
+        {
+          "path": "format_version",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "80",
+          "number": 128
+        },
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 1,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "0900000000000000",
+          "number": 9
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 41,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 42,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 75,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 76,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 140,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 141,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 149,
+          "width": 8,
+          "hex": "2b00000000000000",
+          "number": 43
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 157,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 173,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 189,
+          "width": 8,
+          "hex": "60ae0a0000000000",
+          "number": 700000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 197,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 217,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 233,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 234,
+          "width": 4,
+          "hex": "5023b4df"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 238,
+          "width": 2,
+          "hex": "0700",
+          "number": 7
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 240,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 272,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000002"
+        },
+        {
+          "path": "tx_params.calldata.value.words[2]",
+          "type": "[u8; 32]",
+          "offset": 304,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000003"
+        },
+        {
+          "path": "tx_params.calldata.value.words[3]",
+          "type": "[u8; 32]",
+          "offset": 336,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000004"
+        },
+        {
+          "path": "tx_params.calldata.value.words[4]",
+          "type": "[u8; 32]",
+          "offset": 368,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000005"
+        },
+        {
+          "path": "tx_params.calldata.value.words[5]",
+          "type": "[u8; 32]",
+          "offset": 400,
+          "width": 32,
+          "hex": "0000000000000000000000000000000000000000000000000000000000000006"
+        },
+        {
+          "path": "tx_params.calldata.value.words[6]",
+          "type": "[u8; 32]",
+          "offset": 432,
+          "width": 32,
+          "hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 464,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 465,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "response_kind",
+          "type": "u8",
+          "offset": 497,
+          "width": 1,
+          "hex": "02",
+          "number": 2
         }
       ]
     }

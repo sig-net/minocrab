@@ -267,6 +267,80 @@ impl FixedLen for SwapEvent {
     const LEN: usize = 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams7::LEN + 32 + 38 + 37;
 }
 
+// ---- the request record, M11 stage 7 -----------------------------------------
+//
+// What the BORSH artifacts write: the same record with a FORMAT VERSION byte
+// in front and a 1-byte RESPONSE KIND where the two in-band ABI-JSON schema
+// strings were. Nothing is deployed in this shape — like the stage-5 attested
+// outputs, it is a SPECIFICATION — and the deployed types above stay exactly
+// as they are, because what is on the wire today is still on the wire today.
+//
+// Read the two side by side: the middle is identical, field for field, and
+// that is the whole change.
+
+/// `formatVersion` — the byte at offset 0 of every stage-7 record.
+///
+/// `0x80`: the byte with only the high bit set, so "this is not a small
+/// version number" is a single bit test, and every value below it stays
+/// available to Compact/Midnight (whose largest version number anywhere in the
+/// pinned stack is 33).
+pub const RECORD_FORMAT_VERSION: u8 = 0x80;
+
+/// [`VaultEvent`] as M11 stage 7 defines it — 338 bytes, where the deployed
+/// record is 404.
+///
+/// `deposit` (kind 0, CLAIM), `approveRouter` (kind 4, APPROVE) and `withdraw`
+/// (kind 1, WITHDRAW) write one; `claim`, `completeWithdraw` and `refund` read
+/// one back.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VaultEventV2 {
+    /// [`RECORD_FORMAT_VERSION`].
+    pub format_version: u8,
+    pub sender: [u8; 32],
+    pub request_nonce: u64,
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub algo: u8,
+    pub dest: u8,
+    pub params: ByteArray<64>,
+    pub tx_param_type: u8,
+    pub tx_params: EvmType2TxParams2,
+    pub caip2_id: [u8; 32],
+    /// The response KIND this request expects — the same enumeration the
+    /// attested output carries at ITS byte 0, which is what lets a settle
+    /// circuit check the two ends against each other. It replaces the 68 bytes
+    /// of ABI-JSON the deployed record spends saying the same thing.
+    pub response_kind: u8,
+}
+
+impl FixedLen for VaultEventV2 {
+    const LEN: usize = 1 + 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams2::LEN + 32 + 1;
+}
+
+/// [`SwapEvent`] as M11 stage 7 defines it — 498 bytes, where the deployed
+/// record is 571. The 73 bytes are what takes the swap record's keccak
+/// preimage from five blocks to four, and `swap` from k16 to k15.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SwapEventV2 {
+    pub format_version: u8,
+    pub sender: [u8; 32],
+    pub request_nonce: u64,
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub algo: u8,
+    pub dest: u8,
+    pub params: ByteArray<64>,
+    pub tx_param_type: u8,
+    pub tx_params: EvmType2TxParams7,
+    pub caip2_id: [u8; 32],
+    /// Kind 2, SWAP — the one kind whose response carries a payload.
+    pub response_kind: u8,
+}
+
+impl FixedLen for SwapEventV2 {
+    const LEN: usize = 1 + 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams7::LEN + 32 + 1;
+}
+
 // ---- the attested outputs ----------------------------------------------------
 //
 // What the MPC signs alongside the request id, exactly as deployed: four
@@ -431,6 +505,9 @@ pub fn schema_containers() -> Vec<(&'static str, BorshSchemaContainer)> {
     vec![
         ("VaultEvent", BorshSchemaContainer::for_type::<VaultEvent>()),
         ("SwapEvent", BorshSchemaContainer::for_type::<SwapEvent>()),
+        // M11 stage 7: the versioned, kind-tagged records.
+        ("VaultEventV2", BorshSchemaContainer::for_type::<VaultEventV2>()),
+        ("SwapEventV2", BorshSchemaContainer::for_type::<SwapEventV2>()),
         ("ClaimOutput", BorshSchemaContainer::for_type::<ClaimOutput>()),
         (
             "CompleteWithdrawOutput",

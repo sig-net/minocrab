@@ -1,6 +1,9 @@
 [package]
 name = "minocrab-contracts"
-version = "0.1.0"
+# The corpus rewrite and its differential suites: a test corpus, not a
+# library, and every suite reads ../../corpus and ../../spec.
+publish = false
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "The sig-net corpus contracts rewritten in the MinoCrab eDSL (M4)"

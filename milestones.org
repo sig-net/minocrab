@@ -884,8 +884,40 @@ external value and no dependency on 1-7.
       deliberately not re-emitted — every leaf is canonical where it is
       produced, and re-emitting would move rows. depositViaVault is not
       twinned: it serializes nothing.)
-- [ ] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
+- [X] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
       swap k16→k15; re-run the 9M gate; refresh BENCHMARK.md.
+      (DONE 2026-08-16 — notes/borsh-format.org §"As built — stage 7",
+      whose layout table IS the spec together with spec/borsh-subset.md §6.
+      SWAP CROSSED: erc20_vault_borsh::swap 32,819 → 28,625 rows, k16 →
+      k15, 4,143 rows of margin — the projection said −4,218 and a
+      crossing, the measurement is −4,194 and the crossing (M10's own
+      k15 attempt missed by 51 rows; this one did not). The record gains
+      a format-version byte 0x80 at offset 0 and ONE response-kind byte
+      where the two in-band ABI-JSON schema strings were: 404 → 338 bytes
+      (2-word) and 571 → 498 (7-word, 5 → 4 keccak blocks), atom count
+      unchanged at 24/29, limbs 33 → 31 and 43 → 41. Everything between
+      the two ends is identical field for field, so every other offset is
+      the old one plus one — which is how layout_v2 is written (1 +
+      layout::X) and how the spec twins are built. RESPONSE_KINDS 4 → 5:
+      approveRouter's record gets its own REQUEST-ONLY kind, so an
+      approve is structurally unsettleable rather than incidentally so,
+      at zero rows (the `< K` bound is not emitted anywhere). Borsh and
+      modern move in lockstep — modern_fork_status stays Identical ×9 —
+      and the compat port and erc20_vault_opt are byte-identical ZKIR:
+      the dump says 151 byte-identical, 0 renumbered, 16 changed, being
+      exactly the eight non-initialize circuits of each borsh artifact.
+      STAGE 0'S DEPLOYED-BYTES CONFORMANCE IS UNTOUCHED AND GREEN: the
+      deployed record types stay, the stage-7 types are additional, and
+      the new property says the same thing about the new format (model
+      limbs == borsh::to_vec == bincode-fixint, keccak == request id).
+      The interface snapshot did not move at all. Deviations: the record
+      is a hand-written twin rather than a #[derive(CircuitBorsh)] type
+      (its Borsh-ness is proven exactly as the deployed record's is), and
+      the kind travels as a raw wire inside the record rather than a
+      Tag<K>. HONEST GAP: BENCHMARK.md is NOT refreshed — a bench run is
+      hours — and it is now materially stale for the first time in M11,
+      because k moved; the stage-4 "not benched until a k moves"
+      decision has come due and is the supervisor's follow-up.)
 - [X] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,
       padding rule, Maybe↦Flagged, per-record offset tables GENERATED
       from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
@@ -996,9 +1028,21 @@ Exit criteria: the spec document and vectors exist and the TS/MPC side
 can implement against them; every in-circuit encoder is byte-equal to
 both oracles at millions of cases; the record change's k movement is
 measured and published.
-NOTE stage 7 is HELD by dmd (notes/borsh-format.org §"Protocol
-status"): designed + measured, not implemented, until the contract is
-presented for discussion. Nothing else blocks on it.
+NOTE stage 7 WAS held by dmd (notes/borsh-format.org §"Protocol
+status") pending the contract being presented for discussion. It was
+implemented 2026-08-16 on the session's work order, and the hold was
+LIFTED EXPLICITLY by dmd 2026-08-17 ("Lift the hold on M11 stage 7,
+I'm happy with it") after the layout, reader constants and k movement
+were presented — the discussion the hold asked for, held with a
+measured change in front of it. Nothing is deployed on either side.
+- [ ] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
+      found the docs claiming checks the circuits do not make — the
+      docs now tell the truth): bind `record.kind == output.kind` and
+      assert the record's version byte in each settle circuit — two
+      wire equalities per circuit, its own gate (rows move, snapshots
+      regen, elevated spec run), both twins in lockstep.
+- [ ] BENCHMARK.md refresh (the stage-7 tick's honest remainder): a
+      fresh bench run now that swap crossed k16→k15.
 
 * M12 — Interface crates: import a contract's crate to call it
 (dmd, 2026-08-15: "import someone else's crate and use it for your
@@ -1876,3 +1920,69 @@ green on every differential the day before.
       the ZKIR dump is unchanged across all four forks.)
 Exit criteria: every finding either fixed or refused in writing with a
 reason; no invariant left as prose that a pass or a type could hold.
+
+* M20 — Handoff: a human team productionizes this (dmd, 2026-08-17)
+A team from another company takes over to productionize. The risk is not
+missing information — the notes are thorough — it is that the notes are
+written for the agent/owner loop (org jargon, M-numbers, assumed history),
+and that THE DISCIPLINE THAT KEEPS THIS CODEBASE CORRECT LIVES IN HABITS,
+NOT FILES: baseline dump → change → gates → explain every moved byte →
+ledger entry when a circuit leaves its predecessor's coverage. If the new
+team edits like a normal repo, the instruments decay into noise and the
+correctness story dies quietly. Items chosen by dmd from the handoff
+survey (his picks: 1, 2, 3, 5, 7).
+- [ ] CONTRIBUTING.md — the working method written down, because the
+      process is load-bearing. How to make a change (the loop above); what
+      each instrument MEANS when it fires (point at version-bump.org's
+      drift taxonomy, do not duplicate it); when a divergence-ledger entry
+      must move and what its both-directions assertion is for; how to
+      regenerate snapshots (between-markers, reviewable diff, never a
+      paste); the api-safety-survey §0 method for the class tests cannot
+      see; the escape-hatch greps as the code-review checklist.
+- [ ] CI — the gate ladder in GitHub Actions, nix-provisioned. On PR:
+      workspace tests, --release row/interface snapshots, the zkir dump
+      comparison against the base branch. Nightly: elevated
+      PROPTEST_CASES. Weekly: corpus determinism (compile.sh, zero of 788
+      artifacts moved). The point for a team that does not yet trust the
+      codebase: instruments that run on their PRs without being asked.
+- [ ] ONBOARDING.md — the day-one reading path (README → VERIFICATION.md →
+      ledger-abi.org §6 → architecture.org, then review-queue.org for
+      what has had human eyes), a map of the notes/ files with one line
+      each of "read this when …", and a GLOSSARY for the first hour's
+      jargon: PI-equality, FAB, the four vault artifacts and why four
+      forks in lockstep is a feature, zero movement, the fold, k/rows,
+      Impact, the M-numbering. Assembly, not writing.
+- [ ] Issue-ize the known debt — everything deferred lives in notes prose
+      where their boards cannot see it: the `_with` caching profile (M18's
+      loose end), Q5's map value-typing (51 rows), the 27 guarded sites,
+      e2e-on-a-network and the reference client (the expert-audience
+      roadmap), M19's open fixes, the review-queue items. One issue each,
+      linking back to the note section that holds the reasoning — the
+      issue is a pointer, the note stays the record.
+- [ ] Publish rustdoc now — cargo doc to GitHub Pages from CI, not gated
+      on crates.io (which waits on upstream publishing the ledger-9.1
+      line; see PUBLISHING.md). The API docs are good; they are locked
+      behind a local build.
+Exit criteria: a new engineer reaches their first gated, explained,
+reviewable change without asking anyone anything — and their PR runs the
+instruments without them knowing the instruments exist.
+
+* M21 — crates.io readiness (dmd, 2026-08-17: "ready to be deployed")
+- [X] Everything on our side prepared so publish day is a `cargo publish`
+      sequence: nine publishable crates classified and metadata'd
+      (four marked publish = false with reasons), crate-level rustdoc
+      front doors, per-crate READMEs, docs.rs config (no build.rs
+      anywhere — nothing needs compactc or nix at build time),
+      include-lists, license texts shipped per crate, PUBLISHING.md
+      with the dependency-DAG publish order. ~45 pre-existing broken
+      intra-doc links found and fixed by the strict `cargo doc` pass.
+      DECISIONS OF RECORD, dmd's: the unblock path is WAIT FOR UPSTREAM
+      to publish the ledger-9.1 line to crates.io (vendoring REJECTED,
+      not deferred); and NO fake `version` keys on the git deps — a
+      publish that resolved downstream against the wrong upstream line
+      would be the silently-different-build failure this project exists
+      to prevent. rust-version = 1.85, floored by upstream's edition
+      2024, not by our code (1.79). Names minocrab/minocrab-* free on
+      crates.io at 2026-08-17.
+Exit criteria: when upstream publishes, `cargo publish` in PUBLISHING.md's
+order with no repo changes beyond removing the git pins.

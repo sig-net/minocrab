@@ -695,3 +695,32 @@ strictness bonus). FOUND AND FIXED, four things:
    (corrected in the survey), and builtin-lowering §9's downcast rule is
    refined at the source. Fix 1's `BoundedUint::to_uint` is where our
    API can be STRICTER than Compact by emitting the check compactc omits.
+
+* [ ] M11 stage 7 (THE RECORD): three things a reviewer should read
+1. THE LAYOUT TABLE AGAINST THE MPC'S READER. notes/borsh-format.org
+   §"As built — stage 7" states the record's atoms/limbs/bytes and the
+   reader-constant deltas RECOMPUTED with the version byte — the work
+   order's "22→21" becomes 22→22 (the kind takes two schema atoms away
+   at the tail, the version puts one back at the head) while "3→2"
+   stands. That correction is derived from OUR atom lists, not read out
+   of ~/mpc (which this session must not touch), so it wants a second
+   pair of eyes against reader.rs before it is sent: if their 22 counts
+   something other than "atoms excluding the calldata words", the number
+   is wrong even though the format is right.
+2. RESPONSE_KINDS 4 → 5. The record and the attested output share ONE
+   enumeration, so approveRouter's request needed a kind; it got its own
+   (4, APPROVE, request-only) rather than borrowing CLAIM's. Zero rows
+   (the `< K` bound is emitted nowhere), but it IS a decoder-visible enum
+   extension and a widening of a bound — worth confirming that is the
+   call, since the alternative (reuse CLAIM, rely on the depositor gate)
+   is one line.
+3. THE FORK LEDGERS, BOTH DIRECTIONS. borsh_fork_status now has exactly
+   one Identical entry (initialize) and eight Diverged ones, and
+   modern_fork_status is still Identical ×9 — asserted both ways by
+   tests/erc20_vault_borsh_fork.rs and tests/erc20_vault_modern_fork.rs.
+   The thing to check by hand is that the two `why` strings say what
+   actually changed per circuit (request circuits: stage 7 alone; settle
+   circuits: stages 5 and 7), because those strings are the only record
+   of WHY a circuit left its predecessor's coverage.
+Also pending, not a review item: BENCHMARK.md is stale — swap moved k16
+→ k15 and nothing has re-benched.

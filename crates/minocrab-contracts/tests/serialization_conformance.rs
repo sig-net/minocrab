@@ -233,6 +233,55 @@ fn swap_event() -> impl Strategy<Value = SwapEvent> {
         )
 }
 
+/// M11 stage 7's 2-word record: the same generated middle, a version byte and
+/// a kind byte. Generated, not fixed, at both ends — the conformance
+/// properties are about the ENCODING, so they must hold at every value the
+/// type admits, not only at the two the protocol writes.
+fn vault_event_v2() -> impl Strategy<Value = VaultEventV2> {
+    (record_header(), tx_params2(), any::<u8>(), any::<u8>()).prop_map(
+        |((sender, request_nonce, key_version, path, algo, dest, params, tx_param_type, caip2_id),
+          tx_params,
+          format_version,
+          response_kind)| VaultEventV2 {
+            format_version,
+            sender,
+            request_nonce,
+            key_version,
+            path,
+            algo,
+            dest,
+            params: ByteArray(params),
+            tx_param_type,
+            tx_params,
+            caip2_id,
+            response_kind,
+        },
+    )
+}
+
+/// M11 stage 7's 7-word record. See [`vault_event_v2`].
+fn swap_event_v2() -> impl Strategy<Value = SwapEventV2> {
+    (record_header(), tx_params7(), any::<u8>(), any::<u8>()).prop_map(
+        |((sender, request_nonce, key_version, path, algo, dest, params, tx_param_type, caip2_id),
+          tx_params,
+          format_version,
+          response_kind)| SwapEventV2 {
+            format_version,
+            sender,
+            request_nonce,
+            key_version,
+            path,
+            algo,
+            dest,
+            params: ByteArray(params),
+            tx_param_type,
+            tx_params,
+            caip2_id,
+            response_kind,
+        },
+    )
+}
+
 fn sign_bidirectional_misc() -> impl Strategy<Value = SignBidirectionalMisc> {
     (any::<u8>(), byte_array::<32>(), byte_array::<128>()).prop_map(|(version, request_id, payload)| {
         SignBidirectionalMisc {
@@ -266,6 +315,13 @@ proptest! {
     /// (a) + (b) for the two request records.
     #[test]
     fn records_are_conformant(vault in vault_event(), swap in swap_event()) {
+        assert_conformant(&vault);
+        assert_conformant(&swap);
+    }
+
+    /// (a) + (b) for M11 stage 7's two request records.
+    #[test]
+    fn stage7_records_are_conformant(vault in vault_event_v2(), swap in swap_event_v2()) {
         assert_conformant(&vault);
         assert_conformant(&swap);
     }
@@ -323,6 +379,33 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(SwapEvent::LEN, 571);
     assert_eq!(VaultEvent::LEN, 404);
 
+    // M11 STAGE 7, and the same statement about the SHIPPING alignment: the
+    // widths are the borsh artifacts' own atom lists, not our arithmetic.
+    assert_eq!(
+        VaultEventV2::LEN,
+        deployed::fab_len(&records::vault_record_v2_atoms()),
+        "stage-7 vault record width"
+    );
+    assert_eq!(
+        SwapEventV2::LEN,
+        deployed::fab_len(&records::swap_record_v2_atoms()),
+        "stage-7 swap record width"
+    );
+    // 404 → 338 and 571 → 498: +1 version byte, −68/−75 of schema, +1 kind.
+    assert_eq!(VaultEventV2::LEN, 404 + 1 - 2 * 34 + 1);
+    assert_eq!(VaultEventV2::LEN, 338);
+    assert_eq!(SwapEventV2::LEN, 571 + 1 - 38 - 37 + 1);
+    assert_eq!(SwapEventV2::LEN, 498);
+    // The keccak block counts those widths buy: 3 → 3 for the vault record,
+    // 5 → 4 for the swap record — the block that takes `swap` from k16 to
+    // k15. Counted by the ROW MODEL's own `keccak_blocks` (rate 136, at least
+    // one padding byte) rather than by a second copy of the padding rule
+    // here: the block this saves is the block the cost model charges for, and
+    // that is the claim.
+    use minocrab_sim::v3::rowcost::keccak_blocks as blocks;
+    assert_eq!((blocks(VaultEvent::LEN), blocks(VaultEventV2::LEN)), (3, 3));
+    assert_eq!((blocks(SwapEvent::LEN), blocks(SwapEventV2::LEN)), (5, 4));
+
     assert_eq!(ClaimOutput::LEN, 1);
     assert_eq!(CompleteWithdrawOutput::LEN, 1);
     assert_eq!(RefundOutput::LEN, erc20_vault::MPC_FAILURE_OUTPUT.len());
@@ -355,6 +438,8 @@ fn schema_widths_match_the_lens() {
     let expected: Vec<(&str, usize)> = vec![
         ("VaultEvent", VaultEvent::LEN),
         ("SwapEvent", SwapEvent::LEN),
+        ("VaultEventV2", VaultEventV2::LEN),
+        ("SwapEventV2", SwapEventV2::LEN),
         ("ClaimOutput", ClaimOutput::LEN),
         ("CompleteWithdrawOutput", CompleteWithdrawOutput::LEN),
         ("RefundOutput", RefundOutput::LEN),
@@ -450,6 +535,71 @@ proptest! {
         prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
         let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&spec)).into();
         prop_assert_eq!(digest, swap.request_id());
+    }
+
+    /// M11 STAGE 7: the record the BORSH artifacts write.
+    ///
+    /// The deployed properties above are untouched and still pin what is on
+    /// the wire today; this is the same statement about the new format, with
+    /// the same two independent sides. LEFT: the bytes the borsh circuit
+    /// hashes — the reference model's stage-7 limbs under
+    /// `erc20_vault_borsh::VaultEventV2::atoms()`, which is the alignment
+    /// `calculateRequestId` hands to keccak256. RIGHT: `borsh::to_vec` of the
+    /// spec twin. Closed with `keccak256(borsh(record)) == request_id`, so the
+    /// request id the borsh vault stores IS keccak256 of the record's
+    /// canonical Borsh encoding — the property the MPC recomputes and drops
+    /// the request on.
+    #[test]
+    fn stage7_record_bytes_are_canonical_borsh(
+        deposit in gen::deposit(),
+        approve in gen::approve(),
+        withdraw in gen::withdraw(),
+        swap in gen::swap(),
+    ) {
+        let deposit = deposit.with_art(Art::Borsh);
+        let approve = approve.with_art(Art::Borsh);
+        let withdraw = withdraw.with_art(Art::Borsh);
+        let swap = swap.with_art(Art::Borsh);
+
+        let atoms = records::vault_record_v2_atoms();
+        for (name, limbs, spec) in [
+            ("deposit", deposit.event_limbs(), records::deposit_event_v2(&deposit)),
+            ("approveRouter", approve.event_limbs(), records::approve_event_v2(&approve)),
+            ("withdraw", withdraw.event_limbs(), records::withdraw_event_v2(&withdraw)),
+        ] {
+            prop_assert_eq!(limbs.len(), records::VAULT_RECORD_V2_LIMBS);
+            let on_chain = deployed::fab_bytes(&atoms, &limbs);
+            prop_assert_eq!(on_chain.len(), VaultEventV2::LEN);
+            let spec_bytes = borsh_bytes(&spec);
+            prop_assert_eq!(&on_chain, &spec_bytes, "{}: stage-7 record bytes differ", name);
+            prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone(), "{}", name);
+            // The version byte is the first byte, before anything else.
+            prop_assert_eq!(on_chain[0], spec_types::RECORD_FORMAT_VERSION);
+        }
+        prop_assert_eq!(
+            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::deposit_event_v2(&deposit)))),
+            deposit.request_id()
+        );
+        prop_assert_eq!(
+            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::approve_event_v2(&approve)))),
+            approve.request_id()
+        );
+        prop_assert_eq!(
+            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::withdraw_event_v2(&withdraw)))),
+            withdraw.request_id()
+        );
+
+        let limbs = swap.event_limbs();
+        prop_assert_eq!(limbs.len(), records::SWAP_RECORD_V2_LIMBS);
+        let on_chain = deployed::fab_bytes(&records::swap_record_v2_atoms(), &limbs);
+        let spec = records::swap_event_v2(&swap);
+        prop_assert_eq!(on_chain.len(), SwapEventV2::LEN);
+        prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+        prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+        prop_assert_eq!(
+            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&spec))),
+            swap.request_id()
+        );
     }
 
     /// The attestation digest preimages of all four settle circuits.
@@ -848,6 +998,59 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("SwapEvent", "caip2_id", "[u8; 32]", 464, 32),
     ("SwapEvent", "output_deserialization_schema", "[u8; 38]", 496, 38),
     ("SwapEvent", "respond_serialization_schema", "[u8; 37]", 534, 37),
+    ("VaultEventV2", "format_version", "u8", 0, 1),
+    ("VaultEventV2", "sender", "[u8; 32]", 1, 32),
+    ("VaultEventV2", "request_nonce", "u64", 33, 8),
+    ("VaultEventV2", "key_version", "u8", 41, 1),
+    ("VaultEventV2", "path", "[u8; 32]", 42, 32),
+    ("VaultEventV2", "algo", "u8", 74, 1),
+    ("VaultEventV2", "dest", "u8", 75, 1),
+    ("VaultEventV2", "params", "[u8; 64]", 76, 64),
+    ("VaultEventV2", "tx_param_type", "u8", 140, 1),
+    ("VaultEventV2", "tx_params.chain_id", "u64", 141, 8),
+    ("VaultEventV2", "tx_params.nonce", "u64", 149, 8),
+    ("VaultEventV2", "tx_params.max_priority_fee_per_gas", "u128", 157, 16),
+    ("VaultEventV2", "tx_params.max_fee_per_gas", "u128", 173, 16),
+    ("VaultEventV2", "tx_params.gas_limit", "u64", 189, 8),
+    ("VaultEventV2", "tx_params.to", "[u8; 20]", 197, 20),
+    ("VaultEventV2", "tx_params.value", "u128", 217, 16),
+    ("VaultEventV2", "tx_params.calldata.is_some", "bool", 233, 1),
+    ("VaultEventV2", "tx_params.calldata.value.selector", "[u8; 4]", 234, 4),
+    ("VaultEventV2", "tx_params.calldata.value.no_words", "u16", 238, 2),
+    ("VaultEventV2", "tx_params.calldata.value.words[0]", "[u8; 32]", 240, 32),
+    ("VaultEventV2", "tx_params.calldata.value.words[1]", "[u8; 32]", 272, 32),
+    ("VaultEventV2", "tx_params.access_list_entry_count", "u8", 304, 1),
+    ("VaultEventV2", "caip2_id", "[u8; 32]", 305, 32),
+    ("VaultEventV2", "response_kind", "u8", 337, 1),
+    ("SwapEventV2", "format_version", "u8", 0, 1),
+    ("SwapEventV2", "sender", "[u8; 32]", 1, 32),
+    ("SwapEventV2", "request_nonce", "u64", 33, 8),
+    ("SwapEventV2", "key_version", "u8", 41, 1),
+    ("SwapEventV2", "path", "[u8; 32]", 42, 32),
+    ("SwapEventV2", "algo", "u8", 74, 1),
+    ("SwapEventV2", "dest", "u8", 75, 1),
+    ("SwapEventV2", "params", "[u8; 64]", 76, 64),
+    ("SwapEventV2", "tx_param_type", "u8", 140, 1),
+    ("SwapEventV2", "tx_params.chain_id", "u64", 141, 8),
+    ("SwapEventV2", "tx_params.nonce", "u64", 149, 8),
+    ("SwapEventV2", "tx_params.max_priority_fee_per_gas", "u128", 157, 16),
+    ("SwapEventV2", "tx_params.max_fee_per_gas", "u128", 173, 16),
+    ("SwapEventV2", "tx_params.gas_limit", "u64", 189, 8),
+    ("SwapEventV2", "tx_params.to", "[u8; 20]", 197, 20),
+    ("SwapEventV2", "tx_params.value", "u128", 217, 16),
+    ("SwapEventV2", "tx_params.calldata.is_some", "bool", 233, 1),
+    ("SwapEventV2", "tx_params.calldata.value.selector", "[u8; 4]", 234, 4),
+    ("SwapEventV2", "tx_params.calldata.value.no_words", "u16", 238, 2),
+    ("SwapEventV2", "tx_params.calldata.value.words[0]", "[u8; 32]", 240, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[1]", "[u8; 32]", 272, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[2]", "[u8; 32]", 304, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[3]", "[u8; 32]", 336, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[4]", "[u8; 32]", 368, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[5]", "[u8; 32]", 400, 32),
+    ("SwapEventV2", "tx_params.calldata.value.words[6]", "[u8; 32]", 432, 32),
+    ("SwapEventV2", "tx_params.access_list_entry_count", "u8", 464, 1),
+    ("SwapEventV2", "caip2_id", "[u8; 32]", 465, 32),
+    ("SwapEventV2", "response_kind", "u8", 497, 1),
     ("ClaimOutput", "success", "u8", 0, 1),
     ("CompleteWithdrawOutput", "success", "u8", 0, 1),
     ("RefundOutput", "failure", "[u8; 5]", 0, 5),
@@ -1103,26 +1306,53 @@ mod spec_document {
 
     use serialization::{spec_doc, ts_codegen};
 
+    /// `(what the document has between a marker pair, what the generator says
+    /// belongs there)` — read from the SAME list the regenerator writes from,
+    /// so a check and a rewrite cannot disagree about what a region is.
+    fn committed_and_generated(begin_marker: &str) -> (String, String) {
+        let path = spec_doc::spec_dir().join("borsh-subset.md");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
+        let (_, end_marker, want) = spec_doc::generated_regions()
+            .into_iter()
+            .find(|(begin, _, _)| *begin == begin_marker)
+            .unwrap_or_else(|| panic!("`{begin_marker}` is not a generated region"));
+        let from = text
+            .find(begin_marker)
+            .unwrap_or_else(|| panic!("{} has no `{begin_marker}`", path.display()))
+            + begin_marker.len();
+        let to = text
+            .find(end_marker)
+            .unwrap_or_else(|| panic!("{} has no `{end_marker}`", path.display()));
+        (text[from..to].to_string(), want)
+    }
+
     /// The generated region of `spec/borsh-subset.md` IS
     /// `spec_doc::offset_tables_markdown()` — same types, same order, same
     /// offsets. Prose outside the markers is not touched by either side.
     #[test]
     fn the_committed_offset_tables_are_generated() {
-        let path = spec_doc::spec_dir().join("borsh-subset.md");
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
-        let begin = text
-            .find(spec_doc::TABLES_BEGIN)
-            .expect("the document has no generated-tables begin marker")
-            + spec_doc::TABLES_BEGIN.len();
-        let end = text
-            .find(spec_doc::TABLES_END)
-            .expect("the document has no generated-tables end marker");
+        let (committed, generated) = committed_and_generated(spec_doc::TABLES_BEGIN);
         assert_eq!(
-            &text[begin..end],
-            spec_doc::offset_tables_markdown(),
+            committed, generated,
             "spec/borsh-subset.md's offset tables are not the generated ones — every offset \
              there is a wire commitment; regenerate with the `regenerate_spec` test"
+        );
+    }
+
+    /// §5's response-kind table IS the generated one, and the generator's own
+    /// asserts hold: exactly `RESPONSE_KINDS` rows, numbered `0..n` in order.
+    ///
+    /// The table is the MPC's `kind ↦ (ABI types, response shape)` lookup, so
+    /// a row that drifts from the contract's constants is a decoder reading
+    /// the wrong shape off a correctly signed response.
+    #[test]
+    fn the_committed_kind_table_is_generated() {
+        let (committed, generated) = committed_and_generated(spec_doc::KINDS_BEGIN);
+        assert_eq!(
+            committed, generated,
+            "spec/borsh-subset.md §5's kind table is not the generated one — it is the MPC's \
+             lookup table; regenerate with the `regenerate_spec` test"
         );
     }
 
@@ -1274,7 +1504,7 @@ mod spec_document {
         assert!(status.success(), "the TypeScript vector suite failed");
     }
 
-    /// Regeneration helper: rewrites the generated region of
+    /// Regeneration helper: rewrites every generated region of
     /// `spec/borsh-subset.md`, every `spec/vectors/*.json` and every
     /// `spec/ts/` file.
     #[test]
@@ -1282,15 +1512,17 @@ mod spec_document {
     fn regenerate_spec() {
         let dir = spec_doc::spec_dir();
         let doc = dir.join("borsh-subset.md");
-        let text = std::fs::read_to_string(&doc).expect("the document exists");
-        let begin = text.find(spec_doc::TABLES_BEGIN).expect("begin marker")
-            + spec_doc::TABLES_BEGIN.len();
-        let end = text.find(spec_doc::TABLES_END).expect("end marker");
-        let mut out = String::new();
-        out.push_str(&text[..begin]);
-        out.push_str(&spec_doc::offset_tables_markdown());
-        out.push_str(&text[end..]);
-        std::fs::write(&doc, out).expect("the document is writable");
+        let mut text = std::fs::read_to_string(&doc).expect("the document exists");
+        for (begin_marker, end_marker, body) in spec_doc::generated_regions() {
+            let begin = text.find(begin_marker).expect("begin marker") + begin_marker.len();
+            let end = text.find(end_marker).expect("end marker");
+            let mut out = String::new();
+            out.push_str(&text[..begin]);
+            out.push_str(&body);
+            out.push_str(&text[end..]);
+            text = out;
+        }
+        std::fs::write(&doc, text).expect("the document is writable");
         println!("wrote {}", doc.display());
 
         let vectors = dir.join("vectors");

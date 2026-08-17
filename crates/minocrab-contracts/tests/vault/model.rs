@@ -51,6 +51,64 @@ pub fn kind(k: u32) -> u8 {
     u8::try_from(k).expect("a Borsh tag is one byte")
 }
 
+/// The record's LEADING limbs: M11 stage 7's format-version byte, or nothing.
+///
+/// The deployed record starts at `sender`; the stage-7 record puts
+/// `formatVersion = 0x80` in front of it, so a decoder reads the version
+/// before anything else (`signet::RECORD_FORMAT_VERSION`).
+pub fn record_head(art: Art) -> Vec<Fr> {
+    if art.is_borsh_format() {
+        vec![Fr::from(u64::from(
+            minocrab_contracts::signet::RECORD_FORMAT_VERSION,
+        ))]
+    } else {
+        vec![]
+    }
+}
+
+/// The record's TRAILING limbs: M11 stage 7's 1-byte response kind, or the
+/// two in-band ABI-JSON schema strings the deployed record carries (two limbs
+/// each — a `Bytes<34>`/`Bytes<38>`/`Bytes<37>` is `[hi = byte 31.., lo =
+/// bytes 0..31]`).
+pub fn record_tail(
+    art: Art,
+    out_schema: &[u8],
+    respond_schema: &[u8],
+    response_kind: u32,
+) -> Vec<Fr> {
+    if art.is_borsh_format() {
+        return vec![Fr::from(u64::from(kind(response_kind)))];
+    }
+    let (out_hi, out_lo) = schema_slots(out_schema);
+    let (re_hi, re_lo) = schema_slots(respond_schema);
+    vec![out_hi, out_lo, re_hi, re_lo]
+}
+
+/// The record's FAB alignment for `words` calldata words: the deployed atom
+/// list, or M11 stage 7's — a `bytes<1>` version in front, and ONE `bytes<1>`
+/// kind where the two schema atoms were.
+pub fn record_alignment(art: Art, words: usize, out_len: u32, respond_len: u32) -> Alignment {
+    let mut a: Vec<u32> = Vec::new();
+    if art.is_borsh_format() {
+        a.push(1); // formatVersion
+    }
+    a.extend([
+        32u32, 8, 1, 32, 1, 1, 64, 1, // header
+        8, 8, 16, 16, 8, 20, 16, // envelope
+        1, 4, 2, // Maybe tag + calldata head
+    ]);
+    a.extend(std::iter::repeat_n(32u32, words)); // words
+    a.push(1); // accessListEntryCount
+    a.push(32); // caip2Id
+    if art.is_borsh_format() {
+        a.push(1); // responseKind
+    } else {
+        a.push(out_len);
+        a.push(respond_len);
+    }
+    Alignment(a.into_iter().map(atom).collect())
+}
+
 /// The concrete initialize() call every test shares.
 #[derive(Clone, Debug)]
 pub struct Scenario {
@@ -348,10 +406,8 @@ impl DepositScenario {
         let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
         let (w0_hi, w0_lo) = b32_slots(&self.word0());
         let (w1_hi, w1_lo) = b32_slots(&self.word1());
-        let schema = erc20_vault::VAULT_RESPONSE_SCHEMA;
-        let schema_hi = Fr::from_le_bytes(&schema[31..]).unwrap();
-        let schema_lo = Fr::from_le_bytes(&schema[..31]).unwrap();
-        vec![
+        let mut limbs = record_head(self.art);
+        limbs.extend([
             self_hi,
             self_lo,
             Fr::from(self.request_nonce),
@@ -381,32 +437,30 @@ impl DepositScenario {
             Fr::from(0u64), // accessListEntryCount
             caip2_hi,
             caip2_lo,
-            schema_hi,
-            schema_lo,
-            schema_hi,
-            schema_lo,
-        ]
+        ]);
+        limbs.extend(record_tail(
+            self.art,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault_borsh::RESPONSE_KIND_CLAIM,
+        ));
+        limbs
     }
 
-    /// The record's 24-atom FAB alignment.
-    pub fn event_alignment() -> Alignment {
-        Alignment(
-            [
-                32u32, 8, 1, 32, 1, 1, 64, 1, // header
-                8, 8, 16, 16, 8, 20, 16, // envelope
-                1, 4, 2, 32, 32, // Maybe tag + calldata
-                1,  // accessListEntryCount
-                32, 34, 34, // caip2Id + schemas
-            ]
-            .into_iter()
-            .map(atom)
-            .collect(),
+    /// The record's FAB alignment: 24 atoms deployed, 24 at stage 7 (a
+    /// version atom in, two schema atoms out, a kind atom in).
+    pub fn event_alignment(art: Art) -> Alignment {
+        record_alignment(
+            art,
+            erc20_vault::VAULT_WORDS,
+            erc20_vault::VAULT_SCHEMA_LEN as u32,
+            erc20_vault::VAULT_SCHEMA_LEN as u32,
         )
     }
 
     /// The record as an AlignedValue (the map-insert's pushed cell).
     pub fn event_av(&self) -> AlignedValue {
-        Self::event_alignment()
+        Self::event_alignment(self.art)
             .parse_field_repr(&self.event_limbs())
             .expect("event limbs match the alignment")
     }
@@ -1196,10 +1250,8 @@ impl ApproveScenario {
         let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
         let (w0_hi, w0_lo) = b32_slots(&self.word0());
         let (w1_hi, w1_lo) = b32_slots(&self.word1());
-        let schema = erc20_vault::VAULT_RESPONSE_SCHEMA;
-        let schema_hi = Fr::from_le_bytes(&schema[31..]).unwrap();
-        let schema_lo = Fr::from_le_bytes(&schema[..31]).unwrap();
-        vec![
+        let mut limbs = record_head(self.art);
+        limbs.extend([
             self_hi,
             self_lo,
             Fr::from(self.request_nonce),
@@ -1229,15 +1281,20 @@ impl ApproveScenario {
             Fr::from(0u64), // accessListEntryCount
             caip2_hi,
             caip2_lo,
-            schema_hi,
-            schema_lo,
-            schema_hi,
-            schema_lo,
-        ]
+        ]);
+        // APPROVE — the one REQUEST-ONLY kind: no settle circuit accepts it
+        // (`erc20_vault_borsh::RESPONSE_KIND_APPROVE`).
+        limbs.extend(record_tail(
+            self.art,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault_borsh::RESPONSE_KIND_APPROVE,
+        ));
+        limbs
     }
 
     pub fn event_av(&self) -> AlignedValue {
-        DepositScenario::event_alignment()
+        DepositScenario::event_alignment(self.art)
             .parse_field_repr(&self.event_limbs())
             .expect("event limbs match the alignment")
     }
@@ -1542,10 +1599,8 @@ impl WithdrawScenario {
         w1[16..].copy_from_slice(&self.amount.to_be_bytes());
         let (w0_hi, w0_lo) = b32_slots(&w0);
         let (w1_hi, w1_lo) = b32_slots(&w1);
-        let schema = erc20_vault::VAULT_RESPONSE_SCHEMA;
-        let schema_hi = Fr::from_le_bytes(&schema[31..]).unwrap();
-        let schema_lo = Fr::from_le_bytes(&schema[..31]).unwrap();
-        vec![
+        let mut limbs = record_head(self.art);
+        limbs.extend([
             self_hi,
             self_lo,
             Fr::from(self.request_nonce),
@@ -1575,15 +1630,18 @@ impl WithdrawScenario {
             Fr::from(0u64),
             caip2_hi,
             caip2_lo,
-            schema_hi,
-            schema_lo,
-            schema_hi,
-            schema_lo,
-        ]
+        ]);
+        limbs.extend(record_tail(
+            self.art,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault::VAULT_RESPONSE_SCHEMA,
+            erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+        ));
+        limbs
     }
 
     pub fn event_av(&self) -> AlignedValue {
-        DepositScenario::event_alignment()
+        DepositScenario::event_alignment(self.art)
             .parse_field_repr(&self.event_limbs())
             .expect("event limbs match the alignment")
     }
@@ -2352,18 +2410,13 @@ impl SwapScenario {
         u64::try_from(self.amount_in_max).unwrap_or(u64::MAX)
     }
 
-    pub fn event_alignment7() -> Alignment {
-        Alignment(
-            [
-                32u32, 8, 1, 32, 1, 1, 64, 1, // header
-                8, 8, 16, 16, 8, 20, 16, // envelope
-                1, 4, 2, 32, 32, 32, 32, 32, 32, 32, // Maybe tag + 7-word calldata
-                1,  // accessListEntryCount
-                32, 38, 37, // caip2Id + schemas
-            ]
-            .into_iter()
-            .map(atom)
-            .collect(),
+    /// The 7-word record's FAB alignment: 29 atoms deployed, 29 at stage 7.
+    pub fn event_alignment7(art: Art) -> Alignment {
+        record_alignment(
+            art,
+            erc20_vault::SWAP_WORDS,
+            erc20_vault::SWAP_OUTPUT_LEN as u32,
+            erc20_vault::SWAP_RESPOND_LEN as u32,
         )
     }
 
@@ -2380,9 +2433,8 @@ impl SwapScenario {
             abi_num_word(self.amount_in_max),
             [0u8; 32],
         ];
-        let (out_hi, out_lo) = schema_slots(erc20_vault::SWAP_OUTPUT_SCHEMA);
-        let (re_hi, re_lo) = schema_slots(erc20_vault::SWAP_RESPOND_SCHEMA);
-        let mut limbs = vec![
+        let mut limbs = record_head(self.art);
+        limbs.extend([
             self_hi,
             self_lo,
             Fr::from(self.request_nonce),
@@ -2405,7 +2457,7 @@ impl SwapScenario {
             Fr::from(1u64),
             Fr::from_le_bytes(&erc20_vault::EXACT_OUTPUT_SINGLE_SELECTOR).unwrap(),
             Fr::from(7u64),
-        ];
+        ]);
         for w in &words {
             let (hi, lo) = b32_slots(w);
             limbs.push(hi);
@@ -2415,16 +2467,18 @@ impl SwapScenario {
             Fr::from(0u64), // accessListEntryCount
             caip2_hi,
             caip2_lo,
-            out_hi,
-            out_lo,
-            re_hi,
-            re_lo,
         ]);
+        limbs.extend(record_tail(
+            self.art,
+            erc20_vault::SWAP_OUTPUT_SCHEMA,
+            erc20_vault::SWAP_RESPOND_SCHEMA,
+            erc20_vault_borsh::RESPONSE_KIND_SWAP,
+        ));
         limbs
     }
 
     pub fn event_av(&self) -> AlignedValue {
-        Self::event_alignment7()
+        Self::event_alignment7(self.art)
             .parse_field_repr(&self.event_limbs())
             .expect("event limbs match the alignment")
     }

@@ -297,16 +297,29 @@ pub fn borsh_fork_status(circuit: Circuit) -> Fork {
     const ATTESTED: &str = "attested output is {kind, …} in Borsh, not an opaque byte string: \
                             the digest preimage carries the response kind, and completeWithdraw's \
                             success is a Borsh bool (0x02 is unprovable, not a refund)";
+    /// Stage 7: the request record itself.
+    const RECORD: &str = "the request record carries a format-version byte (0x80) at offset 0 and \
+                          a 1-byte response KIND where the two in-band ABI-JSON schema strings \
+                          were: 404 → 338 bytes on the vault record and 571 → 498 on the swap \
+                          record (5 → 4 keccak blocks), so the request id, the map's value atoms \
+                          and every settle circuit's read offsets all move";
+    /// The settle circuits carry both stage 5's change and stage 7's.
+    const ATTESTED_AND_RECORD: &str = "stage 5: attested output is {kind, …} in Borsh, not an \
+                                       opaque byte string (completeWithdraw's success is a Borsh \
+                                       bool — 0x02 is unprovable, not a refund); stage 7: the \
+                                       record read back out of the map is the versioned, \
+                                       kind-tagged one, so its atoms and every field offset move";
     let diverged = |rung, why| Fork::Diverged { rung, why };
     match circuit {
-        // The five non-settle circuits are untouched by the response format.
-        Circuit::Initialize
-        | Circuit::Deposit
-        | Circuit::ApproveRouter
-        | Circuit::Withdraw
-        | Circuit::Swap => Fork::Identical,
+        // `initialize` writes no record and settles none: it is the one
+        // circuit no M11 stage has reached.
+        Circuit::Initialize => Fork::Identical,
+        // The request circuits: stage 7 alone.
+        Circuit::Deposit | Circuit::ApproveRouter | Circuit::Withdraw | Circuit::Swap => {
+            diverged("M11 stage 7, the record", RECORD)
+        }
         Circuit::Claim | Circuit::CompleteWithdraw | Circuit::CompleteSwap | Circuit::Refund => {
-            diverged("M11 stage 5, attested outputs", ATTESTED)
+            diverged("M11 stages 5 + 7, attested outputs + the record", ATTESTED_AND_RECORD)
         }
     }
 }

@@ -46,6 +46,15 @@ import {
   type LeafValue,
 } from './primitives.ts';
 
+// ---- the record format version -------------------------------------------------
+
+/**
+ * `formatVersion` — the byte at offset 0 of every stage-7 record
+ * (`spec/borsh-subset.md` §6). `0x80` is the byte with only the high bit
+ * set, so "this is not a small version number" is a single bit test.
+ */
+export const RECORD_FORMAT_VERSION = 0x80;
+
 // ---- bool ------------------------------------------------------------------------
 
 /** The fixed serialized width of `bool`. */
@@ -877,6 +886,398 @@ export const swapEventCodec: Codec<SwapEvent> = {
   read: readSwapEvent,
   write: writeSwapEvent,
   leaves: swapEventLeaves,
+};
+
+// ---- VaultEventV2 ----------------------------------------------------------------
+
+/** The fixed serialized width of `VaultEventV2`. */
+export const VAULT_EVENT_V2_LEN = 338;
+
+/** `VaultEventV2`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const VAULT_EVENT_V2_FIELDS: readonly FieldSpec[] = [
+  { path: 'format_version', type: 'u8', offset: 0, width: 1 },
+  { path: 'sender', type: '[u8; 32]', offset: 1, width: 32 },
+  { path: 'request_nonce', type: 'u64', offset: 33, width: 8 },
+  { path: 'key_version', type: 'u8', offset: 41, width: 1 },
+  { path: 'path', type: '[u8; 32]', offset: 42, width: 32 },
+  { path: 'algo', type: 'u8', offset: 74, width: 1 },
+  { path: 'dest', type: 'u8', offset: 75, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 76, width: 64 },
+  { path: 'tx_param_type', type: 'u8', offset: 140, width: 1 },
+  { path: 'tx_params.chain_id', type: 'u64', offset: 141, width: 8 },
+  { path: 'tx_params.nonce', type: 'u64', offset: 149, width: 8 },
+  { path: 'tx_params.max_priority_fee_per_gas', type: 'u128', offset: 157, width: 16 },
+  { path: 'tx_params.max_fee_per_gas', type: 'u128', offset: 173, width: 16 },
+  { path: 'tx_params.gas_limit', type: 'u64', offset: 189, width: 8 },
+  { path: 'tx_params.to', type: '[u8; 20]', offset: 197, width: 20 },
+  { path: 'tx_params.value', type: 'u128', offset: 217, width: 16 },
+  { path: 'tx_params.calldata.is_some', type: 'bool', offset: 233, width: 1 },
+  { path: 'tx_params.calldata.value.selector', type: '[u8; 4]', offset: 234, width: 4 },
+  { path: 'tx_params.calldata.value.no_words', type: 'u16', offset: 238, width: 2 },
+  { path: 'tx_params.calldata.value.words[0]', type: '[u8; 32]', offset: 240, width: 32 },
+  { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 272, width: 32 },
+  { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 304, width: 1 },
+  { path: 'caip2_id', type: '[u8; 32]', offset: 305, width: 32 },
+  { path: 'response_kind', type: 'u8', offset: 337, width: 1 },
+];
+
+export interface VaultEventV2 {
+  readonly formatVersion: number;
+  readonly sender: Uint8Array;
+  readonly requestNonce: bigint;
+  readonly keyVersion: number;
+  readonly path: Uint8Array;
+  readonly algo: number;
+  readonly dest: number;
+  readonly params: Uint8Array;
+  readonly txParamType: number;
+  readonly txParams: {
+    readonly chainId: bigint;
+    readonly nonce: bigint;
+    readonly maxPriorityFeePerGas: bigint;
+    readonly maxFeePerGas: bigint;
+    readonly gasLimit: bigint;
+    readonly to: Uint8Array;
+    readonly value: bigint;
+    readonly calldata: {
+      readonly isSome: boolean;
+      readonly value: {
+        readonly selector: Uint8Array;
+        readonly noWords: number;
+        readonly words: readonly [Uint8Array, Uint8Array];
+      };
+    };
+    readonly accessListEntryCount: number;
+  };
+  readonly caip2Id: Uint8Array;
+  readonly responseKind: number;
+}
+
+/** Read a `VaultEventV2` from `bytes` at `offset` — 338 bytes, fixed. */
+export function readVaultEventV2(bytes: Uint8Array, offset = 0): VaultEventV2 {
+  const view = checkedView(bytes, offset, VAULT_EVENT_V2_LEN);
+  // The version byte FIRST — `spec/borsh-subset.md` §6: a decoder reads byte 0
+  // and rejects a record whose format it does not know, BY NAME, before it
+  // reads a single offset that format may have moved.
+  const version = getU8(view, 0);
+  if (version !== RECORD_FORMAT_VERSION) {
+    throw new Error(
+      'record-version: expected 0x80, got 0x' + version.toString(16).padStart(2, '0'),
+    );
+  }
+  return {
+    formatVersion: getU8(view, 0),
+    sender: getBytes(view, 1, 32),
+    requestNonce: getU64(view, 33),
+    keyVersion: getU8(view, 41),
+    path: getBytes(view, 42, 32),
+    algo: getU8(view, 74),
+    dest: getU8(view, 75),
+    params: getBytes(view, 76, 64),
+    txParamType: getU8(view, 140),
+    txParams: {
+      chainId: getU64(view, 141),
+      nonce: getU64(view, 149),
+      maxPriorityFeePerGas: getU128(view, 157),
+      maxFeePerGas: getU128(view, 173),
+      gasLimit: getU64(view, 189),
+      to: getBytes(view, 197, 20),
+      value: getU128(view, 217),
+      calldata: {
+        isSome: getBool(view, 233),
+        value: {
+          selector: getBytes(view, 234, 4),
+          noWords: getU16(view, 238),
+          words: [
+            getBytes(view, 240, 32),
+            getBytes(view, 272, 32),
+          ],
+        },
+      },
+      accessListEntryCount: getU8(view, 304),
+    },
+    caip2Id: getBytes(view, 305, 32),
+    responseKind: getU8(view, 337),
+  };
+}
+
+/** Write a `VaultEventV2` into `out` at `offset`, and return `out`. */
+export function writeVaultEventV2(
+  value: VaultEventV2,
+  out = new Uint8Array(VAULT_EVENT_V2_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, VAULT_EVENT_V2_LEN);
+  setU8(view, 0, value.formatVersion);
+  setBytes(view, 1, 32, value.sender);
+  setU64(view, 33, value.requestNonce);
+  setU8(view, 41, value.keyVersion);
+  setBytes(view, 42, 32, value.path);
+  setU8(view, 74, value.algo);
+  setU8(view, 75, value.dest);
+  setBytes(view, 76, 64, value.params);
+  setU8(view, 140, value.txParamType);
+  setU64(view, 141, value.txParams.chainId);
+  setU64(view, 149, value.txParams.nonce);
+  setU128(view, 157, value.txParams.maxPriorityFeePerGas);
+  setU128(view, 173, value.txParams.maxFeePerGas);
+  setU64(view, 189, value.txParams.gasLimit);
+  setBytes(view, 197, 20, value.txParams.to);
+  setU128(view, 217, value.txParams.value);
+  setBool(view, 233, value.txParams.calldata.isSome);
+  setBytes(view, 234, 4, value.txParams.calldata.value.selector);
+  setU16(view, 238, value.txParams.calldata.value.noWords);
+  setBytes(view, 240, 32, value.txParams.calldata.value.words[0]);
+  setBytes(view, 272, 32, value.txParams.calldata.value.words[1]);
+  setU8(view, 304, value.txParams.accessListEntryCount);
+  setBytes(view, 305, 32, value.caip2Id);
+  setU8(view, 337, value.responseKind);
+  return out;
+}
+
+/** `VaultEventV2`'s leaves, in declaration order — one per `VAULT_EVENT_V2_FIELDS` entry. */
+export function vaultEventV2Leaves(value: VaultEventV2): readonly LeafValue[] {
+  return [
+    value.formatVersion,
+    value.sender,
+    value.requestNonce,
+    value.keyVersion,
+    value.path,
+    value.algo,
+    value.dest,
+    value.params,
+    value.txParamType,
+    value.txParams.chainId,
+    value.txParams.nonce,
+    value.txParams.maxPriorityFeePerGas,
+    value.txParams.maxFeePerGas,
+    value.txParams.gasLimit,
+    value.txParams.to,
+    value.txParams.value,
+    value.txParams.calldata.isSome,
+    value.txParams.calldata.value.selector,
+    value.txParams.calldata.value.noWords,
+    value.txParams.calldata.value.words[0],
+    value.txParams.calldata.value.words[1],
+    value.txParams.accessListEntryCount,
+    value.caip2Id,
+    value.responseKind,
+  ];
+}
+
+export const vaultEventV2Codec: Codec<VaultEventV2> = {
+  name: 'VaultEventV2',
+  byteLength: VAULT_EVENT_V2_LEN,
+  fields: VAULT_EVENT_V2_FIELDS,
+  read: readVaultEventV2,
+  write: writeVaultEventV2,
+  leaves: vaultEventV2Leaves,
+};
+
+// ---- SwapEventV2 -----------------------------------------------------------------
+
+/** The fixed serialized width of `SwapEventV2`. */
+export const SWAP_EVENT_V2_LEN = 498;
+
+/** `SwapEventV2`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const SWAP_EVENT_V2_FIELDS: readonly FieldSpec[] = [
+  { path: 'format_version', type: 'u8', offset: 0, width: 1 },
+  { path: 'sender', type: '[u8; 32]', offset: 1, width: 32 },
+  { path: 'request_nonce', type: 'u64', offset: 33, width: 8 },
+  { path: 'key_version', type: 'u8', offset: 41, width: 1 },
+  { path: 'path', type: '[u8; 32]', offset: 42, width: 32 },
+  { path: 'algo', type: 'u8', offset: 74, width: 1 },
+  { path: 'dest', type: 'u8', offset: 75, width: 1 },
+  { path: 'params', type: '[u8; 64]', offset: 76, width: 64 },
+  { path: 'tx_param_type', type: 'u8', offset: 140, width: 1 },
+  { path: 'tx_params.chain_id', type: 'u64', offset: 141, width: 8 },
+  { path: 'tx_params.nonce', type: 'u64', offset: 149, width: 8 },
+  { path: 'tx_params.max_priority_fee_per_gas', type: 'u128', offset: 157, width: 16 },
+  { path: 'tx_params.max_fee_per_gas', type: 'u128', offset: 173, width: 16 },
+  { path: 'tx_params.gas_limit', type: 'u64', offset: 189, width: 8 },
+  { path: 'tx_params.to', type: '[u8; 20]', offset: 197, width: 20 },
+  { path: 'tx_params.value', type: 'u128', offset: 217, width: 16 },
+  { path: 'tx_params.calldata.is_some', type: 'bool', offset: 233, width: 1 },
+  { path: 'tx_params.calldata.value.selector', type: '[u8; 4]', offset: 234, width: 4 },
+  { path: 'tx_params.calldata.value.no_words', type: 'u16', offset: 238, width: 2 },
+  { path: 'tx_params.calldata.value.words[0]', type: '[u8; 32]', offset: 240, width: 32 },
+  { path: 'tx_params.calldata.value.words[1]', type: '[u8; 32]', offset: 272, width: 32 },
+  { path: 'tx_params.calldata.value.words[2]', type: '[u8; 32]', offset: 304, width: 32 },
+  { path: 'tx_params.calldata.value.words[3]', type: '[u8; 32]', offset: 336, width: 32 },
+  { path: 'tx_params.calldata.value.words[4]', type: '[u8; 32]', offset: 368, width: 32 },
+  { path: 'tx_params.calldata.value.words[5]', type: '[u8; 32]', offset: 400, width: 32 },
+  { path: 'tx_params.calldata.value.words[6]', type: '[u8; 32]', offset: 432, width: 32 },
+  { path: 'tx_params.access_list_entry_count', type: 'u8', offset: 464, width: 1 },
+  { path: 'caip2_id', type: '[u8; 32]', offset: 465, width: 32 },
+  { path: 'response_kind', type: 'u8', offset: 497, width: 1 },
+];
+
+export interface SwapEventV2 {
+  readonly formatVersion: number;
+  readonly sender: Uint8Array;
+  readonly requestNonce: bigint;
+  readonly keyVersion: number;
+  readonly path: Uint8Array;
+  readonly algo: number;
+  readonly dest: number;
+  readonly params: Uint8Array;
+  readonly txParamType: number;
+  readonly txParams: {
+    readonly chainId: bigint;
+    readonly nonce: bigint;
+    readonly maxPriorityFeePerGas: bigint;
+    readonly maxFeePerGas: bigint;
+    readonly gasLimit: bigint;
+    readonly to: Uint8Array;
+    readonly value: bigint;
+    readonly calldata: {
+      readonly isSome: boolean;
+      readonly value: {
+        readonly selector: Uint8Array;
+        readonly noWords: number;
+        readonly words: readonly [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
+      };
+    };
+    readonly accessListEntryCount: number;
+  };
+  readonly caip2Id: Uint8Array;
+  readonly responseKind: number;
+}
+
+/** Read a `SwapEventV2` from `bytes` at `offset` — 498 bytes, fixed. */
+export function readSwapEventV2(bytes: Uint8Array, offset = 0): SwapEventV2 {
+  const view = checkedView(bytes, offset, SWAP_EVENT_V2_LEN);
+  // The version byte FIRST — `spec/borsh-subset.md` §6: a decoder reads byte 0
+  // and rejects a record whose format it does not know, BY NAME, before it
+  // reads a single offset that format may have moved.
+  const version = getU8(view, 0);
+  if (version !== RECORD_FORMAT_VERSION) {
+    throw new Error(
+      'record-version: expected 0x80, got 0x' + version.toString(16).padStart(2, '0'),
+    );
+  }
+  return {
+    formatVersion: getU8(view, 0),
+    sender: getBytes(view, 1, 32),
+    requestNonce: getU64(view, 33),
+    keyVersion: getU8(view, 41),
+    path: getBytes(view, 42, 32),
+    algo: getU8(view, 74),
+    dest: getU8(view, 75),
+    params: getBytes(view, 76, 64),
+    txParamType: getU8(view, 140),
+    txParams: {
+      chainId: getU64(view, 141),
+      nonce: getU64(view, 149),
+      maxPriorityFeePerGas: getU128(view, 157),
+      maxFeePerGas: getU128(view, 173),
+      gasLimit: getU64(view, 189),
+      to: getBytes(view, 197, 20),
+      value: getU128(view, 217),
+      calldata: {
+        isSome: getBool(view, 233),
+        value: {
+          selector: getBytes(view, 234, 4),
+          noWords: getU16(view, 238),
+          words: [
+            getBytes(view, 240, 32),
+            getBytes(view, 272, 32),
+            getBytes(view, 304, 32),
+            getBytes(view, 336, 32),
+            getBytes(view, 368, 32),
+            getBytes(view, 400, 32),
+            getBytes(view, 432, 32),
+          ],
+        },
+      },
+      accessListEntryCount: getU8(view, 464),
+    },
+    caip2Id: getBytes(view, 465, 32),
+    responseKind: getU8(view, 497),
+  };
+}
+
+/** Write a `SwapEventV2` into `out` at `offset`, and return `out`. */
+export function writeSwapEventV2(
+  value: SwapEventV2,
+  out = new Uint8Array(SWAP_EVENT_V2_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, SWAP_EVENT_V2_LEN);
+  setU8(view, 0, value.formatVersion);
+  setBytes(view, 1, 32, value.sender);
+  setU64(view, 33, value.requestNonce);
+  setU8(view, 41, value.keyVersion);
+  setBytes(view, 42, 32, value.path);
+  setU8(view, 74, value.algo);
+  setU8(view, 75, value.dest);
+  setBytes(view, 76, 64, value.params);
+  setU8(view, 140, value.txParamType);
+  setU64(view, 141, value.txParams.chainId);
+  setU64(view, 149, value.txParams.nonce);
+  setU128(view, 157, value.txParams.maxPriorityFeePerGas);
+  setU128(view, 173, value.txParams.maxFeePerGas);
+  setU64(view, 189, value.txParams.gasLimit);
+  setBytes(view, 197, 20, value.txParams.to);
+  setU128(view, 217, value.txParams.value);
+  setBool(view, 233, value.txParams.calldata.isSome);
+  setBytes(view, 234, 4, value.txParams.calldata.value.selector);
+  setU16(view, 238, value.txParams.calldata.value.noWords);
+  setBytes(view, 240, 32, value.txParams.calldata.value.words[0]);
+  setBytes(view, 272, 32, value.txParams.calldata.value.words[1]);
+  setBytes(view, 304, 32, value.txParams.calldata.value.words[2]);
+  setBytes(view, 336, 32, value.txParams.calldata.value.words[3]);
+  setBytes(view, 368, 32, value.txParams.calldata.value.words[4]);
+  setBytes(view, 400, 32, value.txParams.calldata.value.words[5]);
+  setBytes(view, 432, 32, value.txParams.calldata.value.words[6]);
+  setU8(view, 464, value.txParams.accessListEntryCount);
+  setBytes(view, 465, 32, value.caip2Id);
+  setU8(view, 497, value.responseKind);
+  return out;
+}
+
+/** `SwapEventV2`'s leaves, in declaration order — one per `SWAP_EVENT_V2_FIELDS` entry. */
+export function swapEventV2Leaves(value: SwapEventV2): readonly LeafValue[] {
+  return [
+    value.formatVersion,
+    value.sender,
+    value.requestNonce,
+    value.keyVersion,
+    value.path,
+    value.algo,
+    value.dest,
+    value.params,
+    value.txParamType,
+    value.txParams.chainId,
+    value.txParams.nonce,
+    value.txParams.maxPriorityFeePerGas,
+    value.txParams.maxFeePerGas,
+    value.txParams.gasLimit,
+    value.txParams.to,
+    value.txParams.value,
+    value.txParams.calldata.isSome,
+    value.txParams.calldata.value.selector,
+    value.txParams.calldata.value.noWords,
+    value.txParams.calldata.value.words[0],
+    value.txParams.calldata.value.words[1],
+    value.txParams.calldata.value.words[2],
+    value.txParams.calldata.value.words[3],
+    value.txParams.calldata.value.words[4],
+    value.txParams.calldata.value.words[5],
+    value.txParams.calldata.value.words[6],
+    value.txParams.accessListEntryCount,
+    value.caip2Id,
+    value.responseKind,
+  ];
+}
+
+export const swapEventV2Codec: Codec<SwapEventV2> = {
+  name: 'SwapEventV2',
+  byteLength: SWAP_EVENT_V2_LEN,
+  fields: SWAP_EVENT_V2_FIELDS,
+  read: readSwapEventV2,
+  write: writeSwapEventV2,
+  leaves: swapEventV2Leaves,
 };
 
 // ---- ClaimOutput -----------------------------------------------------------------
@@ -1796,6 +2197,8 @@ export const CODECS: Readonly<Record<string, AnyCodec>> = {
   'Flagged<u32>': flaggedU32Codec,
   'VaultEvent': vaultEventCodec,
   'SwapEvent': swapEventCodec,
+  'VaultEventV2': vaultEventV2Codec,
+  'SwapEventV2': swapEventV2Codec,
   'ClaimOutput': claimOutputCodec,
   'CompleteWithdrawOutput': completeWithdrawOutputCodec,
   'RefundOutput': refundOutputCodec,

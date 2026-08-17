@@ -33,7 +33,7 @@ This directory exists so that the dependency is a **choice** rather than a
 requirement, and so that the offsets you decode at are *generated* from the
 circuit's own layout rather than transcribed from a table by hand.
 
-Two rules to carry across either way:
+Three rules to carry across either way:
 
 - **Integers are little-endian.** The EVM ABI words carried *inside* these
   payloads are big-endian by the EVM's own rules; they travel as `[u8; 32]`
@@ -41,6 +41,12 @@ Two rules to carry across either way:
 - **`Maybe` is `Flagged`, never `Option`.** `Flagged<u32>` is five bytes at
   every value; `Option<u32>` is one or five. Decode one as the other and
   every offset after it is wrong on half your inputs.
+- **Read the version byte first.** A stage-7 record opens with
+  `formatVersion = RECORD_FORMAT_VERSION` (`0x80`), and `readVaultEventV2` /
+  `readSwapEventV2` throw `record-version: expected 0x80, got 0x…` before they
+  touch a single offset a format change could have moved. A library decodes
+  the same bytes but will not do this for you — `../borsh-subset.md` §6 is the
+  rule, and it is the reader's job.
 
 ## What is here
 
@@ -48,7 +54,7 @@ Two rules to carry across either way:
 |---|---|
 | `borsh-subset.ts` | GENERATED: types, offset tables, readers, writers and the codec registry |
 | `primitives.ts` | the `DataView` leaf layer and the reject rules |
-| `vectors.test.ts` | the vector-driven conformance tests |
+| `vectors.test.ts` | the vector-driven conformance tests, and a GENERATED section: one version-rejection test per versioned record reader |
 | `node-builtins.d.ts` | ambient declarations for the node APIs the tests use (so no `@types/node`) |
 | `tsconfig.json` | strict, `erasableSyntaxOnly` — the code node can run by stripping types |
 
@@ -87,8 +93,10 @@ cargo test --release -p minocrab-contracts --test serialization_conformance -- \
 
 The generator is `crates/minocrab-contracts/tests/serialization/ts_codegen.rs`;
 the hand-written files above are edited in
-`crates/minocrab-contracts/tests/serialization/ts/` and copied here verbatim by
-that test.
+`crates/minocrab-contracts/tests/serialization/ts/` and copied here by that
+test — verbatim, except that this README's type table and `vectors.test.ts`'s
+version-rejection tests are substituted in, both walked out of the same schema
+as the decoder.
 
 ## Types the decoder covers
 

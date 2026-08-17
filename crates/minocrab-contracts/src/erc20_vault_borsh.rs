@@ -29,6 +29,21 @@
 //! design and the safety argument for each is in notes/borsh-format.org):
 //!
 //! - (stage 4) none — byte-identical fork.
+//! - (stage 5) the ATTESTED OUTPUT is a declared, kind-tagged Borsh type
+//!   instead of an opaque byte string, so the signed digest preimage carries
+//!   the response kind (cross-circuit replay becomes a signature failure) and
+//!   `completeWithdraw`'s success is a Borsh `bool` — a `0x02` attestation is
+//!   unprovable here where the port and the optimized fork refund on it. The
+//!   `0xdeadbeef01` failure sentinel is gone. Four settle circuits, +12 rows
+//!   net, no k moved. (Logged here retroactively: stage 5 landed the change
+//!   and its documentation everywhere but this list.)
+//! - (stage 7) the REQUEST RECORD carries a format-version byte
+//!   ([`signet::RECORD_FORMAT_VERSION`], `0x80`) at offset 0 and a 1-byte
+//!   response KIND where the two in-band ABI-JSON schema strings were: 404 →
+//!   338 bytes on the vault record, 571 → 498 on the swap record (five keccak
+//!   blocks to four). Every circuit but `initialize` moves; `swap` crosses
+//!   **k16 → k15** (32,819 → 28,625 rows). The ledger's two request maps are
+//!   the SAME fields carrying the new value type ([`SIGN_EVENT_MAP_V2`]).
 //!
 //! M10's own deviations (from the direct port) are inherited verbatim and are
 //! documented on [`crate::erc20_vault_opt`]: the deduplicated `kernel.self()`
@@ -48,7 +63,7 @@ use minocrab_std::v3::kernel;
 use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
-    circuit, label, le, ne, own_public_key_guarded, Bool, Bytes, BytesN, CircuitArg, CoinRecipient,
+    circuit, label, le, ne, own_public_key_guarded, Bool, Bytes, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
 };
 
@@ -57,13 +72,14 @@ use signet_signer_interface::SignetSigner;
 
 use crate::common;
 use crate::erc20_vault::{
-    SwapEvent, VaultEvent, VaultRecord, APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
+    APPROVE_SELECTOR, CAIP2_ID, DEPLOYER,
     // (`MPC_FAILURE_OUTPUT`, the 5-byte `0xdeadbeef01` sentinel, is
-    // deliberately NOT imported: stage 5 replaced it with the failure KIND.)
+    // deliberately NOT imported: stage 5 replaced it with the failure KIND.
+    // The two ABI-JSON schema constants are not imported either: stage 7
+    // replaced them with the response KIND.)
     EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_RESPONSE_KEY,
-    REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
-    SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS, TRANSFER_SELECTOR, UNISWAP_ROUTER,
-    VAULT, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA, VAULT_SCHEMA_LEN, VAULT_WORDS,
+    REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER, SWAP_WORDS, TRANSFER_SELECTOR,
+    UNISWAP_ROUTER, VAULT, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_WORDS,
 };
 use crate::signet;
 
@@ -104,6 +120,45 @@ label! {
     ClaimRecipientContract = "claim recipient contract";
     ClaimMintNonce = "claim mint nonce";
 }
+
+// ---- the request record, as M11 stage 7 defines it ---------------------------
+//
+// The record is LEDGER STATE (the MPC reads it back off `midnight_contractState`
+// with a hand-written FAB atom cursor — notes/borsh-format.org §Q6), so a
+// format change here is a change to what that cursor reads. Stage 7 makes two:
+// a FORMAT VERSION byte at offset 0, and a 1-byte RESPONSE KIND in place of the
+// two in-band ABI-JSON schema strings. The shapes are declared in `signet`
+// beside the deployed record; what is here is the vault's two instantiations
+// and the two ledger maps re-typed to them.
+
+/// The vault's two stage-7 event instantiations — the deployed
+/// `erc20_vault::{VaultEvent, SwapEvent}` without their schema widths, which
+/// no longer exist.
+pub type VaultEventV2<V> = signet::SignBidirectionalEventV2<V, VAULT_WORDS>;
+/// See [`VaultEventV2`].
+pub type SwapEventV2<V> = signet::SignBidirectionalEventV2<V, SWAP_WORDS>;
+
+/// The same two records read back out of their maps by the settle circuits —
+/// distinct types, so `refund`'s two branches cannot cross, and distinct from
+/// the DEPLOYED [`crate::erc20_vault::VaultRecord`], so a stage-7 record
+/// cannot be read with the deployed offsets.
+pub type VaultRecordV2 = signet::EventRecordV2<VAULT_WORDS>;
+/// See [`VaultRecordV2`].
+pub type SwapRecordV2 = signet::EventRecordV2<SWAP_WORDS>;
+
+/// `signBidirectionalEventMap`, holding the stage-7 record.
+///
+/// THE SAME LEDGER FIELD: the index comes from [`VAULT`]'s own slot, so the
+/// state LAYOUT is unchanged and only the map's VALUE TYPE — its atoms — moves.
+/// The ledger block is not re-declared for that; a second `#[derive(Ledger)]`
+/// struct differing in two value types would be thirty lines of duplicated
+/// field order to keep in step, and the field order is the wire contract.
+pub const SIGN_EVENT_MAP_V2: LedgerMap<B32<Public>, VaultRecordV2> =
+    LedgerMap::at(VAULT.sign_bidirectional_event_map.index());
+
+/// `swapEventMap`, holding the stage-7 swap record. See [`SIGN_EVENT_MAP_V2`].
+pub const SWAP_EVENT_MAP_V2: LedgerMap<B32<Public>, SwapRecordV2> =
+    LedgerMap::at(VAULT.swap_event_map.index());
 
 /// `export circuit initialize(vaultEvm: Bytes<20>, swapRouter: Bytes<20>,
 /// chainId: Uint<64>, chainCaip2Id: Bytes<32>, responseKey:
@@ -306,7 +361,9 @@ pub fn deposit(
 
     // constructSignBidirectionalEvent(kernel.self(), requestNonce,
     // keyVersion, caller, ecdsa, unused, pad(64, ""), evmType2, txParams,
-    // caip2Id, schema, schema)
+    // caip2Id, CLAIM) — the two schema strings are gone (stage 7); what the
+    // MPC needs to know about the response is its KIND, and `claim` is what
+    // settles a deposit.
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
@@ -325,8 +382,7 @@ pub fn deposit(
         hi: caip2[0].private(),
         lo: caip2[1].private(),
     };
-    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
-    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
+    let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
         sender,
         request_nonce.private(),
@@ -337,18 +393,10 @@ pub fn deposit(
         },
         tx_params,
         caip2,
-        schema.clone(),
-        schema,
+        RESPONSE_KIND_CLAIM as u8,
     );
 
-    record_and_notify(
-        c,
-        one,
-        me,
-        &request,
-        &VAULT.sign_bidirectional_event_map,
-        [0, 0, 0, 0],
-    );
+    record_and_notify(c, one, me, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -356,12 +404,12 @@ pub fn deposit(
 /// `requestId = disclose(calculateRequestId(request))` +
 /// `assert(!map.member(requestId), "Request already exists")`. Returns the
 /// disclosed id and its ledger-value form.
-fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
+fn check_fresh_request<const WORDS: usize>(
     c: &mut Circuit3,
-    request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    request: &signet::SignBidirectionalEventV2<Private, WORDS>,
+    map: &LedgerMap<B32<Public>, signet::EventRecordV2<WORDS>>,
 ) -> B32<Public> {
-    let request_id_priv = signet::calculate_request_id(c, request);
+    let request_id_priv = signet::calculate_request_id_v2(c, request);
     c.region("record: freshness", |c| {
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
         let exists = map.member(c, &request_id);
@@ -373,18 +421,19 @@ fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPO
 
 /// `signetRequestNonce.increment(1)` + `map.insert(requestId,
 /// disclose(request))`.
-fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
+fn insert_request<const WORDS: usize>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    request: &signet::SignBidirectionalEventV2<Private, WORDS>,
+    map: &LedgerMap<B32<Public>, signet::EventRecordV2<WORDS>>,
     request_id: &B32<Public>,
 ) {
     c.region("record: insert", |c| {
         emit(c, one, &counter_increment(SIGNET_REQUEST_NONCE, 1));
         // The record's atoms come from its TYPE — there is no atom list here
         // to disagree with the one the settle circuits look it up with.
-        let record = signet::EventRecord::from_limbs(request.limbs().disclose_as::<RequestRecord>(c));
+        let record =
+            signet::EventRecordV2::from_limbs(request.limbs().disclose_as::<RequestRecord>(c));
         map.insert(c, request_id, &record);
     });
 }
@@ -414,12 +463,12 @@ fn notify_signet(
 
 /// The contiguous tail deposit/approveRouter share: freshness check,
 /// record, notify.
-fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
+fn record_and_notify<const WORDS: usize>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     me: ContractAddress<Public>,
-    request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    request: &signet::SignBidirectionalEventV2<Private, WORDS>,
+    map: &LedgerMap<B32<Public>, signet::EventRecordV2<WORDS>>,
     notify_path: [u8; 4],
 ) -> B32<Public> {
     let request_id = check_fresh_request(c, request, map);
@@ -615,8 +664,9 @@ pub fn withdraw(
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
-    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
+    // The response kind is WITHDRAW: `completeWithdraw` is what settles this
+    // request (or `refund`, on the FAILURE kind, which every request may get).
+    let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
         sender,
         request_nonce.private(),
@@ -624,11 +674,10 @@ pub fn withdraw(
         path,
         tx_params,
         caip2,
-        schema.clone(),
-        schema,
+        RESPONSE_KIND_WITHDRAW as u8,
     );
 
-    let request_id = check_fresh_request(c, &request, &VAULT.sign_bidirectional_event_map);
+    let request_id = check_fresh_request(c, &request, &SIGN_EVENT_MAP_V2);
 
     // The surrendered value is BURNED (rung vi, avenue 6): a SINGLE claimed
     // shielded spend of the burn-address output — no receive custody claim,
@@ -640,13 +689,7 @@ pub fn withdraw(
     };
     common::burn_spend(c, one, &coin);
 
-    insert_request(
-        c,
-        one,
-        &request,
-        &VAULT.sign_bidirectional_event_map,
-        &request_id,
-    );
+    insert_request(c, one, &request, &SIGN_EVENT_MAP_V2, &request_id);
 
     // refundCommitment.insert(requestId,
     //   disclose(withdrawRefundCommitment(callerSecretKey(), requestId)))
@@ -827,9 +870,10 @@ pub fn swap(
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let output_schema = BytesN::<Private, SWAP_OUTPUT_LEN>::literal(c, SWAP_OUTPUT_SCHEMA);
-    let respond_schema = BytesN::<Private, SWAP_RESPOND_LEN>::literal(c, SWAP_RESPOND_SCHEMA);
-    let request: SwapEvent<Private> = signet::construct_sign_bidirectional_event(
+    // The response kind is SWAP — the one kind whose response carries a
+    // PAYLOAD (the attested `amountIn`), which is what the two wider schema
+    // strings used to say: `uint256` in on the EVM side, `uint64` back.
+    let request: SwapEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
         sender,
         request_nonce.private(),
@@ -837,11 +881,10 @@ pub fn swap(
         path,
         tx_params,
         caip2,
-        output_schema,
-        respond_schema,
+        RESPONSE_KIND_SWAP as u8,
     );
 
-    let request_id = check_fresh_request(c, &request, &VAULT.swap_event_map);
+    let request_id = check_fresh_request(c, &request, &SWAP_EVENT_MAP_V2);
 
     // Burn the surrendered amountInMaximum of tokenIn (rung vi, avenue 6): a
     // SINGLE claimed shielded spend of the burn-address output — no receive
@@ -853,7 +896,7 @@ pub fn swap(
     };
     common::burn_spend(c, one, &coin);
 
-    insert_request(c, one, &request, &VAULT.swap_event_map, &request_id);
+    insert_request(c, one, &request, &SWAP_EVENT_MAP_V2, &request_id);
 
     // swapRefundCommitment.insert(requestId, disclose(...))
     let sk = common::witness_sk(c);
@@ -977,8 +1020,10 @@ pub fn approve_router(
         hi: path.hi.private(),
         lo: path.lo.private(),
     };
-    let schema = BytesN::<Private, VAULT_SCHEMA_LEN>::literal(c, VAULT_RESPONSE_SCHEMA);
-    let request: VaultEvent<Private> = signet::construct_sign_bidirectional_event(
+    // The response kind is APPROVE — the one REQUEST-ONLY kind: an approve is
+    // fire-and-forget, no settle circuit accepts it, and giving it its own
+    // kind is what says so on the wire (see [`RESPONSE_KIND_APPROVE`]).
+    let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
         sender,
         request_nonce.private(),
@@ -986,18 +1031,10 @@ pub fn approve_router(
         path,
         tx_params,
         caip2,
-        schema.clone(),
-        schema,
+        RESPONSE_KIND_APPROVE as u8,
     );
 
-    record_and_notify(
-        c,
-        one,
-        me,
-        &request,
-        &VAULT.sign_bidirectional_event_map,
-        [0, 0, 0, 0],
-    );
+    record_and_notify(c, one, me, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -1069,9 +1106,10 @@ pub const VAULT_TOKEN_TAG: u8 = 0x01;
 // the same declarations.
 
 /// The number of response kinds — `Tag<RESPONSE_KINDS>` is one Borsh byte.
-pub const RESPONSE_KINDS: u32 = 4;
+pub const RESPONSE_KINDS: u32 = 5;
 
-/// Response kinds, at BYTE 0 of every attested output.
+/// Response kinds, at BYTE 0 of every attested output AND in the last byte of
+/// every stage-7 request record.
 ///
 /// The discriminant is what makes cross-circuit attestation replay
 /// STRUCTURALLY impossible. Before it, `claim` and `completeWithdraw` shared a
@@ -1081,6 +1119,35 @@ pub const RESPONSE_KINDS: u32 = 4;
 /// from being used. Now the kind is inside the signed preimage, so the two
 /// digests differ for the same request id and the same outcome, and each
 /// circuit asserts its own kind.
+///
+/// STAGE 7 gives the same enumeration a second job: the RECORD carries the
+/// kind its response will have, and the MPC reads it instead of the two
+/// in-band ABI-JSON schema strings — `kind ↦ (ABI types to decode the EVM
+/// return data with, response shape to serialize back)`:
+///
+/// | kind | name | recorded by | settled by | ABI types | response |
+/// |------|------|-------------|------------|-----------|----------|
+/// | 0 | CLAIM | `deposit` | `claim` | `[bool success]` | `VaultResponse` |
+/// | 1 | WITHDRAW | `withdraw` | `completeWithdraw` | `[bool success]` | `VaultResponse` |
+/// | 2 | SWAP | `swap` | `completeSwap` | `[uint256 amountIn]` | `SwapResponse` |
+/// | 3 | FAILURE | — | `refund` | — (never executed) | `FailureResponse` |
+/// | 4 | APPROVE | `approveRouter` | — | `[bool success]` | `VaultResponse` |
+///
+/// The two ends of the table are the two ASYMMETRIES, and they are the reason
+/// the record's kind and the response's kind are ONE namespace rather than
+/// two: FAILURE is response-only (it says the transaction never executed,
+/// which is an outcome and not a request), and APPROVE is request-only (an
+/// approve is fire-and-forget: the vault records it, the MPC signs it, and no
+/// circuit settles it — `claim` would have to match its `path`, which is the
+/// vault's own and not any `userCommitment(sk)`). Giving the approve request
+/// its own kind rather than borrowing CLAIM's is what MAKES that
+/// unsettleability structural ON THE OUTPUT SIDE — an approve RESPONSE is a
+/// kind no settle circuit accepts. The RECORD side is not yet bound
+/// in-circuit (no settle circuit reads the record's kind byte; the bind is
+/// the queued hardening stage in milestones.org M11), so until it lands a
+/// mis-kinded ATTESTATION against an approve record is rejected by the
+/// settle circuit's own output-kind constant, and the depositor gate remains
+/// the backstop the kind was introduced to stop relying on.
 pub const RESPONSE_KIND_CLAIM: u32 = 0;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
@@ -1088,6 +1155,8 @@ pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
 pub const RESPONSE_KIND_SWAP: u32 = 2;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_FAILURE: u32 = 3;
+/// The REQUEST-ONLY kind — see [`RESPONSE_KIND_CLAIM`]'s table.
+pub const RESPONSE_KIND_APPROVE: u32 = 4;
 
 /// `struct VaultResponse { kind: u8, success: bool }` — 2 bytes, the attested
 /// output of `claim` (kind 0) and `completeWithdraw` (kind 1).
@@ -1215,7 +1284,7 @@ fn verify_attestation<T: CircuitBorsh<Private>>(
 fn refund_surrendered_value(
     c: &mut Circuit3,
     request_id: &B32<Public>,
-    ev: &VaultRecord,
+    ev: &VaultRecordV2,
     mint_nonce: &B32<Public>,
 ) {
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
@@ -1288,12 +1357,8 @@ pub fn complete_withdraw(
     let ev = c.region("event map consume", |c| {
         let pending = VAULT.refund_commitment.member(c, &request_id);
         c.assert_with(pending.field(), Some("Withdrawal not found"));
-        let ev = VAULT
-            .sign_bidirectional_event_map
-            .lookup(c, &request_id);
-        VAULT
-            .sign_bidirectional_event_map
-            .remove(c, &request_id);
+        let ev = SIGN_EVENT_MAP_V2.lookup(c, &request_id);
+        SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
 
@@ -1352,8 +1417,8 @@ pub fn complete_swap(
     let ev = c.region("event map consume", |c| {
         let pending = VAULT.swap_refund_commitment.member(c, &request_id);
         c.assert_with(pending.field(), Some("Swap not found"));
-        let ev = VAULT.swap_event_map.lookup(c, &request_id);
-        VAULT.swap_event_map.remove(c, &request_id);
+        let ev = SWAP_EVENT_MAP_V2.lookup(c, &request_id);
+        SWAP_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
 
@@ -1562,12 +1627,9 @@ pub fn refund(
     // Withdrawal-route record consume (guarded): the VaultRecord and its
     // removal from the request map.
     let ev = c.region("event map consume", |c| {
-        let ev = VAULT
-            .sign_bidirectional_event_map
+        let ev = SIGN_EVENT_MAP_V2
             .lookup_guarded(c, is_withdrawal, &request_id).or_default();
-        VAULT
-            .sign_bidirectional_event_map
-            .remove_under(c, is_withdrawal, &request_id);
+        SIGN_EVENT_MAP_V2.remove_under(c, is_withdrawal, &request_id);
         ev
     });
 
@@ -1579,10 +1641,9 @@ pub fn refund(
             .member_guarded(c, swapping, &request_id).or_default()
             .field();
         common::assert_if(c, swapping, swap_pending);
-        let ev7 = VAULT
-            .swap_event_map
+        let ev7 = SWAP_EVENT_MAP_V2
             .lookup_guarded(c, swapping, &request_id).or_default();
-        VAULT.swap_event_map.remove_under(c, swapping, &request_id);
+        SWAP_EVENT_MAP_V2.remove_under(c, swapping, &request_id);
         ev7
     });
 
@@ -1750,16 +1811,10 @@ pub fn claim(
 
     // Double-claim protection: member + lookup + remove.
     let ev = c.region("event map consume", |c| {
-        let found = VAULT
-            .sign_bidirectional_event_map
-            .member(c, &request_id);
+        let found = SIGN_EVENT_MAP_V2.member(c, &request_id);
         c.assert(found.field());
-        let ev = VAULT
-            .sign_bidirectional_event_map
-            .lookup(c, &request_id);
-        VAULT
-            .sign_bidirectional_event_map
-            .remove(c, &request_id);
+        let ev = SIGN_EVENT_MAP_V2.lookup(c, &request_id);
+        SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
 

@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import {
   CODECS,
   FLAGGED_U32_LEN,
+  RECORD_FORMAT_VERSION,
   readFlaggedU32,
   readVaultResponse,
   writeSwapResponse,
@@ -210,4 +211,46 @@ test('Flagged<T> is fixed width at BOTH tags — Maybe is never Option', () => {
   assert.equal(FLAGGED_U32_LEN, 5);
   assert.deepEqual(readFlaggedU32(fromHex('01efbeadde')), { isSome: true, value: 0xdeadbeef });
   assert.deepEqual(readFlaggedU32(fromHex('0000000000')), { isSome: false, value: 0 });
+});
+
+// ---- the version byte (spec/borsh-subset.md §6) — GENERATED -----------------------
+//
+// One test per VERSIONED record reader, emitted by
+// `crates/minocrab-contracts/tests/serialization/ts_codegen.rs` from the same
+// schema walk the readers themselves are walked out of: a record format that
+// gains a version byte gains its rejection test in the same regeneration.
+//
+// Nothing above reaches this rule — every committed vector carries a
+// well-formed record, so the version check is only ever satisfied there.
+
+test('reject: readVaultEventV2 on a record whose format version is not 0x80', () => {
+  const codec = CODECS['VaultEventV2'];
+  const bytes = new Uint8Array(codec.byteLength);
+  bytes[0] = RECORD_FORMAT_VERSION;
+  assert.equal(codec.read(bytes).formatVersion, RECORD_FORMAT_VERSION);
+  for (const wrong of [0x00, 0x01, 0x7f, 0x81, 0xff]) {
+    bytes[0] = wrong;
+    const hex = wrong.toString(16).padStart(2, '0');
+    assert.throws(
+      () => codec.read(bytes),
+      new RegExp(`record-version: expected 0x80, got 0x${hex}`),
+      `version 0x${hex} must be rejected by name`,
+    );
+  }
+});
+
+test('reject: readSwapEventV2 on a record whose format version is not 0x80', () => {
+  const codec = CODECS['SwapEventV2'];
+  const bytes = new Uint8Array(codec.byteLength);
+  bytes[0] = RECORD_FORMAT_VERSION;
+  assert.equal(codec.read(bytes).formatVersion, RECORD_FORMAT_VERSION);
+  for (const wrong of [0x00, 0x01, 0x7f, 0x81, 0xff]) {
+    bytes[0] = wrong;
+    const hex = wrong.toString(16).padStart(2, '0');
+    assert.throws(
+      () => codec.read(bytes),
+      new RegExp(`record-version: expected 0x80, got 0x${hex}`),
+      `version 0x${hex} must be rejected by name`,
+    );
+  }
 });

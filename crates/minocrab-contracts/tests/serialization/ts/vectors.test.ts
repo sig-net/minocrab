@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import {
   CODECS,
   FLAGGED_U32_LEN,
+  RECORD_FORMAT_VERSION,
   readFlaggedU32,
   readVaultResponse,
   writeSwapResponse,
@@ -211,3 +212,15 @@ test('Flagged<T> is fixed width at BOTH tags — Maybe is never Option', () => {
   assert.deepEqual(readFlaggedU32(fromHex('01efbeadde')), { isSome: true, value: 0xdeadbeef });
   assert.deepEqual(readFlaggedU32(fromHex('0000000000')), { isSome: false, value: 0 });
 });
+
+// ---- the version byte (spec/borsh-subset.md §6) — GENERATED -----------------------
+//
+// One test per VERSIONED record reader, emitted by
+// `crates/minocrab-contracts/tests/serialization/ts_codegen.rs` from the same
+// schema walk the readers themselves are walked out of: a record format that
+// gains a version byte gains its rejection test in the same regeneration.
+//
+// Nothing above reaches this rule — every committed vector carries a
+// well-formed record, so the version check is only ever satisfied there.
+
+{{VERSION_REJECTS}}

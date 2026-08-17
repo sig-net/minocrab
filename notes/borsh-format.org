@@ -845,7 +845,9 @@ untouched (bit-identical, all differential suites green).
 The MPC has never settled on Midnight (=MidnightPublisher::publish_signature=
 bails), so there is no deployed response format: what follows is DEFINED here.
 Response kinds, one Borsh byte at OFFSET 0 of every attested output
-(=erc20_vault_borsh::RESPONSE_KIND_*=, =RESPONSE_KINDS = 4=):
+(=erc20_vault_borsh::RESPONSE_KIND_*=, =RESPONSE_KINDS = 4=; STAGE 7 MADE IT
+5 — the record carries a kind too, so approveRouter's request needed one:
+see §"As built — stage 7"):
 | kind | name     | settles          | attested output type                     | LEN |
 |------+----------+------------------+------------------------------------------+-----|
 |    0 | CLAIM    | claim            | VaultResponse { kind: u8, success: bool } |   2 |
@@ -1058,6 +1060,193 @@ its original's numbers and its original's interface verbatim. All
 differential suites green, including the two the twins were added to — the
 originals' own tests are untouched and still pass.
 
+* As built — stage 7 (2026-08-16)
+THE RECORD. =erc20_vault_borsh= and =erc20_vault_modern= now write a
+VERSIONED, KIND-TAGGED request record: a format-version byte =0x80= at
+offset 0, and ONE response-kind byte where the two in-band ABI-JSON schema
+strings were. The compat port and =erc20_vault_opt= are untouched — every
+one of their circuits is BYTE-IDENTICAL ZKIR — and the deployed-bytes
+conformance suite is untouched and green, because what is on the wire today
+is still what is on the wire today.
+SWAP CROSSED: =erc20_vault_borsh::swap= 32,819 → 28,625 rows, *k16 → k15*,
+with 4,143 rows of margin under 2^15. The design projected −4,218 and a
+crossing; the measurement is −4,194 and the crossing. (M10's k15 attempt
+missed by 51 rows; this one did not.)
+
+** THE LAYOUT — this section is the spec (with spec/borsh-subset.md §6)
+Stage 7 changes the record at its two ENDS and nowhere in between, which is
+how =signet::layout_v2= is WRITTEN (=1 + layout::X=, not a second hand
+count) and how the spec twins are BUILT (from the deployed value, with the
+two ends replaced):
+| position | deployed | stage 7 |
+|----------+----------+---------|
+| first field | =sender: Bytes<32>= | =formatVersion: Uint<8>= = 0x80, then =sender= |
+| last fields | =outputDeserializationSchema: Bytes<L>= + =respondSerializationSchema: Bytes<L'>= (68 B on a vault record, 75 on a swap record) | =responseKind: Uint<8>= |
+Everything between is identical field for field, so EVERY OTHER OFFSET IS
+THE OLD ONE PLUS ONE.
+| shape | atoms | limbs | bytes | keccak blocks (rate 136) |
+|-------+-------+-------+-------+--------------------------|
+| VaultEvent (2 words, deployed) | 24 | 33 | 404 | 3 |
+| VaultEventV2 (2 words, stage 7) | 24 | 31 | 338 | 3 |
+| SwapEvent (7 words, deployed) | 29 | 43 | 571 | 5 |
+| SwapEventV2 (7 words, stage 7) | 29 | 41 | 498 | *4* |
+The ATOM COUNT IS UNCHANGED (one atom in at the head, two out and one in at
+the tail); the LIMB count drops by two per record (a 34/38/37-byte schema is
+two limbs, the kind is one, the version is one). The swap record's fourth
+block is the whole prize: 5×136 = 680 ≥ 572 but 4×136 = 544 ≥ 499.
+Byte offsets of the stage-7 records, generated: spec/borsh-subset.md §9
+(=VaultEventV2= — 338 bytes, =SwapEventV2= — 498), and the frozen
+=LAYOUT_SNAPSHOT= grew 86 → 139 rows.
+
+** THE READER CONSTANTS, for the MPC team (work order §STAGE 7)
+The work order says "reader.rs constants 22→21/3→2 + uint<u8> read". WITH
+the format-version byte, recomputed from our own atom lists:
+- ATOMS AFTER caip2Id (the tail their cursor walks): *3 → 2* — the two
+  schema atoms become one kind atom, and caip2Id is still the one before it.
+  UNCHANGED by the version byte, which is at the other end.
+- WORDS-INDEPENDENT ATOM COUNT (total atoms minus the calldata words):
+  *22 → 22*, not 21. The work order's 21 counted the kind replacing two
+  schemas; the version byte puts the atom back at the head. Total atoms are
+  therefore 24 (2-word) and 29 (7-word), exactly as today.
+- ONE NEW LEADING READ: =uint<u8>= at atom 0, byte 0 — assert it equals
+  *128 (0x80)* and drop with a NAMED reason otherwise ("record-version"),
+  which is the point of the byte (their current failure is a silent
+  "record-undecodable").
+- ONE NEW TRAILING READ: =uint<u8>= responseKind, replacing two
+  =bytes<34/38/37>= schema reads.
+- =request_id.rs=: no change beyond the tail — it hashes the record's
+  binary_repr, which is exactly the bytes above.
+- =convert.rs=: the =kind ↦ (ABI types, response shape)= table is
+  spec/borsh-subset.md §5, now printed WITH its request-side column.
+- EVERY OTHER FIELD OFFSET SHIFTS BY EXACTLY ONE BYTE (and one atom).
+
+** RESPONSE_KINDS 4 → 5: the approve request gets its own kind
+The record's kind and the attested output's kind are ONE enumeration — that
+is what lets a settle circuit check the two ends against each other — so the
+enumeration has to name every request as well as every response:
+| kind | name | recorded by | settled by | ABI types | response |
+|------+------+-------------+------------+-----------+----------|
+| 0 | CLAIM | deposit | claim | [bool] | VaultResponse |
+| 1 | WITHDRAW | withdraw | completeWithdraw | [bool] | VaultResponse |
+| 2 | SWAP | swap | completeSwap | [uint256 amountIn] | SwapResponse |
+| 3 | FAILURE | — | refund | — (never executed) | FailureResponse |
+| 4 | APPROVE | approveRouter | — | [bool] | VaultResponse |
+The two ends are the asymmetries: FAILURE is response-only (an outcome, not
+a request; any request may get it), and APPROVE is REQUEST-ONLY. An approve
+is fire-and-forget — no settle circuit consumes it, and =claim= could not
+because an approve record's =path= is the vault's own and not any
+=userCommitment(sk)=. Giving it its own kind makes that STRUCTURAL (no
+settle circuit accepts kind 4) instead of a consequence of the depositor
+gate, and it costs ZERO rows: =Tag<K>='s =< K= bound is not emitted anywhere
+(stage 5's documented departure — each circuit asserts equality with its own
+kind), so K is a documentation and decoder fact, not an instruction. The
+adversarial sweep =an_attestation_for_another_settle_circuit_does_not_settle=
+is written over =0..RESPONSE_KINDS=, so it now rejects kind 4 at all four
+settle circuits without an edit.
+
+** MEASURED rows (row_snapshot; borsh and modern move in lockstep)
+| circuit          | before        | after         | Δ      |
+|------------------+---------------+---------------+--------|
+| initialize       | k13 2,412     | k13 2,412     | 0      |
+| deposit          | k14 15,632    | k14 15,614    | −18    |
+| claim            | k16 42,057    | k16 42,053    | −4     |
+| approveRouter    | k14 13,332    | k14 13,314    | −18    |
+| withdraw         | k15 23,707    | k15 23,689    | −18    |
+| completeWithdraw | k16 40,163    | k16 40,159    | −4     |
+| refund           | k16 40,797    | k16 40,789    | −8     |
+| swap             | *k16* 32,819  | *k15* 28,625  | *−4,194* |
+| completeSwap     | k16 50,263    | k16 50,259    | −4     |
+=erc20_vault_modern= carries the identical numbers, line for line — the twin
+ledger stays =Identical= ×9, which is the statement that the M9 API's
+spelling is still free at the IR level after a wire-format change.
+READING THE DELTAS: a request circuit saves 18 rows (two 34-byte literals
+and their limbs out, one constant in, and 66 fewer bytes through the keccak
+chip at ~0.25 rows/byte) EXCEPT swap, where the fifth keccak block goes
+away; a settle circuit saves 4-8 (two fewer limbs to push through the map
+lookup/remove). Nothing needed a new instruction: the version byte and the
+kind byte are constants the constant-folding pass inlines.
+
+** What stayed pinned
+- STAGE 0'S DEPLOYED-BYTES CONFORMANCE IS UNTOUCHED AND GREEN. =VaultEvent=
+  (404) and =SwapEvent= (571) still exist as spec types, still equal the
+  deployed FAB bytes under both oracles, and their keccak is still the
+  compat/opt model's request id. The stage-7 types are ADDITIONAL
+  (=VaultEventV2= / =SwapEventV2=), and the new property
+  =stage7_record_bytes_are_canonical_borsh= is the same statement for the
+  new format: model limbs under the SHIPPING atom list == =borsh::to_vec= ==
+  bincode-fixint, and =keccak256(borsh(record)) == request_id=, per case,
+  for all four request circuits.
+- =erc20_vault= and =erc20_vault_opt=: byte-identical ZKIR, all differential
+  suites green. The ZKIR dump against the pre-change baseline: *151
+  byte-identical, 0 renumbered, 16 changed* — exactly
+  ={borsh,modern}::{deposit, approveRouter, withdraw, swap, claim,
+  completeWithdraw, refund, completeSwap}=. Both =initialize= circuits are
+  in the byte-identical set.
+- The interface snapshot did NOT move: the record travels as transcript
+  limbs, not as argument slots, so no circuit's declared interface changed
+  (regenerated, empty diff).
+- =signet.rs= gained the new types beside the deployed ones and shares two
+  helpers with them (=record_atoms_through_caip2=, =request_id_of=); the
+  deployed record's own ZKIR is unchanged, which the port/opt dumps prove.
+
+** Files
+- =src/signet.rs= — =RECORD_FORMAT_VERSION=, =SignBidirectionalEventV2<V,
+  WORDS>=, =layout_v2= (every offset =1 + layout::X=), =EventRecordV2=,
+  =construct_sign_bidirectional_event_v2=, =calculate_request_id_v2=, and
+  three new unit tests (the V2 atom list stated AGAINST the deployed one,
+  the shapes as numbers, the offsets as =layout::X + 1=).
+- =src/erc20_vault_borsh.rs= — the two instantiations, the two ledger maps
+  RE-TYPED rather than re-declared (=LedgerMap::at(VAULT.<field>.index())=,
+  so the state layout is provably the same field), =RESPONSE_KIND_APPROVE=,
+  and the four request circuits' construction sites.
+- =src/erc20_vault_modern.rs= — the same, in the M9 spelling; it IMPORTS the
+  record types and the two maps from the borsh fork, as it already imported
+  the response types.
+- =tests/vault/model.rs= — =record_head= / =record_tail= / =record_alignment=
+  select on =art.is_borsh_format()=; the four scenarios' =event_limbs= are
+  now head + middle + tail, so the deviation is one call per record.
+- =tests/vault/artifact.rs= — =borsh_fork_status=: the four request circuits
+  move to =Diverged= with the stage-7 rung; the four settle circuits' entry
+  now names both stages. =initialize= is the one circuit still =Identical=.
+- =tests/serialization/{spec_types,records,spec_doc}.rs=,
+  =tests/serialization_conformance.rs=, =spec/borsh-subset.md=,
+  =spec/vectors/records.json=, =spec/ts/= — the V2 twins, the new property,
+  the regenerated tables/vectors/TypeScript (39 node tests green, tsc clean).
+
+** Deviations, argued
+1. THE RECORD IS NOT A =#[derive(CircuitBorsh)]= TYPE. It is a hand-written
+   twin of the deployed record (atoms + limbs + a layout module), and its
+   Borsh-ness is proven the way the DEPLOYED record's is: a spec type with
+   borsh's own derives, the dual oracle, and per-case byte equality against
+   the shipping atom list. Deriving would have meant re-typing the record's
+   fields as v3 leaves in a struct the LEDGER also reads back by slot
+   offset, in a file all four artifacts import — a large refactor whose
+   payoff (a layout() we already get from the spec twin) is a test we
+   already have. Recorded as the one place stage 7 did not use the M11 API.
+2. RESPONSE_KINDS 4 → 5 (above). It widens the =Tag<K>= bound that no
+   circuit emits, and it is a decoder-visible enum extension for the MPC.
+3. THE KIND IS A RAW WIRE, not a =Tag<RESPONSE_KINDS>=, inside the record:
+   the value is a contract-fixed constant at every construction site (there
+   is no argument to range-check), and typing it would have made K a third
+   const parameter of a type shared by two instantiations.
+4. THE VERSION BYTE IS FIRST, as the brief's default: a decoder reads it
+   before anything else, and it is the only position at which an unknown
+   version can be a NAMED rejection rather than a mis-parse. The kind stays
+   at the TAIL, where the schemas were, so every other offset moves by
+   exactly one byte and the MPC's cursor diff is two reads.
+
+** Not done, deliberately
+- BENCHMARK.md IS NOT REFRESHED (a full bench run is hours). It is now
+  MATERIALLY STALE for the first time in M11: =swap= moved a k, and k is
+  what decides prove time and RAM, so the stage-4 decision ("the borsh
+  artifact is not benched until a k moves") has come due. The supervisor's
+  follow-up: add the fourth =Artifacts= side and re-run, or publish the row
+  table above with a note. The row snapshot already carries the numbers at
+  every commit.
+- No MIGRATION path and no dual-format decoder. Nothing is deployed in
+  either shape by the MPC (its Midnight publisher bails), so an
+  implementation targets one format and the version byte says which.
+
 * Stage 9 (added by dmd 2026-08-15): hash-flavor API
 persistent_hash = borsh flavor DEFAULT (subset bytes; for all-bytes
 alignments identical to FAB — stage 0's headline); persistent_hash_
@@ -1083,6 +1272,13 @@ contract is to be PRESENTED FOR DISCUSSION before integration into
 the rest of the stack — therefore M11 STAGE 7 (the record change) is
 HELD: designed + measured, not implemented, until after that
 discussion. Nothing else blocks on it.
+SUPERSEDED 2026-08-16: stage 7 was IMPLEMENTED on this session's work
+order (§"As built — stage 7"). The hold's premise is unchanged and
+unharmed — nothing is deployed, on either side, in either format — so
+what the discussion now has in front of it is a measured change in the
+working tree rather than a projection. If the discussion goes the other
+way the revert is one commit; if it goes this way the MPC work order
+above is complete and costed.
 
 * Stage 10 (dmd 2026-08-15): TypeScript parser codegen
 Generate TS reader/writer code from CircuitBorsh::layout() (fixed

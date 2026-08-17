@@ -6,10 +6,13 @@
 //! here, from `borsh`'s own schema of the spec types — never typed by hand —
 //! so the document cannot drift from the format. What is hand-written in
 //! `spec/borsh-subset.md` is PROSE: the subset rule, the reject rules, the
-//! padding rule, the response-kind table and the rationale. Everything
-//! between the generated markers is this module's output, and
-//! `spec_document::the_committed_offset_tables_are_generated` fails if the
-//! committed file disagrees.
+//! padding rule and the rationale. The §5 response-kind table is NOT prose any
+//! more — it is the MPC's lookup table and its rows are the contract's own
+//! constants, so it is generated like the offsets. Everything between a
+//! generated marker pair ([`generated_regions`]) is this module's output, and
+//! `spec_document::{the_committed_offset_tables_are_generated,
+//! the_committed_kind_table_is_generated}` fail if the committed file
+//! disagrees.
 //!
 //! Regenerate with:
 //! `cargo test --release -p minocrab-contracts --test serialization_conformance -- \
@@ -20,7 +23,7 @@ use std::path::PathBuf;
 
 use borsh::schema::BorshSchemaContainer;
 use borsh::{BorshSchema, BorshSerialize};
-use minocrab_contracts::erc20_vault;
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
 use serde::Serialize;
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
@@ -35,11 +38,173 @@ use super::spec_types::*;
 pub const TABLES_BEGIN: &str = "<!-- BEGIN GENERATED: offset tables -->";
 pub const TABLES_END: &str = "<!-- END GENERATED: offset tables -->";
 
+/// The marker pair §5's response-kind table lives between. Same rule as
+/// [`TABLES_BEGIN`]: the table is generated, the prose around it is not.
+pub const KINDS_BEGIN: &str = "<!-- BEGIN GENERATED: response kinds -->";
+pub const KINDS_END: &str = "<!-- END GENERATED: response kinds -->";
+
 /// The repository's `spec/` directory.
 pub fn spec_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("spec")
+}
+
+/// Every generated region of `spec/borsh-subset.md`: `(begin marker, end
+/// marker, what belongs between them)`, in document order.
+///
+/// One list, so the checker and the regenerator cannot cover different sets of
+/// regions — the way a region gets added is by adding it here.
+pub fn generated_regions() -> Vec<(&'static str, &'static str, String)> {
+    vec![
+        (KINDS_BEGIN, KINDS_END, response_kinds_markdown()),
+        (TABLES_BEGIN, TABLES_END, offset_tables_markdown()),
+    ]
+}
+
+// ---- §5's response kinds -------------------------------------------------------
+
+/// One row of §5's kind table: a kind number and everything the document — and
+/// the MPC's `kind ↦ (ABI types, response shape)` lookup — says about it.
+///
+/// The prose fields are markdown, because the table is what they are for.
+struct KindRow {
+    /// `erc20_vault_borsh::RESPONSE_KIND_*` — the byte at offset 0 of the
+    /// attested output, and the last byte of the stage-7 record.
+    number: u32,
+    name: &'static str,
+    /// The circuit that writes a record carrying this kind, or `—`.
+    requested_by: &'static str,
+    /// The circuit that settles an attested output carrying it, or `—`.
+    settles: &'static str,
+    /// The ABI types the MPC decodes the destination-chain return data with.
+    abi_types: &'static str,
+    /// The response shape it serializes back.
+    response: &'static str,
+    /// That shape's fixed width — the spec type's own `LEN`, not a numeral.
+    len: usize,
+}
+
+/// THE KIND TABLE, once. §5's markdown is written from this array and the
+/// attested-output vectors' kind bytes are checked against it, so the
+/// document, the vectors and the contract's constants cannot say three
+/// different things.
+///
+/// The two asserts are the count-sync: the array is exactly `RESPONSE_KINDS`
+/// long, and its numbers are `0..len` in order. `RESPONSE_KINDS` is what the
+/// circuits build `Tag<RESPONSE_KINDS>` from, so a sixth kind added to the
+/// contract without a row here fails HERE rather than publishing a lookup
+/// table that is quietly one row short — which is a response byte the MPC can
+/// sign and nobody can decode.
+fn kind_rows() -> Vec<KindRow> {
+    let rows = vec![
+        KindRow {
+            number: erc20_vault_borsh::RESPONSE_KIND_CLAIM,
+            name: "CLAIM",
+            requested_by: "`deposit`",
+            settles: "`claim`",
+            abi_types: "`[bool success]`",
+            response: "`VaultResponse { kind: u8, success: bool }`",
+            len: VaultResponse::LEN,
+        },
+        KindRow {
+            number: erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+            name: "WITHDRAW",
+            requested_by: "`withdraw`",
+            settles: "`completeWithdraw`",
+            abi_types: "`[bool success]`",
+            response: "`VaultResponse { kind: u8, success: bool }`",
+            len: VaultResponse::LEN,
+        },
+        KindRow {
+            number: erc20_vault_borsh::RESPONSE_KIND_SWAP,
+            name: "SWAP",
+            requested_by: "`swap`",
+            settles: "`completeSwap`",
+            abi_types: "`[uint256 amountIn]`",
+            response: "`SwapResponse { kind: u8, amount_in: u64 }`",
+            len: SwapResponse::LEN,
+        },
+        KindRow {
+            number: erc20_vault_borsh::RESPONSE_KIND_FAILURE,
+            name: "FAILURE",
+            requested_by: "—",
+            settles: "`refund`",
+            abi_types: "— (never executed)",
+            response: "`FailureResponse { kind: u8 }`",
+            len: FailureResponse::LEN,
+        },
+        KindRow {
+            number: erc20_vault_borsh::RESPONSE_KIND_APPROVE,
+            name: "APPROVE",
+            requested_by: "`approveRouter`",
+            settles: "—",
+            abi_types: "`[bool success]`",
+            response: "`VaultResponse { kind: u8, success: bool }`",
+            len: VaultResponse::LEN,
+        },
+    ];
+    assert_eq!(
+        rows.len(),
+        erc20_vault_borsh::RESPONSE_KINDS as usize,
+        "§5's kind table has {} rows and the contract declares RESPONSE_KINDS = {}. The table \
+         IS the MPC's lookup — add the row beside the constant",
+        rows.len(),
+        erc20_vault_borsh::RESPONSE_KINDS
+    );
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(
+            row.number as usize,
+            i,
+            "§5's kind numbers are the wire bytes and must be 0..{} in order; row {i} carries \
+             kind {}",
+            rows.len(),
+            row.number
+        );
+    }
+    rows
+}
+
+/// §5's table, as the markdown the document publishes.
+fn response_kinds_markdown() -> String {
+    let mut out = String::from("\n");
+    let _ = writeln!(
+        out,
+        "| kind | name | requested by | settles | ABI types to decode | attested output | LEN |"
+    );
+    let _ = writeln!(out, "|---:|---|---|---|---|---|---:|");
+    for row in kind_rows() {
+        let _ = writeln!(
+            out,
+            "| {} | `{}` | {} | {} | {} | {} | {} |",
+            row.number, row.name, row.requested_by, row.settles, row.abi_types, row.response,
+            row.len
+        );
+    }
+    out
+}
+
+/// Every kind byte in `vectors` is one §5 declares.
+///
+/// The loop-closer between the table and the bytes: a vector built with a kind
+/// that has no row would publish an attested output no settle circuit accepts
+/// and no MPC lookup can decode, and the offset tables beside it would look
+/// perfectly well-formed.
+fn assert_kinds_are_declared(vectors: &[Vector]) {
+    let declared: Vec<u128> = kind_rows().iter().map(|row| u128::from(row.number)).collect();
+    for vector in vectors {
+        let field = vector
+            .fields
+            .iter()
+            .find(|f| f.path == "kind" || f.path.ends_with(".kind"))
+            .unwrap_or_else(|| panic!("{}: an attested output with no kind field", vector.kind));
+        let byte = field.number.expect("a kind byte decodes to a number");
+        assert!(
+            declared.contains(&byte),
+            "{}: kind {byte} is not one of §5's declared kinds {declared:?}",
+            vector.kind
+        );
+    }
 }
 
 // ---- the offset tables ---------------------------------------------------------
@@ -290,6 +455,49 @@ pub fn swap_event() -> SwapEvent {
     }
 }
 
+/// The 2-word record as M11 STAGE 7 writes it: the same value as
+/// [`vault_event`] with the version byte in front and the response kind (0,
+/// CLAIM — a `deposit` request) where the two schema strings were.
+///
+/// Built FROM the deployed value, so the two vectors differ in exactly the two
+/// fields stage 7 changes and a reader can diff them byte for byte.
+pub fn vault_event_v2() -> VaultEventV2 {
+    let e = vault_event();
+    VaultEventV2 {
+        format_version: RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: erc20_vault_borsh::RESPONSE_KIND_CLAIM as u8,
+    }
+}
+
+/// The 7-word swap record as M11 stage 7 writes it — response kind 2, SWAP.
+pub fn swap_event_v2() -> SwapEventV2 {
+    let e = swap_event();
+    SwapEventV2 {
+        format_version: RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: erc20_vault_borsh::RESPONSE_KIND_SWAP as u8,
+    }
+}
+
 /// The request id a vector's record hashes to — the value the MPC recomputes
 /// and drops the request on mismatch.
 fn request_id_of<T: BorshSerialize>(value: &T) -> [u8; 32] {
@@ -353,14 +561,21 @@ fn leaves() -> String {
     )
 }
 
-/// The two request records, and the request ids they hash to.
+/// The request records — the deployed pair and M11 stage 7's — and the request
+/// ids they hash to.
 fn records() -> String {
     file(
-        "The two request-record instantiations. keccak256 of these bytes IS the request id \
-         the vault stores and the MPC recomputes (it drops the request on mismatch).",
+        "The request-record instantiations, DEPLOYED and M11 stage 7. keccak256 of these bytes \
+         IS the request id the vault stores and the MPC recomputes (it drops the request on \
+         mismatch). The V2 pair carries the same values as its deployed twin, so the diff is \
+         exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte \
+         responseKind where the two in-band ABI-JSON schema strings were (404 → 338 and \
+         571 → 498 bytes).",
         vec![
             vector("VaultEvent", &vault_event()),
             vector("SwapEvent", &swap_event()),
+            vector("VaultEventV2 (M11 stage 7, kind 0 CLAIM)", &vault_event_v2()),
+            vector("SwapEventV2 (M11 stage 7, kind 2 SWAP)", &swap_event_v2()),
         ],
     )
 }
@@ -368,62 +583,56 @@ fn records() -> String {
 /// The attested outputs THIS SPEC defines (M11 stage 5), with their signed
 /// digest preimages.
 fn attested_outputs() -> String {
-    let request_id = request_id_of(&vault_event());
+    let request_id = request_id_of(&vault_event_v2());
+    let claim = VaultResponse {
+        kind: erc20_vault_borsh::RESPONSE_KIND_CLAIM as u8,
+        success: true,
+    };
+    let withdraw = VaultResponse {
+        kind: erc20_vault_borsh::RESPONSE_KIND_WITHDRAW as u8,
+        success: false,
+    };
+    let swap = SwapResponse {
+        kind: erc20_vault_borsh::RESPONSE_KIND_SWAP as u8,
+        amount_in: 1_234_567_890,
+    };
+    let failure = FailureResponse {
+        kind: erc20_vault_borsh::RESPONSE_KIND_FAILURE as u8,
+    };
+    let vectors = vec![
+        vector("VaultResponse (kind 0, CLAIM, success)", &claim),
+        vector("VaultResponse (kind 1, WITHDRAW, failure)", &withdraw),
+        vector("SwapResponse (kind 2, SWAP)", &swap),
+        vector("FailureResponse (kind 3, FAILURE)", &failure),
+        vector(
+            "AttestationPreimage<VaultResponse>",
+            &AttestationPreimage {
+                request_id,
+                output: claim,
+            },
+        ),
+        vector(
+            "AttestationPreimage<SwapResponse>",
+            &AttestationPreimage {
+                request_id,
+                output: swap,
+            },
+        ),
+        vector(
+            "AttestationPreimage<FailureResponse>",
+            &AttestationPreimage {
+                request_id,
+                output: failure,
+            },
+        ),
+    ];
+    assert_kinds_are_declared(&vectors);
     file(
         "The kind-tagged attested outputs and their digest preimages. keccak256 of an \
          AttestationPreimage IS the digest the MPC signs; request_id here is the request id of \
-         the VaultEvent vector in records.json.",
-        vec![
-            vector(
-                "VaultResponse (kind 0, CLAIM, success)",
-                &VaultResponse {
-                    kind: 0,
-                    success: true,
-                },
-            ),
-            vector(
-                "VaultResponse (kind 1, WITHDRAW, failure)",
-                &VaultResponse {
-                    kind: 1,
-                    success: false,
-                },
-            ),
-            vector(
-                "SwapResponse (kind 2, SWAP)",
-                &SwapResponse {
-                    kind: 2,
-                    amount_in: 1_234_567_890,
-                },
-            ),
-            vector("FailureResponse (kind 3, FAILURE)", &FailureResponse { kind: 3 }),
-            vector(
-                "AttestationPreimage<VaultResponse>",
-                &AttestationPreimage {
-                    request_id,
-                    output: VaultResponse {
-                        kind: 0,
-                        success: true,
-                    },
-                },
-            ),
-            vector(
-                "AttestationPreimage<SwapResponse>",
-                &AttestationPreimage {
-                    request_id,
-                    output: SwapResponse {
-                        kind: 2,
-                        amount_in: 1_234_567_890,
-                    },
-                },
-            ),
-            vector(
-                "AttestationPreimage<FailureResponse>",
-                &AttestationPreimage {
-                    request_id,
-                    output: FailureResponse { kind: 3 },
-                },
-            ),
-        ],
+         the VaultEventV2 vector in records.json — the stage-7 record is the one these \
+         responses settle, and its last byte is the kind these carry at their first.",
+        vectors,
     )
 }
 
@@ -472,6 +681,11 @@ fn deployed_attested_outputs() -> String {
 }
 
 /// The singleton's logged payloads, inside the envelope they are logged in.
+///
+/// THE DEPLOYED request id, on purpose (stage-0 deployed conformance): these
+/// payloads are what the singleton logs TODAY, so the id inside them is the
+/// deployed [`vault_event`]'s and not [`vault_event_v2`]'s. Stage 7 changes
+/// the record, not the notification, and the vector says so in its `about`.
 fn misc_payloads() -> String {
     let request_id = request_id_of(&vault_event());
     let mut payload = [0u8; 128];
@@ -481,9 +695,13 @@ fn misc_payloads() -> String {
     payload[32] = 2;
     payload[33..37].copy_from_slice(b"reqs");
     file(
-        "The Signet singleton's Misc log payloads. `hex` is the payload; `envelope_hex` is the \
-         288-byte Misc value actually logged — pad(32, eventName) ‖ payload ‖ zeros — and the \
-         trailing zeros are REQUIRED, not optional (the deployed circuit hashes them).",
+        "The Signet singleton's Misc log payloads, in the DEPLOYED singleton format. `hex` is \
+         the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, \
+         eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the \
+         deployed circuit hashes them). The request id inside these payloads is the DEPLOYED \
+         VaultEvent's (records.json), deliberately: stage 7 changes the request record, not the \
+         notification, so what the singleton logs is unchanged. A stage-7 notification carries \
+         the VaultEventV2 request id instead — that is the id attested-outputs.json is built on.",
         vec![
             misc_vector(
                 "SignBidirectionalMisc",

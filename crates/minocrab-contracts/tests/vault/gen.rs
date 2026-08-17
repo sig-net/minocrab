@@ -499,14 +499,13 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
             Just([0xde, 0xad, 0xbe, 0xef, 0x00]),
             any::<[u8; 5]>(),
         ],
-        // The borsh artifact's form of "not the failure response": a kind
-        // that is not the failure kind. Applied only when the 5-byte output
-        // is not the sentinel, so ONE generated case says the same thing to
-        // all three artifacts.
-        prop_oneof![
-            (0u32..minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE).prop_map(kind),
-            any::<u8>(),
-        ],
+        // `refund`'s own kind, through the SHARED strategy the other three
+        // settle circuits use — own kind, another declared kind, a byte that
+        // is no kind at all. What the prop_map below does with it is refund's
+        // own business: the draw is only consulted when the 5-byte output is
+        // not the sentinel, and there it is forced off the failure kind, so
+        // ONE generated case says the same thing to all three artifacts.
+        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE),
     )
         .prop_map(
             |(w, sw, is_withdrawal, mint_nonce, own_pk, wrong_sk, both, init, output, not_failure)| {
@@ -526,8 +525,9 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
                 } else if not_failure
                     == kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE)
                 {
-                    // `any::<u8>()` can land on the failure kind; nudge it off,
-                    // so "not the failure response" stays true in both encodings.
+                    // The shared strategy's modal draw IS the failure kind, and
+                    // `any::<u8>()` can land on it too; nudge both off, so "not
+                    // the failure response" stays true in both encodings.
                     kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_CLAIM)
                 } else {
                     not_failure

@@ -146,16 +146,32 @@ response kind**, which makes cross-circuit replay structurally impossible: a
 signature attesting a claim is not a valid signature for a withdrawal, because
 the two preimages differ in their first byte.
 
-| kind | name | settles | attested output | LEN |
-|---:|---|---|---|---:|
-| 0 | `CLAIM` | `claim` | `VaultResponse { kind: u8, success: bool }` | 2 |
-| 1 | `WITHDRAW` | `completeWithdraw` | `VaultResponse { kind: u8, success: bool }` | 2 |
-| 2 | `SWAP` | `completeSwap` | `SwapResponse { kind: u8, amount_in: u64 }` | 9 |
-| 3 | `FAILURE` | `refund` | `FailureResponse { kind: u8 }` | 1 |
+<!-- BEGIN GENERATED: response kinds -->
+| kind | name | requested by | settles | ABI types to decode | attested output | LEN |
+|---:|---|---|---|---|---|---:|
+| 0 | `CLAIM` | `deposit` | `claim` | `[bool success]` | `VaultResponse { kind: u8, success: bool }` | 2 |
+| 1 | `WITHDRAW` | `withdraw` | `completeWithdraw` | `[bool success]` | `VaultResponse { kind: u8, success: bool }` | 2 |
+| 2 | `SWAP` | `swap` | `completeSwap` | `[uint256 amountIn]` | `SwapResponse { kind: u8, amount_in: u64 }` | 9 |
+| 3 | `FAILURE` | — | `refund` | — (never executed) | `FailureResponse { kind: u8 }` | 1 |
+| 4 | `APPROVE` | `approveRouter` | — | `[bool success]` | `VaultResponse { kind: u8, success: bool }` | 2 |
+<!-- END GENERATED: response kinds -->
+
+This table is generated from the contract's own `RESPONSE_KIND_*` constants and
+the response types' widths; it is exactly `RESPONSE_KINDS` rows long, numbered
+`0..n`, and the generator fails rather than publishing a lookup that is one row
+short of the enumeration the circuits use.
 
 Each settle circuit accepts **exactly one** kind and asserts equality with its
-own — which is strictly stronger than a `kind < 4` range check, and is the
+own — which is strictly stronger than a `kind < 5` range check, and is the
 anti-replay property.
+
+**This table is also the record's lookup table.** The request record carries the
+kind it expects (§6), so `kind ↦ (ABI types, response shape)` is what replaced
+the two in-band ABI-JSON schema strings the record used to carry. The two ends
+of the table are the asymmetries: `FAILURE` is response-only (an outcome, not a
+request — any request can get it back), and `APPROVE` is request-only, because
+an approve is fire-and-forget and no circuit settles it. Giving the approve its
+own kind is what makes that *structural* rather than incidental.
 
 ### The signed digest
 
@@ -194,10 +210,46 @@ proven byte-for-byte against the deployed encoding. The MPC recomputes it and
 drops any request whose id does not match, so an implementation that gets one
 offset wrong fails closed rather than signing the wrong transaction.
 
-The two instantiations differ only in their calldata word count and schema
-string widths: `VaultEvent` (2 words, 404 bytes) for deposit / approveRouter /
-withdraw, `SwapEvent` (7 words, 571 bytes) for swap. Their field-by-field
-layouts are in §9.
+There are TWO record formats, and this document specifies both.
+
+**The current format** — `VaultEvent` (2 calldata words, 404 bytes) for deposit
+/ approveRouter / withdraw, `SwapEvent` (7 words, 571 bytes) for swap — is what
+the deployed contract writes, verified byte-for-byte against the deployed
+encoding.
+
+**The V2 format** — `VaultEventV2` (338 bytes) and `SwapEventV2` (498 bytes) —
+is what the contracts of this specification write. It changes the record at its
+two ENDS and nowhere in between:
+
+| | current | V2 |
+|---|---|---|
+| first field | `sender: [u8; 32]` | `format_version: u8` = **`0x80`**, then `sender` |
+| last fields | `output_deserialization_schema: [u8; L]` + `respond_serialization_schema: [u8; L']` (68 bytes on a vault record, 75 on a swap record) | `response_kind: u8` — the §5 kind, one byte |
+
+Everything between is identical, field for field, so every V2 offset is the old
+one **plus one**. Both layouts are in §9.
+
+`format_version = 0x80` is the byte with only the high bit set: "this is not a
+small version number" is a single bit test, and every value below `0x80` stays
+available to Compact and Midnight, whose largest version number anywhere in the
+stack is 33. A decoder MUST read byte 0 first and reject a record whose version
+it does not know, by name. The on-chain reader does not check the version
+byte today — records in the map are all this contract's own writes, so the
+byte protects off-chain readers and future formats; an in-circuit version
+assert is queued alongside the record-kind bind below.
+
+`response_kind` is the §5 enumeration: the record declares which response kind
+will settle it. The settle circuit asserts the ATTESTED OUTPUT's kind against
+its own constant; the RECORD's kind is read by the MPC, not (yet) by any
+circuit — the in-circuit `record.kind == output.kind` bind is queued as a
+hardening stage. An implementer MUST NOT assume the chain enforces the
+record/output kind match today. What the two schema strings used to carry — which ABI types
+to decode the destination-chain return data with, and what shape to serialize
+the response in — is the lookup table in §5.
+
+The V2 record is what takes the swap record's keccak preimage from **five
+blocks to four** (5 × 136 = 680 ≥ 572, but 4 × 136 = 544 ≥ 499), which is worth
+about 4,200 circuit rows and one power of two in the proving key.
 
 Decoder note, load-bearing: `words` MUST be declared as a fixed array
 `[[u8; 32]; K]` with the separate `no_words: u16` count. A `Vec` would add a
@@ -335,6 +387,69 @@ preimage; the `output.*` rows are the attested output at offset 32.
 | 496 | 38 | `output_deserialization_schema` | `[u8; 38]` |
 | 534 | 37 | `respond_serialization_schema` | `[u8; 37]` |
 
+### `VaultEventV2` — 338 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `format_version` | `u8` |
+| 1 | 32 | `sender` | `[u8; 32]` |
+| 33 | 8 | `request_nonce` | `u64` |
+| 41 | 1 | `key_version` | `u8` |
+| 42 | 32 | `path` | `[u8; 32]` |
+| 74 | 1 | `algo` | `u8` |
+| 75 | 1 | `dest` | `u8` |
+| 76 | 64 | `params` | `[u8; 64]` |
+| 140 | 1 | `tx_param_type` | `u8` |
+| 141 | 8 | `tx_params.chain_id` | `u64` |
+| 149 | 8 | `tx_params.nonce` | `u64` |
+| 157 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 173 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 189 | 8 | `tx_params.gas_limit` | `u64` |
+| 197 | 20 | `tx_params.to` | `[u8; 20]` |
+| 217 | 16 | `tx_params.value` | `u128` |
+| 233 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 234 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 238 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 240 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 272 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 304 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 305 | 32 | `caip2_id` | `[u8; 32]` |
+| 337 | 1 | `response_kind` | `u8` |
+
+### `SwapEventV2` — 498 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `format_version` | `u8` |
+| 1 | 32 | `sender` | `[u8; 32]` |
+| 33 | 8 | `request_nonce` | `u64` |
+| 41 | 1 | `key_version` | `u8` |
+| 42 | 32 | `path` | `[u8; 32]` |
+| 74 | 1 | `algo` | `u8` |
+| 75 | 1 | `dest` | `u8` |
+| 76 | 64 | `params` | `[u8; 64]` |
+| 140 | 1 | `tx_param_type` | `u8` |
+| 141 | 8 | `tx_params.chain_id` | `u64` |
+| 149 | 8 | `tx_params.nonce` | `u64` |
+| 157 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 173 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 189 | 8 | `tx_params.gas_limit` | `u64` |
+| 197 | 20 | `tx_params.to` | `[u8; 20]` |
+| 217 | 16 | `tx_params.value` | `u128` |
+| 233 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 234 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 238 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 240 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 272 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 304 | 32 | `tx_params.calldata.value.words[2]` | `[u8; 32]` |
+| 336 | 32 | `tx_params.calldata.value.words[3]` | `[u8; 32]` |
+| 368 | 32 | `tx_params.calldata.value.words[4]` | `[u8; 32]` |
+| 400 | 32 | `tx_params.calldata.value.words[5]` | `[u8; 32]` |
+| 432 | 32 | `tx_params.calldata.value.words[6]` | `[u8; 32]` |
+| 464 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 465 | 32 | `caip2_id` | `[u8; 32]` |
+| 497 | 1 | `response_kind` | `u8` |
+
 ### `ClaimOutput` — 1 bytes
 
 | offset | width | field | type |
@@ -459,10 +574,18 @@ regeneration.
 | file | contents |
 |---|---|
 | `leaves.json` | one vector per leaf type, including `Flagged<u32>` set and unset (same width) |
-| `records.json` | `VaultEvent` and `SwapEvent`; their `keccak256` IS the request id |
+| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values; their `keccak256` IS the request id |
 | `attested-outputs.json` | the kind-tagged responses of §5 and their signed digest preimages |
 | `attested-outputs-deployed.json` | what the deployed contract accepts TODAY, for reference |
 | `misc-payloads.json` | the singleton's logged payloads, with the 288-byte envelope |
+
+**Which record a file's request ids come from**, because two record formats are
+specified here and the ids differ: `attested-outputs.json` uses the **V2**
+record's id (`VaultEventV2` in `records.json`) — V2 records are what these
+responses settle; `attested-outputs-deployed.json` and `misc-payloads.json` use
+the **deployed** record's id (`VaultEvent`), because the deployed outputs and
+the singleton's log payloads are what is on the wire today and stage 7 does not
+change either.
 
 Each vector carries:
 
@@ -485,17 +608,23 @@ the format is ordered and JSON objects are not.
 
 Read this before implementing.
 
-- **The request record, the request id, and the singleton's log payloads are
-  DEPLOYED and unchanged.** This document specifies what is already on the
-  wire; it was verified byte-for-byte against the deployed encoding, including
-  by handing the bytes to the compiled contract itself.
-- **The response kinds of §5 are SPECIFIED, not deployed.** The MPC has never
-  settled a transaction on Midnight (its Midnight publisher is unimplemented),
-  so there is no legacy response format to migrate: §5 defines it.
+- **The singleton's log payloads are DEPLOYED and unchanged.** This document
+  specifies what is already on the wire; it was verified byte-for-byte against
+  the deployed encoding, including by handing the bytes to the compiled
+  contract itself.
+- **`VaultEvent` / `SwapEvent` and their request ids are what the DEPLOYED
+  vault writes**, likewise verified byte-for-byte. They are pinned here and are
+  not going to move.
+- **`VaultEventV2` / `SwapEventV2` (§6) and the response kinds of §5 are
+  SPECIFIED, not deployed.** The MPC has never settled a transaction on
+  Midnight (its Midnight publisher is unimplemented) and nothing has been
+  deployed in the V2 shape, so there is no legacy format to migrate and no
+  dual-format window to support: an implementation targets one or the other,
+  and the version byte tells it which record it is holding.
   `attested-outputs-deployed.json` records what the currently deployed vault
   would accept, for reference only.
-- A `format_version` byte in the record is recommended and not yet present; it
-  would turn an unknown shape into a named rejection rather than a silent one.
+- **The format-version byte is now present** (V2 only, and in the record only —
+  an attested output carries a kind and a signed digest, which is enough).
 
 ## 12. Provenance
 
@@ -509,10 +638,11 @@ cargo test --release -p minocrab-contracts --test serialization_conformance -- \
     --ignored --nocapture regenerate_spec
 ```
 
-and commit the diff. Five tests fail if the committed artifact stops being the
+and commit the diff. Six tests fail if the committed artifact stops being the
 generator's output, so neither this document nor the code that reads it can
 drift from the format: `the_committed_offset_tables_are_generated`,
-`the_committed_vectors_are_generated`, `every_vector_is_tiled_by_its_fields`,
+`the_committed_kind_table_is_generated`, `the_committed_vectors_are_generated`,
+`every_vector_is_tiled_by_its_fields`,
 `the_committed_typescript_is_generated`,
 `every_vector_type_has_a_typescript_codec`.
 

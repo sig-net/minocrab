@@ -88,6 +88,40 @@ impl<V: Vis3, const WORDS: usize> EvmType2TxParams<V, WORDS> {
 /// `params: Bytes<64>`'s width — the record's one fixed-size byte field.
 pub const PARAMS_LEN: usize = 64;
 
+/// The FAB atoms both record formats share: `sender` through `caip2Id`.
+///
+/// One definition, so the deployed record ([`SignBidirectionalEvent`]) and the
+/// stage-7 record ([`SignBidirectionalEventV2`]) cannot drift in the middle —
+/// stage 7 changes the two ENDS, and this function is what says so.
+fn record_atoms_through_caip2<V: Vis3, const WORDS: usize>() -> Vec<AlignmentAtom> {
+    let mut a = vec![
+        bytes(32), // sender
+        bytes(8),  // requestNonce
+        bytes(1),  // keyVersion
+        bytes(32), // path
+        bytes(1),  // algo
+        bytes(1),  // dest
+    ];
+    a.extend(BytesN::<V, PARAMS_LEN>::atoms()); // params
+    a.extend([
+        bytes(1),  // txParamType
+        bytes(8),  // chainId
+        bytes(8),  // nonce
+        bytes(16), // maxPriorityFeePerGas
+        bytes(16), // maxFeePerGas
+        bytes(8),  // gasLimit
+        bytes(20), // to
+        bytes(16), // value
+        bytes(1),  // calldata.is_some
+        bytes(4),  // selector
+        bytes(2),  // noWords
+    ]);
+    a.extend(std::iter::repeat_n(bytes(32), WORDS)); // words
+    a.push(bytes(1)); // accessListEntryCount
+    a.push(bytes(32)); // caip2Id
+    a
+}
+
 /// `struct SignBidirectionalEvent<TxParams, #LenOut, #LenRespond>` with
 /// `TxParams = EvmType2TxParams<#WORDS, 0, 0>`. Field order is the wire
 /// contract (the request-id hash order and the ledger record layout).
@@ -192,31 +226,7 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
     /// The record's FAB atoms, one per field except the `Bytes<32>` pairs
     /// (claim.zkir:287 — 24 atoms for the 2-word vault instantiation).
     pub fn atoms() -> Vec<AlignmentAtom> {
-        let mut a = vec![
-            bytes(32), // sender
-            bytes(8),  // requestNonce
-            bytes(1),  // keyVersion
-            bytes(32), // path
-            bytes(1),  // algo
-            bytes(1),  // dest
-        ];
-        a.extend(BytesN::<V, PARAMS_LEN>::atoms()); // params
-        a.extend([
-            bytes(1),  // txParamType
-            bytes(8),  // chainId
-            bytes(8),  // nonce
-            bytes(16), // maxPriorityFeePerGas
-            bytes(16), // maxFeePerGas
-            bytes(8),  // gasLimit
-            bytes(20), // to
-            bytes(16), // value
-            bytes(1),  // calldata.is_some
-            bytes(4),  // selector
-            bytes(2),  // noWords
-        ]);
-        a.extend(std::iter::repeat_n(bytes(32), WORDS)); // words
-        a.push(bytes(1)); // accessListEntryCount
-        a.push(bytes(32)); // caip2Id
+        let mut a = record_atoms_through_caip2::<V, WORDS>();
         a.extend(BytesN::<V, LEN_OUT>::atoms());
         a.extend(BytesN::<V, LEN_RESPOND>::atoms());
         a
@@ -244,6 +254,296 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
         debug_assert_eq!(l.len(), Self::LIMBS);
         l
     }
+}
+
+// ---- SignBidirectionalEventV2 — the M11 stage 7 record -----------------------
+
+/// The record's FORMAT VERSION byte, at offset 0 of every stage-7 record.
+///
+/// `0x80` — the byte with only the HIGH BIT set (dmd, 2026-08-16). The point
+/// is headroom rather than taste: every version number anywhere in the pinned
+/// stack is small (ZKIR envelope 2 and 3, Impact transcript 2.3, Compact
+/// `language_version` 0.12..0.23, compactc 0.33), the largest number in any
+/// position being 33 — so "this is not a small version number" is a single bit
+/// test rather than a magnitude comparison, every value below it stays
+/// available to Compact/Midnight, and a decoder that reads `0x80` where it
+/// expected a Compact version knows immediately which format it is holding.
+///
+/// It is in the RECORD only — never in an attested output, where the kind tag
+/// suffices and the digest is signed (notes/borsh-format.org §"ANSWERED from
+/// MPC source", Q4). The record is what the MPC reads back out of ledger
+/// STATE, so this byte is what its FAB cursor sees first; the singleton's
+/// notification payload is a different, unchanged shape (Q6), and it is the
+/// notification — not the record — that is logged today.
+pub const RECORD_FORMAT_VERSION: u8 = 0x80;
+
+/// `struct SignBidirectionalEvent` as M11 stage 7 defines it: the same request
+/// record with a FORMAT VERSION byte in front and a 1-byte RESPONSE KIND where
+/// the two in-band ABI-JSON schema strings used to be.
+///
+/// | change | old | new |
+/// |--------|-----|-----|
+/// | head | — | `formatVersion: Uint<8>` = [`RECORD_FORMAT_VERSION`] |
+/// | tail | `outputDeserializationSchema: Bytes<LEN_OUT>` + `respondSerializationSchema: Bytes<LEN_RESPOND>` | `responseKind: Uint<8>` |
+///
+/// Everything between is [`SignBidirectionalEvent`]'s, field for field, at the
+/// same relative order — so every offset is the old one plus the version
+/// byte ([`layout_v2`] is written that way rather than recounted).
+///
+/// WHAT THE KIND REPLACES: the schemas were the ABI types the MPC decodes the
+/// destination-chain return data with, and the shape it serializes the
+/// response back in — 68 bytes on a `<2>` record and 75 on a `<7>` one, hashed
+/// into the request id on every request. A response KIND says the same thing
+/// through a lookup table on the MPC side (`kind ↦ (ABI types, response
+/// shape)`), in one byte, and it is the SAME enumeration the attested output
+/// carries at its own byte 0 (M11 stage 5) — so the record declares which
+/// response kind will settle it. WHO CHECKS WHAT, precisely: the settle
+/// circuit asserts the ATTESTED OUTPUT's kind against its own compile-time
+/// constant; the RECORD's kind byte is read by the MPC (which derives the
+/// response shape from it) and is NOT yet read by any circuit — the
+/// in-circuit bind of `record.kind == output.kind`, and a version-byte
+/// assert beside it, are the queued hardening stage (milestones.org M11
+/// follow-up), each one wire equality. Until it lands, an MPC that signed a
+/// mismatched kind is caught by the settle circuit's own constant, and a
+/// cross-request replay by the depositor gate.
+///
+/// The type parameter list also loses `LEN_OUT`/`LEN_RESPOND`: there are no
+/// schema widths left for an instantiation to disagree about.
+#[derive(Clone)]
+pub struct SignBidirectionalEventV2<V: Vis3, const WORDS: usize> {
+    /// [`RECORD_FORMAT_VERSION`] — a `Uint<8>`, the first byte a decoder reads.
+    pub format_version: Wire3<FieldT, V>,
+    pub sender: B32<V>,
+    pub request_nonce: Wire3<FieldT, V>,
+    pub key_version: Wire3<FieldT, V>,
+    pub path: B32<V>,
+    pub algo: Wire3<FieldT, V>,
+    pub dest: Wire3<FieldT, V>,
+    /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
+    pub params: BytesN<V, PARAMS_LEN>,
+    pub tx_param_type: Wire3<FieldT, V>,
+    pub tx_params: EvmType2TxParams<V, WORDS>,
+    pub caip2_id: B32<V>,
+    /// The response KIND this request expects — one Borsh byte, the same
+    /// enumeration the attested output carries (the vault's
+    /// `erc20_vault_borsh::RESPONSE_KIND_*`). A raw wire rather than a
+    /// `Tag<K>`: the value is a contract-fixed constant at every construction
+    /// site, so there is no argument to range-check, and the K would have to
+    /// become a third const parameter of this type for no reader's benefit.
+    pub response_kind: Wire3<FieldT, V>,
+}
+
+/// [`SignBidirectionalEventV2`]'s FAB slot layout — [`layout`]'s, shifted by
+/// the one format-version limb, with the schemas' slots replaced by the kind's.
+///
+/// Written as `1 + layout::X` rather than recounted, which is the statement
+/// that stage 7 changes the record at its two ENDS and nowhere in between:
+/// there is no offset here that can drift from the deployed record's except by
+/// that one limb.
+pub mod layout_v2 {
+    use super::layout;
+
+    /// `formatVersion: Uint<8>` — the first byte and the first slot.
+    pub const FORMAT_VERSION: usize = 0;
+    /// The shift every later field takes: the version limb.
+    const HEAD: usize = 1;
+
+    pub const SENDER: usize = HEAD + layout::SENDER;
+    pub const REQUEST_NONCE: usize = HEAD + layout::REQUEST_NONCE;
+    pub const KEY_VERSION: usize = HEAD + layout::KEY_VERSION;
+    pub const PATH: usize = HEAD + layout::PATH;
+    pub const ALGO: usize = HEAD + layout::ALGO;
+    pub const DEST: usize = HEAD + layout::DEST;
+    pub const PARAMS: usize = HEAD + layout::PARAMS;
+    pub const TX_PARAM_TYPE: usize = HEAD + layout::TX_PARAM_TYPE;
+    pub const CHAIN_ID: usize = HEAD + layout::CHAIN_ID;
+    pub const NONCE: usize = HEAD + layout::NONCE;
+    pub const MAX_PRIORITY_FEE_PER_GAS: usize = HEAD + layout::MAX_PRIORITY_FEE_PER_GAS;
+    pub const MAX_FEE_PER_GAS: usize = HEAD + layout::MAX_FEE_PER_GAS;
+    pub const GAS_LIMIT: usize = HEAD + layout::GAS_LIMIT;
+    pub const TO: usize = HEAD + layout::TO;
+    pub const VALUE: usize = HEAD + layout::VALUE;
+    pub const CALLDATA_IS_SOME: usize = HEAD + layout::CALLDATA_IS_SOME;
+    pub const SELECTOR: usize = HEAD + layout::SELECTOR;
+    pub const NO_WORDS: usize = HEAD + layout::NO_WORDS;
+    pub const WORDS: usize = HEAD + layout::WORDS;
+
+    pub const fn word_hi(i: usize) -> usize {
+        HEAD + layout::word_hi(i)
+    }
+    pub const fn word_lo(i: usize) -> usize {
+        HEAD + layout::word_lo(i)
+    }
+    pub const fn access_list_entry_count(words: usize) -> usize {
+        HEAD + layout::access_list_entry_count(words)
+    }
+    pub const fn caip2_id(words: usize) -> usize {
+        HEAD + layout::caip2_id(words)
+    }
+    /// `responseKind: Uint<8>` — where the two schemas used to start.
+    pub const fn response_kind(words: usize) -> usize {
+        caip2_id(words) + 2
+    }
+
+    /// The record's total limb count (31 for the vault's `<2>`, 41 for `<7>`).
+    pub const fn limbs(words: usize) -> usize {
+        response_kind(words) + 1
+    }
+}
+
+impl<V: Vis3, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
+    /// The record's FAB limb count.
+    pub const LIMBS: usize = layout_v2::limbs(WORDS);
+
+    /// The record's FAB atoms — [`SignBidirectionalEvent::atoms`] with the
+    /// version byte in front and the kind byte where the schemas were.
+    pub fn atoms() -> Vec<AlignmentAtom> {
+        let mut a = vec![bytes(1)]; // formatVersion
+        a.extend(record_atoms_through_caip2::<V, WORDS>());
+        a.push(bytes(1)); // responseKind
+        a
+    }
+
+    /// The record's FAB limbs, slot order ([`Self::LIMBS`] of them).
+    pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+        let mut l = vec![
+            self.format_version,
+            self.sender.hi,
+            self.sender.lo,
+            self.request_nonce,
+            self.key_version,
+            self.path.hi,
+            self.path.lo,
+            self.algo,
+            self.dest,
+        ];
+        l.extend(self.params.limbs().iter().copied());
+        l.push(self.tx_param_type);
+        l.extend(self.tx_params.limbs());
+        l.push(self.caip2_id.hi);
+        l.push(self.caip2_id.lo);
+        l.push(self.response_kind);
+        debug_assert_eq!(l.len(), Self::LIMBS);
+        l
+    }
+}
+
+/// A [`SignBidirectionalEventV2`] read back out of the ledger — the stage-7
+/// twin of [`EventRecord`], and a DISTINCT type, so a settle circuit cannot
+/// read a stage-7 record with the deployed record's offsets (or the reverse).
+pub struct EventRecordV2<const WORDS: usize>(Vec<Wire3<FieldT, Public>>);
+
+impl<const WORDS: usize> EventRecordV2<WORDS> {
+    pub const LIMBS: usize = layout_v2::limbs(WORDS);
+
+    /// `path` — the depositor's identity commitment.
+    pub fn path(&self) -> B32<Public> {
+        B32 {
+            hi: self.0[layout_v2::PATH],
+            lo: self.0[layout_v2::PATH + 1],
+        }
+    }
+
+    /// `txParams.to`.
+    pub fn to(&self) -> Wire3<FieldT, Public> {
+        self.0[layout_v2::TO]
+    }
+
+    /// `txParams.calldata.is_some`.
+    pub fn calldata_is_some(&self) -> Wire3<FieldT, Public> {
+        self.0[layout_v2::CALLDATA_IS_SOME]
+    }
+
+    /// `txParams.calldata.words[i]`.
+    pub fn word(&self, i: usize) -> B32<Public> {
+        assert!(i < WORDS, "word {i} of a {WORDS}-word record");
+        B32 {
+            hi: self.0[layout_v2::word_hi(i)],
+            lo: self.0[layout_v2::word_lo(i)],
+        }
+    }
+}
+
+impl<const WORDS: usize> LedgerRepr for EventRecordV2<WORDS> {
+    fn atoms() -> Vec<AlignmentAtom> {
+        SignBidirectionalEventV2::<Public, WORDS>::atoms()
+    }
+
+    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        limbs.extend_from_slice(&self.0);
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        assert_eq!(
+            limbs.len(),
+            Self::LIMBS,
+            "event record takes {} limbs",
+            Self::LIMBS
+        );
+        EventRecordV2(limbs)
+    }
+}
+
+/// [`construct_sign_bidirectional_event`] for the stage-7 record: the same
+/// `keyVersion >= 1` assert and the same zero-filled `params`, with the format
+/// version supplied here (a contract cannot choose it) and the two schema
+/// arguments replaced by the response kind.
+///
+/// `response_kind` is a `u8` because the atom is `bytes(1)`: a kind of 256 or
+/// more is not a wide field, it is a record whose last limb cannot hold the
+/// value the caller wrote. The vault's constants are `u32` (they are also
+/// `Tag<K>` parameters, where the const generic is a `u32`), so a call site
+/// casts — and the cast is where the type says the wire is one byte.
+#[allow(clippy::too_many_arguments)]
+pub fn construct_sign_bidirectional_event_v2<V: Vis3, const WORDS: usize>(
+    c: &mut Circuit3,
+    sender: B32<V>,
+    request_nonce: Wire3<FieldT, V>,
+    key_version: Wire3<FieldT, V>,
+    path: B32<V>,
+    tx_params: EvmType2TxParams<V, WORDS>,
+    caip2_id: B32<V>,
+    response_kind: u8,
+) -> SignBidirectionalEventV2<V, WORDS> {
+    c.region("signet: event assembly", |c| {
+        let zero = V::from_public(c.constant(0u64));
+        let is_zero = c.test_eq(key_version, zero);
+        let nonzero = c.not(is_zero);
+        c.assert(nonzero);
+
+        let format_version = V::from_public(c.constant(u64::from(RECORD_FORMAT_VERSION)));
+        let response_kind = V::from_public(c.constant(u64::from(response_kind)));
+        // pad(64, "")
+        let params = BytesN::from_limbs(vec![zero; BytesN::<V, PARAMS_LEN>::LIMBS]);
+        SignBidirectionalEventV2 {
+            format_version,
+            sender,
+            request_nonce,
+            key_version,
+            path,
+            algo: zero, // MPCSignatureAlgorithm.ecdsa
+            dest: zero, // MPCDestination.unused
+            params,
+            tx_param_type: zero, // TxParamType.evmType2
+            tx_params,
+            caip2_id,
+            response_kind,
+        }
+    })
+}
+
+/// [`calculate_request_id`] over a stage-7 record: `keccak256` of the whole
+/// record in its FAB alignment, which for these all-`bytes<n>` atoms IS
+/// `keccak256(borsh(record))` (notes/borsh-format.org, finding #1).
+pub fn calculate_request_id_v2<V: Vis3, const WORDS: usize>(
+    c: &mut Circuit3,
+    request: &SignBidirectionalEventV2<V, WORDS>,
+) -> B32<V> {
+    request_id_of(
+        c,
+        SignBidirectionalEventV2::<V, WORDS>::atoms(),
+        &request.limbs(),
+    )
 }
 
 /// A `SignBidirectionalEvent` read back out of the ledger: the map value's
@@ -368,14 +668,26 @@ pub fn calculate_request_id<
     c: &mut Circuit3,
     request: &SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>,
 ) -> B32<V> {
+    request_id_of(
+        c,
+        SignBidirectionalEvent::<V, WORDS, LEN_OUT, LEN_RESPOND>::atoms(),
+        &request.limbs(),
+    )
+}
+
+/// The keccak half of [`calculate_request_id`], over an atom list and its
+/// limbs — shared with [`calculate_request_id_v2`] so the two record formats
+/// hash through ONE construction rather than two copies of it. The extraction
+/// is instruction-for-instruction identical to the inlined original (the row
+/// and interface snapshots and every vault differential suite say so).
+fn request_id_of<V: Vis3>(
+    c: &mut Circuit3,
+    atoms: Vec<AlignmentAtom>,
+    limbs: &[Wire3<FieldT, V>],
+) -> B32<V> {
     c.region("signet: request id (keccak)", |c| {
-        let alignment = Alignment(
-            SignBidirectionalEvent::<V, WORDS, LEN_OUT, LEN_RESPOND>::atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        let limbs: Vec<_> = request.limbs().iter().map(|w| w.erase()).collect();
+        let alignment = Alignment(atoms.into_iter().map(AlignmentSegment::Atom).collect());
+        let limbs: Vec<_> = limbs.iter().map(|w| w.erase()).collect();
         let digest = c.keccak256(alignment, &limbs);
         B32::from_typed(c, digest)
     })
@@ -703,6 +1015,116 @@ mod tests {
         assert_eq!(Event::LIMBS, 43);
         assert_eq!(event.limbs().len(), 43);
         assert_eq!(EventRecord::<7, 38, 37>::LIMBS, 43);
+    }
+
+    /// M11 STAGE 7, both instantiations: the record's atoms are the deployed
+    /// record's with a `bytes<1>` version in front and a `bytes<1>` kind where
+    /// the two schema atoms were — stated against the DEPLOYED list rather
+    /// than against a second hand count, so the two formats cannot drift in
+    /// the middle.
+    #[test]
+    fn v2_atoms_are_the_deployed_atoms_with_the_two_ends_replaced() {
+        for (deployed, v2, schemas) in [
+            (
+                SignBidirectionalEvent::<Public, 2, 34, 34>::atoms(),
+                SignBidirectionalEventV2::<Public, 2>::atoms(),
+                2usize,
+            ),
+            (
+                SignBidirectionalEvent::<Public, 7, 38, 37>::atoms(),
+                SignBidirectionalEventV2::<Public, 7>::atoms(),
+                2,
+            ),
+        ] {
+            let middle = &deployed[..deployed.len() - schemas];
+            let mut expected = vec![bytes(1)];
+            expected.extend(middle.iter().copied());
+            expected.push(bytes(1));
+            assert_eq!(atom_lens(&v2), atom_lens(&expected));
+        }
+    }
+
+    /// The stage-7 records' shapes as NUMBERS: 24 atoms / 31 limbs / 338
+    /// bytes for the vault instantiation, 29 / 41 / 498 for the swap one.
+    /// (The deployed pair is 24 / 33 / 404 and 29 / 43 / 571.)
+    #[test]
+    fn v2_shapes() {
+        let bin_len = |atoms: &[AlignmentAtom]| -> u32 {
+            atoms
+                .iter()
+                .map(|a| match a {
+                    AlignmentAtom::Bytes { length } => *length,
+                    _ => panic!("all atoms are bytes"),
+                })
+                .sum()
+        };
+        let vault = SignBidirectionalEventV2::<Public, 2>::atoms();
+        assert_eq!(vault.len(), 24);
+        assert_eq!(bin_len(&vault), 338);
+        assert_eq!(SignBidirectionalEventV2::<Public, 2>::LIMBS, 31);
+        assert_eq!(EventRecordV2::<2>::LIMBS, 31);
+
+        let swap = SignBidirectionalEventV2::<Public, 7>::atoms();
+        assert_eq!(swap.len(), 29);
+        assert_eq!(bin_len(&swap), 498);
+        assert_eq!(SignBidirectionalEventV2::<Public, 7>::LIMBS, 41);
+        assert_eq!(EventRecordV2::<7>::LIMBS, 41);
+
+        // The limb count is also what the struct emits, per instantiation.
+        let mut c = Circuit3::new();
+        let z = c.constant(0u64);
+        let b32 = B32 { hi: z, lo: z };
+        let ev = SignBidirectionalEventV2::<Public, 2> {
+            format_version: z,
+            sender: b32,
+            request_nonce: z,
+            key_version: z,
+            path: b32,
+            algo: z,
+            dest: z,
+            params: BytesN::from_limbs(vec![z; BytesN::<Public, PARAMS_LEN>::LIMBS]),
+            tx_param_type: z,
+            tx_params: EvmType2TxParams {
+                chain_id: z,
+                nonce: z,
+                max_priority_fee_per_gas: z,
+                max_fee_per_gas: z,
+                gas_limit: z,
+                to: z,
+                value: z,
+                calldata_is_some: z,
+                calldata: EvmCalldata {
+                    selector: z,
+                    no_words: z,
+                    words: [b32; 2],
+                },
+                access_list_entry_count: z,
+            },
+            caip2_id: b32,
+            response_kind: z,
+        };
+        assert_eq!(ev.limbs().len(), 31);
+    }
+
+    /// The stage-7 read offsets: every one is the deployed record's plus the
+    /// version limb, and the kind sits where the schemas started.
+    #[test]
+    fn v2_read_offsets_are_the_deployed_ones_shifted_by_one() {
+        assert_eq!(layout_v2::FORMAT_VERSION, 0);
+        assert_eq!(layout_v2::PATH, layout::PATH + 1);
+        assert_eq!(layout_v2::TO, layout::TO + 1);
+        assert_eq!(layout_v2::CALLDATA_IS_SOME, layout::CALLDATA_IS_SOME + 1);
+        assert_eq!(layout_v2::word_hi(0), layout::word_hi(0) + 1);
+        assert_eq!(layout_v2::word_lo(5), layout::word_lo(5) + 1);
+        // The kind takes the slot the first schema had.
+        assert_eq!(
+            layout_v2::response_kind(2),
+            layout::output_deserialization_schema(2) + 1
+        );
+        assert_eq!(
+            layout_v2::response_kind(7),
+            layout::output_deserialization_schema(7) + 1
+        );
     }
 
     /// The read offsets the settle circuits use, against the hand-counted

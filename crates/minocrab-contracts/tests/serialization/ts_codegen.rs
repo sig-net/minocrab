@@ -6,8 +6,10 @@
 //! not transcribe a table by hand. `spec/ts/borsh-subset.ts` is walked out of
 //! `borsh::schema_container_of` exactly as §9's tables are — every offset in
 //! it is a literal from the same rows — and the rest of the directory is
-//! copied verbatim from `tests/serialization/ts/`, which is where those
-//! files are EDITED.
+//! copied from `tests/serialization/ts/`, which is where those files are
+//! EDITED. Two of them carry a substituted region walked out of the same
+//! schema: the README's type table, and `vectors.test.ts`'s
+//! version-rejection tests.
 //!
 //! Everything committed under `spec/ts/` is this module's output, byte for
 //! byte, and `spec_document::the_committed_typescript_is_generated` fails if
@@ -24,7 +26,7 @@ use borsh::schema::BorshSchemaContainer;
 use borsh::BorshSchema;
 use minocrab_std::v3::borsh::schema::{layout_rows, Row};
 
-use super::spec_types::{schema_containers, ByteArray, Flagged};
+use super::spec_types::{schema_containers, ByteArray, Flagged, RECORD_FORMAT_VERSION};
 
 // ---- the types the decoder covers -------------------------------------------------
 
@@ -118,6 +120,30 @@ fn camel(snake: &str) -> String {
     let mut words = snake.split('_');
     let first = words.next().unwrap_or_default().to_string();
     first + &words.map(pascal).collect::<String>()
+}
+
+// ---- the versioned records ------------------------------------------------------------
+
+/// Is this type a stage-7 record — a `format_version: u8` leaf at offset 0?
+///
+/// DERIVED from the schema walk, not listed: a third versioned record gets its
+/// version check and its rejection test without anybody editing this file, and
+/// a record that loses the byte loses both, loudly.
+fn is_versioned(rows: &[Row]) -> bool {
+    matches!(
+        rows.first(),
+        Some(row) if row.offset == 0 && row.path == "format_version" && row.kind == "u8"
+    )
+}
+
+/// Every versioned record as `(the spec's name — which is the `CODECS` key —
+/// and the TypeScript one)`, in `ts_types` order.
+fn versioned_records() -> Vec<(&'static str, String)> {
+    ts_types()
+        .into_iter()
+        .filter(|(_, container)| is_versioned(&layout_rows(container)))
+        .map(|(spec_name, _)| (spec_name, ts_name(spec_name)))
+        .collect()
 }
 
 // ---- the layout as a tree -----------------------------------------------------------
@@ -406,6 +432,20 @@ pub fn module_source() -> String {
     let mut out = String::from(MODULE_HEADER);
     let mut registry: Vec<(String, String)> = Vec::new();
 
+    let _ = writeln!(out, "\n// ---- the record format version {}\n", "-".repeat(49));
+    let _ = writeln!(
+        out,
+        "/**\n \
+         * `formatVersion` — the byte at offset 0 of every stage-7 record\n \
+         * (`spec/borsh-subset.md` §6). `0x80` is the byte with only the high bit\n \
+         * set, so \"this is not a small version number\" is a single bit test.\n \
+         */"
+    );
+    let _ = writeln!(
+        out,
+        "export const RECORD_FORMAT_VERSION = 0x{RECORD_FORMAT_VERSION:02x};"
+    );
+
     for (spec_name, container) in ts_types() {
         let rows = layout_rows(&container);
         let len: usize = rows.iter().map(|r| r.width).sum();
@@ -455,6 +495,29 @@ pub fn module_source() -> String {
             "export function read{name}(bytes: Uint8Array, offset = 0): {name} {{"
         );
         let _ = writeln!(out, "  const view = checkedView(bytes, offset, {upper}_LEN);");
+        if is_versioned(&rows) {
+            // THE NAMED REJECTION `spec/borsh-subset.md` §6 requires: byte 0
+            // first, before any offset that a format change may have moved.
+            let _ = writeln!(
+                out,
+                "  // The version byte FIRST — `spec/borsh-subset.md` §6: a decoder reads byte 0"
+            );
+            let _ = writeln!(
+                out,
+                "  // and rejects a record whose format it does not know, BY NAME, before it"
+            );
+            let _ = writeln!(out, "  // reads a single offset that format may have moved.");
+            let _ = writeln!(out, "  const version = getU8(view, 0);");
+            let _ = writeln!(out, "  if (version !== RECORD_FORMAT_VERSION) {{");
+            let _ = writeln!(out, "    throw new Error(");
+            let _ = writeln!(
+                out,
+                "      'record-version: expected 0x{RECORD_FORMAT_VERSION:02x}, got 0x' + \
+                 version.toString(16).padStart(2, '0'),"
+            );
+            let _ = writeln!(out, "    );");
+            let _ = writeln!(out, "  }}");
+        }
         let _ = writeln!(out, "  return {};", emit_read(&node, 1));
         let _ = writeln!(out, "}}\n");
 
@@ -525,8 +588,9 @@ pub fn module_source() -> String {
 
 // ---- the whole published directory ----------------------------------------------------
 
-/// The static files of `spec/ts/`, copied verbatim from
-/// `tests/serialization/ts/` — THE PLACE THEY ARE EDITED. Published as
+/// The static files of `spec/ts/`, copied from `tests/serialization/ts/` —
+/// THE PLACE THEY ARE EDITED — verbatim but for their `{{…}}` placeholders
+/// (the README's type table, `vectors.test.ts`'s rejection tests). Published as
 /// generator output like everything else in the directory, so the committed
 /// tree is checkable with one rule: `spec/ts/` is what the generator says it
 /// is, byte for byte.
@@ -547,13 +611,63 @@ fn readme_types_table() -> String {
     out
 }
 
+/// `vectors.test.ts`'s generated section: one version-rejection test per
+/// versioned record reader.
+///
+/// The vectors only ever carry a WELL-FORMED record, so nothing in the
+/// vector-driven half of the suite exercises the §6 rejection; these are the
+/// negative cases, and they are generated from [`versioned_records`] so the
+/// set of readers under test cannot fall behind the set of readers that check.
+///
+/// The reader is reached through `CODECS`, which the template already imports
+/// — a generated test that needed a generated import line would put the
+/// hand-written and the generated halves of the file back in step with each
+/// other, which is the thing this arrangement is for.
+fn version_reject_tests() -> String {
+    let mut out = String::new();
+    let expected = format!("0x{RECORD_FORMAT_VERSION:02x}");
+    for (i, (spec_name, name)) in versioned_records().iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        let _ = writeln!(
+            out,
+            "test('reject: read{name} on a record whose format version is not {expected}', () => {{"
+        );
+        let _ = writeln!(out, "  const codec = CODECS['{spec_name}'];");
+        let _ = writeln!(out, "  const bytes = new Uint8Array(codec.byteLength);");
+        let _ = writeln!(out, "  bytes[0] = RECORD_FORMAT_VERSION;");
+        let _ = writeln!(
+            out,
+            "  assert.equal(codec.read(bytes).formatVersion, RECORD_FORMAT_VERSION);"
+        );
+        let _ = writeln!(out, "  for (const wrong of [0x00, 0x01, 0x7f, 0x81, 0xff]) {{");
+        let _ = writeln!(out, "    bytes[0] = wrong;");
+        let _ = writeln!(out, "    const hex = wrong.toString(16).padStart(2, '0');");
+        let _ = writeln!(out, "    assert.throws(");
+        let _ = writeln!(out, "      () => codec.read(bytes),");
+        let _ = writeln!(
+            out,
+            "      new RegExp(`record-version: expected {expected}, got 0x${{hex}}`),"
+        );
+        let _ = writeln!(out, "      `version 0x${{hex}} must be rejected by name`,");
+        let _ = writeln!(out, "    );");
+        let _ = writeln!(out, "  }}");
+        let _ = writeln!(out, "}});");
+    }
+    out
+}
+
 /// Every committed file of `spec/ts/`: `(file name, contents)`.
 pub fn ts_files() -> Vec<(&'static str, String)> {
     vec![
         ("README.md", README_TEMPLATE.replace("{{TYPES}}\n", &readme_types_table())),
         ("primitives.ts", PRIMITIVES.to_string()),
         ("borsh-subset.ts", module_source()),
-        ("vectors.test.ts", VECTOR_TESTS.to_string()),
+        (
+            "vectors.test.ts",
+            VECTOR_TESTS.replace("{{VERSION_REJECTS}}\n", &version_reject_tests()),
+        ),
         ("node-builtins.d.ts", NODE_BUILTINS.to_string()),
         ("tsconfig.json", TSCONFIG.to_string()),
     ]

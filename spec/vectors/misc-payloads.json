@@ -2,7 +2,7 @@
   "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
   "format": "borsh-subset-vectors/1",
   "spec": "spec/borsh-subset.md",
-  "about": "The Signet singleton's Misc log payloads. `hex` is the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the deployed circuit hashes them).",
+  "about": "The Signet singleton's Misc log payloads, in the DEPLOYED singleton format. `hex` is the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the deployed circuit hashes them). The request id inside these payloads is the DEPLOYED VaultEvent's (records.json), deliberately: stage 7 changes the request record, not the notification, so what the singleton logs is unchanged. A stage-7 notification carries the VaultEventV2 request id instead — that is the id attested-outputs.json is built on.",
   "vectors": [
     {
       "type": "SignBidirectionalMisc",
