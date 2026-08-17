@@ -1,0 +1,649 @@
+#+title: M23 R2 — the newtype sweep: survey, refusals, and as-built
+
+Read-only survey of every same-shaped-different-meaning value family in
+the MinoCrab API surface, taken before any edit. Eight families ADOPTED
+(one commit each, in the order given); eight REFUSED in writing, because
+the milestone requires the refusals to be argued rather than silent.
+
+* 0. Method, and the three mechanical facts that decide every verdict
+
+** Where the hazard actually lives
+=#[circuit]= parameters are /declared/, never passed:
+=crates/minocrab-macros/src/circuit.rs= shows the expansion unpacks
+=__args.field= *by name* into the body. So newtyping a circuit parameter
+buys nothing at a call site — there is no call site. *Every real
+cross-assignment hazard in this codebase is a positional argument to an
+ordinary =fn=, or a same-typed pair handed to a =LedgerMap= op.* Struct
+literals are safe by construction (Rust requires field names), which is
+why =EvmType2TxParams='s nine identically-typed fields are /not/ a
+finding. This is the filter applied throughout, and it is why several
+"obvious" families below are refused.
+
+** Why wrapping is provably zero-instruction and snapshot-neutral
+The precedent is already in the tree and is exact:
+=ContractAddress<V>(pub B32<V>)= in =crates/minocrab-std/src/v3.rs=, with
+
+- =CircuitAbi= delegating (=crates/minocrab-std/src/v3/entry.rs=),
+- =CircuitArg for ContractAddress<Private>= — =ContractAddress(B32::declare(c, path))=,
+  *the same =ArgPath=, no extra segment*,
+- =CallArg=/=CallResult= (=crates/minocrab-std/src/v3/call.rs=),
+- =LedgerRepr= via =ledger_repr_via_abi!= (=crates/minocrab-std/src/v3/ledger.rs=),
+- =Disclose= (=crates/minocrab-std/src/v3/disclose.rs=),
+- =Select= via =select_via_field!= (=crates/minocrab-std/src/v3.rs=).
+
+Because =declare= reuses the caller's path verbatim, the argument labels
+stay =foo_hi=/=foo_lo= — identical. =interface_snapshot.rs= freezes
+=(label, IrType)= only; =row_snapshot.rs= freezes =(k, rows)=; the
+interface crates' =artifact/interface-schema.txt= freezes
+slots/alignment/constraints/entry-point hash. *None of the four gates can
+see a Rust type name.* M23 A32's =ContractAddress= change
+(api-safety-survey §A4) already landed on exactly this argument: /"Zero
+rows … dump unchanged."/
+
+** The two ways an implementer could still move a dump
+Flag both in the commit messages.
+
+1. Modelling the newtype as Compact's /struct/ shape (=declare(c,
+   &path.field("bytes"))=). That adds a =_bytes= label segment and *moves
+   =interface_snapshot=*. The existing =ContractAddress= impl deliberately
+   does not do this; copy it verbatim.
+2. Adding a =constrain_input= call the site did not already have. The
+   newtype is a /rename/; it must emit nothing new. (=CircuitArg::constrain=
+   is a provided body over =push_prims=/=push_slots= — delegation gives the
+   identical constraint sequence.)
+
+** The recommended shape: distinct newtypes emitted by one declarative macro, not phantom tags
+The milestone sanctions either. Distinct newtypes win here on three
+counts: they match five existing precedents in-tree (=ContractAddress=,
+=UserAddress=, =ZswapCoinPublicKey=, =kernel::UnshieldedToken=,
+=MerkleTreeDigest=); they give per-type rustdoc and per-type
+=#[diagnostic::on_unimplemented]=, which R1 is landing this same
+milestone; and a =Tagged<T,K>= alias would produce error messages naming
+the tag module rather than the concept. The cost of N hand-written impl
+sets is removed by a =b32_newtype!= macro in
+=crates/minocrab-std/src/v3.rs=, in the idiom the file already uses twice
+(=select_via_field!=, =ledger_repr_via_abi!=). One line per family emits:
+=CircuitAbi=, =CircuitArg<Private>=, =CallArg=/=CallResult<Public>=,
+=LedgerRepr<Public>=, =Disclose=, =Select=, =CircuitBorsh= (=borsh.rs='s
+=B32= impl is what it delegates to), =CircuitOut<Public>=, and the
+inherent =bytes()= / =limbs()= / =from_limbs()= / =private()= /
+=cond_select()= / =constrain_input()=.
+
+** The ripple ceiling, measured
+=grep -c B32 crates/minocrab-contracts/tests/vault/*.rs= returns *0
+across all eight files (~9,000 lines)* — the reference model, the spec
+harness, =gen=, =tamper= and =exec= work in =[u8;32]=/=Fr=. *The entire
+spec/differential harness is untouched by every family below.* Test
+ripple is confined to =crates/minocrab-contracts/tests/interface_macro.rs=
+and a handful of =minocrab-std= unit tests.
+
+** Precedent that the codebase already reasons this way
+Worth quoting in the commits: =crates/minocrab-contracts/src/signet.rs= —
+/"the stage-7 twin of =EventRecord=, and a DISTINCT type, so a settle
+circuit cannot read a stage-7 record with the deployed record's offsets
+(or the reverse)"/. R2 is finishing a job this file started.
+
+* Part 1 — ADOPTED, in implementation order
+
+** A1. =RequestId= — ADOPT (commit 1, carries the =b32_newtype!= machinery)
+
+*Proposed type.* =#[repr(transparent)] pub struct RequestId<V: Vis3>(pub B32<V>)=.
+
+*Where it should live.* =crates/signet-signer-interface/src/lib.rs=
+already declares =pub type RequestId<V> = B32<V>;= — a *type alias*, i.e.
+the newtype with the safety removed. It is /generated/:
+=crates/minocrab-interface-gen/src/lib.rs= has the =CompactType::Alias=
+row that emits =pub type Name<V> = target=. The right fix is to narrow
+that row — an alias whose target resolves to =Bytes<32>= emits
+=b32_newtype!= instead of =pub type=; every other alias is unchanged.
+=signet-signer-interface= has exactly one alias and =xcall-target-interface=
+has none, so the generator change regenerates two files and moves neither
+=artifact/interface-schema.txt= (they are ABI-only: slots, alignment,
+=constrain_bits=, entry-point hash). /Lower-risk fallback if the generator
+change looks large: hand-write =RequestId= in =minocrab-std= and leave the
+generator alone; record the deviation./
+
+*Sites.*
+
+/Declaration / generator:/
+- =crates/signet-signer-interface/src/lib.rs= (the alias) and its three trait methods
+- =crates/minocrab-interface-gen/src/lib.rs= (the =Alias= row), plus its table doc
+
+/The =LedgerMap= keys — the sharpest hazard:/
+- =crates/minocrab-contracts/src/erc20_vault.rs= (the =#[derive(Ledger)] struct Vault= block)
+- =crates/minocrab-contracts/src/erc20_vault_borsh.rs= (=SIGN_EVENT_MAP_V2=, =SWAP_EVENT_MAP_V2=)
+- the =map: &LedgerMap<B32<Public>, …>= helper parameters in all four forks
+
+/Function signatures:/ =signet.rs= (=calculate_request_id_v2=,
+=calculate_request_id=, =request_id_of=), all four vault forks,
+=attest.rs=, =xcall_with_payment.rs=, =signet_contract.rs= (still bare
+=B32<Private>= where three neighbours already say =RequestId<Private>= —
+the inconsistency is itself evidence), =interfaces.rs=.
+
+/Test call sites:/ =crates/minocrab-contracts/tests/interface_macro.rs=;
+=tests/contract_matches_its_interface.rs= (already spells
+=RequestId<Public>=; compiles unchanged once the alias becomes a newtype).
+
+*Hazard closed.* Three, in descending severity.
+
+1. *=LedgerMap<B32<Public>, B32<Public>>=* — =refundCommitment= and
+   =swapRefundCommitment= are maps whose *key and value are the same Rust
+   type*. =VAULT.refund_commitment.insert(c, &request_id, &rc)= type-checks
+   with its two arguments swapped. That writes the commitment as the key
+   and the id as the value; the withdrawer gate then looks up under the id,
+   finds nothing, and the settle path either fails or — with an
+   attacker-chosen id colliding a stored commitment — passes the wrong
+   authorisation. *=LedgerMap<RequestId<Public>, RefundCommitment<Public>>=
+   makes the swap a compile error* (this hazard needs A1 /and/ A4; the
+   compile error appears at A4).
+2. *=withdraw_refund_commitment(c, sk: &B32<Private>, request_id: &B32<Private>)=*
+   — identically in all four forks, 20 call sites. Two =&B32<Private>= in a
+   row, both feeding a Poseidon preimage at fixed positions. Swap them and
+   =transientHash([pad, sk, requestId])= becomes =transientHash([pad,
+   requestId, sk])=, a *different, still well-formed commitment* — every
+   honest test still passes because both sides of the round trip swap
+   together, but the deployed contract's commitments no longer match
+   anything an off-chain client computes, and the withdrawal is
+   unrefundable. This is precisely api-safety-survey §0's class: invisible
+   to every differential.
+3. *The cross-contract call.* =signer.sign_bidirectional(c, one,
+   *request_id, notification)= is a genuine positional call across a
+   contract boundary. =RequestId<Public>= there means no commitment, nonce
+   or digest can be handed to the signer as an id.
+
+*Ripple.* ~110 edited lines across 12 =src= files, the generator, 2
+regenerated interface crates, 6 test lines. Public API of
+=signet-signer-interface= changes shape (alias → newtype) but *not its
+ABI*; the schema freeze does not move. Bodies that read =.hi=/=.lo= on a
+request id gain one =.bytes()= binding each (~15 sites). No
+interface/row/dump movement.
+
+*Verdict: ADOPT.* It is the milestone's named family, it carries the
+reusable machinery, and it is the only family that reaches the
+cross-contract boundary.
+
+** A2. =SecretKey= — ADOPT (commit 2)
+
+*Proposed type.* =#[repr(transparent)] pub struct SecretKey<V: Vis3>(pub B32<V>)=,
+=Private= in practice.
+
+*Sites.*
+- Producer: =crates/minocrab-contracts/src/common.rs= (=witness_sk=)
+- Consumers: =common.rs= (=commitment_padded_tag(c, prefix, sk)=,
+  =commitment_packed_tag(c, sk)=, and the two deployer gates)
+- The four =withdraw_refund_commitment= declarations and their 20 call sites
+- the =let sk = common::witness_sk(c)= sites across the four forks
+
+*Hazard closed.* This is the /other half/ of hazard A1.2:
+=withdraw_refund_commitment(c, &sk, &request_id)= becomes uninhabitable by
+a swap only once *both* arguments are distinct types. It also closes the
+wider one: =witness_sk= returns a bare =B32<Private>=, so any of the ~30
+private =B32=s in scope in a settle circuit (=args.big_r_x=, =args.sig_s=,
+=args.mint_nonce=, =coin.nonce=, =coin.color=, =request_id=) type-checks
+as the secret key at =commitment_packed_tag(c, &x)=. Passing the /mint
+nonce/ there derives an identity commitment from a public value — the
+depositor gate would then admit anyone who knows the nonce. A =SecretKey=
+parameter makes =commitment_packed_tag= accept nothing but =witness_sk='s
+output.
+
+*Ripple.* ~60 lines, 5 =src= files, no tests, no gates.
+
+*Verdict: ADOPT.* Smallest ripple-to-severity ratio in the sweep, and it
+is a prerequisite for A3 and A4.
+
+** A3. =UserCommitment= — ADOPT (commit 3)
+
+*Proposed type.* =#[repr(transparent)] pub struct UserCommitment<V: Vis3>(pub B32<V>)=
+— the MPC key-derivation path, =SHA-256(["vault:user:", sk])=.
+
+*Sites.*
+- Producers: =common.rs= (=commitment_padded_tag=, =commitment_packed_tag=)
+- Deployer gates: =common.rs= (=assert_deployer_short=, =assert_deployer=)
+  and =erc20_vault_modern.rs='s caller derivation
+- The ledger cell: =erc20_vault.rs= (=pub deployer: LedgerCell<B32<Public>>=)
+- Producer call sites across the four forks and =test_caller.rs=
+- The depositor gate comparisons (=b32_eq(&caller, &ev.path().private())=)
+- Flows into the event as =path= — see A7.
+
+*Hazard closed.* The value that decides /which EVM account the MPC
+derives/. =notes/vault-vocabulary.org §0= records that this exact family
+already caused a real misfiling: two functions returning the same shape
+with different values, one of which was filed for "unification" — which
+/"would have silently restranded every derived account."/ A type makes the
+two forms non-unifiable at the type level as well as in prose:
+=commitment_padded_tag= and =commitment_packed_tag= both return
+=UserCommitment=, but nothing else in the codebase can be compared against
+a stored deployer or written to the =deployer= cell. Today
+=VAULT.deployer.read(c)= is a =B32<Public>= that any 32-byte value
+type-checks against — a nonce, a colour, a request id.
+
+*Ripple.* ~45 lines, 6 =src= files. =LedgerCell<UserCommitment<Public>>=
+requires =LedgerRepr=, which the macro emits. No gates move (a
+=LedgerCell='s atoms come from =LedgerRepr::atoms()=, delegated).
+
+*Verdict: ADOPT.*
+
+** A4. =RefundCommitment= — ADOPT (commit 4)
+
+*Proposed type.* =#[repr(transparent)] pub struct RefundCommitment<V: Vis3>(pub B32<V>)=
+— the Poseidon =transientHash([pad("vault:refund:"), sk, requestId])=.
+*One type covers both the withdraw and swap variants*: they are computed
+by the same function and differ only in which map holds them, which the
+two =LedgerMap=s already distinguish.
+
+*Sites.*
+- Producers: the four forks' =withdraw_refund_commitment= return type
+- The two maps: =erc20_vault.rs= =refund_commitment= / =swap_refund_commitment=
+  → =LedgerMap<RequestId<Public>, RefundCommitment<Public>>=
+- Insert/lookup/member/remove sites in all four forks
+- The 20 producer call sites listed under A1.2
+
+*Hazard closed.* With A1 landed, this is the commit at which
+=map.insert(c, &request_id, &rc)= stops type-checking with its arguments
+swapped, and at which =VAULT.refund_commitment.lookup(c, &request_id)= can
+no longer be handed a commitment. It also separates the two commitment
+/families/: today a =UserCommitment= (A3) and a =RefundCommitment= are
+both =B32<Private>=, so =b32_eq(&rc, &stored.private())= would accept a
+user commitment compared against a stored refund commitment — the "Not the
+withdrawer" gate satisfied by the wrong secret.
+
+*Ripple.* ~50 lines, 4 =src= files. No tests, no gates.
+
+*Verdict: ADOPT.*
+
+** A5. =CoinNonce= — ADOPT (commit 5)
+
+*Proposed type.* =#[repr(transparent)] pub struct CoinNonce<V: Vis3>(pub B32<V>)=
+— one type for =mintNonce=, =changeNonce=, =ShieldedCoinInfo.nonce= and
+the kernel's evolved nonces. They are the same protocol object at
+different points in its life; splitting them would need conversions with
+no invariant to enforce.
+
+*Sites.*
+- =common.rs= (=mint_shielded_token=, =mint_shielded_token_to_key_with=,
+  =mint_shielded_token_to_key=)
+- =mint_tokens.rs= (=nonce= and its two call sites)
+- =change_nonce= declarations and calls in three forks
+- =ShieldedCoinInfo3.nonce= / =QualifiedShieldedCoinInfo3.nonce= in =v3.rs=
+- =kernel::derived_nonce= and its uses; =common.rs='s burn nonce evolution
+- The settle circuits' =mint_nonce= in all four forks
+- The 13 mint call sites listed under A6
+
+*Hazard closed — the single most consequential in the sweep.*
+=mint_shielded_token_to_key_with(c, guard, me, domain_sep: &B32<Public>,
+value, nonce: &B32<Public>, pk: &B32<Public>)= has *three =&B32<Public>=
+parameters* in one signature, and the call sites spread it over four
+lines. Swapping =nonce= and =pk= compiles. The result is
+=coinCommitment({nonce: pk, colour, value}, left(nonce))= — a *shielded
+coin minted to a recipient key that is the nonce*, i.e. to a key nobody
+holds. The value is destroyed, silently, and no test on honest input can
+see it: the reference model would have to make the same swap to disagree.
+Swapping =domain_sep= and =nonce= mints a coin of the wrong colour with a
+colour-derived nonce.
+
+=mint_tokens.rs= has the same shape (=nonce=, =recipient= adjacent) at two
+call sites.
+
+Secondary: =change_nonce(c, &mint_nonce)= is documented over 35 lines
+explaining that the two nonces must never collide, because /"the effects'
+spend claims are a map keyed by commitment, so two identical commitments
+collapse into one entry and a coin is silently lost."/ That argument is
+currently guarded by nothing but the parameter name.
+
+*Ripple.* ~70 lines, 7 =src= files. =ShieldedCoinInfo3= is a =CircuitAbi=
+type written out by hand whose =nonce= field becomes =CoinNonce<V>= — the
+ABI delegates, so no atom or prim changes. =coins.rs= (a
+=#[derive(CircuitArg)]= field) and =_modern.rs='s =ShieldedCoinArg.nonce=
+change type, and their *labels are unaffected* (labels come from field
+names). No gates move.
+
+*Verdict: ADOPT.* Highest severity in the sweep.
+
+** A6. =TokenDomainSeparator= and =CoinColor= — ADOPT (commit 6)
+
+*Proposed types.* =TokenDomainSeparator<V>(pub B32<V>)= (the pre-token)
+and =CoinColor<V>(pub B32<V>)= (the derived token type). Two types, one
+commit: they are the input and the output of one function and the hazard
+is between them.
+
+*Sites.*
+- =crates/minocrab-std/src/v3.rs= — =token_type(c, domain_sep: &B32<V>,
+  contract: &B32<V>) -> B32<V>=, the function this commit exists for
+- =token_type= call sites: =common.rs=, =mint_tokens.rs=, =kernel.rs=, the
+  four vault forks
+- =vault_token_domain_separator= declarations in the four forks and 28 call sites
+- =kernel::mint_shielded= / =mint_unshielded= / =mint_unshielded_token=
+- =common.rs='s =domain_sep= params, shared with A5
+- =ShieldedCoinInfo3.color= / =QualifiedShieldedCoinInfo3.color=;
+  =coins.rs=; =_modern.rs='s =ShieldedCoinArg=
+- The colour equality gates in all four forks
+- =kernel::unshielded= / =unshielded_balance*= / =send_unshielded= /
+  =receive_unshielded= colour params
+
+*Hazard closed.* =token_type(c, domain_sep, contract)= takes *two adjacent
+=&B32<V>=*. Swapping them computes =SHA-256([pad("midnight:derive_token"),
+selfAddr, domainSep])= — a valid-looking 32-byte colour that is not the
+vault's token colour for any ERC-20. Every mint and every burn in the
+contract would agree on it (they all call the same swapped helper), so
+*the vault would mint a coherent but wrong-coloured token family* and the
+withdraw-side colour assert would still pass. The differentials would
+catch it only because they are PI-equal against compactc — but the
+/modern/ fork is pinned to a statement, not a stream, so it is the
+artifact least protected here.
+
+Second: =mint_shielded_token(c, one, domain_sep, value, nonce, recipient)=
+has =domain_sep= and =nonce= both =&B32<Public>=; A5 closes one direction
+of that pair and this commit closes the other.
+
+Third: =vault_token_domain_separator= returns =B32<Public>= and
+=token_type= returns =B32<Public>= — a /pre-token/ and a /colour/ are
+interchangeable today. =kernel::mint_shielded(c, domain_sep, amount)=
+handed a colour instead of a separator mints under a doubly-derived token
+nobody can spend.
+
+*Ripple.* ~90 lines, 9 =src= files — the widest of the adopted set.
+=kernel.rs= alone has ~14 sites. =kernel::TokenType<V> = Either<B32<V>,
+B32<V>, V>= is itself a same-shaped =Either= worth retyping to
+=Either<CoinColor, CoinColor>= or leaving; leaving =TokenType= as-is is
+acceptable and should be noted. No tests, no gates.
+
+*Verdict: ADOPT.* Note in the commit that this is the widest ripple of the
+eight; if it must be split, =TokenDomainSeparator= alone closes the
+=token_type= swap and =CoinColor= can follow.
+
+** A7. The event-assembly triple: =SigningPath= and =Caip2Id= — ADOPT (commit 7)
+
+*Proposed types.* =SigningPath<V>(pub B32<V>)= with
+=From<UserCommitment<V>>= and a =SigningPath::vault_path(c)= constructor;
+=Caip2Id<V>(pub B32<V>)=. Plus: restore =sender= to =ContractAddress<V>=
+rather than the =.bytes()=-flattened =B32=.
+
+*Sites.*
+- =crates/minocrab-contracts/src/signet.rs= —
+  =construct_sign_bidirectional_event_v2(c, sender: B32<V>, request_nonce,
+  key_version, path: B32<V>, tx_params, caip2_id: B32<V>, response_kind)=
+- =signet.rs= — the v1 twin, same three
+- The struct fields: =SignBidirectionalEvent.sender=/=.path= and
+  =SignBidirectionalEventV2.sender=/=.path=/=caip2_id=
+- =EventRecordV2::path()= and =EventRecord='s twin
+- The 16 call sites across the four forks
+- =VAULT.caip2_id: LedgerCell<B32<Public>>=
+- The =path = B32::pad(c, VAULT_PATH).private()= sites
+- The depositor gate =b32_eq(&caller, &ev.path().private())=
+
+*Hazard closed.* *Three =B32<V>= in one positional argument list —
+=sender=, =path=, =caip2_id= — at argument positions 2, 5 and 7 of an
+eight-argument function that already carries
+=#[allow(clippy::too_many_arguments)]=.* Every one of the 16 call sites
+spells them across ten lines, so a transposition survives review easily.
+The record this function builds is what the MPC signs and what
+=calculate_request_id_v2= keccaks. Swapping =path= and =caip2_id= means
+*the MPC derives its signing key from the chain id rather than from the
+depositor's identity commitment* — the deposit's whole authorisation model
+inverts, and =claim='s depositor gate would compare a user commitment
+against a stored chain id and reject every honest claim, stranding the
+deposit. Swapping =sender= and =path= signs from the contract's own
+address as if it were a user path.
+
+The =path= slot is genuinely polymorphic — =deposit= passes a
+=UserCommitment=, =withdraw=/=swap=/=approveRouter= pass the constant
+=pad(32,"vault")=. That is /why/ it needs a named type with two
+constructors rather than four separate types: =SigningPath::from(user_commitment)=
+and =SigningPath::vault_path(c)= are the only two ways to make one, and
+nothing else fits the slot.
+
+*Ripple.* ~55 lines, 5 =src= files. =SignBidirectionalEventV2='s
+=CircuitAbi=/=atoms()= are hand-written over field types; delegation keeps
+the alignment identical — *verify with =zkir_dump= before/after, since this
+struct's atom list feeds =calculate_request_id_v2='s keccak alignment and a
+change here would move every vault dump.* This is the one commit in the
+sweep where the dump check is not a formality.
+
+*Verdict: ADOPT.* Highest hazard density per line of any signature in the
+codebase.
+
+/Sub-case retained under A7's neighbourhood, worth one line in that
+commit:/ =verify_respond_bidirectional_event_borsh(c, request_id: &B32,
+output, big_r_x: &B32, s: &B32, key)= and =verify_attestation_signature(c,
+digest: &B32, big_r_x: &B32, s: &B32, key)= have three same-typed =&B32=
+each. A1 types =request_id=; =big_r_x= and =s= are the two halves of one
+ECDSA signature and are best typed together as a =Secp256k1SigLimbs { r:
+B32, s: B32 }= struct (named fields), not as two newtypes —
+=Secp256k1EcdsaSignature= is already that struct one layer down. Recommend
+folding the two =&B32= into it while touching A7's file; it is a signature
+change with no ABI consequence (=BigR=/=RespondSignature= are the
+=CircuitArg= types and stay).
+
+** A8. =ZswapCoinPublicKey=, adopted where it already exists — ADOPT (commit 8)
+
+*Proposed type.* None new. =ZswapCoinPublicKey<V>= already exists in
+=crates/minocrab-std/src/v3.rs= with =CircuitAbi=, =CircuitArg= and
+=Disclose= impls — *and 1 use in the entire tree.* It needs
+=CallArg=/=CallResult=/=LedgerRepr=/=Select=, which A1's macro provides.
+
+*Sites.*
+- =v3.rs= — =own_public_key(c) -> B32<Private>=, whose own doc comment two
+  lines above says /"=circuit ownPublicKey(): ZswapCoinPublicKey=";/ the
+  type is written in the docs and discarded in the signature
+- =v3.rs= — =own_public_key_guarded= → =Guarded<ZswapCoinPublicKey<Private>, V>=
+- =CoinRecipient.left= (documented as the =ZswapCoinPublicKey= arm) and
+  =.right= (documented as the =ContractAddress= arm) — *both =B32<V>=*
+- =common.rs= (=pk: &B32<Public>= in the two mint-to-key helpers)
+- =own_public_key= call sites across the four forks and =mint_tokens.rs=
+- =claim='s recipient: =Maybe<Either<B32<Private>, B32<Private>>>=, i.e.
+  Compact's =Maybe<Either<ZswapCoinPublicKey, ContractAddress>>= with *both
+  arms erased to the same type*, in all four forks
+- the =rec_left=/=rec_right= selection into =CoinRecipient=
+
+*Hazard closed.* =CoinRecipient { is_left, left, right }= with both arms
+=B32= is exactly the situation =UserAddress='s own doc comment says must
+not happen: /"=Either<ContractAddress, UserAddress>= would say nothing if
+both arms were the same type"/. Today =Either<ZswapCoinPublicKey,
+ContractAddress>= says nothing. Constructing a =CoinRecipient= with
+=is_left: 1= and a /contract address/ in =left= mints a shielded coin to a
+wallet key that is a contract address — unspendable. The fork bodies build
+exactly that struct from two =cond_select=ed pairs, and nothing but the
+variable names keeps =rec_left= out of the =right= slot.
+
+Second: =mint_shielded_token_to_key_with(… nonce: &B32, pk: &B32)= — A5
+typed the nonce; this commit types the key, and only then does the pair
+become unswappable.
+
+*Ripple.* ~40 lines, 6 =src= files.
+=Maybe<Either<ZswapCoinPublicKey<Private>, ContractAddress<Private>>>= as a
+=#[circuit]= parameter: =Either='s =CircuitArg= is generic over its arms
+and both arms already have the impls, so the declared labels
+(=recipient_value_left_hi=, …) are unchanged. =CoinRecipient= is not a
+=CircuitArg= type, so nothing there is labelled.
+
+*Verdict: ADOPT.* The type already exists, is already documented as the
+right one, and is used once. This commit is mostly deletion of
+=.bytes()=/=B32= and is the natural close of the sweep.
+
+* Part 2 — REFUSED, argued
+
+** R1. EVM addresses (=Bytes<20>=) — REFUSE
+
+*Family.* =vault_evm=, =swap_router=, =erc20_address=, =dest_evm_address=,
+=token_in=, =token_out=, and the two ledger cells =vault_evm_address= /
+=uniswap_router=. ~30 sites across the four forks.
+
+*Why it looks compelling.* =initialize(c, vault_evm: Bytes<20>,
+swap_router: Bytes<20>, …)= and =SwapRequest { token_in: Bytes<20>,
+token_out: Bytes<20>, … }= are adjacent same-typed values whose meanings
+are opposite (a swap with =token_in=/=token_out= transposed buys the token
+it meant to sell).
+
+*Why it is refused.* Both are *declaration sites, not call sites* — §0's
+filter. =initialize='s parameters are unpacked by name from
+=__initialize_Args=; =SwapRequest='s fields are a named struct literal
+filled by the derive. There is no expression anywhere in the tree that
+passes two =Bytes<20>= values positionally. And by the time the values
+reach a function that /could/ confuse them, they are already raw wires:
+=signet::evm_address_abi_word(c, addr: Wire3<FieldT, V>)= takes a field
+element, reached via =.field()=. A =Bytes<20>= newtype does not reach that
+boundary; making =evm_address_abi_word= typed would be a separate, larger
+change with no swap to close (it takes one address).
+
+Against that: the family would need *four* distinct types to say anything
+(=Erc20Address=, =RouterAddress=, =DestEvmAddress=, =VaultEvmAddress=),
+each with the full impl set, plus =LedgerCell<Bytes<20, Public>>= retyping
+in the shared =Vault= block — which all four forks import, so the change is
+lockstep across artifacts pinned to compactc's stream.
+=crates/minocrab-interface-gen/src/lib.rs= would also need a rule for which
+=Bytes<n≤31>= becomes which newtype, and there is no such rule.
+
+*Ripple exceeds the safety win: four types, ~60 sites, a shared ledger
+block across four pinned artifacts, and a generator rule that cannot be
+written — to close zero actual call-site swaps.* Revisit only if
+=evm_address_abi_word= and =abi_word_low20= ever take typed values.
+
+** R2. Amounts, gas, chain id, EVM nonce (=Uint<64>= / =Uint<128>=) — REFUSE
+
+*Family.* =evm_nonce=, =gas_limit=, =chain_id=, =key_version=, =amount=,
+=amount_out=, =amount_in_maximum=, =max_fee_per_gas=,
+=max_priority_fee_per_gas=, =fee=, =value=. ~45 sites.
+
+*Why it looks compelling.* =deposit(c, evm_nonce: Uint<64>, gas_limit:
+Uint<64>, max_fee_per_gas: Uint<128>, max_priority_fee_per_gas: Uint<128>,
+…)= is *two adjacent =Uint<64>= followed by two adjacent =Uint<128>=*, and
+transposing the fee pair means paying a 30-gwei priority tip on every
+deposit.
+
+*Why it is refused.* Same declaration-site filter — these are
+=__deposit_Args= fields. More decisively: *the contract already solved the
+half of this that had a real call site.* =FixedGas<const LIMIT: u64>=
+exists precisely so that /"a circuit cannot accidentally pass a
+caller-chosen limit where a fixed one belongs"/, and its =wires()= returns
+a destructured =[priority_fee, max_fee, gas]= array consumed positionally
+into a *named* struct literal. The remaining assignments all land in
+=EvmType2TxParams='s named fields.
+
+And the cost is not neutral. A =Uint<BITS>= newtype family would have to
+re-export or re-implement the arithmetic and predicate surface that M19's
+B1/B2 fixes just built — =sub=/=sub_with= (api-safety-survey §B1),
+=BoundedUint::add=/=mul=/=narrow= with their =E0080= bound asserts (§B2),
+=gt=/=le=/=ne=/=eq= through the predicate layer. A newtype either loses
+that surface (and the guards go with it — a strict regression on the /most
+severe/ finding in the prior survey) or duplicates ~700 lines of it.
+
+*Ripple exceeds the safety win, and would put the underflow guard at
+risk.* Refused.
+
+** R3. =EvmType2TxParams='s nine raw =Wire3<FieldT, V>= fields — REFUSE
+
+=signet.rs=: =chain_id=, =nonce=, =max_priority_fee_per_gas=,
+=max_fee_per_gas=, =gas_limit=, =to=, =value=, =calldata_is_some=,
+=access_list_entry_count= — nine identically-typed fields, the densest
+same-shape cluster in the codebase.
+
+*Refused because the shape that would be dangerous does not occur.* The
+struct is only ever built as a *named struct literal* — sixteen sites
+across the four forks. Rust already requires every field name at every
+construction. There is no constructor function, no =from_limbs= with
+positional arguments, and no accessor pair that could be transposed. Nine
+newtypes over a bare =Wire3= with no =CircuitAbi= to delegate to would each
+need hand-written impls for a type that is /below/ the typed layer, to
+close a hazard the language already closes.
+
+** R4. Ledger field indices (=u8=) — REFUSE
+
+*Family.* =SIGN_BIDIRECTIONAL_EVENT_MAP=, =SIGNET_SIGNER=, =DEPLOYER=,
+=MPC_RESPONSE_KEY=, =VERY_PUBLIC_VALUE= and friends, consumed by
+=common::assert_deployer_short(c, guard, deployer_field: u8)=,
+=common::cell_read_point(c, guard, index: u8)=,
+=common::assert_counter_zero=, =common::assert_deployer=,
+=common::write_coin_to_self(… field: u8 …)=, and =minocrab_ledger='s
+=cell_read=/=cell_write=/=idx_field=.
+
+*The hazard is real:* =common::assert_deployer_short(c, one, DEPLOYER)=
+with =MPC_RESPONSE_KEY= substituted reads the wrong ledger cell and the
+gate compares an identity commitment against a curve point — a deployer
+check that always fails, or with a different pair, one that always passes.
+
+*Refused on ripple.* A =FieldIndex(u8)= newtype must land in
+=minocrab-ledger= (3,657 lines), whose entire op vocabulary is indexed —
+and =minocrab-ledger= is the layer the hard rule says to keep as a
+mechanical translation of Midnight's own. Worse, *the win is already banked
+elsewhere*: =#[derive(Ledger)]= and the typed slots replaced this API for
+everything written since M9 phase 8, and =erc20_vault_modern.rs='s own
+module doc records that it names /"the sealed signer handle's"/ index and
+no other. The three raw-index callers left are the three *direct ports*,
+which are pinned instruction-for-instruction to compactc and are the
+artifacts least able to absorb an API change. Newtyping the API those three
+use, to protect code that is frozen, in a crate that is a translation of
+somebody else's — refused.
+
+** R5. Guard wires (=one: Wire3<FieldT, Public>=) — REFUSE
+
+=common.rs=, plus =notify_signet(c, one, …)=/=record_and_notify(c, one, …)=
+and ~25 =let one = c.constant(1u64)= sites. Passing an arbitrary wire where
+a guard belongs would emit a ledger effect under a non-boolean condition.
+
+*Refused because the fix is not a newtype and is partly already in.*
+=STRAIGHT_LINE= is the named constant for the unguarded case, and =impl
+Into<Operand<FieldT, G>>= on the =_under= family is the accepted spelling.
+The genuinely correct type is =Bool<V>=, not a newtype over a raw wire —
+and api-safety-survey §A4 already adjudicated the analogous =c.assert(w)=
+case as acceptable under dmd's bar (/"errors after typechecking but before
+deploy are fine"/), because the reference VM rejects a non-boolean
+condition outright. Recorded as a follow-up for the =_under= family, not as
+an R2 family.
+
+** R6. =notify_path: [u8; 4]= — REFUSE (out of scope)
+
+Four call sites carrying =[0,0,0,0]= or =[11,0,0,0]=. *Nothing else in the
+tree has the shape =[u8; 4]=*, so there is no second meaning to be confused
+with — this is not a same-shaped-different-meaning family, it is a single
+under-documented constant. A named =const SIGN_EVENT_PATH: [u8;4]= /
+=SWAP_EVENT_PATH: [u8;4]= pair is the right fix and is a one-line
+readability change, not a newtype.
+
+** R7. ABI calldata words (=B32= at =words[i]=) — REFUSE
+
+=ev.word(0)=, =ev.word(1)=, =ev.word(4)=, =ev.word(5)= select the token,
+the amount, the amountOut and the amountInMaximum out of one record.
+Getting the *index* wrong mints the wrong amount of the wrong token.
+
+*Refused because a newtype cannot express it.* The confusion is between
+/positions in an array/, not between types: =word(1)= and =word(5)= return
+the same =B32= whichever type it wears. The correct instrument is named
+accessors on =EventRecordV2= (=fn transfer_amount(&self)=, =fn
+amount_in_maximum(&self)=) — the shape =path()=, =to()= and
+=calldata_is_some()= already take. Recorded here so it is not rediscovered
+as a newtype family; it belongs in a readability commit, not R2.
+
+** R8. "Digests" as a single family — REFUSE (redundant)
+
+Every hash in the tree returns =B32= via =B32::from_typed(c, digest)= —
+=persistent_hash=/=keccak256=/=transient_hash= in =hash.rs=, =hashing.rs=,
+=signet.rs=, =xcontract_events.rs=. A single =Digest<V>= newtype over all
+of them would be *strictly weaker than what A3–A7 already give*:
+=UserCommitment=, =RefundCommitment=, =CoinCommitment=, =CoinNullifier=,
+=CoinColor= and the attestation digest are all digests, and typing them
+/as digests/ would reunify exactly the values this sweep separates.
+Refused as counterproductive.
+
+* Gates for the implementer
+
+Per commit, in order:
+
+1. =cargo test --workspace= (the routine loop; deps are optimized under dev).
+2. =cargo test --release -p minocrab-contracts --test row_snapshot= — must
+   be *unchanged*, no regeneration.
+3. =cargo test -p minocrab-contracts --test interface_snapshot= — must be
+   *unchanged*, no regeneration. If it moves, the newtype's
+   =CircuitArg::declare= added a path segment (§0, failure mode 1).
+4. =cargo test -p minocrab-interface-gen= (commit 1 only) — regenerates both
+   interface crates and fails on any difference;
+   =crates/*/artifact/interface-schema.txt= must not move.
+5. *=zkir_dump= before/after byte comparison* on every commit, per the
+   procedure in =crates/minocrab-contracts/tests/zkir_dump.rs=. =diff -rq=
+   must be empty for all 200 circuits. This is not optional on *A7*, whose
+   struct feeds the request-id keccak alignment.
+6. =cargo test -p minocrab-contracts --test disclosure_report --test
+   contract_matches_its_interface= and the vault differential suites.
+
+Expected outcome, stated so a deviation is visible: *every circuit
+byte-identical, on every commit.* Any movement at all is a bug in the
+newtype, not an intended cost.
