@@ -17,7 +17,7 @@ That being said this is a direct port of the Compact compiler and has millions o
 
 **Low level circuit generation.** MinoCrab emits ZKIR directly, so you can do low level optimisations: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Measured against compactc on the same contracts: rows −18..−58%, prove time −46..−97% amortized ([BENCHMARK.md](BENCHMARK.md)).
 
-**Use standard serialisation formats — or write your own.** Records are a [Borsh](https://borsh.io) subset: a published, stable spec with implementations in many languages, so both ends of the wire are auditable separately. Compact's FAB encoding can still be used for compatibility, and Compact contract interfaces can be imported.
+**Use standard serialisation formats — or write your own.** Records are a [Borsh](https://borsh.io) subset: a published, stable spec with implementations in many languages, so both ends of the wire are auditable separately. Compact's FAB encoding can still be used for compatibility, and Compact contract interfaces can be imported. All just a standard `Serialize` implementation.
 
 **It's all just Rust.** A mature toolchain: cargo, crates.io, rust-analyzer, `#[test]`, modules and visibility. Circuit families are const generics, monomorphized by rustc ([notes/const-generics.org](notes/const-generics.org)). A deployed contract imports as a typed crate and is checked against the callee's compiled artifact ([interface-gen](crates/minocrab-interface-gen)). You even have macros if that's your cup of tea.
 
