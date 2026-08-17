@@ -1,6 +1,6 @@
 # MinoCrab
 
-Rust eDSL for Midnight contracts, replacing Compact. Same target (ZKIR, never below it), same statements proved.
+Rust eDSL for Midnight contracts, which can be used instead of Compact.
 
 This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose it, and neither you nor I will know why.
 
