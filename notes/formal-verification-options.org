@@ -1,0 +1,830 @@
+#+title: Formal verification options — Midnight's Agda spec, and the Rust FV landscape
+
+Commissioned by dmd 2026-08-16, during M19. Two questions: what can we get
+from Midnight's EXISTING Agda spec, and what are the best FV tools for Rust
+today. dmd is partial to Lean and wants a machine-checked spec "later, on the
+more finicky parts"; a mid-task addition made LLM-WRITABILITY the main axis,
+since any proof here will be LLM-written and LLM-maintained under review.
+
+Everything below is checked against the actual files or against live sources
+with dates. Where a claim is prospective or unverified it says so.
+
+* 0. THE ONE-PARAGRAPH ANSWER
+
+The Agda spec is real, is smaller than its reputation, specifies the STATIC
+semantics of Compact SOURCE, says nothing whatever about ZKIR, and has not
+been touched since the day it was imported while the language moved nine
+minor versions. Its value to us is DOCUMENTATION and a modelling precedent —
+not transcription, not cross-checking. On the Rust side, the Lean bridge is
+not yet load-bearing, so the staged answer is: property tests over the passes
+first (nearly free, and the gap they close is real), Kani on the bound
+arithmetic and the packing lemma second, and Lean only when the bridge clears
+a named bar (§9).
+
+* 1. THE AGDA SPEC — WHERE IT IS, AND WHAT IT ACTUALLY IS
+
+** Not in our corpus, and that is on purpose
+
+=corpus/fetch.sh= copies =*.compact= files plus, per =sources.json='s =extra=
+block, =compiler/*.ss= and =runtime/src/compact-types.ts=. Nothing else. So
+=find corpus -name '*.agda'= is empty and always was — the spec was never
+vendored, not deleted.
+
+It lives upstream at [[https://github.com/LFDT-Minokawa/compact][LFDT-Minokawa/compact]] under =specification/=, which the repo
+README's structure section labels "Formal specification (Agda)". Read at our
+pinned rev =56c3b7796f78de582bee907318737077fb6e210f= (2026-08-13).
+
+** Size, and where the mass sits
+
+9,194 lines of Agda across 21 files. But the shape matters more than the
+total:
+
+| file | lines | in CI? | what |
+|------+-------+--------+------|
+| =Semantics/Static/Lsrc/Lsrc.lagda.md= | 2899 | yes | term-level static semantics |
+| =Semantics/Static/Lsrc/Lsrc-Typing.lagda.md= | 1447 | yes | type-level static semantics |
+| =Syntax/Generated/Lsrc.agda= | 414 | yes | generated abstract syntax |
+| =Semantics/Static/Coverage.agda= | 340 | yes | the coverage meta-program |
+| =Semantics/Static/Lsrc/{Specialize,Renaming,Substitution}.agda= | 955 | *no* | orphaned |
+| =Semantics/Operational/**= (8 files) | 1599 | *no* | orphaned, and stubbed |
+| =Syntax/Generated/{Lexpr,Ltypes}.agda= + =Archive/= | 1465 | *no* | other IRs, snapshots |
+| =Overview.agda=, =Util/ListSyntax.agda= | 75 | yes | entry point, helper |
+
+(Sums to 9,194. *5,175 lines are in CI; 4,019 are not.*)
+
+=src/Overview.agda= — the CI entry point — imports exactly four modules:
+=Syntax.Generated.Lsrc=, =Semantics.Static.Coverage=,
+=Semantics.Static.Lsrc.Lsrc-Typing=, =Semantics.Static.Lsrc.Lsrc=. Nothing
+else is reachable, so nothing else is typechecked.
+
+** What it specifies: Compact's STATIC semantics, over Lsrc, and stops there
+
+The spec's own README is unusually candid:
+
+#+begin_quote
+The formal spec itself only consists of 3 relevant files: … the
+automatically-generated Agda representation of the compiler's internal
+syntax, … a static semantic specification of all type-level objects in
+Compact, … a static semantic specification of all term-level objects in
+Compact.
+#+end_quote
+
+=Lsrc= is compactc's FIRST IR — "the source program without any
+transformations applied", generated from =compiler/langs.ss=. So the object
+of study is the surface language after parsing, and the content is a typing
+relation: a family of inductive =data= declarations
+(=_⊢expr_⦂_=, =_⊢stmt_⊣_=, =_⊢cdefn_⊣_=, ~20 of them).
+
+*IT SAYS NOTHING ABOUT ZKIR.* Grepping the whole spec for
+=zkir|impact|constraint|R1CS|field element= returns only prose uses of
+"circuit" (Compact's =circuit= keyword) and "witness"/"proof" in their Agda
+senses. There is no arithmetisation, no constraint system, no instruction
+set, no Impact VM. *The entire layer MinoCrab targets is outside its scope.*
+
+** The teeth it does have: the coverage check
+
+The one genuinely clever part, and the part in CI. =Coverage.agda= (340
+lines, =--safe --without-K=) is an Agda reflection meta-program that checks
+the hand-written typing relations COVER every constructor of the
+machine-generated syntax. The README:
+
+#+begin_quote
+we employ the meta-program defined in src/Semantics/Static/Coverage.agda to
+ensure that the defined typing relations adequately cover all parts of the
+generated syntax.
+#+end_quote
+
+That is a real and reusable idea (see §10), and it is the mechanism that
+would, in principle, catch language drift.
+
+** The operational semantics is a SKETCH, and is not checked
+
+=Semantics/Operational/Untyped/= is a CEK-style abstract machine over Lsrc
+expressions (=Machine.agda=, =Reduction.agda=, =Value.agda=, =Context.agda=,
+=State.agda=), with a ledger state model and — interestingly for us — a
+witness oracle threaded through evaluation:
+
+#+begin_src agda
+witnesses : List (Name × (List Expression → 𝓟 → 𝓟 × Expression))
+#+end_src
+
+That is exactly the object M19 §A3's first bug was about (guarded witnesses
+consuming the private transcript on the untaken branch). But:
+
+- *No module imports it.* Nothing in =Overview.agda='s cone reaches it, so
+  CI never typechecks it. It may not even compile today.
+- *=Machine.agda= has three unfilled holes* — =fetch = {!!}=, =deref = {!!}=,
+  =_>>=_ = {!!}=. The machine cannot step.
+- The state model is explicitly provisional: =-- TODO change to actual FAB=
+  on =AlignedValue=, =-- TODO: import this from ledger spec= on =StateValue=,
+  and =boundedMerkleTree='s actual tree contents commented out.
+
+So the dynamic semantics — the only part that could conceivably relate to a
+simulator — does not exist in runnable or checked form.
+
+** Completeness markers, read off the files
+
+- =Lsrc.lagda.md=, the largest CI-checked file, carries
+  =OPTIONS --allow-unsolved-metas= and is *not* =--safe=. Its own prose says
+  "The specification uses no known unsafe features of Agda" immediately
+  followed by "*TODO: safe temporarily gone bc type-level spec is unsafe*".
+  So the flagship file typechecks with holes permitted.
+- 29 TODOs in =Lsrc.lagda.md=, 6 in =Lsrc-Typing.lagda.md=.
+- =Specialize.agda= (not in CI) has 6 literal =­{!!}= holes and two
+  =postulate= blocks. =Lsrc-Typing.lagda.md= postulates =⊑-⊢⇔⊏-⊢= outright.
+- =CHANGELOG_spec.md= in full: "*Specification 0.0.1, Compact Language
+  0.14.0.* A first version of a formal specification of Compact's static
+  semantics."
+
+** MAINTENANCE: this is the finding that decides the question
+
+*=specification/= has exactly ONE commit in its history* — "Initial code
+import (#1)", Kevin Millikin, 2025-09-30 — inside a window of 1,029 commits
+spanning 2025-09-23 to 2026-08-13.
+
+In that same window =compiler/= took 391 commits, and =compiler/langs.ss= —
+the single file the spec's generated syntax is derived FROM — took 60,
+including structural language changes:
+
+- 2026-08-05 "Make curve points into builtin types (#662)"
+- 2026-06-26 "[Issue 377] Events -- phase 1 (#470)"
+- 2026-06-10 "added =contract implements= form, checking, and tests"
+- 2026-05-27 "Add typed 'outputs' to ZKIR v3 (#421)"
+- 2026-03-31 "split downcast-unsigned into field->unsigned and
+  downcast-unsigned …"
+
+The version stamps make the drift exact. The spec's committed syntax JSON
+(=src/Syntax/json/Lsrc.json=) opens:
+
+#+begin_src json
+[["Compiler version", "0.24.103"], ["Language version", "0.16.103"], ...]
+#+end_src
+
+Repo HEAD at our pinned rev: =compiler-version.ss= says
+=(make-version 'compiler 0 33 122)=, =language-version.ss= says
+=(make-version 'language 0 25 107)=.
+
+*The spec describes language 0.16.103. The compiler ships 0.25.107. Nine
+minor versions.* Our own flake pins compactc 0.33.x, so the spec is nine
+minor versions behind the language WE target.
+
+** And CI cannot see the drift
+
+This is the part worth understanding, because "Agda spec with CI" sounds like
+it would catch exactly this. =.github/workflows/ci-specification.yml= (on
+=pull_request= only — no push, no schedule) runs:
+
+#+begin_src yaml
+- run: cd specification/syntax-generation && cabal update && cabal build && cabal run
+- run: cd specification && agda --verbose=2 src/Semantics/Static/Coverage.agda
+                            agda --verbose=2 src/Overview.agda
+#+end_src
+
+The regeneration step is =cabal run= — which, per =app/Main.hs=, reads
+=../src/Syntax/json/&lt;IR&gt;.json=, i.e. the COMMITTED, FROZEN JSON. The step
+that actually consults the live compiler is =syntax-generation/run.sh= STAGE
+ONE, which hooks =serialize.ss= into =compiler/= and runs Chez to serialise
+the current =langs.ss=. *CI never runs =run.sh=.* There is no
+=git diff --exit-code= on the regenerated Agda either.
+
+So the coverage check proves the typing relation covers a syntax snapshot
+from September 2025, and would keep passing however far the language moved.
+The README anticipated this — "The syntax generation process, as well as
+automatic specification checking can and should be an (optional) part of the
+compiler build. This will be part of a separate PR" — and that PR never
+landed.
+
+** Consequence for our README
+
+=README.md:376= says: "Compact has an Agda spec in-tree with CI; our warrant
+is differential and property testing. Not formal-verification parity." That
+is defensible and should stay — we genuinely have no machine-checked
+semantics. But the honest shape of the gap is narrower than the sentence
+implies, and if it is ever expanded it should say: a static-semantics spec of
+the SOURCE language, frozen at 0.16.103, with CI that checks internal
+consistency rather than agreement with the compiler. *Not our call to make
+here* — recorded so the next README pass has the evidence.
+
+* 2. WHAT WE COULD ACTUALLY GET FROM IT
+
+Three options were posed. Verdicts, in order of how much they buy.
+
+** (a) Transcribe into Lean — NO
+
+Two independent reasons, either sufficient.
+
+*There is no bridge.* Agda→Lean has no production tool. =agda2hs=
+([[https://github.com/agda/agda2hs][repo]], [[https://agda.github.io/agda2hs/features.html][docs]]) targets Haskell and deliberately only a
+"common sublanguage between Agda and Haskell" — it is not a general
+translator and does not emit Lean. Agda's own GHC/JS backends (MAlonzo) are
+compilers for RUNNING code, not translators to another logic. The only
+Agda↔Lean tool found is [[https://github.com/lyphyser/lean2agda][lean2agda]], which runs the wrong way. Transcription
+would be manual, and manual transcription of 4,300 lines of dependently-typed
+Agda into Lean 4 is a multi-month project whose output is a Lean copy of a
+frozen spec of a language layer we do not implement.
+
+*And we would be transcribing the wrong thing.* The spec types Compact
+SOURCE. MinoCrab has no Compact frontend; our surface language is Rust and
+=rustc= is our typechecker. A Lean model of =_⊢expr_⦂_= would have no
+MinoCrab artifact to be a spec OF.
+
+** (b) Cross-check our simulator against an extraction — NO, and it is not close
+
+Three blockers, compounding:
+
+1. *Nothing extracts.* The typing rules are declarative inductive relations
+   with no decision procedure. Grepping the spec for =Dec=, =Decidable=,
+   =_≟_=, or =COMPILE GHC= finds nothing (outside unrelated =mono=/=no=
+   substring hits). There is no executable typechecker to extract, and
+   writing the decision procedure is the hard 80% of the work.
+2. *Even extracted, it checks the wrong artifact.* A Compact source
+   typechecker consumes =.compact= files. We never parse one.
+3. *The only relevant layer is the stubbed one.* A simulator cross-check
+   needs DYNAMIC semantics, and =Machine.agda= has =fetch = {!!}=.
+
+The idea would need the operational semantics finished, extended down to
+ZKIR (which upstream has not started), made executable, and given an
+extraction target. That is upstream's roadmap, not a task we can pick up.
+
+** (c) Documentation and precedent — YES, and this is the real value
+
+Genuinely useful, at near-zero cost:
+
+- *A second reading of Compact's typing rules.* Where
+  =notes/builtin-lowering.org= §9 decodes =infer-types.ss= by reading
+  Scheme, =Lsrc-Typing.lagda.md= states the same rules declaratively, in
+  prose plus Agda, from the language designers. For a question like "what
+  exactly is =Castable=?" or the numeric hierarchy (=IsNumeric=, =UIntType=,
+  =Castable= are all named =data= declarations), it is a cross-check on our
+  decoding — with the caveat that it describes 0.16.103.
+- *The coverage-check IDEA is directly stealable*, and §10 says how.
+- *A confirmation that the hard part is un-specified.* Upstream's formal
+  methods effort spent its first (and so far only) push on source typing and
+  stopped before lowering. The layer where MinoCrab's bugs actually live —
+  lowering, guards, constraint emission — has no spec from anyone. That is
+  worth knowing before we assume a reference exists to check against.
+
+*One thing it is NOT: a reason to prefer Agda.* It is unmaintained, in a
+language nobody here writes, with an ecosystem no LLM workflow is optimised
+for (§7). Nothing about its existence argues for our using Agda.
+
+* 3. RUST FV LANDSCAPE — VERIFIED AUGUST 2026
+
+Everything in this section was checked against repos, releases and papers in
+August 2026 rather than recalled.
+
+** Kani — bounded model checking, AWS
+
+[[https://github.com/model-checking/kani][model-checking/kani]]. MIR → GOTO → CBMC → SAT/SMT.
+
+- Latest release *kani-0.67.0, 2026-01-16*. =main= HEAD is 2026-08-16 with 83
+  commits in 90 days and a toolchain bump on 2026-08-14 — so *actively
+  developed but the release process has stalled seven months*, against its
+  own documented monthly cadence. =cargo install kani-verifier= gets you the
+  January build.
+- Still AWS-staffed. Deployed on Firecracker, s2n-quic, and the Rust stdlib
+  verification campaign ([[https://arxiv.org/pdf/2606.17374][arXiv:2606.17374]] — 16,748 harnesses, 11,970
+  verified). Tool paper [[https://arxiv.org/abs/2607.01504][arXiv:2607.01504]], ASE 2026.
+- *Everything interesting is still behind =-Z=.* Function contracts
+  (=requires=/=ensures=), loop contracts (=loop_invariant=), quantifiers, and
+  the Lean backend are all unstable, and =stabilization_version()= returns
+  =None= for every feature — nothing is even in a deprecation window.
+- *=Vec= has no =Arbitrary=*; you use =kani::bounded_any::<_, N>()= (itself
+  experimental), which is literally "make an =[T; N]=, truncate to a symbolic
+  length ≤ N". The bound is a compile-time constant burned into the harness.
+- *There is an Aeneas/LLBC backend (=-Z lean=) and it is a stub*:
+  ~2,530 lines against 15,485 for the CBMC codegen, and it only EMITS LLBC
+  (=--print-llbc=) — it runs no proof. Do not plan around it.
+
+*AND IT COSTS THE BUILD NOTHING, which matters here more than usual.* Kani
+INJECTS the =kani= crate at verification time and sets =cfg(kani)= — *it is
+not a Cargo dependency* ([[https://model-checking.github.io/kani/usage.html][usage guide]]). Harnesses live behind =#[cfg(kani)]=;
+=cargo build= and =cargo test= are untouched, no lockfile change, no new
+dependency in the tree. The only suggested =Cargo.toml= addition is a
+=[lints.rust] unexpected_cfgs= line. That satisfies CLAUDE.md's "the build is
+plain =cargo=" rule exactly, and — the thing that would otherwise sink any of
+this — *it cannot perturb the 162 circuit dumps*, because the shipped code is
+not modified at all.
+
+Contrast Verus, which requires wrapping the verified code in =verus!{}= (or
+attribute syntax) in the shipped source.
+
+Verdict: *the most practical tool to start with, and the only one that needs
+no change to the code being verified.* You write a harness beside untouched
+Rust. The guarantee is bounded — "correct for inputs up to N" — and going
+unbounded means loop invariants whose documented limitations include
+silently-incomplete modifies-inference and unsoundness if an invariant has
+side effects. Note it supports =aarch64-apple-darwin=, so it runs on dmd's
+machine.
+
+** Verus — SMT, annotations in-source
+
+[[https://github.com/verus-lang/verus][verus-lang/verus]]. Rust subset → VIR → Z3.
+
+- Version in =Cargo.toml= is *0.1.0*; releases are date-stamped rolling
+  builds (=0.2026.08.15.7d4628a=, 2026-08-15), *no semver, no 1.0*. =vstd= on
+  crates.io is published as =0.0.0-2026-08-09-0044=. Very active (206 commits
+  /90 days).
+- README: "under active development. Features may be broken and/or missing …
+  please be prepared to ask for help." The KVerus paper ([[https://arxiv.org/html/2605.03822v1][arXiv:2605.03822]],
+  2026-05-05) independently calls it "a fast-evolving toolchain, with
+  frequent updates that have broken existing proofs".
+- Better than I expected on toolchain: pinned to *stable 1.97.1* (with
+  =rustc-dev=), not a nightly date.
+- You must annotate the code — =verus!{}= macro or the attribute syntax. It
+  does not verify unmodified idiomatic Rust.
+- =Vec=/=HashMap=/=HashSet= supported; =while=/=loop= supported with
+  invariants; =for= and iterators only PARTIALLY. Real deployments: VeriSMo
+  (OSDI'24 best paper), Anvil (OSDI'24 best paper), Atmosphere (SOSP'25),
+  Vest and Verdict (USENIX Security 2025) — Vest is verified
+  parsing/serialisation, which is our Borsh shape.
+
+*THE ANSWER ON OUR BOUND FORMULAS IS NO, and it is structural.* (Checked
+directly against =verus-lang/verus@main= on 2026-08-16, not taken on
+report.) Verus's type IR (=source/vir/src/ast.rs=, =pub enum TypX=) has
+=ConstInt(BigInt)=, =ConstBool(bool)= and =TypParam(Ident)= — and *no node
+for a const EXPRESSION at all*. =mid_ty_const_to_vir=
+(=rust_to_vir_base.rs:1484-1517=) handles a const param (as an opaque
+symbol), a literal value, and an =Unevaluated= that normalises to a literal;
+everything else hits =unsupported_err!("const type argument …")=.
+=generic_const_exprs= appears *nowhere* in the Verus repo. So a
+=BoundedUint<{A + B - 1}>= is not expressible, and even our actual signature
+— caller-named =OUT= with an inline-=const= assert — puts the interesting
+content (=OUT >= sum_bound(BOUND, BOUND2)=) in a place Verus reasons about
+only per-monomorphisation.
+
+Verdict: *strong tool, wrong shape for the bound formulas as written.* The
+Verus-idiomatic encoding is a runtime field plus a spec predicate
+(=self.v <= max=), which is a different API than the one M19 shipped and not
+one we should adopt to please a verifier.
+
+** Creusot, Prusti, and the rest of the field
+
+- *Creusot* — still Why3-based (SMT via Why3's backends), active, *no Lean
+  backend*. A reasonable tool; irrelevant to a Lean endgame.
+- *Prusti* (Viper) — *dead*. No commit on =master= since *2024-03-26*; 2026
+  activity is side-branch noise. The successor research direction is "Place
+  Capability Graphs". *Do not adopt.*
+- *Flux* (liquid/refinement types for Rust, UCSD) — active (last commit
+  2026-08-14) but *no releases and not on crates.io*, git-install only. Its
+  result is the strongest real-deployment story of any Rust verifier:
+  *TickTock, SOSP 2025* verified process isolation in Tock OS (shipping in
+  Google's security chip and Microsoft Pluton), finding 5 unknown
+  MPU-configuration bugs and 2 interrupt-handling bugs. Refinement types on
+  integers are a good fit for range-constraint reasoning; worth a look if the
+  bound work grows.
+- *RefinedRust* (Rocq/Iris, MPI-SWS) — very much alive (commits 2026-08-16),
+  second major paper at *OOPSLA 2026*. *Rocq-only*, no releases. Foundational
+  but heavyweight.
+- *Soteria* — successor to the now-dead Gillian-Rust (last commit
+  2025-05-21, a PLDI 2025 artifact drop). Now a company; first Rust symbolic
+  executor supporting *Tree Borrows*. Symbolic execution, no proof-assistant
+  output.
+- *coq-of-rust / rocq-of-rust* (Formal Land) — Rocq target; see §4.
+
+** Two pieces of context that reframe the whole field
+
+*(1) Charon is becoming the shared frontend.* Aeneas, hax, *Kani* and Soteria
+all now consume Charon's LLBC (Charon has a CAV 2025 paper,
+[[https://arxiv.org/abs/2410.18042][arXiv:2410.18042]]; Kani vendors it as a submodule). So "which Rust subset is
+translatable" is converging on one answer across tools, and improvements to
+Charon lift several boats at once. That is a genuine reason to expect the
+Lean path to get better rather than to stay where it is.
+
+*(2) The Rust stdlib verification campaign is a sobering data point.*
+=verify-rust-std=: 27 challenges, *8 resolved, none since August 2025*. The
+paper ([[https://arxiv.org/pdf/2606.17374][arXiv:2606.17374]], NFM 2026) admits manual verification *plateaued
+around October 2025*, which is why Autoharness was built, and reports *zero
+previously-unknown memory-safety vulnerabilities found* — the yield was
+missing safety annotations, wrong SAFETY comments, doc errors, and one SIMD
+shift bug. Approved tools were Flux, ESBMC, Kani and VeriFast; *Verus is
+still only "under review"*.
+
+Read that honestly: a well-funded, high-profile campaign on the most
+scrutinised Rust code in existence, using these exact tools, stalled. It is
+not an argument against doing FV here — our targets are far smaller and we
+have specific theorems in mind — but it is an argument against expecting
+breadth, and for picking two or three named properties rather than "verify
+the passes".
+
+*A trap worth naming*: the top search hit, "Surveying the Rust Verification
+Landscape" ([[https://arxiv.org/abs/2410.01981][arXiv:2410.01981]]), is a v1 from *October 2024*, never revised.
+It predates almost everything in this section. The same authors' [[https://arxiv.org/abs/2510.01072][arXiv:2510.01072]] (Oct 2025) is the better read.
+
+* 4. THE LEAN PATHS
+
+dmd's preference is Lean, so this section decides whether the preference is
+practical. *The verdict is "not yet, and the reason is specific and
+checkable" — which is better than a vague no, because it names what has to
+change.*
+
+** Aeneas — the only serious Rust→Lean route
+
+[[https://github.com/AeneasVerif/aeneas][AeneasVerif/aeneas]] (INRIA; Son Ho, Jonathan Protzenko). Rust → (Charon)
+LLBC → a pure functional translation, with =&mut= eliminated by
+state-passing rather than modelled as a heap.
+
+Verified directly, 2026-08-16:
+- Last commit *2026-07-31*; Charon last commit the same day. Active, not
+  daily.
+- README: "Our most mature backends are *Lean* and HOL4." So the tool dmd
+  would want is the one Aeneas is best at — genuinely good news.
+- Charon (its rustc frontend, [[https://arxiv.org/abs/2410.18042][CAV 2025]]) is becoming the SHARED frontend of
+  the field: Aeneas, hax, Kani and Soteria all consume LLBC.
+
+*THE STD MODEL, read off the repo* (=backends/lean/Aeneas/Std/=):
+
+| construct | file | ours? |
+|-----------+------+-------|
+| =Vec= + iteration | =Vec.lean=, =VecIter.lean= | yes, we use it |
+| slices, arrays | =Slice.lean=, =SliceIter.lean=, =Array.lean= | — |
+| =String= | =String.lean=, =StringDef.lean=, =StringIter.lean= | yes, =Identifier(String)= |
+| scalars, ranges, iterators, =Option=/=Result= | =Scalar.lean=, =Range*.lean=, =Core/Iter.lean=, =Core/Result.lean= | yes |
+| *=HashMap= / =HashSet=* | *absent* | *yes — and this is the blocker* |
+
+*A GitHub code search for =HashMap= across the whole Aeneas repository
+returns ZERO hits.* There is no =std::collections= model, so
+=HashMap<Identifier, Operand>= and =HashSet<Identifier>= — which both our
+passes are built on — cannot be translated at all.
+
+*And a second, independent block*, from the README's own limitations:
+
+#+begin_quote
+Instantiating a generic type (including =Self= through a trait
+implementation) with a mutable reference is not supported yet
+#+end_quote
+
+which is exactly =operands_mut='s =Vec<&mut Operand>= (§8(i)).
+
+Other documented gaps that matter less to us but are worth knowing:
+=break=/=return= out of nested loops, =FnMut= closures with mutable
+captures, GATs and mutually-recursive traits (reported as *silently
+miscompiled*, which is the worst failure mode a translator can have), raw
+pointer deref, no =async=. Charon is pinned to a nightly (reported
+=nightly-2026-06-01=); our crate being edition 2021 on stable is not itself a
+problem, since Charon compiles the crate with its own toolchain.
+
+*So the Lean bridge does not reject our code marginally — it rejects the two
+central data structures of the code we most want to verify.* Both blocks are
+incidental rather than essential, which is the whole point of §9's "X".
+
+Real users, for calibration: Signal, Microsoft SymCrypt, Google
+zerocopy/Anneal are the marquee bets. This is not a toy.
+
+** hax — a front door to the same thing
+
+[[https://github.com/cryspen/hax][cryspen/hax]] (Cryspen). Very active (last commit *2026-08-13*); latest
+published release *=hax-lib-v0.3.7=, 2026-05-20*.
+
+The important structural point: *hax's Lean output is reported to delegate to
+charon+aeneas*, so "hax → Lean" and "Aeneas → Lean" are the same maturity and
+the same subset — hax is a front door, not a second implementation. hax's own
+mature, production-used backend is F* (libcrux). *Treat hax's Lean support as
+Aeneas's, and do not count it as an independent option.*
+
+** coq-of-rust / rocq-of-rust, and the Rocq alternatives
+
+Targets Rocq, not Lean, so it is off dmd's preferred path by construction.
+Same for *RefinedRust* (Rocq/Iris, MPI-SWS — active, OOPSLA 2026 paper, but
+heavyweight and release-less). Listed for completeness; neither is a
+recommendation here.
+
+** The one directly relevant precedent: LLM-written Lean proofs over a ZK codebase
+
+Worth flagging because it is the closest thing to our situation anyone has
+done: the *Aristotle/Aleph* pipeline ([[https://arxiv.org/abs/2605.30106][arXiv:2605.30106]]) drove an AI prover
+over hax/Aeneas extractions and reportedly landed machine-generated proofs in
+a *Plonky3 FRI* repository in February 2026 — i.e. Lean proofs, LLM-written,
+about zero-knowledge proving code. If that holds up it is the single best
+evidence that the Lean endgame here is realistic rather than aspirational.
+*Flagged as PROMISING BUT UNVERIFIED by me* — the detail (how much was
+machine-generated, whether the tooling is public) was still being checked
+when this note was written and should be confirmed before it is leaned on.
+
+* 5. TOOL SHORTLIST
+
+One line each, synthesising §3/§4. "Adopt" means a concrete first target
+exists in this repo today.
+
+| tool | verdict |
+|---|---|
+| Kani | ADOPT for the passes — push-button bounded checking over pure =Vec<Instruction>= functions, CI-able; the bounds are honest (small instruction counts exercise every code path the passes have) |
+| Verus | SECOND — the bound-formula const arithmetic and pass invariants as SMT-checked annotations; active, real industrial users; lives in-source |
+| Creusot / Prusti | NO — nothing they verify here that Verus does not, with less momentum (§3) |
+| Aeneas | THE LEAN ENDGAME — the only serious Rust→Lean route; gated on the subset fit of =passes.rs= (OPEN — see §9's X; the check was in flight when this note was written) |
+| hax | same maturity as Aeneas for Lean output (it delegates there, §4); its own mature backend is F*, off the preferred path |
+| coq-of-rust / RefinedRust | OFF-PATH — Rocq targets, listed for completeness |
+| hand-written Lean model, no extraction | ALWAYS AVAILABLE — transcribe the pass + a ZKIR semantics by hand; the transcription gap then becomes the thing to distrust, which is what extraction exists to remove |
+
+* 6. THE ZK-SPECIFIC ANGLE A RUST SURVEY WOULD MISS
+
+Our severest hazards are not memory-safety or overflow bugs; they are
+UNDER-CONSTRAINT bugs — a wire that reaches a digest preimage without a range
+constraint (M19 §B3), a =from_field_unchecked= asserting a range nothing
+enforces (§A1). That is the central bug class of the ZK circuit world and it
+has its own tooling: Picus (Veridise), Ecne, QED2 and halo2-analyzer detect
+under-constrained circuits by symbolic execution plus SMT; CODA
+([[https://arxiv.org/pdf/2304.07648][arXiv:2304.07648]]) certifies circuits with refinement types in Rocq. Survey:
+[[https://blog.zksecurity.xyz/posts/zksecurity-tools/][zksecurity.xyz, State of Security Tools for ZKPs]].
+
+*None of them speaks ZKIR* — they target Circom R1CS and halo2. So we cannot
+adopt one. But the observation that matters is:
+
+#+begin_quote
+The check "every operand reaching a hash/commitment preimage is transitively
+range-constrained" is a taint analysis over =Vec<Instruction>= — a hundred
+lines of pure Rust, in exactly the shape our existing passes have.
+#+end_quote
+
+That is a LINT we can write ourselves, it mechanises M19's most severe
+finding, and — being another small pure function over the instruction stream
+— it is then itself a verification target. See §9 stage 2.
+
+* 7. LLM-WRITABILITY — the main axis (dmd, 2026-08-16)
+
+dmd's criterion, stated while this note was in flight: prefer a proving
+system widely optimised for LLM usage, Lean the example, "but of course only
+if it's practical" — because the proofs here will realistically be
+LLM-written and LLM-maintained under human review.
+
+** The 2026 landscape, from the verified survey (all sources checked live)
+
+- *Benchmark theorem proving has consolidated on Lean, decisively.*
+  miniF2F-test: Lean systems at 99.2% ([[https://arxiv.org/abs/2509.22819][HILBERT]], ICLR 2026) with several
+  32B open models above 92%; Isabelle's best is 59.4%
+  ([[https://arxiv.org/abs/2505.15740][HybridProver]], May 2025, unbeaten since); Rocq has no comparable
+  hand-checked number at all. arXiv momentum: Lean outnumbers each of
+  Isabelle and Rocq ~5× in theorem-proving abstracts, two years running.
+- *The corpus asymmetry favours Lean and, surprisingly, Isabelle.* Rocq's
+  trainable corpus is 2,226 repos of mixed quality (196,929 theorems);
+  Isabelle's AFP is a single curated, CI'd corpus (~324,200 lemmas,
+  ~5.4M LOC); Lean has mathlib plus the entire benchmark ecosystem.
+- *All three ecosystems went agentic in 2026* — MCP servers driving frontier
+  models, not fine-tuned tactic predictors: [[https://github.com/LLM4Rocq/rocq-mcp][rocq-mcp]] (10/12 Putnam 2025
+  with a frontier model, at ~1.9B tokens for twelve problems —
+  capability proven, economics brutal), [[https://github.com/kappelmann/isabelle-pide-mcp][PIDE MCP]] for Isabelle. So
+  LLM-writability is no longer only corpus size; it is agent connector
+  quality plus check-loop latency. Lean currently leads on both.
+- *The result shaped like OUR work*: [[https://arxiv.org/abs/2607.06341][Aria]] — a generic code agent (not a
+  prover) clearing thousands of library-internal lemmas WITH SPECS GIVEN at
+  75.5% first-attempt. Pass-correctness lemmas against a defined semantics
+  are exactly that shape; open conjecture-proving is not what we need.
+
+** How it lands per shortlist row
+
+- Lean (via Aeneas): the strongest LLM story by a wide margin, and it is the
+  gap that is WIDENING. If the subset gate opens, this is the endgame.
+- Kani/Verus: LLM-friendliness of a different kind — the LLM writes
+  annotations and harnesses, not proofs; errors round-trip like compiler
+  errors; corpus depth matters much less because the solver closes goals.
+  This is why they are the NOW half of §9 regardless of the Lean question.
+- Rocq/Isabelle: no advantage on this axis over Lean for us, and the
+  survey's momentum data says the gap grows.
+
+** Marked as UNVERIFIED, because the checking died mid-flight
+
+- The Aristotle/Aleph precedent (§4) — LLM-written Lean proofs landing in a
+  Plonky3 FRI repo via hax/Aeneas extraction. The verifying agent had found
+  the repository and was reading the actual PRs when it was cut off. If it
+  holds up it is the single best evidence for the endgame; confirm before
+  leaning on it.
+- The current state of Lean-side proof-copilot tooling (LeanDojo-class
+  infrastructure, 2026 versions) — asserted from the general survey, not
+  independently checked the way the Rocq/Isabelle claims were.
+
+* 8. WHAT THE "FINICKY PARTS" ACTUALLY ARE
+
+From the repo's own record, with the shape each one presents to a verifier.
+This ordering is by (value × tractability), not by severity alone.
+
+** (i) The IR passes — the best target in the codebase
+
+=crates/minocrab-ir/src/v3/passes.rs=, 271 lines.
+=fold_immediate_copies= and =dedup_range_constraints= are pure
+=Vec<Instruction> -> Vec<Instruction>=. They are the highest-value target for
+the reason =notes/ir-passes.org= §3 gives about DCE: *a pass bug is invisible
+to the differentials*, because a differential runs one honest preimage and a
+dropped constraint changes nothing about it.
+
+The claims are stated in the doc comments and are genuinely provable:
+- fold: the pass "only ever removes instructions it can prove are renames",
+  and folding is a fixpoint through chains.
+- fold: ALL-OR-NOTHING per copy — if any use is an output slot the copy
+  stays. (This one has a real argument behind it: compactc's =Output=
+  terminator lists variables, never immediates.)
+- dedup: soundness in one direction only, =val < 2^n ⟹ val < 2^m= for
+  =m >= n=, resting on ZKIR v3 being SSA (upstream's =mem_push= is push-only).
+- ordering: fold-then-dedup, argued in =ir-passes.org= §11.
+
+*THREE OBSTACLES, and together they decide the tooling.*
+
+1. *The types are not ours.* =Instruction=, =Operand=, =Identifier= and
+   =IrSource= are re-exported by =crates/minocrab-zkir/src/v3.rs= from
+   =midnight-zkir-v3=. Any tool needs a model of them, or must translate the
+   upstream crate too — and that is ~4,600 lines of =zkir-v3= plus ~4,500 of
+   =base-crypto= (where =Fr= lives), before =serialize= and
+   =transient-crypto=. Whole-crate translation is not the route; a small
+   shadow model is.
+2. *=Identifier= is =pub struct Identifier(pub String)=*, keyed in
+   =HashMap=/=HashSet= with SipHash. So the "small pure function" is a
+   function over a heap-allocated string map. Kani has =BoundedArbitrary=
+   impls for =String=, =HashMap= and =HashSet=, so this is survivable at
+   small bounds; for anything unbounded it means abstracting the identifier
+   to an integer.
+3. *=operands_mut= returns =Vec<&mut Operand>=* — several simultaneous
+   mutable borrows INTO one instruction, collected into a vector and then
+   iterated (=for op in operands_mut(&mut instruction)=). This is the single
+   most translation-hostile construct in Rust for anything with a functional
+   borrow model, and *Aeneas rules it out by name.* Its README's limitations
+   list says:
+
+   #+begin_quote
+   Instantiating a generic type (including =Self= through a trait
+   implementation) with a mutable reference is not supported yet
+   #+end_quote
+
+   =Vec<&mut Operand>= is precisely instantiating =Vec<T>= with
+   =T = &mut Operand=. *So our best FV target contains, in its 44 most
+   mechanical lines, a construct the Lean bridge documents as unsupported.*
+   It is also entirely incidental — an index-returning or fold-shaped
+   =operands_mut= computes the same thing and would lift the block. Note this
+   refactor is needed for essentially any of these tools, so it is not work
+   done only to please Lean.
+
+*The one piece of good news, and it is bigger than it looks*: the passes are
+PARAMETRIC in the field element. =Fr= is
+=transient_crypto::curve::Fr(pub outer::Scalar)= — a curve scalar with
+Montgomery arithmetic, which would be a miserable thing to model. But
+=fold_immediate_copies= only ever MATCHES =Operand::Immediate(_)= and clones
+it; =dedup_range_constraints= ignores immediates entirely. *Neither pass ever
+performs, or even inspects, field arithmetic — not even an equality test.* So
+every harness can hold =Fr= at a single fixed constant, and the whole
+curve/modular-arithmetic modelling cost disappears. That is the difference
+between a feasible target and an infeasible one.
+
+** (ii) The bound-formula const arithmetic — the smallest real target
+
+=crates/minocrab-std/src/v3.rs:695-718=. =sum_bound= and =product_bound= are
+=const fn (u128, u128) -> u128= over =checked_add=/=checked_mul=, with
+=bound_or_overflow= turning an overflow into a compile error rather than a
+wrap. The theorem is one line each — =sum_bound(a,b)= is the least =n= such
+that every =x < a=, =y < b= has =x + y < n= — and the consequence of getting
+it wrong is stated in the code: "a wrapped bound is a small number and would
+accept an =OUT= the result cannot hold, i.e. the max tracking lying."
+
+Small, total, pure, no allocation, no foreign types. *This is the "hello
+world" of the whole programme* and should be done first for that reason.
+
+** (iii) The Borsh packing injectivity — the four-line theorem
+
+=crates/minocrab-std/src/v3/borsh.rs:352=:
+
+#+begin_quote
+the four-line theorem: packing is injective on range-constrained inputs, the
+MPC signed the digest, the circuit constrains bytes == serialize(fields) with
+the fields in range, therefore the fields are what the MPC encoded
+#+end_quote
+
+Line 1 is a genuine mathematical lemma and the rest depends on it: a
+mixed-radix packing =Σ xᵢ · 2^(8·offsetᵢ)= is injective when each
+=xᵢ < 2^(8·widthᵢ)=. M19 §B3 rates its violation the most severe consequence
+in the survey ("a digest that binds nothing"). It is currently a doc comment
+in three places.
+
+Nicely, it is ALSO the one whose precondition M19 already made dischargeable
+(=Serializer::constrained()= + the dedup pass, byte-identical per
+=tests/v3_dedup.rs=) — so a proof here would be proving something the code
+can actually rely on.
+
+** (iv) Guard / scope lowering — high value, and FV-HOSTILE
+
+=Circuit3::guarded= (=crates/minocrab/src/v3.rs:1415=) is not a pass. It is a
+guard STACK on a mutable builder, entered through
+=body: impl FnOnce(&mut Self) -> R=, with nesting lowered as
+=cond_select(outer, inner, 0)=. Two of M19 §A3's three invisible bugs lived
+here.
+
+Every tool in §3-§5 struggles with exactly this combination: higher-order
+closures over a =&mut= builder with interior state. *Say so plainly: this is
+the most valuable thing to get right and the worst FV target in the repo.*
+Its warrant should stay empirical (the =_under=-form equivalence in
+=ir-passes.org= §9, which is a real equivalence proof done by testing) plus
+property tests, not FV.
+
+** (v) Simulator instruction semantics — already has a better oracle
+
+=minocrab-sim= cross-checks every run against upstream =IrSource::check=
+(=crates/minocrab-sim/src/v3.rs:27=). Proving our simulator against a
+hand-written Lean ZKIR semantics would replace a check against the REAL
+reference VM with a check against a model we wrote. *FV buys little here* —
+the existing oracle is stronger, because it is the thing that actually
+decides whether a proof verifies.
+
+* 9. THE STAGED RECOMMENDATION
+
+** STAGE 0 — property tests over the passes. NOT FV, and it comes first anyway
+
+*This is the best value-per-day in the note, and it is the thing to do
+whether or not any of the rest happens.* It is listed inside the FV plan
+because it is the honest baseline every later stage has to beat.
+
+Today the two passes have *seven hand-written example tests*
+(=crates/minocrab-ir/tests/v3_passes.rs=) and *no property tests at all*
+(=grep proptest crates/minocrab-ir/= is empty). Meanwhile
+=midnight-zkir-v3= already derives =proptest::Arbitrary= for =Instruction=,
+=Operand=, =Identifier= and =IrSource= behind its =proptest= feature
+(=zkir-v3/Cargo.toml:25-31=), which no crate of ours enables. =proptest= is
+already a workspace dependency. So the generator is free.
+
+Two tiers, and the distinction matters:
+
+*Tier A — structural invariants, valid on ARBITRARY instruction streams.*
+No well-formedness needed, so =Arbitrary= is directly usable:
+- fold: the output is a SUBSEQUENCE of the input; every dropped instruction
+  is a =Copy= whose value is an immediate and whose output is not returned;
+  no folded identifier survives in any operand; =fold(fold(x)) == fold(x)=.
+- dedup: the output is a subsequence, order preserved; every dropped
+  instruction is a range constraint implied by an earlier RETAINED one on the
+  same identifier; the first constraint on a wire is never dropped;
+  idempotence.
+- the documented =fold=-then-=dedup= asymmetry (=ir-passes.org= §11) pinned as
+  a test rather than a paragraph.
+
+*Tier B — the semantic property, at the builder level.* Random =Arbitrary=
+streams are mostly ill-formed (dangling identifiers, type errors), so
+semantics-preservation needs well-formed input: generate random circuits
+through =Builder3= (well-formed by construction), then assert
+=simulate(ir, w) == simulate(pass(ir), w)= for random preimages =w=, using
+=minocrab-sim=, which already cross-checks itself against upstream
+=IrSource::check=. *That is the actual "semantics-preserving" claim the
+passes make*, checked against the real reference VM rather than a model we
+wrote.
+
+Effort: Tier A ~1 day. Tier B ~2-3 days (the random-circuit generator is the
+work). Buys: the pass invariants become machine-checked over ~10^5 streams
+instead of 7 examples, and Tier B closes precisely the gap
+=ir-passes.org= §3 identifies — that a pass bug is invisible to a
+differential on an honest preimage.
+
+*What it does NOT buy, which is why the later stages exist*: proptest samples
+a distribution. It will not find the adversarial small case (a specific
+three-instruction interleaving), and it proves nothing about inputs it did
+not draw.
+
+* 10. THE CHEAP IDEA WORTH STEALING FROM THE AGDA SPEC
+
+Independent of any Lean decision, and the one concrete thing §2(c) buys.
+
+Upstream's =Coverage.agda= mechanises "the typing relation covers every
+constructor of the generated syntax". Our analogue exists and is free:
+=operands_mut= in =passes.rs:226-270= matches all 34 =Instruction= variants
+with no wildcard, and its doc comment claims
+
+#+begin_quote
+Exhaustive by construction: a ZKIR instruction added upstream breaks this
+match rather than silently escaping the pass.
+#+end_quote
+
+which is TRUE, and is the guarantee upstream needed 340 lines of reflection
+for, bought from =rustc= for nothing.
+
+*BUT THE GUARANTEE IS UNEVEN ACROSS THE FILE, and the unevenness has a
+direction.* Three other matches in the same 271 lines are NOT exhaustive, and
+they differ in which way they fail:
+
+- =dedup_range_constraints:150-153= ends =_ => None=. A new
+  range-establishing instruction upstream would go unrecorded, so the pass
+  would record FEWER bounds and drop FEWER constraints. *Conservative* —
+  incomplete, not unsound.
+- =returned_identifiers:208-220= inspects only =Instruction::Output=. This
+  function IS the fold's one exception ("a constant that a circuit RETURNS
+  stays named"). A new output-carrying terminator would be invisible to it,
+  so the fold would fold a constant that should have stayed named — it would
+  do MORE. *That is the unsound direction*, and it is the one variant of this
+  hazard that matters.
+
+Given that ZKIR 3.x breadth is in flight upstream (=notes/readme-research.org=
+records Curve25519, secp256r1, SHA-512, RSA as landing), this is worth a
+cheap fix independent of everything else in this note: make
+=returned_identifiers= exhaustive the way =operands_mut= is, so a new
+terminator breaks the build. Same trick, same cost, and it is the difference
+between "the pass is incomplete" and "the pass is wrong".
+(=notes/review-queue.org= tracks the sibling hazard for the hand-written
+circuit list.)
+
+* 11. WHAT FV DOES NOT BUY, SAID PLAINLY
+
+- *Lowering fidelity to compactc is empirical by nature.* Our primary warrant
+  is instruction-for-instruction differential equality with an artifact
+  compactc produced. No proof replaces that, because the property is
+  "agrees with a specific Scheme program's behaviour", and the only complete
+  specification of that program is the program. FV can prove our passes
+  preserve semantics; it cannot prove our lowering is compactc's.
+- *Nor does it replace the M10 warrant.* The optimised vault proves its own
+  preimage; its warrant is symbolic-effect equivalence plus a 9M-case
+  harness. That is an argument about protocol equivalence between two
+  DIFFERENT circuits — not a program-correctness property any of these tools
+  states.
+- *And it does not cover the macros' generated code*, the ledger ABI
+  agreement, or anything about the proving system — the same gaps
+  =api-safety-survey.org= §4 lists.
