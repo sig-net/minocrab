@@ -39,6 +39,23 @@ Internal error (please report): Exception: failed assertion not-implemented at l
 (`--skip-zk` is irrelevant to the bug; the failure is in circuit generation,
 before proving keys.)
 
+## Self-contained test
+
+`test.sh` in this directory is a runnable assertion of the bug — it needs only
+`compactc` on `PATH`:
+
+```
+$ ./test.sh
+ok: v2 compiles kernel.checkpoint()
+ok: v3 crashes with the internal assertion (bug reproduced):
+    Internal error (please report): Exception: failed assertion not-implemented at line 748, char 23 of compiler/zkir-v3-passes.ss
+PASS: checkpoint compiles on v2 and crashes the v3 backend.
+```
+
+It exits 0 while the bug is present (v2 compiles, v3 crashes with
+`not-implemented`) and starts failing once v3 either supports `checkpoint` or
+rejects it with a proper diagnostic.
+
 ## Impact
 
 Any v3 contract using `kernel.checkpoint()`. The v2 path is unaffected.

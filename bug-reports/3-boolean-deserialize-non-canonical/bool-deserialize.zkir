@@ -1,0 +1,20 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%payload.0", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+  ],
+  "instructions": [
+    { "op": "constrain_bits", "val": "%payload.0", "bits": 8 },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0e", "0x01"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
+    { "op": "div_mod_power_of_two", "outputs": ["%quo.1", "%ignore.2"], "val": "%payload.0", "bits": 0 },
+    { "op": "div_mod_power_of_two", "outputs": ["%ignore.3", "%t.4"], "val": "%quo.1", "bits": 8 },
+    { "op": "test_eq", "output": "%b.5", "a": "%t.4", "b": "0x01" },
+    { "op": "cond_select", "output": "%t.6", "bit": "%b.5", "a": "0x00", "b": "0x01" },
+    { "op": "assert", "cond": "%t.6" }
+  ]
+}

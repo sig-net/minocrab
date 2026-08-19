@@ -1,23 +1,22 @@
-// Repro: deserialize<Boolean, 1> accepts non-canonical bytes.
-//
-// A deserialized Boolean is not constrained to {0, 1}: a payload byte of
-// 0x02 is accepted by the circuit, and downstream boolean routing then
-// treats it as it will — in the erc20-vault example this meant any attested
-// byte != 1 routed completeWithdraw's settle to the REFUND branch, a
-// re-mint on a successful withdrawal.
-//
-// See the compiled ZKIR: the payload byte is range-checked to 8 bits only;
-// no constraint pins it to {0, 1} before it feeds the branch.
 import CompactStandardLibrary;
 
-export ledger trueBranch: Counter;
-export ledger falseBranch: Counter;
+export ledger touched: Counter;
 
-export circuit route(payload: Bytes<1>): [] {
-  const flag = disclose(deserialize<Boolean, 1>(payload));
-  if (flag) {
-    trueBranch.increment(1);
-  } else {
-    falseBranch.increment(1);
-  }
+// Demonstration circuit for the non-canonical-Boolean bug.
+//
+// `payload` is a witnessed Bytes<1>. It is deserialized to a Boolean and the
+// circuit ASSERTS the result is false. A canonical Boolean decoder would
+// reject any byte outside {0, 1}; this one does not, so the reference VM
+// accepts payload = 0x02 (proving 0x02 is a valid Boolean witness AND that it
+// deserializes to false), and rejects only payload = 0x01.
+//
+// The compiled ZKIR range-checks `payload` to 8 bits and then decides
+// truthiness with `test_eq payload, 0x01` — there is no {0,1} constraint, so
+// 254 distinct byte values satisfy a circuit whose author believes the input
+// is one bit. `test.rs` runs Midnight's own reference VM over the three
+// inputs and asserts the acceptance pattern.
+export circuit routeAssertFalse(payload: Bytes<1>): [] {
+  touched.increment(1);
+  const b = disclose(deserialize<Boolean, 1>(payload));
+  assert(!b, "payload deserialized to false");
 }
