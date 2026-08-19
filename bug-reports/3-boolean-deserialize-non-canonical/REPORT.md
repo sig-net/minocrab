@@ -1,11 +1,13 @@
 # `deserialize<Boolean, 1>` accepts non-canonical bytes
 
 `deserialize<Boolean, N>` does not constrain the deserialized byte to `{0, 1}`.
-The byte is range-checked to 8 bits and truthiness is decided by
-`test_eq byte, 0x01`, so any byte `!= 0x01` (including `0x02`..`0xFF`) is
-accepted by the circuit and read as `false`. A prover can supply a
-non-canonical byte, produce a valid proof, and have it routed to the `false`
-branch — where a canonical decoder would reject it.
+The `tboolean` case of `build-deserialize` lowers the byte to `byte == 1`
+([`compiler/analysis-passes/expand-serialize.ss#L266-L272`](https://github.com/LFDT-Minokawa/compact/blob/56c3b7796f78de582bee907318737077fb6e210f/compiler/analysis-passes/expand-serialize.ss#L266-L272)),
+with no `{0,1}` constraint on the byte. So the byte is only range-checked to 8
+bits and any value `!= 0x01` (including `0x02`..`0xFF`) is accepted by the
+circuit and read as `false`. A prover can supply a non-canonical byte, produce
+a valid proof, and have it routed to the `false` branch — where a canonical
+decoder would reject it.
 
 ## Repro
 
