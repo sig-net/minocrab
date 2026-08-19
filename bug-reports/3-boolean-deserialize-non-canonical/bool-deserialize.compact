@@ -1,0 +1,23 @@
+// Repro: deserialize<Boolean, 1> accepts non-canonical bytes.
+//
+// A deserialized Boolean is not constrained to {0, 1}: a payload byte of
+// 0x02 is accepted by the circuit, and downstream boolean routing then
+// treats it as it will — in the erc20-vault example this meant any attested
+// byte != 1 routed completeWithdraw's settle to the REFUND branch, a
+// re-mint on a successful withdrawal.
+//
+// See the compiled ZKIR: the payload byte is range-checked to 8 bits only;
+// no constraint pins it to {0, 1} before it feeds the branch.
+import CompactStandardLibrary;
+
+export ledger trueBranch: Counter;
+export ledger falseBranch: Counter;
+
+export circuit route(payload: Bytes<1>): [] {
+  const flag = disclose(deserialize<Boolean, 1>(payload));
+  if (flag) {
+    trueBranch.increment(1);
+  } else {
+    falseBranch.increment(1);
+  }
+}

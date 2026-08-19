@@ -10,31 +10,18 @@ were found (pointers at the bottom).
 Every entry: what, evidence (checkable, not remembered), impact, and whether
 anything deployed is affected.
 
-* 1. BUG-ADJACENT — a cast in argument position emits no range check
+Note (dmd session, 2026-08-19): a former entry 1 ("a cast in argument
+position emits no range check") was REFUTED on re-verification against
+compactc 0.33.0-rc.2 and removed. Every minimal shape emits the downcast
+check in both argument and assignment position; what actually varies is
+unconditional vs. guarded lowering (a cast under an =if= lowers to a guarded
+=less_than=/=cond_select=/=assert= rather than a bare =constrain_bits 64=),
+which is a benign codegen difference, not a missing constraint. The vault's
+settle mints that the original scan read as unchecked are exactly the guarded
+form and are in fact bounded. Do not re-file without new artifact evidence.
+The findings below are renumbered accordingly.
 
-=amount as Uint<64>= compiles to NOTHING when the cast is an argument rather
-than an assignment. The erc20-vault writes it at all four settle mints
-(claim/completeWithdraw/refund/completeSwap) on a value locally bounded only
-to < 2^128, and the compiled artifacts contain no 64-bit constraint anywhere
-between the ABI-word decode and the mint — the only 64-bit op in each circuit
-is the =initialized >= 1= counter guard. Verified instruction by instruction
-in the artifacts, 2026-08-16.
-
-The general downcast rule ("assignment to a declared =Uint<N>= inserts
-=downcast-unsigned="; =infer-types.ss=) therefore does NOT cover argument
-position, and a cast that reads as checked is not. The vault happens to be
-safe because every request circuit bounds its amounts to u64::MAX before a
-record enters the map (=erc20-vault.compact:263/431/801-802=) — a
-whole-contract invariant the compiler neither states nor checks, and which a
-contract author has no way to know they are relying on.
-
-Impact: silent unsoundness pattern available to every Compact author; the
-failure needs a malformed record in state, so honest deployments are safe
-until some other path can write one. Evidence: notes/api-safety-survey.org
-§B4 ("CORRECTED BY THE REVIEW"), notes/builtin-lowering.org §9 (REFINED
-block, with the artifact scan described).
-
-* 2. GAP — kernel.checkpoint() cannot be compiled for ZKIR v3
+* 1. GAP — kernel.checkpoint() cannot be compiled for ZKIR v3
 
 compactc's v2 backend assembles =ckpt= to 255 (=zkir-passes/
 print-zkir.ss:546=); the v3 backend has no =ckpt= case, so
@@ -46,7 +33,7 @@ construct and the flag that made it so).
 Impact: any v3 contract using checkpoint. Evidence: notes/kernel-tokens.org
 (M17 design note, failure quoted in the fixture header).
 
-* 3. HAZARD — Boolean deserialization accepts non-canonical bytes
+* 2. HAZARD — Boolean deserialization accepts non-canonical bytes
 
 =deserialize<T, N>= does not constrain a deserialized Boolean to {0,1}: a
 byte of 0x02 is accepted, and downstream =!b=-style routing then treats it as
@@ -62,7 +49,7 @@ bool is 0|1 and nothing else); Compact's own deserialize still has it.
 Evidence: notes/vault-optimization.org §"As built — step 1" (the harness
 finding), notes/borsh-format.org §"Site classification" (the 0x02 hazard).
 
-* 4. INEFFICIENCY — serialization lowering explodes bytes it could shift
+* 3. INEFFICIENCY — serialization lowering explodes bytes it could shift
 
 compactc lowers byte-reordering through full explode/rebuild chains (~150
 rows per exploded byte) where ZKIR's own =ReverseBytes= (~150 rows TOTAL) or
@@ -78,7 +65,7 @@ Impact: prove time and RAM for every Compact user, no correctness issue.
 Evidence: notes/benchmark.org ("M7 pass 1"/"pass 2" with per-circuit
 numbers), BENCHMARK.md (the presentable three-way).
 
-* 5. HAZARD — midnight-ledger main dropped instructions we (and they) ship
+* 4. HAZARD — midnight-ledger main dropped instructions we (and they) ship
 
 A bump dry-run against midnight-ledger main (diverged from the release line;
 merge base 2026-06-25) found it renamed midnight-ledger-v9, DROPPED
@@ -91,7 +78,7 @@ Impact: forward-compatibility of every deployed v3 circuit using those
 instructions/types. Evidence: notes/version-bump.org (the recorded dry run,
 with the worktree transcript).
 
-* 6. RELEASE HYGIENE — identical version strings, different code
+* 5. RELEASE HYGIENE — identical version strings, different code
 
 The ledger rc.3 tag's zkir-v3 crate PREDATES the binary bundled in the same
 release despite carrying an identical version string — resolving "which code
@@ -103,7 +90,7 @@ Impact: anyone pinning their stack by version string. Evidence:
 notes/version-bump.org (the version-string trap; =bump.sh pins= exists
 because of it).
 
-* 7. MINOR — constant naming is frontend-driven, not rule-driven
+* 6. MINOR — constant naming is frontend-driven, not rule-driven
 
 compactc sometimes names a constant (=copy 0x00= then uses the name) and
 sometimes inlines the same constant, with the choice driven by frontend
@@ -116,7 +103,7 @@ anyone doing instruction-level comparison a normalisation pass (ours:
 Evidence: notes/ir-passes.org §8 ("§1's table was WRONG, and the fixture
 that proved it").
 
-* 8. LATENT — the coin-arm `dup` reach overflows its nibble past depth 5
+* 7. LATENT — the coin-arm `dup` reach overflows its nibble past depth 5
 
 The `insertCoin`/`pushFrontCoin` lowering computes its `dup` reach from the
 field path length, and the encoding has room for a nibble; a source comment at
