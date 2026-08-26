@@ -1,0 +1,24 @@
+import CompactStandardLibrary;
+
+// A voucher redeemable once per (flag, tag). `used` holds spent nullifiers; the
+// freshness check `!used.member(nul)` is meant to stop a `tag` being redeemed
+// twice. `flag` is the serialized Boolean gate; `tag` is the string the
+// redeemer is entitled to. The payout is the `else` ("not redeemed yet") branch,
+// which commits (flag, tag) as the spent nullifier.
+//
+// THE EXPLOIT: deserialize<Boolean,1> lowers to `test_eq(flag, 0x01)` with NO
+// {0,1} constraint, so ALL 255 bytes != 0x01 pass the gate as `false` and take
+// the `else` branch. The nullifier is persistentHash over the RAW flag byte, so
+// those 255 bytes mint 255 DISTINCT nullifiers for ONE `tag` — the same voucher
+// redeemed 255 times, one per non-canonical encoding of `false`.
+export ledger used: Set<Bytes<32>>;
+
+export circuit redeem(flag: Bytes<1>, tag: Bytes<32>): [] {
+  const flag_bool = disclose(deserialize<Boolean, 1>(flag));
+  if (!flag_bool) {
+    const nul = disclose(persistentHash<[Bytes<1>, Bytes<32>]>([flag, tag]));
+    assert(!used.member(nul), "tag already redeemed");
+    used.insert(nul);
+    // ... pay out `tag` ...
+  }
+}

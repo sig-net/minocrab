@@ -109,3 +109,18 @@ fn non_canonical_boolean_is_accepted_and_falsy() {
          (the bug is fixed) — update this expectation",
     );
 }
+
+/// The control-flow core of the `redeem` exploit (see `redeem.compact`):
+/// `assert(!b)` — the "b is false" / `else` branch — is satisfied by EVERY byte
+/// except `0x01`. A gate that treats a deserialized bool as `false` therefore
+/// admits 255 distinct byte encodings of `false`, not the one canonical `0x00`.
+/// Hashed with a fixed `tag`, those 255 bytes mint 255 distinct nullifiers, so
+/// one `tag` redeems 255 times.
+#[test]
+fn exactly_255_bytes_deserialize_to_false() {
+    let ir = IrSource::load(ZKIR.as_bytes()).expect("parse .zkir");
+    let falses = (0u16..=255)
+        .filter(|&b| reference_vm_accepts(&ir, b as u8))
+        .count();
+    assert_eq!(falses, 255, "every byte except 0x01 is accepted as false");
+}
