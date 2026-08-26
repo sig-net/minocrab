@@ -145,6 +145,19 @@ impl std::error::Error for Error {}
 enum Item {
     /// `pub type Name<V> = Target<V>;`
     Alias { name: String, target: String, doc: String },
+    /// `b32_newtype! { Name }` — a Compact `Alias` whose target is
+    /// `Bytes<32>`, which is the one alias shape that gets a NEWTYPE rather
+    /// than a `pub type` (M23 R2, notes/newtype-survey.org §A1).
+    ///
+    /// A `pub type` is a newtype with the safety removed: `RequestId` was one,
+    /// so a commitment, a nonce or a digest type-checked wherever an id
+    /// belonged — including at a cross-contract call. `Bytes<32>` is the shape
+    /// that hazard takes in this codebase, so an alias over it is exactly
+    /// where a generated crate can close it for free: `b32_newtype!` delegates
+    /// every impl to `B32`, declares with the caller's `ArgPath` verbatim, and
+    /// therefore does not move `artifact/interface-schema.txt` (slots,
+    /// alignment, constraints and the entry-point hash are all `B32`'s).
+    B32Newtype { name: String, doc: String },
     /// `pub struct Name<V: Vis3> { … }`
     Struct { name: String, fields: Vec<(String, String)>, doc: String },
     /// `ts_type!(Name = "ts-name");` — the marker type for one distinct
@@ -158,6 +171,7 @@ impl Item {
     fn name(&self) -> &str {
         match self {
             Item::Alias { name, .. }
+            | Item::B32Newtype { name, .. }
             | Item::Struct { name, .. }
             | Item::TsType { name, .. } => name,
         }
@@ -204,7 +218,8 @@ impl Registry {
     /// | `Maybe<T>`              | `Maybe<T, V>`           |
     /// | `Either<A, B>`          | `Either<A, B, V>`       |
     /// | other `struct`          | a generated struct      |
-    /// | `Alias`                 | a generated `pub type`  |
+    /// | `Alias` over `Bytes<32>`| a generated `b32_newtype!` |
+    /// | `Alias`, otherwise      | a generated `pub type`  |
     /// | `Enum` over k names     | the `Uint<0..k>` row    |
     /// | `Opaque<'ts'>`          | `Opaque<Marker, V>` + a generated `ts_type!` |
     /// | `Secp256k1Point`        | `Secp256k1Point<V>`     |
@@ -221,6 +236,16 @@ impl Registry {
     /// either the `Alias` row or the `Opaque` one (M15,
     /// notes/opaque-bridging.org §0b). Before M15 they were refused, which is
     /// why the erc20-vault's own `initialize` could not be imported.
+    ///
+    /// THE TWO ALIAS ROWS (M23 R2, notes/newtype-survey.org §A1): an alias
+    /// over `Bytes<32>` generates a NEWTYPE, not a `pub type`. A `pub type`
+    /// is a newtype with the safety removed, and `Bytes<32>` is the shape
+    /// every same-shaped-different-meaning family in this codebase takes — so
+    /// `RequestId = Bytes<32>` used to accept any commitment, nonce or digest,
+    /// including at a cross-contract call. `b32_newtype!` delegates every impl
+    /// to `B32` and declares with the caller's `ArgPath` verbatim, so the
+    /// generated crate's `artifact/interface-schema.txt` — slots, alignment,
+    /// `constrain_bits`, entry-point hash — does not move.
     ///
     /// What remains an error, with a reason: a bare `Field` (every MinoCrab
     /// leaf is range-constrained and a `Field` carries no range — note this is
@@ -268,13 +293,29 @@ impl Registry {
             }
             CompactType::Struct { name, elements } => self.rust_struct(name, elements)?,
             CompactType::Alias { name, ty } => {
+                // Whether `B32` was already reachable BEFORE walking the
+                // target, so a `Bytes<32>` alias that is the only mention of
+                // the leaf does not leave an unused import behind: the
+                // newtype's impls reach `B32` through `$crate` paths, not
+                // through the generated crate's `use`.
+                let b32_before = self.std_imports.contains("B32");
                 let target = self.rust_type(ty)?;
                 let name = pascal(name);
-                self.declare(Item::Alias {
-                    doc: format!("Compact `{name} = {}`.", render(ty)),
-                    target: target.clone(),
-                    name: name.clone(),
-                })?;
+                let doc = format!("Compact `{name} = {}`.", render(ty));
+                // An alias over `Bytes<32>` is the one that gets a NEWTYPE:
+                // see `Item::B32Newtype`. Every other alias stays a `pub
+                // type`, unchanged — a `Uint<64>` alias has no swap to close
+                // that the width does not already close, and an alias over a
+                // struct is already a distinct type.
+                if target == "B32<V>" {
+                    if !b32_before {
+                        self.std_imports.remove("B32");
+                    }
+                    self.std_imports.insert("b32_newtype");
+                    self.declare(Item::B32Newtype { doc, name: name.clone() })?;
+                } else {
+                    self.declare(Item::Alias { doc, target, name: name.clone() })?;
+                }
                 format!("{name}<V>")
             }
             // A fieldless `enum` of k names is Compact's `Uint<0..k>`
@@ -590,6 +631,9 @@ pub fn generate(info: &ContractInfo, options: &Options) -> Result<String, Error>
         match item {
             Item::Alias { name, target, doc } => {
                 out.push_str(&format!("/// {doc}\npub type {name}<V> = {target};\n"));
+            }
+            Item::B32Newtype { name, doc } => {
+                out.push_str(&format!("b32_newtype! {{\n    /// {doc}\n    {name},\n}}\n"));
             }
             Item::Struct { name, fields, doc } => {
                 out.push_str(&format!(
@@ -1057,6 +1101,72 @@ mod tests {
         .unwrap();
         assert!(reg.items.is_empty(), "the leaf is imported, not declared: {:?}", reg.items);
         assert!(reg.std_imports.contains("Secp256k1Point"));
+    }
+
+    /// An alias over `Bytes<32>` is a NEWTYPE, and every other alias is still
+    /// a `pub type` (M23 R2, notes/newtype-survey.org §A1). The second half
+    /// matters as much as the first: narrowing the alias row too far would
+    /// silently retype a `Uint` or a struct alias.
+    #[test]
+    fn a_bytes32_alias_generates_a_newtype_and_other_aliases_do_not() {
+        let mut reg = Registry::default();
+        assert_eq!(
+            reg.rust_type(&ty(
+                r#"{"type-name":"Alias","name":"RequestId",
+                     "type":{"type-name":"Bytes","length":32}}"#
+            ))
+            .unwrap(),
+            "RequestId<V>"
+        );
+        assert_eq!(
+            reg.items,
+            vec![Item::B32Newtype {
+                name: "RequestId".into(),
+                doc: "Compact `RequestId = Bytes<32>`.".into(),
+            }]
+        );
+        // The macro reaches `B32` through `$crate` paths, so an alias that is
+        // the only mention of the leaf must not leave an unused import.
+        assert!(!reg.std_imports.contains("B32"), "unused import: {:?}", reg.std_imports);
+        assert!(reg.std_imports.contains("b32_newtype"));
+
+        // A `Bytes<20>` alias, and a `Uint` alias: both still `pub type`.
+        let mut reg = Registry::default();
+        reg.rust_type(&ty(
+            r#"{"type-name":"Alias","name":"EvmAddress",
+                 "type":{"type-name":"Bytes","length":20}}"#,
+        ))
+        .unwrap();
+        reg.rust_type(&ty(
+            r#"{"type-name":"Alias","name":"Amount",
+                 "type":{"type-name":"Uint","maxval":18446744073709551615}}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            reg.items,
+            vec![
+                Item::Alias {
+                    name: "EvmAddress".into(),
+                    target: "Bytes<20, V>".into(),
+                    doc: "Compact `EvmAddress = Bytes<20>`.".into(),
+                },
+                Item::Alias {
+                    name: "Amount".into(),
+                    target: "Uint<64, V>".into(),
+                    doc: "Compact `Amount = Uint<64>`.".into(),
+                },
+            ]
+        );
+
+        // `B32` STAYS imported when something else reaches the leaf.
+        let mut reg = Registry::default();
+        reg.rust_type(&ty(r#"{"type-name":"Bytes","length":32}"#)).unwrap();
+        reg.rust_type(&ty(
+            r#"{"type-name":"Alias","name":"RequestId",
+                 "type":{"type-name":"Bytes","length":32}}"#,
+        ))
+        .unwrap();
+        assert!(reg.std_imports.contains("B32"));
     }
 
     /// A bound that is not a bit width is no longer a refusal: it is the

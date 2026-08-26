@@ -22,6 +22,16 @@ use minocrab_std::v3::{
     pow2_const, secp256k1_ecdsa_verify, BytesN, LedgerRepr, Secp256k1EcdsaSignature, Vis3, B32,
 };
 
+/// The signer's request id — the keccak of a whole signing record, and the
+/// key every event map and every refund commitment is filed under.
+///
+/// Re-exported from the interface crate (where the generator emits it from
+/// the callee's own `RequestId = Bytes<32>` alias) so a vault fork can write
+/// `signet::RequestId` without importing the crate: the forks already declare
+/// a DISCLOSURE LABEL called `RequestId`, and the module qualifier keeps the
+/// two apart at every use.
+pub use signet_signer_interface::RequestId;
+
 fn atom(n: u32) -> AlignmentSegment {
     AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
 }
@@ -538,7 +548,7 @@ pub fn construct_sign_bidirectional_event_v2<V: Vis3, const WORDS: usize>(
 pub fn calculate_request_id_v2<V: Vis3, const WORDS: usize>(
     c: &mut Circuit3,
     request: &SignBidirectionalEventV2<V, WORDS>,
-) -> B32<V> {
+) -> RequestId<V> {
     request_id_of(
         c,
         SignBidirectionalEventV2::<V, WORDS>::atoms(),
@@ -667,7 +677,7 @@ pub fn calculate_request_id<
 >(
     c: &mut Circuit3,
     request: &SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>,
-) -> B32<V> {
+) -> RequestId<V> {
     request_id_of(
         c,
         SignBidirectionalEvent::<V, WORDS, LEN_OUT, LEN_RESPOND>::atoms(),
@@ -684,12 +694,12 @@ fn request_id_of<V: Vis3>(
     c: &mut Circuit3,
     atoms: Vec<AlignmentAtom>,
     limbs: &[Wire3<FieldT, V>],
-) -> B32<V> {
+) -> RequestId<V> {
     c.region("signet: request id (keccak)", |c| {
         let alignment = Alignment(atoms.into_iter().map(AlignmentSegment::Atom).collect());
         let limbs: Vec<_> = limbs.iter().map(|w| w.erase()).collect();
         let digest = c.keccak256(alignment, &limbs);
-        B32::from_typed(c, digest)
+        RequestId::from_typed(c, digest)
     })
 }
 
@@ -702,12 +712,12 @@ fn request_id_of<V: Vis3>(
 /// outputs are all the single limb of a `Bytes<n <= 31>`).
 pub fn calculate_attestation_digest<V: Vis3, const LEN_OUTPUT: usize>(
     c: &mut Circuit3,
-    request_id: &B32<V>,
+    request_id: &RequestId<V>,
     output_limbs: &[Wire3<FieldT, V>],
 ) -> B32<V> {
     c.region("signet: attestation digest (keccak)", |c| {
         let alignment = Alignment(vec![atom(32), atom(LEN_OUTPUT as u32)]);
-        let mut limbs = vec![request_id.hi.erase(), request_id.lo.erase()];
+        let mut limbs = vec![request_id.bytes().hi.erase(), request_id.bytes().lo.erase()];
         limbs.extend(output_limbs.iter().map(|w| w.erase()));
         let digest = c.keccak256(alignment, &limbs);
         B32::from_typed(c, digest)
@@ -730,7 +740,7 @@ pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
 /// verification (big-endian stored, reversed into scalars).
 pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
     c: &mut Circuit3,
-    request_id: &B32<V>,
+    request_id: &RequestId<V>,
     output_limbs: &[Wire3<FieldT, V>],
     big_r_x: &B32<V>,
     s: &B32<V>,
@@ -788,7 +798,7 @@ fn verify_attestation_signature<V: Vis3>(
 /// is `keccak256(borsh(v))` for zero extra rows.
 pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
-    request_id: &B32<V>,
+    request_id: &RequestId<V>,
     output: &T,
 ) -> B32<V> {
     c.region("signet: attestation digest (keccak)", |c| {
@@ -810,7 +820,7 @@ pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
 /// carries the response kind.
 pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
-    request_id: &B32<V>,
+    request_id: &RequestId<V>,
     output: &T,
     big_r_x: &B32<V>,
     s: &B32<V>,

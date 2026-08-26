@@ -948,6 +948,261 @@ impl<V: Vis3> B32<V> {
     }
 }
 
+/// Declare a `Bytes<32>`-shaped newtype and its whole impl set — the M23 R2
+/// sweep's machinery (notes/newtype-survey.org).
+///
+/// The problem it solves is stated there in one line: **every real
+/// cross-assignment hazard in this codebase is a positional argument to an
+/// ordinary `fn`, or a same-typed pair handed to a `LedgerMap` op**, and a
+/// `Bytes<32>` is the shape that hazard keeps taking — a request id, a
+/// secret key, an identity commitment, a refund commitment, a coin nonce, a
+/// token domain separator and a coin colour are all `[hi, lo]` pairs, so
+/// today they all type-check for each other.
+///
+/// **A newtype declared this way is provably zero-instruction and
+/// snapshot-neutral**, because every impl DELEGATES:
+///
+/// - [`CircuitArg::declare`] reuses **the caller's [`ArgPath`] verbatim** —
+///   no extra segment — so the declared labels stay `foo_hi`/`foo_lo` and
+///   `interface_snapshot` cannot see the change. Modelling the newtype as
+///   Compact's *struct* shape (`declare(c, &path.field("bytes"))`) would add
+///   a `_bytes` segment and move that snapshot; this deliberately does not.
+/// - No impl adds a `constrain_input` the site did not already have.
+///   `CircuitArg::constrain` is a provided body over `push_prims`/
+///   `push_slots`, so delegation gives the identical constraint sequence.
+///
+/// The precedent is [`ContractAddress`] below, which is hand-written in
+/// exactly this shape and landed zero-movement in M23 A32; this macro is
+/// that impl set, once, in the idiom `select_via_field!` and
+/// `ledger_repr_via_abi!` already use in this crate.
+///
+/// Exported (`minocrab_std::v3::b32_newtype`) because generated interface
+/// crates invoke it: `minocrab-interface-gen` emits it for any Compact
+/// `Alias` whose target is `Bytes<32>`, which is how `RequestId` stopped
+/// being a `pub type` — a newtype with the safety removed.
+///
+/// ```
+/// use minocrab_std::v3::b32_newtype;
+///
+/// b32_newtype! {
+///     /// A protocol-meaningful 32-byte value.
+///     Widget,
+/// }
+/// ```
+#[macro_export]
+macro_rules! b32_newtype {
+    ($( $(#[$m:meta])* $name:ident ),* $(,)?) => {$(
+        $(#[$m])*
+        #[derive(Clone, Copy)]
+        #[repr(transparent)]
+        pub struct $name<V: $crate::v3::Vis3>(pub $crate::v3::B32<V>);
+
+        impl<V: $crate::v3::Vis3> $name<V> {
+            /// The underlying `Bytes<32>` — the same two slots, no
+            /// instructions. The one way OUT of the newtype, so a `grep`
+            /// for `.bytes()` finds every place the distinction is dropped.
+            pub fn bytes(self) -> $crate::v3::B32<V> {
+                self.0
+            }
+
+            /// The FAB limbs, `[hi, lo]`.
+            pub fn limbs(self) -> [::minocrab::v3::Wire3<::minocrab::v3::FieldT, V>; 2] {
+                [self.0.hi, self.0.lo]
+            }
+
+            /// From the `[hi, lo]` limbs a ledger read hands back.
+            pub fn from_limbs(limbs: [::minocrab::v3::Wire3<::minocrab::v3::FieldT, V>; 2]) -> Self {
+                $name($crate::v3::B32 { hi: limbs[0], lo: limbs[1] })
+            }
+
+            /// Forget that both limbs are public — [`B32::private`] for the
+            /// pair. Zero instructions.
+            pub fn private(self) -> $name<::minocrab::Private> {
+                $name(self.0.private())
+            }
+
+            /// Constrain this value entering the circuit (8/248 bits) —
+            /// [`B32::constrain_input`], delegated, so the emitted sequence
+            /// is identical to the bare `Bytes<32>`'s.
+            pub fn constrain_input(self, c: &mut ::minocrab::v3::Circuit3) {
+                self.0.constrain_input(c)
+            }
+
+            /// `bit ? a : b`, limbwise.
+            pub fn cond_select(
+                c: &mut ::minocrab::v3::Circuit3,
+                bit: ::minocrab::v3::Wire3<::minocrab::v3::FieldT, V>,
+                a: &Self,
+                b: &Self,
+            ) -> Self {
+                $name($crate::v3::B32::cond_select(c, bit, &a.0, &b.0))
+            }
+
+            /// To the typed `Bytes<32>` value (instruction-boundary form).
+            pub fn to_typed(
+                self,
+                c: &mut ::minocrab::v3::Circuit3,
+            ) -> ::minocrab::v3::Wire3<::minocrab::v3::Bytes32T, V> {
+                self.0.to_typed(c)
+            }
+
+            /// From the typed `Bytes<32>` value — what a hash result is
+            /// wrapped with, and the point at which a digest becomes THIS
+            /// protocol value rather than any other 32-byte one.
+            pub fn from_typed(
+                c: &mut ::minocrab::v3::Circuit3,
+                typed: ::minocrab::v3::Wire3<::minocrab::v3::Bytes32T, V>,
+            ) -> Self {
+                $name($crate::v3::B32::from_typed(c, typed))
+            }
+        }
+
+        /// A struct of one `Bytes<32>`, which flattens to exactly that
+        /// `Bytes<32>`'s slots.
+        impl<V: $crate::v3::Vis3> ::minocrab::v3::CircuitAbi for $name<V> {
+            const SLOTS: usize = <$crate::v3::B32<V> as ::minocrab::v3::CircuitAbi>::SLOTS;
+
+            fn push_atoms(atoms: &mut Vec<::minocrab::AlignmentAtom>) {
+                <$crate::v3::B32<V> as ::minocrab::v3::CircuitAbi>::push_atoms(atoms);
+            }
+
+            fn push_prims(prims: &mut Vec<::minocrab::v3::Prim>) {
+                <$crate::v3::B32<V> as ::minocrab::v3::CircuitAbi>::push_prims(prims);
+            }
+        }
+
+        impl $crate::v3::CircuitArg for $name<::minocrab::Private> {
+            fn declare(c: &mut ::minocrab::v3::Circuit3, path: &$crate::v3::ArgPath) -> Self {
+                // THE CALLER'S PATH, VERBATIM — see the macro's docs.
+                $name(<$crate::v3::B32<::minocrab::Private> as $crate::v3::CircuitArg>::declare(c, path))
+            }
+
+            fn push_slots(
+                &self,
+                slots: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Private>>,
+            ) {
+                $crate::v3::CircuitArg::push_slots(&self.0, slots)
+            }
+        }
+
+        impl ::minocrab::v3::CallArg for $name<::minocrab::Public> {
+            fn push_call_slots(
+                &self,
+                slots: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
+            ) {
+                ::minocrab::v3::CallArg::push_call_slots(&self.0, slots)
+            }
+        }
+
+        impl ::minocrab::v3::CallResult for $name<::minocrab::Public> {
+            fn from_call_slots(
+                slots: &[::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>],
+            ) -> Self {
+                $name(<$crate::v3::B32<::minocrab::Public> as ::minocrab::v3::CallResult>::from_call_slots(slots))
+            }
+        }
+
+        impl $crate::v3::CircuitOut for $name<::minocrab::Public> {
+            const SLOTS: usize = <$crate::v3::B32<::minocrab::Public> as $crate::v3::CircuitOut>::SLOTS;
+
+            fn emit(self, c: &mut ::minocrab::v3::Circuit3, label: &str) {
+                $crate::v3::CircuitOut::emit(self.0, c, label)
+            }
+        }
+
+        impl ::minocrab::v3::Disclose for $name<::minocrab::Private> {
+            type Public = $name<::minocrab::Public>;
+
+            fn disclose_as<L: ::minocrab::v3::DisclosureLabel>(
+                self,
+                c: &mut ::minocrab::v3::Circuit3,
+            ) -> $name<::minocrab::Public> {
+                $name(::minocrab::v3::Disclose::disclose_as::<L>(self.0, c))
+            }
+        }
+
+        /// Two slots — the `[hi, lo]` pair, the same cost the bare
+        /// `Bytes<32>` has.
+        impl<V: $crate::v3::Vis3> ::minocrab::v3::Select<V> for $name<V> {
+            fn select(
+                c: &mut ::minocrab::v3::Circuit3,
+                bit: ::minocrab::v3::Wire3<::minocrab::v3::FieldT, V>,
+                a: Self,
+                b: Self,
+            ) -> Self {
+                $name(::minocrab::v3::Select::select(c, bit, a.0, b.0))
+            }
+        }
+
+        /// In a ledger slot: pure delegation to the ABI traits, the same
+        /// path `ledger_repr_via_abi!` takes for every leaf.
+        impl $crate::v3::LedgerRepr for $name<::minocrab::Public> {
+            fn atoms() -> Vec<::minocrab::AlignmentAtom> {
+                <Self as ::minocrab::v3::CircuitAbi>::atoms()
+            }
+
+            fn push_limbs(
+                &self,
+                _c: &mut ::minocrab::v3::Circuit3,
+                limbs: &mut Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
+            ) {
+                ::minocrab::v3::CallArg::push_call_slots(self, limbs)
+            }
+
+            #[track_caller]
+            fn from_limbs(
+                limbs: Vec<::minocrab::v3::Wire3<::minocrab::v3::FieldT, ::minocrab::Public>>,
+            ) -> Self {
+                debug_assert_eq!(
+                    limbs.len(),
+                    <Self as ::minocrab::v3::CircuitAbi>::SLOTS,
+                    "ledger read handed back the wrong number of limbs"
+                );
+                <Self as ::minocrab::v3::CallResult>::from_call_slots(&limbs)
+            }
+        }
+
+        /// Borsh: one 32-byte atom over the `[hi, lo]` slot pair —
+        /// [`B32`]'s encoding, delegated, so a newtype in a preimage hashes
+        /// exactly the bytes the bare `Bytes<32>` did.
+        impl<V: $crate::v3::Vis3> $crate::v3::borsh::CircuitBorsh<V> for $name<V> {
+            const LEN: usize = <$crate::v3::B32<V> as $crate::v3::borsh::CircuitBorsh<V>>::LEN;
+
+            fn push_limbs(&self, limbs: &mut $crate::v3::borsh::Limbs<V>) {
+                $crate::v3::borsh::CircuitBorsh::push_limbs(&self.0, limbs)
+            }
+
+            fn push_segments(&self, out: &mut $crate::v3::Serializer<V>) {
+                $crate::v3::borsh::CircuitBorsh::push_segments(&self.0, out)
+            }
+
+            fn constrain_canonical(&self, c: &mut ::minocrab::v3::Circuit3) {
+                $crate::v3::borsh::CircuitBorsh::constrain_canonical(&self.0, c)
+            }
+
+            fn read<R: $crate::v3::borsh::BorshReader<V>>(
+                c: &mut ::minocrab::v3::Circuit3,
+                r: &mut R,
+            ) -> Self {
+                $name(<$crate::v3::B32<V> as $crate::v3::borsh::CircuitBorsh<V>>::read(c, r))
+            }
+
+            fn push_layout(
+                path: &$crate::v3::borsh::LayoutPath,
+                offset: &mut usize,
+                out: &mut Vec<$crate::v3::borsh::FieldSpec>,
+            ) {
+                <$crate::v3::B32<V> as $crate::v3::borsh::CircuitBorsh<V>>::push_layout(path, offset, out)
+            }
+        }
+    )*};
+}
+
+/// The R2 sweep's declarative newtype constructor — see its own docs.
+/// Re-exported under `v3` so a generated interface crate's single
+/// `use minocrab_std::v3::…` line brings it in with everything else.
+pub use crate::b32_newtype;
+
 /// Compact's `ContractAddress` — a struct of one `Bytes<32>`, and the type
 /// every cross-contract call names its target with (164 occurrences in the
 /// corpus). A newtype rather than a bare [`B32`] because a contract address

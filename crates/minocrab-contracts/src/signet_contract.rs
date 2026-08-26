@@ -79,7 +79,7 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
 #[circuit]
 pub fn sign_bidirectional(
     c: &mut Circuit3,
-    request_id: B32<Private>,
+    request_id: RequestId<Private>,
     notification: SignBidirectionalEventNotification<Private>,
 ) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
     let version = notification.version.field();
@@ -93,7 +93,7 @@ pub fn sign_bidirectional(
     c.region("event serialize + emit", |c| {
         let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
         s.push_uint(version, 1);
-        s.push_b32(&rid);
+        s.push_b32(&rid.bytes());
         s.push_bytes_n(&payload);
         emit_misc(c, s);
     });
@@ -134,7 +134,7 @@ fn respond_like(
     // payload: requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1) ‖ zeros(127)
     c.region("event serialize + emit", |c| {
         let mut s = misc_name(c, name);
-        s.push_b32(&rid);
+        s.push_b32(&rid.bytes());
         s.push_b32(&x);
         s.push_b32(&y);
         s.push_b32(&s_scalar);

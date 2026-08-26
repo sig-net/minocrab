@@ -31,10 +31,12 @@
 pub mod notification;
 
 use minocrab::Public;
-use minocrab_std::v3::{interface, BytesN, CircuitArg, Uint, Vis3, B32};
+use minocrab_std::v3::{b32_newtype, interface, BytesN, CircuitArg, Uint, Vis3, B32};
 
-/// Compact `RequestId = Bytes<32>`.
-pub type RequestId<V> = B32<V>;
+b32_newtype! {
+    /// Compact `RequestId = Bytes<32>`.
+    RequestId,
+}
 
 /// Compact `struct SignBidirectionalEventNotification { version: Uint<8>, payload: Bytes<128> }`.
 #[derive(Clone, CircuitArg)]

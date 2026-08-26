@@ -203,7 +203,7 @@ fn a_pinned_struct_argument_call_lowers_like_the_hand_written_handle() {
     let attributed = notify_call(|c, one| {
         let signer = SignetSigner::at_field(1).pin(c, one);
         let (id, note) = notification(c, one);
-        signer.sign_bidirectional(c, one, id, note);
+        signer.sign_bidirectional(c, one, signet_signer_interface::RequestId(id), note);
     });
     let hand = notify_call(|c, one| {
         let signer = HandSigner::at_field(1).pin(c, one);

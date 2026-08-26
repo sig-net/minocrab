@@ -370,8 +370,8 @@ pub fn deposit(
 fn check_fresh_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
     c: &mut Circuit3,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
-) -> B32<Public> {
+    map: &LedgerMap<signet::RequestId<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+) -> signet::RequestId<Public> {
     let request_id_priv = signet::calculate_request_id(c, request);
     c.region("record: freshness", |c| {
         let request_id = request_id_priv.disclose_as::<RequestId>(c);
@@ -388,8 +388,8 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
-    request_id: &B32<Public>,
+    map: &LedgerMap<signet::RequestId<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    request_id: &signet::RequestId<Public>,
 ) {
     c.region("record: insert", |c| {
         emit(c, one, &counter_increment(SIGNET_REQUEST_NONCE, 1));
@@ -408,7 +408,7 @@ fn notify_signet(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     me: ContractAddress<Public>,
-    request_id: &B32<Public>,
+    request_id: &signet::RequestId<Public>,
     notify_path: [u8; 4],
 ) {
     c.region("xcall: notify signet", |c| {
@@ -430,9 +430,9 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
     one: Wire3<FieldT, Public>,
     me: ContractAddress<Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
-    map: &LedgerMap<B32<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
+    map: &LedgerMap<signet::RequestId<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
     notify_path: [u8; 4],
-) -> B32<Public> {
+) -> signet::RequestId<Public> {
     let request_id = check_fresh_request(c, request, map);
     insert_request(c, one, request, map, &request_id);
     notify_signet(c, one, me, &request_id, notify_path);
@@ -467,7 +467,7 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
 fn withdraw_refund_commitment(
     c: &mut Circuit3,
     sk: &B32<Private>,
-    request_id: &B32<Private>,
+    request_id: &signet::RequestId<Private>,
 ) -> B32<Private> {
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
@@ -476,8 +476,8 @@ fn withdraw_refund_commitment(
             pad.lo.private(),
             sk.hi,
             sk.lo,
-            request_id.hi,
-            request_id.lo,
+            request_id.bytes().hi,
+            request_id.bytes().lo,
         ]);
         let (hi, lo) = c.div_mod_power_of_two(f, 248);
         B32 { hi, lo }
@@ -662,10 +662,7 @@ pub fn withdraw(
     // refundCommitment.insert(requestId,
     //   disclose(withdrawRefundCommitment(callerSecretKey(), requestId)))
     let sk = common::witness_sk(c);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
+    let rid_priv = request_id.private();
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<WithdrawerRefundCommitment>(c);
     VAULT.refund_commitment.insert(c, &request_id, &rc);
@@ -868,10 +865,7 @@ pub fn swap(
 
     // swapRefundCommitment.insert(requestId, disclose(...))
     let sk = common::witness_sk(c);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
+    let rid_priv = request_id.private();
     let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
     let rc = rc.disclose_as::<SwapperRefundCommitment>(c);
     VAULT.swap_refund_commitment.insert(c, &request_id, &rc);
@@ -1080,7 +1074,7 @@ pub const VAULT_TOKEN_TAG: u8 = 0x01;
 /// `respond.recoveryId` are part of the wire shape and read by nothing, as
 /// in the Compact original).
 struct SettleArgs {
-    request_id: B32<Private>,
+    request_id: signet::RequestId<Private>,
     big_r_x: B32<Private>,
     sig_s: B32<Private>,
     mint_nonce: B32<Private>,
@@ -1094,14 +1088,11 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
     one: Wire3<FieldT, Public>,
     args: &SettleArgs,
     output_limbs: &[Wire3<FieldT, Private>],
-) -> B32<Public> {
+) -> signet::RequestId<Public> {
     let request_id = args.request_id.disclose_as::<SettleRequestId>(c);
     assert_initialized(c);
     let mpc_key = common::cell_read_point(c, one, MPC_RESPONSE_KEY);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
+    let rid_priv = request_id.private();
     let valid = signet::verify_respond_bidirectional_event::<Private, LEN_OUTPUT>(
         c,
         &rid_priv,
@@ -1126,7 +1117,7 @@ fn verify_attestation<const LEN_OUTPUT: usize>(
 /// an answer in the transcript on the success path, which needs none.
 fn refund_surrendered_value(
     c: &mut Circuit3,
-    request_id: &B32<Public>,
+    request_id: &signet::RequestId<Public>,
     ev: &VaultRecord,
     mint_nonce: &B32<Public>,
 ) {
@@ -1134,10 +1125,7 @@ fn refund_surrendered_value(
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
     c.region("withdrawer gate", |c| {
         let sk = common::witness_sk(c);
-        let rid_priv = B32 {
-            hi: request_id.hi.private(),
-            lo: request_id.lo.private(),
-        };
+        let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.refund_commitment.lookup(c, request_id);
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
@@ -1177,7 +1165,7 @@ fn refund_surrendered_value(
 #[circuit]
 pub fn complete_withdraw(
     c: &mut Circuit3,
-    request_id: B32<Private>,
+    request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<1>,
     mint_nonce: B32<Private>,
@@ -1238,7 +1226,7 @@ pub fn complete_withdraw(
 #[circuit]
 pub fn complete_swap(
     c: &mut Circuit3,
-    request_id: B32<Private>,
+    request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<8>,
     mint_nonce: B32<Private>,
@@ -1267,10 +1255,7 @@ pub fn complete_swap(
     // Swapper gate.
     c.region("swapper gate", |c| {
         let sk = common::witness_sk(c);
-        let rid_priv = B32 {
-            hi: request_id.hi.private(),
-            lo: request_id.lo.private(),
-        };
+        let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
         let eq_hi = c.test_eq(rc.hi, stored.hi.private());
@@ -1431,7 +1416,7 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
 #[circuit]
 pub fn refund(
     c: &mut Circuit3,
-    request_id: B32<Private>,
+    request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<5>,
     mint_nonce: B32<Private>,
@@ -1501,10 +1486,7 @@ pub fn refund(
     // the port's per-route authorisation.
     c.region("claimant gate", |c| {
         let sk = common::witness_sk(c);
-        let rid_priv = B32 {
-            hi: request_id.hi.private(),
-            lo: request_id.lo.private(),
-        };
+        let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let wd_stored = VAULT
             .refund_commitment
@@ -1598,7 +1580,7 @@ struct RespondSignature {
 #[circuit]
 pub fn claim(
     c: &mut Circuit3,
-    request_id: B32<Private>,
+    request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<1>,
     mint_nonce: B32<Private>,
@@ -1639,10 +1621,7 @@ pub fn claim(
     // assert(verifyRespondBidirectionalEvent<1>(requestId,
     //   serializedOutput, event, mpcResponseKey))
     let mpc_key = common::cell_read_point(c, one, MPC_RESPONSE_KEY);
-    let rid_priv = B32 {
-        hi: request_id.hi.private(),
-        lo: request_id.lo.private(),
-    };
+    let rid_priv = request_id.private();
     let valid = signet::verify_respond_bidirectional_event::<Private, 1>(
         c,
         &rid_priv,
