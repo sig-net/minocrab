@@ -20,6 +20,7 @@ pub mod events_borsh;
 pub mod hashing;
 pub mod interfaces;
 pub mod kernel_tokens;
+pub mod manager;
 pub mod mint_tokens;
 pub mod nested;
 pub mod opaque;

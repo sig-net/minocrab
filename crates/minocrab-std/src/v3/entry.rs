@@ -39,14 +39,14 @@
 
 use minocrab::v3::{
     uint_atom_bytes, Circuit3, CircuitAbi, Compiled3, FieldT, JubjubPointT, Prim,
-    Secp256k1PointT, Wire3,
+    Secp256k1PointT, Secp256k1ScalarT, Wire3,
 };
 use minocrab::{AlignmentAtom, Private, Public};
 
 use super::{
     Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
-    MerkleTreeDigest, Opaque, Secp256k1Point, ShieldedCoinInfo3, ShieldedSendResult, TsType, Uint,
-    UserAddress, Vis3, ZswapCoinPublicKey, B32,
+    MerkleTreeDigest, Opaque, Secp256k1Point, Secp256k1Scalar, ShieldedCoinInfo3,
+    ShieldedSendResult, TsType, Uint, UserAddress, Vis3, ZswapCoinPublicKey, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -330,6 +330,35 @@ impl CircuitArg for Secp256k1Point<Private> {
     }
 
     /// A point slot is not a native field wire: nothing to constrain, and
+    /// nothing a slot list could carry it as.
+    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
+}
+
+/// Compact's `Secp256k1Scalar`: ONE slot that is not a field element, the
+/// same story as [`Secp256k1Point`] one type over — no constraint, no native
+/// slot. The FAB atoms are `b24 + b8` (reduce-to-zkir.ss:34-91,
+/// notes/ledger-abi.org §3). `Prim::Point` is the marker for "a slot the
+/// native-field machinery must skip", which a scalar slot is for exactly the
+/// point's reasons; the constraint table maps it to no constraint either way.
+impl<V: Vis3> CircuitAbi for Secp256k1Scalar<V> {
+    const SLOTS: usize = 1;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        atoms.push(AlignmentAtom::Bytes { length: 24 }); // low 24 bytes
+        atoms.push(AlignmentAtom::Bytes { length: 8 }); // high 8 bytes
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        prims.push(Prim::Point);
+    }
+}
+
+impl CircuitArg for Secp256k1Scalar<Private> {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        Secp256k1Scalar::from_scalar(c.arg::<Secp256k1ScalarT>(path.as_str()))
+    }
+
+    /// A scalar slot is not a native field wire: nothing to constrain, and
     /// nothing a slot list could carry it as.
     fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
 }

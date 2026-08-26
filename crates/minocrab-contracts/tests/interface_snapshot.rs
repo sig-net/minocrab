@@ -2299,6 +2299,117 @@ in  k3_lo: Scalar<BLS12-381>
 out value: Scalar<BLS12-381>
 ",
     ),
+    (
+        "manager::is_registered",
+        "\
+in  owner_hi: Scalar<BLS12-381>
+in  owner_lo: Scalar<BLS12-381>
+out registered: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::account_record",
+        "\
+in  account_hi: Scalar<BLS12-381>
+in  account_lo: Scalar<BLS12-381>
+out record registered: Scalar<BLS12-381>
+out record mode: Scalar<BLS12-381>
+out record owner: Scalar<BLS12-381>
+out record nextNonce: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::shielded_account_balance",
+        "\
+in  owner_hi: Scalar<BLS12-381>
+in  owner_lo: Scalar<BLS12-381>
+in  colour_hi: Scalar<BLS12-381>
+in  colour_lo: Scalar<BLS12-381>
+out balance: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::unshielded_account_balance",
+        "\
+in  owner_hi: Scalar<BLS12-381>
+in  owner_lo: Scalar<BLS12-381>
+in  colour_hi: Scalar<BLS12-381>
+in  colour_lo: Scalar<BLS12-381>
+out balance: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::pool_value",
+        "\
+in  colour_hi: Scalar<BLS12-381>
+in  colour_lo: Scalar<BLS12-381>
+out value: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::pool_has_colour",
+        "\
+in  colour_hi: Scalar<BLS12-381>
+in  colour_lo: Scalar<BLS12-381>
+out present: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::deposit_shielded",
+        "\
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+in  account_hi: Scalar<BLS12-381>
+in  account_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::deposit_unshielded",
+        "\
+in  colour_hi: Scalar<BLS12-381>
+in  colour_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+in  account_hi: Scalar<BLS12-381>
+in  account_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "manager::execute",
+        "\
+in  payload_selector: Scalar<BLS12-381>
+in  payload_authMode: Scalar<BLS12-381>
+in  payload_account_hi: Scalar<BLS12-381>
+in  payload_account_lo: Scalar<BLS12-381>
+in  payload_owner: Scalar<BLS12-381>
+in  payload_accountSalt_hi: Scalar<BLS12-381>
+in  payload_accountSalt_lo: Scalar<BLS12-381>
+in  payload_nonce: Scalar<BLS12-381>
+in  payload_validUntil: Scalar<BLS12-381>
+in  payload_primaryColor_hi: Scalar<BLS12-381>
+in  payload_primaryColor_lo: Scalar<BLS12-381>
+in  payload_primaryAmount: Scalar<BLS12-381>
+in  payload_recipientKind: Scalar<BLS12-381>
+in  payload_recipient_hi: Scalar<BLS12-381>
+in  payload_recipient_lo: Scalar<BLS12-381>
+in  payload_toAccount_hi: Scalar<BLS12-381>
+in  payload_toAccount_lo: Scalar<BLS12-381>
+in  payload_wantNonce_hi: Scalar<BLS12-381>
+in  payload_wantNonce_lo: Scalar<BLS12-381>
+in  payload_wantColor_hi: Scalar<BLS12-381>
+in  payload_wantColor_lo: Scalar<BLS12-381>
+in  payload_wantAmount: Scalar<BLS12-381>
+in  payload_creditAccount_hi: Scalar<BLS12-381>
+in  payload_creditAccount_lo: Scalar<BLS12-381>
+in  sig_r: Scalar<Secp256k1>
+in  sig_s: Scalar<Secp256k1>
+in  pk: Point<Secp256k1>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

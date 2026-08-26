@@ -1,3 +1,6 @@
+src/aa-midnight-evm-experiment/contracts/manager.compact	ok	
+src/aa-midnight-evm-experiment/contracts/test-support/minter-collide.compact	ok	
+src/aa-midnight-evm-experiment/contracts/test-support/minter.compact	ok	
 src/compact/compiler/standard-library.compact	fail	Exception: src/compact/compiler/standard-library.compact line 24 char 1:
 src/compact/compiler/zkir-v3-library.compact	fail	Exception: src/compact/compiler/zkir-v3-library.compact line 147 char 45:
 src/compact/examples/adt/exports/counter.compact	ok	

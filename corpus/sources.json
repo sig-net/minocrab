@@ -86,6 +86,18 @@
       "flags": [
         "--feature-zkir-v3"
       ]
+    },
+    {
+      "name": "aa-midnight-evm-experiment",
+      "url": "https://github.com/acedward/AA-midnight-evm-experiment-v3",
+      "rev": "713a20215f33e02904ea5bd699b7de7f76562e1b",
+      "license": "NONE (no license file in repo)",
+      "paths": [
+        "contracts"
+      ],
+      "flags": [
+        "--feature-zkir-v3"
+      ]
     }
   ]
 }

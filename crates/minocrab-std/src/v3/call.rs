@@ -23,7 +23,7 @@ use minocrab::Public;
 
 use super::{
     Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, MerkleTreeDigest, Opaque,
-    ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
+    QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
 /// Compact's `Opaque<'ts-type'>` across a contract boundary — one limb, in
@@ -215,6 +215,29 @@ impl CallResult for ShieldedCoinInfo3<Public> {
             nonce: B32::from_call_slots(&slots[..2]),
             color: B32::from_call_slots(&slots[2..4]),
             value: slots[4],
+        }
+    }
+}
+
+/// A QUALIFIED coin crossing a boundary — [`ShieldedCoinInfo3`]'s slots then
+/// the `Uint<64>` tree index. First needed by the AA manager's `pools`
+/// (`Map<Bytes<32>, QualifiedShieldedCoinInfo>`), whose `lookup` reads the
+/// pooled coin back out.
+impl CallArg for QualifiedShieldedCoinInfo3<Public> {
+    fn push_call_slots(&self, slots: &mut Vec<Wire3<FieldT, Public>>) {
+        self.downcast().push_call_slots(slots);
+        slots.push(self.mt_index);
+    }
+}
+
+impl CallResult for QualifiedShieldedCoinInfo3<Public> {
+    fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
+        let coin = ShieldedCoinInfo3::from_call_slots(&slots[..5]);
+        QualifiedShieldedCoinInfo3 {
+            nonce: coin.nonce,
+            color: coin.color,
+            value: coin.value,
+            mt_index: slots[5],
         }
     }
 }

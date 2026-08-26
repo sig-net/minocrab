@@ -237,6 +237,15 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("nested::hmt_reset", 8, 144),
     ("nested::deep_insert", 9, 330),
     ("nested::deep_lookup", 9, 311),
+    ("manager::is_registered", 8, 129),
+    ("manager::account_record", 9, 311),
+    ("manager::shielded_account_balance", 13, 4000),
+    ("manager::unshielded_account_balance", 13, 4000),
+    ("manager::pool_value", 8, 158),
+    ("manager::pool_has_colour", 8, 129),
+    ("manager::deposit_shielded", 16, 38487),
+    ("manager::deposit_unshielded", 13, 4150),
+    ("manager::execute", 18, 209330),
     // GENERATED END
 ];
 

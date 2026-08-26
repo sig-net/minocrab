@@ -11,8 +11,8 @@ use minocrab::v3::Compiled3;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
     adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
-    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, mint_tokens, nested,
-    opaque,
+    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, manager, mint_tokens,
+    nested, opaque,
     serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
     xcontract_events_borsh,
 };
@@ -458,6 +458,22 @@ pub fn circuits() -> Vec<Circuit> {
     // because the typed surface is stage B2 and the encoding had to be
     // proven first. Derived, like `coins` above.
     listed.extend(of("nested", &nested::Nested::CIRCUITS));
+    // `manager.compact` (aa-midnight-evm-experiment, pinned in
+    // corpus/sources.json): the AA custody contract's nine provable
+    // circuits, ported SEMANTICALLY rather than instruction-mirroring —
+    // the rows here are deliberately BELOW compactc's artifacts
+    // (tests/manager_differential.rs holds the PI-equality warrant).
+    listed.extend([
+        c!("manager::is_registered", || manager::is_registered()),
+        c!("manager::account_record", || manager::account_record()),
+        c!("manager::shielded_account_balance", || manager::shielded_account_balance()),
+        c!("manager::unshielded_account_balance", || manager::unshielded_account_balance()),
+        c!("manager::pool_value", || manager::pool_value()),
+        c!("manager::pool_has_colour", || manager::pool_has_colour()),
+        c!("manager::deposit_shielded", || manager::deposit_shielded()),
+        c!("manager::deposit_unshielded", || manager::deposit_unshielded()),
+        c!("manager::execute", || manager::execute()),
+    ]);
     listed
 }
 

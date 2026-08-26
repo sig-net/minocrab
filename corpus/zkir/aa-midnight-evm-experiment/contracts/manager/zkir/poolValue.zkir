@@ -1,0 +1,33 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+    { "name": "%colour.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%colour.1", "type": "Scalar<BLS12-381>" }
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>"
+  ],
+  "instructions": [
+    { "op": "constrain_bits", "val": "%colour.0", "bits": 8 },
+    { "op": "constrain_bits", "val": "%colour.1", "bits": 248 },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.2", "guard": null },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%colour.0", "%colour.1"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x18"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x01", "%t.2"] },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.3", "guard": "%t.2" },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.4", "guard": "%t.2" },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.5", "guard": "%t.2" },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.6", "guard": "%t.2" },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.7", "guard": "%t.2" },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.8", "guard": "%t.2" },
+    { "op": "impact", "guard": "%t.2", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "%t.2", "inputs": ["0x50", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "%t.2", "inputs": ["0x50", "0x01", "0x20", "%colour.0", "%colour.1"] },
+    { "op": "impact", "guard": "%t.2", "inputs": ["0x0c", "0x04", "0x20", "0x20", "0x10", "0x08", "%t.3", "%t.4", "%t.5", "%t.6", "%t.7", "%t.8"] },
+    { "op": "cond_select", "output": "%t.9", "bit": "%t.2", "a": "%t.7", "b": "0x00" },
+    { "op": "output", "vals": ["%t.9"] }
+  ]
+}

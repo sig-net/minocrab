@@ -1,0 +1,111 @@
+// Minter v2 — 00004-multi-token-custody (EXPERIMENTAL_LANE / LANE-DEV-1)
+//
+// FR-101. One source, deployed as many times as you like: the domain separators are DERIVED from a
+// per-deployment tag supplied as a CONSTRUCTOR ARGUMENT (owner decision Q1, 2026-08-18 — "lets add
+// in the constructor the domain sep so we get consistent tokens id when minted (and is a more
+// standard practive)"). 00004 deploys it three times:
+//
+//   Minter1 tag "TOKA" -> colours S1 (shielded) + U1 (unshielded)   — configured in the Manager
+//   Minter2 tag "TOKB" -> colours S2 (shielded) + U2 (unshielded)   — configured in the Manager
+//   Minter3 tag "TOKC" -> two control colours                        — NEVER configured (NC-4)
+//
+// Derivation, recorded here as the contract header per Plan 02 Phase 1:
+//
+//   sep_family = persistentHash<Vector<2, Bytes<32>>>([tag, familyTag])
+//   familyTag  = pad(32, "aa00004:minter:shielded") | pad(32, "aa00004:minter:unshielded")
+//   colour     = tokenType(sep_family, kernel.self())
+//
+// The two family tags are distinct CONSTANTS, so the two separators of one deployment cannot
+// collide however the tag is chosen; colours stay contract-scoped, so two deployments differ twice
+// over (different tag AND different address). This is exactly the scheme probe P2 proved end to end
+// — compile and deploy — in Plan 01 (`contracts/probes/p2-constructor-tag.compact`).
+//
+// Constructor arguments are witness data under the compiler's witness-protection program, so the
+// tag must be `disclose`d before it can reach ledger state (probe P2, finding F-102).
+//
+// Circuit names keep 00003's `shieldedColor` / `unshieldedColor` spelling (Plan 02 Phase 1: "Keep
+// `shieldedColor()` / `unshieldedColor()` reads"); the Manager, which is substantially new, uses
+// the spec's `colour` spelling.
+//
+// This is a demo minting tool, not a product: any party may request minting. There is no custody
+// state here — custody lives in the Manager.
+//
+// Derived from the pinned standard library at compactc-v0.33.0-rc.2:
+//   mintShieldedToken L125, mintUnshieldedToken L299, tokenType L121
+
+import CompactStandardLibrary;
+
+export {
+  mintShieldedTo,
+  mintUnshieldedTo,
+  shieldedColor,
+  unshieldedColor,
+  deploymentTag,
+  shieldedSep,
+  unshieldedSep
+}
+
+// --- per-deployment state, fixed at construction -------------------------------------------------
+
+/// The tag this deployment was constructed with (evidence: the harness reads it back and compares
+/// it to the argument it passed).
+export ledger deploymentTag: Bytes<32>;
+export ledger shieldedSep: Bytes<32>;
+export ledger unshieldedSep: Bytes<32>;
+
+// --- colours -------------------------------------------------------------------------------------
+
+/// Per-family constants. Distinct by construction, so one deployment's two separators can never
+/// collide.
+circuit shieldedFamilyTag(): Bytes<32> {
+  return pad(32, "aa00004:minter:shielded");
+}
+
+circuit unshieldedFamilyTag(): Bytes<32> {
+  return pad(32, "aa00004:minter:unshielded");
+}
+
+circuit deriveSep(t: Bytes<32>, family: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([t, family]);
+}
+
+constructor(tag: Bytes<32>) {
+  const t = disclose(tag);
+  deploymentTag = t;
+  shieldedSep = deriveSep(t, shieldedFamilyTag());
+  unshieldedSep = deriveSep(t, unshieldedFamilyTag());
+}
+
+/// The shielded colour minted by THIS deployment.
+export circuit shieldedColor(): Bytes<32> {
+  return tokenType(shieldedSep, kernel.self());
+}
+
+/// The unshielded colour minted by THIS deployment.
+export circuit unshieldedColor(): Bytes<32> {
+  return tokenType(unshieldedSep, kernel.self());
+}
+
+// --- minting ---------------------------------------------------------------------------------
+
+/// Mint `value` of this deployment's shielded colour to `recipient`.
+/// When the recipient is a contract, the stdlib claims the receive only if that contract is *this*
+/// one; minting into the Manager therefore requires the Manager's receive circuit to run in the
+/// same transaction.
+export circuit mintShieldedTo(
+  value: Uint<64>,
+  nonce: Bytes<32>,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): ShieldedCoinInfo {
+  assert(value > 0, "mint value must be positive");
+  return mintShieldedToken(shieldedSep, disclose(value), disclose(nonce), disclose(recipient));
+}
+
+/// Mint `amount` of this deployment's unshielded colour to `recipient`.
+export circuit mintUnshieldedTo(
+  amount: Uint<64>,
+  recipient: Either<ContractAddress, UserAddress>
+): Bytes<32> {
+  assert(amount > 0, "mint amount must be positive");
+  return mintUnshieldedToken(unshieldedSep, disclose(amount), disclose(recipient));
+}

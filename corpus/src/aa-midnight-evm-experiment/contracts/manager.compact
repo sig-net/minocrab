@@ -1,0 +1,1420 @@
+// ================================================================================================
+// MANAGER — an account-abstraction custody contract for Midnight
+// ================================================================================================
+//
+// Holds value on behalf of registered ACCOUNTS and attributes every unit of it to exactly one
+// (account, colour) pair. Deliberately OPEN: no token registry, no admin circuit, no colour list
+// anywhere in this file. It deploys knowing zero colours and custodies whatever arrives, including
+// a colour minted long after deployment.
+//
+//   * CUSTODY IS FAMILY-SEPARATED. Shielded value (zswap coins pooled inside the contract) and
+//     unshielded value (the contract's own kernel balance) live in separate maps under distinct key
+//     domains, so the two can never alias. See FAMILY-SCOPED STORAGE.
+//
+//   * AUTHORIZATION IS DUAL-MODE. An account is either NATIVE (mode 0 — authorized by a Midnight
+//     witness secret whose commitment IS the account id) or EVM (mode 1 — authorized by an Ethereum
+//     EOA signing an EIP-712 payload). The mode is fixed at registration, and explicit asserts on
+//     every authorized path keep the two isolated.
+//
+//   * THERE IS EXACTLY ONE WRITE GATEWAY: `execute`, taking a FIXED-WIDTH action envelope
+//     (`ExecutePayload`) plus an ECDSA signature, whose `selector` chooses the action:
+//
+//         0  register a native account          4  internal transfer, shielded
+//         1  register an EVM account            5  internal transfer, unshielded
+//         2  withdraw shielded                  6  open a swap-maker offer
+//         3  withdraw unshielded
+//
+//     Every field a selector does not use is constrained to its canonical zero form before any
+//     authentication or custody logic runs. Deposits are the separate entry points
+//     `depositShielded` / `depositUnshielded`: they only ever credit, so they need no gateway.
+//     Selector 6 fuses a swap's give and want legs into one proved call, so a maker's offer settles
+//     ATOMICALLY and cannot half-execute — see THE SWAP MAKER, above `custodyDispatch`.
+//
+//   * `execute` FITS IN A k=19 CIRCUIT (2^19 = 524,288 rows) and THE CONTRACT EMITS NO EVENTS.
+//     Those two facts are connected; see THE SEMANTIC COMMITMENT near the end of the file.
+//
+// THE `export` BLOCK BELOW IS THE COMPLETE PUBLIC SURFACE. Nine exported circuits read ledger state
+// and are therefore PROVABLE — each gets a proving and verifier key: `execute`, `depositShielded`,
+// `depositUnshielded`, `isRegistered`, `accountRecord`, `shieldedAccountBalance`,
+// `unshieldedAccountBalance`, `poolValue`, `poolHasColour`. Every other exported circuit is PURE: it
+// reads no ledger state, emits no key, and costs nothing on chain. PURE EXPORTS ARE FREE ORACLES —
+// off-chain code runs the compiled artifact to get the contract's OWN answer for a key derivation,
+// an EIP-712 digest, a zswap commitment or the semantic commitment, instead of reimplementing the
+// scheme and hoping the two agree. The exported ledger names are read handles.
+//
+// --- THE SAFETY STORY: read this before changing anything below ---------------------------------
+//
+//   1. THE WITNESS CHOKE POINT. The DEBITED account is DERIVED, never taken on trust: in native
+//      mode `ownerCommitment(localOwnerSecret())`, a commitment to the caller's own witness secret;
+//      in EVM mode a record whose stored owner must equal the address recovered from the signature.
+//      Never the account id the caller wrote into the envelope. Every debiting path funnels through
+//      that one derivation.
+//
+//   2. THE PER-(ACCOUNT, COLOUR) BALANCE GUARD RUNS BEFORE ANY POOL GUARD, and a missing cell reads
+//      as BALANCE 0 — never as an error, never by creating the cell. Security-critical, not
+//      cosmetic: a refused spend leaks nothing about the contract's own holdings and creates no
+//      state. Someone probing with an empty account is refused on their own cell, before the pool
+//      is consulted at all.
+//
+//   3. GUARD BEFORE WRITE, ALWAYS. Every assert precedes its circuit's first write, so A REFUSAL IS
+//      STATE-NEUTRAL: no balance cell, no pool entry, no map growth, no nonce movement. That is
+//      what makes it safe to drive these circuits from untrusted input.
+//
+//   4. CUSTODY STATE IS CREATED LAZILY, ON FIRST CREDIT ONLY. A shielded deposit creates the
+//      colour's pool and the (account, colour) cell; an unshielded deposit creates the cell; the
+//      credit side of a transfer or swap creates the destination's cell. Registration creates NO
+//      balance cell, and nothing else creates anything — so a colour never credited is absent from
+//      every map and reads 0 everywhere.
+//
+//   Opening ADMISSION does not open SPENDING: `deposit*` may credit any REGISTERED account, so a
+//   third party can fund an account they do not control, while every DEBIT still passes 1 and 2.
+//   Authorization is by witness rather than `kernel.caller()` — sound because this contract is
+//   always invoked in root position, and nothing here reads the caller.
+//
+// --- FAMILY-SCOPED STORAGE (the maps themselves are declared under LEDGER STATE below) ----------
+//
+//   pools               colour                  -> ONE pooled coin
+//   shieldedBalances    shieldedKey(a, colour)  -> amount        (shielded family)
+//   unshieldedBalances  unshieldedKey(a, colour)-> amount        (unshielded family)
+//
+// A shielded colour and an unshielded colour may be BYTE-IDENTICAL — nothing prevents it. Two
+// independent defences are in place, either of which would suffice: the families live in separate
+// maps, AND their composite keys are derived under different domain separators, so they could not
+// alias even if the maps were merged. That is also why there is no colour-generic internal
+// transfer: a circuit taking only (to, colour, amount) could not say WHICH family it meant.
+//
+// SHIELDED CUSTODY KEEPS ONE POOLED COIN PER COLOUR — depositing a colour already held MERGES into
+// the existing coin — so `pools` holds at most one entry per colour, a debit is a single coin spend,
+// and per colour c
+//
+//     poolValue(c)      == sum over accounts of shieldedBalances[shieldedKey(a, c)]
+//     pools.member(c)  <=> that sum > 0
+//
+// with the analogous statement over the kernel's unshielded balance for the other family. Every
+// write site maintains it: a credit is paired with a pool insert of the same colour and value, a
+// debit with a re-pool or removal, and an internal transfer moves value between two cells of one
+// colour without touching the pool. THE INVARIANT IS LOAD-BEARING — it keeps the pool guards in
+// `custodyDispatch` strictly behind the per-(account, colour) guard, so they can never refuse first.
+//
+// --- FROZEN BYTES -------------------------------------------------------------------------------
+//
+// The tag strings "aa:manager:owner:v1.0", "aa:manager:shielded:v1" and
+// "aa:manager:unshielded:v1", the zswap separators "midnight:zswap-cc[v1]" and
+// "midnight:zswap-cn[v1]", and every hex byte constant in this file (EIP-712 type hashes, the
+// semantic-commitment tags) are FROZEN DOMAIN SEPARATORS. Their exact bytes are consensus-critical:
+// they determine account ids, storage keys, the digests wallets sign and the values off-chain
+// verifiers recompute — change one byte and every value derived from it changes silently. They must
+// never change.
+//
+// Two of them carry a hard constraint a reader cannot see from the string alone. The owner tag is
+// the type parameter of `persistentCommit<Bytes<21>>`, so it must be EXACTLY 21 bytes — a rename of
+// any other length will not compile. The two family tags sit inside `pad(32, …)`, so any length up
+// to 32 bytes works, but they must stay DISTINCT from each other or the two custody families would
+// alias. The `:v1` / `:v1.0` suffixes exist so a future scheme change gets a new separator rather
+// than a silent reinterpretation of existing state.
+//
+// The zswap separators are the one group NOT chosen by this contract: they reproduce the standard
+// library's own coin-commitment and nullifier preimages byte for byte. Renaming them would not
+// "version" anything — it would make this contract's coins unrecognisable to the ledger.
+
+pragma language_version >= 0.25.0;
+
+import CompactStandardLibrary;
+
+export {
+  execute,
+  depositShielded,
+  depositUnshielded,
+  zswapNullifierOf,
+  zswapCommitmentOf,
+  myAccount,
+  isRegistered,
+  accountRecord,
+  shieldedAccountBalance,
+  unshieldedAccountBalance,
+  shieldedKey,
+  unshieldedKey,
+  poolValue,
+  poolHasColour,
+  evmAccountIdFor,
+  evmDomainSeparatorFor,
+  evmStructHashFor,
+  evmDigestFor,
+  semanticCommitmentFor,
+  accounts,
+  shieldedBalances,
+  unshieldedBalances,
+  pools,
+  accountModes,
+  evmOwners,
+  evmNonces,
+  deploymentDomain
+}
+
+/// The single fixed-width action/auth envelope. Every inactive field is constrained to its
+/// canonical zero representation before authentication or custody logic runs.
+export struct ExecutePayload {
+  selector: Uint<8>;
+  authMode: Uint<8>;
+  account: Bytes<32>;
+  owner: Bytes<20>;
+  accountSalt: Bytes<32>;
+  nonce: Uint<64>;
+  validUntil: Uint<64>;
+  primaryColor: Bytes<32>;
+  primaryAmount: Uint<128>;
+  recipientKind: Uint<8>;
+  recipient: Bytes<32>;
+  toAccount: Bytes<32>;
+  wantNonce: Bytes<32>;
+  wantColor: Bytes<32>;
+  wantAmount: Uint<128>;
+  creditAccount: Bytes<32>;
+}
+
+export struct AccountRecord {
+  registered: Boolean;
+  mode: Uint<8>;
+  owner: Bytes<20>;
+  nextNonce: Uint<64>;
+}
+
+// --- LEDGER STATE -------------------------------------------------------------------------------
+//
+// Note what is NOT here: no colour cells, no `configured` flag, no admin key. This contract's whole
+// colour knowledge is whatever these maps accumulated from credits.
+
+/// Pooled shielded custody, ONE merged coin per shielded colour, created on first credit.
+export ledger pools: Map<Bytes<32>, QualifiedShieldedCoinInfo>;
+
+/// Registered accounts. Registration publishes only a commitment to the owner's secret.
+export ledger accounts: Set<Bytes<32>>;
+
+/// Internal ownership attribution, per (account, colour), PER FAMILY.
+export ledger shieldedBalances: Map<Bytes<32>, Uint<128>>;
+export ledger unshieldedBalances: Map<Bytes<32>, Uint<128>>;
+
+/// Authorization policy is mode-separated. Native records have no EVM owner or nonce entries.
+/// 0 = native witness; 1 = EVM EOA.
+export ledger accountModes: Map<Bytes<32>, Uint<8>>;
+export ledger evmOwners: Map<Bytes<32>, Bytes<20>>;
+export ledger evmNonces: Map<Bytes<32>, Uint<64>>;
+
+/// Fresh-deployment EIP-712 salt, fixed at construction and never written again. The domain
+/// separator binds it, so two deployments of this contract cannot replay each other's signatures.
+export ledger deploymentDomain: Bytes<32>;
+
+constructor(deploymentDomain_: Bytes<32>) {
+  const domain = disclose(deploymentDomain_);
+  assert(domain != default<Bytes<32>>, "deployment domain must be nonzero");
+  deploymentDomain = domain;
+}
+
+// --- owner authorization --------------------------------------------------------------------
+
+witness localOwnerSecret(): Bytes<32>;
+
+/// Account identity = a commitment to the owner's secret. Registering an account publishes only the
+/// commitment; spending requires the witness that opens it.
+circuit ownerCommitment(sk: Bytes<32>): Bytes<32> {
+  return persistentCommit<Bytes<21>>("aa:manager:owner:v1.0", disclose(sk));
+}
+
+/// Assert the witness-derived account selected by `execute` is a registered NATIVE record.
+/// THE single authorization choke point for every native debiting action: the account arrives here
+/// already derived from the witness, so there is nothing caller-supplied to check it against.
+circuit authenticatedNativeAccount(acct: Bytes<32>): Bytes<32> {
+  assert(accounts.member(acct), "caller's owner witness matches no registered account");
+  assert(accountModes.member(acct), "registered account has no authorization mode");
+  assert(accountModes.lookup(acct) == 0, "EVM account cannot enter native authorization");
+  return acct;
+}
+
+// --- family-scoped keys -------------------------------------------------------------------------
+//
+// The two family tags are distinct CONSTANTS, so `shieldedKey(a, c)` and `unshieldedKey(a, c)` are
+// different values for every (a, c) — including a colour whose 32 bytes exist in both families.
+// Both are EXPORTED although nothing on-chain needs that: they touch no ledger state, so no proving
+// key is emitted, and off-chain code can derive the key for every cell BY RUNNING THE COMPILED
+// ARTIFACT instead of reimplementing the hashing scheme. That turns an "exact map sizes, zero
+// unaccounted keys" audit into an enumeration of real state rather than a lookup of the cells the
+// auditor happened to think of.
+
+circuit shieldedFamilyTag(): Bytes<32> {
+  return pad(32, "aa:manager:shielded:v1");
+}
+
+circuit unshieldedFamilyTag(): Bytes<32> {
+  return pad(32, "aa:manager:unshielded:v1");
+}
+
+export circuit shieldedKey(acct: Bytes<32>, colour: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([acct, colour, shieldedFamilyTag()]);
+}
+
+export circuit unshieldedKey(acct: Bytes<32>, colour: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([acct, colour, unshieldedFamilyTag()]);
+}
+
+/// A MISSING CELL READS AS 0 — never as an error, and never by creating the cell. This is the read
+/// the per-(account, colour) guard uses, so refusing an unbacked spend costs no state.
+circuit shieldedBalanceOf(acct: Bytes<32>, colour: Bytes<32>): Uint<128> {
+  const k = shieldedKey(acct, colour);
+  return shieldedBalances.member(k) ? shieldedBalances.lookup(k) : 0;
+}
+
+circuit unshieldedBalanceOf(acct: Bytes<32>, colour: Bytes<32>): Uint<128> {
+  const k = unshieldedKey(acct, colour);
+  return unshieldedBalances.member(k) ? unshieldedBalances.lookup(k) : 0;
+}
+
+// --- setup ------------------------------------------------------------------------------------
+
+/// Shared registration gateway for both authorization modes. It seeds no custody cell and never
+/// stores a secret, a signature or a key — only the account id and its mode.
+circuit registerAccount(acct: Bytes<32>, mode: Uint<8>): [] {
+  assert(acct != default<Bytes<32>>, "account id must be nonzero");
+  assert(!accounts.member(acct), "account already registered");
+  assert(!accountModes.member(acct), "account mode collision");
+  accounts.insert(acct);
+  accountModes.insert(acct, mode);
+}
+
+// --- the EIP-712 byte codec ---------------------------------------------------------------------
+//
+// EVM-mode authorization is an ordinary EIP-712 signature, reproduced byte for byte so that what a
+// wallet displays and signs is exactly what this circuit verifies:
+//
+//     digest = keccak256(0x19 || 0x01 || domainSeparator || structHash)
+//
+// THE DOMAIN SEPARATOR BINDS TWO DEPLOYMENT-SPECIFIC THINGS (`evmDomainSeparatorFor`): the CONTRACT
+// ADDRESS ALIAS — the low 20 bytes of keccak256 of this contract's 32-byte Midnight address, which
+// is what gives a Midnight contract an EVM-shaped `verifyingContract` — and the DEPLOYMENT SALT in
+// `deploymentDomain`. A signature is therefore useless against another contract or another
+// deployment of this one. THE STRUCT HASH IS PER-ACTION (`evmStructHashFor`): each selector has its
+// OWN frozen type hash and field list, so a signature authorizing a withdrawal cannot be
+// reinterpreted as a transfer or a swap. That separation is at the HASH level, not merely the field
+// level, which is also what lets a wallet show a distinct, meaningful action name.
+//
+// Byte order: `v as Bytes<N>` is LITTLE-endian here, while EVM hashing wants BIG-endian 32-byte
+// words, so every integer goes through one of the `*Word` encoders below.
+
+circuit reverseBytes32(value: Bytes<32>): Bytes<32> {
+  return Bytes[value[31], value[30], value[29], value[28], value[27], value[26], value[25], value[24],
+               value[23], value[22], value[21], value[20], value[19], value[18], value[17], value[16],
+               value[15], value[14], value[13], value[12], value[11], value[10], value[9],  value[8],
+               value[7],  value[6],  value[5],  value[4],  value[3],  value[2],  value[1],  value[0]];
+}
+
+circuit reverseBytes16(value: Bytes<16>): Bytes<16> {
+  return Bytes[value[15], value[14], value[13], value[12], value[11], value[10], value[9], value[8],
+               value[7], value[6], value[5], value[4], value[3], value[2], value[1], value[0]];
+}
+
+/// Big-endian comparison of two 32-byte colours, used to put an open swap's two imbalance slots in
+/// a canonical order so the semantic commitment does not depend on which leg was written first.
+circuit bytes32LexicographicLt(leftValue: Bytes<32>, rightValue: Bytes<32>): Boolean {
+  const leftHigh = reverseBytes16(slice<16>(leftValue, 0)) as Uint<128>;
+  const rightHigh = reverseBytes16(slice<16>(rightValue, 0)) as Uint<128>;
+  const leftLow = reverseBytes16(slice<16>(leftValue, 16)) as Uint<128>;
+  const rightLow = reverseBytes16(slice<16>(rightValue, 16)) as Uint<128>;
+  return leftHigh < rightHigh || (leftHigh == rightHigh && leftLow < rightLow);
+}
+
+// --- big-endian integer encoders ----------------------------------------------------------------
+//
+// Each of these CONSTRUCTS the EVM big-endian 32-byte word directly, placing the integer's
+// significant bytes behind a compile-time-constant zero prefix, instead of casting to a full
+// little-endian `Bytes<32>` and reversing it. Same bytes out; the reason for the direct form is
+// COST. This backend holds a `Bytes<32>` packed and charges only for VARIABLE bytes, so reversing a
+// packed 32-byte word pays for all 32 — roughly 8,500 rows per call — even though 24 / 16 / 31 of
+// them are known zero. Every EIP-712 and semantic-commitment preimage here is assembled from these
+// encoders, so that cost would recur at every site; the direct form pays for 8 / 16 / 1 variable
+// bytes instead, and makes the downstream preimage splice cheaper too.
+
+circuit uint64Word(value: Uint<64>): Bytes<32> {
+  const b = value as Bytes<8>;
+  return Bytes[0, 0, 0, 0, 0, 0, 0, 0,
+               0, 0, 0, 0, 0, 0, 0, 0,
+               0, 0, 0, 0, 0, 0, 0, 0,
+               b[7], b[6], b[5], b[4], b[3], b[2], b[1], b[0]];
+}
+
+circuit uint128Word(value: Uint<128>): Bytes<32> {
+  const b = value as Bytes<16>;
+  return Bytes[0, 0, 0, 0, 0, 0, 0, 0,
+               0, 0, 0, 0, 0, 0, 0, 0,
+               b[15], b[14], b[13], b[12], b[11], b[10], b[9], b[8],
+               b[7],  b[6],  b[5],  b[4],  b[3],  b[2],  b[1], b[0]];
+}
+
+circuit uint8Word(value: Uint<8>): Bytes<32> {
+  return slice<32>([...pad(31, ""), ...(value as Bytes<1>)], 0) as Bytes<32>;
+}
+
+/// A 20-byte EVM address in a 32-byte word: 12 zero bytes, then the address. Same layout Solidity's
+/// ABI encoder produces for an `address`.
+circuit addressWord(value: Bytes<20>): Bytes<32> {
+  return slice<32>([...pad(12, ""), ...value], 0) as Bytes<32>;
+}
+
+// --- frozen EIP-712 constants -------------------------------------------------------------------
+//
+// These are keccak256 hashes of the EIP-712 type strings and of the domain's name and version.
+// FROZEN: changing any one of them changes what every wallet signs and what every off-chain
+// verifier recomputes.
+
+circuit accountTag(): Bytes<32> {
+  return Bytes[0x55, 0xbc, 0x94, 0x0f, 0x83, 0x53, 0x37, 0xf1,
+               0x22, 0x4c, 0x18, 0x11, 0x10, 0xb2, 0xb7, 0x7f,
+               0x57, 0xed, 0x69, 0x4c, 0xae, 0x0c, 0x4b, 0xf8,
+               0xff, 0x6b, 0xb3, 0xe0, 0x3b, 0xe6, 0xa9, 0x88];
+}
+
+circuit domainType(): Bytes<32> {
+  return Bytes[0x36, 0xc2, 0x5d, 0xe3, 0xe5, 0x41, 0xd5, 0xd9,
+               0x70, 0xf6, 0x6e, 0x42, 0x10, 0xd7, 0x28, 0x72,
+               0x12, 0x20, 0xff, 0xf5, 0xc0, 0x77, 0xcc, 0x6c,
+               0xd0, 0x08, 0xb3, 0xa0, 0xc6, 0x2a, 0xda, 0xb7];
+}
+
+circuit domainName(): Bytes<32> {
+  return Bytes[0xb2, 0xa1, 0x61, 0xc1, 0xe1, 0xfe, 0x09, 0xf6,
+               0x31, 0x58, 0x5b, 0x3b, 0xda, 0x0e, 0x4a, 0x22,
+               0xf3, 0x17, 0xd7, 0xc6, 0x63, 0xc5, 0x82, 0xa0,
+               0x7c, 0x1d, 0x68, 0x3e, 0x61, 0xfd, 0xcd, 0xb1];
+}
+
+circuit domainVersion(): Bytes<32> {
+  return Bytes[0xc8, 0x9e, 0xfd, 0xaa, 0x54, 0xc0, 0xf2, 0x0c,
+               0x7a, 0xdf, 0x61, 0x28, 0x82, 0xdf, 0x09, 0x50,
+               0xf5, 0xa9, 0x51, 0x63, 0x7e, 0x03, 0x07, 0xcd,
+               0xcb, 0x4c, 0x67, 0x2f, 0x29, 0x8b, 0x8b, 0xc6];
+}
+
+circuit registerType(): Bytes<32> {
+  return Bytes[0xe6, 0xac, 0xe6, 0xc7, 0x0a, 0x9d, 0x92, 0xef,
+               0x85, 0x1c, 0x2e, 0x2a, 0x67, 0xb2, 0x30, 0x90,
+               0x17, 0xb0, 0x51, 0xd3, 0x9e, 0x05, 0x54, 0xc7,
+               0x46, 0x27, 0x4a, 0x17, 0x69, 0x59, 0xac, 0x4f];
+}
+
+circuit withdrawShieldedType(): Bytes<32> {
+  return Bytes[0x71, 0x7e, 0x1e, 0x74, 0x12, 0x98, 0x52, 0xbd,
+               0x43, 0x67, 0x44, 0xa5, 0xa1, 0x10, 0x8f, 0x0d,
+               0xb9, 0x02, 0x92, 0x70, 0x31, 0xf5, 0xe7, 0x79,
+               0x96, 0x18, 0xec, 0x12, 0x93, 0x66, 0xd6, 0x1e];
+}
+
+circuit withdrawUnshieldedType(): Bytes<32> {
+  return Bytes[0xb6, 0x01, 0x29, 0xea, 0x6c, 0xa4, 0xc1, 0xb5,
+               0x1d, 0x86, 0x60, 0x77, 0xd1, 0x1c, 0xdb, 0x02,
+               0x30, 0xe6, 0x06, 0x58, 0x76, 0xa5, 0x42, 0x06,
+               0xfe, 0xce, 0x04, 0x41, 0x3e, 0xda, 0xba, 0x9d];
+}
+
+circuit transferShieldedType(): Bytes<32> {
+  return Bytes[0x06, 0xbe, 0xb8, 0x3e, 0xc8, 0xde, 0xd3, 0xa8,
+               0x08, 0x0b, 0xfa, 0xb5, 0x91, 0xd8, 0x9a, 0x1b,
+               0x86, 0xed, 0x9e, 0x3f, 0x8d, 0xf6, 0xc1, 0x0e,
+               0xd3, 0x67, 0x74, 0x16, 0xd0, 0xa5, 0x60, 0x64];
+}
+
+circuit transferUnshieldedType(): Bytes<32> {
+  return Bytes[0x46, 0xe9, 0x6f, 0x44, 0x96, 0xc1, 0x82, 0xe9,
+               0x83, 0x95, 0xb6, 0x89, 0x70, 0x1a, 0x94, 0x5c,
+               0xbd, 0xb4, 0x75, 0x43, 0x57, 0x42, 0x42, 0xcc,
+               0x17, 0xf9, 0xb6, 0x44, 0x8c, 0x04, 0x9a, 0x07];
+}
+
+circuit openSwapType(): Bytes<32> {
+  return Bytes[0xf7, 0x87, 0xd7, 0xf9, 0x63, 0xe8, 0x9e, 0xfc,
+               0xda, 0x8e, 0x6a, 0x54, 0x6b, 0xaf, 0xff, 0x33,
+               0x38, 0x8c, 0xbd, 0xf4, 0x4b, 0x81, 0xf6, 0xf5,
+               0x95, 0x0c, 0x4b, 0xd3, 0xb0, 0x66, 0x58, 0x48];
+}
+
+/// Selector -> frozen type hash. Selector 0 (native registration) signs nothing, hence the zero.
+circuit frozenTypeHash(selector: Uint<8>): Bytes<32> {
+  if (selector == 1) { return registerType(); }
+  if (selector == 2) { return withdrawShieldedType(); }
+  if (selector == 3) { return withdrawUnshieldedType(); }
+  if (selector == 4) { return transferShieldedType(); }
+  if (selector == 5) { return transferUnshieldedType(); }
+  if (selector == 6) { return openSwapType(); }
+  return default<Bytes<32>>;
+}
+
+/// An EVM account's id is a hash of (tag, this contract, the owning EOA, a caller-chosen salt), so
+/// one EOA can hold several independent accounts here and neither the id nor the salt is guessable
+/// from the address alone.
+export circuit evmAccountIdFor(manager: Bytes<32>, owner: Bytes<20>, salt: Bytes<32>): Bytes<32> {
+  const preimage: Bytes<128> = slice<128>([
+    ...accountTag(), ...manager, ...addressWord(owner), ...salt
+  ], 0) as Bytes<128>;
+  return disclose(keccak256<Bytes<128>>(preimage));
+}
+
+/// The EIP-712 domain separator. `alias` is this contract's EVM-shaped `verifyingContract`: the low
+/// 20 bytes of keccak256 over its 32-byte Midnight address. `domain` is the deployment salt.
+export circuit evmDomainSeparatorFor(manager: Bytes<32>, domain: Bytes<32>): Bytes<32> {
+  const alias = slice<20>(keccak256<Bytes<32>>(manager), 12);
+  const preimage: Bytes<160> = slice<160>([
+    ...domainType(), ...domainName(), ...domainVersion(), ...addressWord(alias), ...domain
+  ], 0) as Bytes<160>;
+  return disclose(keccak256<Bytes<160>>(preimage));
+}
+
+/// The per-action struct hash. One branch per action shape, each opening with its own frozen type
+/// hash, so no signature can be replayed as a different action.
+export circuit evmStructHashFor(manager: Bytes<32>, payload: ExecutePayload): Bytes<32> {
+  const p = payload;
+  if (p.selector == 1) {
+    const preimage: Bytes<192> = slice<192>([
+      ...registerType(), ...manager, ...p.account, ...addressWord(p.owner), ...p.accountSalt,
+      ...uint64Word(p.validUntil)
+    ], 0) as Bytes<192>;
+    return disclose(keccak256<Bytes<192>>(preimage));
+  }
+  if (p.selector == 2 || p.selector == 3) {
+    const typeHash = p.selector == 2 ? withdrawShieldedType() : withdrawUnshieldedType();
+    const preimage: Bytes<320> = slice<320>([
+      ...typeHash, ...manager, ...p.account, ...addressWord(p.owner), ...uint64Word(p.nonce),
+      ...uint64Word(p.validUntil), ...p.primaryColor, ...uint128Word(p.primaryAmount),
+      ...uint8Word(p.recipientKind), ...p.recipient
+    ], 0) as Bytes<320>;
+    return disclose(keccak256<Bytes<320>>(preimage));
+  }
+  if (p.selector == 4 || p.selector == 5) {
+    const typeHash = p.selector == 4 ? transferShieldedType() : transferUnshieldedType();
+    const preimage: Bytes<288> = slice<288>([
+      ...typeHash, ...manager, ...p.account, ...addressWord(p.owner), ...uint64Word(p.nonce),
+      ...uint64Word(p.validUntil), ...p.toAccount, ...p.primaryColor, ...uint128Word(p.primaryAmount)
+    ], 0) as Bytes<288>;
+    return disclose(keccak256<Bytes<288>>(preimage));
+  }
+  assert(p.selector == 6, "EIP-712 selector must be 1..6");
+  const preimage: Bytes<448> = slice<448>([
+    ...openSwapType(), ...manager, ...p.account, ...addressWord(p.owner), ...uint64Word(p.nonce),
+    ...uint64Word(p.validUntil), ...p.primaryColor, ...uint128Word(p.primaryAmount),
+    ...uint8Word(p.recipientKind), ...p.recipient, ...p.wantNonce, ...p.wantColor,
+    ...uint128Word(p.wantAmount), ...p.creditAccount
+  ], 0) as Bytes<448>;
+  return disclose(keccak256<Bytes<448>>(preimage));
+}
+
+circuit eip712Digest(domain: Bytes<32>, structHash: Bytes<32>): Bytes<32> {
+  const preimage: Bytes<66> = slice<66>([0x19, 0x01, ...domain, ...structHash], 0) as Bytes<66>;
+  return keccak256<Bytes<66>>(preimage);
+}
+
+/// The value an EVM owner's wallet signs. Exported and pure, so a signer, a relayer or a verifier
+/// can obtain it from the contract itself instead of reimplementing the codec.
+export circuit evmDigestFor(
+  manager: Bytes<32>, domain: Bytes<32>, payload: ExecutePayload
+): Bytes<32> {
+  return disclose(eip712Digest(
+    evmDomainSeparatorFor(manager, domain), evmStructHashFor(manager, payload)
+  ));
+}
+
+// --- readers -----------------------------------------------------------------------------------
+
+/// The account id (owner commitment) for the witness the caller supplies. Returns only the
+/// commitment — never the secret — so it is safe to expose: the commitment is exactly what
+/// `registerAccount` publishes.
+export circuit myAccount(): Bytes<32> {
+  return ownerCommitment(localOwnerSecret());
+}
+
+export circuit isRegistered(owner: Bytes<32>): Boolean {
+  return accounts.member(disclose(owner));
+}
+
+/// One policy query covering registration, mode, EVM owner and next nonce. Native records return a
+/// zero owner and nonce WITHOUT creating EVM map entries; unknown accounts return the all-zero
+/// inactive record. The asserts state the mode invariant: a native record carries no EVM state; an
+/// EVM record carries both halves of it.
+export circuit accountRecord(account: Bytes<32>): AccountRecord {
+  const acct = disclose(account);
+  if (!accounts.member(acct)) {
+    return AccountRecord{
+      registered: false,
+      mode: 0,
+      owner: default<Bytes<20>>,
+      nextNonce: 0
+    };
+  }
+  const mode = accountModes.lookup(acct);
+  if (mode == 0) {
+    assert(!evmOwners.member(acct) && !evmNonces.member(acct), "native record carries EVM state");
+    return AccountRecord{
+      registered: true,
+      mode: 0,
+      owner: default<Bytes<20>>,
+      nextNonce: 0
+    };
+  }
+  assert(mode == 1, "unknown account authorization mode");
+  assert(evmOwners.member(acct) && evmNonces.member(acct), "EVM record is incomplete");
+  return AccountRecord{
+    registered: true,
+    mode: 1,
+    owner: evmOwners.lookup(acct),
+    nextNonce: evmNonces.lookup(acct)
+  };
+}
+
+/// One cell of the dynamic table, shielded family. Returns 0 for a colour this contract has never
+/// seen — the observable form of "a missing cell reads 0".
+export circuit shieldedAccountBalance(owner: Bytes<32>, colour: Bytes<32>): Uint<128> {
+  return shieldedBalanceOf(disclose(owner), disclose(colour));
+}
+
+/// The same cell in the OTHER family. For a colour whose bytes exist in both families these two
+/// reads take the same 32-byte `colour` argument and must still answer independently.
+export circuit unshieldedAccountBalance(owner: Bytes<32>, colour: Bytes<32>): Uint<128> {
+  return unshieldedBalanceOf(disclose(owner), disclose(colour));
+}
+
+export circuit poolValue(colour: Bytes<32>): Uint<128> {
+  const col = disclose(colour);
+  return pools.member(col) ? pools.lookup(col).value : 0;
+}
+
+export circuit poolHasColour(colour: Bytes<32>): Boolean {
+  return pools.member(disclose(colour));
+}
+
+// --- shielded custody ---------------------------------------------------------------------------
+
+/// Claim an incoming shielded coin and credit it to `account` under the coin's OWN colour. THE OPEN
+/// PATH: no colour check — whatever colour the coin carries is custodied, including one minted after
+/// this contract was deployed, and that colour's pool and the (account, colour) cell are created
+/// HERE if absent, and only here. The stdlib auto-receives only when the recipient is this contract
+/// itself, so a transfer in commits only if THIS circuit runs in the sender's own transaction.
+export circuit depositShielded(coin: ShieldedCoinInfo, account: Bytes<32>): [] {
+  // The deposited coin and target account are public facts of this transfer: the pooled coin and
+  // the credited balance both land in ledger state, so they are disclosed once, up front.
+  const c = disclose(coin);
+  const acct = disclose(account);
+
+  // Every guard precedes every write, so a refusal creates nothing.
+  assert(c.value > 0, "deposit must be positive");
+  assert(accounts.member(acct), "credit account is not registered");
+
+  // Must precede insertCoin: this is what allocates the Merkle-tree index.
+  receiveShielded(c);
+
+  if (pools.member(c.color)) {
+    // Per-colour merge-on-deposit: each colour's pool stays exactly one coin.
+    pools.insertCoin(
+      c.color,
+      mergeCoinImmediate(pools.lookup(c.color), c),
+      right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
+    );
+  } else {
+    // FIRST CREDIT of this colour — the pool is created lazily, right here.
+    pools.insertCoin(c.color, c, right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  }
+
+  shieldedBalances.insert(
+    shieldedKey(acct, c.color),
+    (shieldedBalanceOf(acct, c.color) + c.value) as Uint<128>
+  );
+}
+
+// --- unshielded custody -------------------------------------------------------------------------
+
+/// Credit `amount` of `colour` to `account`, unshielded family.
+///
+/// No colour check, by design. The LEDGER is what enforces honesty here: `receiveUnshielded` only
+/// increments this contract's declared unshielded inputs, so a transaction that names a colour it is
+/// not actually carrying fails to BALANCE and is refused by the node.
+export circuit depositUnshielded(colour: Bytes<32>, amount: Uint<128>, account: Bytes<32>): [] {
+  const col = disclose(colour);
+  const amt = disclose(amount);
+  const acct = disclose(account);
+
+  assert(amt > 0, "deposit must be positive");
+  assert(accounts.member(acct), "credit account is not registered");
+
+  receiveUnshielded(col, amt);
+  unshieldedBalances.insert(
+    unshieldedKey(acct, col),
+    (unshieldedBalanceOf(acct, col) + amt) as Uint<128>
+  );
+}
+
+// --- zswap primitives the pinned standard library keeps private ---------------------------------
+//
+// `coinCommitment` and `coinNullifier` are unexported circuits in the pinned standard library, and
+// `sendShielded` — the only exported route to a zswap INPUT — always creates an output for the value
+// it moves. An open swap offer, which releases value with NO output, therefore cannot be built out
+// of exported pieces alone. These two circuits are transcriptions of the stdlib's, preimage-
+// identical field for field: same struct shape (a 21-byte separator, then the coin, then the
+// recipient discriminant, then 32 bytes of recipient), same domain separators, same
+// `persistentHash` — which digests the ALIGNED ENCODING of the fields, so the struct's NAME is
+// irrelevant and only the field types and their order matter.
+//
+// Transcription is exactly the kind of code that is silently wrong, so the equality is PROVEN rather
+// than asserted in a comment: `zswapNullifierOf` / `zswapCommitmentOf` below expose these values,
+// and the unit suite compares them against the nullifier and commitment THE STDLIB ITSELF claims for
+// the same coin inside the shielded payout leg of `custodyDispatch`. A wrong separator or a
+// reordered field fails that test.
+
+struct SwapCoinPreimage {
+  // `midnight:zswap-cc[v1]` / `midnight:zswap-cn[v1]` — 21 bytes each, exactly as the stdlib.
+  domain_sep: Bytes<21>,
+  info: ShieldedCoinInfo,
+  dataType: Boolean,
+  data: Bytes<32>,
+}
+
+circuit zswapCoinCommitment(
+  coin: ShieldedCoinInfo,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): Bytes<32> {
+  return persistentHash<SwapCoinPreimage>(
+    SwapCoinPreimage {
+      domain_sep: "midnight:zswap-cc[v1]",
+      info: coin,
+      dataType: recipient.is_left,
+      data: recipient.is_left ? recipient.left.bytes : recipient.right.bytes,
+    });
+}
+
+circuit zswapCoinNullifier(coin: ShieldedCoinInfo, addr: ContractAddress): Bytes<32> {
+  return persistentHash<SwapCoinPreimage>(
+    SwapCoinPreimage {
+      domain_sep: "midnight:zswap-cn[v1]",
+      info: coin,
+      // The hypothetical `is_left` of `Either<ZswapCoinSecretKey, ContractAddress>` — a contract-owned
+      // coin is always the RIGHT variant, so this is `false`, verbatim as the stdlib comments it.
+      dataType: false,
+      data: addr.bytes,
+    });
+}
+
+/// The pooled coin without its Merkle index — the stdlib's private `downcastQualifiedCoin`.
+circuit dropMerkleIndex(coin: QualifiedShieldedCoinInfo): ShieldedCoinInfo {
+  return ShieldedCoinInfo{ nonce: coin.nonce, color: coin.color, value: coin.value };
+}
+
+/// EXPORTED so the equality above can be TESTED rather than believed. Pure: it reads no ledger state,
+/// so the compiler emits no proving key for it, and it discloses nothing — a coin commitment and a
+/// coin nullifier are public objects that live in the transaction anyway.
+export circuit zswapNullifierOf(coin: ShieldedCoinInfo, addr: ContractAddress): Bytes<32> {
+  return zswapCoinNullifier(coin, addr);
+}
+
+export circuit zswapCommitmentOf(
+  coin: ShieldedCoinInfo,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): Bytes<32> {
+  return zswapCoinCommitment(coin, recipient);
+}
+
+/// Write back what is left of colour `col`'s pool after a debit, or drop the colour entirely. This
+/// is the debit half of the one-coin-per-colour invariant.
+circuit repoolOrRemove(col: Bytes<32>, change: Maybe<ShieldedCoinInfo>): [] {
+  if (change.is_some) {
+    pools.insertCoin(col, change.value, right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  } else {
+    // Fully spent: the colour leaves the map entirely.
+    pools.remove(col);
+  }
+}
+
+// ================================================================================================
+// THE GATEWAY — envelope validation, deadline, authentication
+// ================================================================================================
+
+/// CANONICAL-ZERO ENVELOPE VALIDATION, and the first thing `execute` runs.
+///
+/// `ExecutePayload` is one fixed-width struct shared by all seven actions, so most of its fields are
+/// INACTIVE for any given selector, and this circuit constrains every inactive field to its
+/// canonical zero. SECURITY-CRITICAL, not hygiene: it is what keeps the actions separated. Without
+/// it a payload could carry a live swap target or transfer destination while presenting as a
+/// withdrawal, so the meaning of a signed or witnessed action would depend on which fields the
+/// reader happened to look at. With it, ONE selector implies ONE field set, the EIP-712 struct hash
+/// covers exactly that set, and anything else is refused before authentication.
+///
+/// It also fixes the mode pairing (selector 0 native-only, selector 1 EVM-only), the replay fields
+/// (native actions carry no nonce or deadline; EVM actions must carry a deadline), and per-action
+/// parameter sanity — amounts positive, recipient kinds in range, a swap's colours distinct. That
+/// sanity is pure arithmetic on the caller's own arguments: it reads no state and leaks nothing,
+/// which is why it may run before the witness choke point.
+///
+/// NO CONTRACT RECIPIENTS — the three shapes that pay a CONTRACT are refused here, deliberately.
+/// They are selector 2/3 `recipientKind 1` and selector 6 `recipientKind 2`. The reason is the
+/// ledger's effects check, not a limitation of this contract: a contract-addressed payout is
+/// accepted ONLY if the recipient contract claims receipt in the SAME transaction. Shielded, the
+/// payout's commitment enters `commitments` tagged with the recipient's address and `commitments ==
+/// claimed_shielded_receives` is an EQUALITY, so an unclaimed one is rejected with error 218;
+/// unshielded, the claim is tagged `PublicAddress::Contract(recipient)` and can only be matched by
+/// that contract's own `unshielded_inputs`, so it is rejected with error 214. Neither `sendShielded`
+/// nor `sendUnshielded` auto-receives for anybody but the SENDER, no receiving contract exists
+/// anywhere in this repo, and simulation never runs the effects check — so before this assert a
+/// caller could sign such an action, spend minutes proving it at k=19, and learn only from an opaque
+/// node error that it was never satisfiable.
+///
+/// AND THE ONE VARIANT THE NODE ACCEPTS IS WORSE THAN A REFUSAL: name the Manager's OWN address and
+/// the auto-receive fires, so the effects check passes — but `repoolOrRemove` re-pools only the
+/// CHANGE, so the payout lands outside `pools`, which is the only holdings any debit path can spend,
+/// while the account's cell has already been debited. No account holds the value and the contract
+/// cannot spend it; it is burnt, silently, on a transaction that looks successful.
+///
+/// The give legs keep their contract arms intact (they are simply unreachable while these asserts
+/// stand), so restoring the capability the day a receiving contract exists is a change to these two
+/// asserts and nothing else. Refusing costs one extra assert per site and, unlike the node's error,
+/// says what is wrong before anything is proved — the same fail-CLOSED preference the swap's
+/// colour-distinctness guard is argued from below.
+circuit assertActionEnvelope(p: ExecutePayload): [] {
+  assert(p.selector <= 6, "unknown execute selector");
+  assert(p.authMode <= 1, "unknown authorization mode");
+
+  if (p.selector == 0) {
+    assert(p.authMode == 0, "native registration requires native authorization");
+    assert(p.account == default<Bytes<32>>, "native registration account is derived");
+    assert(p.owner == default<Bytes<20>> && p.accountSalt == default<Bytes<32>>, "native registration EVM fields must be inactive");
+    assert(p.nonce == 0 && p.validUntil == 0, "native registration replay fields must be inactive");
+    assert(p.primaryColor == default<Bytes<32>> && p.primaryAmount == 0, "native registration action fields must be inactive");
+    assert(p.recipientKind == 0 && p.recipient == default<Bytes<32>>, "native registration recipient must be inactive");
+    assert(p.toAccount == default<Bytes<32>> && p.wantNonce == default<Bytes<32>>, "native registration targets must be inactive");
+    assert(p.wantColor == default<Bytes<32>> && p.wantAmount == 0 && p.creditAccount == default<Bytes<32>>, "native registration swap fields must be inactive");
+    return;
+  }
+
+  if (p.selector == 1) {
+    assert(p.authMode == 1, "EVM registration requires EVM authorization");
+    assert(p.account != default<Bytes<32>>, "EVM registration account must be supplied");
+    assert(p.owner != default<Bytes<20>>, "EVM registration owner must be nonzero");
+    assert(p.accountSalt != default<Bytes<32>>, "EVM registration salt must be nonzero");
+    assert(p.nonce == 0 && p.validUntil > 0, "EVM registration replay fields are noncanonical");
+    assert(p.primaryColor == default<Bytes<32>> && p.primaryAmount == 0, "EVM registration action fields must be inactive");
+    assert(p.recipientKind == 0 && p.recipient == default<Bytes<32>>, "EVM registration recipient must be inactive");
+    assert(p.toAccount == default<Bytes<32>> && p.wantNonce == default<Bytes<32>>, "EVM registration targets must be inactive");
+    assert(p.wantColor == default<Bytes<32>> && p.wantAmount == 0 && p.creditAccount == default<Bytes<32>>, "EVM registration swap fields must be inactive");
+    return;
+  }
+
+  assert(p.account != default<Bytes<32>>, "action account must be supplied");
+  assert(p.accountSalt == default<Bytes<32>>, "action account salt must be inactive");
+  if (p.authMode == 0) {
+    assert(p.owner == default<Bytes<20>>, "native action owner must be inactive");
+    assert(p.nonce == 0 && p.validUntil == 0, "native action replay fields must be inactive");
+  } else {
+    assert(p.owner != default<Bytes<20>>, "EVM action owner must be nonzero");
+    assert(p.validUntil > 0, "EVM action deadline must be nonzero");
+  }
+
+  if (p.selector == 2 || p.selector == 3) {
+    assert(p.primaryAmount > 0, "withdraw amount must be positive");
+    assert(p.recipientKind <= 1, "withdraw recipient kind is invalid");
+    // Kind 1 is the CONTRACT recipient — refused, see this circuit's header. The range check above
+    // is kept ahead of it so an out-of-range kind still reports itself as out of range, and so this
+    // assert reads as what it is: a capability that is switched off, not a malformed field.
+    assert(p.recipientKind == 0, "withdraw to a contract recipient is not supported");
+    assert(p.recipient != default<Bytes<32>>, "withdraw recipient must be nonzero");
+    assert(p.toAccount == default<Bytes<32>>, "withdraw transfer target must be inactive");
+    assert(p.wantNonce == default<Bytes<32>> && p.wantColor == default<Bytes<32>>, "withdraw swap fields must be inactive");
+    assert(p.wantAmount == 0 && p.creditAccount == default<Bytes<32>>, "withdraw swap target must be inactive");
+    return;
+  }
+
+  if (p.selector == 4 || p.selector == 5) {
+    assert(p.primaryAmount > 0, "internal transfer must be positive");
+    assert(p.recipientKind == 0 && p.recipient == default<Bytes<32>>, "internal transfer recipient must be inactive");
+    assert(p.toAccount != default<Bytes<32>>, "internal transfer target must be supplied");
+    assert(p.wantNonce == default<Bytes<32>> && p.wantColor == default<Bytes<32>>, "internal transfer swap fields must be inactive");
+    assert(p.wantAmount == 0 && p.creditAccount == default<Bytes<32>>, "internal transfer swap target must be inactive");
+    return;
+  }
+
+  assert(p.selector == 6, "unknown execute selector");
+  assert(p.primaryAmount > 0, "swap must give a positive amount");
+  assert(p.recipientKind <= 2, "swap recipient kind is invalid");
+  // Kind 2 is the CONTRACT taker — refused, see this circuit's header. Kind 0 (the open offer) and
+  // kind 1 (named to a user key) are untouched: neither addresses a contract, so neither needs a
+  // counterparty contract inside the maker's own transaction.
+  assert(p.recipientKind <= 1, "swap to a contract taker is not supported");
+  if (p.recipientKind == 0) {
+    assert(p.recipient == default<Bytes<32>>, "open swap recipient must be zero");
+  } else {
+    assert(p.recipient != default<Bytes<32>>, "named swap recipient must be nonzero");
+  }
+  assert(p.toAccount == default<Bytes<32>>, "swap transfer target must be inactive");
+  assert(p.wantAmount > 0, "swap must want a positive amount");
+  assert(p.primaryColor != p.wantColor, "swap legs must be different colours");
+  assert(p.creditAccount != default<Bytes<32>>, "swap credit account must be supplied");
+}
+
+/// An EVM signature is valid only inside a bounded window ending at `validUntil`. The lower bound
+/// exists because a circuit can prove only block-time INEQUALITIES: without it, a signature merely
+/// "not yet expired" could be proved against an arbitrarily old block. 3,600 seconds keeps it tight.
+circuit assertLiveDeadline(validUntil: Uint<64>): [] {
+  assert(validUntil > 3600, "EVM authorization deadline cannot satisfy the horizon");
+  // HAZARD, deliberately left as-is. This subtraction UNDERFLOWS on every NATIVE call: the
+  // envelope forces `validUntil == 0` when `authMode == 0`, the assert above is guard-folded away
+  // with the caller's `if (isEvmAuthorized)`, and the arithmetic still runs — so `earliest` holds a
+  // negative field element on calls that prove perfectly well today. It is safe ONLY because its
+  // single consumer is the `blockTimeGte` ledger op below, which is itself guarded by
+  // `authMode == 1` and therefore contributes zeroed public inputs on a native call. Nothing ever
+  // range-constrains the wire.
+  //
+  // Routing `earliest` into ANY hash preimage, `Bytes<N>` cast or comparison would make every
+  // native `execute` unprovable — this is exactly the shape of F-00012-08, which cost selectors 3,
+  // 4 and 5 their provability (see the clamp in `custodyDispatch`'s pool leg). If you need this
+  // value anywhere else, clamp it first: `validUntil >= 3600 ? validUntil - 3600 : 0`.
+  const earliest = (validUntil - 3600) as Uint<64>;
+  assert(blockTimeGte(earliest), "EVM authorization deadline exceeds 3600-second horizon");
+  assert(blockTimeLt(validUntil), "EVM authorization has expired");
+}
+
+/// Resolve the acting account for a non-registration action, per mode.
+///
+/// NATIVE: start from the WITNESS-DERIVED account, require it to be a registered native record, and
+/// only THEN check it equals the account named in the envelope — the envelope field is a declaration
+/// to be matched, never the source of authority. EVM: the envelope's account must be a registered
+/// EVM record whose stored owner equals the signed owner and whose stored nonce equals the signed
+/// nonce; `execute` checks the signature over the digest, and together those bind the action to the
+/// EOA that controls the record.
+circuit authenticatedActionAccount(
+  p: ExecutePayload,
+  nativeAccount: Bytes<32>
+): Bytes<32> {
+  if (p.authMode == 0) {
+    const acct = authenticatedNativeAccount(nativeAccount);
+    assert(acct == p.account, "native witness does not match supplied account transcript");
+    assert(accountModes.lookup(acct) == p.authMode, "authorization mode does not match account record");
+    assert(!evmOwners.member(acct) && !evmNonces.member(acct), "native account carries EVM state");
+    return acct;
+  }
+
+  assert(p.authMode == 1, "unknown account authorization mode");
+  assert(accounts.member(p.account), "gateway account is not registered");
+  assert(accountModes.member(p.account), "registered account has no authorization mode");
+  assert(accountModes.lookup(p.account) == 1, "authorization mode does not match account record");
+  assert(evmOwners.member(p.account) && evmNonces.member(p.account), "EVM account record is incomplete");
+  assert(p.owner == evmOwners.lookup(p.account), "signed owner does not match stored owner");
+  assert(p.nonce == evmNonces.lookup(p.account), "EVM nonce mismatch");
+  return p.account;
+}
+
+/// Registration selects the account being CREATED (witness-derived, or derived from owner+salt);
+/// every other selector goes through the authentication above.
+circuit gatewayAccount(
+  p: ExecutePayload,
+  nativeAccount: Bytes<32>,
+  evmRegistrationAccount: Bytes<32>
+): Bytes<32> {
+  if (p.selector == 0) {
+    return nativeAccount;
+  }
+  if (p.selector == 1) {
+    return evmRegistrationAccount;
+  }
+  return authenticatedActionAccount(p, nativeAccount);
+}
+
+// ================================================================================================
+// CUSTODY DISPATCH — the file's ONLY debit path
+// ================================================================================================
+//
+// `custodyDispatch` implements selectors 2..6 as ONE debit leg, ONE credit leg and shared sends,
+// with the family, recipient, account and colour muxed in as ARGUMENTS. There is no per-selector
+// custody circuit anywhere in this file, so "which code debits an account" is answerable by
+// inspection: this one. The mux is not only a readability choice — Compact compiles EVERY branch of
+// every `if`, so a per-selector dispatch would emit a full copy of each helper per branch, whereas
+// muxing calls each expensive operation exactly once (two key derivations, one shielded send, one
+// unshielded send, one want-claim).
+//
+// --- THE GUARD ORDER: what this circuit's assert sequence encodes --------------------------------
+//
+//   0. PARAMETER SANITY — the three `!isSwap || …` lines opening the body; every selector's sanity
+//      also lives in `assertActionEnvelope`, which `execute` runs first. Pure arithmetic on the
+//      caller's own arguments: reads nothing, leaks nothing.
+//   1. THE WITNESS CHOKE POINT — already passed. The debited account was DERIVED by `gatewayAccount`
+//      / `authenticatedActionAccount` and arrives as the `account` parameter, so this circuit has no
+//      option of trusting a supplied account.
+//   2. THE PER-(ACCOUNT, COLOUR) GUARD, BEFORE ANY POOL GUARD, MISSING CELL READS 0 — the single
+//      `assert(debitBalance >= val, …)`, shared by all five selectors. `debitKey` is derived once
+//      with the family tag muxed (for a shielded selector it is exactly `shieldedKey(account,
+//      col)`'s body) and read through `shieldedBalanceAt` / `unshieldedBalanceAt`, the `*BalanceOf`
+//      bodies with the key supplied — read-as-0 preserved, not re-implemented.
+//   3. THE POOL GUARDS — only now does the contract's own holding matter. A pool rich in the colour
+//      cannot rescue a maker whose own cell is short: that already refused at step 2.
+//   4. THE CREDIT TARGET — a swap's wanted colour must be attributed to a registered account.
+//
+// The sequence is a TOPOLOGICAL SUPERSET of the five actions' individual orders, so muxing them
+// together changed no action's relative ordering. Every guard precedes every write: the first write
+// is the give leg, after all of steps 0-4, so a refused action is provably state-neutral.
+//
+// Guard 0's colour-distinctness assert is not decoration. Two same-colour shielded credits cannot be
+// assembled in one transaction at these pins — the second needs the first coin's Merkle index, only
+// allocated once the first is really inserted on chain — so a swap whose legs shared a colour would
+// surface as an opaque `invalid index into sparse merkle tree` from inside the proving path.
+// Refusing it here (and in `assertActionEnvelope`) fails CLOSED with a readable reason instead.
+//
+// --- THE SWAP MAKER (selector 6) ----------------------------------------------------------------
+//
+// One proved call fuses a GIVE leg (debit `primaryAmount` of `primaryColor` from the maker) and a
+// WANT leg (receive `wantAmount` of `wantColor` into custody, attributed to `creditAccount`), so a
+// swap settles atomically BY CONSTRUCTION rather than by composing two calls that could diverge.
+// The want leg receives value this transaction does not fund, leaving the call UNBALANCED by a
+// deficit of `wantAmount` of `wantColor` — the same deficit shape `depositShielded` creates. THAT
+// DEFICIT IS THE OFFER, and a taker balances it. `recipientKind` picks which of TWO SHAPES the offer
+// takes, and they are genuinely different mechanisms rather than a cosmetic flag:
+//
+//   NAMED RECIPIENT (recipientKind 1 = a user key; 2 = a contract address, REFUSED by
+//       `assertActionEnvelope` — see its header) — `sendShielded` pays the
+//       given value to that recipient and re-pools the change, so the give leg is INTERNALLY
+//       BALANCED and the call's only imbalance is the want-side deficit. Naming a throwaway key
+//       whose secret ships alongside the offer turns this into a bearer offer: any holder of that
+//       secret can settle and then sweep the payout, with no contract support beyond this branch.
+//       A named CONTRACT taker cannot work at these pins whatever the maker intends: settling would
+//       require the taker contract to claim the payout commitment inside the MAKER's transaction,
+//       which is not something a taker composing its own transaction can do, so the offer would be
+//       unsettleable by construction and the node would refuse it with 218.
+//
+//   NO RECIPIENT (recipientKind 0), THE OPEN OFFER — the given value is released with NO OUTPUT AT
+//       ALL: the pooled coin is consumed as a zswap input, its nullifier claimed, and the only
+//       output created is the change back to this contract. The released value stands as a POSITIVE
+//       IMBALANCE at the guaranteed segment, addressed to nobody, which ANY taker's stock balancer
+//       will sweep — that is what makes the offer usable by a holder whose keys the maker never
+//       knew, and why this file reimplements the zswap commitment and nullifier (see
+//       `zswapCoinCommitment` above).
+//
+// SHIELDED ONLY. There is no unshielded swap: a contract's unshielded payout is a UTXO in the
+// maker's own bound intent, so its recipient cannot be left open.
+
+/// Balance at an ALREADY-DERIVED key. A missing cell reads 0, exactly as `shieldedBalanceOf` does —
+/// the only difference is that the key is computed by the caller, once.
+circuit shieldedBalanceAt(k: Bytes<32>): Uint<128> {
+  return shieldedBalances.member(k) ? shieldedBalances.lookup(k) : 0;
+}
+
+circuit unshieldedBalanceAt(k: Bytes<32>): Uint<128> {
+  return unshieldedBalances.member(k) ? unshieldedBalances.lookup(k) : 0;
+}
+
+/// The whole custody dispatch for selectors 2..6, with one copy of every expensive operation.
+circuit custodyDispatch(p: ExecutePayload, account: Bytes<32>): [] {
+  const isWithdrawShielded   = p.selector == 2;
+  const isWithdrawUnshielded = p.selector == 3;
+  const isTransferShielded   = p.selector == 4;
+  const isTransferUnshielded = p.selector == 5;
+  const isSwap               = p.selector == 6;
+  const isTransfer           = isTransferShielded || isTransferUnshielded;
+
+  // Family muxing: shielded custody is selectors 2, 4, 6; unshielded is 3, 5.
+  const debitShielded  = isWithdrawShielded || isTransferShielded || isSwap;
+  const creditShielded = isTransferShielded || isSwap;
+  const hasCredit      = isTransfer || isSwap;
+  // Only the shielded PAYOUT paths touch the pooled coin; an internal shielded transfer does not.
+  const needsPool      = isWithdrawShielded || isSwap;
+
+  const col = p.primaryColor;
+  const val = p.primaryAmount;
+  const creditAcct   = isSwap ? p.creditAccount : p.toAccount;
+  const creditColour = isSwap ? p.wantColor : col;
+
+  // --- 0. swap parameter sanity (the other selectors' sanity lives in `assertActionEnvelope`) ---
+  assert(!isSwap || val > 0,            "swap must give a positive amount");
+  assert(!isSwap || p.wantAmount > 0,   "swap must want a positive amount");
+  assert(!isSwap || col != p.wantColor, "swap legs must be different colours");
+
+  // --- 1. internal-transfer destination checks (selectors 4/5) ---
+  assert(!isTransfer || accounts.member(p.toAccount), "destination account is not registered");
+  assert(!isTransfer || account != p.toAccount,       "internal transfer to the same account");
+  assert(!isTransfer || val > 0,                      "internal transfer must be positive");
+
+  // --- 2. THE PER-(ACCOUNT, COLOUR) GUARD, before any pool guard, missing cell reads 0 ---
+  //     ONE key derivation for all five selectors; the family tag is the muxed argument.
+  const debitKey = persistentHash<Vector<3, Bytes<32>>>(
+    [account, col, debitShielded ? shieldedFamilyTag() : unshieldedFamilyTag()]);
+  const debitBalance = debitShielded ? shieldedBalanceAt(debitKey) : unshieldedBalanceAt(debitKey);
+  assert(debitBalance >= val, "account colour balance too low");
+
+  // --- 3. only now, the pool guard and the shielded give leg (selectors 2 and 6) ---
+  if (needsPool) {
+    assert(pools.member(col), "no pooled coin for this colour");
+    const pooled = pools.lookup(col);
+    assert(pooled.value >= val, "pooled colour balance too low");
+
+    // THE CLAMP THAT KEEPS THE CHANGE COIN IN RANGE. `safeGive == val` on every run that reaches
+    // this line — the assert immediately above forces `pooled.value >= val`, so the comparison is
+    // always true and the clamp is the identity. It exists solely for the runs that DO NOT reach
+    // it: a circuit has no control flow, so `if (needsPool)` suppresses this block's effects and
+    // asserts but NOT its arithmetic. On a call where `needsPool` is false (selectors 3, 4, 5) the
+    // guarded-off `pools.lookup` above reads the type default 0 while `assertActionEnvelope` has
+    // already required `primaryAmount > 0` — so an unclamped `pooled.value - val` would be a
+    // NEGATIVE field element, and both change-coin computations below hash it as a `Uint<128>`.
+    // The witness VM refuses to encode that ("inputs did not match alignment") and the in-circuit
+    // twin range-constrains the same wire to 16 bytes, so those three selectors would have no
+    // provable run at all, whatever the pool holds. With the clamp both subtractions evaluate to
+    // `0 - 0 = 0`, which encodes.
+    //
+    // The condition must be `pooled.value >= val` and NOT `needsPool`: the compiler treats the
+    // guard as known-true inside its own block and folds a `needsPool`-conditioned mux away
+    // entirely, emitting a byte-identical circuit. And BOTH consumers must take `safeGive` — the
+    // `sendShielded` call below subtracts inside the library body, which is the FIRST site the
+    // prover refuses, so clamping only `changeValue` fixes nothing.
+    const safeGive = (pooled.value >= val ? val : 0) as Uint<128>;
+
+    // --- 4. the swap credit target, after the pool guard ---
+    assert(!isSwap || accounts.member(p.creditAccount), "credit account is not registered");
+
+    if (isWithdrawShielded || p.recipientKind != 0) {
+      // ONE `sendShielded`, shared by the withdrawal and the named-swap shape. The recipient
+      // discriminant is the muxed argument: a withdrawal uses kind 0 = user key / 1 = contract,
+      // a named swap uses kind 1 = user key / 2 = contract.
+      //
+      // THE CONTRACT ARM BELOW IS UNREACHABLE TODAY. `assertActionEnvelope` refuses withdraw kind 1
+      // and swap kind 2 (see its header): a contract-addressed zswap output puts `(seg, cm, that
+      // address)` into `commitments`, only that contract's own transcript can claim it, and the
+      // check is an EQUALITY — so the node rejects with 218 unless the recipient contract is called
+      // in the same transaction. It is kept rather than deleted precisely so that restoring the
+      // capability, once a receiving contract exists, is an envelope change and not a rewrite here.
+      const useLeft = isWithdrawShielded ? (p.recipientKind == 0) : (p.recipientKind == 1);
+      const rcpt = useLeft
+        ? left<ZswapCoinPublicKey, ContractAddress>(ZswapCoinPublicKey{ bytes: p.recipient })
+        : right<ZswapCoinPublicKey, ContractAddress>(ContractAddress{ bytes: p.recipient });
+      const result = sendShielded(pooled, rcpt, safeGive);
+      repoolOrRemove(col, result.change);
+    } else {
+      // THE OPEN OFFER: the pooled coin is consumed as a zswap input and its nullifier claimed, but
+      // the only output created is the change back to this contract. The given value is released
+      // with no output at all and stands as a positive imbalance any taker's balancer can sweep.
+      const selfAddr = kernel.self();
+      createZswapInput(pooled);
+      kernel.claimZswapNullifier(zswapCoinNullifier(dropMerkleIndex(pooled), selfAddr));
+      const changeValue = (pooled.value - safeGive) as Uint<128>;
+      if (changeValue == 0) {
+        repoolOrRemove(col, none<ShieldedCoinInfo>());
+      } else {
+        const changeCoin = ShieldedCoinInfo{
+          nonce: evolveNonce(2, pooled.nonce),
+          color: col,
+          value: changeValue
+        };
+        const selfRecipient = right<ZswapCoinPublicKey, ContractAddress>(selfAddr);
+        createZswapOutput(changeCoin, selfRecipient);
+        const cm = zswapCoinCommitment(changeCoin, selfRecipient);
+        kernel.claimZswapCoinSpend(cm);
+        kernel.claimZswapCoinReceive(cm);
+        repoolOrRemove(col, some<ShieldedCoinInfo>(changeCoin));
+      }
+    }
+  }
+
+  // --- the unshielded give leg (selector 3): account guard above, then contract holdings ---
+  if (isWithdrawUnshielded) {
+    assert(unshieldedBalanceGte(col, val), "contract unshielded balance too low");
+    // MIND THE OPERAND ORDER — it is the mirror image of the shielded `Either` above.
+    // `sendUnshielded`'s recipient is `Either<ContractAddress, UserAddress>`, so LEFT = contract
+    // and RIGHT = user; the shielded `Either<ZswapCoinPublicKey, ContractAddress>` puts the user
+    // key on the LEFT. The envelope's discriminant is unchanged by that (kind 0 = user key /
+    // 1 = contract, `:789`), so kind 0 must take the RIGHT arm here.
+    // This tag is not cosmetic: it becomes the `PublicAddress` of the
+    // `claimUnshieldedCoinSpend` the library emits, and the ledger's effects check satisfies a
+    // `Contract`-tagged claim ONLY from that contract's own `unshielded_inputs` in the same
+    // transaction — a user recipient tagged `Contract` is unsatisfiable, and the node rejects
+    // the transaction with `Custom error: 214`.
+    //
+    // AND THE CONTRACT ARM BELOW IS UNREACHABLE TODAY, for the same reason as the shielded leg
+    // above: `assertActionEnvelope` refuses `recipientKind 1` on selectors 2 and 3 (see its
+    // header). A genuine `Contract`-tagged claim is just as unsatisfiable as the mistaken one this
+    // fix removed, unless the named contract calls `receiveUnshielded` in the same transaction —
+    // the 214 above, in its CORRECT form. Kept, not deleted, for the same restore-later reason.
+    sendUnshielded(col, val, p.recipientKind == 0
+      ? right<ContractAddress, UserAddress>(UserAddress{ bytes: p.recipient })
+      : left<ContractAddress, UserAddress>(ContractAddress{ bytes: p.recipient }));
+  }
+
+  // --- ONE debit write, into the muxed family ---
+  const newDebit = (debitBalance - val) as Uint<128>;
+  if (debitShielded) {
+    shieldedBalances.insert(debitKey, newDebit);
+  } else {
+    unshieldedBalances.insert(debitKey, newDebit);
+  }
+
+  // --- the swap WANT leg: claim `wantCoin` into custody ---
+  //
+  // `receiveShielded` creates an output the transaction does not fund, so this is what makes the
+  // offer UNBALANCED — a deficit of `p.wantAmount` of `p.wantColor` at the guaranteed segment, the
+  // same deficit shape `depositShielded` creates. It MUST precede `insertCoin`: receiving is what
+  // allocates the coin's Merkle-tree index. The pool then merges or creates, keeping one coin per
+  // colour.
+  if (isSwap) {
+    const wantCoin = ShieldedCoinInfo{
+      nonce: p.wantNonce, color: p.wantColor, value: p.wantAmount
+    };
+    receiveShielded(wantCoin);
+    if (pools.member(p.wantColor)) {
+      pools.insertCoin(
+        p.wantColor,
+        mergeCoinImmediate(pools.lookup(p.wantColor), wantCoin),
+        right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    } else {
+      pools.insertCoin(
+        p.wantColor, wantCoin, right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    }
+  }
+
+  // --- ONE credit write (selectors 4, 5, 6), key derived once with the family muxed ---
+  if (hasCredit) {
+    const creditKey = persistentHash<Vector<3, Bytes<32>>>(
+      [creditAcct, creditColour, creditShielded ? shieldedFamilyTag() : unshieldedFamilyTag()]);
+    const creditValue = (isSwap ? p.wantAmount : val) as Uint<128>;
+    if (creditShielded) {
+      shieldedBalances.insert(
+        creditKey, (shieldedBalanceAt(creditKey) + creditValue) as Uint<128>);
+    } else {
+      unshieldedBalances.insert(
+        creditKey, (unshieldedBalanceAt(creditKey) + creditValue) as Uint<128>);
+    }
+  }
+}
+
+// ================================================================================================
+// THE SEMANTIC COMMITMENT — defined here, computed OFF-CIRCUIT. AND: WHY THERE ARE NO EVENTS
+// ================================================================================================
+//
+// The semantic commitment is a single 32-byte keccak digest summarising what an `execute` call
+// meant: which contract and deployment, which action, which account, how it was authorized, every
+// action parameter, and the call's zswap imbalances in a canonical order. It is the one comparable
+// handle an off-chain reader — indexer, relayer, EVM-side verifier — has on a call.
+//
+// THE CONTRACT DOES NOT COMPUTE OR EMIT IT, AND EMITS NO EVENTS AT ALL. Events are disabled because
+// computing and emitting the commitment in-circuit cost about 367,000 rows — roughly 38% of
+// `execute`. That cost is NOT the hashing: it is SERIALIZING the 1,024-byte commitment envelope
+// (plus the transcript and action-union sub-preimages) into keccak preimages, byte by byte, inside
+// the circuit. Paying 38% of a proof for it is not worth it, because it proved nothing new:
+//
+//   THE PROVED CALL TRANSCRIPT IS THE AUTHORITY. Every field the commitment covers is already a
+//   CONSTRAINED PUBLIC FACT of the proved `execute` transcript — selector, auth mode, account id,
+//   owner, deadline, nonce, colours, amounts, recipient and credit account all enter
+//   `assertActionEnvelope` and `custodyDispatch` as constrained values, and the authorization result
+//   is either the in-circuit EIP-712 digest or `nativeAuthResult(account)`. The keccak chain merely
+//   re-hashed already-bound values and republished them.
+//
+//   THE RECIPE STAYS NORMATIVE AND AVAILABLE, as the EXPORTED PURE circuit `semanticCommitmentFor`.
+//   Pure circuits emit no proving key, so keeping the definition costs zero rows and zero keys, and
+//   ANY READER CAN RECOMPUTE THE COMMITMENT OFF-CIRCUIT — by running that circuit on the compiled
+//   artifact, or by reimplementing the recipe, which is keccak-only and flat-byte-concatenated
+//   precisely so an EVM-side verifier can do it with the `keccak256` opcode.
+//
+//   SECURITY RULE, load-bearing:
+//
+//       NO CONSUMER MAY TRUST A SEMANTIC COMMITMENT IT DID NOT RECOMPUTE FROM THE PROVED TRANSCRIPT.
+//
+//   With nothing emitted there is nothing to trust by mistake, so the failure mode "a reader
+//   accepted an event's value without parsing the transcript that justifies it" is removed BY
+//   CONSTRUCTION rather than by discipline.
+
+circuit semanticTag(): Bytes<32> {
+  return Bytes[0xe2, 0x11, 0x48, 0x48, 0x81, 0xf2, 0x54, 0x57,
+               0xd3, 0x38, 0xef, 0xff, 0x10, 0x5e, 0x35, 0x53,
+               0x31, 0x43, 0x51, 0x33, 0x8b, 0x55, 0xee, 0x21,
+               0x55, 0x39, 0x10, 0x6f, 0xf5, 0xee, 0x9c, 0x6e];
+}
+
+circuit callTranscriptTag(): Bytes<32> {
+  return Bytes[0x6b, 0x26, 0xfd, 0x1f, 0x96, 0x66, 0x83, 0x29,
+               0x9a, 0xae, 0x5e, 0x9e, 0x5e, 0xcd, 0x2c, 0x57,
+               0x5f, 0x1a, 0x17, 0xe9, 0x16, 0xdb, 0x0a, 0x6f,
+               0xb2, 0x9d, 0xcd, 0x9e, 0xd8, 0x62, 0xf0, 0xdf];
+}
+
+circuit nativeAuthTag(): Bytes<32> {
+  return Bytes[0x2a, 0xdb, 0xa8, 0x74, 0x39, 0x0d, 0xb7, 0x25,
+               0xf4, 0x89, 0x15, 0x21, 0x7d, 0xa7, 0x03, 0xe3,
+               0xfd, 0x62, 0xec, 0x40, 0x29, 0x6c, 0x2a, 0x2d,
+               0x02, 0x60, 0x2e, 0x67, 0xa3, 0xb9, 0xe7, 0xf4];
+}
+
+circuit entrypointHash(): Bytes<32> {
+  return Bytes[0xc6, 0x40, 0x06, 0x0c, 0xdb, 0x34, 0xfc, 0xc2,
+               0x60, 0xf4, 0x1e, 0xac, 0x74, 0x74, 0xee, 0x1d,
+               0x7c, 0x80, 0xb7, 0xe3, 0x60, 0x7d, 0xaf, 0xf9,
+               0xac, 0x67, 0xc7, 0xea, 0x2e, 0xbb, 0x1c, 0x44];
+}
+
+/// The native-mode authorization slot: keccak(nativeAuthTag || account). Nothing in this contract
+/// calls it; it is kept as the NORMATIVE in-contract definition of that slot, so an off-circuit
+/// recomputer has one authoritative source. Private and uncalled, it emits no constraints.
+circuit nativeAuthResult(account: Bytes<32>): Bytes<32> {
+  const preimage: Bytes<64> = slice<64>([...nativeAuthTag(), ...account], 0) as Bytes<64>;
+  return keccak256<Bytes<64>>(preimage);
+}
+
+/// Every action parameter of the envelope in one fixed-width hash; fields inactive for the call's
+/// selector are zero, which is what `assertActionEnvelope` guarantees.
+circuit actionUnionHash(p: ExecutePayload): Bytes<32> {
+  const preimage: Bytes<384> = slice<384>([
+    ...addressWord(p.owner), ...uint64Word(p.validUntil), ...p.accountSalt,
+    ...p.primaryColor, ...uint128Word(p.primaryAmount), ...uint8Word(p.recipientKind),
+    ...p.recipient, ...p.toAccount, ...p.wantNonce, ...p.wantColor,
+    ...uint128Word(p.wantAmount), ...p.creditAccount
+  ], 0) as Bytes<384>;
+  return keccak256<Bytes<384>>(preimage);
+}
+
+/// WHO called WHAT, and how it was authorized: contract, entrypoint, selector, the selector's frozen
+/// EIP-712 type hash, the acting account, the authorization result, and the action parameters.
+circuit semanticCallTranscriptHash(
+  manager: Bytes<32>, p: ExecutePayload, account: Bytes<32>, authResult: Bytes<32>
+): Bytes<32> {
+  const preimage: Bytes<256> = slice<256>([
+    ...callTranscriptTag(), ...manager, ...entrypointHash(), ...uint8Word(p.selector),
+    ...frozenTypeHash(p.selector), ...account, ...authResult, ...actionUnionHash(p)
+  ], 0) as Bytes<256>;
+  return keccak256<Bytes<256>>(preimage);
+}
+
+/// The commitment envelope: a flat 1,024-byte preimage of every semantic field, the call-transcript
+/// sub-hash, and TWO imbalance slots — two because an open swap moves value in both directions (a
+/// positive release and a negative want) while every other action moves at most one; unused slots
+/// are zero. Flat and keccak-only so an EVM verifier can rebuild it directly.
+circuit semanticCommitmentFromSlots(
+  manager: Bytes<32>, domain: Bytes<32>, p: ExecutePayload, account: Bytes<32>,
+  authResult: Bytes<32>, imbalanceCount: Uint<8>,
+  family0: Uint<8>, color0: Bytes<32>, direction0: Uint<8>, amount0: Uint<128>,
+  family1: Uint<8>, color1: Bytes<32>, direction1: Uint<8>, amount1: Uint<128>
+): Bytes<32> {
+  const semanticNonce = p.authMode == 1 ? p.nonce : (0 as Uint<64>);
+  const callHash = semanticCallTranscriptHash(manager, p, account, authResult);
+  const preimage: Bytes<1024> = slice<1024>([
+    ...semanticTag(), ...manager, ...domain, ...entrypointHash(), ...uint8Word(p.selector),
+    ...frozenTypeHash(p.selector), ...account, ...uint8Word(p.authMode), ...authResult,
+    ...uint64Word(semanticNonce), ...addressWord(p.owner), ...uint64Word(p.validUntil),
+    ...p.accountSalt, ...p.primaryColor, ...uint128Word(p.primaryAmount),
+    ...uint8Word(p.recipientKind), ...p.recipient, ...p.toAccount, ...p.wantNonce,
+    ...p.wantColor, ...uint128Word(p.wantAmount), ...p.creditAccount, ...callHash,
+    ...uint8Word(imbalanceCount),
+    ...uint8Word(family0), ...color0, ...uint8Word(direction0), ...uint128Word(amount0),
+    ...uint8Word(family1), ...color1, ...uint8Word(direction1), ...uint128Word(amount1)
+  ], 0) as Bytes<1024>;
+  return keccak256<Bytes<1024>>(preimage);
+}
+
+/// Slot selection. Non-swaps have no imbalance; a named swap has one (the want-side deficit); an
+/// open swap has two, ORDERED BY COLOUR so the commitment does not depend on which leg was written
+/// first. Muxing the values into one call avoids branch-duplicated keccak.
+circuit semanticCommitmentCore(
+  manager: Bytes<32>, domain: Bytes<32>, payload: ExecutePayload,
+  account: Bytes<32>, authResult: Bytes<32>
+): Bytes<32> {
+  const p = payload;
+  const isSwap = p.selector == 6;
+  const isOpenSwap = isSwap && p.recipientKind == 0;
+  const giveBeforeWant = isOpenSwap && bytes32LexicographicLt(p.primaryColor, p.wantColor);
+  const imbalanceCount = (isSwap ? (isOpenSwap ? 2 : 1) : 0) as Uint<8>;
+  const family0 = (isSwap ? 1 : 0) as Uint<8>;
+  const color0 = giveBeforeWant
+    ? p.primaryColor
+    : (isSwap ? p.wantColor : default<Bytes<32>>);
+  const direction0 = (giveBeforeWant ? 2 : (isSwap ? 1 : 0)) as Uint<8>;
+  const amount0 = (giveBeforeWant ? p.primaryAmount : (isSwap ? p.wantAmount : 0)) as Uint<128>;
+  const family1 = (isOpenSwap ? 1 : 0) as Uint<8>;
+  const color1 = isOpenSwap
+    ? (giveBeforeWant ? p.wantColor : p.primaryColor)
+    : default<Bytes<32>>;
+  const direction1 = (isOpenSwap ? (giveBeforeWant ? 1 : 2) : 0) as Uint<8>;
+  const amount1 = (isOpenSwap ? (giveBeforeWant ? p.wantAmount : p.primaryAmount) : 0) as Uint<128>;
+  return semanticCommitmentFromSlots(
+    manager, domain, p, account, authResult, imbalanceCount,
+    family0, color0, direction0, amount0,
+    family1, color1, direction1, amount1
+  );
+}
+
+/// THE normative definition of the semantic commitment, and the only place this contract computes
+/// it. PURE — it reads no ledger state, so the compiler emits no proving key for it and evaluating
+/// it costs nothing on chain. Consumers call it on the compiled artifact (or reimplement the recipe
+/// off-circuit) with fields they recovered from the proved `execute` transcript.
+///
+/// `authResult` is the caller's OWN recomputation: the EIP-712 digest (`evmDigestFor`, exported and
+/// pure) when `authMode == 1`, or `nativeAuthResult(account)` when `authMode == 0`. It is an
+/// argument rather than an internal derivation precisely so the caller has to reconstruct it — see
+/// the security rule at the head of this section.
+export circuit semanticCommitmentFor(
+  manager: Bytes<32>, domain: Bytes<32>, payload: ExecutePayload,
+  account: Bytes<32>, authResult: Bytes<32>
+): Bytes<32> {
+  const p = payload;
+  assertActionEnvelope(p);
+  return disclose(semanticCommitmentCore(manager, domain, p, account, authResult));
+}
+
+/// THE ONLY externally callable registration/debit gateway. Order of business: validate the
+/// envelope, compute the EIP-712 digest, run the ECDSA check, resolve the acting account through the
+/// choke point, enforce the deadline, bind the signature to the owner, then register OR dispatch
+/// custody, then write the nonce.
+///
+/// The ECDSA and address operations are STRAIGHT-LINE — computed unconditionally and consumed by
+/// `!isEvm… || …` asserts rather than placed inside an `if` — because the pinned proving backend
+/// cannot lower guarded secp256k1 operations. Native calls therefore verify a signature over a zero
+/// digest whose result nothing consumes: deliberate, and it costs rows rather than safety.
+export circuit execute(
+  payload: ExecutePayload,
+  sig: Secp256k1EcdsaSignature,
+  pk: Secp256k1Point
+): [] {
+  const p = disclose(payload);
+  assertActionEnvelope(p);
+  const manager = kernel.self().bytes;
+  const digest = p.selector == 0
+    ? default<Bytes<32>>
+    : evmDigestFor(manager, deploymentDomain, p);
+  const signatureOk = disclose(secp256k1EcdsaVerify(digest, sig, pk));
+  const signer = disclose(secp256k1EthereumAddress(pk));
+  const isNativeRegistration = p.selector == 0;
+  const isEvmRegistration = p.selector == 1;
+  const isRegistration = isNativeRegistration || isEvmRegistration;
+  const isEvmAuthorized = p.authMode == 1;
+  const isEvmAction = isEvmAuthorized && !isEvmRegistration;
+  const nativeAccount = ownerCommitment(localOwnerSecret());
+  const evmRegistrationAccount = evmAccountIdFor(manager, p.owner, p.accountSalt);
+  assert(!isEvmRegistration || evmRegistrationAccount == p.account, "EVM registration account id mismatch");
+  const account = gatewayAccount(p, nativeAccount, evmRegistrationAccount);
+
+  if (isEvmAuthorized) {
+    assertLiveDeadline(p.validUntil);
+  }
+  assert(!isEvmRegistration || signatureOk, "EVM registration signature does not verify");
+  assert(!isEvmRegistration || signer == p.owner, "EVM registration signer does not match owner");
+  assert(!isEvmAction || signatureOk, "EVM signature does not verify");
+  assert(!isEvmAction || signer == p.owner, "EVM signer does not control account");
+
+  if (isRegistration) {
+    registerAccount(account, (isEvmRegistration ? 1 : 0) as Uint<8>);
+  }
+  if (isEvmRegistration) {
+    evmOwners.insert(account, p.owner);
+  }
+
+  if (!isRegistration) {
+    custodyDispatch(p, account);
+  }
+
+  // The sole checked nonce write is deliberately AFTER the custody dispatch: every guard and effect
+  // must succeed first, so a refused action leaves the nonce where it was and the same authorization
+  // can simply be retried. EVM registration stores zero (the record's first usable nonce); native
+  // records never enter this write at all.
+  const incrementedNonce = (p.nonce + 1) as Uint<64>;
+  assert(!isEvmAction || incrementedNonce > p.nonce, "EVM nonce overflow");
+  const storedNonce = (isEvmRegistration ? 0 : incrementedNonce) as Uint<64>;
+  if (isEvmAuthorized) {
+    evmNonces.insert(account, storedNonce);
+  }
+
+  // This circuit emits NO EVENTS, and neither does any other in this file. The semantic commitment
+  // is not computed here: the proved transcript of this call is the authority, and readers recompute
+  // the commitment off-circuit via the exported pure `semanticCommitmentFor`. See THE SEMANTIC
+  // COMMITMENT above for the cost that motivated it, and for the rule that no consumer may trust a
+  // commitment it did not recompute.
+}

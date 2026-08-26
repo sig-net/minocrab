@@ -876,11 +876,25 @@ impl Circuit3 {
     }
 
     /// Guarded public-transcript read.
+    ///
+    /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, exactly as an
+    /// emitted op's does — without this, a `_guarded` read inside
+    /// [`Circuit3::when`] would fire its gates on the raw condition while
+    /// its op embed (which goes through [`Circuit3::resolve_guard`]) stays
+    /// correctly skipped, shifting every later read's public inputs by the
+    /// orphaned gates. Found by the AA manager port: `sendUnshielded`'s
+    /// auto-receive `kernel.self` read is guarded by `recipient.is_left`,
+    /// and the manager is the first contract to run it inside a branch
+    /// (`custodyDispatch`'s `isWithdrawUnshielded` arm), where a named-swap
+    /// call has `is_left` true while the arm is off. Straight-line callers
+    /// are untouched — with no ambient guard the operand passes through
+    /// unchanged.
     pub fn public_transcript_input_guarded<T: IrTy, V: Visibility>(
         &mut self,
         guard: Wire3<FieldT, V>,
     ) -> Wire3<T, Public> {
-        Wire3::new(self.b.public_input(T::ir_type(), Some(Arg::Val(guard.val))))
+        let guard = self.resolve_guard(Arg::Val(guard.val));
+        Wire3::new(self.b.public_input(T::ir_type(), Some(guard)))
     }
 
     /// A native-field constant, NAMED: `Copy imm` into a reusable wire.

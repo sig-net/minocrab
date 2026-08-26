@@ -1,0 +1,97 @@
+// MinterCollide — 00005-open-colour-custody (EXPERIMENTAL_LANE / LANE-DEV-1)
+//
+// The P-COLL fixture, and nothing else. Its ONLY job is to make the shielded and the unshielded
+// colour of one deployment BYTE-IDENTICAL, so that the Manager's family separation (FR-203) can be
+// tested against the exact case that would break an implementation keyed on the colour alone.
+//
+// HOW THE COLLISION IS BUILT — by construction, not by search:
+//
+//   sep    = persistentHash<Vector<2, Bytes<32>>>([tag, pad(32, "aa00005:collide")])   ONE separator
+//   colour = tokenType(sep, kernel.self())                                             ONE colour
+//
+// and that same `sep` is handed to BOTH `mintShieldedToken` and `mintUnshieldedToken`. Because
+// `tokenType` is a pure function of (domain separator, contract address) — see the pinned standard
+// library, L121 — the two families' colours are the same 32 bytes with probability 1.
+//
+// Contrast with the ordinary Minter, which is reused UNCHANGED for TOKA-TOKE: it derives TWO
+// separators from two distinct family constants precisely so its two colours can never collide. This
+// contract is that safeguard removed on purpose, in a throwaway probe contract, so the Manager's own
+// separation is what is under test rather than the Minter's.
+//
+// Nothing here custodies anything: there is no balance state, and any party may request minting. It
+// is a demo fixture, not a product.
+//
+// Derived from `contracts/minter.compact` (00004, unchanged) and from the pinned standard library at
+// compactc-v0.33.0-rc.2: mintShieldedToken L125, mintUnshieldedToken L299, tokenType L121.
+
+import CompactStandardLibrary;
+
+export {
+  mintShieldedTo,
+  mintUnshieldedTo,
+  collidingColor,
+  shieldedColor,
+  unshieldedColor,
+  deploymentTag,
+  collidingSep
+}
+
+// --- per-deployment state, fixed at construction -------------------------------------------------
+
+/// The tag this deployment was constructed with (the harness reads it back and compares).
+export ledger deploymentTag: Bytes<32>;
+
+/// THE ONE separator. There is no second one — that is the whole point of this contract.
+export ledger collidingSep: Bytes<32>;
+
+circuit collideFamilyTag(): Bytes<32> {
+  return pad(32, "aa00005:collide");
+}
+
+/// Constructor arguments are witness data under the compiler's witness-protection program, so the
+/// tag must be `disclose`d before it can reach ledger state (00004 probe P2, finding F-102).
+constructor(tag: Bytes<32>) {
+  const t = disclose(tag);
+  deploymentTag = t;
+  collidingSep = persistentHash<Vector<2, Bytes<32>>>([t, collideFamilyTag()]);
+}
+
+// --- colours -------------------------------------------------------------------------------------
+
+/// The single colour this deployment mints in BOTH families.
+export circuit collidingColor(): Bytes<32> {
+  return tokenType(collidingSep, kernel.self());
+}
+
+/// Read as "the shielded family's colour" — deliberately the same value as `unshieldedColor()`.
+/// Both accessors exist so the harness can read the two families through two different circuit
+/// calls and then assert them EQUAL. That inverted assertion is the probe: everywhere else in this
+/// project colours are asserted distinct.
+export circuit shieldedColor(): Bytes<32> {
+  return tokenType(collidingSep, kernel.self());
+}
+
+export circuit unshieldedColor(): Bytes<32> {
+  return tokenType(collidingSep, kernel.self());
+}
+
+// --- minting ---------------------------------------------------------------------------------
+
+/// Mint `value` of the colliding colour, SHIELDED, to `recipient`.
+export circuit mintShieldedTo(
+  value: Uint<64>,
+  nonce: Bytes<32>,
+  recipient: Either<ZswapCoinPublicKey, ContractAddress>
+): ShieldedCoinInfo {
+  assert(value > 0, "mint value must be positive");
+  return mintShieldedToken(collidingSep, disclose(value), disclose(nonce), disclose(recipient));
+}
+
+/// Mint `amount` of the SAME colour, UNSHIELDED, to `recipient`.
+export circuit mintUnshieldedTo(
+  amount: Uint<64>,
+  recipient: Either<ContractAddress, UserAddress>
+): Bytes<32> {
+  assert(amount > 0, "mint amount must be positive");
+  return mintUnshieldedToken(collidingSep, disclose(amount), disclose(recipient));
+}

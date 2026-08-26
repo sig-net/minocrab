@@ -182,6 +182,11 @@ ledger_repr_via_abi! {
     /// `checkRoot` argument is pushed through this path, and a contract may
     /// keep one in a `Cell`.
     [] MerkleTreeDigest<Public>,
+    /// `Map<K, QualifiedShieldedCoinInfo>`'s VALUE read back out — six limbs
+    /// under the coin's four atoms (`b32, b32, b16, b8`). The write side of
+    /// a coin slot is [`insert_coin`](LedgerMap::insert_coin) (the qualify
+    /// dance); this impl is what a `lookup` of the pooled coin needs.
+    [] QualifiedShieldedCoinInfo3<Public>,
     [const BOUND: u128] BoundedUint<BOUND, Public>,
     [] Bool<Public>,
     [const N: usize] Bytes<N, Public>,

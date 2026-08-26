@@ -76,8 +76,10 @@ fn corpus_circuit_names() -> (usize, BTreeSet<String>) {
 #[test]
 fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     let (artifacts, names) = corpus_circuit_names();
+    // 312 through M22; +3 with the aa-midnight-evm-experiment source (the
+    // AA manager and its two test-support minters, 2026-08-26).
     assert_eq!(
-        artifacts, 312,
+        artifacts, 315,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

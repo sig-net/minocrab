@@ -1,0 +1,80 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.1",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 29381,
+      "hash": "61e0b509b6692bbababc070fc1497ab877dac419da0739fa1561cea35a8a733b"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 13270,
+      "hash": "92c251d34d3f875b80f238acee3244919d255a630531b0a47da50850ba2f8fc5"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 432700,
+      "hash": "5b096cb24f57f08b64b7ae622e70d30e7565904517477bbd541434000f0df165"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 22736,
+      "hash": "5fc45846e917a7173eefc3a8da134ca521e89961b0e1723473a59645c2fd5d3d"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "accountRecord.zkir": {
+      "type": "file",
+      "size": 6066,
+      "hash": "85e6e17aa1ffcbe39155bdfaf7da164aba3cf3a0fb468cbe9f95e4ea24bcbe87"
+    },
+    "depositShielded.zkir": {
+      "type": "file",
+      "size": 17233,
+      "hash": "7cf9e1c7ef4f22c672dbbba718c0b6ce5234f020c031ea86375bdd03fb2511ad"
+    },
+    "depositUnshielded.zkir": {
+      "type": "file",
+      "size": 5132,
+      "hash": "b6606d0a7b819e02a7779cdb7928aabfac3465e8e32c91d50970acd686fac75d"
+    },
+    "execute.zkir": {
+      "type": "file",
+      "size": 605634,
+      "hash": "bd8e655895e883a78525dce673ca398d45af84cc21e4c713860b39d5fd7774ec"
+    },
+    "isRegistered.zkir": {
+      "type": "file",
+      "size": 945,
+      "hash": "df0d50c70e43c0d98483c10f228198c74a434fbc454422797336f43aa0acaefb"
+    },
+    "poolHasColour.zkir": {
+      "type": "file",
+      "size": 951,
+      "hash": "f02c677c55a37efe87adc2357a6eb729aa3da388d8e9dc3025a902df4584cff4"
+    },
+    "poolValue.zkir": {
+      "type": "file",
+      "size": 2001,
+      "hash": "1781e52f5254aab9f46e006b68ef2d714a659d782f3b2404f5337096bfc24bfd"
+    },
+    "shieldedAccountBalance.zkir": {
+      "type": "file",
+      "size": 2152,
+      "hash": "1cd73ab6a165117b2b78d94c1129dab282ff9b3a8309b02c76112cdad974bb7e"
+    },
+    "unshieldedAccountBalance.zkir": {
+      "type": "file",
+      "size": 2156,
+      "hash": "9705f1fbea0dfd408926891aed472cb1908e49b563d5848a2e5f2947bca621ef"
+    }
+  }
+}

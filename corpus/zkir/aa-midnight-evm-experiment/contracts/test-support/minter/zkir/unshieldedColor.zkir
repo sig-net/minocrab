@@ -1,0 +1,25 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": true,
+  "inputs": [
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>",
+    "Scalar<BLS12-381>"
+  ],
+  "instructions": [
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%domain_sep.0", "guard": null },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%domain_sep.1", "guard": null },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x02"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0c", "0x01", "0x20", "%domain_sep.0", "%domain_sep.1"] },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%contractAddress.2", "guard": null },
+    { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%contractAddress.3", "guard": null },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x32"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
+    { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%contractAddress.2", "%contractAddress.3"] },
+    { "op": "persistent_hash", "output": "%bytes.4", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", "%domain_sep.0", "%domain_sep.1", "%contractAddress.2", "%contractAddress.3"] },
+    { "op": "bytes32_into_low_high", "outputs": ["%t.5", "%t.6"], "bytes": "%bytes.4" },
+    { "op": "output", "vals": ["%t.6", "%t.5"] }
+  ]
+}

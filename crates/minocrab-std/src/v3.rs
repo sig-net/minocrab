@@ -1831,6 +1831,35 @@ impl<V: Vis3> Secp256k1Point<V> {
     }
 }
 
+/// Compact's `Secp256k1Scalar`: ONE slot of ZKIR type `Scalar<Secp256k1>`,
+/// the same non-native-slot story as [`Secp256k1Point`] — no range
+/// constraint (`reduce-to-zkir.ss` has nothing to say about a scalar slot),
+/// no entry in a native slot list, an ordinary argument slot otherwise.
+///
+/// The FAB atoms are `b24 + b8` (`circuit-alignment-for`,
+/// reduce-to-zkir.ss:34-91: "Secp256k1 Base/Scalar → b24+b8" —
+/// notes/ledger-abi.org §3): one slot, two atoms, the way a point is one
+/// slot and five.
+///
+/// First needed by the AA manager's `execute`, whose
+/// `Secp256k1EcdsaSignature { r, s }` argument is two of these — the
+/// corpus's only scalar-typed circuit arguments.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Secp256k1Scalar<V: Vis3 = Private>(Wire3<Secp256k1ScalarT, V>);
+
+impl<V: Vis3> Secp256k1Scalar<V> {
+    /// Wrap a scalar wire (a circuit argument, or a conversion's result).
+    pub fn from_scalar(w: Wire3<Secp256k1ScalarT, V>) -> Self {
+        Secp256k1Scalar(w)
+    }
+
+    /// The scalar wire — the same slot, no instructions.
+    pub fn scalar(self) -> Wire3<Secp256k1ScalarT, V> {
+        self.0
+    }
+}
+
 /// Compact's `JubjubPoint`: one slot of ZKIR type `Point<Jubjub>`, exactly as
 /// [`Secp256k1Point`] is one `Point<Secp256k1>` — same story about carrying no
 /// range constraint and contributing no native slot, a shorter alignment.
