@@ -542,9 +542,10 @@ fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND
 /// requestId])`.
 fn withdraw_refund_commitment(
     c: &mut Circuit3,
-    sk: &B32<Private>,
+    sk: &common::SecretKey<Private>,
     request_id: &signet::RequestId<Private>,
 ) -> B32<Private> {
+    let sk = sk.bytes();
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
         let alignment = Alignment(vec![

@@ -504,9 +504,10 @@ fn record_and_notify<const WORDS: usize>(
 /// is `< 2^255`).
 fn withdraw_refund_commitment(
     c: &mut Circuit3,
-    sk: &B32<Private>,
+    sk: &common::SecretKey<Private>,
     request_id: &signet::RequestId<Private>,
 ) -> B32<Private> {
+    let sk = sk.bytes();
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
         let f = c.transient_hash(&[

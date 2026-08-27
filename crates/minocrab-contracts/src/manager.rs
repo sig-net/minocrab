@@ -248,7 +248,8 @@ fn balance_at(
 /// `[bytes 32, bytes 21]` (the stdlib's `persistentCommit` is
 /// rand-then-value; here the VALUE is the 21-byte tag and the RAND the
 /// secret).
-fn owner_commitment(c: &mut Circuit3, sk: &B32<Private>) -> B32<Private> {
+fn owner_commitment(c: &mut Circuit3, sk: &common::SecretKey<Private>) -> B32<Private> {
+    let sk = sk.bytes();
     let tag = c.constant(Fr::from_le_bytes(OWNER_TAG).expect("21 bytes fit"));
     let alignment = Alignment(vec![atom(32), atom(21)]);
     let digest = c.persistent_hash(

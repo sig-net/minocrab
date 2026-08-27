@@ -9,9 +9,20 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
+    b32_newtype, coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
     ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32, STRAIGHT_LINE,
 };
+
+b32_newtype! {
+    /// The witnessed vault secret key (`witness …SecretKey(): Bytes<32>`) —
+    /// what [`commitment_padded_tag`] and [`commitment_packed_tag`] derive
+    /// an identity from, and the first preimage limb of every refund
+    /// commitment. Constructed only by [`witness_sk`], so nothing but a
+    /// witnessed secret key can reach those derivations: any other private
+    /// `B32` in scope (a nonce, a colour, a request id) no longer
+    /// type-checks there, which is newtype-survey hazard A2 closed.
+    SecretKey,
+}
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
 /// native field element (notes/ledger-abi.org §3) — 5 limbs, matching
@@ -41,7 +52,12 @@ pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
 /// design pass read the old name `commitment_short` as a cheaper spelling and
 /// filed it for unification, which would have silently restranded every
 /// derived account (notes/vault-vocabulary.org §0).
-pub fn commitment_padded_tag(c: &mut Circuit3, prefix: &str, sk: &B32<Private>) -> B32<Private> {
+pub fn commitment_padded_tag(
+    c: &mut Circuit3,
+    prefix: &str,
+    sk: &SecretKey<Private>,
+) -> B32<Private> {
+    let sk = sk.bytes();
     c.region("identity commitment", |c| {
         let pad = B32::pad(c, prefix);
         let alignment = Alignment(vec![
@@ -87,7 +103,8 @@ pub fn commitment_padded_tag(c: &mut Circuit3, prefix: &str, sk: &B32<Private>) 
 /// | byte(s) | 0..10          | 11..42 |
 /// |---------|----------------|--------|
 /// | content | "vault:user:"  | sk[32] |
-pub fn commitment_packed_tag(c: &mut Circuit3, sk: &B32<Private>) -> B32<Private> {
+pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> B32<Private> {
+    let sk = sk.bytes();
     c.region("identity commitment", |c| {
         let tag = c.constant(
             minocrab::Fr::from_le_bytes(super::erc20_vault::USER_PAD.as_bytes())
@@ -127,13 +144,14 @@ pub fn assert_deployer_short<V: Visibility + Copy>(
 }
 
 /// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
-pub fn witness_sk(c: &mut Circuit3) -> B32<Private> {
+/// The ONLY [`SecretKey`] constructor.
+pub fn witness_sk(c: &mut Circuit3) -> SecretKey<Private> {
     let sk = B32 {
         hi: c.witness::<FieldT>(),
         lo: c.witness::<FieldT>(),
     };
     sk.constrain_input(c);
-    sk
+    SecretKey(sk)
 }
 
 /// `right<ZswapCoinPublicKey, ContractAddress>(kernel.self())` — a fresh
