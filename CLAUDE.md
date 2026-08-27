@@ -25,3 +25,10 @@ Priorities in order: correctness (and obvious correctness) > performance > idiom
   build-time panic only for genuinely value-dependent checks, with a
   prescriptive message, recorded for dmd to review.
 - `plan.org` is the vision; don't edit it without asking.
+- NO Claude/Anthropic attribution in commits or PRs (dmd 2026-08-27).
+  The Claude Code harness appends a `Co-Authored-By: Claude …` trailer by
+  DEFAULT — this rule overrides that default. Write commit messages ending
+  at the last real body line; add no `Co-Authored-By: Claude`,
+  `Claude-Session:`, or "Generated with Claude Code" line. A local
+  `commit-msg` hook strips them as a backstop, but don't rely on it —
+  don't write them in the first place.
