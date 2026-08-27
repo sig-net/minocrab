@@ -2244,6 +2244,12 @@ The four extension points (à la carte, no fork):
       and marking the rest internal. The lowering levers to document are
       already inventoried in notes/benchmark.org + notes/vault-
       optimization.org + notes/manager-port.org.
+      (COOKBOOK LANDED 2026-08-27, step 4 first half: OPTIMIZATION.md at
+      the repo root — the ten levers de-jargoned for external gadget
+      authors, each grounded in a real API + the measured note behind it,
+      linked from the README library section. REMAINING for point 1: the
+      stable authoring-surface decision itself, which is the step-3 tier
+      boundary.)
 - [ ] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
       pass layer from today's free-functions + `dedup_range_constraints`
       builder flag to a stable `Pass` trait (`IR -> IR` + a report) with

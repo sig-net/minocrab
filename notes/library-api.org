@@ -211,10 +211,17 @@ state.
   humans get the pitch first and LLMs/power users get the extension guide),
   covering the three extension points, the audiences, and the honest
   ceiling. dmd's ask 2026-08-27.
+- GADGET COOKBOOK (step 4, first half): OPTIMIZATION.md at the repo root —
+  the ten lowering levers de-jargoned for external gadget authors (hash
+  in-chip, shift-don't-reverse, ReverseBytes, segment Serializer, guarded
+  read-as-0, const-generic families, .widen(), inline immediates,
+  Uint::sub's guard, from_field_checked/unchecked), each grounded in a real
+  API + the measured note behind it, and closing on "then verify". Linked
+  from the README library section.
 REMAINING for M24: the =unstable= internals sweep + docs.rs config (step
-3), the gadget cookbook + rustdoc publish (step 4), and — when wanted —
-=cost=/=profile= formally marked stable, the flake app, and the CLI's
-=pass= subcommand.
+3), rustdoc publish (step 4, second half — needs CI, M20), and — when
+wanted — =cost=/=profile= formally marked stable, the flake app, and the
+CLI's =pass= subcommand.
 
 * Build order (least-work-first, per dmd "any order you like")
 1. §5 CLI seed → a real =minocrab-cli= over the existing =cost=/=profile=
