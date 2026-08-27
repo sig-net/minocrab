@@ -421,4 +421,6 @@ Consume it today as a **git dependency** (crates.io is blocked on upstream — s
 
 3. **Measure** — `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
 
+If you find a good optimisation pass, or circuit, either put it up on cargo, or open a PR if it improves on something in the stdlib. Improvements with lean proofs of equivalence are preferred and may even be merged automatically.
+
 The optimisation levers that cut gate counts are catalogued for gadget authors in [OPTIMIZATION.md](OPTIMIZATION.md) (the measured record behind them is in [notes/benchmark.org](notes/benchmark.org), [notes/vault-optimization.org](notes/vault-optimization.org) and [notes/manager-port.org](notes/manager-port.org)); the library design of record is [notes/library-api.org](notes/library-api.org).
