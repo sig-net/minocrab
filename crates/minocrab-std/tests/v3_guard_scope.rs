@@ -131,6 +131,39 @@ fn a_read_between_two_scopes_is_guarded_by_the_outer_one() {
     assert_eq!(scoped, by_hand);
 }
 
+/// A `_guarded` transcript read called INSIDE a DIFFERENT ambient scope must
+/// conjoin the two guards — gate on `a && b`, not on the explicit `b` alone.
+///
+/// REGRESSION for the bug the AA-manager port exposed (2026-08-27,
+/// `sendUnshielded`'s auto-receive `kernel.self` read inside
+/// `custodyDispatch`'s `isWithdrawUnshielded` arm): before the fix,
+/// `public_transcript_input_guarded` used its explicit guard directly and did
+/// NOT resolve against the ambient scope, so the read's PI gates fired on `b`
+/// while its op embed (which always resolves through `resolve_guard`) stayed
+/// skipped under `a && b` — shifting every later read's public inputs. The two
+/// builds below must be byte-identical: a plain read nested one scope deeper
+/// gates on `a && b`, and so must `input_guarded(b)` under `when(a)`.
+#[test]
+fn a_guarded_read_inside_a_scope_conjoins_both_guards() {
+    let nested = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(a, |c| {
+            c.when(b, |c| {
+                let _w = c.public_transcript_input::<FieldT>();
+            });
+        });
+    });
+    let guarded = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(a, |c| {
+            let _w = c.public_transcript_input_guarded::<FieldT, _>(b);
+        });
+    });
+    assert_eq!(nested, guarded);
+}
+
 /// `otherwise` runs under the negation, computed once.
 #[test]
 fn a_chain_negates_once() {

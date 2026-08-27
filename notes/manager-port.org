@@ -1,0 +1,89 @@
+#+title: The AA-manager port (ad-hoc, 2026-08-27)
+
+Ad-hoc, on dmd's work order: add
+=acedward/AA-midnight-evm-experiment-v3/contracts/manager.compact= to the
+corpus, port it, count rows, and surface any eDSL improvement it forces.
+Not a planned milestone; recorded here because the port surfaced a real
+core bug and a measured win, and the project method writes findings down.
+
+* What it is
+An account-abstraction custody contract: dual-mode authorization (a
+Midnight witness secret, OR an Ethereum EOA signing EIP-712),
+family-separated shielded/unshielded custody, and ONE write gateway
+=execute= over seven selectors (register native/EVM, withdraw
+shielded/unshielded, internal transfer shielded/unshielded, open swap).
+It calls NO other contract — it reimplements EIP-712 + ECDSA and custodies
+zswap coins directly (unlike the erc20-vault, which offloads to the Signet
+singleton). Pinned in corpus/sources.json; artifacts under
+corpus/zkir/aa-midnight-evm-experiment/. Now 315 corpus artifacts (312 →
+315; the entry_point sweep's frozen count moved and was accepted).
+
+* The port is SEMANTIC, not instruction-mirroring
+The ledger-op stream (the PI contract) reproduces compactc's exactly, read
+off the compiled vm-code (contract/index.js) function by function; the
+in-circuit arithmetic uses OUR lowerings — the keccak chip's in-chip byte
+packing where compactc splices Bytes<N> byte by byte, div_mod shifts for
+the big-endian ABI words, guarded reads whose =or_default()= IS compactc's
+read-as-zero with no select. Equivalence is M3's criterion (same typed I/O
+schema + equal pis/pi_skips on a shared preimage), in
+crates/minocrab-contracts/tests/manager_differential.rs — 20 scenarios
+(native+EVM registration, both transfer families, both withdraw families,
+open + named/exact-spend swaps, guard-rejection agreement).
+
+* Gate counts — strictly better than compactc, every circuit
+| circuit                   | compactc k·rows | MinoCrab k·rows |
+|---------------------------+-----------------+-----------------|
+| isRegistered              | 8 · 129         | 8 · 129         |
+| poolHasColour             | 8 · 129         | 8 · 129         |
+| poolValue                 | 8 · 159         | 8 · 158         |
+| accountRecord             | 9 · 316         | 9 · 311         |
+| shieldedAccountBalance    | 13 · 4,001      | 13 · 4,000      |
+| unshieldedAccountBalance  | 13 · 4,001      | 13 · 4,000      |
+| depositUnshielded         | 13 · 7,918      | 13 · 4,150      |
+| depositShielded           | 16 · 42,239     | 16 · 38,487     |
+| execute                   | 19 · 382,781    | 18 · 209,330    |
+Total rows 441,673 → 260,694 (−41.0%); average per-circuit −11.6%.
+Only =execute= crosses a k boundary (19→18) — the one circuit anyone
+proves at scale. Its rows split ~60% self-contained authentication crypto
+(EIP-712 keccak assembly ~48%, one ECDSA verify ~12%, address recovery),
+~40% custody + ledger framing, 0% cross-contract call.
+
+* New leaves the port needed (all zero-movement on the 200 existing circuits)
+- =Secp256k1Scalar= (the ECDSA signature argument — the corpus's only
+  scalar-typed circuit arguments), minocrab-std/src/v3.rs +
+  v3/entry.rs. FAB atoms b24+b8, no constraint (`Prim::Point` marker), like
+  the point leaf one type over.
+- =QualifiedShieldedCoinInfo3='s CallArg/CallResult (v3/call.rs) and
+  LedgerRepr (v3/ledger.rs) — the pooled-coin map's =lookup=.
+
+* THE CORE BUG the port exposed, and its fix
+=Circuit3::public_transcript_input_guarded= did NOT resolve its explicit
+guard against the AMBIENT scope, while an emitted op's guard always does
+(through =resolve_guard=). So a =_guarded= transcript read inside a
+=when()= branch fired its PI gates on the raw guard while its op embed
+stayed skipped under the conjunction — shifting every LATER read's public
+inputs. First hit by =sendUnshielded='s auto-receive =kernel.self= read
+inside =custodyDispatch='s =isWithdrawUnshielded= arm, which a named-swap
+call reaches with =is_left= true while the arm is off.
+FIX (crates/minocrab/src/v3.rs): route the guard through =resolve_guard=,
+same as an op. VERIFIED ZERO-MOVEMENT: all 200 pre-existing circuits'
+serialized ZKIR byte-identical with and without the fix — which also
+PROVES no existing circuit had a =_guarded= transcript read under an
+ambient guard where the conjunction mattered (else its dump would have
+moved), so the existing corpus was never affected; the manager was the
+first to reach the case.
+REGRESSION TEST: =a_guarded_read_inside_a_scope_conjoins_both_guards= in
+minocrab-std/tests/v3_guard_scope.rs, confirmed to FAIL without the fix
+and pass with it.
+
+* Snapshots
+Nine manager circuits registered in tests/support/mod.rs::circuits();
+row_snapshot and interface_snapshot regenerated (additions only). The
+manager rows are deliberately BELOW compactc's — a semantic port, not a
+PI-mirror — so this block, unlike the vault's compat port, is not an
+instruction-for-instruction reference.
+
+* Measurement tooling landed alongside
+crates/minocrab-sim/examples/zkircost.rs (k, rows for any .zkir, works on
+compactc's output too) and crates/minocrab-contracts/examples/
+manager_rows.rs. Both feed M24's "expose a measurement surface" work.
