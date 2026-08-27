@@ -610,18 +610,32 @@ stage declares movement, notes as-built.
       shifts where the chip's absorption check is what enforces the
       slot. AWAITING dmd's ruling on the extension options ranked in
       the note; unticked for that reason only.)
-- [ ] R4 — KANI on the passes (dmd approved, conditional on not
+- [X] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
-      harnesses that plain cargo test never compiles, run as an opt-in
-      instrument `cargo kani -p minocrab-ir`, a separate job when CI
-      exists). Targets: fold_immediate_copies (folded streams
-      semantics-preserving: no dropped non-copy instruction, every
-      substituted operand equals the copy's immediate, output/disclosure
-      names preserved), dedup_range_constraints (only implied
-      constraints dropped; tightest bound kept), and R3's taint pass
-      itself. Bounds stated per property; MEASURED RUNTIMES in the
-      report; a property that cannot close at a useful bound is scoped
-      down honestly, never ground.
+      harnesses that plain cargo test never compiles, run as the opt-in
+      `./kani.sh`, a separate job when CI exists). Targets:
+      fold_immediate_copies, dedup_range_constraints, and R3's taint
+      pass. Bounds stated per property; measured runtimes; a property
+      that cannot close at a useful bound is scoped down honestly.
+      (DONE 2026-08-27 — notes/formal-verification-options.org §"As
+      built — M23 R4". CLOSED: the taint lint's exact interval
+      arithmetic, ten proofs at stated bounds (0.24s..522s — the 16-bit
+      multiplier dominates; sum/shift/bits/order against exact u128 and
+      closed-form oracles, cross-limb carries at full width). DOES NOT
+      CLOSE, recorded with the mechanism named: the two stream-level
+      pass properties — CBMC must unwind Vec<Instruction> drop glue,
+      which statically reaches the RECURSIVE Alignment type, and a fully
+      CONCRETE two-instruction harness exceeds 25 min — so they are
+      retained as bounded SPECIMENS whose unbounded discharge is M25's
+      ZKIR-pass prong. Byproduct kept: the passes' internal maps are now
+      an insertion-ordered AssocMap (RandomState-seeded HashMap is
+      opaque to any model checker; BTreeMap defeats symex), the statable
+      shape Lean wants too; workspace green, taint baseline unchanged.
+      Provisioning per dmd: rustup FROM NIX (flake devshell, ordered
+      behind the pinned toolchain) + a gcc→clang alias for CBMC; kani
+      via its supported rustup path; two temporary shims for kani-0.67's
+      pre-1.95 nightly vs sysinfo 0.39, documented in kani.sh, both dead
+      when kani's nightly catches up.)
 - [ ] NOTED, NOT YET (dmd): cargo-semver-checks on the interface crates
       in CI — waits for CI (M20 item 2).
 Exit criteria: R1-R4 landed with their gates; the taint lint green over

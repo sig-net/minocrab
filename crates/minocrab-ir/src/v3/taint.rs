@@ -42,7 +42,10 @@
 //! any allowlist entry is written; extending the marking rules (with a cited
 //! warrant) is preferred over allowlisting.
 
-use std::collections::{HashMap, HashSet};
+// Ordered maps for the same reason as passes.rs (M23 R4): std's
+// randomly-seeded HashMap is opaque to a model checker, and this pass is a
+// named future proof target.
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
@@ -82,7 +85,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // the stream bounds the wire for the whole circuit — the same argument
     // `dedup_range_constraints` makes. The wildcard here is the SAFE
     // direction: a missed constraint only under-marks, which over-fires.
-    let mut bound: HashMap<Identifier, Max> = HashMap::new();
+    let mut bound: BTreeMap<String, Max> = BTreeMap::new();
     for ins in instructions {
         match ins {
             Instruction::ConstrainBits { val: Operand::Variable(id), bits } => {
@@ -123,18 +126,18 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // like `operands_mut`: a new upstream instruction must break this build
     // rather than silently escape the audit — the unsound direction is a new
     // byte-absorbing hash falling through a wildcard.
-    let mut is_bytes32: HashSet<Identifier> = HashSet::new();
+    let mut is_bytes32: BTreeSet<String> = BTreeSet::new();
     let mut findings = Vec::new();
     for (index, ins) in instructions.iter().enumerate() {
         match ins {
             // ---- the two audited hashes ---------------------------------
             Instruction::PersistentHash { alignment, inputs, output } => {
                 audit_hash(index, "persistent_hash", alignment, inputs, &bound, &mut findings);
-                is_bytes32.insert(output.clone());
+                is_bytes32.insert(output.0.clone());
             }
             Instruction::Keccak256 { alignment, inputs, output } => {
                 audit_hash(index, "keccak256", alignment, inputs, &bound, &mut findings);
-                is_bytes32.insert(output.clone());
+                is_bytes32.insert(output.0.clone());
             }
 
             // ---- bounded producers, each with its in-circuit warrant ----
@@ -145,7 +148,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             // (field-wide), so an unknown type is left unmarked.
             Instruction::Encode { input, outputs } => {
                 let input_is_bytes32 =
-                    matches!(input, Operand::Variable(id) if is_bytes32.contains(id));
+                    matches!(input, Operand::Variable(id) if is_bytes32.contains(&id.0));
                 if input_is_bytes32 && outputs.len() == 2 {
                     note(&mut bound, &outputs[0], Max::all_ones(8 * LIMB_BYTES as u32));
                     note(&mut bound, &outputs[1], Max::all_ones(8));
@@ -193,8 +196,8 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     note(&mut bound, output, m);
                 }
                 if let Operand::Variable(id) = val {
-                    if is_bytes32.contains(id) {
-                        is_bytes32.insert(output.clone());
+                    if is_bytes32.contains(&id.0) {
+                        is_bytes32.insert(output.0.clone());
                     }
                 }
             }
@@ -237,7 +240,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::IntoBytes32 { output, .. }
             | Instruction::ReverseBytes { output, .. }
             | Instruction::Bytes32FromLowHigh { output, .. } => {
-                is_bytes32.insert(output.clone());
+                is_bytes32.insert(output.0.clone());
             }
             Instruction::PublicInput { val_t, output, .. }
             | Instruction::PrivateInput { val_t, output, .. } => {
@@ -247,7 +250,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 // elsewhere, a warrant that is the ledger's, not the
                 // circuit's, and NOT marked (see the module docs).
                 if *val_t == IrType::Bytes32 {
-                    is_bytes32.insert(output.clone());
+                    is_bytes32.insert(output.0.clone());
                 }
             }
 
@@ -290,7 +293,7 @@ fn audit_hash(
     hash: &'static str,
     alignment: &Alignment,
     inputs: &[Operand],
-    bound: &HashMap<Identifier, Max>,
+    bound: &BTreeMap<String, Max>,
     findings: &mut Vec<Finding>,
 ) {
     let mut ops = inputs.iter();
@@ -387,7 +390,7 @@ fn check_limb(
     li: usize,
     atom_len: u32,
     width_bytes: usize,
-    bound: &HashMap<Identifier, Max>,
+    bound: &BTreeMap<String, Max>,
     findings: &mut Vec<Finding>,
 ) {
     let required = 8 * width_bytes as u32;
@@ -410,7 +413,7 @@ fn check_limb(
                 });
             }
         }
-        Operand::Variable(id) => match bound.get(id) {
+        Operand::Variable(id) => match bound.get(&id.0) {
             Some(m) if m.bits() <= required => {}
             proven => findings.push(Finding {
                 index,
@@ -430,19 +433,19 @@ fn check_limb(
 }
 
 /// Merge a newly proven maximum for `id`, keeping the tightest.
-fn note(bound: &mut HashMap<Identifier, Max>, id: &Identifier, m: Max) {
+fn note(bound: &mut BTreeMap<String, Max>, id: &Identifier, m: Max) {
     bound
-        .entry(id.clone())
+        .entry(id.0.clone())
         .and_modify(|old| *old = (*old).min(m))
         .or_insert(m);
 }
 
 /// The proven maximum of an operand: an immediate's exact value, or the
 /// wire's tightest noted bound.
-fn op_max(bound: &HashMap<Identifier, Max>, op: &Operand) -> Option<Max> {
+fn op_max(bound: &BTreeMap<String, Max>, op: &Operand) -> Option<Max> {
     match op {
         Operand::Immediate(v) => Some(Max::from_fr(v)),
-        Operand::Variable(id) => bound.get(id).copied(),
+        Operand::Variable(id) => bound.get(&id.0).copied(),
     }
 }
 
@@ -786,5 +789,161 @@ mod tests {
         assert_eq!(audit(&short).len(), 1);
         let long = vec![keccak(vec![bytes_atom(1)], vec![imm(1), imm(2)])];
         assert_eq!(audit(&long).len(), 1);
+    }
+}
+
+// ============================================================================
+// Kani harnesses (M23 R4) — compiled ONLY under `cargo kani -p minocrab-ir`
+// ============================================================================
+//
+// The lint's soundness rests on the exact interval arithmetic: a Max that
+// under-reports a maximum would prove a bound that does not hold — the false
+// negative the whole instrument exists to prevent. These proofs pin the
+// arithmetic against independent oracles (`u128`, bit arithmetic) at stated
+// widths, and the order relation at full width. Bounds per proof; runtimes
+// in notes/formal-verification-options.org §"As built — M23 R4".
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::Max;
+
+    fn from_u128(v: u128) -> Max {
+        Max([v as u64, (v >> 64) as u64, 0, 0])
+    }
+
+    fn to_u128(m: &Max) -> Option<u128> {
+        (m.0[2] == 0 && m.0[3] == 0).then(|| m.0[0] as u128 | (m.0[1] as u128) << 64)
+    }
+
+    /// `checked_add` agrees with `u128` addition wherever both are defined.
+    /// BOUND: both operands ≤ 2^127 − 1, so the oracle cannot itself
+    /// overflow; the 256-bit path has no carry at this width, which is the
+    /// carry-chain's base case — `add_carries_across_limbs` covers the rest.
+    #[kani::proof]
+    fn add_matches_u128() {
+        let a: u128 = kani::any();
+        let b: u128 = kani::any();
+        kani::assume(a < 1 << 127 && b < 1 << 127);
+        let sum = from_u128(a).checked_add(from_u128(b)).expect("cannot overflow 256 bits");
+        assert_eq!(to_u128(&sum), Some(a + b));
+    }
+
+    /// The carry propagates across every limb boundary: adding 1 to
+    /// `2^n − 1` gives `2^n`, for every n < 256.
+    #[kani::proof]
+    fn add_carries_across_limbs() {
+        let n: u32 = kani::any();
+        kani::assume(n < 256);
+        let sum = Max::all_ones(n).checked_add(Max::all_ones(1).min(Max::pow2(0)))
+            // all_ones(1) is 1 and pow2(0) is 1; min keeps the proof honest
+            // about both constructors agreeing on the value 1.
+            .expect("2^n fits for n < 256");
+        assert_eq!(sum, Max::pow2(n), "all_ones({n}) + 1 != pow2({n})");
+    }
+
+    /// 256-bit overflow is reported, never wrapped.
+    #[kani::proof]
+    fn add_overflow_is_none() {
+        let a: u64 = kani::any();
+        kani::assume(a > 0);
+        assert!(Max::all_ones(256).checked_add(Max([a, 0, 0, 0])).is_none());
+    }
+
+    /// `checked_mul` agrees with `u128` multiplication. BOUND: 16-bit
+    /// operands. Neither 64x64 nor 32x32 closed in 900s — the 4x4 limb
+    /// loop embeds sixteen 64-bit partial-product multipliers in the SAT
+    /// formula regardless of assumed operand width, and wide
+    /// multiplication is the canonical SAT-hard circuit. 16-bit operands
+    /// still drive the identical limb/carry code path against an exact
+    /// oracle; the cross-limb carry at full width is
+    /// `mul_carries_across_limbs`.
+    #[kani::proof]
+    fn mul_matches_u128() {
+        let a: u64 = kani::any();
+        let b: u64 = kani::any();
+        kani::assume(a < 1 << 16 && b < 1 << 16);
+        let product = Max([a, 0, 0, 0]).checked_mul(Max([b, 0, 0, 0])).expect("fits");
+        assert_eq!(to_u128(&product), Some(a as u128 * b as u128));
+    }
+
+    /// The multiplier's cross-limb carry, at the boundary a 32-bit oracle
+    /// cannot see: (2^64 - 1)^2 spans all four limbs and has an exact
+    /// closed form.
+    #[kani::proof]
+    fn mul_carries_across_limbs() {
+        let ones = Max([u64::MAX, 0, 0, 0]);
+        let square = ones.checked_mul(ones).expect("fits 128 bits");
+        // (2^64 - 1)^2 = 2^128 - 2^65 + 1
+        assert_eq!(to_u128(&square), Some(u128::MAX - (1 << 65) + 2));
+    }
+
+    /// `shr` agrees with `u128` shifting for a SYMBOLIC 64-bit value at
+    /// EVERY concrete shift 0..=64. A fully symbolic shift amount did not
+    /// close in 900s at either 64- or 128-bit width (a symbolic barrel
+    /// shifter across four limbs); sweeping the shift concretely keeps the
+    /// value symbolic where the lint's soundness lives — `div = val >> bits`
+    /// with `bits` a CONCRETE instruction field, so a concrete-shift sweep
+    /// is in fact the exact shape the lint evaluates. Limb-boundary
+    /// crossings of wider values: `shr_limb_boundaries` below.
+    #[kani::proof]
+    #[kani::unwind(70)] // 65 sweep steps; memcmp inside assert_eq is 32
+    fn shr_matches_u128() {
+        let v: u64 = kani::any();
+        let mut s = 0u32;
+        while s <= 64 {
+            let shifted = Max([v, 0, 0, 0]).shr(s);
+            let expect = if s >= 64 { 0 } else { (v >> s) as u128 };
+            assert_eq!(to_u128(&shifted), Some(expect));
+            s += 1;
+        }
+    }
+
+    /// Every limb boundary of a full-width value, at concrete shifts: the
+    /// all-ones 256-bit value shifted by each multiple of 32 has the
+    /// closed form all_ones(256 - s).
+    #[kani::proof]
+    #[kani::unwind(40)] // the 8-step ladder, plus memcmp's per-byte loop
+                        // inside assert_eq! over the 32-byte limb array
+    fn shr_limb_boundaries() {
+        let mut s = 0u32;
+        while s < 256 {
+            assert_eq!(Max::all_ones(256).shr(s), Max::all_ones(256 - s));
+            s += 32;
+        }
+    }
+
+    /// `bits()` is exactly the position of the highest set bit — the fact
+    /// `m.bits() <= 8*w` relies on to mean `m ≤ 2^8w − 1`. BOUND: 128-bit
+    /// values (limb-symmetric; the upper limbs run the same code path).
+    #[kani::proof]
+    fn bits_matches_leading_zeros() {
+        let v: u128 = kani::any();
+        assert_eq!(from_u128(v).bits(), 128 - v.leading_zeros());
+    }
+
+    /// `bits(all_ones(n)) == n` for every n ≤ 256 — the two sides of the
+    /// verdict `m.bits() <= required` use the same ruler.
+    #[kani::proof]
+    fn all_ones_bits_roundtrip() {
+        let n: u32 = kani::any();
+        kani::assume(n <= 256);
+        assert_eq!(Max::all_ones(n).bits(), n);
+    }
+
+    /// `le` is a total order and `min`/`max` select within it — at FULL
+    /// 256-bit width (comparisons are cheap for the solver).
+    #[kani::proof]
+    fn le_total_order_and_min_max() {
+        let a = Max([kani::any(), kani::any(), kani::any(), kani::any()]);
+        let b = Max([kani::any(), kani::any(), kani::any(), kani::any()]);
+        assert!(a.le(&a));
+        assert!(a.le(&b) || b.le(&a));
+        if a.le(&b) && b.le(&a) {
+            assert_eq!(a, b);
+        }
+        let lo = a.min(b);
+        assert!(lo.le(&a) && lo.le(&b) && (lo == a || lo == b));
+        let hi = a.max(b);
+        assert!(a.le(&hi) && b.le(&hi) && (hi == a || hi == b));
     }
 }

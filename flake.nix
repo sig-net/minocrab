@@ -80,6 +80,15 @@
             # them, and spec/ts/ has no npm dependencies at all.
             pkgs.nodejs_22
             pkgs.typescript
+            # M23 R4: the Kani instrument (`./kani.sh`, opt-in — never part
+            # of the routine loop). rustup comes LAST so its proxy shims sit
+            # behind rustToolchain on PATH: it exists only to serve Kani's
+            # pinned nightly, and the pinned rust above must keep winning
+            # for every ordinary `cargo` invocation. The gcc alias serves
+            # CBMC, whose preprocessor asks for `gcc` by name — this
+            # machine's /usr/bin/gcc is an xcrun shim with no CLT behind it.
+            (pkgs.writeShellScriptBin "gcc" ''exec ${pkgs.clang}/bin/clang "$@"'')
+            pkgs.rustup
           ];
         };
       });
