@@ -1,0 +1,96 @@
+# The gate ladder (M20): the instruments run on every PR without being
+# asked. What each gate MEANS when it fires is written once, in
+# notes/version-bump.org's drift taxonomy — see CONTRIBUTING.md.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The routine loop: plain `cargo test` (deps are optimized under dev via
+  # the workspace profile override), inside the nix devshell so the
+  # toolchain is the pinned one.
+  workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop -c cargo test --workspace
+
+  # The heavy gates: the frozen (k, rows) and interface tables, --release
+  # as the testing docs prescribe.
+  snapshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: >
+          nix develop -c cargo test --release -p minocrab-contracts
+          --test row_snapshot --test interface_snapshot
+
+  # The instrument the snapshots cannot replace: byte-comparison of every
+  # circuit's serialized ZKIR against the PR's base. Movement is ALLOWED —
+  # a legitimate change regenerates the row snapshot in the same PR — so
+  # this fails only on the hidden-movement class: dumps differ while the
+  # frozen tables did not move (an instruction reorder at equal rows, a
+  # removed Copy — exactly what M9 phase 7 learned row_snapshot is blind
+  # to). The full diff is uploaded either way.
+  zkir-dump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - name: dump head
+        run: >
+          MINOCRAB_ZKIR_DUMP="$PWD/../dump-head" nix develop -c cargo test
+          -p minocrab-contracts --test zkir_dump --
+          --ignored dump_every_circuits_zkir
+      - name: dump base
+        run: |
+          git checkout --detach "${{ github.event.pull_request.base.sha }}"
+          MINOCRAB_ZKIR_DUMP="$PWD/../dump-base" nix develop -c cargo test \
+            -p minocrab-contracts --test zkir_dump -- \
+            --ignored dump_every_circuits_zkir
+          git checkout --detach "${{ github.event.pull_request.head.sha }}"
+      - name: compare
+        run: |
+          if diff -rq ../dump-base ../dump-head > ../dump-diff.txt; then
+            echo "zkir dumps byte-identical"
+          else
+            echo "zkir dumps moved:"
+            cat ../dump-diff.txt
+            mkdir -p dump-diff && cp ../dump-diff.txt dump-diff/
+            for f in $(cut -d' ' -f2 ../dump-diff.txt | xargs -n1 basename 2>/dev/null | sort -u); do
+              diff -u "../dump-base/$f" "../dump-head/$f" > "dump-diff/$f.diff" || true
+            done
+            if git diff --quiet "${{ github.event.pull_request.base.sha }}" \
+                 "${{ github.event.pull_request.head.sha }}" -- \
+                 crates/minocrab-contracts/tests/row_snapshot.rs; then
+              echo "::error::circuits moved but the row snapshot did not —" \
+                "this is the hidden-movement class (reorder at equal rows," \
+                "removed Copy). Explain the movement: regenerate the" \
+                "snapshot or revert the change. See CONTRIBUTING.md."
+              exit 1
+            fi
+            echo "movement is declared (the row snapshot moved in this PR) — see the artifact"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zkir-dump-diff
+          path: dump-diff/
+          if-no-files-found: ignore

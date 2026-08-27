@@ -27,14 +27,24 @@
         # latest stable is 0.31.1 (current Mainnet, ledger 8, no CCC).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
         compactcVersion = "0.33.0-rc.2";
+        # The release zips name linux targets `-unknown-linux-musl`.
+        compactcTarget = {
+          aarch64-darwin = "aarch64-darwin";
+          x86_64-darwin = "x86_64-darwin";
+          aarch64-linux = "aarch64-unknown-linux-musl";
+          x86_64-linux = "x86_64-unknown-linux-musl";
+        };
         compactcHashes = {
           aarch64-darwin = "sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I=";
+          x86_64-darwin = "sha256-3OGlfYLOBiCPzF2d5TQ/GMSGVKX/Os9rr6vj0Xvx7xg=";
+          aarch64-linux = "sha256-OqI4ErCwhtvOB9o5MaQNywG+yWdrHO7X8tC+Nwqy3EY=";
+          x86_64-linux = "sha256-MFWrkrvI1bsNYoK2Ybg3YdKg3i7jfiHPcQfiWq8qmq0=";
         };
         compactc = pkgs.stdenvNoCC.mkDerivation {
           pname = "compactc";
           version = compactcVersion;
           src = pkgs.fetchurl {
-            url = "https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v${compactcVersion}/compactc_v${compactcVersion}_${system}.zip";
+            url = "https://github.com/LFDT-Minokawa/compact/releases/download/compactc-v${compactcVersion}/compactc_v${compactcVersion}_${compactcTarget.${system}}.zip";
             hash = compactcHashes.${system};
           };
           nativeBuildInputs = [ pkgs.unzip ];

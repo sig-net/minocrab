@@ -486,7 +486,7 @@ ledger entry when a circuit leaves its predecessor's coverage. If the new
 team edits like a normal repo, the instruments decay into noise and the
 correctness story dies quietly. Items chosen by dmd from the handoff
 survey (his picks: 1, 2, 3, 5, 7).
-- [ ] CONTRIBUTING.md — the working method written down, because the
+- [X] CONTRIBUTING.md — the working method written down, because the
       process is load-bearing. How to make a change (the loop above); what
       each instrument MEANS when it fires (point at version-bump.org's
       drift taxonomy, do not duplicate it); when a divergence-ledger entry
@@ -494,33 +494,47 @@ survey (his picks: 1, 2, 3, 5, 7).
       regenerate snapshots (between-markers, reviewable diff, never a
       paste); the api-safety-survey §0 method for the class tests cannot
       see; the escape-hatch greps as the code-review checklist.
-- [ ] CI — the gate ladder in GitHub Actions, nix-provisioned. On PR:
+- [X] CI — the gate ladder in GitHub Actions, nix-provisioned. On PR:
       workspace tests, --release row/interface snapshots, the zkir dump
       comparison against the base branch. Nightly: elevated
       PROPTEST_CASES. Weekly: corpus determinism (compile.sh, zero of 788
       artifacts moved). The point for a team that does not yet trust the
       codebase: instruments that run on their PRs without being asked.
-- [ ] ONBOARDING.md — the day-one reading path (README → VERIFICATION.md →
+- [X] ONBOARDING.md — the day-one reading path (README → VERIFICATION.md →
       ledger-abi.org §6 → architecture.org, then review-queue.org for
       what has had human eyes), a map of the notes/ files with one line
       each of "read this when …", and a GLOSSARY for the first hour's
       jargon: PI-equality, FAB, the four vault artifacts and why four
       forks in lockstep is a feature, zero movement, the fold, k/rows,
       Impact, the M-numbering. Assembly, not writing.
-- [ ] Issue-ize the known debt — everything deferred lives in notes prose
+- [X] Issue-ize the known debt — everything deferred lives in notes prose
       where their boards cannot see it: the `_with` caching profile (M18's
       loose end), Q5's map value-typing (51 rows), the 27 guarded sites,
       e2e-on-a-network and the reference client (the expert-audience
       roadmap), M19's open fixes, the review-queue items. One issue each,
       linking back to the note section that holds the reasoning — the
       issue is a pointer, the note stays the record.
-- [ ] Publish rustdoc now — cargo doc to GitHub Pages from CI, not gated
+- [X] Publish rustdoc now — cargo doc to GitHub Pages from CI, not gated
       on crates.io (which waits on upstream publishing the ledger-9.1
       line; see PUBLISHING.md). The API docs are good; they are locked
       behind a local build.
 Exit criteria: a new engineer reaches their first gated, explained,
 reviewable change without asking anyone anything — and their PR runs the
 instruments without them knowing the instruments exist.
+LANDED 2026-08-27, with one honest caveat: CONTRIBUTING.md (the loop,
+the taxonomy pointers, the ledger rule, the survey method, the greps),
+ONBOARDING.md (the day-one path, all 32 notes mapped, the glossary),
+four workflows (.github/workflows/: ci — workspace + release snapshots
++ the base-branch zkir-dump comparison that fails exactly on the
+hidden-movement class; nightly elevated PROPTEST; weekly corpus
+determinism; docs → Pages, ENABLED at sig-net.github.io/minocrab,
+workflow build type, via gh api), the flake made cross-platform for
+linux runners (compactc hashes + target mapping for all four systems),
+and the known debt filed as issues #1–#9, each a pointer to the note
+that holds the reasoning (the M18 _with item was NOT filed — it closed
+today; Q5 filed with its superseded-for-borsh framing). THE CAVEAT: the
+workflows have not yet RUN — they run on the next push to GitHub, and
+their first green is the exit criterion's real test.
 
 * M21 — crates.io readiness (dmd, 2026-08-17: "ready to be deployed")
 - [X] Everything on our side prepared so publish day is a `cargo publish`

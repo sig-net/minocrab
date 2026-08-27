@@ -1,0 +1,20 @@
+# Corpus determinism (M20): recompiling the whole corpus with the pinned
+# compactc must move zero of the committed artifacts. A diff here means
+# either the pin drifted or compilation is nondeterministic — both are
+# version-bump.org drift-taxonomy events, not routine failures.
+name: weekly
+
+on:
+  schedule:
+    - cron: "43 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  corpus-determinism:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - run: nix develop -c ./corpus/compile.sh
+      - run: git diff --exit-code -- corpus
