@@ -1188,6 +1188,28 @@ fn assert_kind(c: &mut Circuit3, kind: Tag<RESPONSE_KINDS>, expected: u32) {
     c.assert(is_expected);
 }
 
+/// The stage-7 HARDENING (milestones.org M11 follow-up): bind the consumed
+/// RECORD to the attested output — `record.kind == output.kind`, and the
+/// record's format-version byte against [`signet::RECORD_FORMAT_VERSION`] —
+/// two wire equalities. [`assert_kind`] pins the OUTPUT's kind to the
+/// circuit's own constant; this pins the RECORD to the same kind, so an MPC
+/// response can only settle a record that declared that response kind, and a
+/// record of any other format version settles nothing.
+pub(crate) fn assert_record_binds<const WORDS: usize>(
+    c: &mut Circuit3,
+    ev: &signet::EventRecordV2<WORDS>,
+    output_kind: Tag<RESPONSE_KINDS>,
+) {
+    let kind_ok = c.test_eq(output_kind.field(), ev.response_kind().private());
+    c.assert(kind_ok);
+    let version_ok = c.test_eq(
+        ev.format_version(),
+        u64::from(signet::RECORD_FORMAT_VERSION),
+    );
+    c.assert(version_ok);
+}
+
+
 /// The settle circuits' shared argument block, as the three of them hand it
 /// to [`verify_attestation`]: the request id, the two signature limbs the
 /// verification reads, and the mint nonce.
@@ -1325,6 +1347,7 @@ pub fn complete_withdraw(
         SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, output.kind);
 
     // const succeeded = disclose(output.success) — a Borsh `bool` IS the
     // branch condition, so there is no `== 1` test to get wrong: the wire is
@@ -1385,6 +1408,7 @@ pub fn complete_swap(
         SWAP_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, output.kind);
 
     // Swapper gate.
     c.region("swapper gate", |c| {
@@ -1608,6 +1632,24 @@ pub fn refund(
         ev7
     });
 
+    // The stage-7 hardening, route-selected: exactly one of the two records
+    // is real (the other is the guarded default), so the record's kind and
+    // version wires are selected by the route bit before the equalities.
+    // The record's kind is the REQUEST's — WITHDRAW or SWAP by route — not
+    // the FAILURE kind the output carries: refund is the one settle circuit
+    // where the two legitimately differ, and the bind is to the route.
+    let record_kind = c.cond_select(is_withdrawal, ev.response_kind(), ev7.response_kind());
+    let expected_kind = c.cond_select(
+        is_withdrawal,
+        u64::from(RESPONSE_KIND_WITHDRAW),
+        u64::from(RESPONSE_KIND_SWAP),
+    );
+    let kind_ok = c.test_eq(record_kind, expected_kind);
+    c.assert(kind_ok);
+    let record_version = c.cond_select(is_withdrawal, ev.format_version(), ev7.format_version());
+    let version_ok = c.test_eq(record_version, u64::from(signet::RECORD_FORMAT_VERSION));
+    c.assert(version_ok);
+
     // Unified claimant gate (avenue 4): the refund commitment is computed
     // ONCE, and the expected value is `cond_select`ed from the route's own
     // commitment map — see the circuit doc comment for why this is exactly
@@ -1771,6 +1813,7 @@ pub fn claim(
         SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, serialized_output.kind);
 
     // Depositor gate: userCommitment(callerSecretKey()) == request.path — the
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).

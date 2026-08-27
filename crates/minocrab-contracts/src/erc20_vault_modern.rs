@@ -96,6 +96,7 @@ use crate::erc20_vault::{
 };
 // The wire format is M11 stage 5's, imported rather than restated: the twin
 // changes how the contract is WRITTEN, never what it says on the wire.
+use crate::erc20_vault_borsh::assert_record_binds;
 pub use crate::erc20_vault_borsh::{
     FailureResponse, SwapResponse, VaultResponse, RESPONSE_KINDS, RESPONSE_KIND_APPROVE,
     RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_SWAP, RESPONSE_KIND_WITHDRAW,
@@ -1121,6 +1122,7 @@ pub fn complete_withdraw(
         SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, output.kind);
 
     // const succeeded = disclose(output.success) — a Borsh `bool` IS the
     // branch condition, so there is no `== 1` test to get wrong: the wire is
@@ -1179,6 +1181,7 @@ pub fn complete_swap(
         SWAP_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, output.kind);
 
     // Swapper gate.
     c.region("swapper gate", |c| {
@@ -1395,6 +1398,24 @@ pub fn refund(
         ev7
     });
 
+    // The stage-7 hardening, route-selected: exactly one of the two records
+    // is real (the other is the guarded default), so the record's kind and
+    // version wires are selected by the route bit before the equalities.
+    // The record's kind is the REQUEST's — WITHDRAW or SWAP by route — not
+    // the FAILURE kind the output carries: refund is the one settle circuit
+    // where the two legitimately differ, and the bind is to the route.
+    let record_kind = c.cond_select(is_withdrawal, ev.response_kind(), ev7.response_kind());
+    let expected_kind = c.cond_select(
+        is_withdrawal,
+        u64::from(RESPONSE_KIND_WITHDRAW),
+        u64::from(RESPONSE_KIND_SWAP),
+    );
+    let kind_ok = c.test_eq(record_kind, expected_kind);
+    c.assert(kind_ok);
+    let record_version = c.cond_select(is_withdrawal, ev.format_version(), ev7.format_version());
+    let version_ok = c.test_eq(record_version, u64::from(signet::RECORD_FORMAT_VERSION));
+    c.assert(version_ok);
+
     // Unified claimant gate (avenue 4): the refund commitment is computed
     // ONCE, and the expected value is `cond_select`ed from the route's own
     // commitment map — see the circuit doc comment for why this is exactly
@@ -1547,6 +1568,7 @@ pub fn claim(
         SIGN_EVENT_MAP_V2.remove(c, &request_id);
         ev
     });
+    assert_record_binds(c, &ev, serialized_output.kind);
 
     // Depositor gate: userCommitment(callerSecretKey()) == request.path — the
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).

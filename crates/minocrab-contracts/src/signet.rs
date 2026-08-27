@@ -458,6 +458,18 @@ impl<const WORDS: usize> EventRecordV2<WORDS> {
         })
     }
 
+    /// `formatVersion` — the record's first byte
+    /// ([`RECORD_FORMAT_VERSION`]).
+    pub fn format_version(&self) -> Wire3<FieldT, Public> {
+        self.0[layout_v2::FORMAT_VERSION]
+    }
+
+    /// `responseKind` — which response kind the record declared would
+    /// settle it.
+    pub fn response_kind(&self) -> Wire3<FieldT, Public> {
+        self.0[layout_v2::response_kind(WORDS)]
+    }
+
     /// `txParams.to`.
     pub fn to(&self) -> Wire3<FieldT, Public> {
         self.0[layout_v2::TO]
