@@ -32,6 +32,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::to_zkir_string;
 
+mod support;
 mod vault;
 
 use vault::artifact::{Art, Circuit, Fork};
@@ -127,9 +128,11 @@ fn diverged_circuits_really_differ_from_the_optimized_vault() {
 /// The reference model is the SAME model, told `Art::Borsh` — so this is
 /// also the statement that the borsh artifact's own model concretizes to
 /// something the circuit accepts, which is what the spec harness then sweeps
-/// at scale. The borsh artifact is deliberately NOT benched
-/// (notes/borsh-format.org §"As built — stage 4"), so unlike the opt fork
-/// test this one dumps no preimages.
+/// at scale. Stage 4 deliberately did not bench this artifact; the stage-7
+/// record change then crossed swap k16→k15, which is exactly the kind of
+/// movement the benchmark exists to publish — so this test now also dumps
+/// the side's preimages (a no-op unless `MINOCRAB_DUMP_PREIMAGES` is set;
+/// see bench.sh), superseding that decision.
 #[test]
 fn borsh_circuits_accept_their_reference_preimages() {
     for (circuit, pi) in preimages() {
@@ -140,5 +143,6 @@ fn borsh_circuits_accept_their_reference_preimages() {
                 circuit.zkir_name()
             )
         });
+        support::dump_preimage_in(Some("borsh"), circuit.zkir_name(), &pi);
     }
 }

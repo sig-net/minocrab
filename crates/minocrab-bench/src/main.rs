@@ -42,7 +42,7 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use midnight_base_crypto::data_provider::{FetchMode, MidnightDataProvider, OutputMode};
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProofPreimage, Zkir};
-use minocrab_contracts::{erc20_vault, erc20_vault_opt, signet_contract};
+use minocrab_contracts::{erc20_vault, erc20_vault_borsh, erc20_vault_opt, signet_contract};
 use minocrab_zkir::v3::IrSource;
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +57,11 @@ struct Target {
     /// circuits. `None` for the Signet singleton, which is a deployed
     /// compactc artifact rather than something M10 rewrites.
     opt: Option<fn() -> minocrab::v3::Compiled3>,
+    /// The M11 borsh artifact — the optimized vault on the stage-7 wire
+    /// format. Benched since the record change crossed swap k16→k15
+    /// (superseding stage 4's not-benched decision, which predated the
+    /// crossing); `None` outside the nine vault circuits.
+    borsh: Option<fn() -> minocrab::v3::Compiled3>,
 }
 
 /// Where a side's circuits come from.
@@ -68,6 +73,8 @@ enum Artifacts {
     Corpus,
     /// Built in-process from the M10 optimized contract.
     Optimized,
+    /// Built in-process from the M11 borsh contract.
+    Borsh,
 }
 
 /// Where a side's [`ProofPreimage`]s come from.
@@ -110,6 +117,11 @@ fn sides() -> Vec<Side> {
             artifacts: Artifacts::Optimized,
             preimages: Preimages::PerSide("opt"),
         },
+        Side {
+            name: "borsh",
+            artifacts: Artifacts::Borsh,
+            preimages: Preimages::PerSide("borsh"),
+        },
     ]
 }
 
@@ -143,6 +155,7 @@ impl Side {
                 )
             }
             Artifacts::Optimized => target.opt.map(|build| Ok(build().ir)),
+            Artifacts::Borsh => target.borsh.map(|build| Ok(build().ir)),
         }
     }
 
@@ -153,6 +166,7 @@ impl Side {
             Artifacts::Port => Some((target.ours)()),
             Artifacts::Corpus => None,
             Artifacts::Optimized => target.opt.map(|build| build()),
+            Artifacts::Borsh => target.borsh.map(|build| build()),
         }
     }
 
@@ -172,14 +186,15 @@ const SIGNET: &str =
 fn targets() -> Vec<Target> {
     macro_rules! t {
         ($dir:expr, $name:literal, $f:expr) => {
-            t!($dir, $name, $f, None)
+            t!($dir, $name, $f, None, None)
         };
-        ($dir:expr, $name:literal, $f:expr, $opt:expr) => {
+        ($dir:expr, $name:literal, $f:expr, $opt:expr, $borsh:expr) => {
             Target {
                 name: $name,
                 corpus: constcat($dir, $name),
                 ours: $f,
                 opt: $opt,
+                borsh: $borsh,
             }
         };
     }
@@ -187,15 +202,15 @@ fn targets() -> Vec<Target> {
         Box::leak(format!("{dir}/{name}.zkir").into_boxed_str())
     }
     vec![
-        t!(VAULT, "initialize", || erc20_vault::initialize(), Some(erc20_vault_opt::initialize)),
-        t!(VAULT, "deposit", || erc20_vault::deposit(), Some(erc20_vault_opt::deposit)),
-        t!(VAULT, "claim", || erc20_vault::claim(), Some(erc20_vault_opt::claim)),
-        t!(VAULT, "approveRouter", || erc20_vault::approve_router(), Some(erc20_vault_opt::approve_router)),
-        t!(VAULT, "withdraw", || erc20_vault::withdraw(), Some(erc20_vault_opt::withdraw)),
-        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw(), Some(erc20_vault_opt::complete_withdraw)),
-        t!(VAULT, "refund", || erc20_vault::refund(), Some(erc20_vault_opt::refund)),
-        t!(VAULT, "swap", || erc20_vault::swap(), Some(erc20_vault_opt::swap)),
-        t!(VAULT, "completeSwap", || erc20_vault::complete_swap(), Some(erc20_vault_opt::complete_swap)),
+        t!(VAULT, "initialize", || erc20_vault::initialize(), Some(erc20_vault_opt::initialize), Some(erc20_vault_borsh::initialize)),
+        t!(VAULT, "deposit", || erc20_vault::deposit(), Some(erc20_vault_opt::deposit), Some(erc20_vault_borsh::deposit)),
+        t!(VAULT, "claim", || erc20_vault::claim(), Some(erc20_vault_opt::claim), Some(erc20_vault_borsh::claim)),
+        t!(VAULT, "approveRouter", || erc20_vault::approve_router(), Some(erc20_vault_opt::approve_router), Some(erc20_vault_borsh::approve_router)),
+        t!(VAULT, "withdraw", || erc20_vault::withdraw(), Some(erc20_vault_opt::withdraw), Some(erc20_vault_borsh::withdraw)),
+        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw(), Some(erc20_vault_opt::complete_withdraw), Some(erc20_vault_borsh::complete_withdraw)),
+        t!(VAULT, "refund", || erc20_vault::refund(), Some(erc20_vault_opt::refund), Some(erc20_vault_borsh::refund)),
+        t!(VAULT, "swap", || erc20_vault::swap(), Some(erc20_vault_opt::swap), Some(erc20_vault_borsh::swap)),
+        t!(VAULT, "completeSwap", || erc20_vault::complete_swap(), Some(erc20_vault_opt::complete_swap), Some(erc20_vault_borsh::complete_swap)),
         t!(SIGNET, "signBidirectional", || signet_contract::sign_bidirectional()),
         t!(SIGNET, "respond", || signet_contract::respond()),
         t!(SIGNET, "respondBidirectional", || signet_contract::respond_bidirectional()),
@@ -440,7 +455,7 @@ fn orchestrate() -> Result<()> {
 }
 
 /// Every (circuit, side) pair the run covers — sides without an artifact
-/// for a circuit drop out, so the vault targets are three-sided and the
+/// for a circuit drop out, so the vault targets are four-sided and the
 /// Signet singleton's stay two-sided.
 fn cells() -> Vec<(Target, Side)> {
     let mut out = Vec::new();
@@ -453,6 +468,7 @@ fn cells() -> Vec<(Target, Side)> {
                         corpus: target.corpus,
                         ours: target.ours,
                         opt: target.opt,
+                        borsh: target.borsh,
                     },
                     side,
                 ));
@@ -505,6 +521,7 @@ fn list_cells() -> Result<()> {
             Artifacts::Port => "minocrab-contracts (port)".to_string(),
             Artifacts::Corpus => tail(std::path::Path::new(target.corpus)),
             Artifacts::Optimized => "minocrab-contracts (opt)".to_string(),
+            Artifacts::Borsh => "minocrab-contracts (borsh)".to_string(),
         };
         let preimage = side.preimage_path(target.name);
         let present = if preimage.exists() { "" } else { "  [missing]" };

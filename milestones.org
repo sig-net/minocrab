@@ -242,14 +242,33 @@ NOTE: stage 7 was held by dmd pending discussion; implemented 2026-08-16
 and the hold LIFTED EXPLICITLY 2026-08-17 ("Lift the hold on M11 stage 7,
 I'm happy with it"). Nothing is deployed on either side. Two items remain
 open:
-- [ ] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
+- [X] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
       found the docs claiming checks the circuits do not make — the
       docs now tell the truth): bind `record.kind == output.kind` and
       assert the record's version byte in each settle circuit — two
       wire equalities per circuit, its own gate (rows move, snapshots
       regen, elevated spec run), both twins in lockstep.
-- [ ] BENCHMARK.md refresh (the stage-7 tick's honest remainder): a
+      (DONE 2026-08-27 — assert_record_binds over new EventRecordV2
+      kind/version accessors, all four settle circuits, borsh+modern
+      byte-identical throughout. refund's bind is ROUTE-selected
+      (WITHDRAW/SWAP by the pending-marker bit) because its output kind
+      is FAILURE — the one circuit where record.kind and output.kind
+      legitimately differ, said so at the site. Movement: +6 rows
+      claim/completeWithdraw/completeSwap, +9 refund, no k moves;
+      taint baseline renumbered only (verified by normalized diff);
+      elevated spec 20k×9 green.)
+- [X] BENCHMARK.md refresh (the stage-7 tick's honest remainder): a
       fresh bench run now that swap crossed k16→k15.
+      (DONE 2026-08-27 — the benchmark gained a FOURTH side: borsh,
+      superseding stage 4's not-benched decision (which predated the
+      crossing). minocrab-bench Artifacts::Borsh + per-side preimages
+      dumped by the borsh fork gate; fresh single-session 42-cell run.
+      THE NUMBER: swap k15, prove 5.27s / 788MB — −40.5% / −46% vs opt,
+      −67% / −73% vs compactc — the crossing M10 stopped 51 rows short
+      of, paid for by the stage-7 kind-for-schemas record change. All
+      other borsh cells within noise of opt, as byte-identity predicts;
+      the hardened settle circuits are what is priced. BENCHMARK.md
+      rewritten as the four-artifact report.)
 
 * M12 — Interface crates: import a contract's crate to call it
 (dmd: NEAR-style — "import someone else's crate and use it for your
