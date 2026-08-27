@@ -819,16 +819,34 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
      where a bulk port would not.
   3. PORT + CONSTRAIN — port the proof to Lean (machine-checked), AND
      reflect its invariants into MinoCrab's Rust TYPE SYSTEM so the types
-     CONSTRAIN use of the feature to exactly what the proof covers. The
-     Lean proof is the WHY; the Rust type is the always-on enforcement at
+     CONSTRAIN use of the feature to what the proof covers. The Lean
+     proof is the WHY; the Rust type is the always-on enforcement at
      every call site. This is CLAUDE.md's "compile errors over panics"
      with a PROOF behind the constraint, landing on M24's type-level
      surface. A typing rule maps onto a trait bound / a distinct type that
      does not unify / an inline-const assert — the same ladder the hard
      rule already ranks.
+     THE FIT (dmd, 2026-08-27): the Rust types are NOT required to cover
+     EXACTLY the set of values the Lean proof allows. The requirement is
+     SOUNDNESS in one direction — the types must admit a SUBSET of what the
+     proof allows (never a value the proof does not cover) — and within
+     that, the MAXIMAL such subset the type system can express at
+     reasonable cost. Sometimes the subset is the whole set and the two
+     coincide; often the proof's boundary is value-dependent or
+     non-structural and the type-level approximation is properly smaller.
+     Both are acceptable; admitting MORE than the proof is not.
+     THE BALANCE: pick a reasonable point between usability and typing
+     strength, leaning towards CORRECTNESS over usability but WITHOUT
+     abandoning usability. A constraint that requires a type-level
+     contortion no user could reasonably write (or read) is a worse
+     product than a slightly smaller admitted set expressed plainly —
+     and where tightening to the proof's edge would make the feature
+     unspellable in practice, stop short and record the gap (the shortfall
+     is an honest entry for the LIMITATIONS DISCUSSION below, not a
+     failure of the loop).
   The deliverable of each turn of the loop is thus TWO things: a checked
-  Lean proof, and a type-system invariant that makes the proven-safe usage
-  the only spellable one.
+  Lean proof, and a type-system invariant that makes only proven-safe
+  usage spellable (the maximal usable subset, per THE FIT above).
 
 - [ ] Design note first (the house method), extending
       notes/formal-verification-options.org: the construct inventory (the
@@ -839,8 +857,10 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
 - [ ] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
       Agda proof → Lean (holes closed where the LLM-writability axis
       allows) → the Rust type-system invariant that constrains the feature
-      to the proof. The type invariant is the milestone's user-facing
-      product; the Lean is its warrant.
+      to (a maximal usable subset of) what the proof allows, per THE FIT.
+      The type invariant is the milestone's user-facing product; the Lean
+      is its warrant. Record per construct whether the types match the
+      proof's set exactly or admit a strict subset, and why.
 - [ ] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
       preserve-meaning proof (PI/witness stream unchanged, only implied
       range constraints dropped — M23 R4 Kani bounds it first, Lean
@@ -860,9 +880,11 @@ THE AIM (dmd, 2026-08-27): PARITY, not exhaustiveness. The Agda is thin;
 "as many as possible" means match their formal coverage where it is real
 and portable, reach for the other approaches where it is not, and say so.
 Exit criteria: PARITY with the Compact repo's formal coverage — every
-construct they actually prove has its invariant in our Rust type system,
-Lean-warranted where portable and argued via the other approaches where
-not — plus the honest limitations discussion above; and the M24 pass
+construct they actually prove has its invariant in our Rust type system
+(admitting a subset of the proven-safe values, maximal within the
+usability balance of THE FIT, never a superset), Lean-warranted where
+portable and argued via the other approaches where not — plus the honest
+limitations discussion above; and the M24 pass
 surface has a machine-checked "preserves meaning" proof reflected in its
 type-level contract. Explicitly OUT: transcribing the unchecked
 operational sketch (porting a =  {!!}= proves nothing) and any Lean the
