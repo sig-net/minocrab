@@ -1,4 +1,4 @@
 /target
 .direnv/
 .DS_Store
-lean/.lake/
+crates/minocrab-ir/lean/.lake/

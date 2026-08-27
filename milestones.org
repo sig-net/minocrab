@@ -962,22 +962,27 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       The type invariant is the milestone's user-facing product; the Lean
       is its warrant. Record per construct whether the types match the
       proof's set exactly or admit a strict subset, and why.
-- [-] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
+- [X] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
       preserve-meaning proof (PI/witness stream unchanged, only implied
       range constraints dropped — M23 R4 Kani bounds it first, Lean
       discharges it unbounded), reflected as the type-level pass CONTRACT
       (M24 §3) so a third-party pass that violates it does not type-check
       as far as the type system can reach.
-      (PARTIAL 2026-08-27 — dedup DONE (four sorry-free theorems, see
-      the design-note tick above). Fold's SYNTACTIC half DONE in
-      lean/MinocrabProofs/Fold.lean: output operand lists verbatim, the
-      non-copy skeleton preserved in kind/order, and
-      =foldRun_is_filter_map= (the fold is exactly filter-then-
-      substitute). REMAINING: fold's SEMANTIC half — operand-values
-      preserved under the copy environment — which needs an SSA
-      well-formedness apparatus (defs-before-uses, no rebinding; the
-      statement is fixed as a comment in Fold.lean); and the
-      =VerifiedPass= reflection per notes/lean-port.org §4.)
+      (DONE 2026-08-27, in three landings — notes/lean-port.org §5:
+      dedup's four sorry-free theorems; fold's SYNTACTIC half
+      (=fold_outputs=/=fold_skeleton=/=foldRun_is_filter_map=); and
+      fold's SEMANTIC half — =fold_preserves_observables=, sorry-free,
+      under a =WellFormed= that is exactly Builder3's SSA guarantee
+      (Nodup dsts + defs-before-uses), via a shared =envStep= so the
+      observer and =namedOf= agree by construction. The R4 stream
+      specimens are both discharged UNBOUNDED. The REFLECTION landed as
+      designed: =ProofRef= + =lean_proof!= (proof file EMBEDDED at
+      compile time — a deleted proof is a build error), =VerifiedPass=,
+      =run_pipeline_verified= with theorem-drift surfaced as report
+      warnings and a builtin-claims test. The lake project MOVED to
+      crates/minocrab-ir/lean/ so the proofs ship inside the crate the
+      macro embeds them from (Cargo.toml include; CI + flake updated).
+      Checked green under both Lean 4.30 (CI devshell) and 4.33.)
 - [ ] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
       what the Compact repo's spec actually covers and does NOT — static/
       typing only, an unchecked operational SKETCH, nothing on ZKIR,

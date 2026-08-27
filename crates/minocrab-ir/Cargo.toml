@@ -9,7 +9,19 @@ rust-version.workspace = true
 readme = "README.md"
 keywords = ["midnight", "zkir", "circuit", "zero-knowledge", "compiler"]
 categories = ["cryptography::cryptocurrencies", "compilers"]
-include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+# lean/ is the machine-checked proof development for the pass layer
+# (M25); passes.rs embeds the proof files via lean_proof!, so they must
+# ship with the crate (and .lake/ build artifacts must not).
+include = [
+    "src/**/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "lean/lakefile.toml",
+    "lean/lake-manifest.json",
+    "lean/MinocrabProofs.lean",
+    "lean/MinocrabProofs/*.lean",
+]
 
 [dependencies]
 minocrab-zkir.workspace = true

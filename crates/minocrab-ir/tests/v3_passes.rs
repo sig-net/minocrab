@@ -213,3 +213,87 @@ fn a_pipeline_threads_the_ir_and_collects_a_report_per_pass() {
     // The dedup stage still drops the duplicate after the (no-op here) fold.
     assert_eq!(out, vec![bits("%a", 64), assert_("%p")]);
 }
+
+// ---- the VerifiedPass reflection (M25) -------------------------------------
+
+use minocrab_ir::v3::passes::{
+    run_pipeline_verified, VerifiedPass, DEDUP_PROOF, FOLD_PROOF,
+};
+
+/// The claim and the proof must agree: every theorem a built-in pass cites
+/// is DECLARED in the Lean file embedded at compile time. Rename or remove
+/// one in lean/MinocrabProofs/ and this fires — proof drift is a test
+/// failure, not a stale claim.
+#[test]
+fn the_builtin_proofs_declare_every_claimed_theorem() {
+    for proof in [&FOLD_PROOF, &DEDUP_PROOF] {
+        assert_eq!(
+            proof.missing_theorems(),
+            Vec::<&str>::new(),
+            "{} no longer declares every claimed theorem",
+            proof.file(),
+        );
+    }
+}
+
+/// The reflection asserts nothing about the TRANSFORM: the verified
+/// pipeline is the plain pipeline plus the proof-drift check, byte for
+/// byte on the IR it produces.
+#[test]
+fn the_verified_pipeline_matches_the_plain_one_and_stays_clean() {
+    let stream = vec![bits("%a", 64), bits("%a", 64), assert_("%p")];
+    let plain: Vec<Box<dyn Pass>> =
+        vec![Box::new(FoldImmediateCopies), Box::new(DedupRangeConstraints)];
+    let verified: Vec<Box<dyn VerifiedPass>> =
+        vec![Box::new(FoldImmediateCopies), Box::new(DedupRangeConstraints)];
+    let (out_plain, _) = run_pipeline(&plain, stream.clone());
+    let (out_verified, reports) = run_pipeline_verified(&verified, stream);
+    assert_eq!(out_verified, out_plain);
+    // Healthy proofs → no drift warnings beyond what the passes already say.
+    assert!(
+        !reports
+            .iter()
+            .flat_map(|r| r.warnings.iter())
+            .any(|w| w.contains("UNVERIFIED")),
+        "no proof drift expected: {reports:?}",
+    );
+}
+
+/// The drift channel itself, exercised: a ProofRef claiming a theorem the
+/// file does not declare surfaces it — through `missing_theorems` and as a
+/// report warning on the verified pipeline.
+#[test]
+fn a_drifted_proof_claim_is_surfaced_as_a_warning() {
+    struct DriftedFold;
+    static DRIFTED: minocrab_ir::v3::passes::ProofRef = minocrab_ir::lean_proof! {
+        file: "../lean/MinocrabProofs/Fold.lean",
+        theorems: ["fold_outputs", "no_such_theorem"],
+    };
+    impl Pass for DriftedFold {
+        fn name(&self) -> &'static str {
+            "drifted_fold"
+        }
+        fn transform(
+            &self,
+            ir: Vec<Instruction>,
+        ) -> (Vec<Instruction>, Vec<String>) {
+            (ir, Vec::new())
+        }
+    }
+    impl VerifiedPass for DriftedFold {
+        fn proof(&self) -> &'static minocrab_ir::v3::passes::ProofRef {
+            &DRIFTED
+        }
+    }
+    assert_eq!(DRIFTED.missing_theorems(), vec!["no_such_theorem"]);
+    let verified: Vec<Box<dyn VerifiedPass>> = vec![Box::new(DriftedFold)];
+    let (_, reports) = run_pipeline_verified(&verified, vec![assert_("%p")]);
+    assert!(
+        reports[0]
+            .warnings
+            .iter()
+            .any(|w| w.contains("no_such_theorem") && w.contains("UNVERIFIED")),
+        "drift must surface in the report: {:?}",
+        reports[0].warnings,
+    );
+}

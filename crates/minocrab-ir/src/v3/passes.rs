@@ -527,6 +527,199 @@ pub fn builtin_names() -> &'static [&'static str] {
 }
 
 // ============================================================================
+// The VerifiedPass reflection (M25, notes/lean-port.org §4)
+// ============================================================================
+//
+// The honest boundary first: Rust's type system cannot make "preserves the
+// PI/witness stream" a trait bound — the property is semantic, and its real
+// discharge is the machine-checked Lean development shipped WITH this crate
+// (`lean/MinocrabProofs/`, a lake project; `cd lean && lake build` checks
+// it). What the type system CAN hold is the CLAIM: a [`VerifiedPass`] names
+// the proof file and theorems discharging its obligation, the file is
+// embedded at COMPILE TIME (a deleted proof is a build error — the
+// compile-errors-over-panics rule applied to proofs), and a pipeline that
+// REQUIRES verification takes `dyn VerifiedPass`. A pass without a proof
+// still runs through [`run_pipeline`]; it cannot claim verification. That is
+// as far as reflection reaches, said so per the FIT shortfall clause.
+//
+// What a Lean model proof warrants — and does not — is stated in each proof
+// file's header: it warrants the ALGORITHM as transcribed; the claim that
+// the Rust implements that algorithm rests on review plus the Rust-side
+// instruments (the unit tests here, the Kani-bounded twins below).
+
+/// A machine-checked warrant: the Lean file whose theorems discharge a
+/// pass's preserve-meaning obligation, embedded at compile time.
+///
+/// Constructed only via [`lean_proof!`](crate::lean_proof), which forces the
+/// file to EXIST at build time. Whether it still DECLARES the claimed
+/// theorems is [`ProofRef::missing_theorems`]'s question, asked by
+/// [`run_pipeline_verified`] on every run and by this crate's tests for the
+/// built-in passes — so a renamed theorem is drift a gate catches, not a
+/// silently stale claim.
+pub struct ProofRef {
+    file: &'static str,
+    theorems: &'static [&'static str],
+    contents: &'static str,
+}
+
+impl ProofRef {
+    /// [`lean_proof!`](crate::lean_proof)'s constructor — not public API;
+    /// the macro is the supported spelling because it is what makes the
+    /// file's existence a compile-time fact.
+    #[doc(hidden)]
+    pub const fn new_via_macro(
+        file: &'static str,
+        theorems: &'static [&'static str],
+        contents: &'static str,
+    ) -> Self {
+        ProofRef { file, theorems, contents }
+    }
+
+    /// The proof file's path as the claiming crate spelled it (relative to
+    /// the source file that invoked the macro) — the doc-link to follow.
+    pub fn file(&self) -> &'static str {
+        self.file
+    }
+
+    /// The theorem names claimed to discharge the pass's obligation.
+    pub fn theorems(&self) -> &'static [&'static str] {
+        self.theorems
+    }
+
+    /// The embedded proof text, byte for byte as built.
+    pub fn contents(&self) -> &'static str {
+        self.contents
+    }
+
+    /// Every claimed theorem the embedded file does NOT declare — empty is
+    /// the healthy state. A non-empty answer means the proof and the claim
+    /// have drifted (a theorem renamed or removed); the pass should be
+    /// treated as unverified until they agree again.
+    pub fn missing_theorems(&self) -> Vec<&'static str> {
+        let declared: Vec<&str> = self
+            .contents
+            .lines()
+            .filter_map(|line| {
+                let rest = line.trim_start().strip_prefix("theorem ")?;
+                let end = rest
+                    .find(|c: char| !c.is_alphanumeric() && c != '_')
+                    .unwrap_or(rest.len());
+                Some(&rest[..end])
+            })
+            .collect();
+        self.theorems
+            .iter()
+            .copied()
+            .filter(|thm| !declared.contains(thm))
+            .collect()
+    }
+}
+
+/// A [`Pass`] carrying a machine-checked preserve-meaning proof.
+///
+/// The marker a third-party pass earns by shipping a Lean proof and citing
+/// it via [`lean_proof!`](crate::lean_proof); [`run_pipeline_verified`] is
+/// the pipeline that demands it. See the section comment above for exactly
+/// what the marker does and does not assert.
+pub trait VerifiedPass: Pass {
+    /// The proof discharging this pass's obligation.
+    fn proof(&self) -> &'static ProofRef;
+}
+
+/// Cite a Lean proof file as a [`ProofRef`] — the one supported way to
+/// construct one, because it makes the file's existence a COMPILE-TIME
+/// fact: the path resolves relative to the calling source file
+/// (`include_str!` semantics, so a third-party pass crate names its own
+/// proof file), and a path that does not resolve is a build error.
+///
+/// ```ignore
+/// pub static MY_PROOF: ProofRef = minocrab_ir::lean_proof! {
+///     file: "../proofs/MyPass.lean",
+///     theorems: ["my_pass_preserves_observables"],
+/// };
+/// ```
+#[macro_export]
+macro_rules! lean_proof {
+    (file: $path:literal, theorems: [$($thm:literal),+ $(,)?] $(,)?) => {
+        $crate::v3::passes::ProofRef::new_via_macro(
+            $path,
+            &[$($thm),+],
+            include_str!($path),
+        )
+    };
+}
+
+/// The Lean warrant for [`FoldImmediateCopies`]: the syntactic contract
+/// (`fold_outputs` — terminator operand lists verbatim; `fold_skeleton` —
+/// the non-copy skeleton preserved in kind and order;
+/// `foldRun_is_filter_map` — the fold is exactly filter-then-substitute)
+/// and the semantic theorem (`fold_preserves_observables` — every non-copy
+/// instruction consumes the same resolved operand values, on the SSA shape
+/// `Builder3` emits).
+pub static FOLD_PROOF: ProofRef = lean_proof! {
+    file: "../../lean/MinocrabProofs/Fold.lean",
+    theorems: [
+        "fold_outputs",
+        "fold_skeleton",
+        "foldRun_is_filter_map",
+        "fold_preserves_observables",
+    ],
+};
+
+/// The Lean warrant for [`DedupRangeConstraints`]: output a subsequence
+/// (`dedup_sublist`), non-constraints preserved verbatim
+/// (`dedup_passthrough`), every wire's tightest bound — hence solution set —
+/// unchanged (`dedup_bound`), and idempotence (`dedup_idem`). These are the
+/// M23 R4 stream specimens discharged UNBOUNDED.
+pub static DEDUP_PROOF: ProofRef = lean_proof! {
+    file: "../../lean/MinocrabProofs/Passes.lean",
+    theorems: [
+        "dedup_sublist",
+        "dedup_passthrough",
+        "dedup_bound",
+        "dedup_idem",
+    ],
+};
+
+impl VerifiedPass for FoldImmediateCopies {
+    fn proof(&self) -> &'static ProofRef {
+        &FOLD_PROOF
+    }
+}
+
+impl VerifiedPass for DedupRangeConstraints {
+    fn proof(&self) -> &'static ProofRef {
+        &DEDUP_PROOF
+    }
+}
+
+/// [`run_pipeline`], but every pass must CARRY ITS PROOF — the pipeline a
+/// caller reaches for when "optimised" must also mean "warranted". Beyond
+/// the threading, it re-asks each pass's [`ProofRef::missing_theorems`] and
+/// turns any drift into a report warning, so a stale claim surfaces on the
+/// same advisory channel as everything else.
+pub fn run_pipeline_verified(
+    passes: &[Box<dyn VerifiedPass>],
+    mut ir: Vec<Instruction>,
+) -> (Vec<Instruction>, Vec<PassReport>) {
+    let mut reports = Vec::with_capacity(passes.len());
+    for pass in passes {
+        let (out, mut report) = pass.run(ir);
+        for thm in pass.proof().missing_theorems() {
+            report.warnings.push(format!(
+                "claimed theorem `{thm}` is not declared in {} — the proof \
+                 and the claim have drifted; treat this pass as UNVERIFIED \
+                 until they agree",
+                pass.proof().file(),
+            ));
+        }
+        ir = out;
+        reports.push(report);
+    }
+    (ir, reports)
+}
+
+// ============================================================================
 // Kani harnesses (M23 R4) — compiled ONLY under `cargo kani -p minocrab-ir`
 // ============================================================================
 //

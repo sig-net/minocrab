@@ -236,7 +236,9 @@ its solution set. -/
 theorem dedup_bound (l : List Instr) (id : String) :
     streamBound id (dedup l) = streamBound id l := by
   have h := dedupGo_bound [] l id
-  simpa [Bounds.get, optMin] using h
+  simp only [Bounds.get, optMin] at h
+  show streamBound id (dedupGo [] l) = streamBound id l
+  exact h
 
 /-! ## Theorem 4: idempotence — a deduplicated stream has nothing left
 to drop. -/

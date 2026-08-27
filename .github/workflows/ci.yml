@@ -37,15 +37,16 @@ jobs:
           nix develop -c cargo test --release -p minocrab-contracts
           --test row_snapshot --test interface_snapshot
 
-  # The Lean proofs (M25): the models under lean/ must stay green — a
-  # proof that stops checking is a claim that stopped being one.
+  # The Lean proofs (M25): the models under crates/minocrab-ir/lean/ (they
+  # ship inside the crate — passes.rs embeds them via lean_proof!) must stay
+  # green — a proof that stops checking is a claim that stopped being one.
   lean:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
       - uses: DeterminateSystems/magic-nix-cache-action@v9
-      - run: nix develop -c bash -c 'cd lean && lake build'
+      - run: nix develop -c bash -c 'cd crates/minocrab-ir/lean && lake build'
 
   # The instrument the snapshots cannot replace: byte-comparison of every
   # circuit's serialized ZKIR against the PR's base. Movement is ALLOWED —

@@ -147,3 +147,60 @@ accumulator-relative invariant, =dedup_idem=). Fold's SYNTACTIC half
 landed in =Fold.lean= (=fold_outputs=, =fold_skeleton=,
 =foldRun_is_filter_map=), all lake-green; the semantic half's statement
 is fixed in the file, its WF apparatus is the next session's task.
+
+2026-08-27 (later still) — fold's SEMANTIC half DONE, sorry-free:
+=fold_preserves_observables= in =Fold.lean=. The apparatus, as designed:
+- =WellFormed= is exactly what =Builder3= guarantees and no more — copy
+  destinations =Nodup= (no rebinding) plus =NoUseBeforeDef= (an
+  instruction may not use a name a copy AT OR AFTER it defines; a name
+  no copy defines is symbolic on both sides and free to appear
+  anywhere). The fold NEEDS the hypothesis: it substitutes globally, so
+  a rebound or use-before-def name really would change meaning.
+- The observation model: =observe= walks the stream carrying the copy
+  environment and records every non-copy instruction with operands
+  RESOLVED; one shared =envStep= is factored out of =namedOf=
+  (=namedOf_cons=) so the observer and the fold's own name accumulation
+  agree definitionally.
+- The induction (=observe_foldRun=) runs over the SUFFIX with both
+  sides' environments generalized, carrying: folded names still
+  undefined are unused (defs-before-uses), already-defined folded names
+  agree with the original walk's environment (=namedOf_get_notMem= +
+  no-rebinding close the dropped-copy case), and the folded-side
+  environment agrees with the original outside =folded='s domain. The
+  returned-names filter needs only two facts, proved as implication
+  lemmas (=filter_get_some=, =filter_get_none=) — the predicate depends
+  only on the key, so a key's entries drop or survive uniformly.
+PROOF-ENGINEERING NOTES, for the next Lean file: full =simp= normalizes
+=contains=/=decide= into =∈=-form and breaks syntactic matching against
+the model's own lambdas — =fold='s filter predicate was respelled with
+Bool =!= (semantically identical; the syntactic theorems are parametric
+in =folded= and unaffected) and the filter lemmas are proved with
+explicit =rw= chains (=Bool.not_true=, =if_neg Bool.false_ne_true=)
+rather than =simp=. Checked green under BOTH the devshell Lean 4.30 (CI)
+and an ambient 4.33: =Passes.lean='s =dedup_bound= closer was made
+version-robust (=show= + =exact= instead of a defeq-sensitive =simpa=).
+
+2026-08-27 — the §4 REFLECTION landed, and the lake project MOVED to
+=crates/minocrab-ir/lean/= (from the repo root). The move is forced by
+the reflection's mechanism and is also the right shape: the proofs are
+about THIS crate's passes, and they now ship inside the published crate
+(Cargo.toml =include= lists them; =.lake/= stays out via gitignore).
+The reflection, in =minocrab_ir::v3::passes=:
+- =ProofRef= — file path + claimed theorem names + the file EMBEDDED at
+  compile time; constructible only via the =lean_proof!= macro, whose
+  =include_str!= resolves relative to the CALLING source file (so a
+  third-party pass crate cites its own proof) and makes a deleted proof
+  file a BUILD error — compile-errors-over-panics applied to proofs.
+- =VerifiedPass : Pass= with =proof()=, and =run_pipeline_verified= —
+  the distinct type a pipeline can REQUIRE. It re-asks
+  =ProofRef::missing_theorems()= (a line-scan for =theorem <name>=
+  declarations) each run and surfaces drift as a report WARNING on the
+  established advisory channel; the builtin passes' claims are also a
+  test (=the_builtin_proofs_declare_every_claimed_theorem=), so a
+  renamed Lean theorem is a test failure, not a stale claim.
+- The honest boundary is stated at the definition site: the marker
+  holds the CLAIM; the semantic property itself is the Lean's, and a
+  pass without a proof still runs through =run_pipeline= — it just
+  cannot claim verification (FIT's shortfall clause).
+CI's lean job and flake comment updated for the move. Both builtins
+implement =VerifiedPass= citing their four theorems each.
