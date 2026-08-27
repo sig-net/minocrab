@@ -237,7 +237,7 @@ fn multi_limb_arguments_lower_like_the_hand_written_handles() {
         let one = c.constant(1u64);
         let value = c.constant(9u64);
         let coin = ShieldedCoinInfo3 {
-            nonce: B32::pad(&mut c, "nonce"),
+            nonce: minocrab_std::v3::CoinNonce(B32::pad(&mut c, "nonce")),
             color: B32::pad(&mut c, "color"),
             value,
         };

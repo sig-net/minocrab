@@ -47,6 +47,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
+    CoinNonce,
     circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerField,
     LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
@@ -584,7 +585,7 @@ struct WithdrawRequest {
 /// because the body handles the coin after disclosing it.
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
-    nonce: B32<Private>,
+    nonce: CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
 }
@@ -1114,7 +1115,7 @@ struct SettleArgs {
     request_id: signet::RequestId<Private>,
     big_r_x: B32<Private>,
     sig_s: B32<Private>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 }
 
 /// The settle circuits' shared preamble: disclose the request id, gate on
@@ -1151,7 +1152,7 @@ fn refund_surrendered_value(
     c: &mut Circuit3,
     request_id: &signet::RequestId<Public>,
     ev: &VaultRecord,
-    mint_nonce: &B32<Public>,
+    mint_nonce: &CoinNonce<Public>,
 ) {
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
@@ -1200,7 +1201,7 @@ pub fn complete_withdraw(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<1>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, WithdrawalOutcome, RefundMintNonce, RefundRecipient)> {
     let args = SettleArgs {
         request_id,
@@ -1261,7 +1262,7 @@ pub fn complete_swap(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<8>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
     let args = SettleArgs {
         request_id,
@@ -1338,13 +1339,13 @@ pub fn complete_swap(
     let change_nonce = c.persistent_hash(
         alignment,
         &[
-            mint_nonce.hi.erase(),
-            mint_nonce.lo.erase(),
+            mint_nonce.bytes().hi.erase(),
+            mint_nonce.bytes().lo.erase(),
             change_pad.hi.erase(),
             change_pad.lo.erase(),
         ],
     );
-    let change_nonce = B32::from_typed(c, change_nonce);
+    let change_nonce = CoinNonce(B32::from_typed(c, change_nonce));
     // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
     // locally (notes/api-safety-survey.org §B4's correction) — first in
     // line for `from_field_checked` once there's a spec-anchored artifact.
@@ -1373,7 +1374,7 @@ pub fn refund(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<5>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, RefundMintNonce, RefundRecipient, SwapRefundRecipient)> {
     let args = SettleArgs {
         request_id,
@@ -1496,7 +1497,7 @@ pub fn claim(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<1>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
     recipient: Maybe<Either<B32<Private>, B32<Private>>>,
 ) -> Discloses<(
     ClaimRequestId,

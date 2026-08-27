@@ -15,6 +15,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
+    CoinNonce,
     contract, kernel, label, Bool, CircuitArg, CoinRecipient, Disclose, Discloses, Either,
     Ledger,
     LedgerCounter, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, ShieldedSendResult, Uint,
@@ -54,7 +55,7 @@ pub const KT: KernelTokens = KernelTokens::new();
 /// which is [`ShieldedCoinArg`] plus its place in the commitment tree.
 #[derive(CircuitArg)]
 struct QualifiedCoinArg {
-    nonce: B32<Private>,
+    nonce: CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
     mt_index: Uint<64>,
@@ -79,7 +80,7 @@ impl QualifiedCoinArg {
 /// `ShieldedCoinInfo` as an argument.
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
-    nonce: B32<Private>,
+    nonce: CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
 }

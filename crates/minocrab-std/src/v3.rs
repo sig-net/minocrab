@@ -2264,11 +2264,23 @@ fn b32_pad_limbs(s: &str) -> (Fr, Fr) {
     )
 }
 
+b32_newtype! {
+    /// A shielded-coin nonce — one type for a mint nonce, a change nonce,
+    /// `ShieldedCoinInfo.nonce` and the kernel's evolved nonces, which are
+    /// the same protocol object at different points in its life. The mint
+    /// signatures carry three same-shaped 32-byte values (domain separator,
+    /// nonce, recipient key); this type makes the nonce position
+    /// unswappable — newtype-survey hazard A5, the sweep's most
+    /// consequential (a swapped nonce/recipient mints a coin to a key
+    /// nobody holds and silently destroys the value).
+    CoinNonce,
+}
+
 /// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
 /// value: Uint<128> }`.
 #[derive(Clone, Copy)]
 pub struct ShieldedCoinInfo3<V: Vis3> {
-    pub nonce: B32<V>,
+    pub nonce: CoinNonce<V>,
     pub color: B32<V>,
     pub value: Wire3<FieldT, V>,
 }
@@ -2301,7 +2313,7 @@ impl<V: Vis3> CircuitAbi for ShieldedCoinInfo3<V> {
 /// tree.
 #[derive(Clone, Copy)]
 pub struct QualifiedShieldedCoinInfo3<V: Vis3> {
-    pub nonce: B32<V>,
+    pub nonce: CoinNonce<V>,
     pub color: B32<V>,
     pub value: Wire3<FieldT, V>,
     pub mt_index: Wire3<FieldT, V>,
@@ -2402,8 +2414,8 @@ pub fn coin_nullifier_contract<V: Vis3>(
         coin_preimage_alignment(),
         &[
             AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cn[v1]")),
-            coin.nonce.hi.erase(),
-            coin.nonce.lo.erase(),
+            coin.nonce.bytes().hi.erase(),
+            coin.nonce.bytes().lo.erase(),
             coin.color.hi.erase(),
             coin.color.lo.erase(),
             coin.value.erase(),
@@ -2464,8 +2476,8 @@ pub fn coin_commitment_to<V: Vis3>(
         coin_preimage_alignment(),
         &[
             AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cc[v1]")),
-            coin.nonce.hi.erase(),
-            coin.nonce.lo.erase(),
+            coin.nonce.bytes().hi.erase(),
+            coin.nonce.bytes().lo.erase(),
             coin.color.hi.erase(),
             coin.color.lo.erase(),
             coin.value.erase(),

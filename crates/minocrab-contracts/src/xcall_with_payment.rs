@@ -47,7 +47,7 @@ label! {
 /// disclosing it (as `erc20_vault`'s `ShieldedCoinArg` is).
 #[derive(CircuitArg)]
 struct CoinArg {
-    nonce: B32<Private>,
+    nonce: minocrab_std::v3::CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
 }

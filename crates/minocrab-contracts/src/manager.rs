@@ -43,6 +43,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
+    CoinNonce,
     circuit, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerMap, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
@@ -389,7 +390,7 @@ struct ExecutePayloadArg {
     recipient_kind: Uint<8>,
     recipient: B32<Private>,
     to_account: B32<Private>,
-    want_nonce: B32<Private>,
+    want_nonce: CoinNonce<Private>,
     want_color: B32<Private>,
     want_amount: Uint<128>,
     credit_account: B32<Private>,
@@ -418,7 +419,7 @@ struct PublicPayload {
     recipient_kind: Wire3<FieldT, Public>,
     recipient: B32<Public>,
     to_account: B32<Public>,
-    want_nonce: B32<Public>,
+    want_nonce: CoinNonce<Public>,
     want_color: B32<Public>,
     want_amount: Wire3<FieldT, Public>,
     credit_account: B32<Public>,
@@ -604,7 +605,7 @@ pub fn pool_has_colour(
 /// `ShieldedCoinInfo` as an argument.
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
-    nonce: B32<Private>,
+    nonce: CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
 }
@@ -778,7 +779,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
     let kind0 = c.test_eq(p.recipient_kind, 0u64);
     let rcpt0 = b32_is_zero(c, &p.recipient);
     let to0 = b32_is_zero(c, &p.to_account);
-    let wnonce0 = b32_is_zero(c, &p.want_nonce);
+    let wnonce0 = b32_is_zero(c, &p.want_nonce.bytes());
     let wcolor0 = b32_is_zero(c, &p.want_color);
     let wamount0 = c.test_eq(p.want_amount, 0u64);
     let credit0 = b32_is_zero(c, &p.credit_account);
@@ -998,7 +999,7 @@ fn evm_struct_hash_for(
                 &amount_word,
                 &kind_word,
                 &p.recipient,
-                &p.want_nonce,
+                &p.want_nonce.bytes(),
                 &p.want_color,
                 &want_word,
                 &p.credit_account,
@@ -1199,11 +1200,11 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
                     Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
                 );
                 let two = c.constant(2u64);
-                let evolved = c.transient_hash(&[tag, two, pooled.nonce.lo]);
+                let evolved = c.transient_hash(&[tag, two, pooled.nonce.bytes().lo]);
                 let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
                 let zero = c.constant(0u64);
                 let change_coin = ShieldedCoinInfo3 {
-                    nonce: B32 { hi: zero, lo },
+                    nonce: CoinNonce(B32 { hi: zero, lo }),
                     color: p.primary_color,
                     value: change_value,
                 };

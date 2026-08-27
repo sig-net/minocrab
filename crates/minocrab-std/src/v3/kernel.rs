@@ -42,8 +42,8 @@ use super::hash;
 use super::ledger::LedgerRepr;
 use super::predicate::is_true;
 use super::{
-    coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinRecipient,
-    ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3,
+    coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinNonce,
+    CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3,
     ShieldedSendResult, Uint, UserAddress, B32,
 };
 
@@ -582,13 +582,13 @@ const NONCE_EVOLVE_CHANGE: &[u8] = b"midnight:kernel:nonce_evolve/2";
 ///
 /// Not the stdlib's `evolveNonce`, which hashes an INDEX as well; this is the
 /// two-element form `sendShielded` and `mergeCoin` write inline.
-fn derived_nonce(c: &mut Circuit3, domain: &[u8], nonce: &B32<Public>) -> B32<Public> {
-    let degraded = hash::degrade_to_transient(c, nonce);
+fn derived_nonce(c: &mut Circuit3, domain: &[u8], nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
+    let degraded = hash::degrade_to_transient(c, &nonce.bytes());
     let h = c.transient_hash(&[
         AnyWire3::immediate(super::short_literal_imm(domain)),
         degraded.erase(),
     ]);
-    hash::upgrade_from_transient(c, h)
+    CoinNonce(hash::upgrade_from_transient(c, h))
 }
 
 /// `a == b` on `Bytes<32>`, as compactc lowers it: a `test_eq` per limb and
@@ -786,10 +786,10 @@ pub fn send_shielded(
     // change coin selected against zero — the tag is `has_change` above.
     let none_unless = |c: &mut Circuit3, w| c.cond_select(spent_it_all, 0u64, w);
     let change_value = ShieldedCoinInfo3 {
-        nonce: B32 {
-            hi: none_unless(c, change_coin.nonce.hi),
-            lo: none_unless(c, change_coin.nonce.lo),
-        },
+        nonce: CoinNonce(B32 {
+            hi: none_unless(c, change_coin.nonce.bytes().hi),
+            lo: none_unless(c, change_coin.nonce.bytes().lo),
+        }),
         color: B32 {
             hi: none_unless(c, change_coin.color.hi),
             lo: none_unless(c, change_coin.color.lo),

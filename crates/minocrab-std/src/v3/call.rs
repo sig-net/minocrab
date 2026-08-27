@@ -22,8 +22,9 @@ use minocrab::v3::{CallArg, CallResult, FieldT, Wire3};
 use minocrab::Public;
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, Maybe, MerkleTreeDigest, Opaque,
-    QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
+    Bool, BoundedUint, Bytes, BytesN, CoinNonce, ContractAddress, Either, Maybe,
+    MerkleTreeDigest, Opaque, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, TsType, Uint,
+    UserAddress, B32,
 };
 
 /// Compact's `Opaque<'ts-type'>` across a contract boundary — one limb, in
@@ -212,7 +213,7 @@ impl CallArg for ShieldedCoinInfo3<Public> {
 impl CallResult for ShieldedCoinInfo3<Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
         ShieldedCoinInfo3 {
-            nonce: B32::from_call_slots(&slots[..2]),
+            nonce: CoinNonce::from_call_slots(&slots[..2]),
             color: B32::from_call_slots(&slots[2..4]),
             value: slots[4],
         }

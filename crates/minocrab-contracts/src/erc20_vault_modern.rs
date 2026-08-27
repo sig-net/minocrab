@@ -76,6 +76,7 @@ use minocrab_std::v3::kernel;
 use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
+    CoinNonce,
     circuit, eq, is_true, label, not, own_public_key, own_public_key_guarded, Bool, Bytes,
     Check, CircuitArg, CoinRecipient, Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe,
     Secp256k1Point, Uint, B32,
@@ -544,7 +545,7 @@ struct WithdrawRequest {
 /// because the body handles the coin after disclosing it.
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
-    nonce: B32<Private>,
+    nonce: CoinNonce<Private>,
     color: B32<Private>,
     value: Uint<128>,
 }
@@ -996,7 +997,7 @@ struct SettleArgs {
     request_id: signet::RequestId<Private>,
     big_r_x: B32<Private>,
     sig_s: B32<Private>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 }
 
 /// The settle circuits' shared preamble: disclose the request id, gate on
@@ -1049,7 +1050,7 @@ fn refund_surrendered_value(
     c: &mut Circuit3,
     request_id: &signet::RequestId<Public>,
     ev: &VaultRecordV2,
-    mint_nonce: &B32<Public>,
+    mint_nonce: &CoinNonce<Public>,
 ) {
     // assert(withdrawRefundCommitment(callerSecretKey(), requestId)
     //   == refundCommitment.lookup(requestId), "Not the withdrawer")
@@ -1097,7 +1098,7 @@ pub fn complete_withdraw(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: VaultResponse,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, WithdrawalOutcome, RefundMintNonce, RefundRecipient)> {
     let args = SettleArgs {
         request_id,
@@ -1156,7 +1157,7 @@ pub fn complete_swap(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: SwapResponse,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
     let args = SettleArgs {
         request_id,
@@ -1273,13 +1274,13 @@ pub fn complete_swap(
 ///    SHA-256 was never buying preimage resistance over a secret; it was
 ///    domain separation between two public values, which an injective,
 ///    fixed-point-free map provides just as well.
-fn change_nonce(c: &mut Circuit3, mint_nonce: &B32<Public>) -> B32<Public> {
+fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<Public> {
     c.region("change nonce", |c| {
-        let neg_hi = c.neg(mint_nonce.hi);
-        B32 {
+        let neg_hi = c.neg(mint_nonce.bytes().hi);
+        CoinNonce(B32 {
             hi: c.add(255u64, neg_hi),
-            lo: mint_nonce.lo,
-        }
+            lo: mint_nonce.bytes().lo,
+        })
     })
 }
 
@@ -1345,7 +1346,7 @@ pub fn refund(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: FailureResponse,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(SettleRequestId, RefundMintNonce, RefundRecipient)> {
     let args = SettleArgs {
         request_id,
@@ -1490,7 +1491,7 @@ pub fn claim(
     request_id: signet::RequestId<Private>,
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: VaultResponse,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
     recipient: Maybe<Either<B32<Private>, B32<Private>>>,
 ) -> Discloses<(
     ClaimRequestId,

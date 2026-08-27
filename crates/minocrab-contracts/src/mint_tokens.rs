@@ -26,6 +26,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
+    CoinNonce,
     circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
     ShieldedCoinInfo3, B32,
 };
@@ -50,7 +51,7 @@ pub const DOMAIN_SEP: &str = "testy-test";
 fn mint_shielded_token(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    nonce: &B32<Public>,
+    nonce: &CoinNonce<Public>,
     recipient: &B32<Public>,
 ) {
     let zero = c.constant(0u64);
@@ -95,7 +96,7 @@ fn mint_shielded_token(
 pub fn mint_with_recipient_argument(
     c: &mut Circuit3,
     recipient: B32<Private>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(MintRecipient, MintNonce)> {
     let one = c.constant(1u64);
 
@@ -114,7 +115,7 @@ pub fn mint_with_recipient_argument(
 pub fn mint_with_recipient_own_public_key(
     c: &mut Circuit3,
     _recipient: B32<Private>,
-    mint_nonce: B32<Private>,
+    mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {
     let one = c.constant(1u64);
 

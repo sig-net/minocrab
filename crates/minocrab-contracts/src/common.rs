@@ -9,6 +9,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
+    CoinNonce,
     b32_newtype, coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
     ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32, STRAIGHT_LINE,
 };
@@ -241,8 +242,8 @@ pub fn write_coin_to_self(
                 AlignmentAtom::Bytes { length: 16 },
             ],
             vec![
-                ImpactElem::Wire(coin.nonce.hi),
-                ImpactElem::Wire(coin.nonce.lo),
+                ImpactElem::Wire(coin.nonce.bytes().hi),
+                ImpactElem::Wire(coin.nonce.bytes().lo),
                 ImpactElem::Wire(coin.color.hi),
                 ImpactElem::Wire(coin.color.lo),
                 ImpactElem::Wire(coin.value),
@@ -289,7 +290,7 @@ pub fn mint_shielded_token(
     one: Wire3<FieldT, Public>,
     domain_sep: &B32<Public>,
     value: Uint<64, Public>,
-    nonce: &B32<Public>,
+    nonce: &CoinNonce<Public>,
     recipient: &CoinRecipient<Public>,
 ) {
     c.region("coin: mint", |c| {
@@ -370,11 +371,11 @@ fn burn_body(
         let tag = c.constant(
             minocrab::Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
         );
-        let evolved = c.transient_hash(&[tag, coin.nonce.lo]);
+        let evolved = c.transient_hash(&[tag, coin.nonce.bytes().lo]);
         let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
         let zero = c.constant(0u64);
         let output = ShieldedCoinInfo3 {
-            nonce: B32 { hi: zero, lo },
+            nonce: CoinNonce(B32 { hi: zero, lo }),
             color: coin.color,
             value: coin.value,
         };
@@ -429,11 +430,11 @@ pub fn burn_spend(
         let tag = c.constant(
             minocrab::Fr::from_le_bytes(b"midnight:kernel:nonce_evolve").expect("28 bytes fit"),
         );
-        let evolved = c.transient_hash(&[tag, coin.nonce.lo]);
+        let evolved = c.transient_hash(&[tag, coin.nonce.bytes().lo]);
         let (_overflow, lo) = c.div_mod_power_of_two(evolved, 248);
         let zero = c.constant(0u64);
         let output = ShieldedCoinInfo3 {
-            nonce: B32 { hi: zero, lo },
+            nonce: CoinNonce(B32 { hi: zero, lo }),
             color: coin.color,
             value: coin.value,
         };
@@ -494,7 +495,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
     me: ContractAddress<Public>,
     domain_sep: &B32<Public>,
     value: Uint<64, Public>,
-    nonce: &B32<Public>,
+    nonce: &CoinNonce<Public>,
     pk: &B32<Public>,
 ) {
     let guard = guard.into();
@@ -528,7 +529,7 @@ pub fn mint_shielded_token_to_key(
     c: &mut Circuit3,
     domain_sep: &B32<Public>,
     value: Uint<64, Public>,
-    nonce: &B32<Public>,
+    nonce: &CoinNonce<Public>,
     pk: &B32<Public>,
 ) {
     let me = kernel::self_address(c);

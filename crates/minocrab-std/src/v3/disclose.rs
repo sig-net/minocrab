@@ -13,8 +13,8 @@ use minocrab::{Private, Public};
 
 use super::entry::CircuitOut;
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, MerkleTreeDigest,
-    Opaque,
+    Bool, BoundedUint, Bytes, BytesN, CoinNonce, ContractAddress, Either, JubjubPoint,
+    MerkleTreeDigest, Opaque,
     Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, ZswapCoinPublicKey, B32,
 };
 
@@ -156,15 +156,15 @@ impl Disclose for ShieldedCoinInfo3<Private> {
         let [nonce_hi, nonce_lo, color_hi, color_lo, value] = c.disclose_all(
             L::LABEL,
             [
-                self.nonce.hi,
-                self.nonce.lo,
+                self.nonce.bytes().hi,
+                self.nonce.bytes().lo,
                 self.color.hi,
                 self.color.lo,
                 self.value,
             ],
         );
         ShieldedCoinInfo3 {
-            nonce: B32 { hi: nonce_hi, lo: nonce_lo },
+            nonce: CoinNonce(B32 { hi: nonce_hi, lo: nonce_lo }),
             color: B32 { hi: color_hi, lo: color_lo },
             value,
         }
@@ -199,7 +199,7 @@ mod tests {
         let mut c = Circuit3::new();
         let w = c.arg::<FieldT>("w");
         let coin = ShieldedCoinInfo3::<Private> {
-            nonce: B32 { hi: w, lo: w },
+            nonce: CoinNonce(B32 { hi: w, lo: w }),
             color: B32 { hi: w, lo: w },
             value: w,
         };
