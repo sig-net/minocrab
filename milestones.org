@@ -5,755 +5,198 @@ file and any =notes/= file it links. Findings and decisions get written to
 =notes/= as they're made, so no session ever re-derives them. Mark tasks DONE
 in place.
 
+Closed milestones are kept in SUMMARY form: what they were, the headline
+outcome, and where the full as-built record lives (the =notes/*.org= file
+each names, plus git history). Open milestones are kept in full.
+
 * M0 — Foundations, corpus, and layer map
-Everything here is research and setup; no eDSL code yet. The output is
-written-down knowledge that every later milestone reads instead of rediscovering.
-- [X] Nix flake + direnv; pin the Compact tooling (compactc etc.) in it.
-      (compactc 0.33.0-rc.2 pinned by hash; verified: compiles corpus
-      counter.compact → .zkir/.bzkir + keys. Mainnet stable 0.31.1 noted.)
-- [X] Gather the corpus: clone sig-net Compact contracts (via gh) and public
-      Midnight examples into =corpus/= (or as flake inputs). Compile each with
-      the pinned compactc and keep the ZKIR output alongside the source.
-      (corpus/: 8 pinned sources, 478 files (+195 negative), 312 compile OK
-      incl. ALL 20 sig-net contracts — they need --feature-zkir-v3, wired as
-      per-source flags. ./update.sh bumps pins. Failures recorded in
-      compile-report.tsv are data, mostly older-pragma/multi-file cases.)
-- [X] Survey Midnight's repos: what ZKIR crates/types/serializers exist that we
-      can import or fork, which ZKIR version supports cross-contract calling,
-      and how compactc drives the pipeline. Write to =notes/zkir.org= and
-      =notes/midnight-code-reuse.org=.
-- [X] Write the layer map (per plan.org: ZKIR bindings / rust IR + stdlib /
-      optimisations / …) to =notes/architecture.org= before any implementation.
-Exit criteria: corpus compiles reproducibly under nix; architecture doc exists;
-we know exactly which Midnight code we're reusing and how.
+Research and setup, no eDSL code: the pinned toolchain, the corpus, and the
+written-down layer map every later milestone reads instead of rediscovering.
+- [X] Nix flake + direnv; compactc 0.33.0-rc.2 pinned by hash (mainnet
+      stable 0.31.1 noted).
+- [X] Corpus in =corpus/=: 8 pinned sources, 478 files (+195 negative),
+      312 compile OK including all 20 sig-net contracts
+      (--feature-zkir-v3); =./update.sh= bumps pins; failures recorded as
+      data in compile-report.tsv.
+- [X] Midnight repo survey → =notes/zkir.org=, =notes/midnight-code-reuse.org=.
+- [X] Layer map → =notes/architecture.org=.
+Exit criteria MET: corpus compiles reproducibly under nix; architecture doc
+exists; the Midnight code we reuse is identified.
 
 * M1 — ZKIR bindings layer
-- [X] Rust types + (de)serialization for ZKIR, reusing/forking Midnight's code
-      per M0 findings. Never below ZKIR.
-      (crates/minocrab-zkir: re-exports midnight-zkir 2.2.0 pinned to the same
-      midnight-ledger tag as the toolchain binaries; adds the .zkir JSON
-      version-envelope writer the crate lacks. See Cargo.toml [patch] notes —
-      the ledger-9 line needed their transient-crypto-old workspace patch
-      mirrored.)
-- [X] Round-trip test: parse compactc's ZKIR output, re-emit it, verify
-      equivalence. (Green on the counter fixture.)
-- [X] Extend the round-trip test to sweep every .zkir in corpus/ once the
-      corpus build lands. (722 v2 files round-trip clean.)
-- [X] ZKIR v3 bindings: the sig-net contracts (incl. the erc20-vault
-      benchmark target, now M6)
-      compile with --feature-zkir-v3 and emit v3 (typed IR, inputs/outputs
-      schema). Bind =midnight-zkir-v3= (git; rev the compact flake pins) the
-      same way as v2, round-trip the 66 skipped v3 corpus files.
-      (minocrab_zkir::v3 module + read_any dispatch. Gotcha for bumps: the
-      ledger rc.3 tag's zkir-v3 predates the bundled binary despite identical
-      version strings — all midnight-ledger deps now pin the flake's rev
-      04c9c5d9. All 788 corpus files round-trip, 722 v2 + 66 v3.)
-- [X] Emit a trivial circuit by hand through our bindings and check Midnight's
-      tooling accepts it. (zkir mock-compile accepts; parses back equal.)
-Exit criteria: we can read and write ZKIR that their toolchain accepts, proven
+- [X] =crates/minocrab-zkir=: re-exports midnight-zkir 2.2.0 pinned to the
+      toolchain's own ledger tag, plus the .zkir version-envelope writer
+      the crate lacks.
+- [X] Round-trip: parse compactc's ZKIR, re-emit, verify equivalence —
+      all 788 corpus files round-trip clean (722 v2 + 66 v3).
+- [X] ZKIR v3 bindings (=minocrab_zkir::v3= + =read_any=), pinned to the
+      flake's ledger rev.
+- [X] A hand-emitted trivial circuit is accepted by Midnight's tooling
+      (zkir mock-compile).
+Exit criteria MET: we read and write ZKIR their toolchain accepts, proven
 against the corpus.
 
 * M2 — Core eDSL + native simulator
-- [X] Minimal eDSL: wires, field/int ops, assertions, witness inputs, public
-      outputs; lowering to ZKIR via M1.
-      (crates/minocrab-ir: typed builder over all 26 ZKIR v2 instructions with
-      arity tracking. crates/minocrab: Circuit/Wire API.)
-- [X] Type-level disclosure tracking: =Wire<Private>= can't reach a public
-      output without =disclose()=; overridable escape hatch; greppable.
-      (Meet trait joins visibilities; declare_public/output only accept
-      Wire<Public>; disclose(w, label) is the single gate and carries an
-      audit label into the report. TODO M3: trybuild compile-fail test
-      proving the type error.)
-- [X] Native simulator running circuits in plain Rust inside =cargo test=, with
-      structured output: performance metrics + what was disclosed.
-      (crates/minocrab-sim mirrors midnight-ledger's reference VM;
-      every run convertible to a ProofPreimage and cross-checked against
-      IrSource::check in tests, so the simulator is never trusted alone.
-      Report = op counts + witnesses consumed + labelled disclosed values,
-      serde-serializable. cost() exposes their CircuitModel k/rows.)
-Exit criteria: a small contract written in the eDSL lowers to valid ZKIR and
-simulates with a disclosure report. MET — age-gate demo lowers, zkir
-mock-compile accepts it, reference VM agrees with the simulator
-(crates/minocrab-sim/tests/end_to_end.rs).
+- [X] Minimal eDSL: =crates/minocrab-ir= (typed builder over all 26 ZKIR v2
+      instructions), =crates/minocrab= (Circuit/Wire API).
+- [X] Type-level disclosure tracking: =Wire<Private>= cannot reach a public
+      output without =disclose(w, label)= — the single, greppable gate,
+      carrying an audit label into the report.
+- [X] Native simulator (=crates/minocrab-sim=) mirroring midnight-ledger's
+      reference VM; every run convertible to a ProofPreimage and
+      cross-checked against =IrSource::check=, so the simulator is never
+      trusted alone. Report = op counts + witnesses + labelled disclosures.
+Exit criteria MET: the age-gate demo lowers to valid ZKIR, zkir
+mock-compile accepts it, the reference VM agrees with the simulator.
 
 * M3 — Verification harness + cost profiler
-- [X] Spec-vs-circuit quickcheck/proptest harness: spec in ordinary Rust,
-      millions of random inputs asserting circuit ≡ intent.
-      (crates/minocrab-sim/tests/property.rs; every accepted case re-validated
-      by the reference VM. PROPTEST_CASES env scales to millions in CI.
-      Disclosure typing proven by compile_fail doctest in minocrab.)
-- [X] Differential testing against compactc: same contract in Compact and in
-      the eDSL, same inputs, same results.
-      (ABI modeled: notes/ledger-abi.org — state layout, Impact/PI framing,
-      FAB, v3 schema, worked example, and the equivalence criterion: same
-      typed inputs/outputs + identical Preprocessed::pis/pi_skips on a
-      shared ProofPreimage; instruction streams free to differ.
-      TICKED 2026-08-15 (audit): the harness this bullet asked for has
-      existed and been green since M4-M6 — ELEVEN differential suites in
-      crates/minocrab-contracts/tests/*_differential.rs (attest, erc20_vault,
-      events, hashing, mint_tokens, serde_builtin, signet_contract,
-      test_caller, xcall, xcall_with_payment, xcontract_events), each
-      running our circuit against compactc's own artifact with
-      reject-agreement and tamper sweeps. It was simply never ticked as
-      later milestones consumed it.)
-- [X] User-friendly cost profiler (constraint/RAM/proving-cost proxies, broken
-      down by code region).
-      (Circuit::region() spans; minocrab_sim::profile() → per-region
-      instruction/op breakdown + Midnight's CircuitModel k/rows; Display
-      renders a human table, serde for CI.)
-Exit criteria: the "obviously correct" story exists and is cheap to run in CI.
+- [X] Spec-vs-circuit proptest harness (spec in ordinary Rust; every
+      accepted case re-validated by the reference VM; =PROPTEST_CASES=
+      scales to millions). Disclosure typing proven by compile_fail doctest.
+- [X] Differential testing against compactc: ABI modeled in
+      =notes/ledger-abi.org= (the equivalence criterion: same typed I/O +
+      identical =Preprocessed::pis/pi_skips= on a shared ProofPreimage;
+      instruction streams free to differ). Eleven differential suites in
+      =crates/minocrab-contracts/tests/*_differential.rs=, each with
+      reject-agreement and tamper sweeps.
+- [X] Cost profiler: =Circuit::region()= spans; =minocrab_sim::profile()= →
+      per-region breakdown + Midnight's CircuitModel k/rows.
+Exit criteria MET: the "obviously correct" story exists and is cheap in CI.
 
 * M4 — stdlib + corpus rewrites
-- [X] Port the Compact stdlib pieces the corpus needs, mechanically translating
-      Midnight's own implementations where possible.
-      (Mostly DONE — crates/minocrab-std: Bundle wire-typing (+FAB atoms),
-      Maybe/Either, full merkleTreePathRoot, persistent/transient
-      hash+commit, degrade/upgrade, pad/literals, coin types +
-      coinCommitment/coinNullifier/tokenType/nativeToken/evolveNonce,
-      jubjubSchnorrVerify; v3 module: secp256k1EcdsaVerify +
-      secp256k1EthereumAddress over the typed frontend, tested against
-      real signatures. First compactc differential green:
-      tiny.compact public_key vs corpus set.zkir, digests equal.
-      REMAINING: the kernel.* circuits (mint/send/receive, blockTime*,
-      unshieldedBalance*) — blocked on the ledger-op layer below.)
-      (AUDIT 2026-08-15: the remainder is now OWNED BY M17, which lists it
-      exhaustively against the pinned stdlib. This bullet stays open only
-      as M17's pointer; everything the corpus rewrites needed is done.)
-      (TICKED 2026-08-16: M17 CLOSED — all 24 circuits of its fixture,
-      including the kernel primitives, the block-time and unshielded
-      families and the three shielded compositions, are ported and equal
-      to compactc instruction for instruction. The one thing that is not
-      ported, `kernel.checkpoint()`, cannot be compiled for our IR
-      version by compactc itself.)
-- [X] Prerequisite: ZKIR v3 emission + execution (sig-net contracts are v3).
-      (minocrab-ir::v3::Builder3 — typed, zkir-v3 mock-compile accepts;
-      minocrab::v3::Circuit3 — Wire3<T, Vis>, capability-trait ops, the
-      type lists as Rust compile errors; minocrab-sim::v3 — preprocess()
-      port driving upstream's own pub ir_instructions helpers, full
-      pis/pi_skips/comm_comm, 10 cross-checked tests. Needed because
-      upstream's Preprocessed path is pub(crate) — notes/ledger-abi.org §6.)
-- [X] Ledger-op layer (crates/minocrab-ledger): Impact ops via onchain-vm's
-      Op::field_repr; constant ops through the real Op type, value-carrying
-      ops splice wires into field_repr's layout (unit-tested equal).
-      WRITES DONE + accepted: baseline noop/base rebuilt and call-compatible
-      (equal schemas + pis/pi_skips; tests/differential_baseline.rs).
-      READS DONE + accepted: cell/counter read, counter lessThan, map
-      member/lookup/size/isEmpty, kernel self — public_input gates +
-      popeq[c] embeds per compactc's vm-code; accepted via the initialise/
-      initialize differentials below. KERNEL EFFECTS DONE + accepted:
-      mintShielded + the three zswap claims (mint-tokens differentials).
-      EVENTS DONE + accepted: emit/log op + Serializer (events experiment,
-      all 4 circuits). REMAINING: Map rem, MerkleTree ops,
-      guarded/conditional reads, and the ledger-declaration DSL on top.
-      Priority per notes/signet-corpus.org (erc20-vault inventory).
-      (AUDIT 2026-08-15: three of those four are DONE — map_remove and
-      set_insert landed with M6's vault work (crates/minocrab-ledger/
-      src/lib.rs), guarded/conditional reads likewise (every _guarded op),
-      and the ledger-declaration DSL landed as M9 phase 7's
-      #[derive(Ledger)] + LedgerMap/LedgerCell/LedgerCounter. The ONLY
-      remainder is MerkleTree ops, now owned by M16 together with List,
-      HistoricMerkleTree and the rest of Set. This bullet stays open as
-      M16's pointer.)
-      (TICKED 2026-08-16: M16 CLOSED — List, MerkleTree, HistoricMerkleTree
-      and the rest of Set landed with 31 of 31 circuits byte-identical to
-      compactc. What M16 did not do it named and scoped: the three
-      `insertCoin`/`pushFrontCoin` arms and nested ADTs.)
-- [X] Rewrite the sig-net corpus contracts in the eDSL, one by one; each becomes
-      a differential + property test. (ABI modeled: notes/ledger-abi.org.
-      Equivalence = same typed I/O schema + equal Preprocessed pis/pi_skips
-      on a shared ProofPreimage; instruction shape free to differ.
-      STARTED — crates/minocrab-contracts. Every non-cross-contract
-      experiment in signet-midnight-experiments is COMPLETE and
-      differential-green: baseline (noop/base), attest (all 4, incl.
-      shaVerify/keccakVerify via the deserialize<T,N> port), events
-      (base/emit1/2/4), hashing (all 10), keccak (all 9), mint-tokens
-      (both), serde-builtin (checkRoundtrip). Plus test-caller-contract
-      initialise and erc20-vault initialize (the benchmark target's
-      setup circuit), each with reject-agreement tests. M5 done: the
-      xcall/xcontract-events/xcall-with-payment experiments are ALL
-      differential-green — notify/pay landed 2026-08-14 (M6 session)
-      via the receiveShielded + writeCoin ports (createZswapOutput is a
-      Void witness native, nothing in-circuit; minocrab-ledger
-      cell_write_coin; compositions in minocrab-contracts::common).
-      REMAINING rewrites: Signet.compact, the rest of test-caller and
-      of erc20-vault (deposit/claim/withdraw… also need the event-map
-      composite + guarded reads).
-      M6 session 2026-08-14: ALL NINE erc20-vault circuits
-      differential-green (initialize, deposit, claim, approveRouter,
-      withdraw, completeWithdraw, refund, swap, completeSwap) — every
-      circuit with guard-rejection agreement and (deposit/claim/
-      withdraw/completeWithdraw/refund/completeSwap) full tamper
-      sweeps, multi-scenario where circuits branch (claim's four
-      recipient shapes, completeWithdraw success/refund, refund's two
-      routes, completeSwap exact-spend). Built on: the Signet-module
-      port (minocrab-contracts::signet), map_remove + guarded
-      reads/witnesses/asserts, the coin ports (receiveShielded, burn
-      via sendImmediateShielded's folded form, coinNullifier,
-      nonce evolution, dynamic + static-left + guarded mints).
-      Signet singleton DONE 2026-08-14: its on-chain circuits turn out
-      to live in signet-contract.compact (Signet.compact is the module,
-      already ported; circuits.compact is --skip-zk, no zkir) — all 3
-      emit-only circuits (signBidirectional/respond/respondBidirectional)
-      differential-green with tamper rejection agreement
-      (minocrab-contracts::signet_contract). See notes/signet-corpus.org.
-      With that, every M6-scope circuit is ported: REMAINING here is
-      nothing — the benchmark harness is M6's own bullet.)
-      (TICKED 2026-08-15 (audit): the bullet's own text said REMAINING is
-      nothing as of the M6 session; it was never ticked. Since then the
-      artifact count went 1 → 4 (port, opt, borsh, modern) and every one
-      is differential- or spec-verified.)
-Exit criteria: the sig-net contracts run on MinoCrab with the M3 harness green.
-AUDIT 2026-08-15: two of three bullets tick; the two that stay open are
-pure pointers — the stdlib remainder is M17, the ledger-ADT remainder is
-M16. Nothing in M4's own scope is unaccounted for.
-CLOSED 2026-08-16: all three tick. Both pointers resolved — M16 closed
-the ledger ADTs and M17 the kernel/token stdlib, each with its own
-instruction-for-instruction differential against compactc.
+- [X] Compact stdlib ported by mechanically translating Midnight's own
+      implementations (=crates/minocrab-std=): Bundle wire-typing, Maybe/
+      Either, merkle paths, persistent/transient hash+commit, coin types,
+      jubjubSchnorrVerify, secp256k1 ECDSA + Ethereum address. The kernel/
+      token remainder became M17 (closed).
+- [X] ZKIR v3 emission + execution: =Builder3= / =Circuit3= (=Wire3<T, Vis>=,
+      capability-trait ops) / =minocrab-sim::v3='s =preprocess()= port —
+      see =notes/ledger-abi.org= §6.
+- [X] Ledger-op layer (=crates/minocrab-ledger=): Impact ops via
+      onchain-vm's =Op::field_repr=, value-carrying ops splicing wires into
+      the real layout. The ADT remainder became M16 (closed).
+- [X] Sig-net corpus contracts rewritten one by one, each a differential +
+      property test — every experiment, test-caller, the Signet singleton,
+      and all nine erc20-vault circuits with tamper sweeps
+      (=notes/signet-corpus.org=).
+Exit criteria MET, CLOSED 2026-08-16: the sig-net contracts run on
+MinoCrab with the M3 harness green; both pointer bullets resolved by
+M16/M17, each instruction-for-instruction against compactc.
 
 * M5 — Cross-contract calling
-Pulled ahead of the benchmark (dmd, 2026-08-14): the erc20-vault runtime
-circuits call the Signet singleton cross-contract, so this is a benchmark
-prerequisite.
-- [X] Cross-contract calls in the eDSL on the ZKIR version that supports them
-      (v3; caller-side commitment + Kernel.claimContractCall, see
-      notes/ledger-abi.org §2 on the communications commitment and
-      desugar-contract-calls.ss).
-      (minocrab-ledger: kernel_claim_contract_call + contract_call — the
-      full desugar: result-limb witnesses, cc-rand/ep witnesses, in-circuit
-      transientCommit, effects[3] claim — plus set_insert. Lowering decoded
-      in notes/ledger-abi.org §Implementation "CROSS-CONTRACT CALLS".)
-Exit criteria: the xcall/xcontract-events corpus experiments run on MinoCrab
-with their differentials green. MET — all differential-green incl. tamper
-reject-agreement sweeps (minocrab-contracts tests/xcall_differential.rs,
-xcontract_events_differential.rs, xcall_with_payment_differential.rs):
-xcall caller localBase/callOnce/callTwice/callBig/callEmit + target
-deposit/depositEmit/depositBig; xcontract-events depositViaVault (the
-return-value path: result witnesses bound by the comm commitment) + token
-deposit; xcall-with-payment caller callOnce/request + target confirmRequest.
-NOT here: xcall-with-payment's notify/pay — root-call coin-custody circuits
-(receiveShielded), no cross-contract machinery; they belonged to the M4
-stdlib coin work and landed 2026-08-14 (M6 session, also green).
+Pulled ahead of the benchmark: the erc20-vault runtime circuits call the
+Signet singleton cross-contract.
+- [X] Cross-contract calls on ZKIR v3 — the full desugar (result-limb
+      witnesses, cc-rand/ep witnesses, in-circuit transientCommit,
+      effects[3] claim), decoded in =notes/ledger-abi.org=.
+Exit criteria MET: xcall / xcontract-events / xcall-with-payment all
+differential-green including tamper reject-agreement sweeps.
 
 * M6 — Baseline benchmark: cross-chain deposit/withdrawal
-Benchmark the sig-net cross-chain deposit and withdrawal contracts under
-MinoCrab and under Compact. This pass is the BASELINE: our lowering mirrors
-compactc's op sequences, so expect parity on constraint/cost numbers —
-parity here is evidence the rewrite is correctness-preserving, and it gives
-M7's optimisation work its targets. The presentable "better than Compact"
-write-up comes after M7, from a refreshed run of this harness.
-Confirmed target (dmd, 2026-08-13): the erc20-vault contract
-(sig-net/midnight-examples, examples/erc20-vault) — plus its Signet singleton
-dependency (sig-net/midnight-integration) as needed for the cross-contract
-calls. See notes/signet-corpus.org.
-- [X] Both contracts running under both toolchains at the same pinned versions,
-      with the M3 correctness harness green on the MinoCrab versions.
-      (bench.sh re-runs the erc20-vault + signet-contract differentials
-      with preimage dumping before measuring, so every benchmarked
-      preimage is corpus-verified first.)
-- [X] Head-to-head measurements: RAM, proving time, and constraint/cost-profiler
-      breakdowns, reproducible via a single nix-run command.
-      (nix run .#bench → target/bench/{results.json,report.md,profiles/};
-      median-of-3 proving, per-cell subprocess RSS. Final run 2026-08-14.)
-- [X] Baseline write-up: methodology + numbers, and the cost-profile breakdown
-      that picks M7's optimisation targets.
-      (notes/benchmark.org: full table + findings + the ranked list from
-      the region-attributed profiles — regions landed in
-      minocrab-contracts with this run; minocrab-bench --profiles
-      refreshes attribution without re-proving.)
-Exit criteria: reproducible baseline numbers from a clean checkout, and a
-ranked list of where optimisation should attack. MET — parity confirmed on
-the mirrored circuits (rows ±0.7%), strictly better where compactc
-over-serializes (refund -12%, completeSwap -15%, singleton -53..-55% rows;
-5 circuits a full k lower → ~half prove time/RAM), and the M7 attack list
-is ranked by region-attributed instruction share (notes/benchmark.org).
+The erc20-vault + Signet singleton benchmarked under MinoCrab and Compact
+at the same pinned versions. The BASELINE pass: our lowering mirrors
+compactc's, so parity is evidence the rewrite is correctness-preserving.
+- [X] Both contracts under both toolchains, M3 harness green; every
+      benchmarked preimage corpus-verified first (bench.sh).
+- [X] Head-to-head RAM / proving time / cost breakdowns, reproducible via
+      =nix run .#bench= (median-of-3 proving, per-cell subprocess RSS).
+- [X] Write-up: =notes/benchmark.org= — full table, findings, and the
+      ranked optimisation-target list from region-attributed profiles.
+Exit criteria MET: parity on the mirrored circuits (rows ±0.7%), strictly
+better where compactc over-serializes (refund −12%, completeSwap −15%,
+singleton −53..−55% rows; 5 circuits a full k lower → ~half prove
+time/RAM), and M7's attack list ranked.
 
 * M7 — Optimisation + presentable deliverable
-Driven by M6's cost profiles; every change re-measured with the M6 harness.
-- [X] Const-generic circuit families, monomorphized per size/depth, unrolled by
-      rustc.
-      (DONE 2026-08-15 in three type-level stages: BytesN<V, N> +
-      Serializer::finish::<N> + bytes_limbs() as the one limbing rule
-      (minocrab-std/src/v3.rs); the Signet event family
-      SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND> +
-      EvmCalldata<V, WORDS> + EventRecord with a derived signet::layout
-      replacing the hand-counted event_limb table, retyped in the vault
-      as VaultEvent<V, 2, 34, 34> / SwapEvent<V, 7, 38, 37> and
-      verify_attestation::<LEN_OUTPUT>; MerkleTreePath<V, T, DEPTH>
-      (a real [MerkleTreePathEntry; DEPTH], so it is finally a Bundle)
-      plus Bundle::WIDTH literals derived from their components.
-      Guard: tests/row_snapshot.rs freezes (k, rows) for all 55
-      workspace circuits — written first, bit-identical through all
-      three stages, differential suites green throughout. Skip
-      decisions with reasons (hashing's BytesNDyn, emit_n/call_n_times,
-      Serializer typestate, array-backed limbs, B32, ledger values) and
-      the dropped serde-unification, in notes/const-generics.org.
-      The snapshot doubles as an M8 asset: a toolchain bump that
-      changes lowering shows up as a moved row count per circuit.)
-- [X] Optimisation passes at the IR layer; measure with the M3 profiler against
-      compactc's output (RAM + proving-cost proxies).
-      (Pass 1 DONE 2026-08-15 — native-instruction byte plumbing: ZKIR's
-      ReverseBytes (~150 rows) replaces the mirrored explode/rebuild
-      chains (~4,600); ABI words become algebraic div_mod shifts; the
-      notification payload collapses to one add (limb-aligned). All 9
-      vault circuits -18..-38% rows; every k=17 circuit crossed to k=16,
-      approveRouter 15→14; prove time -49..-76% vs compactc, RSS -43..-51%
-      on the k-crossers. All 13 differential suites green unchanged.
-      Row-cost method + numbers: notes/benchmark.org "M7 pass 1",
-      crates/minocrab-sim/examples/opcost.rs.
-      Pass 2 DONE 2026-08-15 — segment-based Serializer re-limbing
-      (≤1 div_mod per output-limb straddle instead of full byte
-      explosion): singleton circuits -97.5..-97.6% rows vs compactc,
-      respond k 15→10 (1,004 rows, 0.11s prove / 44MB vs their
-      8.24s / 875MB). All suites green. Remaining vault cost is
-      PI-coupled or real crypto — lowering-level work here is done;
-      what's left of M7 is const-generic families + the write-up.
-      Guard: refund/completeSwap sit ~300-450 rows under 2^16.)
-- [X] Refresh the M6 benchmark and produce the presentable write-up
-      (methodology, numbers, where the wins come from; honest about any
-      losses — baseline parity vs optimised deltas cleanly attributed).
-      (BENCHMARK.md at the repo root, from a fresh single-session
-      24-cell run 2026-08-15: rows -18..-38% vault / -97.5% singleton,
-      8 of 12 circuits at least one k lower, prove -46..-51% on the
-      vault k-crossers and -95..-97% singleton, honest same-k rows
-      (deposit/withdraw ~0% prove despite -19..-35% rows — cost is the
-      padded 2^k) and initialize parity. notes/benchmark.org holds the
-      working history; baseline cells in results.jsonl.m6-baseline.)
-Exit criteria: a benchmark report you can present, reproducible from a clean
-checkout, with measurable wins over compactc and the correctness harness
-still green.
+- [X] Const-generic circuit families (=BytesN<V, N>=, the Signet event
+      family, =MerkleTreePath<V, T, DEPTH>=), monomorphized per size/depth;
+      =tests/row_snapshot.rs= born here as the (k, rows) freeze for every
+      workspace circuit. Skip decisions in =notes/const-generics.org=.
+- [X] IR-layer optimisation passes, measured per change
+      (=notes/benchmark.org= "M7 pass 1/2", =examples/opcost.rs=):
+      pass 1 — native byte plumbing (ReverseBytes replaces ~4,600-row
+      explode/rebuild chains): all 9 vault circuits −18..−38% rows, every
+      k=17 circuit crossed to k=16, prove −49..−76% vs compactc;
+      pass 2 — segment-based Serializer re-limbing: singleton circuits
+      −97.5% rows vs compactc, respond k 15→10 (0.11s prove / 44MB vs
+      their 8.24s / 875MB).
+- [X] BENCHMARK.md at the repo root from a fresh 24-cell run — honest
+      about same-k rows cuts that don't move prove time.
+Exit criteria MET: a presentable, reproducible report with measurable wins
+and the correctness harness green.
 
 * M8 — Churn resilience
-- [X] Documented, low-effort ZKIR/Compact-tooling version-bump workflow
-      (update pin → run corpus + harness → fix drift).
-      (DONE 2026-08-15 — notes/version-bump.org, and ./bump.sh, which is
-      that document's runnable half. THE DOCUMENT: the four pins that
-      can move independently (compactc release, the one midnight-*
-      rev, the corpus source revs, and rustc — which FLOATS); the
-      checklist as commands in order, ending in a two-commit shape (the
-      pin, then the accepted baselines, whose message carries the
-      reason per moved instrument); a DRIFT TAXONOMY of twelve
-      instruments saying what a failure in each MEANS after a bump and
-      which of four responses is right (accept the new baseline / fix
-      our lowering / repin / investigate upstream) — including which
-      instruments a bump CANNOT move, since a firing there is the
-      surprise; and eight hazards. THE TOOL: `./bump.sh pins` answers
-      "is there anything to take?" in one screen and closes M1's
-      version-string trap by tooling — it reads the pinned compactc
-      RELEASE TAG's own flake.lock and prints the ledger revs its
-      binaries were built from, and it asks GitHub for ANCESTRY rather
-      than assuming a newer date means newer code. `./bump.sh gates`
-      runs the sequence in diagnosis order with a PASS/FAIL/seconds
-      summary and the taxonomy line for whatever fired, aborting if the
-      pin does not resolve or the workspace does not build. `./bump.sh
-      accept` runs every regenerator in dependency order — including
-      the interface crates' contract-info.json re-copy, which NO tool
-      did before — and ends in a reviewable diff; the row and interface
-      snapshot regenerators now WRITE their tables between markers
-      instead of printing them to paste.
-      THE DRY RUN, real and recorded with its actual output. (a) There
-      is nothing to bump to: compactc-v0.33.0-rc.2 is still upstream's
-      newest release. (b) midnight-ledger main is not ahead of our pin,
-      it has DIVERGED from it (merge base 2026-06-25; main +85, ours
-      +342) — attempted anyway on a throwaway worktree, where it
-      renamed midnight-ledger-v9, dropped Instruction::ReverseBytes
-      (which M7 pass 1 spends to save ~4,500 rows) and the
-      secp256r1/Curve25519 IrTypes, and left our [patch] block silently
-      inert. Rejected. (c) Two corpus sources moved and their .compact
-      files did not. (d) The test instruments were then fired
-      synthetically and behaved exactly as the taxonomy predicts, in
-      BOTH directions: a redundant constraint moves rows (+10 on
-      deposit) and nothing else — all 30 differentials still green,
-      because PI-equality does not see instructions — while swapping
-      two same-typed arguments moves the interface snapshot and one PI
-      ("input 65; expected 7e, computed 06") and NOT rows. (e) The two
-      steps (b) never reached: recompiling the whole corpus with the
-      pinned compiler is deterministic (3m11s, 312/478 OK, zero of 788
-      artifacts moved) and `./bump.sh accept` at HEAD rewrites twenty
-      generated files and changes none of them.
-      FOUND AND FIXED, three frictions: corpus/compile.sh sorted its
-      report in the caller's LOCALE (26 lines of churn on any
-      recompile) and corpus/update.sh reformatted sources.json through
-      jq — a bump's diff is now the bump; and the gate runner used to
-      spend 8m33s re-printing one compile error five times, which is
-      now a 7.2s abort.)
-Exit criteria: a version bump is a routine chore, not a project. MET,
-with one honest remainder. Routine: the whole loop is `pins` (~15s) →
-edit → `compile.sh` (3m11s) → `gates` → `accept` → `gates`, a bad pin
-is rejected in 2 seconds by resolution and 7 by the build stage, and
-every instrument's failure has a written meaning and a written
-response. The remainder is that no session has yet read a corpus diff
-produced by a DIFFERENT compiler, because upstream has not shipped one
-since we pinned; the taxonomy says how to read it, and only the event
-can prove the saying.
+- [X] Documented, tooled version-bump workflow: =notes/version-bump.org=
+      (the four independent pins, the checklist, a DRIFT TAXONOMY of
+      twelve instruments — what a firing MEANS and which response is
+      right — and eight hazards) + =./bump.sh= (=pins= / =gates= /
+      =accept=). Dry run performed and recorded, including a rejected
+      upstream divergence and synthetic instrument firings in both
+      directions.
+Exit criteria MET: a version bump is a routine chore; one honest
+remainder — no corpus diff from a genuinely different compiler has been
+read yet, because upstream hasn't shipped one since we pinned.
 
 * M9 — Contract-API ergonomics
-Design of record: notes/contract-api.org (agreed with dmd 2026-08-14).
-Circuit entry points as plain typed Rust fns (NEAR/dfinity-style
-decorator over a non-macro CircuitArg/entry core), typed disclosure
-declarations with generated tests, then rusty maps + literals. Standing
-principle: real types over macro rewriting — macros only generate
-impls/shims writable by hand. Zero circuit overhead throughout; every
-phase gated on interface snapshot + row_snapshot + all differential
-suites. LOOSENED (dmd 2026-08-15): where small overhead would buy a
-clear ergonomic win, ASK dmd with the concrete numbers (rows/k, what
-the API gains) instead of auto-rejecting — the tradeoff is his call;
-zero overhead stays the default and the gates stay in place.
-- [X] Phase 0: interface-snapshot test — ordered (label, type) of
-      inputs/outputs/witnesses for all 55 circuits, frozen at HEAD.
-- [X] Phase 1: typed v3 leaves Uint<BITS, V=Private> / Bool / Bytes<N≤31>
-      with .field() unwrap; native-Rust values accepted where possible.
-- [X] Phase 2: CircuitArg (schema+declare+constrain in one trait),
-      ArgPath naming, CircuitArgs, entry(), CircuitOut (Public-only ⇒
-      returning is disclosing); hand impls; port sign_bidirectional +
-      deposit with zero movement.
-- [X] Phase 3: crates/minocrab-macros — #[derive(CircuitArg)]; port
-      withdraw + claim (Maybe<Either<..>> flattening).
-- [X] Phase 4: #[circuit] attribute (thinness rule: expansion contains
-      no Circuit3 call); re-port the phase-2/3 circuits.
-- [X] Phase 5: mechanical port of the remaining circuits (order/types
-      never move; name column only where mechanical naming lengthens
-      hand-abbreviated labels).
-      (2026-08-15 — 62 of the 78 snapshot rows now build through the
-      typed API, up from 10: the vault's remaining six circuits in all
-      THREE forks (18, edited in lockstep because the borsh fork owes
-      the opt fork byte-identity on five of them), signet_contract's
-      respond pair through the interface crate's own types one level
-      flatter than its wrapper struct, and every experiment but one
-      family. One new core leaf, Secp256k1Point — the corpus's only
-      curve-point argument (7 circuits), one slot whose wire is NOT a
-      field element, so push_slots hands back nothing and the provided
-      constrain filters Prim::Point out before zipping; five FAB atoms,
-      pinned by a serialized-ZKIR test with the point mid-list. New
-      derives: SwapRequest ×3, DepositArgs (events/xcall), CoinArg.
-      Circuit FAMILIES parameterized by a Rust value (events' emitN,
-      xcall's callTwice) use entry() directly, since the attribute makes
-      a nullary constructor. LEFT UNPORTED, documented at the code:
-      hashing's 16 Bytes<len> circuits, whose width is a runtime sweep
-      parameter and whose constraints BytesNDyn already derives from the
-      same len — a closed match over today's sizes would buy nothing and
-      lose the sweep. Movement: exactly five name-column lines
-      (xcall_with_payment::callOnce's coin_ prefix, which its own target
-      already used). Zero-movement checked harder than the gates
-      require: all 78 circuits' serialized ZKIR dumped at HEAD and
-      compared — 68 byte-identical, 9 settle circuits identical up to
-      the ORDER of three input constraints (parameter order now, not the
-      declarer's), 1 the documented rename. row_snapshot bit-identical,
-      cargo test --workspace --release green.)
-- [X] Phase 6: disclosure — v3 Disclosure carries the Identifier, v3
-      report(), label!/disclose_as::<L>/Discloses<D, R> +
-      Discloses::of, macro-generated set-equality tests with
-      prescriptive failure messages + valued-report golden.
-      (2026-08-15 — 30 circuits DECLARE what they disclose in their
-      signature: the vault's nine in all three forks and
-      signet_contract's three. The v3 record is now its own type,
-      Disclosure3, carrying Identifiers (v3 has no memory index — the
-      old `index: 0` made every value in a v3 report read "<not
-      computed>") and a LIST of them, because one record is one logical
-      value: a Bytes<32> is one label, not a "(hi)"/"(lo)" pair. The
-      vocabulary (label!, DisclosureLabel, LabelSet, Disclose,
-      Discloses<D, R = ()>, Declared) lives in minocrab, not
-      minocrab-std as the design said — because minocrab-ledger
-      discloses too, and a cross-contract call's disclosures must be
-      nameable in the CALLER's declaration. Which is exactly what the
-      generated tests FOUND on day one: the four notify-Signet circuits
-      (×3 forks) were disclosing the xcall entry-point hash and
-      communications commitment through contract_call, undeclared;
-      those are now minocrab_ledger::{XcallEntryPointHash,
-      XcallCommitment, XcallResult} and named in twelve signatures.
-      Two deviations, both forced: `v.disclose_as::<L>(c)` rather than
-      the design's `c.disclose_as::<L>(v)` (a circuit method needs two
-      type parameters and a turbofish is all-or-nothing, E0107); and
-      the valued-report golden is one hand-written test on deposit, not
-      per-circuit codegen, because a golden needs a preimage. Zero
-      movement is the reason `Discloses<D, ()>` routes through the
-      label-less entry(): a declaration occupies no output slot. 30
-      generated set-equality tests with prescriptive messages ("fix:
-      add its label type to `swap`'s -> Discloses<(..)>…"), the
-      valued-report golden, minocrab-sim's v3 report()/simulate_compiled
-      twins. Zero movement checked harder than the gates require: all 78
-      circuits' serialized ZKIR dumped at HEAD and compared — 78 of 78
-      BYTE-IDENTICAL. row_snapshot bit-identical, interface_snapshot
-      unchanged, cargo test --workspace --release green. LEFT for a
-      documented follow-up: the 30 experiment circuits, several of which
-      are entry()-built families the attribute cannot cover.)
-- [X] Phase 7: rusty maps (#[derive(Ledger)] + LedgerMap<K,V>, Compact
-      method names, no hidden Impact ops), inline-immediate literals
-      (impl Into<Operand>; gated on hand-reviewed instruction deltas —
-      row snapshot is blind to Copy removal), and assertion predicates
-      (deferred #[must_use] descriptors: c.assert(less_than(0u64,
-      amount)) — widths from the operand types, optional message,
-      not/and/or + eval() only, no deferred arithmetic; shares the
-      Into<Operand> machinery with literals; no macros).
-      (2026-08-15 — three commits, three gates, all three rolled out
-      across the vault's THREE forks in lockstep; the files lost 297
-      lines net. MAPS: #[derive(Ledger)] makes declaration order the
-      field index (the `pub const REFUND_COMMITMENT: u8 = 9;` table is
-      now read off VAULT.refund_commitment.index()), and LedgerMap<K,V>
-      /LedgerCell<T>/LedgerCounter take the value ATOMS from the type
-      through LedgerRepr — the hand-written value_atoms and index
-      hazards both gone, 28/29/29 map call sites ported, every method
-      one Impact op with c and the guard visible. Placement is
-      minocrab-std (which gains a minocrab-ledger dependency): types
-      above ops. LITERALS: every operand position takes impl
-      Into<Operand<T,V>>, so a native Rust value inlines as a v3
-      immediate and assert_eq_imm/less_than_imm disappear into it; the
-      GATE was the reviewed instruction diff, since the row snapshot
-      cannot see a Copy — 27 circuits changed, 47 instructions removed,
-      ALL 47 `copy <immediate>` (canonicalized streams equal for all
-      78), row_snapshot bit-identical so no k or row moved and the
-      benchmark had nothing to report. PREDICATES: c.assert(chain_id
-      .gt(0u64).message("Chain ID must be positive")) — inert #[must_use]
-      descriptors, widths read off the operand types (mismatch, raw-wire
-      ordering and an oversized literal are build-time panics), messages
-      as metadata that minocrab-sim spends on a failed run, not/and/or +
-      eval only, no macros; 51 guard asserts ported. Zero movement
-      checked harder than the gates require: all 78 circuits' serialized
-      ZKIR dumped at HEAD and after each piece — byte-identical for maps
-      and predicates, the reviewed 47-Copy delta for literals.
-      row_snapshot bit-identical, interface_snapshot unchanged, cargo
-      test --workspace --release green throughout.)
-- [X] Phase 8: showcase twin — a "modern" erc20-vault rewrite using
-      every M9 feature to fullest effect, kept BESIDE the zero-movement
-      direct ports; corpus-verified by the same differential harness
-      (instruction streams are free under PI-equality) + property
-      tests, own snapshot entries with deltas reported; README's
-      full-featured snippet then points at real code.
-      (2026-08-15 — two stages, two commits, two gates. STAGE 1, the API
-      items dmd decided today: polymorphic literals were already phase
-      7's, so what is new is `.widen::<N>()` (the same wire retyped, no
-      instruction and no second range constraint — a value below 2^BITS
-      is below 2^WIDER by construction); NO implicit widening and no
-      auto-constraining of raw wires (decisions A and B, candidates 3
-      and 4 declined); and the four zero-row candidates built —
-      guard-free ledger methods (the Impact guard is an OPERAND now, so
-      the straight-line form inlines the immediate `1` and drops the
-      `Copy` that named it), `LedgerRepr` with `&mut Circuit3` on both
-      sides of the crossing (which retires `LedgerField` for the
-      curve-point cell and the sealed deployer), the boolean leaf
-      `is_true`, and `.when(guard)`. Also dmd's new standing principle,
-      COMPILE ERRORS OVER PANICS: both width rejections are now E0080 at
-      the call site from inline-`const` asserts, and the panics that
-      cannot be (a runtime literal's magnitude is not a type) are listed
-      in the notes. The three forks moved to `_under` mechanically, 78
-      of 78 byte-identical. STAGE 2, `erc20_vault_modern`: the borsh
-      fork's contract written through all of it — no ledger op takes a
-      guard, no `AlignmentAtom`/`LedgerValue`/field index in the file,
-      typed cells including the `Secp256k1Point`, predicates for the
-      boolean and in-branch checks, `FixedGas::<700_000>` as a
-      const-generic family. Gated on the M3 criterion rather than on
-      bytes: all nine circuits accept the BORSH model's own preimage
-      with the same `pis`/`pi_skips`, recorded per circuit in a third
-      divergence ledger whose `Twin::PiEqual` variant says exactly that
-      and is asserted in both directions. ROWS AND k IDENTICAL to the
-      borsh fork, all nine — the modern spelling removes naming, not
-      work; ten `Copy`s of immediates go, which is zero rows.
-      `Art::Modern` is the fourth member of `ARTS`, so the spec harness,
-      the ledger-effect execution and the adversarial sweeps all run
-      against it (`PROPTEST_CASES=20000` elevated pass green). Both
-      snapshots grew by the twin's nine entries and nothing else moved.)
-Exit criteria: the benchmark contracts read side-by-side with their
-Compact sources, disclosure declarations are part of every circuit's
-signature and enforced by generated tests, and every instrument (rows,
-interfaces, differentials) shows zero unexplained movement — plus the
-showcase twin differential-green with its deltas explained.
-ASSESSMENT (2026-08-15, all nine phases done): THREE OF FOUR MET, one
-partially. Met: the benchmark contracts read side-by-side with their
-Compact sources (the vault in four artifacts and signet_contract are
-built through the typed API end to end; `erc20_vault_modern` is the
-side-by-side at its best). Met: every instrument shows zero unexplained
-movement — the 78 pre-existing circuits are byte-identical ZKIR through
-all of phases 6-8, the only movement anyone has to explain in the whole
-milestone is phase 5's five renamed labels and nine reordered input
-constraints, and phase 7's 47 removed `Copy`s. Met: the twin is green
-on the M3 criterion, PI-equal to the borsh fork on all nine circuits,
-with its deltas reported (zero rows, zero k, ten `Copy`s).
-The fourth was NOT FULLY MET at that assessment — 39 of 87 circuits
-declared, the experiments carried free-string `c.disclose` calls, and
-the `entry()`-built families looked blocked on missing machinery.
+Design of record: =notes/contract-api.org=. Circuit entry points as plain
+typed Rust fns; real types over macro rewriting (macros only generate
+impls/shims writable by hand); zero circuit overhead, gated on interface
+snapshot + row_snapshot + all differentials at every phase.
+- [X] Phase 0: interface-snapshot test — ordered (label, type) for all
+      circuits, frozen.
+- [X] Phase 1: typed v3 leaves =Uint<BITS, V>= / =Bool= / =Bytes<N≤31>=.
+- [X] Phase 2: =CircuitArg= / =entry()= / =CircuitOut= (Public-only ⇒
+      returning is disclosing), hand impls.
+- [X] Phase 3: =#[derive(CircuitArg)]= (=crates/minocrab-macros=).
+- [X] Phase 4: =#[circuit]= attribute (thinness rule: the expansion
+      contains no Circuit3 call).
+- [X] Phase 5: mechanical port of the remaining circuits — 78 circuits'
+      ZKIR compared at HEAD, movement limited to five renamed labels and
+      nine reordered input constraints.
+- [X] Phase 6: disclosure declarations in signatures — =label!= /
+      =Discloses<D, R>= + macro-generated set-equality tests, which FOUND
+      undeclared cross-contract disclosures on day one (now
+      =minocrab_ledger::{XcallEntryPointHash, XcallCommitment, XcallResult}=).
+- [X] Phase 7: rusty maps (=#[derive(Ledger)]= + =LedgerMap/Cell/Counter=),
+      inline-immediate literals (47 =copy <immediate>= removed, zero rows),
+      assertion predicates (deferred =#[must_use]= descriptors).
+- [X] Phase 8: =erc20_vault_modern=, the showcase twin — every M9 feature,
+      PI-equal to the borsh fork on all nine circuits, rows and k
+      identical; =.widen::<N>()=; compile-errors-over-panics adopted as a
+      standing principle (both width rejections are E0080).
 - [X] M9 closure: disclosure declarations on every circuit that has a
-      signature to put one in.
-      (2026-08-15, one commit, notes/contract-api.org §"M9 closure".
-      71 of the 87 snapshot circuits declare, up from 39, with 63
-      set-equality tests up from 39: the 21 remaining `#[circuit]`
-      experiment entry points (attest ×4, xcall's local_base /
-      call_emit / call_big / target_deposit_big, xcall_with_payment ×5,
-      xcontract_events ×2 + its borsh twin, mint_tokens ×2,
-      serde_builtin, test_caller, hashing's persistent_vec8) plus the
-      three `entry()`-built FAMILIES covering eleven more rows. Labels
-      are the strings the hand-written calls carried, minus the
-      `(hi)`/`(lo)` suffixes phase 6 dropped everywhere else — a label
-      names a logical value, so a `B32` is one record. FOUND, as in
-      phase 6: every cross-contract caller here was disclosing the
-      xcall entry-point hash and commitment undeclared, and
-      `depositViaVault` the callee's RESULT too. Two circuits declare
-      `Discloses<()>`, a positive statement checked like any other.
-      BLOCKED FAMILY (a), RESOLVED WITH NO NEW MACHINERY: the
-      declaration already worked through `entry()` (phase 6 built
-      `Discloses<D, ()>` as a zero-slot `CircuitOut` for exactly that),
-      and the missing test is the attribute's own body —
-      `assert_declared_disclosures`, already public — hand-written once
-      per instantiation over a `type` alias that makes the entry point
-      and the test the SAME declaration. Better than a macro could
-      have done: the loop covers every instantiation the snapshot
-      builds. BLOCKED FAMILY (b), STILL OUT AND DOCUMENTED: hashing's
-      16 `Bytes<len>` sweep circuits have no typed entry point to
-      return a declaration FROM (their width is a runtime parameter, so
-      `hash_circuit` calls `Circuit3::finish` itself) — porting the
-      family is the only thing that closes it, and phase 5's argument
-      against porting is unchanged. Each discloses one value, the
-      digest three lines below, and they are a measurement rig.
-      Zero movement: all 87 circuits' serialized ZKIR dumped at HEAD in
-      a worktree and diffed — BYTE-IDENTICAL, all 87; row_snapshot and
-      interface_snapshot bit-identical, `cargo test --workspace` 469
-      passed / 0 failed.)
-ASSESSMENT REVISED (2026-08-15, after the closure): ALL FOUR MET. The
-fourth now reads true for every circuit that HAS a signature — 71 of
-87 declare and are enforced by tests, and the 16 that do not are one
-documented family whose entry points are not typed functions at all,
-so the criterion's subject does not exist for them. M9 CLOSED. What
-would cover the last 16 is a const-generic `CircuitArgs` the sweep
-loops can call, which is an M13-shaped API question and not an
-unfinished M9 task.
+      signature — 71 of 87 declare with 63 generated tests; the 16 that
+      don't are one documented family (hashing's runtime-width sweep rig).
+Exit criteria MET (all four): side-by-side readability with Compact
+sources, declarations enforced by tests, zero unexplained movement, the
+twin green with deltas explained.
 
 * M10 — Final: ERC-20 vault, maximally verified and maximally optimized
-(dmd, 2026-08-15: "test the shit out of the ERC-20 contract and do
-everything in your power to optimise it, then output a report of how
-fast the super optimized version is.")
-The M7 profiles say the remaining vault cost is PI-COUPLED — pinned by
-byte-identical-to-compactc framing, not by the protocol. M10 drops the
-compactc-framing constraint where the protocol permits, and re-anchors
-correctness on the M3 harness at scale. The direct ports stay intact as
-the compatibility reference; the optimized vault is its own artifact
-(natural base: M9's showcase twin).
-- [X] Verification first — the license to optimize: spec-based property
-      harness for all 9 vault circuits (specs in ordinary Rust, every
-      branch — claim's four recipient shapes, completeWithdraw's two
-      routes, refund's two, completeSwap exact-spend — every guard,
-      accepted runs re-validated by the reference VM; PROPTEST_CASES
-      scaled to millions in CI), plus adversarial/boundary sweeps
-      (2^128-1 amounts, zero addresses, malformed witnesses, tampered
-      records) and the existing tamper/reject-agreement suites.
-      (PARTIAL 2026-08-15 — harness BUILT and green; see
-      notes/vault-optimization.org §"As built — step 1". All nine specs,
-      the run_program executor (the ledger-semantics link that existed
-      nowhere before), the branch-aware strategies, the shared tamper
-      machinery, witness-malleability / wrong-branch / injectivity sweeps
-      and completeSwap's named underflow boundary. Three suites green:
-      differential 30, spec 9, adversarial 19. Found: the notes' own
-      completeWithdraw generation strategy was wrong (a non-canonical
-      attested byte is ACCEPTED and refunds, both artifacts agree), and
-      the reference model shared the same bug; initialize accepts an
-      IDENTITY mpcResponseKey, which authenticates every attestation;
-      no counter-overflow guard. DONE 2026-08-15: the millions-of-cases
-      gating run EXECUTED — PROPTEST_CASES=1000000 × 9 specs + adversarial,
-      9 passed 0 failed, 3,121.83s (~52 min, exit 0), 9,000,000 spec
-      cases on the direct ports, harness clean. Re-run as the optimized
-      artifact's gate + before the final report.)
-- [X] Scope the freed space: what the protocol actually pins (Impact op
-      stream ↔ on-chain state machine, cross-contract commitment to the
-      Signet singleton, MPC attestation formats, coin commitments) vs
-      what only compactc-artifact PI-equality pinned (constrain_bits
-      placement/redundancy, transcript framing details, serialization
-      shapes). Written analysis before any change.
-      (DONE 2026-08-15 — notes/vault-optimization.org. PREMISE
-      CORRECTED: the vault is hash-bound, not framing-bound (95-99% of
-      rows are SHA/keccak/ECDSA; framing is 1-4%). The freed space is
-      the vault's OWN hash constructions (userCommitment, refund
-      commitments, domain separators — SPEC-discretionary), refund's
-      duplicated branch, changeNonce, state layout. k crossings in
-      reach: initialize 13→~10, deposit 15→14; withdraw/swap 16→15
-      only via the UNSURE burn restructure. Settle circuits are
-      floored above 2^15 by protocol crypto — cuts there are cosmetic;
-      "maximally optimized" = minimal k. Do NOT dedup constrain_bits
-      (soundness surface; comm doesn't imply canonicity — verified).
-      Three UNSUREs to resolve before the risky avenues. Sequencing:
-      M10 starts from the direct ports NOW, in parallel with M9 5-8.)
-- [X] Optimize everything the analysis frees, re-measured per change:
-      k-boundary attacks first (deposit 17,502 is ~1.1k rows over k=14;
-      protect nothing — this artifact has no compactc row parity to
-      keep), constrain-bits dedup, framing/serialization, then the
-      crypto regions if headroom remains. Every change lands with the
-      harness green at full scale. (instruments landed: cryptocost
-      example, row-attributed profiles, bench third side)
-      (IN PROGRESS 2026-08-15 — the artifact is forked and the three
-      low-risk rungs have landed; see notes/vault-optimization.org
-      §"As built — steps 4 + 5(i-iii)". erc20_vault_opt is a
-      byte-identical fork of the nine ports (step 4), gated by a
-      DIVERGENCE LEDGER that says per circuit whether compactc's
-      PI-equality still covers it or the spec harness has taken over,
-      asserted in both directions. Rungs: (i) avenue 7's kernel.self
-      dedup, (ii) avenue 5's derived changeNonce, (iii) avenue 2's
-      injective domain separator. Measured, port → opt: initialize 0% ·
-      deposit −0.07% · approveRouter −0.09% · swap −7.4% · claim /
-      completeWithdraw −7.9% · withdraw −9.0% · refund −11.5% ·
-      completeSwap −17.3%; −33,883 rows overall (−9.6%). NO k MOVES, so
-      no prove-time or RAM change yet — as the analysis predicted for
-      the ECDSA/keccak-floored circuits. Two projections corrected:
-      avenue 7's kernel.self component is 12 rows per read (144 total),
-      an order of magnitude under the ranked table, and the domain
-      separator has 8 uses, not 9. Deferred: avenue 7's config→one-Cell
-      merge (it moves the ledger declaration and the reference model's
-      state layout). Still to come: refund's branch merge, the
-      commitments, and the burn restructure — which needs its
-      well-formedness test first. Ladder continues, so NOT ticked.
-      (step 5(vi) 2026-08-15 — the FIRST prove-time wins:
-      §"As built — step 5(vi)". Task A: the burn well-formedness gate
-      PASSES against the pinned ledger (a single claimed shielded spend
-      of a user-recipient output, empty receive/nullifier sets, no
-      contract-owned input, funded by a user input — new test
-      erc20_vault_opt_burn_wellformed.rs, dev-deps midnight-ledger +
-      midnight-zswap). Task B (avenue 6): withdraw + swap burn via one
-      claimed spend, −11,309 each; WITHDRAW 16→15. Task C (avenue 1):
-      one-block userCommitment at initialize/deposit/claim, −1,860 each;
-      DEPOSIT 15→14 (no Poseidon needed). Two k crossings — the first of
-      M10. Correction: initialize does NOT reach k12 (the SHA chip floors
-      it at k13, measured); its cut + claim's are cosmetic for prove
-      time. swap stays k16 (needs avenues 3+2). Elevated
-      PROPTEST_CASES=20000 green on all five touched circuits. Ladder
-      continues — refund merge, refund commitments → Poseidon, and swap's
-      remaining avenues are the next stage; NOT ticked.))
-      (step 5(iv)+5(v) 2026-08-15 — LOWERING LADDER COMPLETE; see
-      notes/vault-optimization.org §"As built — steps 5(iv refund
-      merge)+5(v Poseidon)". 5(iv) avenue 4: refund's two branches merged
-      into ONE commitment hash + ONE cond_selected mint (guards still gate
-      the per-route ledger effects; the authorisation is bit-for-bit the
-      port's), opt refund 57,721→44,366 (−13,355), k16. 5(v) avenue 3:
-      refund commitments → transientHash (Poseidon), internal/short-lived
-      so curve-mutability is harmless (Q3/Q4), all five sites in lockstep,
-      −3,560 each. THE SWAP MEASUREMENT: 32,819 rows, 51 ABOVE the 32,768
-      k15 boundary — the notes' ~348-row projected margin was measurement
-      noise, and the "if it lands 32,8xx, say so and stop" branch fired:
-      swap STAYS k16, not chased. Map<_,Field> value-typing (Q5) would
-      cross it (drops ~143/site) but was DEFERRED (its differential needs
-      new shipping-crate ledger builders + a 292-op corpus twin —
-      disproportionate for 51 rows on the final rung; the map value stays
-      Bytes<32>, no symbolic-layer change). Final k picture: opt beats
-      compactc by ≥1 k on eight of nine circuits (only initialize ties);
-      the ladder's own crossings over the port are deposit 15→14 and
-      withdraw 16→15. Everything else is protocol/crypto-floored (ECDSA
-      or the SHA hash-chip); row cuts there (−35%..−58% vs compactc) are
-      cosmetic for prove time. All planned avenues landed or explicitly
-      stopped, so TICKED; only the report bullet remains.))
-- [X] The report: fresh single-session benchmark — super-optimized vault
-      vs compactc vs the direct port (three-way, so ergonomics-neutral
-      lowering wins and freed-framing wins are attributed separately);
-      RAM + prove + k/rows; honest about what could not move and why.
-      (DONE 2026-08-15 — BENCHMARK.md refreshed as the three-way capstone
-      from a single-session ./bench.sh run. Opt vs compactc: rows
-      −35..−58% on every vault circuit, prove −37..−59% and RAM
-      −42..−52% where k crosses. HONEST SPLIT: opt's only NEW prove-time
-      wins over the already-fast port are deposit (k15→14) and withdraw
-      (k16→15); the other seven cut rows but stay k-floored (ECDSA k16 /
-      SHA k13), their big compactc deltas inherited from the port's M7
-      k-crossings — opt does not claim the port's wins. swap missed k15
-      by 51 rows, left deliberately. opt proves its OWN preimage
-      (symbolic-effect equality, 9M-case harness) — weaker warrant than
-      the port's PI-equality, stated prominently. HTML at
-      target/bench/report.html (uncommitted, gitignored tree).)
-Exit criteria: report reproducible from a clean checkout; the property
-harness green at millions of cases per circuit; the optimized artifact's
-every deviation from compactc framing documented and spec-justified.
-MET — M10 complete.
+Verification first as the license to optimize, then drop the
+compactc-framing constraint where the protocol permits. The direct ports
+stay intact as the compatibility reference; the optimized vault is its own
+artifact. Full record: =notes/vault-optimization.org=.
+- [X] Spec-based property harness for all 9 vault circuits, every branch
+      and guard, plus adversarial/boundary sweeps; the gating run executed:
+      PROPTEST_CASES=1000000 × 9 specs, 9,000,000 cases, all green (~52
+      min). Found along the way: a wrong generation strategy shared with
+      the reference model, and the identity-mpcResponseKey acceptance.
+- [X] Scoped the freed space in writing first: the vault is HASH-bound
+      (95-99% of rows are SHA/keccak/ECDSA), so "maximally optimized" =
+      minimal k; constrain_bits dedup rejected as a soundness surface.
+- [X] The optimization ladder, every rung gated by the harness and a
+      per-circuit divergence ledger: kernel.self dedup, derived
+      changeNonce, injective domain separator, the burn restructure
+      (single claimed spend, −11,309 rows each for withdraw/swap),
+      one-block userCommitment, refund branch merge, Poseidon refund
+      commitments. Crossings over the port: deposit k15→14, withdraw
+      k16→15; swap missed k15 by 51 rows and was left deliberately.
+- [X] The report: BENCHMARK.md refreshed as a three-way capstone.
+Exit criteria MET: opt vs compactc rows −35..−58% on every vault circuit,
+prove −37..−59% and RAM −42..−52% where k crosses; opt beats compactc by
+≥1 k on eight of nine circuits; every deviation documented and
+spec-justified; the weaker warrant (spec harness, not PI-equality) stated
+prominently.
 
 * M11 — Borsh (fixed-width subset) serialization
 Design of record: =notes/borsh-format.org=. This IS Borsh, restricted
@@ -764,277 +207,41 @@ the same declarations. The subset rule is that every circuit-visible
 type has a fixed width, so Maybe ↦ Flagged (bool tag + always-present
 payload), never Option, and no Vec/String/data-enums. serde +
 bincode-fixint emits byte-identical output for the subset, so spec
-types derive both and conformance is a DUAL oracle. One agent per
-stage; usual gates + notes as-built per stage. Stages 0 and 8 have
-external value and no dependency on 1-7.
-- [X] 0. Instruments + oracle, NO circuit changes: borsh/bincode
-      dev-deps; spec types for the DEPLOYED payloads (singleton Misc ×3,
-      both records, four attested outputs, digest preimages);
-      byte-equality against the deployed bytes.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 0".
-      VERDICT: every deployed payload IS canonical Borsh, byte for byte
-      — both request records (and so the request ids: requestId ==
-      keccak256(borsh(record))), all four attestation digest preimages,
-      and all three singleton Misc payloads, the last verified by
-      handing the borsh envelope to the PINNED COMPACTC ARTIFACT, which
-      accepts it and rejects every single-bit perturbation including in
-      the zero pad. Zero divergences. New suite
-      tests/serialization_conformance.rs, 15 tests, green at default and
-      at PROPTEST_CASES=20000. Corrections to the design: the dual
-      oracle alone is NOT the whole subset checker (Option agrees under
-      both encoders and is caught by the fixed-width property instead),
-      and a Rust fieldless enum is OUTSIDE the dual-oracle subset
-      (bincode-fixint writes a 4-byte variant index) so spec-level tags
-      are u8. Records measured: vault 404 bytes, swap 571 — the number
-      stage 7's estimate is built on.)
-- [X] 1. v3::borsh core, hand impls (CircuitBorsh, leaves,
-      alignment_of/limbs_of/to_bytes, constrain_canonical, layout).
-      ZKIR byte-equality + P1-P4 per leaf.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 1".
-      minocrab_std::v3::borsh, a public module whose docs open with the
-      subset framing. The hash path is FREE, as byte-identical ZKIR
-      against a hand-written alignment; the packed bytes ARE
-      borsh::to_vec of a plain twin and the chip's digest IS
-      keccak256(borsh(v)), both through the simulator. constrain_canonical
-      is proven equal to CircuitArg::constrain for every leaf that is
-      both, with Tag<K>'s `< K` bound the one documented exception.
-      Deviations: the CircuitArg supertrait cannot be spelled (Private
-      only) so the extension is the blanket CircuitBorshArg bound; `read`
-      waits for stage 2 rather than being stubbed; off-width Uint is a
-      missing impl rather than a const assert; Flagged is a type alias of
-      v3's Maybe. The conformance suite gained an in_circuit section
-      tying the library to the DEPLOYED respond payload.)
-- [X] 2. BorshReader both modes + cryptocost-style measured per-leaf costs.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 2".
-      A trait with two implementors rather than one struct with a mode
-      flag: the modes differ in the visibility they hand back, which is a
-      type. Both parse bytes borsh::to_vec produced, in circuit, into the
-      right field values; read(to_bytes(v)) == v in both; every witnessed
-      leaf is individually pinned to the buffer; both enforce the padding
-      rule. MEASURED (minocrab-sim/examples/borshcost.rs): Split ≈ 143
-      rows per field boundary interior to a limb, WitnessCheck EXACTLY
-      2w+1 rows per leaf (w bytes) plus a div_mod per straddled limb
-      boundary — per-leaf 2.0× to 73× cheaper, 1.9× over a whole 204-byte
-      record. Used by no circuit, deliberately.)
-- [X] 3. #[derive(CircuitBorsh)] + #[borsh(spec)] cross-check test.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 3".
-      One derive emits the CircuitBorsh impl AND the CircuitArg family,
-      the latter through the same impl_arg_traits code path the existing
-      derive uses (so a type carries one derive, not both). A struct
-      generic in a single Vis3 parameter serializes at every visibility —
-      log payloads are Public — with the argument impls carrying a
-      where-clause instead of a substitution. Two label namespaces:
-      camelCase argument labels, verbatim layout paths. Option/Vec/
-      String/maps/enums are span errors naming Flagged, [T; K] + count,
-      Bytes<N>, Tag<K>. #[borsh(spec = …)] generates the cross-check
-      against borsh's own schema; the stage-0 walker was EXTRACTED into
-      minocrab_std::v3::borsh::schema behind an off-by-default feature
-      (oracle.rs now re-exports it) rather than duplicated. Gate: the
-      same record declared derived and by hand, five circuits each,
-      byte-identical ZKIR.)
-- [X] 4. erc20_vault_borsh byte-identical fork; Art::Borsh; zero
-      movement asserted.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 4".
-      A third artifact forked from the OPTIMIZED vault, not the port, so
-      the chain is compactc ≡ port ≡ opt ≡ borsh with a ledger and a
-      both-ways gate per link: artifact.rs gained Art::Borsh, ARTS: [Art;3]
-      and a SECOND ledger borsh_fork_status, and tests/
-      erc20_vault_borsh_fork.rs asserts it. Zero movement: the row and
-      interface snapshots gained exactly nine entries each, carrying the
-      opt numbers verbatim. Deliberately absent is a "still PI-equal to
-      compactc" test — M10 diverged all nine circuits, so what the borsh
-      fork inherits is the spec harness, not compactc, and the vacuous
-      version is not shipped. The harness caught the one real wiring bug:
-      two RefundScenario branches asked `art == Art::Opt` where they meant
-      "not the port". BENCH DECISION: the borsh artifact is NOT benched
-      until stage 7 — at stage 4 a fourth column would repeat the opt one,
-      and stage 5 moves no k.)
-- [X] 5. Attested outputs → the flat layout (four settle circuits,
-      +2..+6 rows, deviation-log D6 for the 0x02 semantics + kind byte).
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 5",
-      whose §"THE FORMAT" table IS the spec: kinds 0 claim / 1
-      completeWithdraw / 2 completeSwap / 3 refund at byte 0, outputs
-      {kind, success: bool} (2 B), {kind, amount_in: u64} (9 B) and
-      {kind} (1 B), digest = keccak256(borsh({request_id, output})) at
-      34/41/33 bytes. The 5-byte 0xdeadbeef01 sentinel is GONE — a
-      response kind says the same thing in the same byte position. The
-      0x02 HAZARD IS CLOSED: completeWithdraw's success is a Borsh bool,
-      so a non-boolean attestation is unprovable where the port and the
-      optimized fork REFUND on it, and the harness pins that intentional
-      three-way divergence in both directions. Cross-circuit replay is
-      structurally impossible and has its own adversarial property.
-      MEASURED, no k moves: claim +6, completeWithdraw +6, completeSwap
-      +9, refund −9 (the shorter preimage pays). One documented departure:
-      `tag < K` is not emitted, because each circuit asserts equality with
-      its own kind, which is strictly stronger.)
-- [X] 6. Event payload twins (events_borsh/xcontract_events_borsh)
-      beside the pinned originals.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 6".
-      STRONGER THAN THE TARGET: the twins are byte-identical SERIALIZED
-      ZKIR to the originals, instruction for instruction, not merely equal
-      payloads — so same rows, same interface, same PI vector, and
-      compactc's differential covers them verbatim (asserted both ways:
-      ZKIR equality, and the twins run against the corpus artifact on the
-      preimage carrying the exact 288-byte Misc). Stage 0 proved the
-      deployed payload IS canonical Borsh; this proves the API PRODUCES
-      it, on real event shapes, for zero rows. Both settings of the
-      padding rule are exercised on one shape: a 56-byte DepositEvent
-      padded into Bytes<256> and hashed whole, and a Misc envelope whose
-      LEN is exactly 288 and so has no pad at all. constrain_canonical is
-      deliberately not re-emitted — every leaf is canonical where it is
-      produced, and re-emitting would move rows. depositViaVault is not
-      twinned: it serializes nothing.)
-- [X] 7. THE RECORD (gated on dmd Q1/Q6): schemas → kind tag; expect
-      swap k16→k15; re-run the 9M gate; refresh BENCHMARK.md.
-      (DONE 2026-08-16 — notes/borsh-format.org §"As built — stage 7",
-      whose layout table IS the spec together with spec/borsh-subset.md §6.
-      SWAP CROSSED: erc20_vault_borsh::swap 32,819 → 28,625 rows, k16 →
-      k15, 4,143 rows of margin — the projection said −4,218 and a
-      crossing, the measurement is −4,194 and the crossing (M10's own
-      k15 attempt missed by 51 rows; this one did not). The record gains
-      a format-version byte 0x80 at offset 0 and ONE response-kind byte
-      where the two in-band ABI-JSON schema strings were: 404 → 338 bytes
-      (2-word) and 571 → 498 (7-word, 5 → 4 keccak blocks), atom count
-      unchanged at 24/29, limbs 33 → 31 and 43 → 41. Everything between
-      the two ends is identical field for field, so every other offset is
-      the old one plus one — which is how layout_v2 is written (1 +
-      layout::X) and how the spec twins are built. RESPONSE_KINDS 4 → 5:
-      approveRouter's record gets its own REQUEST-ONLY kind, so an
-      approve is structurally unsettleable rather than incidentally so,
-      at zero rows (the `< K` bound is not emitted anywhere). Borsh and
-      modern move in lockstep — modern_fork_status stays Identical ×9 —
-      and the compat port and erc20_vault_opt are byte-identical ZKIR:
-      the dump says 151 byte-identical, 0 renumbered, 16 changed, being
-      exactly the eight non-initialize circuits of each borsh artifact.
-      STAGE 0'S DEPLOYED-BYTES CONFORMANCE IS UNTOUCHED AND GREEN: the
-      deployed record types stay, the stage-7 types are additional, and
-      the new property says the same thing about the new format (model
-      limbs == borsh::to_vec == bincode-fixint, keccak == request id).
-      The interface snapshot did not move at all. Deviations: the record
-      is a hand-written twin rather than a #[derive(CircuitBorsh)] type
-      (its Borsh-ness is proven exactly as the deployed record's is), and
-      the kind travels as a raw wire inside the record rather than a
-      Tag<K>. HONEST GAP: BENCHMARK.md is NOT refreshed — a bench run is
-      hours — and it is now materially stale for the first time in M11,
-      because k moved; the stage-4 "not benched until a k moves"
-      decision has come due and is the supervisor's follow-up.)
-- [X] 8. spec/borsh-subset.md (grammar, leaf table, reject rules,
-      padding rule, Maybe↦Flagged, per-record offset tables GENERATED
-      from layout()) + spec/vectors/*.json. The artifact the TS/MPC side
-      implements against.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 8".
-      Twelve sections of hand-written prose around ONE GENERATED REGION
-      (§9's per-type offset tables, walked out of borsh's own schema by
-      tests/serialization/spec_doc.rs) plus five committed vector files.
-      THE DOCUMENT CANNOT DRIFT: three tests fail if the committed
-      artifact stops being the generator's output — the marked region,
-      every vector file byte for byte (and the directory holding exactly
-      the generated names), and each vector's fields tiling its value
-      with no gap or overlap. Vector values are the DEPLOYED constants
-      where the protocol fixes them and a visible byte pattern where it
-      does not; each carries hex (authoritative), sha256, keccak256 (the
-      request id for a record, the signed digest for an attestation
-      preimage) and the value leaf by leaf — as an ORDERED ARRAY, since
-      the format is ordered and JSON objects are not. The prose carries
-      what tables cannot: Maybe↦Flagged with its failure mode, the five
-      finite reject classes plus the in-circuit asymmetry, the
-      response-kind table and digest rule, the 128-byte V1 notification
-      layout (the one non-Borsh block, stated for log readers),
-      endianness twice, the two-oracle statement AND explicit permission
-      to use a plain DataView, and a STATUS section separating what is
-      deployed from what is specified. Deviation: the regenerator is a
-      new --ignored test rather than an extension of stage 0's
-      print_layout_snapshot — the two write different things.)
-- [X] 9. Hash-flavor API (dmd 2026-08-15): expose persistent_hash
-      (BORSH flavor, the default — hashes the subset bytes) and
-      persistent_hash_compact (FAB binary_repr semantics: field atoms
-      reduced mod p, compress atoms via transient_commit, option
-      segments — ONLY for digest-agreement with a Compact contract or
-      Compact-produced off-chain digests); same split for
-      transient_hash (borsh = straightforward LE limbing;
-      _compact = FAB field_repr limbing with its reversed-chunk rule).
-      NOT REQUIRED elsewhere (dmd asked): ledger maps/state do no
-      in-circuit hashing (keys/values travel as typed limbs +
-      alignment; storage-level keying is the ledger's own, off
-      circuit), and every ledger-protocol preimage that IS pinned
-      (tokenType, coin commitment/nullifier, entry-point hash,
-      cross-contract comm, merkle interiors) is already encapsulated
-      inside its stdlib/ledger function — users never pick a flavor
-      for those, and their byte-shaped preimages are borsh-identical
-      anyway. Since contracts are never part-Compact/part-MinoCrab,
-      the _compact flavors exist solely at interop boundaries; the
-      compat-port artifacts keep FAB by definition.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 9".
-      minocrab_std::v3::hash, four functions, always written
-      module-qualified so the flavor is visible at the call site.
-      NOTHING WAS RENAMED: the borsh pair is new, Circuit3's raw
-      instructions keep their names, and the v2 hash module — FAB by
-      definition, since its job is compactc's own lowering — is
-      untouched but now says so and points here. The _compact flavor
-      has three callers immediately (token_type, coin_nullifier_contract,
-      coin_commitment route through it at byte-identical ZKIR), which
-      makes "the pinned preimages are its real users" greppable.
-      Gates: the digest IS Sha256(borsh::to_vec(twin)) through the
-      simulator; the two PERSISTENT flavors agree as byte-identical
-      ZKIR, from two independent descriptions (push_limbs vs
-      CircuitAbi::atoms + CircuitArg::push_slots) — finding #1 as a
-      checkable fact; the borsh transient limbing pinned against native
-      Poseidon over borsh::to_vec(v).chunks(31); and the two TRANSIENT
-      flavors pinned as genuinely different digests, which is where the
-      choice is real. sha2 became a dev-dep of minocrab-std: one lock
-      LINE, no new package. Deliberately absent: a keccak256 flavor
-      pair — the borsh keccak path already exists and is used, and no
-      Compact-interop keccak digest exists to disambiguate against.)
-- [X] 10. TypeScript parser codegen (dmd 2026-08-15): generate TS
-      reader/writer code from CircuitBorsh::layout() (fixed offsets →
-      DataView accessors, dependency-free) into spec/ts/, validated
-      against spec/vectors/*.json (vector-driven tests; borsh-js
-      remains the library alternative). Then M13 may claim native
-      parser generation in BOTH languages.
-      (DONE 2026-08-15 — notes/borsh-format.org §"As built — stage 10".
-      spec/ts/: six files, 28 types, a reader + a writer + §9's offset
-      table AS DATA + a codec registry keyed by the spec's own names,
-      all walked out of the SAME schema walk that generates §9 and the
-      vectors — =getU64(view, 148)= and the table row for
-      tx_params.nonce are one walk emitted twice. Dependency-free in
-      the strong sense: no npm packages, no node_modules, no
-      package.json; borsh-subset.ts imports only primitives.ts and
-      primitives.ts imports nothing. THE CODE CANNOT DRIFT EITHER:
-      stage 8's regenerator now writes a third thing, and two new tests
-      fail if it stops being the committed one —
-      the_committed_typescript_is_generated (byte for byte, and the
-      directory holding exactly the generated names) and
-      every_vector_type_has_a_typescript_codec (the loop-closer: a new
-      vector for an uncovered type fails in Rust, before node runs).
-      39 node tests green: every vector decoded, its fields checked
-      against the codec's offset table one by one, every DECODED leaf
-      re-encoded to the vector's hex, byte-equal re-serialization at
-      offset 0 and at offset 3 of a bigger buffer, the 288-byte Misc
-      pad rule enforced, plus four reject tests (the 0x02 hazard, short
-      buffer, out-of-range write, Flagged fixed-width at both tags).
-      MUTATION-CHECKED so the suite cannot be a tautology: shifting one
-      generated offset fails 2 tests, flipping a getUint16 to
-      big-endian fails 3. Deviations: generated from the spec types'
-      BORSH SCHEMA rather than CircuitBorsh::layout() — stage 3's
-      cross-check already proves the two equal, the vectors come from
-      the schema walk, and several published types have no circuit twin
-      — and the hand-written files (primitives, tests, tsconfig,
-      README, node-builtins.d.ts) are include_str!-copied from
-      tests/serialization/ts/ so that "everything in spec/ts is
-      generator output" has no exceptions clause. Nix supplies nodejs_22
-      + typescript as BINARIES ONLY; node runs the .ts directly by type
-      stripping, so there is no build step and no emitted JS.)
+types derive both and conformance is a DUAL oracle.
+Stages 0–10 all landed (as-built per stage in =notes/borsh-format.org=):
+- [X] 0. Instruments + oracle: every DEPLOYED payload verified to be
+      canonical Borsh byte for byte, including against the pinned compactc
+      artifact.
+- [X] 1. =minocrab_std::v3::borsh= core: the hash path is FREE
+      (byte-identical ZKIR) and the chip's digest IS keccak256(borsh(v)).
+- [X] 2. BorshReader, both modes, with measured per-leaf costs
+      (=examples/borshcost.rs=).
+- [X] 3. =#[derive(CircuitBorsh)]= + =#[borsh(spec)]= cross-check.
+- [X] 4. =erc20_vault_borsh= byte-identical fork, own divergence ledger.
+- [X] 5. Attested outputs → the flat layout; the 0x02 hazard closed
+      (success is a Borsh bool, non-boolean attestations unprovable).
+- [X] 6. Event payload twins, byte-identical serialized ZKIR to the
+      pinned originals.
+- [X] 7. The record: in-band schema strings → a kind byte + format-version
+      byte; swap k16→k15 (32,819 → 28,625 rows); records 404→338 and
+      571→498 bytes; approveRouter gains a request-only kind so an
+      approve is structurally unsettleable.
+- [X] 8. =spec/borsh-subset.md= + =spec/vectors/*.json= — the artifact the
+      TS/MPC side implements against; generated regions drift-tested.
+- [X] 9. Hash-flavor API: =persistent_hash= (Borsh, default) /
+      =persistent_hash_compact= (FAB semantics, interop only), same split
+      for transient.
+- [X] 10. TypeScript parser codegen into =spec/ts/= — dependency-free,
+      generated from the same schema walk as the spec, 39 node tests,
+      mutation-checked.
 Exit criteria: the spec document and vectors exist and the TS/MPC side
 can implement against them; every in-circuit encoder is byte-equal to
 both oracles at millions of cases; the record change's k movement is
 measured and published.
-NOTE stage 7 WAS held by dmd (notes/borsh-format.org §"Protocol
-status") pending the contract being presented for discussion. It was
-implemented 2026-08-16 on the session's work order, and the hold was
-LIFTED EXPLICITLY by dmd 2026-08-17 ("Lift the hold on M11 stage 7,
-I'm happy with it") after the layout, reader constants and k movement
-were presented — the discussion the hold asked for, held with a
-measured change in front of it. Nothing is deployed on either side.
+NOTE: stage 7 was held by dmd pending discussion; implemented 2026-08-16
+and the hold LIFTED EXPLICITLY 2026-08-17 ("Lift the hold on M11 stage 7,
+I'm happy with it"). Nothing is deployed on either side. Two items remain
+open:
 - [ ] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
       found the docs claiming checks the circuits do not make — the
       docs now tell the truth): bind `record.kind == output.kind` and
@@ -1045,642 +252,104 @@ measured change in front of it. Nothing is deployed on either side.
       fresh bench run now that swap crossed k16→k15.
 
 * M12 — Interface crates: import a contract's crate to call it
-(dmd, 2026-08-15: "import someone else's crate and use it for your
-interface while doing a cross contract call, think like how NEAR does
-it... this solves a big compact problem which is the lack of a package
-manager (it would be also great if you could do things like derive
-keys if necessary)")
-Cargo IS the package manager: contract interfaces ship as ordinary
-Rust crates (crates.io/git/path), semver'd. Grounding: the M5
-cross-contract machinery (contract_call + kernel_claim_contract_call,
-the full desugar, differential-green in the xcall suites) is the
-engine; M9's typed args/derives are the interface language. What NEAR
-cannot do and we can: an interface crate is CHECKABLE against the
-deployed artifact (zkir v3 carries the typed I/O schema), so drift is
-a test failure, not a runtime surprise.
-- [X] Design (notes/interface-crates.org): the #[interface] decorator —
-      NEAR ext_contract-style trait declaring the callee's circuits with
-      typed args/results; expands to typed call builders over the M5
-      desugar (result-limb witnesses, cc-rand, in-circuit
-      transientCommit, effects claim). Entry-point hashes DERIVED from
-      names, comm layout DERIVED from the types — no hand-typed keys
-      ("derive keys" bullet); contract address stays a runtime
-      parameter. Macro thinness rules per M9.
-- [X] Artifact agreement: machinery asserting an interface crate
-      matches a callee artifact's typed I/O schema (reuse
-      assert_call_compatible / interface-snapshot idioms) — run in the
-      interface crate's OWN test suite against a pinned artifact.
-- [X] The Compact-interop importer: generate an interface crate from a
-      compactc artifact (contract-info.json + .zkir) — ANY deployed
-      Midnight contract becomes importable, Compact-authored or not.
-      This is the package-manager answer for the existing ecosystem.
-- [X] Port the proof cases: the hand-written signet interface module
-      (the vault's calls to the Signet singleton) and the xcall
-      experiments re-expressed through interface crates, zero movement
-      on all snapshots/differentials.
-- [X] Versioning/publishing conventions doc: semver semantics for
-      interface changes (argument reorder = major, by construction),
-      address/verifier-key pinning story, workspace vs published use.
-- [X] README showcase section: the interface-crate story described in
-      the README with a real snippet (dmd: "the readme is a showcase
-      of our features") — same rule for other landed features as they
-      finish (Borsh subset, predicates, maps).
-      (DONE 2026-08-15 — two new sections, both quoting code that is
-      really in the tree: "Cross-contract calls: the interface is a
-      crate" and "Serialization: a Borsh subset, not a format of ours".)
-Stages (notes/interface-crates.org §Phasing is the detail; standing
-gates every stage: both snapshots bit-identical, all suites green):
-- [X] 1. The ABI table: Prim + the ported emit-constraints-for +
-      CircuitAbi; CircuitArg::constrain becomes a table-driven provided
-      method; LimbConstraint replaces contract_call's &[Option<u32>];
-      EntryPoint/ep_hash/ep_limbs via upstream, swept over all 312
-      corpus artifacts (618 distinct circuit names).
-- [X] 2. The call core, no macros: CallArg(s)/CallResult,
-      ContractAddress, Callee, call(); hand-written SignetSigner/Token/
-      XcallTarget/PaymentTarget handles; ALL call sites re-expressed
-      (both vault forks identically); four differential suites switched
-      from invented ep bytes to derived name hashes.
-- [X] 3. #[interface] + the visibility-generic derive mode (one
-      declaration → CircuitAbi everywhere, CircuitArg at Private,
-      CallArg/CallResult at Public); the stage-2 handles re-expressed
-      through it with NO call site touched; byte-equal-ZKIR gate against
-      hand-written twins; 14-item error inventory, unit-tested.
-- [X] 4. signet-signer-interface crate + minocrab-abi + pinned
-      artifact + mutation test + schema snapshot; the three vault
-      artifacts call signBidirectional through the imported crate at
-      zero movement (two import lines changed per artifact).
-- [X] 5. minocrab-interface-gen (regenerating stage 4's hand-authored
-      crate reproduced every declaration byte for byte — only the doc
-      wrapping moved; the xcall target, a Compact-only contract with no
-      port, imported and its callers re-expressed at zero movement;
-      --check wired as a test).
-- [X] 6. Callee-side export (signet_contract's signBidirectional takes
-      the interface crate's own record type — one declaration, Private
-      for the callee and Public for callers) +
-      contract_matches_its_interface (the built IrSource vs the trait
-      schema, for all three circuits) + the conventions section.
-- [X] 7. README showcase + tick M12.
-      (DONE 2026-08-15 — notes/interface-crates.org §"As built — stage 7".
-      The cross-contract section shows the vault's REAL call site, the
-      cargo dependency, the bodyless trait, the generator invocation and
-      the honest limit; the drift-test output is the mutation suite's
-      ACTUAL text, captured by running it. A second section showcases the
-      M11 Borsh subset (subset-not-format, the deployed-protocol-is-
-      already-Borsh finding, the free hash path, the kind byte, and the
-      spec/ pointer). The M9-era honesty marker was refreshed and had to
-      be CORRECTED in both directions: #[circuit] and #[derive(CircuitArg)]
-      are landed and used by deposit/withdraw/claim (so the old "today's
-      numbers come from the explicit builder form" was wrong), while the
-      side-by-side snippet advertised label!/disclose_as/Discloses — an
-      API that does not exist (M9 phase 6). The snippet is now the real
-      deposit, abridged.)
-Approved by dmd 2026-08-15: the approach as designed, including that
-contract interfaces are STATIC (address is data, interface is
-compile-time) — not a limitation to work around.
-Exit criteria: the vault calls the Signet singleton through an
-imported interface crate with every gate green; a Compact-only
-artifact imports via the generator; the conventions doc exists; the
-README showcases it.
+(dmd: NEAR-style — "import someone else's crate and use it for your
+interface while doing a cross contract call".) Cargo IS the package
+manager: contract interfaces ship as ordinary semver'd Rust crates. What
+NEAR cannot do and we can: an interface crate is CHECKABLE against the
+deployed artifact (zkir v3 carries the typed I/O schema), so drift is a
+test failure, not a runtime surprise. Design + as-built:
+=notes/interface-crates.org=. Approved by dmd 2026-08-15, including that
+interfaces are STATIC (address is data, interface is compile-time).
+- [X] The =#[interface]= decorator: a bodyless trait declaring the
+      callee's circuits, expanding to typed call builders over the M5
+      desugar; entry-point hashes DERIVED from names, comm layout from
+      the types.
+- [X] Artifact-agreement machinery, run in the interface crate's own test
+      suite against a pinned artifact (mutation-tested).
+- [X] =minocrab-interface-gen=: generate an interface crate from any
+      compactc artifact — regenerating the hand-authored crate reproduced
+      every declaration byte for byte; a Compact-only contract (the xcall
+      target) imported at zero movement.
+- [X] The vault's three artifacts call signBidirectional through the
+      imported =signet-signer-interface= crate; callee-side export shares
+      the same declaration.
+- [X] Versioning/publishing conventions doc.
+- [X] README showcase sections (cross-contract + Borsh), quoting real code.
+Exit criteria MET: the vault calls the Signet singleton through an
+imported interface crate with every gate green; a Compact-only artifact
+imports via the generator.
 
-* M13 — README overhaul (dmd 2026-08-15: "showcase as many features
-as possible... compare vs Compact... keep the vibe coding line")
-Structure agreed in session: header + vibe-coding line verbatim →
-MinoCrab-vs-Compact feature table (Rust-not-DSL / cargo package
-manager / Borsh subset vs FAB / measured perf / native execution in
-cargo test / drift-as-test-failure / typed-args-are-range-constraints /
-disclosure tracking / profiler / const generics), EVERY ROW LINKING TO
-THE TEST OR DOC THAT ENFORCES IT (the differentiator: claims are
-verified, not asserted) → side-by-side deposit (marker refreshed:
-#[circuit] is real) → PORTING KIT section (corpus 788 artifacts + the
-differential harness: you or your LLM port, the harness proves
-statement-identity against compactc's artifact) → trust bullets (9M
-cases) → benchmarks condensed → layout/deeper. EXCLUDE until landed:
-Discloses labels, maps/predicates (M9 6-7). Runs AFTER the closing
-agent's README sections land; keep its voice (show-not-tell, no
-adjectives, honest markers).
-- [X] The overhaul per the structure above.
-      (DONE 2026-08-15 — twelve sections, docs-only (no crate touched,
-      both snapshots untouched). The feature table is 12 rows and EVERY
-      row links the test or document that enforces it; 47 distinct
-      repo-relative link targets, all verified to exist. Safety is the
-      organizing theme: the table leads with the compile_fail
-      disclosure doctest, typed-args-are-constraints and
-      drift-as-test-failure, and §"Safety: what actually stops a
-      mistake" replaces the old trust bullets with the 9M-case harness,
-      the adversarial sweeps and the 0x02 class closed by a bijective
-      format. THREE STRUCTURE ADDITIONS, all showcase: §"The macros are
-      decorators, not a compiler" (dmd's macros story, quoting the
-      thinness test verbatim), and the two M12 stage-7 sections kept
-      and extended — cross-contract unchanged, serialization gained the
-      Borsh-AND-FAB flavor pair and the both-languages parser-generation
-      block (Rust serde+borsh twins, spec/ts, 39 node tests re-run
-      green while writing). §"Porting kit" quotes the real
-      assert_call_compatible over 788 artifacts / 312 contracts.
-      FAIRNESS: five confirmed gaps after auditing eight candidates
-      against the code — arbitrary-bound Uint<0..n>, Opaque, the
-      List/MerkleTree/Set ledger ADTs, the unported kernel+unshielded
-      builtins, and the Agda spec as an assurance gap. THREE REJECTED
-      with evidence: enum exhaustiveness (Compact has no `match`; its
-      enums are Uint<0..k-1>, so the real gap is the bound row),
-      ZKIR 3.x curve breadth (our pinned IrType already carries
-      Curve25519 + secp256r1, and the pinned Compact stdlib exposes
-      only jubjub/secp256k1 — the rest is in flight upstream, so not
-      possible in Compact today either; this CORRECTS the note's
-      tentative VALID) and hardfork targeting. Audit written up in
-      notes/readme-research.org §"As built — M13 fairness audit".)
-Exit criteria: dmd recognizes the README as the feature showcase; every
-factual claim carries its enforcement link.
-
-M13 additions (dmd): include the MACROS story (thin decorators over
-hand-writable impls, tooling-friendly — bodies moved not rewritten);
-FOCUS HEAVILY ON SAFETY (typed args = range constraints, disclosure
-tracking, drift-as-test-failure, bijective serialization closing the
-0x02 class, the 9M-case harness — safety is the organizing theme, perf
-second); mention BOTH Borsh AND FAB support (Borsh default, _compact
-flavors + FAB compat ports — we speak both); NATIVE PARSER GENERATION
-in Rust (serde+borsh derives from the same types) and TypeScript (see
-M11 stage 10); check the COMPACT ROADMAP and emphasize anything big we
-already have (research task feeding the M13 agent).
-
-M13 tone rules (dmd): Borsh is presented as a STABLE, WIDELY-SUPPORTED
-format (spec'd, canonical, mature parsers across languages) — that IS
-the advantage; NO "they plan it, we shipped it" point-scoring — state
-our advantages neutrally, roadmap research is background input only,
-not a scoreboard; FAIRNESS section: honestly list major Compact
-features MinoCrab lacks (e.g. compactc's maturity/official support,
-the TS runtime + dapp tooling integration, language-level docs/
-tutorials/ecosystem, anything the roadmap research surfaces —
-excluding trivial "we're not our own language" items).
-
-M13 fairness refinement (dmd): the we-lack list contains ONLY actual
-language/feature gaps — things POSSIBLE in Compact but NOT possible in
-MinoCrab today. Not maturity/support (not a feature), not the TS
-runtime (planned later via wasm). Honest candidates to audit for the
-list: arbitrary-bound Uint<0..n> for non-power-of-two n (compactc
-lowers via less_than; our leaves are power-of-two widths only),
-Opaque<'ts-type'> bridging, enum exhaustiveness at the language level,
-the unported kernel.* built-ins (blockTime*, unshieldedBalance*,
-mint/send/receive kernel circuits — M4 REMAINING), ledger MerkleTree
-ops if still unported. The M13 agent verifies each against the code
-before listing (only true gaps).
+* M13 — README overhaul
+(dmd: "showcase as many features as possible... compare vs Compact".)
+- [X] Twelve sections, docs-only. The differentiator: the 12-row
+      MinoCrab-vs-Compact feature table where EVERY row links the test or
+      document that ENFORCES the claim (47 verified link targets). Safety
+      is the organizing theme. FAIRNESS section: five confirmed gaps
+      audited against the code (each later promoted to its own milestone,
+      M14–M17), three candidates rejected with evidence; no point-scoring
+      against the Compact roadmap. Audit in =notes/readme-research.org=.
+Exit criteria MET: every factual claim carries its enforcement link.
 
 * M14 — Bounded integers: Uint<0..n> for arbitrary n
-From the README's fairness list (dmd 2026-08-15: promote the gaps to
-milestones). Compact's Uint<0..n> takes any bound; our leaf is
-Uint<BITS> (power-of-two ranges only). compactc lowers a
-non-power-of-two bound via less_than + assert; the constraint already
-exists on the interop side (Prim::UintMax → LimbConstraint::Bounded,
-crates/minocrab/src/v3/abi.rs) — this milestone makes it DECLARABLE:
-a bounded leaf type whose constrain_input emits the same lowering,
-through the whole stack (CircuitArg, derives, interface crates,
-Borsh width rules). Covers non-power-of-two enums (Compact enums are
-Uint<0..k>, k the variant count — see the correction in the note below).
-- [X] Design note first (notes/): leaf shape (const-generic bound),
-      lowering, Borsh/FAB width interaction, interface-gen round-trip.
-      (2026-08-15, notes/bounded-integers.org. THE FINDING that reframes
-      the milestone: Compact's `Uint<0..n>` range end is EXCLUSIVE —
-      compactc's own error says so ("the range end is exclusive"), and
-      the pinned compiler's contract-info/ZKIR agree (`Uint<0..10>` →
-      maxval 9 → `less_than x 10`). Three of our notes said otherwise;
-      nothing compiled was wrong (Prim::unsigned always took the
-      inclusive maxval, which is what contract-info publishes), the
-      error was prose and printed type names. Design: a SECOND leaf
-      `BoundedUint<const BOUND: u128, V>` carrying the exclusive bound
-      (the digits of the Compact type, so a port cannot go off by one),
-      coexisting with `Uint<BITS>` — generic_const_exprs is unavailable,
-      so neither can be an alias of the other, which is also what makes
-      zero movement free. Three widths a bounded int distinguishes and a
-      sized one never had to: constraint (even-rounded), comparison
-      (intlen(maxval)), FAB atom (ceil bytes). Borsh rule: serialize at
-      the next BORSH primitive width up, since 3-byte integers are not
-      Borsh.)
-- [X] Implement + corpus differentials on contracts using Uint<0..10>,
-      <0..300>, <0..1000>, <0..70000>.
-      (2026-08-15, notes/bounded-integers.org §6. `BoundedUint<BOUND>`
-      through the whole stack: CircuitAbi/CircuitArg, CallArg/CallResult,
-      LedgerRepr (one line — LedgerRepr is BUILT on those two, so a
-      bounded value is a cell/map value for free), Disclose, CheckOperand
-      + the six comparison methods, CircuitBorsh, and the interface
-      generator, whose `unsigned_type` now decides Uint-vs-BoundedUint
-      once for both `Uint` and `Enum`. The three derives needed NO change.
-      NO CORPUS CONTRACT WAS PORTABLE, and establishing that took a scan
-      worth recording: 788 compiled .zkir corpus-wide, 66 of them v3 (only
-      the three sig-net sources carry --feature-zkir-v3, and our IR is
-      v3), and NONE of the 66 has a non-power-of-two bound. The two corpus
-      contracts that use one are multiconst (whose test5.zkir really does
-      carry `less_than x 0x0a bits=4`, but is v2) and midnight-serde's
-      serde-fixtures (every circuit `pure`, and a pure export gets no
-      .zkir at all). So the established tiny.compact-style fallback:
-      crates/minocrab-contracts/tests/fixtures/bounded/bounded.compact,
-      compiled with the pinned compactc, eleven circuits covering the four
-      bounds the fairness bullet names plus every edge of the table
-      (0..1 → constrain_eq, 0..2 → boolean, 0..256 → constrain_bits,
-      0..255 → the bound that LOOKS sized, a 3-name enum, a derived struct
-      with a bounded field, and two bounded arguments compared).
-      THE RESULT IS STRONGER THAN THE CRITERION: the serialized ZKIR is
-      EQUAL to compactc's up to identifier renaming for all eleven — op,
-      immediate, width and operand position — the only differences being
-      our `%lt.N` temporaries and the derive's informative argument labels.
-      Plus the §6 criterion per circuit, the ABI round-trip against
-      contract-info.json slot for slot, and the pair that pins the bound's
-      POSITION: both artifacts REJECT the first illegal value and ACCEPT
-      the largest legal one, at every arm of the table. Four rejections are
-      E0080 at the call site (bound < 1 — in compactc's own words; a
-      narrowing `widen`; a `to_uint` too narrow; a mixed-width comparison);
-      one panic is added to the recorded list (a constant past the bound).
-      Zero movement: all 87 pre-existing circuits' serialized ZKIR dumped
-      before and after — 87 of 87 BYTE-IDENTICAL, which is what "the two
-      leaves coexist" buys. Both snapshots grew by the eleven new entries
-      and nothing else moved; `cargo test --workspace` 497 passed / 0
-      failed, --release row_snapshot green. Corrected in passing, all from
-      the same off-by-one: notes/builtin-lowering.org §1 and §8,
-      minocrab-abi's enum prose and `prim_name`, interface-gen's `render`,
-      notes/interface-crates.org's mapping table.)
-Exit criteria: a corpus contract with a non-power-of-two bound ports
-with the usual differential green; the README fairness bullet moves to
-the feature list.
-ASSESSMENT (2026-08-15): MET, with one substitution. The differential is
-green and the README bullet has moved to the feature list. The
-substitution is the first criterion's word "corpus": no corpus contract
-was portable (the scan above), so the differential runs against a
-tiny.compact-style fixture compiled by the same pinned compactc — the
-route M4 used for the same reason and the route M17's bullet already
-names. What that costs is corpus PROVENANCE; what it does not cost is
-the differential's strength, which is byte-equality against compactc's
-own output rather than the §6 criterion the corpus ports settle for.
-M14 CLOSED.
+First of the fairness-list promotions. Design + as-built:
+=notes/bounded-integers.org=.
+- [X] THE FINDING: Compact's =Uint<0..n>= range end is EXCLUSIVE
+      (compactc's own error text and artifacts agree); three of our notes
+      said otherwise, nothing compiled was wrong.
+- [X] =BoundedUint<const BOUND: u128, V>= through the whole stack
+      (CircuitArg, calls, ledger, disclosure, Borsh, interface-gen).
+      No corpus contract was portable (the scan is recorded), so an
+      eleven-circuit fixture compiled with the pinned compactc covers
+      every edge — and the result is serialized ZKIR EQUAL to compactc's
+      up to identifier renaming for all eleven.
+Exit criteria MET (with the fixture substitution recorded). M14 CLOSED.
 
 * M15 — Opaque<'ts-type'> bridging
-Fairness-list gap: Compact contracts hold and thread TS-side values
-with no in-circuit representation (ledger cells, witness args,
-Set<Opaque<…>>); our ABI reader and interface generator reject Opaque
-by design (crates/minocrab-abi/src/info.rs,
-crates/minocrab-interface-gen/src/lib.rs).
-- [X] Design note first: what Opaque means at the ZKIR/ledger level in
-      compactc's artifacts (survey the corpus uses), and what the Rust
-      shape should be (likely an opaque handle type carrying the
-      ts-type string, never entering circuits).
-      (2026-08-16, notes/opaque-bridging.org. FOUR FINDINGS, and the first
-      two reframe the milestone — this bullet's own parenthesis was wrong
-      in both directions. (a) An Opaque DOES enter circuits: one
-      unconstrained `Scalar<BLS12-381>` slot under a FAB `compress` atom,
-      reachable as argument, result, witness result, every ledger
-      position, and across a cross-contract call in both directions
-      (result limb unconstrained, both limbs bound by the comm
-      commitment). So `Prim::Opaque`, which has existed since M12 stage 1,
-      becomes reachable from a typed leaf for the first time. (b) compactc
-      publishes the two CURVE POINT types AS Opaque —
-      `Alias { name, Opaque { tsType: name } }` — so 12 of the corpus's 74
-      Opaque nodes are points, and our `TypeError::Opaque`'s message ("no
-      in-circuit representation") was false about both halves. THE
-      CONCRETE COST: `CompactType::flatten` could not flatten the
-      erc20-vault's OWN `initialize`, so the benchmark contract was not
-      importable through our own interface machinery. It is not a handle:
-      the field element is `transient_commit(bytes, len)` — zero for the
-      empty value, which is why `default<Opaque<..>>` lowers to `0x00` —
-      so in-circuit equality decides equality of the TS VALUES; a compress
-      atom accepts any length, which is why an opaque is outside the Borsh
-      subset; and it is one-way, since `parse_field_repr` returns None for
-      Compress. (c) `CompactType`'s claim to model every corpus type-name
-      was too strong: four are unmodelled, all ledger-only today, but
-      JubjubScalar is reachable as a circuit ARGUMENT. (d) A witness's
-      result type is spelled "result type" with a SPACE where every
-      circuit uses "result-type" — 66 of 66, found by reconciling a regex
-      count of Opaque nodes against a structural one. Sixteen probe
-      circuits under the pinned compactc back every claim.)
-- [X] Implement through ABI reader + interface-gen + ledger layer;
-      corpus differential on a contract using Opaque.
-      (2026-08-16, notes/opaque-bridging.org §"As built". `Opaque<T: TsType,
-      V>` through the whole stack — CircuitAbi/CircuitArg, CallArg/
-      CallResult, LedgerRepr, Disclose, CircuitOut — plus `JubjubPoint`,
-      the five-line twin of `Secp256k1Point` over two `field` atoms. The
-      ts-type is a MARKER TYPE, not a const string (`adt_const_params` is
-      unstable), which is the better shape anyway: `Opaque<ts::Str>` and
-      `Opaque<ts::Uint8Array>` do not unify, proven by a compile_fail
-      DOCTEST beside a passing twin, and it is compactc's own rule checked
-      against the pinned compiler. Two operations, `eq` and
-      `default_value`, and every rejection is at MISSING IMPL — no
-      CircuitBorsh, so `persistent_hash` on an opaque is E0277, the same
-      refusal compactc makes in almost the same words. THE READER:
-      `TypeError::Opaque` DELETED, not reworded; the curve spelling
-      recognized before the generic Alias arm, with a test per shape
-      because a bare `Opaque<"Secp256k1Point">` must stay a user's opaque.
-      THE GENERATOR: `Opaque<Marker, V>` plus one generated `ts_type!` per
-      distinct ts-type ("string" → `Str`, since `pascal`'s `String` would
-      shadow std's in someone else's crate); the curve rows precede the
-      Alias row because that arm would emit
-      `pub type Secp256k1Point<V> = Secp256k1Point<V>`, E0391.
-      NO CORPUS CONTRACT WAS PORTABLE, as in M14 and for a recorded
-      reason: 74 Opaque nodes across 23 of the 312 artifacts — real
-      production code, not fixtures — and NONE in a v3 artifact, since
-      only the three sig-net sources carry --feature-zkir-v3 and their
-      four are all Secp256k1Point. So the tiny.compact-style fallback:
-      tests/fixtures/opaque/opaque.compact, fourteen circuits covering
-      every position an opaque can occupy plus both curve spellings.
-      THE RESULT IS AS STRONG AS M14's: serialized ZKIR EQUAL to
-      compactc's up to identifier renaming for ELEVEN of fourteen, and
-      equal for the other three after dropping one `copy <immediate>`
-      each — the three that write a LITERAL ledger value, a known gap
-      (M9 phase 7 gave every OPERAND position `impl Into<Operand>`, but a
-      ledger VALUE still goes through `push_limbs`, which hands back
-      wires) that phase 7 measured at ZERO ROWS. Stated in two tests
-      rather than hidden, including an `assert_ne!` so a circuit that
-      stops needing the substitution fails, and a count pinned at one per
-      circuit and zero on compactc's side. FOR DMD: closing it means
-      letting a ledger value carry an immediate, an API change to a trait
-      all four vault forks use, for a cosmetic gain — recommendation is
-      to leave it.
-      Plus THE test that is not about compactc at all: a preimage whose
-      ledger write carries the raw BYTES and whose circuit input carries
-      `transient_commit(bytes, len)` is accepted by both artifacts and by
-      upstream's `check()`, for three byte strings including the empty
-      one — and its negative twin, a mismatched commitment REJECTED by
-      both, which is what makes `eq` an equality on values rather than on
-      interchangeable handles. Plus the ABI round-trip for all twelve
-      argument-carrying circuits, and the erc20-vault's OWN `initialize`
-      flattening from the CORPUS artifact, which is claim 0b closed.
-      TWO DEVIATIONS from the note, both recorded: the three curve
-      scalar/base names are PARSED but not flattened (flattening needs a
-      `Prim`, and the only honest one for a non-field slot is a new
-      variant with a leaf behind it — `TypeError::NoLeaf` says so); and
-      `LedgerSet<T>` landed three milestones early with `insert` +
-      `member` ONLY, because those are the two Impact lowerings that
-      already existed and the fixture stores an opaque in a Set — the
-      rest of Set stays M16's, and no lowering was invented.
-      Zero movement, checked harder than the gates require: all 98
-      pre-existing circuits' serialized ZKIR dumped before and after —
-      98 of 98 BYTE-IDENTICAL, with exactly the 14 new files added. That
-      dump is now a committed instrument, tests/zkir_dump.rs, so the next
-      session does not reinvent it. Both snapshots grew by exactly 14
-      entries and nothing else moved; `cargo test --workspace` 528 passed
-      / 0 failed, --release row_snapshot green, interface-gen's --check
-      over every generated crate green.)
-Exit criteria: an Opaque-using corpus contract imports and ports;
-fairness bullet retired.
-ASSESSMENT (2026-08-16): MET, with M14's substitution and one addition.
-The fairness bullet has moved to the README's feature list. The
-substitution is the word "corpus": no corpus contract was portable (the
-scan above), so the differential runs against a fixture compiled by the
-same pinned compactc — and what that costs, corpus PROVENANCE, is
-recovered where the corpus does have coverage, because
-`the_vaults_own_initialize_now_flattens` reads the erc20-vault's own
-artifact. The addition is that this milestone closed a BUG as well as a
-gap: the benchmark contract was not importable through our own interface
-machinery, and nothing before M15 would have noticed, because the test
-that compares five atoms against five did not exist. M15 CLOSED.
-FOLLOW-UP, small and documented: no fixture circuit sends an opaque
-across a real cross-contract boundary. The machinery is implemented and
-the facts are established from a probe (notes/opaque-bridging.org §0a),
-but the assertion is a probe's, not a suite's.
+Fairness-list gap. Design + as-built: =notes/opaque-bridging.org=.
+- [X] The reframing findings: an Opaque DOES enter circuits (one
+      unconstrained scalar slot under a =compress= atom, equality decides
+      equality of the TS values via =transient_commit=), and compactc
+      publishes the two CURVE POINT types AS Opaque — which is why the
+      erc20-vault's own =initialize= was not importable through our own
+      interface machinery until this milestone (a real bug closed).
+- [X] =Opaque<T: TsType, V>= (marker types, so different ts-types don't
+      unify — compile_fail-proven) through the whole stack, plus
+      =JubjubPoint=. Fourteen-circuit fixture: ZKIR equal to compactc up
+      to renaming for eleven, and for the other three up to one known
+      zero-row =copy= each, stated in tests rather than hidden.
+Exit criteria MET. M15 CLOSED. Follow-up recorded: no fixture sends an
+opaque across a real cross-contract boundary (probe-established only).
 
 * M16 — Ledger ADTs: List, MerkleTree, HistoricMerkleTree, full Set
-Fairness-list gap. crates/minocrab-ledger has Cell/Counter/Map +
-Set::insert; the corpus declares 25 List, 15 MerkleTree, 7
-HistoricMerkleTree, 41 Set. Merkle PATH circuits are ported
-(minocrab-std/src/merkle.rs); the ledger-state ops on trees are not.
-Subsumes M4's "Map rem, MerkleTree ops" remainder at the ledger-op
-layer.
-HEAD START from M15 (2026-08-16): =LedgerSet<T>= exists with =insert=
-and =member= only — those are the two Impact lowerings that already
-existed (a Compact Set is a Map with Null values, so insert is
-map_insert with a Null and member is the SAME Op::Member a map's is,
-confirmed against the M15 fixture's opSet). What M16 owes it is
-=remove= / =size= / =isEmpty=, and it should BECOME M16's Set rather
-than sit beside a second one. Also inherited: =LedgerRepr= for
-=Opaque<T, Public>= and for =Maybe<T, Public>=, so an ADT with opaque
-or optional elements needs no element-type work.
-- [X] Per-ADT: Impact-op lowering via the real Op types (M4's
-      ledger-op method), differential per corpus contract that uses it.
-      (2026-08-16, notes/ledger-adts.org. DESIGN NOTE FIRST, and it
-      reframed the work: M16 reads as four ADTs' worth of new machinery
-      and is not — every one of the thirty-one operations is the same
-      descend/act/write-back shape the crate already emits, and what is
-      genuinely new is SEVEN OPCODES (type, neg, root, pop, branch, jmp,
-      concat), all of which upstream's `Op` already has and
-      `ImpactOp::constant` already encodes. FOUR FINDINGS, each with an
-      artifact behind it: (a) the opcode list above; (b) `List.head` and
-      the four `insert*Index*` contain Impact-level `branch`/`jmp` —
-      TRANSCRIPT control flow, not circuit control flow, so a `head`
-      inside a conditional is the same fifteen constant instructions
-      under a wire guard and its cost is fixed whether the list is empty
-      or not; (c) a "default value" is ALL-ZERO LIMBS for every Compact
-      type (compactc's `VMnull` is `(make-list count 0)`), so no
-      per-type default table exists anywhere below the API — M15 had
-      recorded that for `Opaque` alone; (d) `resetToDefault` at a
-      top-level field is `cell_write` with an ADT constant, because the
-      wrapping `idx`/`insc` are both SUPPRESSED for a one-element path
-      and a suppressed operand emits no instruction at all.
-      Three helpers and fourteen op sequences in minocrab-ledger:
-      `idx_one` (the general one-key idx, with idx_field/idxp_field
-      rewritten as its two cases), `push_array` + `LedgerElem` (the ONE
-      mixed StateValue push, `List.pushFront`'s node), and
-      `default_value`. Every other constant push goes through the real
-      `StateValue` — `Map`, `Array`, `MerkleTree::blank(depth)` — so the
-      crate's never-hand-encode rule holds without exception. Two op
-      sequences serve FIVE methods each: `mtInsert` and `mtInsertHash`
-      are identical instruction for instruction, as are the three
-      `insertIndex*`, and what differs is only where the leaf came from.
-      THE BUG THE FIXTURE FOUND, and only an instruction-for-instruction
-      differential would have: `history_append` was written to take its
-      closing `insc` depth as an argument, on the reading that every
-      HistoricMerkleTree mutation closes the same way. It does not — an
-      insert ends `ins 1; insc 2`, a reset `insc 2; ins 1`. One circuit
-      failed, by one instruction.)
-- [X] Rusty API per M9 phase 7's #[derive(Ledger)] conventions.
-      (2026-08-16, notes/ledger-adts.org §5. `LedgerList<T>`,
-      `LedgerMerkleTree<DEPTH, T>`, `LedgerHistoricMerkleTree<DEPTH, T>`,
-      `LedgerSet` COMPLETED rather than duplicated (remove/size/isEmpty/
-      resetToDefault, all delegating to the Map ops the fixture proves
-      are byte-identical), and `LedgerMap` completed too — insertDefault
-      and resetToDefault were missing and the fixture found them. The
-      derive needed NO change: it emits `<#ty>::at(i)`, so a
-      `LedgerMerkleTree<10, B32<Public>>` field just works. DEPTH's
-      `2 <= n <= 32` is an inline-const assert per the hard rule, with a
-      compile_fail doctest beside a passing twin.
-      ONE NEW LEAF: `MerkleTreeDigest`, one `field` atom and
-      `Prim::Field` — which like `Prim::Opaque` before M15 had never been
-      reachable from a typed leaf. Deliberately a NAMED type rather than
-      a bare `Field`, so "an unconstrained field argument" does not
-      become an idiom. Plus `CircuitOut` for `Maybe<T, Public>`, which was
-      declarable as an argument and as a ledger value but not RETURNABLE
-      until `listHead` returned one.
-      THE ONE API CHANGE OUTSIDE M16's SCOPE, and it CLOSES a recorded
-      gap rather than adding one: `AnyWire3<V>` now carries an `Arg`
-      rather than a `Val`, with `AnyWire3::immediate` the constant arm.
-      The leaf hash's `"mdn:lh"` separator and `insertIndexDefault`'s
-      zeros are inline immediates in compactc's `persistent_hash` operand
-      list and were `copy`s in ours — the M9-phase-7/M15 named-immediate
-      gap reaching the last operand position that lacked M9 phase 8's
-      rule. The field was private and `Wire3::erase` its only other
-      constructor, so the change is contained, and all 112 pre-existing
-      circuits are byte-identical after it. M15's gap (a ledger VALUE
-      position) is untouched and still dmd's call.
-      THE RESULT IS STRONGER THAN M14's AND M15's: serialized ZKIR EQUAL
-      to compactc's up to identifier renaming for ALL 31 circuits, with
-      NO substitution — the gaps that forced one in M14 and M15 were
-      closed here instead of recorded. Plus the corpus provenance the
-      fixture route costs, recovered: `push_front_matches_the_corpus`
-      checks the thirteen Impact instructions
-      test-caller-contract's `submitSignatureRequest` emits for
-      `requestLog.pushFront(requestId)` against ours, differing only in
-      the field key and the wire carrying the value. Plus
-      `compactc_s_abi_agrees_with_the_leaves` (contract-info.json,
-      flattened, against every argument type and `listHead`'s `Maybe`
-      result — the ABI reader needed no change and this says so from the
-      artifact), and `the_tree_reads_are_accepted_by_upstream` (a
-      preimage built from the REFERENCE Impact program, not read back off
-      either artifact, accepted by both and by upstream's `check()`,
-      covering every opcode a write does not exercise: lt+neg, root+eq,
-      member-on-history).
-      Zero movement, MEASURED rather than inferred, which matters
-      because `AnyWire3` is a frontend type every circuit goes through:
-      tests/zkir_dump.rs (M15's instrument, used for the first time by a
-      later session) run at HEAD and again with M16 applied gives
-      `0 files differ, 31 files added` — all 112 pre-existing circuits
-      BYTE-IDENTICAL. Both frozen snapshots agree: regenerated,
-      insertions only (+201 interface, +31 rows, zero deletions either
-      side). `cargo test --workspace` 568 passed / 0 failed, --release
-      row_snapshot green.)
-Exit criteria: corpus contracts using each ADT port with differentials
-green; fairness bullet retired.
-ASSESSMENT (2026-08-16): MET, with M14's and M15's substitution and one
-addition. The substitution is "corpus contracts": under the v3 filter the
-corpus's 88 ADT declarations collapse to Set.insert, Set.member and
-List.pushFront, so the differential runs against a fixture compiled by the
-same pinned compactc — and the corpus provenance that costs is recovered
-where the corpus does have it (`push_front_matches_the_corpus`, against
-production code). The addition is that this milestone CLOSED the
-named-immediate gap for hash operands rather than recording a third
-deviation, which is why its 31-for-31 equality needs no asterisk. M16
-CLOSED.
-NOT DONE, documented and scoped: the three `insertCoin`/`pushFrontCoin`
-arms (they exist only for `QualifiedShieldedCoinInfo`, their shape is
-`cell_write_coin`'s, and they belong with M17's token work where a coin is
-at hand); nested ADTs (every operation here assumes a TOP-LEVEL field,
-which is what the suppression rules rest on, and no ported contract uses a
-nested one). The `root`/`pathForLeaf`/`iter` families are `js-only` in
-compactc — no vm-code, nothing to port.
+Fairness-list gap; subsumed M4's ledger-ADT remainder. Design + as-built:
+=notes/ledger-adts.org=.
+- [X] All thirty-one operations lowered via the real Op types — the
+      genuinely new surface was seven opcodes, all already encodable.
+      Notable findings: ADT control flow is TRANSCRIPT-level branch/jmp
+      (fixed circuit cost); a "default value" is all-zero limbs for every
+      Compact type; the fixture caught a one-instruction ordering bug in
+      =history_append= that only instruction-level differentials would.
+- [X] Typed API per M9's conventions (=LedgerList=, =LedgerMerkleTree=,
+      =LedgerHistoricMerkleTree=, completed =LedgerSet=/=LedgerMap=); one
+      new leaf (=MerkleTreeDigest=); =AnyWire3= gained =immediate=, closing
+      the named-immediate gap for hash operands.
+Exit criteria MET: ZKIR equal to compactc up to renaming for ALL 31
+circuits, no substitution; corpus provenance recovered against
+production code (=push_front_matches_the_corpus=). M16 CLOSED.
+Explicitly scoped out (→ M22 / M17): the three coin arms, nested ADTs.
 
 * M17 — Kernel + token stdlib remainder
-Fairness-list gap; this IS M4's REMAINING bullet, promoted: kernel.checkpoint,
-the block-time family (blockTimeLessThan/GreaterThan, blockTimeLt/Lte/
-Gt/Gte), the unshielded-token family (mintUnshielded, sendUnshielded,
-receiveUnshielded, claimUnshieldedCoinSpend, incUnshieldedInputs/
-Outputs, unshieldedBalance*), kernel.balance/balanceLessThan/
-balanceGreaterThan, sendShielded, mergeCoin/mergeCoinImmediate.
-- [X] Port via the established route: compactc's vm-code lowering →
-      minocrab-ledger ops → stdlib circuits, each with a corpus (or
-      tiny.compact-style) differential.
-      (IN PROGRESS 2026-08-16, notes/kernel-tokens.org. DESIGN NOTE FIRST,
-      and it reframed the milestone twice over.
-      (a) `kernel.checkpoint()` CANNOT BE COMPILED for our IR version.
-      compactc's v2 backend assembles `ckpt` to 255
-      (zkir-passes/print-zkir.ss:546); the v3 backend has no `ckpt` case,
-      so `--feature-zkir-v3` on a contract calling it dies with `failed
-      assertion not-implemented`. A v2-only feature and a compactc gap,
-      not one of ours. NOT PORTED, with the failure quoted in the
-      fixture's header.
-      (b) The milestone's list is TWO LAYERS wearing one name.
-      sendShielded, sendUnshielded, receiveUnshielded, mergeCoin*,
-      unshieldedBalance* and blockTimeLt/Lte/Gt/Gte are ordinary
-      `export circuit`s written IN COMPACT (standard-library.compact),
-      not kernel vm-code. Only nine things in the list have vm-code.
-      (c) Those nine are THREE instruction shapes: one nineteen-
-      instruction effect accumulator (four callers differing only in an
-      effects slot, a key type and an amount width), one balance read
-      (three callers differing only in a comparison tail), one five-
-      instruction block-time read (two callers differing only in OPERAND
-      ORDER — compactc has no `gt` opcode, so a `>` is a `<` with the
-      pushes swapped).
-      (d) And the accumulator ALREADY EXISTED: `kernel_mint_shielded`
-      has emitted it since M4 with the slot, key and amount hard-coded.
-      It grew three parameters and four callers; not one instruction
-      changed. Second milestone running whose "new machinery" was an
-      existing lowering with different arguments, and both times the note
-      found it before any code.
-      DONE SO FAR: the emission layer (the generalized accumulator, plus
-      `kernel_balance` and `kernel_block_time`), the `minocrab_std::v3::
-      kernel` module, the `UserAddress` leaf, `Either`'s LedgerRepr and
-      Disclose, and TWENTY-ONE of the fixture's 24 circuits — the nine
-      compilable kernel primitives, the ten non-conditional stdlib
-      compositions, and the two with a conditional auto-receive
-      (sendUnshielded, mintUnshieldedToken) — all BYTE-EQUAL to compactc
-      up to identifier renaming.
-      The conditional pair's shared piece is the auto-receive guard, and
-      two details of it are compactc's rather than ours: `kernel.self()`
-      is read under `is_left` ALONE (a user-address recipient never needs
-      the contract's address), and the `&&` is TWO cond_selects.
-      THE NAMED-IMMEDIATE GAP, third appearance and third local close:
-      `left<Bytes<32>,Bytes<32>>(color)` is four constant FAB limbs, and
-      routing them through LedgerRepr names each with a `copy`. M15's
-      general fix (a LedgerRepr change all four vault forks depend on) is
-      STILL dmd's call and is not taken; instead `UnshieldedToken` is its
-      own type that knows its own constants, which needs no trait change.
-      The pattern is now nameable: a local close is legitimate exactly
-      when the constants belong to the TYPE rather than to a value.
-      AND ONE CHANGE TO A SHARED GADGET, measured rather than assumed.
-      `mintUnshieldedToken` calls `tokenType`, whose constant domain
-      prefix our `token_type` built with `B32::pad` — two `copy`s where
-      compactc inlines the constants into the persistent_hash operand
-      list. That is the named-immediate gap for a HASH operand, which
-      M16 already built `AnyWire3::immediate` for; `token_type` was the
-      last stdlib hash operand still naming its constants. Because it
-      has ten call sites across all four vault forks, 26 CIRCUITS MOVED
-      — and the diff in every one is the same two `copy`s removed plus
-      renumbering, nothing else. row_snapshot is UNCHANGED, which proves
-      the zero-rows claim rather than assuming it, and every vault
-      differential still passes because a removed `copy` does not touch
-      the PI stream. 26 circuits moved CLOSER to compactc; recorded as
-      movement rather than folded into a zero-movement line.
-      REMAINING, named in the differential's `NOT_YET_PORTED` so the gap
-      cannot widen silently: `sendShielded` / `mergeCoin` /
-      `mergeCoinImmediate` — the shielded compositions, whose pieces
-      exist in ad-hoc form inside the ported vault contracts and want
-      lifting into the stdlib.)
-      (SHIELDED STAGE DONE 2026-08-16 — all 24 of the fixture's circuits
-      match compactc instruction for instruction and `NOT_YET_PORTED` is
-      EMPTY. The three shielded compositions are the only ones here with
-      coin algebra between the kernel calls, and each of the four things
-      they needed is a primitive compactc's lowering has and ours did
-      not: `Circuit3::copy` (a cast NAMES its result — `as Uint<128>`,
-      and `degradeToTransient`); `transient_hash` over `AnyWire3`, so a
-      Poseidon domain separator inlines like a SHA one has since M16 —
-      the named-immediate gap's fourth appearance and first in the
-      transient flavor; v3 `degrade_to_transient`/`upgrade_from_transient`
-      (the v2 twins are M4's); and `coin_commitment_to_contract`, because
-      a static `right(kernel.self())` recipient has NO select to make and
-      compactc emits none.
-      THE VALUE BRANCH IS WRITTEN OUT, not through this session's
-      `when_value`, and the reason is a limit worth having found:
-      compactc folds the `Maybe`'s tag INTO the else-arm's guard (`none`
-      and `some` differ by a tag that is 0 or 1, so selecting it IS
-      `cond_select(change == 0, 0, 1)`), and a chain would emit that
-      select a second time. Same shape one level down: our `&&` is a
-      `mul`, compactc's is a `cond_select`. Both are arguments for
-      notes/ir-passes.org §2(ii)'s normalisation pass, arriving from a
-      direction that note did not anticipate — the surface API can only
-      be as ergonomic as the LOWERING allows while the bar is instruction
-      equality.
-      MEASURED MOVEMENT, same class as stage 3's: inlining the constants
-      in `coin_nullifier_contract`/`coin_commitment` moved 28 pre-existing
-      circuits (six vault circuits × four forks, both mint-tokens, xcall-
-      with-payment notify/pay), 42 `copy`s removed. CHECKED, not asserted:
-      each dump equals its baseline once every removed `copy`'s immediate
-      is substituted for its output name — all 28. row_snapshot regenerated
-      to +3 lines and ZERO deletions, and both classes are now measured in
-      `opcost` (100 `copy`s = 0 rows; 100 `cond_select`s = 101).
-      NOT DONE, queued in notes/review-queue.org: lifting the vault's own
-      `receive_shielded`/`burn_coin`/`mint_shielded_token` onto the stdlib
-      gadgets. It would drop two `cond_select`s per static recipient — ~2
-      rows, no `k` boundary, no prove time, but it MOVES a frozen
-      instrument, so it wants its own gate rather than a ride beside a
-      port.)
-Exit criteria: the README fairness bullet shrinks to nothing in this
-class; M4's stdlib bullet finally ticks. MET — the README bullet is
-GONE (all 24 fixture circuits ported and equal to compactc;
-`kernel.checkpoint()` is not a gap of ours, since compactc's own v3
-backend cannot compile it), and M4's two pointer bullets tick with M16
-and M17 both closed. M17 CLOSED.
+M4's REMAINING bullet promoted. Design + as-built: =notes/kernel-tokens.org=.
+- [X] All 24 fixture circuits — the nine compilable kernel primitives,
+      the stdlib compositions, the block-time and unshielded families,
+      the three shielded compositions — match compactc INSTRUCTION FOR
+      INSTRUCTION. =kernel.checkpoint()= is not ported because compactc's
+      own v3 backend cannot compile it (a compactc gap, quoted in the
+      fixture). The milestone's list turned out to be two layers wearing
+      one name: only nine entries have kernel vm-code, and those are
+      three instruction shapes, one of which had existed since M4.
+Exit criteria MET: the README fairness bullet in this class is GONE;
+M4's pointer bullets tick. M17 CLOSED.
 
 * M18 — Ergonomic parity for the optimized vault (dmd, 2026-08-16)
 dmd's question, queued behind the ir-passes staging (notes/ir-passes.org §5
@@ -1748,176 +417,33 @@ rather than by cost — and the four-fork lockstep either gone or explicitly
 priced. Not one instrument weaker than it is today.
 
 * M19 — API safety survey and the fixes it ranks (dmd, 2026-08-16)
-Commissioned mid-session: survey (a) obvious Rust API footguns — where a
-Rust programmer thinks the compiler or build guarantees something it does
-not (hard to use is fine; failing after typecheck but before deploy is
-fine); (b) anywhere we generate the WRONG code, semantically different
-from the equivalent Compact; (c) anything we can encode in the type system
-so users make fewer mistakes. "This is a smart contract programming
-language."
-Survey: notes/api-safety-survey.org. THE METHOD, since it is reusable:
-look where a test on WELL-FORMED INPUT CANNOT SEE THE ERROR. Two seams —
-invariants stated in prose (`PRECONDITION`, "the caller's job"), and
-compactc's own verified lowering rules (notes/builtin-lowering.org §9),
-where anything compactc does automatically and we leave to the author is a
-divergence whatever the differentials say. The prior for this was earned
-the same day: three bugs of exactly that class were found and fixed, all
-green on every differential the day before.
-- [X] The survey itself.
-      (DONE 2026-08-16. FOUR wrong-code findings and four footguns; the
-      headline is that COMPACT EMITS `assert(a >= b)` BEFORE EVERY
-      SUBTRACTION and we emit nothing — an author writes
-      `c.add(a, c.neg(b))`, which is compactc's lowering with the guard
-      removed. The vault's one subtraction carries a hand-written guard
-      whose comment calls it "the most dangerous arithmetic in the
-      contract"; delete those three lines and every test still passes.
-      Field arithmetic has no sign, so an underflow is not −1, it is a
-      value near 2^255 — a coin worth 2^255, or a Uint<64> ledger write of
-      a 255-bit number. This is the balance-underflow bug and our API
-      makes it EASIER to write than Compact does.)
-- [X] Fix 1 (closes B1 + B2 + most of A2): typed arithmetic carrying
-      Compact's guards.
-      SUBTRACTION DONE 2026-08-16 — `Uint::sub(c, other)` /
-      `Uint::sub_with(c, other, message)` emit exactly compactc's
-      `assert(a >= b)` + `neg` + `add`, in that order, at compactc's width
-      (the bits come from `BITS` through the predicate layer, never typed
-      at the call site); the result keeps `BITS`, compactc's `Uint<maxa>`
-      rule, sound because `a - b <= a < 2^BITS`. `sub_with` exists because
-      the message is what makes a failed proof diagnosable and the vault's
-      was better than compactc's generic text.
-      THE PROOF IS AGAINST A REAL ARTIFACT, not a twin: the vault's only
-      subtraction (completeSwap, all four forks) was ported to `sub` and
-      the ZKIR dump DID NOT MOVE — and two of those forks are
-      instruction-mirroring against compactc's own completeSwap. Three
-      unit tests pin the rest, including that the raw spelling emits NO
-      assert and the typed one does, so a future pass that drops the guard
-      fails there.
-      MAX TRACKING DONE 2026-08-16 — `BoundedUint` gains five methods:
-      `add::<OUT, BOUND2>` and `mul::<OUT, BOUND2>` (ONE `add` resp. `mul`,
-      no check at the op, which IS Compact's rule — the max lives in the
-      type where compactc keeps its `maxval`; the two operand bounds may
-      differ), `sub`/`sub_with` (`Uint::sub`'s guard at the BOUND's
-      comparison width, SAME bound both sides because the guard is a
-      comparison and a comparison needs one width — decision A reaffirmed
-      by dmd), and `narrow::<BITS>`. `OUT` is caller-named since
-      `generic_const_exprs` is unstable, with inline-const E0080s at
-      `OUT >= BOUND + BOUND2 - 1` and `OUT >= (BOUND-1)*(BOUND2-1) + 1`;
-      the bound arithmetic is `checked_*`, so an OVERFLOWING bound is a
-      compile error, not a wrap that would accept an `OUT` too small.
-      STRICTER THAN COMPACT, which is §B4's correction cashed in:
-      `narrow::<BITS>` (the `2^BITS < BOUND` direction) emits the range
-      check compactc emits NOWHERE for a cast in argument position — the
-      free direction stays `to_uint`, and asking `narrow` for it is an
-      E0080 pointing there, so which spelling a call site uses says whether
-      it paid. Six lowering/round-trip tests in `v3_bounded.rs` (each op
-      byte-identical to the hand-written form; 299+199=498, 299·199=59501,
-      and 1-7 REJECTED rather than `1 - 7 + p`) plus four `compile_fail`
-      doc-tests in `src`, where doc-tests actually run. Zero circuit
-      movement: 162 byte-identical, 5 renumbered (pre-existing), 0 changed.
-      No call site ported yet — the contracts still use `Uint`/raw wires,
-      so this is API surface waiting for fix 3's constrained `from_field`
-      before the settle-mint sites can adopt it.
-- [X] Fix 2 (closes B3): constrain-on-construction, made free by
-      ir-passes step 5's dedup pass. Turns every "PRECONDITION: already
-      range-constrained" in the Borsh layer into a check — `hash.rs` says
-      the consequence itself, "without that the packing is not injective
-      and the digest binds nothing".
-      (DONE 2026-08-16, both halves, and they are only worth anything
-      together — notes/ir-passes.org §11.
-      THE PASS: `passes::dedup_range_constraints`, OPT-IN through
-      `Circuit3::dedup_range_constraints(true)` and off everywhere,
-      because it makes us strictly more deduplicated than compactc. Per
-      wire it keeps the tightest bound proven and drops a later
-      wider-or-equal one; a TIGHTER one is new information and stays.
-      `constrain_to_boolean` and `constrain_bits(_, 1)` are ONE family —
-      checked against upstream, not assumed (`ir_vm.rs:844-864`: one
-      converts to an `AssignedBit`, the other decomposes to one bit, and
-      both constrain `val ∈ {0,1}`) — which is what makes a `Bool` leaf
-      free, its entry constraint being booleanity and its Borsh segment a
-      BYTE. Fold first, then dedup: the fold rewrites operands, so
-      running it first means every dedup decision is about a name the
-      circuit ships.
-      THE CHECK: `Serializer::constrained()` emits each segment's
-      `constrain_bits` before packing (`to_bytes_constrained`,
-      `Split::constrained`, `WitnessCheck::constrained`). A MODE rather
-      than a checked `push_*` twin, because the precondition is about
-      EVERY segment and because `CircuitBorsh::push_segments` — the
-      derive included — cannot pass a checked spelling through.
-      THE PROOF THEY ARE FREE TOGETHER (`tests/v3_dedup.rs`): one record
-      built today's way (entry constraints, unchecked serializer, no
-      pass) and the checked way (same entry constraints, checked
-      serializer, flag on) is BYTE-IDENTICAL serialized ZKIR — the twelve
-      added constraints are exact duplicates and the pass drops precisely
-      them. Three tests keep it honest: the check is real when nothing
-      else constrained the leaves, the cost is real with the flag off,
-      and literal segments add nothing.
-      HONEST SCOPE: discharged only on the checked-and-flagged path, and
-      no artifact ships it — every corpus caller still uses
-      `Serializer::new`. B3 is now PREVENTABLE rather than prevented.
-      MEASURED, and it corrects ir-passes §1: scanning all 863 `.zkir`
-      files in the repo — our 167 dumps and every compactc fixture —
-      finds ZERO range constraints implied by an earlier one, so no
-      artifact we hold, ours or compactc's, re-emits. The divergence the
-      opt-profile framing rests on is prospective, not observed; the flag
-      stays off regardless. Gates: `cargo test --workspace` green, 162
-      byte-identical / 5 renumbered / 0 changed.)
-- [X] Fix 3 (closes A1): `from_field` split into an explicit
-      unchecked/checked pair. It was an unaudited `unsafe` that every other
-      soundness argument leaks through, and it did not look different from
-      the escape hatches that ARE enforced (`disclose`, visibility,
-      `Guarded`).
-      (DONE 2026-08-16. Every v3 leaf's `from_field` renamed to
-      `from_field_unchecked` (`Uint`, `BoundedUint`, `Bool`, `Bytes`,
-      `Tag<K>`, `Opaque`, `MerkleTreeDigest`) and no plain `from_field`
-      remains — an old spelling fails to compile, so every call site had to
-      choose. `from_field_checked(c, w)` added for the five leaves that
-      have a `constrain_input` to delegate to (`Uint`, `BoundedUint`,
-      `Bool`, `Bytes`, `Tag<K>`): build unchecked, call the existing
-      `constrain_input`, return — costs exactly that constraint, free under
-      `dedup_range_constraints`. `Opaque` and `MerkleTreeDigest` keep the
-      rename only, by design: both are compactc's own no-constraint
-      primitives (`Prim::Opaque`, `Prim::Field`), so there is no
-      `constrain_input` to delegate to. ~100 call sites migrated to
-      `_unchecked` across minocrab-std (src+tests) and minocrab-contracts
-      (src+tests); no macro-generated `from_field` existed to update. The
-      vault's four settle circuits (claim, completeWithdraw, refund,
-      completeSwap — five `Uint::<64, Public>::from_field_unchecked` call
-      sites per fork, completeSwap mints twice) each got the same one-line
-      comment: the claim rests on request-time bounds, not a local one
-      (§B4's correction), first in line for `from_field_checked` once
-      there's a spec-anchored artifact. Four new tests (`v3_leaves.rs`,
-      `v3_bounded.rs`) pin `from_field_checked` byte-equal to
-      `from_field_unchecked` + `constrain_input` for `Uint`, `Bool`,
-      `Bytes`, `BoundedUint`. Gates: `cargo test --workspace` green, 162
-      byte-identical / 5 renumbered / 0 changed.)
-- [X] Fix 4 (closes B4): the Compact signature types on the
-      contracts-level helpers — `mint_shielded_token` took a raw `Wire3`
-      where Compact's takes `Uint<64>`. The typed kernel layer already got
-      this right; this is the older layer catching up.
-      (DONE 2026-08-16. The signature is read off Compact's OWN standard
-      library, not inferred: `standard-library.compact:122-125` declares
-      `mintShieldedToken(domain_sep: Bytes<32>, value: Uint<64>, nonce:
-      Bytes<32>, ..)`. All four `value: Wire3<FieldT, Public>` parameters
-      in `common.rs` are now `Uint<64, Public>`.
-      WHAT IT BUYS, stated honestly: the narrowing does not become CHECKED
-      — the caller writes `Uint::<64, Public>::from_field(amount)`, which
-      is still A1's unchecked assertion. What changes is that it becomes
-      VISIBLE and greppable at the call site, where before a 128-bit wire
-      slid into a 64-bit parameter with nothing written down. In the vault
-      the `assert(amount <= u64::MAX)` sits a few lines above, so the claim
-      is justified where it is made. Making it checked is A1's fix, not
-      this one. Zero rows; dump unchanged.)
-- [X] Fix 5 (closes the sharpest edge of A4): the `_with` family cannot be
-      handed an arbitrary `B32` — it was memoization with an unchecked key,
-      and a wrong address mints to the wrong contract.
-      (DONE 2026-08-16, and the survey's proposed `SelfAddress` newtype was
-      NOT needed: `ContractAddress<Public>` already existed and only
-      `kernel::self_address` / `self_address_guarded` produce one. Typing
-      the parameter with it is the whole fix. The address now flows typed
-      through `record_and_notify` and `notify_signet` too, so the raw
-      `B32` appears only at `.bytes()`, which is the one conversion point.
-      Zero rows — a `repr(transparent)` wrapper over the same limbs — and
-      the ZKIR dump is unchanged across all four forks.)
+Survey: =notes/api-safety-survey.org=. THE METHOD, since it is reusable:
+look where a test on WELL-FORMED INPUT CANNOT SEE THE ERROR — invariants
+stated in prose, and compactc's own verified lowering rules
+(=notes/builtin-lowering.org= §9), where anything compactc does
+automatically and we leave to the author is a divergence whatever the
+differentials say.
+- [X] The survey: four wrong-code findings, four footguns. The headline:
+      COMPACT EMITS =assert(a >= b)= BEFORE EVERY SUBTRACTION and we
+      emitted nothing — the balance-underflow bug, easier to write in our
+      API than in Compact.
+- [X] Fix 1: typed arithmetic carrying Compact's guards — =Uint::sub/
+      sub_with= emit exactly compactc's guard (proven against a real
+      artifact: the vault's only subtraction ported with a zero-byte ZKIR
+      move); =BoundedUint= add/mul/sub/narrow with compile-time bound
+      arithmetic, stricter than Compact where §B4 found Compact emits
+      nothing.
+- [X] Fix 2: constrain-on-construction (=Serializer::constrained()=) made
+      free by the opt-in =dedup_range_constraints= pass — byte-identical
+      when combined, proven; B3 now preventable (=notes/ir-passes.org= §11).
+- [X] Fix 3: =from_field= split into =from_field_unchecked= /
+      =from_field_checked= across every v3 leaf (~100 call sites chose
+      explicitly).
+- [X] Fix 4: Compact's own signature types on the contracts-level helpers
+      (=Uint<64>= where Compact declares it).
+- [X] Fix 5: the =_with= family takes =ContractAddress<Public>= — only
+      =kernel::self_address= produces one, so the memoization key can no
+      longer be an arbitrary =B32=.
 Exit criteria: every finding either fixed or refused in writing with a
 reason; no invariant left as prose that a pass or a type could hold.
 
@@ -1969,117 +495,40 @@ instruments without them knowing the instruments exist.
 
 * M21 — crates.io readiness (dmd, 2026-08-17: "ready to be deployed")
 - [X] Everything on our side prepared so publish day is a `cargo publish`
-      sequence: nine publishable crates classified and metadata'd
-      (four marked publish = false with reasons), crate-level rustdoc
-      front doors, per-crate READMEs, docs.rs config (no build.rs
-      anywhere — nothing needs compactc or nix at build time),
-      include-lists, license texts shipped per crate, PUBLISHING.md
-      with the dependency-DAG publish order. ~45 pre-existing broken
-      intra-doc links found and fixed by the strict `cargo doc` pass.
-      DECISIONS OF RECORD, dmd's: the unblock path is WAIT FOR UPSTREAM
-      to publish the ledger-9.1 line to crates.io (vendoring REJECTED,
-      not deferred); and NO fake `version` keys on the git deps — a
-      publish that resolved downstream against the wrong upstream line
-      would be the silently-different-build failure this project exists
-      to prevent. rust-version = 1.85, floored by upstream's edition
-      2024, not by our code (1.79). Names minocrab/minocrab-* free on
-      crates.io at 2026-08-17.
+      sequence: nine publishable crates classified and metadata'd, crate
+      rustdoc front doors, per-crate READMEs, docs.rs config (no build.rs
+      anywhere), license texts, PUBLISHING.md with the dependency-DAG
+      publish order. DECISIONS OF RECORD, dmd's: the unblock path is WAIT
+      FOR UPSTREAM to publish the ledger-9.1 line (vendoring REJECTED),
+      and NO fake `version` keys on the git deps — a publish resolving
+      against the wrong upstream would be the silently-different-build
+      failure this project exists to prevent. rust-version = 1.85.
 Exit criteria: when upstream publishes, `cargo publish` in PUBLISHING.md's
 order with no repo changes beyond removing the git pins.
 
 * M22 — The last two ADT gaps: coin arms + nested ADTs (dmd, 2026-08-17)
-dmd: "implement those bullets, don't wait for the people, we can always
-iterate later." The two remaining bullets of the README's fairness list,
-scoped by notes/coin-arms-nested-adts.org (the 2026-08-16 investigation)
-and — for the nested API — the design dmd reviewed in-session
-2026-08-17, now recorded as the design of record in that note's
-"Design of record" section: `at_key` builds a path and emits NOTHING,
-every leaf method emits the ONE Impact op Compact's operation names with
-the path re-encoded per op (compactc's own shape), inner handles are
-runtime values holding cloned key limbs (outer declarations stay const),
-the value-position bound splits into a sealed `LedgerSlot` with plain
-values and ADT handles as the two families, no one-shot `lookup2`
-methods, Map-only nesting per compactc's own kind-checker, and a depth
-bound as an E0080 stricter than upstream's unchecked nibble.
-- [X] Stage A — the three coin arms (`Set.insertCoin`, `Map.insertCoin`,
-      `List.pushFrontCoin`): lift `cell_write_coin`'s qualify dance into
-      a shared `qualify_coin`, four callers; three op sequences, three
-      typed std methods; tiny.compact-style fixture compiled with the
-      pinned compactc, instruction-for-instruction differential (the
-      M17 route); zero movement on every existing circuit.
-      (Done: `qualify_coin` with four callers at dup 3/4/5/7;
-      `coins.compact` compiled first try under --feature-zkir-v3 and
-      byte-equal to compactc for all three; `Coins` is a `#[contract]`
-      so the snapshots derive it; 167 pre-existing circuits
-      byte-identical, three new files. One correction to the note:
-      `pushFrontCoin` is EIGHT instructions longer than `pushFront`,
-      not four. `LedgerCell::write_coin` deliberately NOT promoted.
-      notes/coin-arms-nested-adts.org "AS BUILT — STAGE A".)
-- [X] Stage B1 — nested lowering: `LedgerKey` + the general-path
-      encoder (`idx_path`), the `u8 → path` widening kept purely
-      additive (existing builders become wrappers); nested fixture
-      compiled with pinned compactc; raw-ledger differential proving
-      the encoding instruction for instruction.
-      (Done: `LedgerKey` = `Field | Value | Stack`, encoding-identical
-      to upstream's `Key`; `idx_path` the one new encoder; 45 `_at`
-      twins with the `u8` forms as wrappers, additivity CHECKED not
-      asserted. `nested.compact` — 28 circuits over all seven shapes
-      the kind-checker accepts — compiled first try and byte-equal to
-      compactc for every one. FOUR corrections to the note: a LEAF
-      `Map.lookup` is still two `idx` (only an INTERMEDIATE one folds
-      into the path); a 16-field ledger block makes every `Cell` write
-      nested by itself (`maximum-ledger-segment-length` = 15) — a real
-      pre-existing bug the general path fixes at the emission layer,
-      with the derive still to learn it in B2; an ADT-valued
-      `insertDefault` pushes the ADT's INITIAL VALUE, not zeros (the
-      one place the crate was wrong rather than unable); the coin arms'
-      four `dup` constants are compactc's formulas at depth 1 and are
-      now four functions. 170 pre-existing circuits byte-identical,
-      28 new files. notes/coin-arms-nested-adts.org "AS BUILT —
-      STAGE B1".)
-- [X] Stage B2 — the typed surface: `LedgerSlot` split, `at_key`
-      handles, the method ripple; typed differentials; the README
-      fairness bullets rewritten to what remains true (Map-only
-      nesting is compactc's bound, not ours).
-      (Done: a handle is a PATH, not a `u8` — `FieldPath` (const,
-      Copy, because a `Vec` in a declared handle makes
-      `const I: u8 = VAULT.f.index();` E0493) and `KeyPath<KEYS>`
-      (runtime, cloned key limbs), behind a sealed `LedgerPath` and a
-      DEFAULTED `P` parameter, so every existing declaration is
-      unchanged text and the ~88 methods stayed ONE copy each.
-      `at_key` is one method returning `A::Rooted<P::Deeper>` (a GAT),
-      and the depth bound is `MAX_LEDGER_PATH = 13` — `insc`'s nibble,
-      not `idx`'s, because `resetHistory` closes at `len(f) + 2` — less
-      the three a field path may take, so ten keys. ONE DEVIATION from
-      the design of record: the bound is a MISSING IMPL rather than an
-      E0080 (a rung higher on our own ladder), because a probe showed an
-      inline-const assert does not fire in dead code — it is evaluated
-      at monomorphization, while a where-clause is not. Both directions
-      are doctests. Sealed `LedgerSlot`
-      with a BLANKET over `LedgerRepr` plus concrete impls for the
-      handles, which rustc accepts because both traits are local; its
-      one method is `insertDefault`'s pushed constant, so correction
-      (iii) is a type-level fact rather than a call-site choice.
-      CORRECTION (ii) CLOSED: the derive transcribes
-      `determine-ledger-paths.ss`'s `batch` and emits `at_path(&[..])`,
-      pinned by a NEW compactc fixture (`wide.compact`, sixteen cells)
-      whose circuit our derive reproduces byte for byte. All THIRTY
-      nested circuits — 28 of B1 plus `setReset`/`mtReset`, the two
-      nested resets B1 recorded as uncovered — lower byte-identically
-      from the typed spelling and the raw one, first run. Nested COIN
-      ARMS remain unbuilt and are the README's remaining bullet: the
-      lowering has them, no differential does.
-      notes/coin-arms-nested-adts.org "AS BUILT — STAGE B2".)
-Exit criteria: both README bullets gone or reduced to upstream's own
-limits; every new circuit in the frozen snapshots; zero movement
-outside the declared fixture set; notes as-built per stage.
-ASSESSED (B2): the coin bullet is gone (stage A); the nested bullet is
-REDUCED to nested coin arms — ours, not upstream's, and the Map-only
-restriction inside it is stated as compactc's own kind-checker. The two
-new fixture circuits are in both frozen snapshots (additions only, no
-row moved); the typed twins and the sixteen-field probe are `#[contract]`
-blocks in `tests/`, deliberately outside the snapshots because they are
-duplicates by construction. Zero movement: 198/198 byte-identical.
+The two remaining bullets of the README's fairness list. Design of record
+and as-built per stage: =notes/coin-arms-nested-adts.org= (nested design
+reviewed by dmd in-session 2026-08-17: =at_key= builds a path and emits
+NOTHING, leaf methods emit the ONE Impact op with the path re-encoded per
+op, Map-only nesting per compactc's own kind-checker, depth bound
+compile-checked).
+- [X] Stage A — the three coin arms (=Set.insertCoin=, =Map.insertCoin=,
+      =List.pushFrontCoin=): shared =qualify_coin=, fixture byte-equal to
+      compactc for all three, 167 pre-existing circuits byte-identical.
+- [X] Stage B1 — nested lowering: =LedgerKey= + the general-path encoder
+      (=idx_path=), purely additive; 28-circuit fixture byte-equal to
+      compactc. Found and fixed en route: a 16-field ledger block made
+      every Cell write nested by itself (a real pre-existing bug), and
+      ADT-valued =insertDefault= pushes the ADT's INITIAL VALUE, not zeros.
+- [X] Stage B2 — the typed surface: path-carrying handles (=FieldPath= /
+      =KeyPath=), sealed =LedgerSlot=, =at_key= via a GAT, depth bound as
+      a missing impl (probed: an inline-const assert does not fire in dead
+      code). All thirty nested circuits lower byte-identically from the
+      typed and raw spellings.
+Exit criteria MET: the coin bullet is gone; the nested bullet is REDUCED
+to nested coin arms (lowering exists, no differential yet); zero movement
+(198/198 byte-identical).
 
 * M23 — Review-readiness: instruments and ergonomics before the super review
 (dmd, 2026-08-17.) The sequence to the deep review, approved in-session:
@@ -2140,35 +589,8 @@ stage declares movement, notes as-built.
       preimages can see. IF IT FIRES ON AN EXISTING CIRCUIT: that goes
       to dmd before any allowlist entry is written; extending the taint
       rules (provably-bounded sources) is preferred over allowlisting.
-      (SCOPING SPIKE 2026-08-27, so a fresh session starts warm — the
-      instruction matching is the easy half and is DONE here; the FAB
-      limbing is the hard half and is where the soundness lives:
-      - THE HASHES: =Keccak256= and =PersistentHash= carry an
-        =alignment: Alignment=; =TransientHash= does NOT — it absorbs
-        FIELD elements, so it has no byte atoms and no injective-packing
-        (§B3) concern. The lint's subject is therefore the two
-        byte-atom hashes, NOT transient_hash (note that in the code).
-      - THE BOUNDED SOURCES to mark: =ConstrainBits{val}= /
-        =ConstrainToBoolean{val}= (direct); =DivModPowerOfTwo{outputs}=
-        (the mod output is < 2^bits by construction; the div output is
-        the shifted limb the ABI encoders build) and =Encode{outputs}=
-        (typed-value limbs) as the intrinsic ones. Under-marking is SAFE
-        (it over-fires → surfaces to dmd); OVER-marking is the danger
-        (false negative). When unsure, do not mark.
-      - THE HARD PART, the operand↔atom↔bound mapping: a hash's
-        =inputs: Vec<Operand>= maps to =alignment='s atoms by FAB
-        limbing, and it is NOT 1:1. A =bytes N= atom is =ceil(N/31)=
-        limbs — =bytes 31= is ONE limb, =bytes 32= is TWO — and a
-        multi-limb atom's limbs have DIFFERENT byte widths (=bytes 32=
-        splits into a 1-byte hi limb and a 31-byte lo limb). The check
-        "operand's atom is narrower than the field" is really per-LIMB:
-        each limb feeding the hash must be constrained/constant to its
-        own byte width. The FAB limbing rule lives in
-        minocrab-ledger's =atom_limbs=; reuse it, do not re-derive it.
-        A =Field= atom is field-wide (1 limb, no narrowing → no check).
-      NOT STARTED for correctness reasons: the per-limb bound logic is
-      exactly the kind of subtle thing a false negative hides in, so it
-      wants fresh, focused context rather than a long-session tail.)
+      (SCOPING SPIKE 2026-08-27: recorded in git history at f6077db —
+      superseded by the build, see the BUILT record added with it.)
 - [ ] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
       harnesses that plain cargo test never compiles, run as an opt-in
