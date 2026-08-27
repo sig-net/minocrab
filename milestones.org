@@ -2255,6 +2255,14 @@ The four extension points (à la carte, no fork):
       reject list is the seed of the pass CONTRACT third parties must
       honour. Passes designed pure/total/statable per the soundness
       decision above.
+      (LANDED 2026-08-27, notes/library-api.org §8: =Pass= in
+      minocrab_ir::v3::passes — pure/total =transform= + a PROVIDED =run=
+      that always returns a =PassReport= and AUTO-WARNS on any net
+      instruction drop (dmd: "make sure they've been warned first"), the
+      two reference passes wrapped, =run_pipeline= + =by_name=/=builtin_
+      names=. Report OPTIONAL to consume; a VALID dedup still trips the
+      drop-warning, as dmd anticipated. Exposed by default (stable-ish);
+      the =unstable= internals sweep is step 3, not this. Tests green.)
 - [ ] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
       public API, so a third-party pass can ship WITH its own proof it
       preserved meaning. NOT built now (soundness is deferred), but the
@@ -2266,14 +2274,16 @@ The four extension points (à la carte, no fork):
       primitive-cost tables as stable API, plus the release-only nix flake
       CLI over `.zkir` (measure, region-profile, diff two circuits, run a
       published pass) per the decisions above.
-      (SEED LANDED 2026-08-27: crates/minocrab-cli, bin `minocrab` —
-      `rows <file.zkir>...` (k, rows, instr, in/out + total) and
-      `diff <a> <b>` (row/k delta). Compiler-agnostic (reads compactc's
+      (SEED LANDED 2026-08-27: a simple `[[bin]]` `minocrab` in
+      minocrab-sim (src/bin/minocrab.rs, dmd's "simple [[bin]]" — not its
+      own crate) — `rows <file.zkir>...` (k, rows, instr, in/out + total)
+      and `diff <a> <b>` (row/k delta). Compiler-agnostic (reads compactc's
       ZKIR). Region-profile deliberately NOT over `.zkir` — it needs the
       annotated Compiled3, so it stays the Rust `profile()` path. Flake
       packaging deferred to CI/release. REMAINING: mark cost/profile as
-      stable API when the tier boundary lands, the flake app, and
-      `run <pass>` once the `Pass` trait exists.)
+      stable API when the tier boundary lands, the flake app, and a
+      `pass <name>` subcommand — now unblocked (the `Pass` trait exists),
+      pending minocrab-ir promoted to a regular dep of minocrab-sim.)
 - [ ] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
       vs internals line (a proposed MINIMAL stable set: the eDSL surface,
       the `Pass` trait, the cost API — everything else internal, dmd to

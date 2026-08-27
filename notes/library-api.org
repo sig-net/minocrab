@@ -163,16 +163,58 @@ state.
 - Gadgets: a gadget is just eDSL code, so its correctness is the existing
   differential/spec harness; nothing new to design, only to expose.
 
-* 7. OPEN DECISIONS FOR dmd
-- The minimal stable set v1 (§1) — confirm the in/out list.
-- Enforcement: =unstable= feature (recommended) vs =minocrab-internals=
-  crate (§1).
-- =Pass= trait exact signature (§3) — in particular whether the report is
-  mandatory or optional.
-- CLI: separate =minocrab-cli= crate vs a =[[bin]]= in minocrab-sim.
-None BLOCK starting — each has a recommended default above; they are the
-places dmd's "keep the stable API small / hands free" preference should
-steer, so they are surfaced rather than assumed.
+* 7. DECISIONS (dmd, 2026-08-27)
+- MINIMAL STABLE SET v1 (§1): APPROVED, and "only stable(ish) for now" —
+  not a hard semver commitment while users are few, it may still move.
+- ENFORCEMENT: the =unstable= cargo FEATURE (§1 option a), with dmd's one
+  caveat — "unless that would lead to LLMs missing it entirely, or a lot
+  of syntactic noise on the caller's side." Both are satisfiable and the
+  design must honour them:
+  - LLMs missing it: configure docs.rs to build with the feature
+    (=[package.metadata.docs.rs] features = ["unstable"]= or
+    =all-features = true=), so the internals appear in the published docs
+    WITH the "available on crate feature `unstable`" badge — discoverable
+    AND visibly marked unstable, which is the good outcome.
+  - Syntactic noise: enabling a feature is ONE line in the caller's
+    Cargo.toml, not per-call-site noise. No caller-side cost.
+  NB: the =Pass= trait is NOT behind =unstable= — it is in the stable(ish)
+  tier (§1). The feature gates the deeper internals (raw IR =Builder=, the
+  sim VM, macro guts), a larger sweep that is build-order step 3.
+- =Pass= REPORT: OPTIONAL to consume, but ALWAYS PRODUCED and highly
+  recommended to read (dmd: "people are always going to shoot themselves
+  in the foot, let's just make sure they've been warned first"). And dmd's
+  anticipation is exactly right — "there are optimisations which are valid,
+  but will fail the report": =dedup_range_constraints= soundly drops
+  IMPLIED constraints, which trips the runner's instruction-drop warning.
+  The warnings are advisory, not a verdict.
+- CLI: a simple =[[bin]]= (not its own crate) — so it lives in minocrab-sim
+  (`src/bin/minocrab.rs`), reusing that crate's =cost()= + minocrab-zkir's
+  =read_zkir=.
+
+* 8. AS BUILT (2026-08-27)
+- =minocrab_ir::v3::passes::Pass= landed: =name= + a pure/total =transform=
+  (=Vec<Instruction> -> (Vec<Instruction>, Vec<String>)=) + a PROVIDED
+  =run= that always returns a =PassReport {pass, before, after, warnings}=
+  and AUTO-WARNS on any net instruction drop even when the pass is silent.
+  =FoldImmediateCopies= / =DedupRangeConstraints= wrap the two reference
+  passes; =run_pipeline= composes; =by_name= / =builtin_names= are the
+  registry. Tests in tests/v3_passes.rs pin the wrapper≡free-function
+  equality, the drop-warning (and its absence on a no-op), and the
+  registry. The trait is exposed by default (stable-ish tier); the
+  =unstable= internals sweep is NOT done — step 3.
+- CLI: crates/minocrab-sim/src/bin/minocrab.rs (=rows=, =diff=). The
+  separate =minocrab-cli= crate was removed. =pass <name>= subcommand
+  DEFERRED: it needs minocrab-ir promoted from a dev- to a regular dep of
+  minocrab-sim, a deliberate choice to make when we want it — the =Pass=
+  trait and =by_name= are ready for it.
+- README: a bottom "Using MinoCrab as a library" section (further down, so
+  humans get the pitch first and LLMs/power users get the extension guide),
+  covering the three extension points, the audiences, and the honest
+  ceiling. dmd's ask 2026-08-27.
+REMAINING for M24: the =unstable= internals sweep + docs.rs config (step
+3), the gadget cookbook + rustdoc publish (step 4), and — when wanted —
+=cost=/=profile= formally marked stable, the flake app, and the CLI's
+=pass= subcommand.
 
 * Build order (least-work-first, per dmd "any order you like")
 1. §5 CLI seed → a real =minocrab-cli= over the existing =cost=/=profile=

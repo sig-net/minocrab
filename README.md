@@ -403,3 +403,22 @@ Nothing is published yet: crates.io rejects git dependencies, and every `midnigh
 ## Deeper
 
 `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
+
+## Using MinoCrab as a library
+
+MinoCrab is a library first — like the [GHC API](https://hackage.haskell.org/package/ghc), it exposes its innards so you build your own tooling *on* it without forking. Two audiences:
+
+- **Rust users** depend on the crates and reach for ordinary Rust performance tooling — `minocrab_sim::v3::profile()` in a `#[test]`, `cargo bench` / criterion, the row snapshot as a regression gate. No bespoke wrapper.
+- **Non-Rust users** get a light, compiler-agnostic CLI (the `minocrab` bin in `minocrab-sim`): `minocrab rows <file.zkir>...` and `minocrab diff <a> <b>` report `(k, rows)` over any ZKIR file — MinoCrab's *or* compactc's — so you can see gate counts without writing MinoCrab.
+
+Consume it today as a **git dependency** (crates.io is blocked on upstream — see [PUBLISHING.md](PUBLISHING.md)). The API is **tiered**: a small, stable-*ish* public surface, kept small deliberately while users are few, and an internals tier that may move.
+
+**Three ways to extend it à la carte, no fork:**
+
+1. **Write a super-optimised gadget** — a crate depending on `minocrab-std` that builds a circuit fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is the highest-ceiling extension point: the real performance in MinoCrab comes from *typed-layer instruction selection* (native `ReverseBytes`, in-chip keccak packing, `div_mod` byte shifts, guarded read-as-zero), which needs the type information the eDSL has and type-erased ZKIR does not. Prove it equivalent to a reference with the differential / spec harness.
+
+2. **Write an optimisation pass** — implement `minocrab_ir::v3::passes::Pass` (a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`), compose passes as an ordinary `Vec<Box<dyn Pass>>` through `passes::run_pipeline`, and run built-ins by name with `passes::by_name`. Passes see *type-erased* ZKIR, so they are the uniform-transform tail (guards, constants, range constraints) — real, but not where the speed is. **The report is your safety net**: `Pass::run` always returns a `PassReport` whose `warnings` flag anything dangerous — dropping an instruction can move the public-input / witness stream, which is the correctness oracle. A *valid* optimisation can still warn; read it and verify. Machine-checked verification of "preserves meaning" is planned (Kani, then Lean), which is exactly why passes are pure/total — write yours the same way.
+
+3. **Measure** — `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
+
+The design of record is [notes/library-api.org](notes/library-api.org); the optimisation levers are catalogued across [notes/benchmark.org](notes/benchmark.org), [notes/vault-optimization.org](notes/vault-optimization.org) and [notes/manager-port.org](notes/manager-port.org).
