@@ -2222,6 +2222,17 @@ DECISIONS OF RECORD (dmd, 2026-08-27):
   COMPILER-AGNOSTIC — it reads compactc's ZKIR too, so a Compact user who
   never touches MinoCrab still gets the gate-count value.
 
+- [X] DESIGN NOTE FIRST (the house method): notes/library-api.org. Draws
+      the tier boundary (a proposed minimal stable set + the =unstable=-
+      feature enforcement), the four extension surfaces, the =Pass= trait +
+      its contract (seeded by ir-passes.org's accept/reject list), the
+      CLI + flake packaging, and the design-for-Kani/Lean rule (pure/total
+      IR→IR). ONE REFRAME it forces, from ir-passes.org §4: the perf wins
+      are TYPED-LAYER instruction selection, and ZKIR is type-erased — so
+      extension point #1 (typed gadget libraries) is the HIGH CEILING and
+      #2 (IR passes) is the uniform-transform TAIL, not the speed headline.
+      Say so in the public docs. Build order, least-work-first: CLI seed →
+      =Pass= trait → tier boundary → gadget cookbook + rustdoc.
 The four extension points (à la carte, no fork):
 - [ ] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
       third party publishes a crate depending on minocrab/minocrab-std

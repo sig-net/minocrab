@@ -1,0 +1,184 @@
+#+title: M24 — MinoCrab as a library (design of record)
+
+The GHC-API model (milestones.org M24): expose the innards so third parties
+write their own super-optimised ZKIR gadgets and their own optimisation
+passes as ordinary crates — "compiler rules à la carte" — WITHOUT forking.
+This note is the design; it is written before the API is frozen, per the
+house method, and its job is to draw the tier boundary and the four
+extension surfaces so a later session (or a third party) implements against
+a decided shape rather than a guessed one.
+
+* 0. THE HONEST CEILING, first, because it sets the priorities
+notes/ir-passes.org §4 is the load-bearing fact and M24 must not paper over
+it: the wins that actually moved the benchmark — 35-58% in the M10 fork,
+nine of twelve k-boundary crossings, and the manager's −41% — came from
+INSTRUCTION SELECTION IN THE TYPED LAYER (native ReverseBytes, byte-aligned
+slices, the segment serializer, keccak in-chip packing, guarded read-as-0).
+Every one needed to know a value was a =Bytes<32>= with a known alignment.
+
+ZKIR is TYPE-ERASED. A pass over it sees field elements — strictly less
+information than the eDSL has — so passes can only ever do the UNIFORM
+transforms (guards, constants, range constraints). Instruction selection is
+not uniform and never will be.
+
+CONSEQUENCE FOR M24's PRIORITIES:
+- The HIGH-CEILING extension point is #1, the TYPED GADGET/LIBRARY surface.
+  That is where a third party gets real perf, and it already works over a
+  git dependency — what it needs is a DECIDED, DOCUMENTED stable surface.
+- The IR-pass surface (#2) is real and wanted ("compiler rules à la carte"
+  is dmd's phrase) but it is the UNIFORM-TRANSFORM tail, not the perf
+  headline. Design it well, but do not oversell it as where the speed is.
+Say this plainly in the public docs, or a user reaches for a pass to do
+what only a gadget can.
+
+* 1. THE TIER BOUNDARY
+dmd (2026-08-27): tier the surface, keep the STABLE tier SMALL to keep our
+hands free while users are few.
+
+PROPOSED MINIMAL STABLE SET v1 (dmd to confirm in/out):
+- The eDSL authoring core: =Circuit3= construction + the instruction-
+  emitting methods people actually build with, the typed leaves
+  (=Uint=, =Bool=, =Bytes<N>=, =B32=, the curve leaves), =AnyWire3=, the
+  FAB alignment types (=Alignment=/=AlignmentAtom=), =Compiled3=/=IrSource=.
+- The =Pass= trait + its report type (see §3), and =passes::= as the
+  reference passes.
+- The measurement API: =minocrab_sim::v3::{cost, profile}= and =Profile=/
+  =RegionCost=.
+EVERYTHING ELSE IS INTERNAL — the ledger op layer, the macro internals, the
+IR =Builder=/=Val=, the sim's VM, the interface-gen. A leaf added to the
+language is not automatically stable.
+
+ENFORCEMENT MECHANISM (pick one; recommend the first):
+- (a) An =unstable= cargo feature: internals are =#[cfg(feature =
+  "unstable")]= re-exports or gated modules; the default build sees only
+  the stable set. Cheapest, greppable, no new crate. RECOMMENDED.
+- (b) A =minocrab-internals= facade crate that re-exports the guts, leaving
+  the primary crates' =pub= as the stable surface. Cleaner boundary, more
+  churn to set up, and it fights the existing crate split.
+Whichever: the stable items get =#![deny(missing_docs)]= and a semver
+commitment; the internals get =#[doc(hidden)]= or the feature gate and an
+explicit "no stability promise" note. Do NOT flatten — the GHC API's
+worst-criticised trait is that stable and incidental are indistinguishable.
+
+* 2. EXTENSION POINT #1 — GADGET / CIRCUIT LIBRARIES (the high-ceiling one)
+A third party publishes e.g. =minocrab-keccak-fast= depending on
+minocrab/minocrab-std, exporting a gadget that builds fewer rows than the
+stdlib's. Works TODAY over a git dep; M24 owes only the DECISION + DOCS:
+- The stable authoring surface is §1's eDSL core.
+- The lowering levers to DOCUMENT (this is the cookbook, assembled from
+  notes/benchmark.org + notes/vault-optimization.org + notes/manager-
+  port.org): keccak/persistent-hash in-chip packing vs byte explosion;
+  div_mod byte shifts vs per-byte chains; native ReverseBytes; segment-
+  based Serializer re-limbing; guarded reads + =or_default()= (free
+  read-as-0); const-generic circuit families; =.widen()= (retype, no
+  re-constraint); inline-immediate literals (no Copy); =Uint::sub= carrying
+  compactc's guard; =from_field_checked= vs =_unchecked=.
+- The verification a gadget author gets: the differential/spec harness
+  (§4) so their gadget can be proven equivalent to a reference. NOT built
+  as public API yet, but the levers above are all already =pub=.
+
+* 3. EXTENSION POINT #2 — THE PASS TRAIT ("compiler rules à la carte")
+The passes ALREADY have the right shape: =minocrab_ir::v3::passes::
+{fold_immediate_copies, dedup_range_constraints}= are pure
+=Vec<Instruction> -> Vec<Instruction>= free functions. M24 promotes them to
+a trait so third parties add their own and compose:
+
+#+begin_src rust
+pub trait Pass {
+    fn name(&self) -> &str;
+    /// Pure and TOTAL: same input → same output, no panics, no global
+    /// state. This is the shape Kani/Lean will target (see §6).
+    fn run(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, PassReport);
+}
+#+end_src
+
+- REPORT: what changed (counts: instructions removed/rewritten, rows
+  estimated saved via the cost model), so a pass is measurable and a
+  pipeline is auditable.
+- COMPOSITION is ORDINARY RUST — a =Vec<Box<dyn Pass>>= or a builder that
+  folds them left to right. NO GHC-style =-fplugin= dynamic loading; a
+  third-party pass is a crate import, which is simpler and more robust than
+  GHC's plugin machinery. This is the payoff of being library-first.
+- THE CONTRACT (what a pass MAY ASSUME and MUST PRESERVE) — seeded directly
+  by notes/ir-passes.org, which already did the hard part:
+  - ACCEPTED-class transforms are UNIFORM: guard scoping (done), constant
+    folding (done, as normalisation — both sides normalised or the
+    differential diverges), range-constraint dedup (done, opt-in).
+  - REJECTED-class, and the contract must forbid them for third parties
+    too unless they bring a protocol argument: dead-code elimination and
+    common-subexpression elimination — both DIVERGE or are unsound-here
+    (ir-passes.org §3). A pass that drops an instruction is the danger
+    zone.
+  - MUST PRESERVE: the public-input / witness stream (PI-equality is the
+    correctness oracle), disclosure names, and — until §4 exists — the
+    author's own range constraints (dropping one that was load-bearing is
+    the silent-unsoundness failure the whole project guards against).
+- STABILITY: the =Pass= trait + =PassReport= are stable; the =Instruction=
+  enum it operates on is the one seam that is BOTH stable-ish and churny
+  (it is minocrab-zkir's). Flag it: a pass author codes against the
+  instruction set, so its evolution is a semver event.
+
+* 4. EXTENSION POINT #3 — VERIFICATION HOOKS (deferred build, design-for)
+dmd: soundness deferred ("lean verification of steps later"), but build with
+it in mind. So this point is NOT implemented in M24 — what M24 owes is that
+#1-#2 do not PRECLUDE it:
+- Passes are pure/total/IR→IR (§3) — already true of the two that exist.
+- The differential + spec + taint machinery (crates/minocrab-contracts/
+  tests/vault, minocrab-sim's simulate/check) is the eventual public
+  "prove your pass/gadget preserved meaning" surface; it stays test-only
+  for now but is the thing #1-#2 must remain compatible with.
+- CONVERGES WITH M23 R3 (the taint lint — the mechanical post-pass "no
+  unconstrained hash operand" checker) and R4 (Kani on the passes). M24
+  pulls the SHAPE of these forward even though the build is later.
+
+* 5. EXTENSION POINT #4 — COST / MEASUREMENT + THE CLI
+- STABLE API: =cost()=, =profile()=, =Profile=/=RegionCost=, and the
+  calibrated primitive-cost tables (the cryptocost/opcost/borshcost
+  methodology). Rust users reach for these in a =#[test]= or a criterion
+  bench — normal Rust perf tooling, NO bespoke wrapper (dmd's rule).
+- THE CLI is for people NOT using Rust: over a =.zkir= file it measures
+  (k, rows), region-profiles, diffs two circuits, and runs a published
+  pass. COMPILER-AGNOSTIC — it reads compactc's own ZKIR, so a Compact
+  user who never touches MinoCrab still gets the gate-count value. Seed:
+  crates/minocrab-sim/examples/zkircost.rs.
+- PACKAGING (dmd's constraints): a plain cargo binary in dev (a small
+  =minocrab-cli= crate or a =[[bin]]=); the flake gains a RELEASE-ONLY app
+  that builds it from source — the one scoped relaxation of the M0 "no
+  crane" rule, allowed to break on main until CI. The flake must NOT enter
+  the dev loop (no constant nix rebuilds). NO prebuilt-binary distribution.
+  If the source-build flake app is disproportionately hard, SKIP the flake
+  and ship only the cargo binary.
+
+* 6. DESIGN-FOR-VERIFICATION, made concrete
+The single rule that keeps the deferred Kani/Lean work cheap: every
+extension surface is a PURE, TOTAL function over a value type with no hidden
+state.
+- Passes: =Vec<Instruction> -> (Vec<Instruction>, Report)=, no I/O, no
+  globals, deterministic. Kani can bound-check "output PI stream ≡ input PI
+  stream" and "only implied range constraints dropped"; Lean can model the
+  same over the Instruction semantics once the ZKIR operational semantics
+  exists (notes/formal-verification-options.org: the Agda/Lean spec covers
+  Compact SOURCE today and says nothing about ZKIR yet — that gap is the
+  Lean prerequisite, not M24's job).
+- Gadgets: a gadget is just eDSL code, so its correctness is the existing
+  differential/spec harness; nothing new to design, only to expose.
+
+* 7. OPEN DECISIONS FOR dmd
+- The minimal stable set v1 (§1) — confirm the in/out list.
+- Enforcement: =unstable= feature (recommended) vs =minocrab-internals=
+  crate (§1).
+- =Pass= trait exact signature (§3) — in particular whether the report is
+  mandatory or optional.
+- CLI: separate =minocrab-cli= crate vs a =[[bin]]= in minocrab-sim.
+None BLOCK starting — each has a recommended default above; they are the
+places dmd's "keep the stable API small / hands free" preference should
+steer, so they are surfaced rather than assumed.
+
+* Build order (least-work-first, per dmd "any order you like")
+1. §5 CLI seed → a real =minocrab-cli= over the existing =cost=/=profile=
+   (no API freeze, immediate value, battery-friendly — no proving).
+2. §3 =Pass= trait wrapping the two existing passes (small, pure, testable).
+3. §1 tier boundary (the =unstable= feature sweep) once §2-§3 show what the
+   stable set actually needs.
+4. §2 the gadget cookbook (docs) + rustdoc publish (M20 item, now central).
+Verification hooks (§4) stay deferred; the shape is preserved throughout.
