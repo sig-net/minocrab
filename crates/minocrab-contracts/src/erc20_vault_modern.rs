@@ -226,7 +226,7 @@ fn assert_deployer(c: &mut Circuit3) {
     let sk = common::witness_sk(c);
     let digest = common::commitment_packed_tag(c, &sk);
     let stored = VAULT.deployer.read(c);
-    c.assert(b32_eq(&digest, &stored.private()).message("Not the deployer"));
+    c.assert(b32_eq(&digest.bytes(), &stored.private().bytes()).message("Not the deployer"));
 }
 
 /// `a == b` on a `Bytes<32>` pair, as ONE predicate: two `test_eq`s and the
@@ -348,7 +348,7 @@ pub fn deposit(
         me.bytes().private(),
         request_nonce.field().private(),
         key_version.field(),
-        caller.private(),
+        caller.bytes().private(),
         tx_params,
         caip2.private(),
         RESPONSE_KIND_CLAIM as u8,
@@ -1551,7 +1551,7 @@ pub fn claim(
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_packed_tag(c, &sk);
+        let caller = common::commitment_packed_tag(c, &sk).bytes();
         c.assert(b32_eq(&caller, &ev.path().private()).message("Not the depositor"));
     });
 

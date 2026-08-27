@@ -137,7 +137,7 @@ pub struct Vault {
     pub caip2_id: LedgerCell<B32<Public>>,
     /// `sealed ledger deployer: Bytes<32>`. Sealed means write-once at
     /// deployment; the READ is an ordinary cell read, so the slot is typed.
-    pub deployer: LedgerCell<B32<Public>>,
+    pub deployer: LedgerCell<common::UserCommitment<Public>>,
     pub refund_commitment: LedgerMap<signet::RequestId<Public>, B32<Public>>,
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
     pub swap_event_map: LedgerMap<signet::RequestId<Public>, SwapRecord>,
@@ -442,8 +442,8 @@ pub fn deposit(
         request_nonce.private(),
         key_version,
         B32 {
-            hi: caller.hi.private(),
-            lo: caller.lo.private(),
+            hi: caller.bytes().hi.private(),
+            lo: caller.bytes().lo.private(),
         },
         tx_params,
         caip2,
@@ -1563,7 +1563,7 @@ pub fn claim(
     // Depositor gate: userCommitment(callerSecretKey()) == request.path.
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_padded_tag(c, USER_PAD, &sk);
+        let caller = common::commitment_padded_tag(c, USER_PAD, &sk).bytes();
         let path = ev.path();
         let eq_hi = c.test_eq(caller.hi, path.hi.private());
         let eq_lo = c.test_eq(caller.lo, path.lo.private());

@@ -343,8 +343,8 @@ pub fn deposit(
         request_nonce.private(),
         key_version,
         B32 {
-            hi: caller.hi.private(),
-            lo: caller.lo.private(),
+            hi: caller.bytes().hi.private(),
+            lo: caller.bytes().lo.private(),
         },
         tx_params,
         caip2,
@@ -1652,7 +1652,7 @@ pub fn claim(
     // SHORT one-block userCommitment (rung 5(i-userCommit), avenue 1).
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_packed_tag(c, &sk);
+        let caller = common::commitment_packed_tag(c, &sk).bytes();
         let path = ev.path();
         let eq_hi = c.test_eq(caller.hi, path.hi.private());
         let eq_lo = c.test_eq(caller.lo, path.lo.private());

@@ -22,6 +22,16 @@ b32_newtype! {
     /// `B32` in scope (a nonce, a colour, a request id) no longer
     /// type-checks there, which is newtype-survey hazard A2 closed.
     SecretKey,
+    /// An identity commitment — the MPC's key-derivation PATH, i.e. the
+    /// value that decides which EVM account is derived. Produced only by
+    /// [`commitment_padded_tag`] and [`commitment_packed_tag`]; the stored
+    /// deployer and every depositor/caller comparison carry this type, so
+    /// no other 32-byte value (a nonce, a colour, a request id, a refund
+    /// commitment) can be compared against or written as one —
+    /// newtype-survey hazard A3, the family whose near-unification would
+    /// have "silently restranded every derived account"
+    /// (notes/vault-vocabulary.org §0).
+    UserCommitment,
 }
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a
@@ -56,7 +66,7 @@ pub fn commitment_padded_tag(
     c: &mut Circuit3,
     prefix: &str,
     sk: &SecretKey<Private>,
-) -> B32<Private> {
+) -> UserCommitment<Private> {
     let sk = sk.bytes();
     c.region("identity commitment", |c| {
         let pad = B32::pad(c, prefix);
@@ -73,7 +83,7 @@ pub fn commitment_padded_tag(
                 sk.lo.erase(),
             ],
         );
-        B32::from_typed(c, digest)
+        UserCommitment(B32::from_typed(c, digest))
     })
 }
 
@@ -103,7 +113,7 @@ pub fn commitment_padded_tag(
 /// | byte(s) | 0..10          | 11..42 |
 /// |---------|----------------|--------|
 /// | content | "vault:user:"  | sk[32] |
-pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> B32<Private> {
+pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCommitment<Private> {
     let sk = sk.bytes();
     c.region("identity commitment", |c| {
         let tag = c.constant(
@@ -118,7 +128,7 @@ pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> B32<P
             alignment,
             &[tag.private().erase(), sk.hi.erase(), sk.lo.erase()],
         );
-        B32::from_typed(c, digest)
+        UserCommitment(B32::from_typed(c, digest))
     })
 }
 
@@ -130,7 +140,7 @@ pub fn assert_deployer_short<V: Visibility + Copy>(
     deployer_field: u8,
 ) {
     let sk = witness_sk(c);
-    let digest = commitment_packed_tag(c, &sk);
+    let digest = commitment_packed_tag(c, &sk).bytes();
     let stored = cell_read(
         c,
         guard,
@@ -538,7 +548,7 @@ pub fn assert_deployer<V: Visibility + Copy>(
     deployer_field: u8,
 ) {
     let sk = witness_sk(c);
-    let digest = commitment_padded_tag(c, prefix, &sk);
+    let digest = commitment_padded_tag(c, prefix, &sk).bytes();
     let stored = cell_read(
         c,
         guard,
