@@ -2160,3 +2160,110 @@ proved at stated bounds with runtimes recorded; then the M11 hardening
 stage and BENCHMARK refresh clear the last known-open items and the
 super review runs against a tree with no known-open defects and no
 stale published claims.
+
+* M24 — MinoCrab as a library: the GHC-API model (dmd, 2026-08-27)
+The identity shift, dmd's: "this is primarily a library like the GHC API"
+(https://hackage.haskell.org/package/ghc). GHC ships its innards as an
+importable library so the whole Haskell tooling ecosystem — HLS, hlint,
+plugins — is built WITHOUT forking GHC. MinoCrab should be the same for
+ZKIR: expose the innards so third parties write their own super-optimised
+ZKIR gadgets and their own optimisation passes ("compiler rules à la
+carte") as ordinary crates, never a fork.
+MinoCrab starts CLOSER to this than GHC ever was, because it is
+library-first by construction — the eDSL IS the API — and the crate split
+already mirrors GHC's internal layering: minocrab/minocrab-std are the
+surface language + prelude, minocrab-ir is the "Core" layer (IR builder +
+passes), minocrab-zkir is codegen/serialization, minocrab-sim is analysis
+(cost model, region profiler, verification harness). The work is deciding
+which seams become SUPPORTED extension points, not building the library
+from scratch.
+Motivated by the AA-manager port (2026-08-27, notes/manager-port.org),
+whose −41%-rows-vs-compactc came entirely from the lowering levers this
+milestone wants to hand to others.
+
+DECISIONS OF RECORD (dmd, 2026-08-27):
+- TIER THE SURFACE — a small semver-stable public API and an explicitly
+  unstable internals tier, from day one (do NOT flatten everything, which
+  is the GHC API's most-criticised trait — impossible to tell stable from
+  incidental, breaks every release). KEEP THE STABLE API SMALL for now:
+  "keep our hands free while we have very few users." Rust gives the tools
+  Haskell lacked at the start (semver + module visibility + feature gates
+  + a `minocrab-internals`-style crate or an `unstable` feature); draw the
+  line up front rather than retrofit it (GHC's ghc-lib split came years
+  in, painfully).
+- SOUNDNESS DEFERRED, BUT DESIGN FOR IT. dmd: "I want to move over to
+  having lean verification of steps later, I don't have the time for that
+  right now, but build with the fact we're doing that later in mind." The
+  path is already staged in notes/formal-verification-options.org
+  (compile-fail tests → Kani → the Lean prover). CONCRETE DESIGN
+  CONSEQUENCE: passes stay pure, total, `IR -> IR`, with the invariant a
+  pass preserves STATABLE — no reaching into global mutable state, nothing
+  a machine check (Kani now, per M23 R4; Lean eventually) could not
+  target. Build the extension surface so the verification obligation can
+  be BOLTED ON later without redesign; do not build the verifier now.
+- NIX FLAKE CLI as a RELEASE-ONLY distribution pattern, not a dev
+  dependency. dmd: "make sure we're not constantly rebuilding using nix,
+  it's very slow"; "I don't mind if it stops working on main occasionally
+  for now (later we'll add it to CI)"; "I don't like the binary distro
+  though, if it's too hard just don't bother." So: the CLI is a plain
+  cargo binary in dev (the flake does NOT enter the dev loop); the flake
+  gains a release-only app that builds it from source — the ONE scoped
+  relaxation of the M0 hard rule "no crane/naersk, never build our crates
+  under nix," authorised here for the release CLI only, allowed to break
+  on main until CI. NO prebuilt-binary distribution. If the source-build
+  flake app is disproportionately hard, SKIP the flake packaging entirely
+  — the cargo binary alone still serves.
+- AUDIENCE SPLIT. Rust people use MinoCrab's performance tooling like any
+  Rust program — criterion / cargo bench against the crate API,
+  `minocrab_sim::profile()` in a test, the row snapshot as a regression
+  gate — NO bespoke tooling. The CLI is for people NOT using Rust:
+  measurement + running published passes over `.zkir` files, never
+  authoring (authoring is inherently the Rust API's job), and
+  COMPILER-AGNOSTIC — it reads compactc's ZKIR too, so a Compact user who
+  never touches MinoCrab still gets the gate-count value.
+
+The four extension points (à la carte, no fork):
+- [ ] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
+      third party publishes a crate depending on minocrab/minocrab-std
+      with a hand-tuned keccak, a cheaper Merkle path, a smaller ABI
+      encoder. Works TODAY over a git dependency; what this milestone owes
+      is DECIDING and DOCUMENTING the stable authoring surface (the
+      `Circuit3` builder core, the typed leaves, `AnyWire3`, the raw
+      instruction emitters, the FAB/alignment machinery, the cost model)
+      and marking the rest internal. The lowering levers to document are
+      already inventoried in notes/benchmark.org + notes/vault-
+      optimization.org + notes/manager-port.org.
+- [ ] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
+      pass layer from today's free-functions + `dedup_range_constraints`
+      builder flag to a stable `Pass` trait (`IR -> IR` + a report) with
+      ordinary-Rust composition (a `Vec<Box<dyn Pass>>` or a builder — NO
+      GHC-style `-fplugin` dynamic-loading machinery; it's just a crate
+      import). Build on notes/ir-passes.org, which already names the three
+      to build (guard scoping DONE, constant folding, constraint dedup)
+      and — crucially — the TWO IT REJECTS as unsound-here (DCE, CSE): the
+      reject list is the seed of the pass CONTRACT third parties must
+      honour. Passes designed pure/total/statable per the soundness
+      decision above.
+- [ ] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
+      public API, so a third-party pass can ship WITH its own proof it
+      preserved meaning. NOT built now (soundness is deferred), but the
+      extension surface in points 1-2 must not PRECLUDE it — this is the
+      "build with it in mind" clause made concrete, and it converges with
+      M23 R3 (taint lint) and R4 (Kani on the passes), which this
+      milestone pulls forward.
+- [ ] 4. COST / MEASUREMENT: `cost()` / `profile()` / the calibrated
+      primitive-cost tables as stable API, plus the release-only nix flake
+      CLI over `.zkir` (measure, region-profile, diff two circuits, run a
+      published pass) per the decisions above.
+- [ ] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
+      vs internals line (a proposed MINIMAL stable set: the eDSL surface,
+      the `Pass` trait, the cost API — everything else internal, dmd to
+      confirm in/out), and publish rustdoc — for a compiler-as-a-library
+      the DOCS ARE THE PRODUCT, so M20's "publish rustdoc" item becomes
+      central here rather than a handoff chore.
+Exit criteria: a third party can, from a git dependency and the published
+rustdoc, write both a ZKIR gadget crate and an optimisation-pass crate
+against a small stable API — without forking, and without touching the
+internals tier — and measure the result through the crate API (Rust) or
+the release CLI (non-Rust); the pass surface is shaped so the deferred
+Kani/Lean verification of "preserves meaning" bolts on without redesign.
