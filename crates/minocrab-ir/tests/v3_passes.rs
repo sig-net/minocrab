@@ -147,3 +147,69 @@ fn the_flag_is_off_by_default_and_finish_is_unchanged() {
     assert_eq!(default, duplicate_constraint_circuit(false));
     assert_eq!(duplicate_constraint_circuit(true).len(), 1);
 }
+
+// ---- the Pass trait (M24) --------------------------------------------------
+
+use minocrab_ir::v3::passes::{
+    builtin_names, by_name, run_pipeline, DedupRangeConstraints, FoldImmediateCopies, Pass,
+};
+
+#[test]
+fn the_dedup_wrapper_matches_the_free_function_and_reports() {
+    let stream = vec![bits("%a", 64), bits("%a", 64), assert_("%p")];
+    let (out, report) = DedupRangeConstraints.run(stream.clone());
+    // Same result as calling the free function directly.
+    assert_eq!(out, dedup_range_constraints(stream));
+    // The report carries before/after and the pass name.
+    assert_eq!(report.pass, "dedup_range_constraints");
+    assert_eq!(report.before, 3);
+    assert_eq!(report.after, 2);
+    // It DROPPED an instruction, so the runner auto-warned even though a
+    // valid dedup is sound — "make sure they've been warned first".
+    assert!(
+        report.warnings.iter().any(|w| w.contains("dropped 1 instruction")),
+        "the instruction-drop auto-warning must fire: {:?}",
+        report.warnings
+    );
+    // And the pass's own advisory warning is there too.
+    assert!(report.warnings.iter().any(|w| w.contains("implied")));
+}
+
+#[test]
+fn a_pass_that_changes_nothing_produces_no_drop_warning() {
+    // No redundant constraints → nothing dropped → no auto-warning.
+    let stream = vec![bits("%a", 64), assert_("%p")];
+    let (out, report) = DedupRangeConstraints.run(stream.clone());
+    assert_eq!(out, stream);
+    assert_eq!(report.before, report.after);
+    assert!(
+        !report.warnings.iter().any(|w| w.contains("dropped")),
+        "no drop, so no drop-warning: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn the_registry_resolves_the_builtins_and_rejects_the_unknown() {
+    for name in builtin_names() {
+        assert_eq!(by_name(name).expect("built-in resolves").name(), *name);
+    }
+    assert!(by_name("no_such_pass").is_none());
+    assert_eq!(
+        builtin_names(),
+        &["fold_immediate_copies", "dedup_range_constraints"]
+    );
+}
+
+#[test]
+fn a_pipeline_threads_the_ir_and_collects_a_report_per_pass() {
+    let stream = vec![bits("%a", 64), bits("%a", 64), assert_("%p")];
+    let passes: Vec<Box<dyn Pass>> =
+        vec![Box::new(FoldImmediateCopies), Box::new(DedupRangeConstraints)];
+    let (out, reports) = run_pipeline(&passes, stream);
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].pass, "fold_immediate_copies");
+    assert_eq!(reports[1].pass, "dedup_range_constraints");
+    // The dedup stage still drops the duplicate after the (no-op here) fold.
+    assert_eq!(out, vec![bits("%a", 64), assert_("%p")]);
+}

@@ -317,3 +317,169 @@ fn operands_mut(instruction: &mut Instruction) -> Vec<&mut Operand> {
         Instruction::Output { vals: _ } => vec![],
     }
 }
+
+// ============================================================================
+// The `Pass` trait — third-party optimisation passes, à la carte (M24)
+// ============================================================================
+//
+// notes/library-api.org §3. The two functions above are the reference passes;
+// this trait is the stable-ish surface a third party implements to add their
+// own and compose them, WITHOUT forking. It is ordinary Rust — a pass is a
+// value, composition is a `Vec`, there is no plugin-loading machinery, which
+// is the payoff of being library-first rather than a compiler binary.
+//
+// THE CONTRACT (notes/ir-passes.org §§1-4). The ACCEPTED class is UNIFORM
+// transforms — guards, constants, range constraints. The REJECTED class —
+// dead-code elimination and common-subexpression elimination — DIVERGES from
+// compactc or is unsound-here, and a third party reaching for either needs a
+// protocol argument this crate cannot make for them. Every pass MUST preserve
+// the public-input / witness stream (PI-equality is the correctness oracle)
+// and, until the verification hooks land, the author's own range constraints.
+//
+// DESIGNED FOR THE DEFERRED Kani/Lean VERIFICATION (notes/formal-verification-
+// options.org): `transform` is PURE and TOTAL — same input, same output, no
+// panics, no global state — so a machine check of "output PI stream ≡ input PI
+// stream" and "only implied constraints dropped" can target it without any
+// redesign here. That is the whole reason the shape is `IR -> IR` and nothing
+// more.
+
+/// What a pass did — always produced by [`Pass::run`].
+///
+/// OPTIONAL to consume but HIGHLY RECOMMENDED to read: people shoot themselves
+/// in the foot, so the runner makes sure they were WARNED first. A VALID
+/// optimisation can still raise a warning — [`dedup_range_constraints`]
+/// legitimately drops implied range constraints, which trips the
+/// instruction-drop warning below. The warnings are ADVISORY, not a verdict.
+#[derive(Debug, Clone)]
+pub struct PassReport {
+    /// The pass's name.
+    pub pass: &'static str,
+    /// Instruction count before the pass.
+    pub before: usize,
+    /// Instruction count after the pass.
+    pub after: usize,
+    /// Advisory warnings — the pass's own, plus an auto-warning on any NET
+    /// instruction drop, which is the most dangerous signal: dropping an
+    /// instruction can move the PI/witness stream, and that is the oracle.
+    pub warnings: Vec<String>,
+}
+
+/// A ZKIR optimisation pass — the à-la-carte extension point (M24).
+///
+/// Implement [`Pass::transform`] (the pure, total `IR -> IR`, returning any
+/// advisory warnings); [`Pass::run`] is provided and wraps it with the report.
+/// See the module header for the contract every pass must honour, and
+/// notes/library-api.org for where this sits in the library surface.
+pub trait Pass {
+    /// This pass's name — for the report and the [`by_name`] registry.
+    fn name(&self) -> &'static str;
+
+    /// The pure, total transform: same input → same output, no panics, no
+    /// global state. Returns the new instruction stream and any advisory
+    /// warnings the pass wants to raise (empty is fine).
+    fn transform(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, Vec<String>);
+
+    /// Run the pass and report. PROVIDED — do not override. The report is
+    /// optional to consume but always produced, and it auto-warns on any net
+    /// instruction drop even when the pass itself is silent, so a caller
+    /// cannot be left un-warned about the one signal that matters.
+    fn run(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, PassReport) {
+        let before = ir.len();
+        let (out, mut warnings) = self.transform(ir);
+        let after = out.len();
+        if after < before {
+            warnings.push(format!(
+                "dropped {} instruction(s) — verify the public-input / witness \
+                 stream is unchanged (PI-equality is the correctness oracle)",
+                before - after,
+            ));
+        }
+        (
+            out,
+            PassReport {
+                pass: self.name(),
+                before,
+                after,
+                warnings,
+            },
+        )
+    }
+}
+
+/// [`fold_immediate_copies`] as a [`Pass`]. A fold is a RENAME — it removes
+/// only instructions it can prove are `Copy`s of an immediate — so the
+/// instruction-drop warning it trips is expected and benign.
+pub struct FoldImmediateCopies;
+
+impl Pass for FoldImmediateCopies {
+    fn name(&self) -> &'static str {
+        "fold_immediate_copies"
+    }
+    fn transform(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, Vec<String>) {
+        (fold_immediate_copies(ir), Vec::new())
+    }
+}
+
+/// [`dedup_range_constraints`] as a [`Pass`]. It drops a range constraint only
+/// where a tighter-or-equal bound was ALREADY proven, so the drop is sound on
+/// any stream whose leaves are constrained at entry — the warning names the
+/// one thing to check (an unconstrained source, where a dropped constraint
+/// would be load-bearing). The canonical "valid optimisation that still warns".
+pub struct DedupRangeConstraints;
+
+impl Pass for DedupRangeConstraints {
+    fn name(&self) -> &'static str {
+        "dedup_range_constraints"
+    }
+    fn transform(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, Vec<String>) {
+        let before = ir.len();
+        let out = dedup_range_constraints(ir);
+        // Only warn when it actually dropped something — a warning names what
+        // happened, not what could have. On a real drop this rides ALONGSIDE
+        // the runner's generic "dropped N instructions" warning: generic says
+        // the danger, this says why it is usually fine and what to check.
+        let warnings = if out.len() < before {
+            vec!["dropped only range constraints already implied by a \
+                  tighter-or-equal proven bound; verify the source constrains \
+                  its leaves at entry (an unconstrained leaf makes a dropped \
+                  constraint load-bearing)"
+                .to_string()]
+        } else {
+            Vec::new()
+        };
+        (out, warnings)
+    }
+}
+
+/// Run passes left to right, threading the IR through and collecting one
+/// report per pass. Composition is ordinary Rust — a convenience over a `for`
+/// loop, not machinery; a third party's pipeline is just a `Vec` of their own
+/// passes interleaved with these.
+pub fn run_pipeline(
+    passes: &[Box<dyn Pass>],
+    mut ir: Vec<Instruction>,
+) -> (Vec<Instruction>, Vec<PassReport>) {
+    let mut reports = Vec::with_capacity(passes.len());
+    for pass in passes {
+        let (out, report) = pass.run(ir);
+        ir = out;
+        reports.push(report);
+    }
+    (ir, reports)
+}
+
+/// The BUILT-IN passes by name — what a CLI or a config names to run one à la
+/// carte. A third party's own passes are their own values; this is only the
+/// reference set. See [`builtin_names`] for the accepted names.
+pub fn by_name(name: &str) -> Option<Box<dyn Pass>> {
+    match name {
+        "fold_immediate_copies" => Some(Box::new(FoldImmediateCopies)),
+        "dedup_range_constraints" => Some(Box::new(DedupRangeConstraints)),
+        _ => None,
+    }
+}
+
+/// The names [`by_name`] accepts — for help text and discovery.
+pub fn builtin_names() -> &'static [&'static str] {
+    &["fold_immediate_copies", "dedup_range_constraints"]
+}
