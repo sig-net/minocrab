@@ -239,9 +239,10 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     /// `Circuit3::dedup_range_constraints` enabled, a redundant call is free —
     /// the pass drops a later constraint no tighter than one already proven.
     pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
-        let leaf = Self::from_field_unchecked(w);
-        leaf.constrain_input(c);
-        leaf
+        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // differ (`select(guard, w, 0)` is what was checked, and what the
+        // branch computes), and a checked leaf must carry the checked wire.
+        Self::from_field_unchecked(w).constrain_input(c)
     }
 
     /// `x as Field` — the same slot, no instructions.
@@ -254,8 +255,8 @@ impl<const BITS: u32, V: Vis3> Uint<BITS, V> {
     /// table (`Prim::constraint`), so this and `CircuitArg::constrain`
     /// cannot say different things. Note `Uint<1>` is `constrain_to_boolean`
     /// there, as it is in compactc.
-    pub fn constrain_input(self, c: &mut Circuit3) {
-        Prim::Uint { bits: BITS }.constraint().emit(c, self.0);
+    pub fn constrain_input(self, c: &mut Circuit3) -> Self {
+        Self(Prim::Uint { bits: BITS }.constraint().emit(c, self.0))
     }
 
 
@@ -430,9 +431,10 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// cases the bound lands on). With `Circuit3::dedup_range_constraints`
     /// enabled, a redundant call is free.
     pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
-        let leaf = Self::from_field_unchecked(w);
-        leaf.constrain_input(c);
-        leaf
+        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // differ (`select(guard, w, 0)` is what was checked, and what the
+        // branch computes), and a checked leaf must carry the checked wire.
+        Self::from_field_unchecked(w).constrain_input(c)
     }
 
     /// `x as Field` — the same slot, no instructions.
@@ -450,8 +452,8 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// `constrain_to_boolean`, a `BOUND` of `2^k` is `constrain_bits k`,
     /// and anything else is `less_than v BOUND bits` + `assert` with
     /// compactc's even-rounded `bits`.
-    pub fn constrain_input(self, c: &mut Circuit3) {
-        Prim::unsigned(Self::MAX).constraint().emit(c, self.0);
+    pub fn constrain_input(self, c: &mut Circuit3) -> Self {
+        Self(Prim::unsigned(Self::MAX).constraint().emit(c, self.0))
     }
 
     /// `x as Uint<0..BIGGER>` — the LOSSLESS widening, free in both senses
@@ -801,9 +803,10 @@ impl<V: Vis3> Bool<V> {
     /// With `Circuit3::dedup_range_constraints` enabled, a redundant call is
     /// free.
     pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
-        let leaf = Self::from_field_unchecked(w);
-        leaf.constrain_input(c);
-        leaf
+        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // differ (`select(guard, w, 0)` is what was checked, and what the
+        // branch computes), and a checked leaf must carry the checked wire.
+        Self::from_field_unchecked(w).constrain_input(c)
     }
 
     /// The underlying 0/1 wire — the same slot, no instructions.
@@ -813,8 +816,8 @@ impl<V: Vis3> Bool<V> {
 
     /// Constrain a `Boolean` entering the circuit, as compactc does for
     /// every `tunsigned 1` slot.
-    pub fn constrain_input(self, c: &mut Circuit3) {
-        Prim::Uint { bits: 1 }.constraint().emit(c, self.0);
+    pub fn constrain_input(self, c: &mut Circuit3) -> Self {
+        Self(Prim::Uint { bits: 1 }.constraint().emit(c, self.0))
     }
 }
 
@@ -861,9 +864,10 @@ impl<const N: usize, V: Vis3> Bytes<N, V> {
     /// Cost: exactly `constrain_input`'s constraint (~`8N`/4 rows). With
     /// `Circuit3::dedup_range_constraints` enabled, a redundant call is free.
     pub fn from_field_checked(c: &mut Circuit3, w: Wire3<FieldT, V>) -> Self {
-        let leaf = Self::from_field_unchecked(w);
-        leaf.constrain_input(c);
-        leaf
+        // The CONSTRAINED value comes back, not `w`: inside a `when` the two
+        // differ (`select(guard, w, 0)` is what was checked, and what the
+        // branch computes), and a checked leaf must carry the checked wire.
+        Self::from_field_unchecked(w).constrain_input(c)
     }
 
     /// The packed little-endian limb — the same slot, no instructions.
@@ -873,8 +877,8 @@ impl<const N: usize, V: Vis3> Bytes<N, V> {
 
     /// Constrain a `Bytes<N>` entering the circuit (`8N` bits), as compactc
     /// constrains a short byte-string argument.
-    pub fn constrain_input(self, c: &mut Circuit3) {
-        Prim::Uint { bits: 8 * N as u32 }.constraint().emit(c, self.0);
+    pub fn constrain_input(self, c: &mut Circuit3) -> Self {
+        Self(Prim::Uint { bits: 8 * N as u32 }.constraint().emit(c, self.0))
     }
 }
 
@@ -938,9 +942,11 @@ impl<V: Vis3> B32<V> {
     }
 
     /// Constrain a `Bytes<32>` entering the circuit (8/248 bits).
-    pub fn constrain_input(self, c: &mut Circuit3) {
-        Prim::Uint { bits: 8 }.constraint().emit(c, self.hi);
-        Prim::Uint { bits: 248 }.constraint().emit(c, self.lo);
+    pub fn constrain_input(self, c: &mut Circuit3) -> Self {
+        B32 {
+            hi: Prim::Uint { bits: 8 }.constraint().emit(c, self.hi),
+            lo: Prim::Uint { bits: 248 }.constraint().emit(c, self.lo),
+        }
     }
 
     /// To the typed `Bytes<32>` value (instruction-boundary form).
@@ -1031,8 +1037,8 @@ macro_rules! b32_newtype {
             /// Constrain this value entering the circuit (8/248 bits) —
             /// [`B32::constrain_input`], delegated, so the emitted sequence
             /// is identical to the bare `Bytes<32>`'s.
-            pub fn constrain_input(self, c: &mut ::minocrab::v3::Circuit3) {
-                self.0.constrain_input(c)
+            pub fn constrain_input(self, c: &mut ::minocrab::v3::Circuit3) -> Self {
+                $name(self.0.constrain_input(c))
             }
 
             /// `bit ? a : b`, limbwise.

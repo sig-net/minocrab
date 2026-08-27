@@ -257,15 +257,48 @@ impl Builder3 {
     /// folding pass will inline such a copy away (`passes`).
     pub fn immediate_of(&self, val: Val) -> Option<Fr> {
         let name = self.name(val);
-        self.instructions.iter().rev().find_map(|instruction| {
-            match instruction {
+        self.instructions
+            .iter()
+            .rev()
+            .find_map(|instruction| match instruction {
                 Instruction::Copy {
                     val: Operand::Immediate(imm),
                     output,
                 } if *output == name => Some(*imm),
                 _ => None,
-            }
-        })
+            })
+    }
+
+    /// Whether `val` is the output of a transcript read (`private_input` /
+    /// `public_input`) carrying exactly `guard` as its guard operand.
+    ///
+    /// The question a range check inside a guarded scope asks before it
+    /// selects: a guarded read yields the type's default — zero — where its
+    /// guard is off, so a bit or boolean constraint on it already holds on
+    /// the path not taken and needs no `cond_select` in front of it. That
+    /// is compactc's own shape for a guarded read (the witnesses carry the
+    /// branch guard, the bit constraints stay bare — claim.zkir:436-439),
+    /// and the rule is sound only for the SAME guard: a read guarded by an
+    /// outer scope and checked under an inner one gets the select.
+    pub fn is_read_guarded_by(&self, val: Val, guard: Val) -> bool {
+        let name = self.name(val);
+        let guard = self.name(guard);
+        self.instructions
+            .iter()
+            .rev()
+            .any(|instruction| match instruction {
+                Instruction::PrivateInput {
+                    guard: Some(Operand::Variable(g)),
+                    output,
+                    ..
+                }
+                | Instruction::PublicInput {
+                    guard: Some(Operand::Variable(g)),
+                    output,
+                    ..
+                } => *output == name && *g == guard,
+                _ => false,
+            })
     }
 
     /// Copy a value (does not extend the actual circuit).

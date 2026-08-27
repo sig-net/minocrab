@@ -92,6 +92,65 @@ guard, and no corpus circuit exercises a non-trivial guard on a call —
 whether =contract_call(c, g=false, ..)= at top level should consume the
 callee's witnesses is unverified against compactc.
 
+** AS BUILT — items 2 and 3, one commit (review-fixes, 2026-08-27)
+The two findings were the same bug: the guard was consulted method by
+method, and the review found the cells of that table that were wrong.
+Fixed structurally rather than cell by cell — =minocrab/src/v3/effects.rs=:
+- =EffectGuard=, a private-field type only =Circuit3::effect_guard=
+  constructs; it is the ONLY reader of the guard stack (scope push/pop
+  moved there too). Every raw emitter (=private_input=, =public_input=,
+  =impact=, =assert=, =constrain_eq=, =constrain_bits=,
+  =constrain_to_boolean=) is reachable only through an =emit_*= that takes
+  one. A unit test pins that =v3.rs= contains no raw emitter call and no
+  =self.guards.= access, so the surface has no spelling for "emit an
+  effect under a guard that skipped the scope".
+- Semantics, all compactc's: reads and Impact carry the guard as an
+  operand; =assert= is =assert(select(g, x, 1))=; =assert_eq= in a scope is
+  =test_eq= + guarded assert (compactc's =assert(a == b)= in a branch);
+  =assert_bits= / =assert_boolean= check =select(g, w, 0)=. Straight-line
+  code is untouched (no ambient ⇒ the direct instruction).
+- ONE EXEMPTION, compactc's own: a range check on a transcript read that
+  carries THIS guard needs no select (the read is 0 where the guard is
+  off — =Builder3::is_read_guarded_by=). Without it the port lineage's
+  =own_public_key= reads inside =c.when= gained a select compactc does
+  not emit (5 vault circuits moved); with it, byte-identical.
+- Verified against compactc directly: a cast inside =if= lowers as
+  =select(c, value, 0)= then a guarded check — the value zeroed on the
+  untaken path, the check holding trivially. That is the shape emitted.
+- A side fix the choke point made visible: =assert_with='s message was
+  recorded at the index BEFORE the scope's select, so every named assert
+  inside a =when= pointed one instruction early and the simulator could
+  not find it. Now recorded at the =Assert= itself; test pins it.
+- Movement, declared: 2 of 209 circuits. =manager::deposit_shielded=
+  +1 =cond_select= (+1 row, 38487→38488) and =manager::execute= +4
+  (+4 rows, 209330→209334), one per scoped 128-bit check:
+  =merge_coin_immediate='s constraint on =pooled.value + coin.value=
+  inside =c.when(member)= (and execute's per-arm twins) now holds on the
+  path not taken. The manager is PI-anchored (no compactc stream to
+  match); k unchanged; rows re-frozen with this as the reason. All other
+  207 byte-identical (zkir dump, before/after).
+- THE TAINT LINT CAUGHT THE FIRST DRAFT. With the guarded check spelled
+  =constrain_bits(select(g, sum, 0))= and the merged coin's value still
+  =sum= downstream, the coin-commitment hash consumed a limb the lint
+  could no longer prove bounded (two NEW findings, one per manager
+  circuit). The draft was wrong and the lint was right: on the path not
+  taken =sum= IS unbounded. The fix is compactc's semantics — a value
+  checked inside a branch IS the selected value — so =assert_bits= /
+  =assert_boolean= / =LimbConstraint::emit= now RETURN the wire they
+  constrained, =constrain_input= returns the constrained =Self=, and
+  =from_field_checked= / =as_uint128= carry it forward. The hash then
+  consumes the bounded =sel=; zero new findings. The manager circuits'
+  remaining baseline diff is pure re-indexing (their instruction numbers
+  shifted by the added selects), verified by a normalised comparison
+  (indices and wire numbers stripped: 329 → 329, nothing new, nothing
+  gone).
+- Tests: 5 new in =v3_guard_scope.rs= (26 total), the choke-point pin in
+  =effects.rs=. VERIFICATION.md's guard-scoping row restated.
+- NOT done here: the two guard REGIMES still coexist (=_guarded= /
+  =_under= explicit vs =when= ambient). They now compose correctly, which
+  was the bug; whether the explicit family should become =pub(crate)= is
+  a separate API decision.
+
 ** 4. §3.5 + §4.5 — the disclosure manifest is opt-in, and a set
 Confirmed: the macro pins =a_circuit_without_a_declaration_gets_no_test=
 (circuit.rs:648); =disclosed_labels= is a =BTreeSet<&str>= (disclose.rs),

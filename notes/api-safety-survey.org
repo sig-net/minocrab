@@ -405,6 +405,18 @@ Three, all found in one day, all invisible to every differential:
 Every one of these was a doc comment before it was a check. That is the
 pattern, and §0(a) is how to keep finding them.
 
+*And then the pattern's own closure* (review-fixes branch, 2026-08-27,
+notes/external-review-triage.org items 2-3): the external review found
+three MORE cells of the same table — =assert_eq= / =assert_bits= /
+=assert_boolean= bypassing the scope, and =witness_guarded= passing its
+guard verbatim one commit after =public_transcript_input_guarded= was
+fixed to conjoin. Four cells fixed one at a time is the sign the table is
+the bug. The fix is structural: every effect resolves its guard through
+one private function (=minocrab/src/v3/effects.rs=), the resolved guard
+is a type only that function constructs, every emitter demands it, and a
+test pins that the surface reaches no raw emitter. There is no longer a
+spelling for the mistake.
+
 ** A4. SMALLER, LISTED WITHOUT ARGUMENT
 
 - =c.assert(w)= on a raw wire: Compact's =assert= takes a =Boolean=; ours

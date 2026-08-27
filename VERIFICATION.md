@@ -194,7 +194,7 @@ cannot express.
 | `ContractAddress<Public>` | passing an arbitrary `B32` where `kernel.self()` was meant; only `kernel::self_address` and its guarded twin produce one | zero rows, dump unchanged ([notes/api-safety-survey.org §A4](notes/api-safety-survey.org)) |
 | `Opaque<T: TsType>` | mixing two TypeScript-side types | compile_fail doctest, [v3.rs](crates/minocrab-std/src/v3.rs) |
 | `from_field_unchecked` | *nothing* — it is the escape hatch, named as an assertion. `from_field_checked(c, w)` is the constrained twin (`Uint`, `BoundedUint`, `Bool`, `Bytes`, Borsh `Tag<K>`); there is no bare `from_field` left, so every site chose | [notes/api-safety-survey.org §A1](notes/api-safety-survey.org) |
-| guard scoping | an assertion or witness inside `c.when` escaping the guard — the ambient guard reaches reads, witnesses and assertions, none of which name it | [v3_guard_scope.rs](crates/minocrab-std/tests/v3_guard_scope.rs), 20 tests, each asserting the scoped form is byte-identical to the hand-threaded one |
+| guard scoping | an effect inside `c.when` escaping the guard — every witness read, transcript read, Impact op and check (`assert`, `assert_eq`, `assert_bits`, `assert_boolean`), scoped or `_guarded`, resolves its guard through ONE private choke point ([v3/effects.rs](crates/minocrab/src/v3/effects.rs)); the only way to reach an emitter is with the resolved guard in hand, and a test pins that nothing bypasses it | [v3_guard_scope.rs](crates/minocrab-std/tests/v3_guard_scope.rs), 26 tests, each asserting the scoped form is byte-identical to the hand-threaded one |
 
 The Borsh layer belongs here as a safety feature in its own right:
 

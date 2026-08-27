@@ -527,3 +527,115 @@ fn assert_read_is_one_assert_on_the_guard() {
     });
     assert_eq!(by_hand, wrapped);
 }
+
+// --- the effect choke point (review §4.2, §4.3) ----------------------------------------
+//
+// Every check entry point and every `_guarded` read resolves its guard
+// through one private function (minocrab/src/v3/effects.rs). These pin the
+// three cells of the old method-by-method table that were wrong, each
+// against the hand-threaded lowering it must equal byte for byte.
+
+/// §4.2: `assert_eq` inside a scope is compactc's `assert(a == b)` in a
+/// branch — `test_eq`, then `assert(select(guard, eq, 1))`.
+#[test]
+fn a_scoped_guard_reaches_assert_eq() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        let eq = c.test_eq(a, b);
+        let held = c.cond_select(g, eq, 1u64);
+        c.assert(held);
+    });
+    let scoped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(g, |c| c.assert_eq(a, b));
+    });
+    assert_eq!(by_hand, scoped);
+}
+
+/// §4.2: `assert_bits` and `assert_boolean` inside a scope check
+/// `select(guard, w, 0)` — zero satisfies both, so the constraint holds
+/// wherever the guard is off.
+#[test]
+fn a_scoped_guard_reaches_range_checks() {
+    let by_hand = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let w = c.arg::<FieldT>("w");
+        let b = c.arg::<FieldT>("b");
+        let w_or_zero = c.cond_select(g, w, 0u64);
+        c.assert_bits(w_or_zero, 8);
+        let b_or_zero = c.cond_select(g, b, 0u64);
+        c.assert_boolean(b_or_zero);
+    });
+    let scoped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let w = c.arg::<FieldT>("w");
+        let b = c.arg::<FieldT>("b");
+        c.when(g, |c| {
+            c.assert_bits(w, 8);
+            c.assert_boolean(b);
+        });
+    });
+    assert_eq!(by_hand, scoped);
+}
+
+/// Straight-line checks are untouched: outside a scope each is the direct
+/// instruction, no select — the zero-movement half of the claim.
+#[test]
+fn unscoped_checks_emit_no_select() {
+    let stream = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.assert_eq(a, b);
+        c.assert_bits(a, 8);
+        c.assert_boolean(b);
+    });
+    assert!(!stream.contains("cond_select"), "{stream}");
+    assert!(stream.contains("constrain_eq"), "{stream}");
+}
+
+/// §4.3: the witness twin of `a_guarded_read_inside_a_scope_conjoins_both_guards`
+/// — a `_guarded` witness inside a scope consumes the private transcript
+/// only where BOTH guards hold.
+#[test]
+fn a_guarded_witness_inside_a_scope_conjoins_both_guards() {
+    let nested = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(a, |c| {
+            c.when(b, |c| {
+                let _w = c.witness::<FieldT>();
+            });
+        });
+    });
+    let guarded = zkir(|c| {
+        let a = c.arg::<FieldT>("a");
+        let b = c.arg::<FieldT>("b");
+        c.when(a, |c| {
+            let _w = c.witness_guarded::<FieldT, _>(b);
+        });
+    });
+    assert_eq!(nested, guarded);
+}
+
+/// An assert message inside a scope is recorded against the `Assert`
+/// itself, not the `cond_select` the scope emits in front of it — the index
+/// the simulator looks a failed assertion up by.
+#[test]
+fn an_assert_message_inside_a_scope_names_the_assert() {
+    let mut c = Circuit3::new();
+    let g = c.arg::<FieldT>("g");
+    let x = c.arg::<FieldT>("x");
+    c.when(g, |c| c.assert_with(x, Some("x must hold")));
+    let compiled = c.finish(true);
+    let last = compiled.ir.instructions.len() - 1;
+    assert_eq!(compiled.assert_message(last), Some("x must hold"));
+    assert_eq!(
+        compiled.assert_message(last - 1),
+        None,
+        "the select carries no message"
+    );
+}

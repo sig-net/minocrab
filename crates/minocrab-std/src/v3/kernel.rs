@@ -653,8 +653,12 @@ fn checked_sub(
 /// Compact's `x as Uint<128>` on a value just computed: the range constraint,
 /// then the `Copy` the cast names its result with.
 fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
-    Uint::<128, Public>::from_field_unchecked(w).constrain_input(c);
-    c.copy(w)
+    // Inside a `when` the checked value is the selected one; that is the
+    // value the cast names and everything downstream (the commitment, the
+    // ledger op) consumes — compactc's branch semantics, and what keeps the
+    // hash preimage provably bounded for the taint lint.
+    let checked = Uint::<128, Public>::from_field_checked(c, w);
+    c.copy(checked.field())
 }
 
 /// ```text
