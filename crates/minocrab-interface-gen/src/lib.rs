@@ -46,6 +46,12 @@
 //! - [`render_crate`] — the generated source, without touching the disk
 //! - [`names`] — the `snake_case` / `lowerCamelCase` mapping, shared with the
 //!   derives so a label never disagrees
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! INTERNAL TIER, whole crate: the generator's API serves this workspace's
+//! interface crates and carries no stability promise (the GENERATED crates
+//! are the product; their surface is governed by the callee's artifact).
 
 use std::collections::BTreeSet;
 use std::path::Path;

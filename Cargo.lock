@@ -2301,6 +2301,7 @@ version = "0.1.0"
 dependencies = [
  "midnight-base-crypto",
  "midnight-zkir",
+ "minocrab-ir",
  "minocrab-zkir",
  "serde_json",
 ]
@@ -2343,6 +2344,7 @@ dependencies = [
  "midnight-zkir-v3",
  "minocrab",
  "minocrab-ir",
+ "minocrab-sim",
  "minocrab-std",
  "minocrab-zkir",
  "proptest",

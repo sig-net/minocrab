@@ -59,6 +59,16 @@
 //! - [`v3::Discloses`] — a circuit's disclosure manifest, checked against
 //!   what it actually disclosed (see [`v3::assert_declared_disclosures`])
 //! - [`Compiled`] — a finished circuit: the IR plus its disclosure record
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! STABLE TIER (semver commitment): the v3 eDSL authoring core —
+//! [`v3::Circuit3`] and its instruction-emitting methods, [`v3::Wire3`] /
+//! [`v3::AnyWire3`], the visibility types, the FAB alignment re-exports,
+//! and [`v3::Compiled3`]. INTERNAL TIER (no stability promise): the v2
+//! [`Circuit`] layer, kept for the v2 corpus work. The proposed stable
+//! set is deliberately small (notes/library-api.org §1) and grows only
+//! by decision, never by accident.
 
 use std::marker::PhantomData;
 

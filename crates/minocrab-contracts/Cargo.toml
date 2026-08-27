@@ -36,7 +36,7 @@ minocrab-zkir = { path = "../minocrab-zkir" }
 # over BOTH sides (notes/ir-passes.org §2 ii): our builder folds a `Copy` of an
 # immediate at `finish`, so compactc's artifact is folded the same way before
 # the comparison. One definition of the fold, used by the pass and the test.
-minocrab-ir = { path = "../minocrab-ir" }
+minocrab-ir = { path = "../minocrab-ir", features = ["unstable"] }
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-onchain-runtime.workspace = true

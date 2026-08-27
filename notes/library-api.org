@@ -231,3 +231,72 @@ CLI's =pass= subcommand.
    stable set actually needs.
 4. §2 the gadget cookbook (docs) + rustdoc publish (M20 item, now central).
 Verification hooks (§4) stay deferred; the shape is preserved throughout.
+
+* As built: the tier boundary + the CLI's pass subcommand (2026-08-27)
+
+Build-order steps 3 and the rest of 4, closing the milestone's checklist.
+
+** Tier boundary v1
+
+§1's option (a), implemented: an =unstable= cargo feature on
+=minocrab-ir= and =minocrab-sim= gates the named internals —
+
+- =minocrab-ir=: the =Builder3=/=Val=/=Arg= layer (v3) and the v2
+  =Builder=/=Val= — the eDSL's implementation detail under =Circuit3=.
+- =minocrab-sim=: the simulator VMs (=simulate=, =Run3=, =Report3=, the
+  whole interpreter region) — the correctness harness's engine. The
+  measurement API (=cost=, =profile=, =assert_max_k=, =rowcost=) stays
+  ungated: it IS the stable tier.
+
+In-workspace crates enable the feature (including each crate's own tests
+via a self-dev-dependency, so =cargo test -p minocrab-ir= keeps
+working); the stable-only configuration is checked by the default
+=cargo check -p <crate>= building clean with zero warnings.
+
+THE HONEST MECHANICS, recorded so nobody oversells the wall: cargo
+unifies features per build graph, so any graph containing =minocrab=
+activates =minocrab-ir/unstable= transitively — there the tier lives in
+the docs and the semver commitment, not the compiler. Where the wall is
+REAL is exactly the milestone's à-la-carte audience: a pass or lint
+crate depending on =minocrab-ir= alone (or a measurement tool on
+=minocrab-sim= alone) builds against the stable tier only, and naming an
+internal item is a compile error until they write
+=features = ["unstable"]= — an explicit, greppable opt-in.
+
+DOCS AS THE PRODUCT: every crate's rustdoc now opens with its tier
+statement ("# Stability (M24 tier boundary)"), the README's library
+section carries the Stability-tiers table, and
+=cargo doc --no-deps= over the four stable-tier crates builds with zero
+unresolved-link warnings (the stable docs no longer link into the gated
+tier). PUBLISHING the rustdoc (GitHub Pages) remains M20's CI item.
+
+STILL OPEN, deliberately: the =minocrab-std= contract-authoring surface
+(ledger declarations, kernel, Borsh, disclosure vocabulary) is
+designated not-yet-promised in its tier statement rather than
+feature-gated — the item-level in/out there is dmd's call (§1 said so),
+and gating it would today only reshuffle in-workspace feature flags
+without adding a real wall (every std graph contains minocrab).
+
+** The =pass= subcommand
+
+=minocrab pass <name> <file.zkir> [-o <out.zkir>]= runs a published pass
+over any ZKIR file — compactc's included — and reports
+=instructions before -> after=, =k=, =rows=, and every =PassReport=
+warning; it writes the transformed circuit only when =-o= is given.
+=minocrab-ir= is a regular dependency of =minocrab-sim= since this
+(previously dev-only). Smoke-tested against the corpus singleton:
+both built-ins run, report zero movement there (compactc's respond has
+nothing to fold at these passes), and the =-o= round-trip re-reads
+clean.
+
+** The flake app: SKIPPED BY DECISION
+
+dmd pre-authorised the skip ("if it's too hard just don't bother"), and
+it is: nixpkgs' =importCargoLock= cannot vendor this workspace because
+the TWO pinned midnight-ledger git revisions (the flake rev and the
+transient-crypto tag) both export crates with identical name-versions
+(=midnight-serialize-macros 1.0.0= et al.), which collide in the vendor
+directory (=ln: … Permission denied=). Recorded in =flake.nix= at the
+spot the package would have lived. The CLI stays a plain cargo binary:
+=cargo build --release -p minocrab-sim --bin minocrab=. Revisit if the
+workspace ever converges on a single ledger rev.

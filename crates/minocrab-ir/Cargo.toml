@@ -19,6 +19,18 @@ midnight-base-crypto.workspace = true
 # fields are pub(crate) upstream) — see v3::typed_identifier.
 serde_json.workspace = true
 
+[dev-dependencies]
+# Enable the internal tier for this crate's own tests.
+minocrab-ir = { path = ".", features = ["unstable"] }
+
+[features]
+# The INTERNAL tier (M24 tier boundary, notes/library-api.org §1): the raw
+# `Builder3`/`Val` layers under the eDSL. No stability promise; the stable
+# surface is the `Pass` trait, the taint lint, and the re-exported ZKIR
+# types. In-workspace crates enable this; a third-party pass crate
+# depending on minocrab-ir alone builds against the stable tier only.
+unstable = []
+
 # The Kani harnesses live under cfg(kani), which only the Kani driver sets
 # (see kani.sh at the repo root); tell rustc's cfg checker it is expected.
 [lints.rust]

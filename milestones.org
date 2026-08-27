@@ -752,7 +752,7 @@ DECISIONS OF RECORD (dmd, 2026-08-27):
       Say so in the public docs. Build order, least-work-first: CLI seed →
       =Pass= trait → tier boundary → gadget cookbook + rustdoc.
 The four extension points (à la carte, no fork):
-- [ ] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
+- [X] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
       third party publishes a crate depending on minocrab/minocrab-std
       with a hand-tuned keccak, a cheaper Merkle path, a smaller ABI
       encoder. Works TODAY over a git dependency; what this milestone owes
@@ -765,10 +765,11 @@ The four extension points (à la carte, no fork):
       (COOKBOOK LANDED 2026-08-27, step 4 first half: OPTIMIZATION.md at
       the repo root — the ten levers de-jargoned for external gadget
       authors, each grounded in a real API + the measured note behind it,
-      linked from the README library section. REMAINING for point 1: the
-      stable authoring-surface decision itself, which is the step-3 tier
-      boundary.)
-- [ ] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
+      linked from the README library section.
+      CLOSED 2026-08-27 with tier boundary v1: the stable authoring
+      surface is decided and documented — the README's Stability-tiers
+      table + a tier statement opening every crate's docs.)
+- [X] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
       pass layer from today's free-functions + `dedup_range_constraints`
       builder flag to a stable `Pass` trait (`IR -> IR` + a report) with
       ordinary-Rust composition (a `Vec<Box<dyn Pass>>` or a builder — NO
@@ -787,14 +788,19 @@ The four extension points (à la carte, no fork):
       names=. Report OPTIONAL to consume; a VALID dedup still trips the
       drop-warning, as dmd anticipated. Exposed by default (stable-ish);
       the =unstable= internals sweep is step 3, not this. Tests green.)
-- [ ] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
+- [X] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
       public API, so a third-party pass can ship WITH its own proof it
       preserved meaning. NOT built now (soundness is deferred), but the
       extension surface in points 1-2 must not PRECLUDE it — this is the
       "build with it in mind" clause made concrete, and it converges with
       M23 R3 (taint lint) and R4 (Kani on the passes), which this
       milestone pulls forward.
-- [ ] 4. COST / MEASUREMENT: `cost()` / `profile()` / the calibrated
+      (SATISFIED BY DESIGN 2026-08-27: R3 and R4 are landed, the taint
+      lint IS stable public API (minocrab_ir::v3::taint), passes stayed
+      pure/total throughout (the AssocMap refactor made them MORE
+      statable), and nothing in the tier boundary precludes exposing the
+      differential/spec harness later — the deferred-build clause holds.)
+- [X] 4. COST / MEASUREMENT: `cost()` / `profile()` / the calibrated
       primitive-cost tables as stable API, plus the release-only nix flake
       CLI over `.zkir` (measure, region-profile, diff two circuits, run a
       published pass) per the decisions above.
@@ -803,17 +809,36 @@ The four extension points (à la carte, no fork):
       own crate) — `rows <file.zkir>...` (k, rows, instr, in/out + total)
       and `diff <a> <b>` (row/k delta). Compiler-agnostic (reads compactc's
       ZKIR). Region-profile deliberately NOT over `.zkir` — it needs the
-      annotated Compiled3, so it stays the Rust `profile()` path. Flake
-      packaging deferred to CI/release. REMAINING: mark cost/profile as
-      stable API when the tier boundary lands, the flake app, and a
-      `pass <name>` subcommand — now unblocked (the `Pass` trait exists),
-      pending minocrab-ir promoted to a regular dep of minocrab-sim.)
-- [ ] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
+      annotated Compiled3, so it stays the Rust `profile()` path.
+      CLOSED 2026-08-27: cost/profile/assert_max_k/rowcost are the stable
+      measurement tier (tier boundary v1); `pass <name> <file.zkir>
+      [-o out]` landed (minocrab-ir a regular dep of minocrab-sim; runs a
+      published pass over any ZKIR — compactc's included — reporting the
+      instruction/k/row delta and the pass's warnings, writing only with
+      -o). The FLAKE APP is SKIPPED BY DECISION, per dmd's pre-authorised
+      branch: nixpkgs' importCargoLock cannot vendor a workspace whose two
+      pinned midnight-ledger git revs export identical crate
+      name-versions — recorded in flake.nix at the spot; the CLI stays a
+      plain cargo binary.)
+- [X] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
       vs internals line (a proposed MINIMAL stable set: the eDSL surface,
       the `Pass` trait, the cost API — everything else internal, dmd to
       confirm in/out), and publish rustdoc — for a compiler-as-a-library
       the DOCS ARE THE PRODUCT, so M20's "publish rustdoc" item becomes
       central here rather than a handoff chore.
+      (LANDED 2026-08-27 as TIER BOUNDARY v1 — notes/library-api.org
+      §"As built: the tier boundary". The proposed minimal set is
+      IMPLEMENTED: an `unstable` cargo feature gates the named internals
+      (minocrab-ir's Builder3/Val layers, minocrab-sim's simulator VMs),
+      every crate's docs open with its tier statement, and the README
+      carries the Stability-tiers table. The honest mechanics are
+      recorded: cargo feature-unification makes the gate a hard wall
+      exactly for the à-la-carte pass/lint-crate graph (minocrab-ir
+      alone) and a docs/semver declaration elsewhere. The std
+      contract-authoring surface (ledger/kernel/borsh/disclosure) is
+      explicitly NOT yet promised — the in/out call that remains dmd's.
+      `cargo doc --no-deps` builds warning-free on the stable tier;
+      PUBLISHING rustdoc to Pages stays with M20's CI item.)
 Exit criteria: a third party can, from a git dependency and the published
 rustdoc, write both a ZKIR gadget crate and an optimisation-pass crate
 against a small stable API — without forking, and without touching the

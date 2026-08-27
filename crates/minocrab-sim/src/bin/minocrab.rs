@@ -13,11 +13,15 @@
 //! ```text
 //! minocrab rows  <file.zkir>...        # (k, rows) per file, plus a total
 //! minocrab diff  <a.zkir> <b.zkir>     # the row/k delta between two circuits
+//! minocrab pass  <name> <file.zkir> [-o <out.zkir>]
+//!                                      # run a published optimisation pass;
+//!                                      # report the delta, write with -o
 //! ```
 
 use std::path::Path;
 use std::process::ExitCode;
 
+use minocrab_ir::v3::passes;
 use minocrab_sim::v3::cost;
 use minocrab_zkir::v3::read_zkir;
 
@@ -26,6 +30,7 @@ fn main() -> ExitCode {
     match args.split_first() {
         Some((cmd, rest)) if cmd == "rows" => cmd_rows(rest),
         Some((cmd, rest)) if cmd == "diff" => cmd_diff(rest),
+        Some((cmd, rest)) if cmd == "pass" => cmd_pass(rest),
         Some((cmd, _)) if cmd == "help" || cmd == "--help" || cmd == "-h" => {
             print_usage();
             ExitCode::SUCCESS
@@ -44,6 +49,8 @@ fn print_usage() {
          USAGE:\n\
          \x20 minocrab rows <file.zkir>...      (k, rows) per file, plus a total\n\
          \x20 minocrab diff <a.zkir> <b.zkir>   the row/k delta between two circuits\n\
+         \x20 minocrab pass <name> <file.zkir> [-o <out.zkir>]\n\
+         \x20                                   run a published optimisation pass\n\
          \n\
          `rows` reports k (= log2 of the proving-table rows, the number that\n\
          drives proving time and RAM) and the row count itself. Region-attributed\n\
@@ -148,5 +155,68 @@ fn cmd_diff(files: &[String]) -> ExitCode {
         "{:<28} {:>+3}  {:>+10}  ({:+.1}%)",
         "delta", dk, drow, pct
     );
+    ExitCode::SUCCESS
+}
+
+/// `pass <name> <file.zkir> [-o <out.zkir>]` — run one published pass and
+/// report what it did; write the transformed circuit only when asked.
+fn cmd_pass(args: &[String]) -> ExitCode {
+    let (name, file, out) = match args {
+        [name, file] => (name, file, None),
+        [name, file, flag, out] if flag == "-o" => (name, file, Some(out)),
+        _ => {
+            eprintln!(
+                "usage: minocrab pass <name> <file.zkir> [-o <out.zkir>]\n\
+                 known passes: {}",
+                passes::builtin_names().join(", ")
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let Some(pass) = passes::by_name(name) else {
+        eprintln!(
+            "unknown pass `{name}`; known: {}",
+            passes::builtin_names().join(", ")
+        );
+        return ExitCode::FAILURE;
+    };
+    let ir = match read_zkir(file) {
+        Ok(ir) => ir,
+        Err(e) => {
+            eprintln!("{file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (before_k, before_rows) = cost(&ir);
+
+    let (instructions, report) = pass.run(ir.instructions.to_vec());
+    let transformed = minocrab_zkir::v3::IrSource {
+        instructions: std::sync::Arc::new(instructions),
+        ..ir
+    };
+    let (after_k, after_rows) = cost(&transformed);
+
+    println!(
+        "{}: {} -> {} instructions; k {} -> {}; rows {} -> {}",
+        report.pass, report.before, report.after, before_k, after_k, before_rows, after_rows,
+    );
+    for warning in &report.warnings {
+        println!("  warning: {warning}");
+    }
+
+    if let Some(out) = out {
+        let file = match std::fs::File::create(out) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("{out}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(e) = minocrab_zkir::v3::write_zkir(&transformed, file, out) {
+            eprintln!("{out}: {e}");
+            return ExitCode::FAILURE;
+        }
+        println!("wrote {out}");
+    }
     ExitCode::SUCCESS
 }

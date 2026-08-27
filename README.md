@@ -413,6 +413,18 @@ MinoCrab is a library first — like the [GHC API](https://hackage.haskell.org/p
 
 Consume it today as a **git dependency** (crates.io is blocked on upstream — see [PUBLISHING.md](PUBLISHING.md)). The API is **tiered**: a small, stable-*ish* public surface, kept small deliberately while users are few, and an internals tier that may move.
 
+**Stability tiers**, concretely (v1 of the boundary — each crate's docs open with its own tier statement):
+
+| tier | what | where |
+|---|---|---|
+| **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
+| **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
+| **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
+| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs — gated behind an `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
+| **internal** | the Impact ledger-op layer, the interface generator, the v2 layers | `minocrab-ledger`, `minocrab-interface-gen`, v2 modules |
+
+The `unstable` gate is a hard wall exactly where it matters most: a **pass or lint crate depending on `minocrab-ir` alone** never sees the internals. Graphs that include the full eDSL activate the feature transitively (cargo feature unification), so there the tier lives in the docs and the semver commitment rather than the compiler. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise — the line widens by decision, never by accident.
+
 **Three ways to extend it à la carte, no fork:**
 
 1. **Write a super-optimised gadget** — a crate depending on `minocrab-std` that builds a circuit fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is the highest-ceiling extension point: the real performance in MinoCrab comes from *typed-layer instruction selection* (native `ReverseBytes`, in-chip keccak packing, `div_mod` byte shifts, guarded read-as-zero), which needs the type information the eDSL has and type-erased ZKIR does not. Prove it equivalent to a reference with the differential / spec harness.

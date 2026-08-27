@@ -10,8 +10,10 @@
 //! `zkir-v3/src/ir.rs` doc comments), so a type error can never reach the
 //! prover. Semantics reference: `zkir-v3/src/ir_vm.rs`.
 
+#[cfg(feature = "unstable")]
 use std::sync::Arc;
 
+#[cfg(feature = "unstable")]
 use minocrab_zkir::Fr;
 pub use minocrab_zkir::v3::{Identifier, Instruction, IrSource, IrType, Operand, TypedIdentifier};
 
@@ -20,10 +22,12 @@ pub use midnight_base_crypto::fab::Alignment;
 pub mod passes;
 pub mod taint;
 
+#[cfg(feature = "unstable")]
 /// A handle to one named, typed circuit value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Val(u32);
 
+#[cfg(feature = "unstable")]
 /// An instruction operand: a built value or an inline immediate (immediates
 /// are native field elements).
 #[derive(Debug, Clone, Copy)]
@@ -32,24 +36,28 @@ pub enum Arg {
     Imm(Fr),
 }
 
+#[cfg(feature = "unstable")]
 impl From<Val> for Arg {
     fn from(v: Val) -> Self {
         Arg::Val(v)
     }
 }
 
+#[cfg(feature = "unstable")]
 impl From<Fr> for Arg {
     fn from(imm: Fr) -> Self {
         Arg::Imm(imm)
     }
 }
 
+#[cfg(feature = "unstable")]
 impl From<u64> for Arg {
     fn from(imm: u64) -> Self {
         Arg::Imm(imm.into())
     }
 }
 
+#[cfg(feature = "unstable")]
 fn is_foreign_field(ty: &IrType) -> bool {
     matches!(
         ty,
@@ -62,6 +70,7 @@ fn is_foreign_field(ty: &IrType) -> bool {
     )
 }
 
+#[cfg(feature = "unstable")]
 fn is_point(ty: &IrType) -> bool {
     matches!(
         ty,
@@ -72,23 +81,27 @@ fn is_point(ty: &IrType) -> bool {
     )
 }
 
+#[cfg(feature = "unstable")]
 /// TestEq/Add/Neg/CondSelect/ConstrainEq support everything except
 /// `Bytes<32>` and `Scalar<Jubjub>`.
 fn supports_eq_add(ty: &IrType) -> bool {
     matches!(ty, IrType::Native) || is_foreign_field(ty) || is_point(ty)
 }
 
+#[cfg(feature = "unstable")]
 /// Mul/Inv support field elements only (no points).
 fn supports_mul(ty: &IrType) -> bool {
     matches!(ty, IrType::Native) || is_foreign_field(ty)
 }
 
+#[cfg(feature = "unstable")]
 /// IntoBytes32/FromBytes32 support prime-field elements with a canonical
 /// 32-byte little-endian form.
 fn supports_bytes32_conversion(ty: &IrType) -> bool {
     matches!(ty, IrType::Native) || is_foreign_field(ty)
 }
 
+#[cfg(feature = "unstable")]
 /// The affine-coordinate type of each curve's points.
 fn coordinate_type(point: &IrType) -> Option<IrType> {
     match point {
@@ -100,6 +113,7 @@ fn coordinate_type(point: &IrType) -> Option<IrType> {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// The scalar type matching each curve's points, for EcMul.
 fn scalar_type(point: &IrType) -> Option<IrType> {
     match point {
@@ -111,6 +125,7 @@ fn scalar_type(point: &IrType) -> Option<IrType> {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Construct a [`TypedIdentifier`]; its fields are `pub(crate)` upstream, so
 /// go through its serde form (`{"name": ..., "type": ...}`).
 fn typed_identifier(name: &Identifier, ty: &IrType) -> TypedIdentifier {
@@ -121,6 +136,7 @@ fn typed_identifier(name: &Identifier, ty: &IrType) -> TypedIdentifier {
     serde_json::from_value(value).expect("TypedIdentifier deserializes from name + type")
 }
 
+#[cfg(feature = "unstable")]
 /// Builds a ZKIR v3 instruction stream with statically-tracked, typed,
 /// named values.
 #[derive(Debug, Default)]
@@ -139,6 +155,7 @@ pub struct Builder3 {
     dedup_constraints: bool,
 }
 
+#[cfg(feature = "unstable")]
 impl Builder3 {
     pub fn new() -> Self {
         Self::default()

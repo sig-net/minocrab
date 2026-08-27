@@ -13,7 +13,7 @@ include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 minocrab.workspace = true
-minocrab-ir.workspace = true
+minocrab-ir = { workspace = true, features = ["unstable"] }
 midnight-onchain-vm.workspace = true
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true

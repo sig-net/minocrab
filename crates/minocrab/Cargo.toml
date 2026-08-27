@@ -12,4 +12,4 @@ categories = ["cryptography::cryptocurrencies", "compilers", "rust-patterns"]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
-minocrab-ir.workspace = true
+minocrab-ir = { workspace = true, features = ["unstable"] }

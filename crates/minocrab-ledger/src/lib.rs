@@ -38,6 +38,12 @@
 //!   wires and record their disclosure
 //! - [`contract_call`] — a cross-contract call, and the labels it discloses
 //!   ([`XcallEntryPointHash`], [`XcallCommitment`], [`XcallResult`])
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! INTERNAL TIER, whole crate: the Impact op layer is the eDSL's
+//! implementation detail (reached through `minocrab-std`'s typed ledger
+//! surface) and carries no stability promise.
 
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,

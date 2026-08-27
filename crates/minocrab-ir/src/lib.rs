@@ -25,7 +25,18 @@
 //! - [`v3::passes`] — the normalisation passes both sides of a differential
 //!   are run through
 //! - [`IrSource`] — what a finished build hands to L0 for writing
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! STABLE TIER (semver commitment): [`v3::passes`] (the [`v3::passes::Pass`]
+//! trait and the reference passes), [`v3::taint`], and the re-exported ZKIR
+//! types. INTERNAL TIER, gated behind the `unstable` cargo feature: the raw
+//! [`v3::Builder3`]/`Val` layers and the v2 `Builder` — the eDSL's
+//! implementation detail, wrapped by `minocrab`'s `Circuit3`. A pass or
+//! lint crate depending on `minocrab-ir` alone builds against the stable
+//! tier only; the full-eDSL crates enable `unstable` internally.
 
+#[cfg(feature = "unstable")]
 use std::sync::Arc;
 
 pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
@@ -33,10 +44,12 @@ pub use minocrab_zkir::{Fr, Instruction, IrSource};
 
 pub mod v3;
 
+#[cfg(feature = "unstable")]
 /// A handle to one slot of circuit value memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Val(u32);
 
+#[cfg(feature = "unstable")]
 impl Val {
     /// The raw ZKIR memory index.
     pub fn index(self) -> u32 {
@@ -44,6 +57,7 @@ impl Val {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Builds a ZKIR instruction stream with statically-tracked value handles.
 #[derive(Debug, Default)]
 pub struct Builder {
@@ -52,6 +66,7 @@ pub struct Builder {
     instructions: Vec<Instruction>,
 }
 
+#[cfg(feature = "unstable")]
 impl Builder {
     /// A builder for a circuit taking `num_inputs` field-element arguments.
     /// Returns the handles for those arguments.

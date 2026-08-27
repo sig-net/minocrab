@@ -45,6 +45,15 @@
 //!   `unshieldedBalance*`
 //! - [`macro@v3::circuit`] and [`macro@v3::CircuitArg`] — the decorators
 //!   (default `macros` feature)
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! STABLE TIER (semver commitment): the typed v3 leaves — `Uint`, `Bool`,
+//! `Bytes<N>`, `B32`, the curve leaves — per notes/library-api.org §1's
+//! minimal set. The wider contract-authoring surface (ledger declarations,
+//! kernel, Borsh, disclosure vocabulary) is not yet under a stability
+//! promise: the tier line inside this crate is drawn deliberately small
+//! while users are few, and widens by decision.
 
 pub mod bundle;
 pub mod coin;
