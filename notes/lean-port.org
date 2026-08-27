@@ -109,8 +109,17 @@ THEOREMS (the R4 specimens, discharged without bounds):
 - dedup: output is a subsequence; non-constraints preserved with
   multiplicity; per-wire tightest bound (hence solution set) unchanged;
   idempotence.
-- fold: observables preserved in kind, order and operand-value;
-  =output= operand lists verbatim; idempotence.
+- fold, split in two halves because they need different machinery:
+  - SYNTACTIC (no side conditions): =output= operand lists verbatim;
+    the non-copy skeleton preserved in kind and order; the fold is
+    EXACTLY filter-then-substitute (=foldRun_is_filter_map=) — nothing
+    is added, reordered, or rewritten beyond operand substitution.
+  - SEMANTIC (operand-VALUES preserved under the copy environment):
+    requires an SSA well-formedness apparatus — copy destinations
+    defined before use, no rebinding — because the Rust substitutes
+    globally and only SSA input (guaranteed by Builder3) makes that
+    sound. The statement is fixed as a comment at the bottom of
+    =Fold.lean= so the goal precedes the machinery.
 
 REFLECTION into the type-level contract (dmd's step 3, applied to the
 prong): the honest statement is that Rust's type system cannot make
@@ -131,3 +140,10 @@ plain Lean 4 so the check loop is seconds), =Minocrab/Passes.lean= with
 the dedup model and the first theorems green under =lake build= using
 nixpkgs lean4 (devshell). See the file headers for the model-gap
 statement.
+
+2026-08-27 (later) — dedup complete: four sorry-free theorems
+(=dedup_sublist=, =dedup_passthrough=, =dedup_bound= via the
+accumulator-relative invariant, =dedup_idem=). Fold's SYNTACTIC half
+landed in =Fold.lean= (=fold_outputs=, =fold_skeleton=,
+=foldRun_is_filter_map=), all lake-green; the semantic half's statement
+is fixed in the file, its WF apparatus is the next session's task.

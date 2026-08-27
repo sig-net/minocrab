@@ -962,12 +962,22 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       The type invariant is the milestone's user-facing product; the Lean
       is its warrant. Record per construct whether the types match the
       proof's set exactly or admit a strict subset, and why.
-- [ ] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
+- [-] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
       preserve-meaning proof (PI/witness stream unchanged, only implied
       range constraints dropped — M23 R4 Kani bounds it first, Lean
       discharges it unbounded), reflected as the type-level pass CONTRACT
       (M24 §3) so a third-party pass that violates it does not type-check
       as far as the type system can reach.
+      (PARTIAL 2026-08-27 — dedup DONE (four sorry-free theorems, see
+      the design-note tick above). Fold's SYNTACTIC half DONE in
+      lean/MinocrabProofs/Fold.lean: output operand lists verbatim, the
+      non-copy skeleton preserved in kind/order, and
+      =foldRun_is_filter_map= (the fold is exactly filter-then-
+      substitute). REMAINING: fold's SEMANTIC half — operand-values
+      preserved under the copy environment — which needs an SSA
+      well-formedness apparatus (defs-before-uses, no rebinding; the
+      statement is fixed as a comment in Fold.lean); and the
+      =VerifiedPass= reflection per notes/lean-port.org §4.)
 - [ ] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
       what the Compact repo's spec actually covers and does NOT — static/
       typing only, an unchecked operational SKETCH, nothing on ZKIR,
