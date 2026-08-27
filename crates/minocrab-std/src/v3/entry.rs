@@ -46,7 +46,7 @@ use minocrab::{AlignmentAtom, Private, Public};
 use super::{
     Bool, BoundedUint, Bytes, BytesN, ContractAddress, Either, JubjubPoint, Maybe,
     MerkleTreeDigest, Opaque, Secp256k1Point, Secp256k1Scalar, ShieldedCoinInfo3,
-    ShieldedSendResult, TsType, Uint, UserAddress, Vis3, ZswapCoinPublicKey, B32,
+    ShieldedSendResult, TsType, Uint, UserAddress, Vis3, B32,
 };
 
 // ---- argument paths ---------------------------------------------------------
@@ -459,30 +459,6 @@ impl<V: Vis3> CircuitAbi for ContractAddress<V> {
 impl CircuitArg for ContractAddress<Private> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         ContractAddress(B32::declare(c, path))
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.0.push_slots(slots);
-    }
-}
-
-/// Compact's `ZswapCoinPublicKey`: a struct of one `Bytes<32>`, which
-/// flattens to exactly that `Bytes<32>`'s slots.
-impl<V: Vis3> CircuitAbi for ZswapCoinPublicKey<V> {
-    const SLOTS: usize = <B32<V> as CircuitAbi>::SLOTS;
-
-    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
-        <B32<V> as CircuitAbi>::push_atoms(atoms);
-    }
-
-    fn push_prims(prims: &mut Vec<Prim>) {
-        <B32<V> as CircuitAbi>::push_prims(prims);
-    }
-}
-
-impl CircuitArg for ZswapCoinPublicKey<Private> {
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        ZswapCoinPublicKey(B32::declare(c, path))
     }
 
     fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {

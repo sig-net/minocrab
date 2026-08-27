@@ -85,8 +85,8 @@ fn recipient(c: &mut Circuit3, r: RecipientArg) -> CoinRecipient<Public> {
     let r = r.disclose_as::<Recipient>(c);
     CoinRecipient {
         is_left: r.is_left.field(),
-        left: r.left.bytes(),
-        right: r.right.bytes(),
+        left: r.left,
+        right: r.right,
     }
 }
 

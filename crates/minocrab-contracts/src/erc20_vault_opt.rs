@@ -75,7 +75,7 @@ use crate::erc20_vault::{
     EVM_CHAIN_ID, EXACT_OUTPUT_SINGLE_SELECTOR, INITIALIZED, MPC_FAILURE_OUTPUT, MPC_RESPONSE_KEY,
     REFUND_PAD, SIGNET_REQUEST_NONCE, SIGNET_SIGNER, SWAP_OUTPUT_LEN, SWAP_OUTPUT_SCHEMA,
     SWAP_RESPOND_LEN, SWAP_RESPOND_SCHEMA, SWAP_WORDS, TRANSFER_SELECTOR, UNISWAP_ROUTER,
-    VAULT, VAULT_EVM_ADDRESS, VAULT_PATH, VAULT_RESPONSE_SCHEMA, VAULT_SCHEMA_LEN, VAULT_WORDS,
+    VAULT, VAULT_EVM_ADDRESS, VAULT_RESPONSE_SCHEMA, VAULT_SCHEMA_LEN, VAULT_WORDS,
 };
 use crate::signet;
 
@@ -1560,7 +1560,7 @@ pub fn claim(
     #[arg(name = "respond")] respond_bidirectional_event: RespondSignature,
     serialized_output: Bytes<1>,
     mint_nonce: CoinNonce<Private>,
-    recipient: Maybe<Either<B32<Private>, B32<Private>>>,
+    recipient: Maybe<Either<minocrab_std::v3::ZswapCoinPublicKey<Private>, minocrab_std::v3::ContractAddress<Private>, Private>>,
 ) -> Discloses<(
     ClaimRequestId,
     ClaimRecipientTag,
@@ -1655,14 +1655,14 @@ pub fn claim(
         let rec_left = rec_left.disclose_as::<ClaimRecipientKey>(c);
         let rec_right = rec_right.disclose_as::<ClaimRecipientContract>(c);
         let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-        let left = B32 {
-            hi: c.cond_select(rec_is_some, rec_left.hi, own_pk.hi),
-            lo: c.cond_select(rec_is_some, rec_left.lo, own_pk.lo),
-        };
-        let right = B32 {
-            hi: c.cond_select(rec_is_some, rec_right.hi, 0u64),
-            lo: c.cond_select(rec_is_some, rec_right.lo, 0u64),
-        };
+        let left = minocrab_std::v3::ZswapCoinPublicKey(B32 {
+            hi: c.cond_select(rec_is_some, rec_left.bytes().hi, own_pk.bytes().hi),
+            lo: c.cond_select(rec_is_some, rec_left.bytes().lo, own_pk.bytes().lo),
+        });
+        let right = minocrab_std::v3::ContractAddress(B32 {
+            hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
+            lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
+        });
         CoinRecipient { is_left, left, right }
     });
 

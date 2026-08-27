@@ -392,8 +392,8 @@ impl KernelTokens {
         let v = v.disclose_as::<Amount>(c);
         let recipient = CoinRecipient {
             is_left: r.is_left.field(),
-            left: r.left.bytes(),
-            right: r.right.bytes(),
+            left: r.left,
+            right: r.right,
         };
         Discloses::of(kernel::send_shielded(c, &input, &recipient, v))
     }

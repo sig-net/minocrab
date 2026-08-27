@@ -15,7 +15,7 @@ use super::entry::CircuitOut;
 use super::{
     Bool, BoundedUint, Bytes, BytesN, CoinColor, CoinNonce, ContractAddress, Either,
     JubjubPoint, MerkleTreeDigest, Opaque,
-    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, ZswapCoinPublicKey, B32,
+    Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
 impl<const BITS: u32> Disclose for Uint<BITS, Private> {
@@ -58,14 +58,6 @@ impl Disclose for B32<Private> {
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> B32<Public> {
         let [hi, lo] = c.disclose_all(L::LABEL, [self.hi, self.lo]);
         B32 { hi, lo }
-    }
-}
-
-impl Disclose for ZswapCoinPublicKey<Private> {
-    type Public = ZswapCoinPublicKey<Public>;
-
-    fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> ZswapCoinPublicKey<Public> {
-        ZswapCoinPublicKey(self.0.disclose_as::<L>(c))
     }
 }
 

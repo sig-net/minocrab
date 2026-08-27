@@ -757,14 +757,14 @@ pub fn send_shielded(
         color: input.color,
         value: value.field(),
     };
-    let to = B32::cond_select(c, recipient.is_left, &recipient.left, &recipient.right);
+    let to = B32::cond_select(c, recipient.is_left, &recipient.left.bytes(), &recipient.right.bytes());
     let cm = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
     claim_zswap_coin_spend(c, &cm);
 
     // Auto-receive when sending to self: `!recipient.is_left && …`, which is
     // one `cond_select` with the arms the other way round from `is_self`'s.
     // The address needs no guarded read — `selfAddr` is already to hand.
-    let same = bytes_eq(c, &recipient.right, &me);
+    let same = bytes_eq(c, &recipient.right.bytes(), &me);
     let mine = c.cond_select(recipient.is_left, 0u64, same);
     let cm_again = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
     claim_zswap_coin_receive_under(c, mine, &cm_again);

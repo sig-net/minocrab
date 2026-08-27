@@ -1272,27 +1272,21 @@ impl<V: Vis3> UserAddress<V> {
     }
 }
 
-/// Compact's `ZswapCoinPublicKey` — a struct of one `Bytes<32>`, and the
-/// SHIELDED half of a coin recipient (`Either<ZswapCoinPublicKey,
-/// ContractAddress>`, [`CoinRecipient`]).
-///
-/// The third leaf of this shape after [`ContractAddress`] and [`UserAddress`],
-/// and separate from both for the reason they are separate from each other: a
-/// zswap public key is a user's spending key, not an address, and an `Either`
-/// whose arms were the same type would say nothing.
-#[derive(Clone, Copy)]
-pub struct ZswapCoinPublicKey<V: Vis3>(pub B32<V>);
-
-impl<V: Vis3> ZswapCoinPublicKey<V> {
-    /// The key's FAB limbs, `[hi, lo]`.
-    pub fn limbs(self) -> [Wire3<FieldT, V>; 2] {
-        [self.0.hi, self.0.lo]
-    }
-
-    /// The underlying `Bytes<32>`.
-    pub fn bytes(self) -> B32<V> {
-        self.0
-    }
+b32_newtype! {
+    /// Compact's `ZswapCoinPublicKey` — a struct of one `Bytes<32>`, and the
+    /// SHIELDED half of a coin recipient (`Either<ZswapCoinPublicKey,
+    /// ContractAddress>`, [`CoinRecipient`]).
+    ///
+    /// The third leaf of this shape after [`ContractAddress`] and
+    /// [`UserAddress`], and separate from both for the reason they are
+    /// separate from each other: a zswap public key is a user's spending
+    /// key, not an address, and an `Either` whose arms were the same type
+    /// would say nothing. Adopted THROUGH the recipient plumbing by
+    /// newtype-survey A8: [`own_public_key`] returns one and
+    /// [`CoinRecipient`]'s arms carry their own types, so a recipient built
+    /// with a contract address in the key arm — a coin minted to a wallet
+    /// key nobody holds — no longer compiles.
+    ZswapCoinPublicKey,
 }
 
 /// Compact's `MerkleTreeDigest` — a struct of one `Field`, and the argument
@@ -2188,13 +2182,13 @@ pub fn secp256k1_ethereum_address<V: Vis3>(
 /// local secret key never enters the circuit, the runtime supplies the
 /// derived key as a witness, input-constrained like any `Bytes<32>`
 /// (confirmed against the mint-tokens corpus artifact).
-pub fn own_public_key(c: &mut Circuit3) -> B32<Private> {
+pub fn own_public_key(c: &mut Circuit3) -> ZswapCoinPublicKey<Private> {
     let pk = B32 {
         hi: c.witness::<FieldT>(),
         lo: c.witness::<FieldT>(),
     };
     pk.constrain_input(c);
-    pk
+    ZswapCoinPublicKey(pk)
 }
 
 /// [`own_public_key`] inside a conditional: the witnesses carry the branch
@@ -2203,13 +2197,13 @@ pub fn own_public_key(c: &mut Circuit3) -> B32<Private> {
 pub fn own_public_key_guarded<V: Vis3>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
-) -> Guarded<B32<Private>, V> {
+) -> Guarded<ZswapCoinPublicKey<Private>, V> {
     let pk = B32 {
         hi: c.witness_guarded::<FieldT, V>(guard),
         lo: c.witness_guarded::<FieldT, V>(guard),
     };
     pk.constrain_input(c);
-    Guarded::new(pk, guard)
+    Guarded::new(ZswapCoinPublicKey(pk), guard)
 }
 
 /// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE
@@ -2380,8 +2374,8 @@ pub struct ShieldedSendResult<V: Vis3> {
 #[derive(Clone, Copy)]
 pub struct CoinRecipient<V: Vis3> {
     pub is_left: Wire3<FieldT, V>,
-    pub left: B32<V>,
-    pub right: B32<V>,
+    pub left: ZswapCoinPublicKey<V>,
+    pub right: ContractAddress<V>,
 }
 
 // ---- Compact's generic sum shapes -------------------------------------------
@@ -2467,7 +2461,7 @@ pub fn coin_commitment<V: Vis3>(
     coin: &ShieldedCoinInfo3<V>,
     recipient: &CoinRecipient<V>,
 ) -> B32<V> {
-    let data = B32::cond_select(c, recipient.is_left, &recipient.left, &recipient.right);
+    let data = B32::cond_select(c, recipient.is_left, &recipient.left.bytes(), &recipient.right.bytes());
     coin_commitment_to(c, coin, recipient.is_left.erase(), &data)
 }
 

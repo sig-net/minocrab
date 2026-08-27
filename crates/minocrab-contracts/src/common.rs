@@ -218,8 +218,8 @@ fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinReci
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
-        left: B32 { hi: zero, lo: zero },
-        right: me.bytes(),
+        left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+        right: me,
     }
 }
 
@@ -350,8 +350,8 @@ pub fn mint_shielded_token(
         // Auto-receive when minting to this contract itself.
         let not_left = c.not(recipient.is_left);
         let self2 = kernel::self_address_guarded(c, not_left).or_default().bytes();
-        let eq_hi = c.test_eq(recipient.right.hi, self2.hi);
-        let eq_lo = c.test_eq(recipient.right.lo, self2.lo);
+        let eq_hi = c.test_eq(recipient.right.bytes().hi, self2.hi);
+        let eq_lo = c.test_eq(recipient.right.bytes().lo, self2.lo);
         let eq = c.mul(eq_hi, eq_lo);
         let receive = c.mul(not_left, eq);
         emit(c, receive, &kernel_claim_zswap_coin_receive(&cm_val));
@@ -415,8 +415,8 @@ fn burn_body(
         // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
         let burn = CoinRecipient {
             is_left: one,
-            left: B32 { hi: zero, lo: zero },
-            right: B32 { hi: zero, lo: zero },
+            left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+            right: ContractAddress(B32 { hi: zero, lo: zero }),
         };
         let cm = coin_commitment(c, &output, &burn);
         emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
@@ -473,8 +473,8 @@ pub fn burn_spend(
         // cm = coinCommitment(output, shieldedBurnAddress()) — left(default).
         let burn = CoinRecipient {
             is_left: one,
-            left: B32 { hi: zero, lo: zero },
-            right: B32 { hi: zero, lo: zero },
+            left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+            right: ContractAddress(B32 { hi: zero, lo: zero }),
         };
         let cm = coin_commitment(c, &output, &burn);
         emit(c, one, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
@@ -528,7 +528,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
     domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
-    pk: &B32<Public>,
+    pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>,
 ) {
     let guard = guard.into();
     c.region("coin: mint", |c| {
@@ -548,7 +548,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
         let left = CoinRecipient {
             is_left: one,
             left: *pk,
-            right: B32 { hi: zero, lo: zero },
+            right: ContractAddress(B32 { hi: zero, lo: zero }),
         };
         let cm = coin_commitment(c, &coin, &left);
         emit(c, guard, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
@@ -562,7 +562,7 @@ pub fn mint_shielded_token_to_key(
     domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
-    pk: &B32<Public>,
+    pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>,
 ) {
     let me = kernel::self_address(c);
     mint_shielded_token_to_key_with(c, STRAIGHT_LINE, me, domain_sep, value, nonce, pk);

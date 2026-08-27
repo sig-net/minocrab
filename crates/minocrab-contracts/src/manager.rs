@@ -189,8 +189,8 @@ fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinReci
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
-        left: B32 { hi: zero, lo: zero },
-        right: me.bytes(),
+        left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
+        right: me,
     }
 }
 
@@ -1139,10 +1139,13 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             let k0 = c.test_eq(p.recipient_kind, 0u64);
             let k1 = c.test_eq(p.recipient_kind, 1u64);
             let use_left = c.cond_select(f.is2, k0, k1);
+            // `p.recipient` is genuinely dual-use — a wallet key or a
+            // contract address, selected by the kind bit — so BOTH arms
+            // carry the same limbs and the wrap is per-arm.
             let recipient = CoinRecipient {
                 is_left: use_left,
-                left: p.recipient,
-                right: p.recipient,
+                left: minocrab_std::v3::ZswapCoinPublicKey(p.recipient),
+                right: minocrab_std::v3::ContractAddress(p.recipient),
             };
             let result = kernel::send_shielded(
                 c,

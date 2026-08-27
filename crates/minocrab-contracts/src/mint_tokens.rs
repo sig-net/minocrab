@@ -26,7 +26,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    CoinNonce, TokenDomainSeparator,
+    CoinNonce, ContractAddress, TokenDomainSeparator, ZswapCoinPublicKey,
     circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
     ShieldedCoinInfo3, B32,
 };
@@ -52,7 +52,7 @@ fn mint_shielded_token(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
     nonce: &CoinNonce<Public>,
-    recipient: &B32<Public>,
+    recipient: &ZswapCoinPublicKey<Public>,
 ) {
     let zero = c.constant(0u64);
 
@@ -82,7 +82,7 @@ fn mint_shielded_token(
     let left = CoinRecipient {
         is_left: one,
         left: *recipient,
-        right: B32 { hi: zero, lo: zero }, // default<ContractAddress>
+        right: ContractAddress(B32 { hi: zero, lo: zero }), // default<ContractAddress>
     };
     let cm = coin_commitment(c, &coin, &left);
 
@@ -96,7 +96,7 @@ fn mint_shielded_token(
 #[circuit]
 pub fn mint_with_recipient_argument(
     c: &mut Circuit3,
-    recipient: B32<Private>,
+    recipient: ZswapCoinPublicKey<Private>,
     mint_nonce: CoinNonce<Private>,
 ) -> Discloses<(MintRecipient, MintNonce)> {
     let one = c.constant(1u64);
@@ -128,8 +128,8 @@ pub fn mint_with_recipient_own_public_key(
     let value = LedgerValue::bytes(
         32,
         vec![
-            ImpactElem::Wire(very_public.hi),
-            ImpactElem::Wire(very_public.lo),
+            ImpactElem::Wire(very_public.bytes().hi),
+            ImpactElem::Wire(very_public.bytes().lo),
         ],
     );
     emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
