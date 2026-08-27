@@ -647,3 +647,44 @@ Per commit, in order:
 Expected outcome, stated so a deviation is visible: *every circuit
 byte-identical, on every commit.* Any movement at all is a bug in the
 newtype, not an intended cost.
+
+* As built — the sweep landed (2026-08-27)
+
+All eight adopted families are in, one commit each, in the survey's
+order: A1 =RequestId= (previous session, with the =b32_newtype!=
+machinery), then A2-A8 — =SecretKey=, =UserCommitment=,
+=RefundCommitment=, =CoinNonce=, =TokenDomainSeparator=+=CoinColor=,
+=SigningPath=+=Caip2Id= (with the =Secp256k1SigLimbs= sub-case and
+=sender= restored to =ContractAddress=), and =ZswapCoinPublicKey=
+adopted through the recipient plumbing. The expected outcome held on
+every commit: *zkir dumps byte-identical for all 209 circuits*,
+interface snapshot unchanged, workspace suite green — verified per
+commit by the §Gates procedure, before/after via =git stash=.
+
+Deviations from the survey's letter, all recorded in the commits:
+
+- =SecretKey= (A2) gained a site the survey predates: the AA manager's
+  =owner_commitment=, which consumes the same =witness_sk=.
+- =CoinNonce= (A5) reached ~15 files, not 7 — the coin structs'
+  =nonce= fields ripple through =minocrab-std='s call/disclose/kernel
+  delegation and the M17/M22 fixtures. Two LABEL collisions surfaced
+  (=xcall_with_payment='s =CoinNonce=, and A6 found the same with its
+  =CoinColor= and the port's =Caip2Id= labels): a disclosure label and
+  a newtype legitimately share a name, resolved by qualifying the TYPE
+  at the field, never renaming the label.
+- =CoinColor= (A6) also typed the manager's =pools= map key, colour
+  params and colour-key helpers; =kernel::TokenType= stays
+  =Either<B32, B32>= as the survey allowed, noted in the commit.
+- =ZswapCoinPublicKey= (A8) was CONVERTED to =b32_newtype!= rather than
+  extended — the hand impls in =entry.rs=/=disclose.rs= were the
+  macro's duplicates and are deleted. The manager's kind-selected
+  recipient is the one honestly dual-use site: the same limbs wrapped
+  into both arms, commented at the code.
+- =ContractAddress= gained =.private()= (A7 needed it; the macro types
+  already had it).
+
+What the sweep leaves greppable: every place a distinction is
+deliberately dropped is a =.bytes()= call, and the remaining ones are
+the direct ports' raw-limb gates, the hash-preimage limb feeds, and the
+event/ABI word assembly — exactly the boundaries the survey's §0 said a
+newtype cannot cross without instruction movement.

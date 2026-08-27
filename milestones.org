@@ -566,16 +566,20 @@ stage declares movement, notes as-built.
       the way `operands_mut` is (notes/formal-verification-options.org
       §10) — a new upstream terminator must break the build, since the
       unsound direction is the fold doing MORE.
-- [ ] R2 — the newtype sweep (dmd: "use newtypes wherever you can to
-      make the API safer"). SURVEY FIRST, implement second, own commit
-      each: every same-shaped-different-meaning value family. Obvious
-      four: RequestId, the commitment families (userCommitment,
-      refund/swap-refund commitments), nonces (mintNonce, changeNonce,
-      coin nonces), domain separators. repr(transparent) phantom-tagged
-      or distinct B32 newtypes; zero instructions; dump-gated. The
-      survey names each family, its sites, and the cross-assignment
-      hazard it closes; families where the ripple exceeds the safety win
-      are refused in writing.
+- [X] R2 — the newtype sweep (dmd: "use newtypes wherever you can to
+      make the API safer"). Survey first, one commit per family,
+      dump-gated; families where the ripple exceeds the safety win
+      refused in writing.
+      (DONE 2026-08-27 — notes/newtype-survey.org, §"As built". Eight
+      families adopted and landed (RequestId, SecretKey, UserCommitment,
+      RefundCommitment, CoinNonce, TokenDomainSeparator+CoinColor,
+      SigningPath+Caip2Id with the Secp256k1SigLimbs sub-case,
+      ZswapCoinPublicKey through the recipient plumbing), eight refused
+      in writing. Every commit: zkir dumps byte-identical for all 209
+      circuits, interface snapshot unchanged, workspace green. The
+      sharpest closures: a swapped mint nonce/recipient (a coin minted
+      to a key nobody holds) and the event triple whose transposition
+      inverted the deposit authorisation model no longer compile.)
 - [ ] R3 — THE TAINT LINT, a new instrument (dmd approved 2026-08-17):
       ~150-line pass over Vec<Instruction> per circuit — mark every
       range-constrained wire (constrain_bits/boolean directly;
