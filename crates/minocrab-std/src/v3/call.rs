@@ -22,7 +22,7 @@ use minocrab::v3::{CallArg, CallResult, FieldT, Wire3};
 use minocrab::Public;
 
 use super::{
-    Bool, BoundedUint, Bytes, BytesN, CoinNonce, ContractAddress, Either, Maybe,
+    Bool, BoundedUint, Bytes, BytesN, CoinColor, CoinNonce, ContractAddress, Either, Maybe,
     MerkleTreeDigest, Opaque, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, TsType, Uint,
     UserAddress, B32,
 };
@@ -214,7 +214,7 @@ impl CallResult for ShieldedCoinInfo3<Public> {
     fn from_call_slots(slots: &[Wire3<FieldT, Public>]) -> Self {
         ShieldedCoinInfo3 {
             nonce: CoinNonce::from_call_slots(&slots[..2]),
-            color: B32::from_call_slots(&slots[2..4]),
+            color: CoinColor::from_call_slots(&slots[2..4]),
             value: slots[4],
         }
     }

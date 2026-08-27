@@ -26,7 +26,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinNonce, TokenDomainSeparator,
     circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
     ShieldedCoinInfo3, B32,
 };
@@ -58,8 +58,9 @@ fn mint_shielded_token(
 
     // color = tokenType(domain_sep, kernel.self())
     let me = kernel::self_address(c).bytes();
-    let domain_sep = B32::pad(c, DOMAIN_SEP);
+    let domain_sep = TokenDomainSeparator(B32::pad(c, DOMAIN_SEP));
     let color = token_type(c, &domain_sep, &me);
+    let domain_sep = domain_sep.bytes();
 
     // kernel.mintShielded(domain_sep, 1)
     let ds_val = LedgerValue::bytes(

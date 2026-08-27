@@ -76,7 +76,7 @@ use minocrab_std::v3::kernel;
 use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinColor, CoinNonce, TokenDomainSeparator,
     circuit, eq, is_true, label, not, own_public_key, own_public_key_guarded, Bool, Bytes,
     Check, CircuitArg, CoinRecipient, Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe,
     Secp256k1Point, Uint, B32,
@@ -546,7 +546,7 @@ struct WithdrawRequest {
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -602,7 +602,7 @@ pub fn withdraw(
     // want the same address, and the port read it five times.
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(b32_eq(&coin.color, &color.private()));
+    c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
     c.assert(eq(coin.value.field(), amount));
 
     // Contract-enforced calldata: transfer(destEvmAddress, amount).
@@ -741,7 +741,7 @@ pub fn swap(
     // port read the same address five times.
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(b32_eq(&coin.color, &color.private()));
+    c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
     c.assert(eq(coin.value.field(), amount_in_max));
 
     // exactOutputSingle((tokenIn, tokenOut, fee, vault, amountOut,
@@ -963,10 +963,12 @@ pub fn approve_router(
 fn vault_token_domain_separator(
     c: &mut Circuit3,
     erc20_address: Wire3<FieldT, Public>,
-) -> B32<Public> {
-    c.region("token domain separator", |c| B32 {
-        hi: c.constant(u64::from(VAULT_TOKEN_TAG)),
-        lo: erc20_address,
+) -> TokenDomainSeparator<Public> {
+    c.region("token domain separator", |c| {
+        TokenDomainSeparator(B32 {
+            hi: c.constant(u64::from(VAULT_TOKEN_TAG)),
+            lo: erc20_address,
+        })
     })
 }
 

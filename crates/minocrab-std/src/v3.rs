@@ -2225,9 +2225,10 @@ fn b32_atom() -> AlignmentSegment {
 /// corpus artifact).
 pub fn token_type<V: Vis3>(
     c: &mut Circuit3,
-    domain_sep: &B32<V>,
+    domain_sep: &TokenDomainSeparator<V>,
     contract: &B32<V>,
-) -> B32<V> {
+) -> CoinColor<V> {
+    let domain_sep = domain_sep.bytes();
     // The domain prefix is CONSTANT, so it is inlined into the hash operand
     // list rather than named by two `copy`s — compactc emits
     // `["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", …]` with no
@@ -2238,7 +2239,7 @@ pub fn token_type<V: Vis3>(
     // class).
     let (p_hi, p_lo) = b32_pad_limbs("midnight:derive_token");
     let alignment = Alignment(vec![b32_atom(), b32_atom(), b32_atom()]);
-    hash::persistent_hash_compact(
+    CoinColor(hash::persistent_hash_compact(
         c,
         alignment,
         &[
@@ -2249,7 +2250,7 @@ pub fn token_type<V: Vis3>(
             contract.hi.erase(),
             contract.lo.erase(),
         ],
-    )
+    ))
 }
 
 /// The `[hi, lo]` field elements of `pad(32, s)`, as constants — the
@@ -2274,6 +2275,16 @@ b32_newtype! {
     /// consequential (a swapped nonce/recipient mints a coin to a key
     /// nobody holds and silently destroys the value).
     CoinNonce,
+    /// A token DOMAIN SEPARATOR — the pre-token [`token_type`] derives a
+    /// colour from. Distinct from [`CoinColor`] on purpose: a separator
+    /// handed where a colour goes (or vice versa) derives a coherent but
+    /// wrong token family that every mint and burn would agree on —
+    /// newtype-survey hazard A6.
+    TokenDomainSeparator,
+    /// A token type ("colour") — [`token_type`]'s output, the coin field
+    /// and every unshielded balance/send/receive key. See
+    /// [`TokenDomainSeparator`] for why the two do not unify.
+    CoinColor,
 }
 
 /// `struct ShieldedCoinInfo { nonce: Bytes<32>, color: Bytes<32>,
@@ -2281,7 +2292,7 @@ b32_newtype! {
 #[derive(Clone, Copy)]
 pub struct ShieldedCoinInfo3<V: Vis3> {
     pub nonce: CoinNonce<V>,
-    pub color: B32<V>,
+    pub color: CoinColor<V>,
     pub value: Wire3<FieldT, V>,
 }
 
@@ -2314,7 +2325,7 @@ impl<V: Vis3> CircuitAbi for ShieldedCoinInfo3<V> {
 #[derive(Clone, Copy)]
 pub struct QualifiedShieldedCoinInfo3<V: Vis3> {
     pub nonce: CoinNonce<V>,
-    pub color: B32<V>,
+    pub color: CoinColor<V>,
     pub value: Wire3<FieldT, V>,
     pub mt_index: Wire3<FieldT, V>,
 }
@@ -2416,8 +2427,8 @@ pub fn coin_nullifier_contract<V: Vis3>(
             AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cn[v1]")),
             coin.nonce.bytes().hi.erase(),
             coin.nonce.bytes().lo.erase(),
-            coin.color.hi.erase(),
-            coin.color.lo.erase(),
+            coin.color.bytes().hi.erase(),
+            coin.color.bytes().lo.erase(),
             coin.value.erase(),
             AnyWire3::immediate(0u64),
             addr.hi.erase(),
@@ -2478,8 +2489,8 @@ pub fn coin_commitment_to<V: Vis3>(
             AnyWire3::immediate(short_literal_imm(b"midnight:zswap-cc[v1]")),
             coin.nonce.bytes().hi.erase(),
             coin.nonce.bytes().lo.erase(),
-            coin.color.hi.erase(),
-            coin.color.lo.erase(),
+            coin.color.bytes().hi.erase(),
+            coin.color.bytes().lo.erase(),
             coin.value.erase(),
             is_left,
             data.hi.erase(),

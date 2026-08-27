@@ -15,11 +15,12 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
+    CoinColor, TokenDomainSeparator,
     CoinNonce,
     contract, kernel, label, Bool, CircuitArg, CoinRecipient, Disclose, Discloses, Either,
     Ledger,
     LedgerCounter, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3, ShieldedSendResult, Uint,
-    UserAddress, ZswapCoinPublicKey, B32,
+    UserAddress, ZswapCoinPublicKey,
 };
 
 label! {
@@ -56,7 +57,7 @@ pub const KT: KernelTokens = KernelTokens::new();
 #[derive(CircuitArg)]
 struct QualifiedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
     mt_index: Uint<64>,
 }
@@ -81,7 +82,7 @@ impl QualifiedCoinArg {
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -106,7 +107,7 @@ impl KernelTokens {
     #[circuit]
     pub fn k_mint_unshielded(
         c: &mut Circuit3,
-        ds: B32<Private>,
+        ds: TokenDomainSeparator<Private>,
         amount: Uint<64>,
     ) -> Discloses<(DomainSep, Amount)> {
         let ds = ds.disclose_as::<DomainSep>(c);
@@ -119,7 +120,7 @@ impl KernelTokens {
     #[circuit]
     pub fn k_claim_unshielded_coin_spend(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         addr: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Recipient, Amount)> {
@@ -135,7 +136,7 @@ impl KernelTokens {
     #[circuit]
     pub fn k_inc_unshielded_outputs(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
         let color = color.disclose_as::<Color>(c);
@@ -149,7 +150,7 @@ impl KernelTokens {
     #[circuit]
     pub fn k_inc_unshielded_inputs(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
         let color = color.disclose_as::<Color>(c);
@@ -161,7 +162,7 @@ impl KernelTokens {
 
     /// `export circuit kBalance(color: Bytes<32>): Uint<128>`
     #[circuit(output = "balance")]
-    pub fn k_balance(c: &mut Circuit3, color: B32<Private>) -> Discloses<(Color,), Uint<128, Public>> {
+    pub fn k_balance(c: &mut Circuit3, color: CoinColor<Private>) -> Discloses<(Color,), Uint<128, Public>> {
         let color = color.disclose_as::<Color>(c);
         let token = kernel::unshielded(c, color);
         Discloses::of(kernel::balance(c, &token))
@@ -171,7 +172,7 @@ impl KernelTokens {
     #[circuit(output = "less")]
     pub fn k_balance_less_than(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -184,7 +185,7 @@ impl KernelTokens {
     #[circuit(output = "greater")]
     pub fn k_balance_greater_than(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -247,7 +248,7 @@ impl KernelTokens {
     #[circuit(output = "balance")]
     pub fn s_unshielded_balance(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
     ) -> Discloses<(Color,), Uint<128, Public>> {
         let color = color.disclose_as::<Color>(c);
         Discloses::of(kernel::unshielded_balance(c, color))
@@ -257,7 +258,7 @@ impl KernelTokens {
     #[circuit(output = "lt")]
     pub fn s_unshielded_balance_lt(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -269,7 +270,7 @@ impl KernelTokens {
     #[circuit(output = "gte")]
     pub fn s_unshielded_balance_gte(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -281,7 +282,7 @@ impl KernelTokens {
     #[circuit(output = "gt")]
     pub fn s_unshielded_balance_gt(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -293,7 +294,7 @@ impl KernelTokens {
     #[circuit(output = "lte")]
     pub fn s_unshielded_balance_lte(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount), Bool<Public>> {
         let color = color.disclose_as::<Color>(c);
@@ -305,7 +306,7 @@ impl KernelTokens {
     #[circuit]
     pub fn s_receive_unshielded(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
     ) -> Discloses<(Color, Amount)> {
         let color = color.disclose_as::<Color>(c);
@@ -322,7 +323,7 @@ impl KernelTokens {
     #[circuit]
     pub fn s_send_unshielded(
         c: &mut Circuit3,
-        color: B32<Private>,
+        color: CoinColor<Private>,
         a: Uint<128>,
         r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
     ) -> Discloses<(Color, Amount, Recipient)> {
@@ -337,10 +338,10 @@ impl KernelTokens {
     #[circuit(output = "color")]
     pub fn s_mint_unshielded_token(
         c: &mut Circuit3,
-        ds: B32<Private>,
+        ds: TokenDomainSeparator<Private>,
         a: Uint<64>,
         r: Either<minocrab_std::v3::ContractAddress<Private>, UserAddress<Private>, Private>,
-    ) -> Discloses<(DomainSep, Amount, Recipient), B32<Public>> {
+    ) -> Discloses<(DomainSep, Amount, Recipient), CoinColor<Public>> {
         let ds = ds.disclose_as::<DomainSep>(c);
         let a = a.disclose_as::<Amount>(c);
         let r = r.disclose_as::<Recipient>(c);

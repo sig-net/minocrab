@@ -47,7 +47,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinColor, CoinNonce, TokenDomainSeparator,
     circuit, label, le, ne, own_public_key_guarded, Bytes, BytesN, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerField,
     LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
@@ -586,7 +586,7 @@ struct WithdrawRequest {
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -646,8 +646,8 @@ pub fn withdraw(
     let domain_sep = vault_token_domain_separator(c, erc20_address);
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
-    let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
+    let color_hi_ok = c.test_eq(coin_color.bytes().hi, color.bytes().hi.private());
+    let color_lo_ok = c.test_eq(coin_color.bytes().lo, color.bytes().lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
     c.assert(color_ok);
     let value_ok = c.test_eq(coin_value, amount);
@@ -829,8 +829,8 @@ pub fn swap(
     let domain_sep = vault_token_domain_separator(c, token_in);
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
-    let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
+    let color_hi_ok = c.test_eq(coin_color.bytes().hi, color.bytes().hi.private());
+    let color_lo_ok = c.test_eq(coin_color.bytes().lo, color.bytes().lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
     c.assert(color_ok);
     let value_ok = c.test_eq(coin_value, amount_in_max);
@@ -1081,7 +1081,7 @@ pub fn approve_router(
 fn vault_token_domain_separator(
     c: &mut Circuit3,
     erc20_address: Wire3<FieldT, Public>,
-) -> B32<Public> {
+) -> TokenDomainSeparator<Public> {
     c.region("token domain separator", |c| {
         let pad = B32::pad(c, TOKEN_PAD);
         let zero = c.constant(0u64);
@@ -1098,7 +1098,7 @@ fn vault_token_domain_separator(
                 erc20_address.erase(),
             ],
         );
-        B32::from_typed(c, digest)
+        TokenDomainSeparator(B32::from_typed(c, digest))
     })
 }
 

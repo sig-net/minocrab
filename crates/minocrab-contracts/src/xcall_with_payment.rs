@@ -48,7 +48,7 @@ label! {
 #[derive(CircuitArg)]
 struct CoinArg {
     nonce: minocrab_std::v3::CoinNonce<Private>,
-    color: B32<Private>,
+    color: minocrab_std::v3::CoinColor<Private>,
     value: Uint<128>,
 }
 

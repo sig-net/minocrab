@@ -43,7 +43,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinColor, CoinNonce,
     circuit, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerMap, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
@@ -67,7 +67,7 @@ label! {
 /// Compact `export ledger` block one for one.
 #[derive(Ledger)]
 pub struct Manager {
-    pub pools: LedgerMap<B32<Public>, QualifiedShieldedCoinInfo3<Public>>,
+    pub pools: LedgerMap<CoinColor<Public>, QualifiedShieldedCoinInfo3<Public>>,
     pub accounts: LedgerSet<B32<Public>>,
     pub shielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
     pub unshielded_balances: LedgerMap<B32<Public>, Uint<128, Public>>,
@@ -199,7 +199,7 @@ fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinReci
 fn family_key(
     c: &mut Circuit3,
     acct: &B32<Public>,
-    colour: &B32<Public>,
+    colour: &CoinColor<Public>,
     tag: &B32<Public>,
 ) -> B32<Public> {
     let alignment = Alignment(vec![atom(32), atom(32), atom(32)]);
@@ -208,8 +208,8 @@ fn family_key(
         &[
             acct.hi.erase(),
             acct.lo.erase(),
-            colour.hi.erase(),
-            colour.lo.erase(),
+            colour.bytes().hi.erase(),
+            colour.bytes().lo.erase(),
             tag.hi.erase(),
             tag.lo.erase(),
         ],
@@ -218,13 +218,13 @@ fn family_key(
 }
 
 /// `shieldedKey(acct, colour)`.
-fn shielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &B32<Public>) -> B32<Public> {
+fn shielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, SHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
 
 /// `unshieldedKey(acct, colour)`.
-fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &B32<Public>) -> B32<Public> {
+fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Public>) -> B32<Public> {
     let tag = B32::pad(c, UNSHIELDED_FAMILY_TAG);
     family_key(c, acct, colour, &tag)
 }
@@ -385,13 +385,13 @@ struct ExecutePayloadArg {
     account_salt: B32<Private>,
     nonce: Uint<64>,
     valid_until: Uint<64>,
-    primary_color: B32<Private>,
+    primary_color: CoinColor<Private>,
     primary_amount: Uint<128>,
     recipient_kind: Uint<8>,
     recipient: B32<Private>,
     to_account: B32<Private>,
     want_nonce: CoinNonce<Private>,
-    want_color: B32<Private>,
+    want_color: CoinColor<Private>,
     want_amount: Uint<128>,
     credit_account: B32<Private>,
 }
@@ -414,13 +414,13 @@ struct PublicPayload {
     account_salt: B32<Public>,
     nonce: Wire3<FieldT, Public>,
     valid_until: Wire3<FieldT, Public>,
-    primary_color: B32<Public>,
+    primary_color: CoinColor<Public>,
     primary_amount: Wire3<FieldT, Public>,
     recipient_kind: Wire3<FieldT, Public>,
     recipient: B32<Public>,
     to_account: B32<Public>,
     want_nonce: CoinNonce<Public>,
-    want_color: B32<Public>,
+    want_color: CoinColor<Public>,
     want_amount: Wire3<FieldT, Public>,
     credit_account: B32<Public>,
 }
@@ -554,7 +554,7 @@ pub fn account_record(
 pub fn shielded_account_balance(
     c: &mut Circuit3,
     owner: B32<Private>,
-    colour: B32<Private>,
+    colour: CoinColor<Private>,
 ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
     let owner = owner.disclose_as::<QueriedAccount>(c);
     let colour = colour.disclose_as::<QueriedColour>(c);
@@ -568,7 +568,7 @@ pub fn shielded_account_balance(
 pub fn unshielded_account_balance(
     c: &mut Circuit3,
     owner: B32<Private>,
-    colour: B32<Private>,
+    colour: CoinColor<Private>,
 ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
     let owner = owner.disclose_as::<QueriedAccount>(c);
     let colour = colour.disclose_as::<QueriedColour>(c);
@@ -582,7 +582,7 @@ pub fn unshielded_account_balance(
 #[circuit(output = "value")]
 pub fn pool_value(
     c: &mut Circuit3,
-    colour: B32<Private>,
+    colour: CoinColor<Private>,
 ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
     let col = colour.disclose_as::<QueriedColour>(c);
     let member = MANAGER.pools.member(c, &col).field();
@@ -594,7 +594,7 @@ pub fn pool_value(
 #[circuit(output = "present")]
 pub fn pool_has_colour(
     c: &mut Circuit3,
-    colour: B32<Private>,
+    colour: CoinColor<Private>,
 ) -> Discloses<(QueriedColour,), Bool<Public>> {
     let col = colour.disclose_as::<QueriedColour>(c);
     Discloses::of(MANAGER.pools.member(c, &col))
@@ -606,7 +606,7 @@ pub fn pool_has_colour(
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -681,7 +681,7 @@ pub fn deposit_shielded(
 #[circuit]
 pub fn deposit_unshielded(
     c: &mut Circuit3,
-    colour: B32<Private>,
+    colour: CoinColor<Private>,
     amount: Uint<128>,
     account: B32<Private>,
 ) -> Discloses<(DepositColour, DepositAmount, CreditAccount)> {
@@ -774,13 +774,13 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
     let owner0 = c.test_eq(p.owner, 0u64);
     let nonce0 = c.test_eq(p.nonce, 0u64);
     let until0 = c.test_eq(p.valid_until, 0u64);
-    let color0 = b32_is_zero(c, &p.primary_color);
+    let color0 = b32_is_zero(c, &p.primary_color.bytes());
     let amount0 = c.test_eq(p.primary_amount, 0u64);
     let kind0 = c.test_eq(p.recipient_kind, 0u64);
     let rcpt0 = b32_is_zero(c, &p.recipient);
     let to0 = b32_is_zero(c, &p.to_account);
     let wnonce0 = b32_is_zero(c, &p.want_nonce.bytes());
-    let wcolor0 = b32_is_zero(c, &p.want_color);
+    let wcolor0 = b32_is_zero(c, &p.want_color.bytes());
     let wamount0 = c.test_eq(p.want_amount, 0u64);
     let credit0 = b32_is_zero(c, &p.credit_account);
 
@@ -899,7 +899,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
             c.assert_with(to0, Some("swap transfer target must be inactive"));
             let want_positive = gt(want, 0u64).eval(c).field();
             c.assert_with(want_positive, Some("swap must want a positive amount"));
-            let same = b32_eq(c, &p.primary_color, &p.want_color);
+            let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
             let distinct = c.not(same);
             c.assert_with(distinct, Some("swap legs must be different colours"));
             let credit_set = c.not(credit0);
@@ -955,7 +955,7 @@ fn evm_struct_hash_for(
                 &owner_word,
                 &nonce_word,
                 &until_word,
-                &p.primary_color,
+                &p.primary_color.bytes(),
                 &amount_word,
                 &kind_word,
                 &p.recipient,
@@ -977,7 +977,7 @@ fn evm_struct_hash_for(
                 &nonce_word,
                 &until_word,
                 &p.to_account,
-                &p.primary_color,
+                &p.primary_color.bytes(),
                 &amount_word,
             ],
         );
@@ -995,12 +995,12 @@ fn evm_struct_hash_for(
                 &owner_word,
                 &nonce_word,
                 &until_word,
-                &p.primary_color,
+                &p.primary_color.bytes(),
                 &amount_word,
                 &kind_word,
                 &p.recipient,
                 &p.want_nonce.bytes(),
-                &p.want_color,
+                &p.want_color.bytes(),
                 &want_word,
                 &p.credit_account,
             ],
@@ -1056,7 +1056,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         .eval(c)
         .field();
         c.assert_with(want_positive, Some("swap must want a positive amount"));
-        let same = b32_eq(c, &p.primary_color, &p.want_color);
+        let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
         let distinct = c.not(same);
         c.assert_with(distinct, Some("swap legs must be different colours"));
     });
@@ -1300,7 +1300,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
     // --- ONE credit write (selectors 4, 5, 6) ---
     c.when(has_credit, |c| {
         let credit_acct = B32::cond_select(c, f.is6, &p.credit_account, &p.to_account);
-        let credit_colour = B32::cond_select(c, f.is6, &p.want_color, &p.primary_color);
+        let credit_colour = CoinColor::cond_select(c, f.is6, &p.want_color, &p.primary_color);
         let credit_tag = B32::cond_select(c, credit_shielded, &shielded_tag, &unshielded_tag);
         let credit_key = family_key(c, &credit_acct, &credit_colour, &credit_tag);
         let credit_value = c.cond_select(f.is6, p.want_amount, val);

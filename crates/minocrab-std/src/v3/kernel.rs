@@ -42,9 +42,9 @@ use super::hash;
 use super::ledger::LedgerRepr;
 use super::predicate::is_true;
 use super::{
-    coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinNonce,
-    CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3, ShieldedCoinInfo3,
-    ShieldedSendResult, Uint, UserAddress, B32,
+    coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinColor,
+    CoinNonce, CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3,
+    ShieldedCoinInfo3, ShieldedSendResult, TokenDomainSeparator, Uint, UserAddress, B32,
 };
 
 /// The guard of a STRAIGHT-LINE kernel operation: the immediate `1`, inlined
@@ -78,8 +78,8 @@ pub type UnshieldedRecipient<V = Public> = Either<ContractAddress<V>, UserAddres
 pub struct UnshieldedToken<V: super::Vis3 = Public>(pub B32<V>);
 
 /// `left<Bytes<32>, Bytes<32>>(color)`.
-pub fn unshielded(_c: &mut Circuit3, color: B32<Public>) -> UnshieldedToken<Public> {
-    UnshieldedToken(color)
+pub fn unshielded(_c: &mut Circuit3, color: CoinColor<Public>) -> UnshieldedToken<Public> {
+    UnshieldedToken(color.bytes())
 }
 
 impl UnshieldedToken<Public> {
@@ -132,7 +132,7 @@ pub fn self_address_guarded<G: Visibility + Copy>(
 }
 
 /// `kernel.mintShielded(domain_sep, amount)` — effects\[4\].
-pub fn mint_shielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<64, Public>) {
+pub fn mint_shielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>, amount: Uint<64, Public>) {
     mint_shielded_under(c, STRAIGHT_LINE, domain_sep, amount)
 }
 
@@ -140,16 +140,16 @@ pub fn mint_shielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<64
 pub fn mint_shielded_under<G: Visibility>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     amount: Uint<64, Public>,
 ) {
-    let (ds, amt) = (domain_sep.ledger_value(c), amount.ledger_value(c));
+    let (ds, amt) = (domain_sep.bytes().ledger_value(c), amount.ledger_value(c));
     emit(c, guard, &kernel_mint_shielded(&ds, &amt));
 }
 
 /// `kernel.mintUnshielded(domain_sep, amount)` — effects\[5\], and the same
 /// accumulator shape [`mint_shielded`] is.
-pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<64, Public>) {
+pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>, amount: Uint<64, Public>) {
     mint_unshielded_under(c, STRAIGHT_LINE, domain_sep, amount)
 }
 
@@ -157,10 +157,10 @@ pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &B32<Public>, amount: Uint<
 pub fn mint_unshielded_under<G: Visibility>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     amount: Uint<64, Public>,
 ) {
-    let (ds, amt) = (domain_sep.ledger_value(c), amount.ledger_value(c));
+    let (ds, amt) = (domain_sep.bytes().ledger_value(c), amount.ledger_value(c));
     emit(c, guard, &kernel_mint_unshielded(&ds, &amt));
 }
 
@@ -375,7 +375,7 @@ fn not(c: &mut Circuit3, b: Bool<Public>) -> Bool<Public> {
 }
 
 /// `circuit unshieldedBalance(color): Uint<128>`
-pub fn unshielded_balance(c: &mut Circuit3, color: B32<Public>) -> Uint<128, Public> {
+pub fn unshielded_balance(c: &mut Circuit3, color: CoinColor<Public>) -> Uint<128, Public> {
     let token = unshielded(c, color);
     balance(c, &token)
 }
@@ -383,7 +383,7 @@ pub fn unshielded_balance(c: &mut Circuit3, color: B32<Public>) -> Uint<128, Pub
 /// `circuit unshieldedBalanceLt(color, amount): Boolean`
 pub fn unshielded_balance_lt(
     c: &mut Circuit3,
-    color: B32<Public>,
+    color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let token = unshielded(c, color);
@@ -393,7 +393,7 @@ pub fn unshielded_balance_lt(
 /// `circuit unshieldedBalanceGte(color, amount): Boolean { return !…Lt(…); }`
 pub fn unshielded_balance_gte(
     c: &mut Circuit3,
-    color: B32<Public>,
+    color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let lt = unshielded_balance_lt(c, color, amount);
@@ -403,7 +403,7 @@ pub fn unshielded_balance_gte(
 /// `circuit unshieldedBalanceGt(color, amount): Boolean`
 pub fn unshielded_balance_gt(
     c: &mut Circuit3,
-    color: B32<Public>,
+    color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let token = unshielded(c, color);
@@ -413,7 +413,7 @@ pub fn unshielded_balance_gt(
 /// `circuit unshieldedBalanceLte(color, amount): Boolean { return !…Gt(…); }`
 pub fn unshielded_balance_lte(
     c: &mut Circuit3,
-    color: B32<Public>,
+    color: CoinColor<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
     let gt = unshielded_balance_gt(c, color, amount);
@@ -425,7 +425,7 @@ pub fn unshielded_balance_lte(
 ///   kernel.incUnshieldedInputs(left<Bytes<32>, Bytes<32>>(color), amount);
 /// }
 /// ```
-pub fn receive_unshielded(c: &mut Circuit3, color: B32<Public>, amount: Uint<128, Public>) {
+pub fn receive_unshielded(c: &mut Circuit3, color: CoinColor<Public>, amount: Uint<128, Public>) {
     let token = unshielded(c, color);
     inc_unshielded_inputs(c, &token, amount);
 }
@@ -462,7 +462,7 @@ fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<F
 /// ```
 pub fn send_unshielded(
     c: &mut Circuit3,
-    color: B32<Public>,
+    color: CoinColor<Public>,
     amount: Uint<128, Public>,
     recipient: &UnshieldedRecipient<Public>,
 ) {
@@ -490,10 +490,10 @@ pub fn send_unshielded(
 /// claim — Compact widens it, and so does this.
 pub fn mint_unshielded_token(
     c: &mut Circuit3,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     amount: Uint<64, Public>,
     recipient: &UnshieldedRecipient<Public>,
-) -> B32<Public> {
+) -> CoinColor<Public> {
     mint_unshielded(c, domain_sep, amount);
     let me = self_address(c);
     let color = super::token_type(c, domain_sep, &me.bytes());
@@ -687,7 +687,7 @@ fn merge(
     let nul_b = coin_nullifier_contract(c, b, &me);
     claim_zswap_nullifier(c, &nul_b);
 
-    let same_colour = bytes_eq(c, &a.color, &b.color);
+    let same_colour = bytes_eq(c, &a.color.bytes(), &b.color.bytes());
     c.assert(
         is_true(Bool::from_field_unchecked(same_colour)).message("Can only merge coins of the same color"),
     );
@@ -790,10 +790,10 @@ pub fn send_shielded(
             hi: none_unless(c, change_coin.nonce.bytes().hi),
             lo: none_unless(c, change_coin.nonce.bytes().lo),
         }),
-        color: B32 {
-            hi: none_unless(c, change_coin.color.hi),
-            lo: none_unless(c, change_coin.color.lo),
-        },
+        color: CoinColor(B32 {
+            hi: none_unless(c, change_coin.color.bytes().hi),
+            lo: none_unless(c, change_coin.color.bytes().lo),
+        }),
         value: none_unless(c, change_coin.value),
     };
     ShieldedSendResult {

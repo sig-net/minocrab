@@ -27,7 +27,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinColor, CoinNonce,
     contract, label, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses,
     Either, Ledger, LedgerList, LedgerMap, LedgerSet, QualifiedShieldedCoinInfo3,
     ShieldedCoinInfo3, Uint, ZswapCoinPublicKey, B32,
@@ -56,7 +56,7 @@ pub const COINS: Coins = Coins::new();
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 

@@ -9,7 +9,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinNonce, TokenDomainSeparator,
     b32_newtype, coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
     ContractAddress, Secp256k1Point, ShieldedCoinInfo3, Uint, B32, STRAIGHT_LINE,
 };
@@ -244,8 +244,8 @@ pub fn write_coin_to_self(
             vec![
                 ImpactElem::Wire(coin.nonce.bytes().hi),
                 ImpactElem::Wire(coin.nonce.bytes().lo),
-                ImpactElem::Wire(coin.color.hi),
-                ImpactElem::Wire(coin.color.lo),
+                ImpactElem::Wire(coin.color.bytes().hi),
+                ImpactElem::Wire(coin.color.bytes().lo),
                 ImpactElem::Wire(coin.value),
             ],
         );
@@ -288,7 +288,7 @@ pub fn cell_read_point<V: Visibility + Copy>(
 pub fn mint_shielded_token(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
     recipient: &CoinRecipient<Public>,
@@ -299,7 +299,7 @@ pub fn mint_shielded_token(
         let color = token_type(c, domain_sep, &me);
 
         // kernel.mintShielded(domain_sep, value)
-        let ds_val = b32_value(domain_sep);
+        let ds_val = b32_value(&domain_sep.bytes());
         let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value.field())]);
         emit(c, one, &kernel_mint_shielded(&ds_val, &amount_val));
 
@@ -493,7 +493,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     me: ContractAddress<Public>,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
     pk: &B32<Public>,
@@ -502,7 +502,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
     c.region("coin: mint", |c| {
         let color = token_type(c, domain_sep, &me.bytes());
 
-        let ds_val = b32_value(domain_sep);
+        let ds_val = b32_value(&domain_sep.bytes());
         let amount_val = LedgerValue::bytes(8, vec![ImpactElem::Wire(value.field())]);
         emit(c, guard, &kernel_mint_shielded(&ds_val, &amount_val));
 
@@ -527,7 +527,7 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
 /// (completeSwap's two mints).
 pub fn mint_shielded_token_to_key(
     c: &mut Circuit3,
-    domain_sep: &B32<Public>,
+    domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
     pk: &B32<Public>,

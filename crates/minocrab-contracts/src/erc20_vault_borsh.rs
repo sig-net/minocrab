@@ -63,7 +63,7 @@ use minocrab_std::v3::kernel;
 use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
-    CoinNonce,
+    CoinColor, CoinNonce, TokenDomainSeparator,
     circuit, label, le, ne, own_public_key_guarded, Bool, Bytes, CircuitArg, CoinRecipient,
     Disclose, Discloses, Either, LedgerMap, LedgerRepr, Maybe, Secp256k1Point, Uint, B32,
 };
@@ -541,7 +541,7 @@ struct WithdrawRequest {
 #[derive(CircuitArg)]
 struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
-    color: B32<Private>,
+    color: CoinColor<Private>,
     value: Uint<128>,
 }
 
@@ -604,8 +604,8 @@ pub fn withdraw(
     // want the same address, and the port read it five times.
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
-    let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
+    let color_hi_ok = c.test_eq(coin_color.bytes().hi, color.bytes().hi.private());
+    let color_lo_ok = c.test_eq(coin_color.bytes().lo, color.bytes().lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
     c.assert(color_ok);
     let value_ok = c.test_eq(coin_value, amount);
@@ -786,8 +786,8 @@ pub fn swap(
     // port read the same address five times.
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    let color_hi_ok = c.test_eq(coin_color.hi, color.hi.private());
-    let color_lo_ok = c.test_eq(coin_color.lo, color.lo.private());
+    let color_hi_ok = c.test_eq(coin_color.bytes().hi, color.bytes().hi.private());
+    let color_lo_ok = c.test_eq(coin_color.bytes().lo, color.bytes().lo.private());
     let color_ok = c.mul(color_hi_ok, color_lo_ok);
     c.assert(color_ok);
     let value_ok = c.test_eq(coin_value, amount_in_max);
@@ -1081,10 +1081,12 @@ pub fn approve_router(
 fn vault_token_domain_separator(
     c: &mut Circuit3,
     erc20_address: Wire3<FieldT, Public>,
-) -> B32<Public> {
-    c.region("token domain separator", |c| B32 {
-        hi: c.constant(u64::from(VAULT_TOKEN_TAG)),
-        lo: erc20_address,
+) -> TokenDomainSeparator<Public> {
+    c.region("token domain separator", |c| {
+        TokenDomainSeparator(B32 {
+            hi: c.constant(u64::from(VAULT_TOKEN_TAG)),
+            lo: erc20_address,
+        })
     })
 }
 
