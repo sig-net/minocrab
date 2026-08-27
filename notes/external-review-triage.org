@@ -1,0 +1,178 @@
+#+title: Triage of the external AI review (Midnight DevTeam, 2026-08-19)
+
+The review (~/Downloads/minocrabreview.md) is against =6a53f2b= (M23 queue
+commit). Triaged 2026-08-27 against HEAD =0ff61d3= + 29 commits since.
+CI (their #1 recommendation, §3.1, §7.1) is deliberately NOT triaged here —
+dmd's call, it stays M20 item 2. Each item: what they said, what the tree
+says today, and a proposed disposition. Nothing below has been ticked into
+milestones.org; that is dmd's decision.
+
+* Already fixed since the reviewed commit
+
+- §4.3 (half): =public_transcript_input_guarded= now resolves its guard
+  against the ambient scope (=da794c5=, found by the AA-manager port;
+  regression test =a_guarded_read_inside_a_scope_conjoins_both_guards=).
+  The OTHER half is still open — see §4.3 below.
+- §5 "the =#[circuit]= macro renders with no rustdoc": all three attribute
+  macros now carry a contiguous doc block directly above
+  =#[proc_macro_attribute]= (minocrab-macros/src/lib.rs:156-207, 231-247,
+  262-298). Landed with M23 R1's =max_k= docs.
+- §3.3 "the entire opt/borsh/modern lineage rests on the spec harness
+  alone": half wrong today. opt≡borsh and borsh≡modern are BYTE-gated
+  (=modern_fork_status= is =Identical= for all nine since the constant
+  fold, VERIFICATION.md's link table says so). What rests on the spec
+  harness alone is the ONE link port→opt, whose ledger is all nine
+  =Diverged= by design — that is the optimisation. Accurate residual:
+  the compactc anchor for the optimised lineage is exactly the spec
+  harness + the 1-4 hand-built preimages per circuit. Worth one sentence
+  in VERIFICATION.md §5 saying "port≡opt has zero Identical entries".
+
+* Still open, ranked — candidates for milestones / bug fixes
+
+** 1. §4.1 HIGH — private guard bits drive public effects, manifest-blind
+Confirmed unchanged: =when<V: Visibility>= (v3.rs:1468), =impact<V>=
+(1331), =impact_mixed<V>= (1351) and every =_under= accept any V. No
+=DisclosureKind::Guard= exists (lib.rs:175). No note anywhere discusses
+guard visibility — this is a genuinely new finding, not a refused one.
+A guarded Impact op's presence is on-chain, so =c.when(secret_bit, ..)=
+publishes the bit with no =disclose= and no manifest entry.
+Proposed: (i) SURVEY FIRST — count the sites in the corpus where the
+effective guard of an Impact op / transcript read is Private; that number
+decides the fix. (ii) Preferred fix per the hard rule: a =Public= bound on
+the guard of every EFFECTFUL operation (=impact=, =impact_mixed=, =emit=,
+the ledger =_under= family, and =when= when its body emits — the last is
+the hard one, since =when= cannot see its body; the practical spelling is
+the Public bound on the emitters, so a private =when= over a body that
+emits fails at the emitter with an on_unimplemented message telling the
+author to =disclose= the condition). Pure assertions/witness reads under a
+private guard stay legal (no on-chain effect). (iii) Fallback:
+=DisclosureKind::Guard= recorded on every guarded emit whose guard is
+Private, so the =Discloses<>= set-equality test sees it. CHECKED
+2026-08-27 with the pinned compactc (0.33.0-rc.2): it REJECTS the
+program. `if (c) { x = ...; }` with `c: Boolean` a circuit parameter
+fails to compile — "performing this ledger operation might disclose the
+boolean value of the witness value via this path through the program:
+the conditional branch at line 8" — and compiles once the condition is
+spelled `if (disclose(c))`. So §4.1 is not a judgement call: Compact's
+own disclosure rule is that a witness-derived branch condition guarding
+a ledger operation IS a disclosure, and our accepting it silently is a
+divergence from compactc (api-safety-survey §0(b)). The fix should
+reproduce that rule at the type level: a public (disclosed) guard on
+every on-chain effect.
+
+** 2. §4.2 MEDIUM — three assert entry points bypass the ambient guard
+Confirmed unchanged: =assert= goes through =assert_with= →
+=self.ambient()= (v3.rs:1234); =assert_eq= (1244), =assert_bits= (1252),
+=assert_boolean= (1256) call the builder directly. VERIFICATION.md:197
+still claims "the ambient guard reaches reads, witnesses and assertions".
+Borsh tag checks use =c.assert_eq= (borsh.rs:442, :542); 7 call sites in
+std/ledger/contracts. Fails closed (unprovable, not a leak).
+Proposed: route all three through the guard — =assert_eq(a,b)= ↦
+=constrain_eq(select(g, a, b), b)=, =assert_bits(w,n)= ↦
+=constrain_bits(select(g, w, 0), n)=, =assert_boolean= likewise — with
+no ambient guard the path is unchanged (zero movement on every straight-
+line circuit; the dump instrument proves it). Add three tests to
+v3_guard_scope.rs. Correct VERIFICATION.md:197 either way.
+
+** 3. §4.3 MEDIUM — the other half: =witness_guarded= is still verbatim
+=witness_guarded= (v3.rs:859) passes =Some(Arg::Val(guard.val))= straight
+through; =public_transcript_input_guarded= (892) now calls =resolve_guard=.
+So the =_guarded= family is now inconsistent WITH ITSELF, and
+=own_public_key_guarded= (std v3.rs:2197) inherits the verbatim regime.
+Inside a =when=, a =_guarded= witness consumes the private transcript
+when =inner && !outer=, desynchronising every later witness — the exact
+class =da794c5= fixed for the public side, invisible to honest-preimage
+differentials. Two callers in std/ledger.
+Proposed: one-line fix (=resolve_guard= in =witness_guarded=), a mirror
+regression test, dump-gated (expect zero movement — no corpus circuit
+runs a =_guarded= witness under a scope, or da794c5's sweep would have
+seen it). Also record: =contract_call= (ledger lib.rs:2403) reads its
+callee witnesses with ambient-only =c.witness= and emits with the explicit
+guard, and no corpus circuit exercises a non-trivial guard on a call —
+whether =contract_call(c, g=false, ..)= at top level should consume the
+callee's witnesses is unverified against compactc.
+
+** 4. §3.5 + §4.5 — the disclosure manifest is opt-in, and a set
+Confirmed: the macro pins =a_circuit_without_a_declaration_gets_no_test=
+(circuit.rs:648); =disclosed_labels= is a =BTreeSet<&str>= (disclose.rs),
+so duplicate labels collapse and a free-string =c.disclose(w, "L")= can
+satisfy a declared =L=.
+Proposed, zero API change: every =#[circuit]= WITHOUT a =Discloses<>=
+return gets a generated test asserting =disclosed_labels()= is EMPTY —
+"returns ()" then means "declares nothing", and a =c.disclose= in such a
+circuit fails its own test. Make the comparison reject duplicate labels
+(a =Vec= compared as a multiset, or an assert on =len()=). The
+=#[cfg(test)]= point (a crate shipped without running tests never checks)
+is the CI item and stays out of scope.
+
+** 5. §7.4 — nothing checks =support::circuits()= is complete
+Confirmed, and VERIFICATION.md §5 admits it: 198 =#[circuit]= attributes
+in minocrab-contracts/src; 157 hand-listed =c!(..)= entries + the
+=#[contract]=-derived blocks (4 adopters). Proposed, cheap: a test that
+scans =src/**/*.rs= for =#[circuit= / =#[contract]= block sizes and
+asserts the total equals =circuits().len()= — textual, but it turns a
+silent omission into a red test today; the =#[contract]= migration
+remains the real fix.
+
+** 6. §3.4 — silent skips
+=corpus_roundtrip.rs= asserts "no failures" and PRINTS the count; nothing
+asserts 788. =toolchain_accepts.rs= eprintln-and-returns without =zkir=.
+Proposed: assert the count (one line; version-bump.org's recompile step
+updates it). The =zkir= skip stays a skip until CI (a =ZKIR_REQUIRED= env
+turning it into a failure is the CI-day change).
+
+** 7. §3.8 — the comparator is copied 12 times and one copy drifted
+Confirmed: =fn assert_call_compatible= in 11 contracts differentials +
+ledger's =differential_baseline.rs=. =erc20_vault_opt_fork.rs:83= does
+=ours.check= only — no schema check, no =theirs.check=. Proposed: one
+copy in =tests/support= (or minocrab-sim, where a third party could reuse
+it — M24 point 3 wants exactly this), all 12 call it.
+
+** 8. §4.4 — VERIFICATION.md's "four sites" is wrong
+=erc20_vault.rs= alone has 7 =from_field_unchecked(= sites (claim ×1,
+refund ×1, complete_swap ×4, =refund_surrendered_value= ×1); ×3 for
+port/opt/borsh, 10 in modern, 35 in manager. Proposed: correct the
+count in VERIFICATION.md:372 now. The conversion to =from_field_checked=
+(~16 rows each) is a dmd decision: opt≡borsh≡modern are =Identical= in
+the ledgers, so it is all three at once or none, and the port stays
+unchecked to mirror compactc.
+
+** 9. §4.5 — the small ones
+- =ContractAddress<V>(pub B32<V>)= + =pub fn from_limbs= (std v3.rs:1217,
+  1226) contradict VERIFICATION.md:194 "only =kernel::self_address= and
+  its guarded twin produce one". Fix: private field, =from_limbs=
+  pub(crate) (check callers first), or soften the claim. Zero rows.
+- Identity =mpcResponseKey=: still pinned as CURRENT behaviour
+  (erc20_vault_adversarial.rs:391). A point-at-infinity check in
+  =initialize= is cheap on the opt/borsh/modern lineages (moves their
+  rows, keeps PI-equality); the port stays as compactc has it. Decision.
+- Cross-contract entry-point hash witnessed, not constant: admitted
+  (VERIFICATION.md:345). A "hardened" =contract_call= that constrains the
+  =&'static str= hash as an immediate is a design item, not a bug.
+- Simulator error strings interpolate wire values (sim lib.rs:127,156,
+  268 …): local tooling; note it in the sim's rustdoc, nothing more now.
+- minocrab-ledger/src/lib.rs is still one 3,657-line file. Cosmetic.
+- Differential bookkeeping: VERIFICATION.md says 18 (lines 256, 283,
+  395); 22 files match =*differential*.rs= today (19 contracts + 3
+  ledger). Fix the number or define what counts.
+
+** 10. §3.2 / §7.5 — the compactc anchor is thin on the optimised lineage
+Confirmed by construction (erc20_vault_spec.rs header: PI-equality is
+re-anchored to OUR reference op stream). Proposed: drive the spec
+generator's preimages through =assert_call_compatible= against the
+compactc artifact for the PORT lineage (the only one it can anchor), so
+the 9M-scale cases also check compactc agreement rather than 1-4 hand-
+built preimages. Medium work; the natural home is M23's "M11 hardening
+stage before the super review".
+
+** 11. §5 DX — no authoring path (tutorial, typed test harness, deploy)
+Nothing in milestones today; M23 explicitly defers e2e-on-node to the
+next cycle. Suggested as a post-super-review milestone: a from-scratch
+template crate + a typed contract-testing harness in minocrab-sim (the
+vault's 6,611-line private support is the pattern to distil) + the
+keygen/deploy binding. Not a bug; a roadmap gap.
+
+* Process findings, out of scope now
+§3.7 (=bump.sh accept= re-baselines everything), §3.9 (headline numbers
+are one-time runs), §3.1/§7.1 (CI): all land in M20 (CONTRIBUTING.md +
+CI). The 3-clippy-warnings remark was not re-measured.
