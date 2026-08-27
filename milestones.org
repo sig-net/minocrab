@@ -2331,23 +2331,63 @@ so the milestone is not scoped on the Agda's reputation:
   §9's named bar). This milestone assumes that bar has cleared; if it has
   not, the milestone's prerequisite is clearing it, not porting.
 
+THE METHOD (dmd, 2026-08-27) — a PER-CONSTRUCT loop, not a bulk port, and
+the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
+  1. MAP — find our eDSL syntax construct's counterpart in Compact's
+     syntax. The corpus ports already ARE this mapping in practice: each
+     MinoCrab circuit is a Compact construct rendered in the eDSL.
+  2. FIND — locate the Agda proof(s) about that Compact construct. Because
+     the CHECKED Agda is STATIC/TYPING semantics, the constructs that have
+     proofs are the source-level ones (well-formedness, typing rules) —
+     which is precisely why this method fits the Agda we actually have,
+     where a bulk port would not.
+  3. PORT + CONSTRAIN — port the proof to Lean (machine-checked), AND
+     reflect its invariants into MinoCrab's Rust TYPE SYSTEM so the types
+     CONSTRAIN use of the feature to exactly what the proof covers. The
+     Lean proof is the WHY; the Rust type is the always-on enforcement at
+     every call site. This is CLAUDE.md's "compile errors over panics"
+     with a PROOF behind the constraint, landing on M24's type-level
+     surface. A typing rule maps onto a trait bound / a distinct type that
+     does not unify / an inline-const assert — the same ladder the hard
+     rule already ranks.
+  The deliverable of each turn of the loop is thus TWO things: a checked
+  Lean proof, and a type-system invariant that makes the proven-safe usage
+  the only spellable one.
+
 - [ ] Design note first (the house method), extending
-      notes/formal-verification-options.org: which Agda modules port
-      1:1, which close a hole in the porting, and which ZKIR-pass Lean is
-      NEW (with the =Pass= trait as its subject). State the §9 bridge bar
-      and confirm it is cleared before any Lean lands.
-- [ ] Port the CHECKED higher-level Agda (Lsrc static + typing +
-      Coverage) to Lean, hole-closing where the LLM-writability axis
-      allows, as the modelling foundation.
-- [ ] Build the NEW ZKIR-pass Lean on M24's pure/total =Pass= surface:
-      the reference passes (=fold_immediate_copies=,
-      =dedup_range_constraints=) proven to preserve the PI/witness stream
-      and to drop only implied range constraints — the properties M23 R4
-      Kani bounds first and Lean discharges unbounded.
-Exit criteria: the higher-level source-semantics Agda that is worth
-porting is in Lean (holes closed or explicitly carried), and the M24 pass
-surface has a machine-checked "preserves meaning" proof in Lean for the
-reference passes — the endgame the whole verification staging was for.
-Explicitly OUT: transcribing the unchecked operational sketch (porting a
-=  {!!}= proves nothing) and any Lean that the §9 bridge does not yet
-support.
+      notes/formal-verification-options.org: the construct inventory (the
+      step-1 map), which constructs have checked Agda proofs (step 2), and
+      for each the target Lean module AND the Rust type invariant it
+      becomes (step 3). State the §9 bridge bar and confirm it is cleared
+      before any Lean lands.
+- [ ] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
+      Agda proof → Lean (holes closed where the LLM-writability axis
+      allows) → the Rust type-system invariant that constrains the feature
+      to the proof. The type invariant is the milestone's user-facing
+      product; the Lean is its warrant.
+- [ ] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
+      preserve-meaning proof (PI/witness stream unchanged, only implied
+      range constraints dropped — M23 R4 Kani bounds it first, Lean
+      discharges it unbounded), reflected as the type-level pass CONTRACT
+      (M24 §3) so a third-party pass that violates it does not type-check
+      as far as the type system can reach.
+- [ ] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
+      what the Compact repo's spec actually covers and does NOT — static/
+      typing only, an unchecked operational SKETCH, nothing on ZKIR,
+      =--allow-unsolved-metas= — so PARITY is measured against their real
+      coverage, not their reputation. Where a construct has NOTHING to
+      port, the milestone does not leave a gap: it names the OTHER
+      APPROACH taken (a property test, a Kani harness, or a type invariant
+      argued directly from the protocol) so the feature is still
+      constrained, just not by a ported proof.
+THE AIM (dmd, 2026-08-27): PARITY, not exhaustiveness. The Agda is thin;
+"as many as possible" means match their formal coverage where it is real
+and portable, reach for the other approaches where it is not, and say so.
+Exit criteria: PARITY with the Compact repo's formal coverage — every
+construct they actually prove has its invariant in our Rust type system,
+Lean-warranted where portable and argued via the other approaches where
+not — plus the honest limitations discussion above; and the M24 pass
+surface has a machine-checked "preserves meaning" proof reflected in its
+type-level contract. Explicitly OUT: transcribing the unchecked
+operational sketch (porting a =  {!!}= proves nothing) and any Lean the
+§9 bridge does not yet support.
