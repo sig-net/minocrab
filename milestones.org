@@ -2140,6 +2140,35 @@ stage declares movement, notes as-built.
       preimages can see. IF IT FIRES ON AN EXISTING CIRCUIT: that goes
       to dmd before any allowlist entry is written; extending the taint
       rules (provably-bounded sources) is preferred over allowlisting.
+      (SCOPING SPIKE 2026-08-27, so a fresh session starts warm — the
+      instruction matching is the easy half and is DONE here; the FAB
+      limbing is the hard half and is where the soundness lives:
+      - THE HASHES: =Keccak256= and =PersistentHash= carry an
+        =alignment: Alignment=; =TransientHash= does NOT — it absorbs
+        FIELD elements, so it has no byte atoms and no injective-packing
+        (§B3) concern. The lint's subject is therefore the two
+        byte-atom hashes, NOT transient_hash (note that in the code).
+      - THE BOUNDED SOURCES to mark: =ConstrainBits{val}= /
+        =ConstrainToBoolean{val}= (direct); =DivModPowerOfTwo{outputs}=
+        (the mod output is < 2^bits by construction; the div output is
+        the shifted limb the ABI encoders build) and =Encode{outputs}=
+        (typed-value limbs) as the intrinsic ones. Under-marking is SAFE
+        (it over-fires → surfaces to dmd); OVER-marking is the danger
+        (false negative). When unsure, do not mark.
+      - THE HARD PART, the operand↔atom↔bound mapping: a hash's
+        =inputs: Vec<Operand>= maps to =alignment='s atoms by FAB
+        limbing, and it is NOT 1:1. A =bytes N= atom is =ceil(N/31)=
+        limbs — =bytes 31= is ONE limb, =bytes 32= is TWO — and a
+        multi-limb atom's limbs have DIFFERENT byte widths (=bytes 32=
+        splits into a 1-byte hi limb and a 31-byte lo limb). The check
+        "operand's atom is narrower than the field" is really per-LIMB:
+        each limb feeding the hash must be constrained/constant to its
+        own byte width. The FAB limbing rule lives in
+        minocrab-ledger's =atom_limbs=; reuse it, do not re-derive it.
+        A =Field= atom is field-wide (1 limb, no narrowing → no check).
+      NOT STARTED for correctness reasons: the per-limb bound logic is
+      exactly the kind of subtle thing a false negative hides in, so it
+      wants fresh, focused context rather than a long-session tail.)
 - [ ] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
       harnesses that plain cargo test never compiles, run as an opt-in
