@@ -1,0 +1,176 @@
+#+title: M23 R3 — the taint lint: design, warrants, and the findings awaiting dmd
+
+The instrument api-safety-survey §B3 asked for: a static pass proving every
+byte-atom hash-preimage limb bounded to its own byte width or constant — the
+class no test on honest preimages can see, because an honest prover always
+supplies in-range values. Built 2026-08-27.
+
+* 1. Where it lives and how it runs
+
+- =minocrab_ir::v3::taint::audit(&[Instruction]) -> Vec<Finding>= — pure
+  function of one circuit's stream, ~150 lines of analysis plus the exact
+  interval arithmetic below. In =minocrab-ir= because that is where the pass
+  layer lives and where M23 R4's Kani harnesses will point
+  (=cargo kani -p minocrab-ir=).
+- The gate: =crates/minocrab-contracts/tests/taint_lint.rs= over
+  =support::circuits()= — all 200 workspace circuits and every future one,
+  since the snapshot registry is the one list a new circuit must join.
+- The corpus side-instrument (not a gate):
+  =cargo run -p minocrab-ir --example taint_corpus= audits every v3 corpus
+  artifact, i.e. compactc's own output, with the same rules.
+
+* 2. The subject, per the scoping spike
+
+=Keccak256= and =PersistentHash= — the two instructions carrying an
+=alignment= and absorbing byte atoms. =TransientHash= (and =HashToCurve=)
+absorb native field elements: no byte atoms, no injective-packing concern,
+deliberately out of scope (noted in the code).
+
+* 3. What the chip already enforces — the premise correction
+
+The spike framed the check as "each limb feeding the hash must be
+constrained to its own byte width". The in-circuit decoder turns out to
+enforce exactly that ITSELF: =fab_decode_to_bytes_atom= (zkir-v3
+ir_vm.rs:125-175) decomposes every =bytes= limb with
+=assigned_to_le_bytes(f, Some(width))=, which midnight-circuits documents as
+UNSATISFIABLE when =f= exceeds =width= bytes (decomposition.rs, "Unsatisfiable
+Circuit"). So the digest always binds the LIMB.
+
+What nothing enforces is one level up: a limb PACKED from several narrower
+segments (=a + b·2^8k=) is injective in those segments only if each segment
+is bounded to its own slot — §B3's precondition. The lint therefore demands a
+/derivable/ bound on the limb wire, and its bound propagation only succeeds
+when every wire feeding the packing arithmetic is itself
+constrained-or-constant. That is the §B3 check, mechanized.
+
+Honest boundary, stated in the module docs: the lint proves BOUNDS, not
+shift-layout disjointness. Overlapping segment shifts are the serializer's
+own layout invariant, pinned by its byte-equality tests, not by this lint.
+
+* 4. The marking rules, each with its cited in-circuit warrant
+
+Direction of caution: under-marking is safe (over-fires → a human looks);
+over-marking is the danger (false negative). When unsure, do not mark.
+
+Position-independent (ZKIR v3 is SSA — push-only upstream memory, fresh
+identifiers in =Builder3= — so a constraint anywhere bounds the wire
+everywhere, the =dedup_range_constraints= argument):
+- =ConstrainBits{bits}= → =2^bits−1=; =ConstrainToBoolean= → 1 bit.
+- =ReconstituteField= asserts BOTH its operands in-circuit
+  (=assert_lower_than_fixed=, ir_vm): divisor < =2^(255−bits)=, modulus <
+  =2^bits=.
+- =Bytes32FromLowHigh= asserts low < =2^248= (32nd byte zero) and
+  byte-checks high.
+
+Forward-propagated producers:
+- =DivModPowerOfTwo=: canonical full decomposition
+  (=assigned_to_le_bits(.., true)=) — mod < =2^bits=; div = val ≫ bits, so
+  any bound on val shifts down (val canonical ≤ p−1).
+- =Encode= of a KNOWN-=Bytes32= input → (low ≤ =2^248−1=, high ≤ 255),
+  recomposed from already-range-checked assigned bytes
+  (ir_instructions/encode.rs:93-96). Bytes32-ness is tracked through the
+  producers (=IntoBytes32=, =ReverseBytes=, the hashes,
+  =Bytes32FromLowHigh=, typed inputs); a 2-output =Encode= of unknown type
+  is NOT marked — it could be JubjubPoint coordinates, field-wide.
+- =Bytes32IntoLowHigh= → (248, 8), same recomposition warrant.
+- =Copy= inherits; =CondSelect= takes the max of both branches (the bit is
+  converted to an =AssignedBit=, so the output IS one of them).
+- =Add=/=Mul=: exact interval arithmetic, valid only while the result cannot
+  wrap: a ≤ Ma, b ≤ Mb ⇒ a+b ≤ Ma+Mb, a·b ≤ Ma·Mb over the integers iff the
+  result ≤ p−1; anything larger is dropped as unbounded.
+- =TestEq=/=Not=/=LessThan= outputs are converted bits → 1.
+- Explicitly NOT marked: =PublicInput=/=PrivateInput= outputs (the witnessed
+  VALUE is free; only its shape is typed — the instruction's own doc), =Neg=
+  (wraps), =FromBytes32= (a full reduction), and every curve op.
+
+WHY EXACT MAXIMA rather than bit counts: the motivating packing
+=a + b·2^64= with both segments ≤ =2^64−1= is EXACTLY ≤ =2^128−1= — a
+16-byte atom. Any =max(n,m)+1=-bits rule reports 129 and falsely fires on
+every full-width packing. =Max= is a 4×u64 exact upper bound with checked
+add/mul/shr; a one-bit overlap (=b·2^63=) correctly exceeds 128 bits.
+Pinned by the =max_arithmetic_is_exact= unit test; this arithmetic is also
+the natural first Kani target for R4.
+
+The operand↔atom mapping follows the decoder's own consumption rule, not
+=minocrab_ledger::atom_limbs=: a =bytes n= atom consumes its leftover
+(most-significant, =n mod 31=-byte) limb FIRST, then =n/31= full 31-byte
+limbs — and =bytes 0= consumes NOTHING (the decoder's =chunks + (stray!=0)=
+is zero), where the Impact FAB rule floors at one limb. Option and compress
+segments are reported as unmappable: the in-circuit decoder REJECTS both,
+so they cannot occur in a proving circuit.
+
+* 5. The findings — 329, frozen, classified, awaiting dmd
+
+First run over all 200 circuits: 329 findings across the vault's four forks
+(59+49+49+49), manager (90), kernel_tokens (19), xcall_with_payment (8),
+mint_tokens (4), xcontract_events (+borsh) (2). Frozen byte-for-byte in
+=tests/taint_baseline.txt=; the gate fails on any NEW finding (and on a
+resolved one, so progress is recorded). Per the R3 spec no allowlist entry
+is written without dmd's ruling — the baseline is the freeze that keeps the
+instrument live meanwhile, and this section is the write-up that goes to
+dmd.
+
+** The headline negative: ZERO free-witness findings
+
+No finding names a =%w.*= wire (=private_input=). Every prover-controlled
+limb that reaches a byte-atom hash is constrained in-circuit, in all 200
+circuits. The sharpest §B3 shape — a free witness whose digest binds
+nothing — does not occur.
+
+** Class 1 (317): public-transcript wires, the ledger's warrant
+
+Every one roots in a =%pi.*= wire — =public_input=, i.e. the popeq ledger
+reads and cross-contract results — either directly (261) or through
+=sel=/=add=/=div= wires derived from them (56). In-circuit these are free
+witnesses; what binds them is the =Impact= instruction pushing
+=select(guard, x, 0)= into the public-input stream, which the verifier
+checks against the actual transcript — and the ledger only ever produces
+transcripts whose stored values are normalized in-range. So the warrant is
+REAL but EXTERNAL: it is the ledger's invariant, not a circuit constraint.
+
+Platform parity, measured: compactc's own artifacts have the identical
+property — 27 of the 84 v3 corpus artifacts fire, 195 findings, same class
+(=%contractAddress=, =%value=, =%sender=, =%requestNonce= …). The survey
+already said "compactc's byte-wise form has the same property"; now it is a
+number.
+
+The wrinkle that makes this dmd's call rather than a mechanical extension:
+GUARDED reads. When the guard is false the Impact pushes zeros and the wire
+is genuinely FREE — whether a hash over it matters then is contract-level
+reasoning (the vault's guarded branches discard the result, but the lint
+cannot know that). A sound "Impact-bound" marking rule would have to parse
+popeq shapes out of Impact element streams and handle the guarded case
+conservatively.
+
+** Class 2 (12): proven, but wider than the slot
+
+=erc20_vault{,_opt,_borsh,_modern}::{deposit,approve_router,swap}= — the
+M7 pass-1 ABI-word construction feeds a =%div.*= wire proven ≤ 103 bits
+into the 1-byte hi limb of a =bytes<32>= word. Here the chip's own
+=assigned_to_le_bytes(f, Some(1))= is what enforces the slot (§3): an
+out-of-range value is unsatisfiable, honest values fit by construction, and
+the wire is derived by constrained arithmetic, not witnessed. A precision
+gap of the lint (it cannot see that the algebraic shift arrangement keeps
+the top byte small), not an injectivity hole.
+
+** The options for dmd, ranked as the R3 spec ranks them
+
+1. Extend the taint rules with the Impact/popeq warrant for UNGUARDED reads
+   (guarded ones keep firing) — closes most of class 1 mechanically, with
+   the parsing cost above.
+2. Extend with a "chip-enforced at absorption" rule — since the decoder
+   range-checks every limb it absorbs (§3), the residual value of the lint
+   is packed-segment discipline; this would close class 2 and arguably all
+   of class 1 too, at the cost of no longer flagging wires whose only bound
+   is the absorption itself.
+3. Keep the frozen baseline as-is: the instrument audits all new code;
+   the recorded classes stand as documentation.
+
+* 6. Gates
+
+- 7 unit tests in the module (exact arithmetic, fires/passes both
+  directions, packing needs every segment, intrinsic sources, stray-first
+  mapping, transient out of scope, arity findings).
+- The workspace gate green against the frozen baseline; zero movement
+  anywhere else (the change adds a module, an example, a test, and the
+  baseline — no circuit code touched).

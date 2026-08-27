@@ -589,8 +589,23 @@ stage declares movement, notes as-built.
       preimages can see. IF IT FIRES ON AN EXISTING CIRCUIT: that goes
       to dmd before any allowlist entry is written; extending the taint
       rules (provably-bounded sources) is preferred over allowlisting.
-      (SCOPING SPIKE 2026-08-27: recorded in git history at f6077db —
-      superseded by the build, see the BUILT record added with it.)
+      (BUILT 2026-08-27 — notes/taint-lint.org. =minocrab_ir::v3::taint=
+      with exact 256-bit interval maxima (a bit-count rule falsely fires
+      on every full-width packing) and the in-circuit decoder's own
+      operand↔atom consumption rule; gate
+      =minocrab-contracts/tests/taint_lint.rs= over all 200 circuits.
+      One premise correction: the decoder itself range-checks every limb
+      it absorbs, so the lint's residual value is the PACKED-SEGMENT
+      discipline behind each limb. IT FIRED: 329 findings, frozen
+      byte-for-byte in tests/taint_baseline.txt (any NEW finding fails;
+      no allowlist), classified for dmd in the note — ZERO free-witness
+      findings anywhere; 317 root in public-transcript popeq wires whose
+      warrant is the ledger's normalization (compactc's own artifacts
+      fire identically: 27 of 84 v3 corpus files, 195 findings, measured
+      by =--example taint_corpus=), and 12 are the M7 ABI-word div
+      shifts where the chip's absorption check is what enforces the
+      slot. AWAITING dmd's ruling on the extension options ranked in
+      the note; unticked for that reason only.)
 - [ ] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
       harnesses that plain cargo test never compiles, run as an opt-in
