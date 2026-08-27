@@ -1,0 +1,133 @@
+#+title: M25 — the Lean port: design of record
+
+The final milestone's design note, extending
+notes/formal-verification-options.org (the ground-truth survey) with the
+three things M25's first bullet owes: the construct inventory (step 1),
+which constructs have CHECKED Agda proofs (step 2), and per construct the
+target Lean module plus the Rust type invariant it becomes (step 3, under
+dmd's FIT rule: types admit a SUBSET of what the proof allows — maximal
+within a usability balance — never a superset). Plus: the path decision
+(model vs extraction), the §9 bridge bar restated and its clearing.
+
+* 0. What the Agda actually offers, restated in one table
+
+From formal-verification-options.org §1-2, so this note stands alone:
+
+| layer | state | portable? |
+|---|---|---|
+| Lsrc STATIC/TYPING semantics (~20 inductive typing relations, the numeric hierarchy =IsNumeric=/=UIntType=/=Castable=) | CI-checked, but =--allow-unsolved-metas= and not =--safe=; describes language 0.16.103 (nine minors behind our 0.25.107 target) | YES — this is the "anything higher level" content |
+| =Coverage.agda= (typing covers every syntax constructor) | checked, =--safe= | as an IDEA (already stolen: the exhaustive matches in =passes.rs=/=taint.rs=) |
+| Operational/CEK semantics + witness oracle | UNCHECKED SKETCH — =fetch = {!!}=, no module imports it | NO — a modelling precedent only |
+| Anything about ZKIR | DOES NOT EXIST | the ZKIR-pass prong is NEW Lean |
+
+* 1. The path decision: MODEL-FIRST, extraction as the prepared upgrade
+
+Two ways to get Rust facts into Lean: EXTRACTION (Aeneas: Rust → LLBC →
+Lean) or MODELLING (a hand/LLM-written Lean model mirroring the Rust,
+kept honest by review and by stating the gap).
+
+DECISION: model-first. The reasons, each checkable:
+
+- The survey's two named Aeneas blockers were both in our passes. ONE IS
+  NOW GONE: M23 R4 replaced the passes' =HashMap=/=BTreeMap= with
+  =AssocMap= (a =Vec<(String, V)>= with linear scan) for Kani reasons —
+  and =Vec= + =String= are exactly what Aeneas's std model covers. The
+  OTHER STANDS: =operands_mut='s =Vec<&mut Operand>= (a generic
+  instantiated at a mutable reference, documented unsupported).
+- Even with both cleared, extraction runs Charon over a crate whose
+  dependency tree is the midnight stack; carving an extractable
+  sub-crate is real work with no proof content.
+- The Agda precedent itself is a model, not an extraction; and the
+  LLM-proving sweet spot (§7's Aria result: spec-given lemmas at 75.5%
+  first-attempt) is exactly "prove things about a small defined model".
+
+THE PREPARED UPGRADE: a pure =map_operands(&Instruction, impl Fn(&Operand)
+-> Operand) -> Instruction= twin beside =operands_mut= would clear the
+last extraction blocker; it is the same verification-motivated shape as
+the AssocMap change. Do it when (if) extraction is attempted; the model
+does not need it.
+
+THE HONEST GAP a model carries, stated once and inherited by every proof:
+a Lean model proof warrants the ALGORITHM, and the claim that the Rust
+implements that algorithm rests on review plus the Rust-side instruments
+(unit tests, the Kani-bounded twins where they close). Extraction would
+close that gap; nothing else does. Every Lean file here says so in its
+header.
+
+* 2. The §9 bridge bar, restated for the model path, and CLEARED
+
+The survey's bar was written for extraction ("Lean only when the bridge
+clears a named bar"). For the model path the load-bearing question is
+different and smaller: CAN THE LOOP RUN — a nix-provisioned Lean
+toolchain, a =lake= project in-repo, and one real theorem about a
+transcribed pass, checked green, written LLM-first under review.
+
+CLEARED 2026-08-27: =lean/= at the repo root (lean4 from nixpkgs, added
+to the devshell — no elan, per the nix-light rule), with the dedup model
+and its first theorems lake-checked. See §5.
+
+* 3. The construct inventory — the per-construct loop's map
+
+Step 1 (eDSL ↔ Compact) is the corpus rewrite read backwards; step 2
+marks which constructs the CHECKED Agda actually proves something about;
+step 3 names the Lean target and the Rust invariant, FIT-annotated
+(EXACT = types admit precisely the proof's set; SUBSET = properly
+smaller, and why).
+
+| # | Compact construct | Agda (checked) | our construct | Lean target | Rust invariant (FIT) |
+|---|---|---|---|---|---|
+| 1 | numeric hierarchy: =Uint<n>= widths, =IsNumeric=, arithmetic result types | YES — the numeric =data= declarations + expression typing | =Uint<BITS, V>= / =BoundedUint<MAX>= ops | =Lean/Minocrab/Numeric.lean=: the width lattice + add/mul/sub result-bound lemmas | EXACT for =BoundedUint= (compile-time bound arithmetic IS the lemma); SUBSET for =Uint= (we forbid what Compact's implicit widening allows — M9's decision A, stricter by design) |
+| 2 | =Castable= / casts | YES — =Castable= relation | =widen::<N>= (free), =from_field_checked= / =_unchecked= (priced/unproven) | same module: widen-soundness (n ≤ m ⇒ value < 2^n ⇒ < 2^m) | EXACT for =widen= (inline-const =N ≥ BITS=); the =_unchecked= escape is OUTSIDE the proof and named for it |
+| 3 | =disclose= / witness visibility | PARTIAL — Lsrc types witness/disclose occurrences | =Vis3= (=Meet=), =Disclose=, =Discloses<D>= manifests | =Lean/Minocrab/Visibility.lean=: the two-point lattice, meet-monotonicity, "no Private reaches Public without disclose" over a tiny expression model | SUBSET — our manifests + generated set-equality tests enforce more than the typing rule (labels, declared sets) |
+| 4 | =circuit= arguments / typed I/O | YES — signature typing | =CircuitArg=/=CircuitOut=, the interface snapshot | not ported as Lean — the artifact-agreement tests check the REAL deployed schema, stronger than a model | n/a (OTHER APPROACH, per the milestone's limitations clause) |
+| 5 | ledger ADT operations | NO (static rules only name the types; semantics unspecified) | =LedgerMap=/=Cell=/=Counter= + Impact lowering | none to port | OTHER APPROACH: instruction-for-instruction differentials vs compactc (M16/M17) |
+| 6 | =assert= / guards / branch semantics | NO (operational sketch only, unchecked) | ambient guard scopes, =Guarded<T>= | the witness-oracle IDEA feeds the pass model's guard treatment only | OTHER APPROACH: byte-equality twins (=v3_guard_scope.rs=) + the survey's fixed bug classes |
+| 7 | ZKIR passes (fold, dedup) | NOTHING — no Agda exists | =minocrab_ir::v3::passes= | =Lean/Minocrab/Passes.lean= — NEW Lean, §4 | the =Pass= contract; reflection design in §4 |
+| 8 | hash-preimage boundedness | NOTHING | the taint lint's =Max= interval arithmetic | =Lean/Minocrab/Interval.lean=: unbounded twins of the ten Kani-bounded proofs (exact add/mul/shr/bits over 4-limb naturals) | EXACT — the lint's verdict rule =bits(m) ≤ 8·w= is the lemma's statement |
+
+Rows 1-3 are the portable Agda; rows 4-6 are the milestone's "where a
+construct has NOTHING to port, name the other approach"; rows 7-8 are the
+new-Lean prongs (row 7 is the milestone's own; row 8 is R4's natural
+unbounded continuation and the cheapest first win).
+
+* 4. The ZKIR-pass prong (new Lean)
+
+MODEL: =Instruction= as a small inductive — =copy (dst : Name) (src :
+Operand)=, =constrainBits (v : Operand) (bits : Nat)=,
+=constrainBoolean=, =output (vals : List Operand)=, and =opaque (touched
+: List Operand)= for everything else (the passes treat all other
+instructions uniformly: fold substitutes operands, dedup passes through —
+so ONE opaque constructor models the whole complement FAITHFULLY for
+these two passes; the model file says so and why).
+
+SEMANTICS: for dedup, a stream's meaning per wire is its solution set
+(=⋂ {v < 2^b}= = =v < 2^min=); for fold, an environment-passing
+evaluator over an abstract value domain with the observable list
+(the same shape R4's scoped harness used, unbounded here).
+
+THEOREMS (the R4 specimens, discharged without bounds):
+- dedup: output is a subsequence; non-constraints preserved with
+  multiplicity; per-wire tightest bound (hence solution set) unchanged;
+  idempotence.
+- fold: observables preserved in kind, order and operand-value;
+  =output= operand lists verbatim; idempotence.
+
+REFLECTION into the type-level contract (dmd's step 3, applied to the
+prong): the honest statement is that Rust's type system cannot make
+"preserves the PI stream" a trait bound — the property is semantic. What
+it CAN do, and what this designs for: a =VerifiedPass= marker trait,
+implementable only via a macro/constructor that names the Lean theorem
+file discharging the pass's obligation (a build-time existence check, a
+doc-link, and a distinct type the pipeline can REQUIRE:
+=run_pipeline_verified(Vec<Box<dyn VerifiedPass>>)=). A third-party pass
+without a proof still runs through the ordinary pipeline; it cannot
+CLAIM verification, which is as far as the type system reaches — said
+so, per FIT's shortfall clause.
+
+* 5. As built (running record)
+
+2026-08-27 — the bar cleared: =lean/= project (lake, mathlib-free —
+plain Lean 4 so the check loop is seconds), =Minocrab/Passes.lean= with
+the dedup model and the first theorems green under =lake build= using
+nixpkgs lean4 (devshell). See the file headers for the model-gap
+statement.

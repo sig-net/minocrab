@@ -935,12 +935,26 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
   Lean proof, and a type-system invariant that makes only proven-safe
   usage spellable (the maximal usable subset, per THE FIT above).
 
-- [ ] Design note first (the house method), extending
+- [X] Design note first (the house method), extending
       notes/formal-verification-options.org: the construct inventory (the
       step-1 map), which constructs have checked Agda proofs (step 2), and
       for each the target Lean module AND the Rust type invariant it
       becomes (step 3). State the §9 bridge bar and confirm it is cleared
       before any Lean lands.
+      (DONE 2026-08-27 — notes/lean-port.org. The eight-row inventory
+      (rows 1-3 the portable Agda: numeric hierarchy, Castable,
+      visibility; rows 4-6 the named OTHER APPROACHES; rows 7-8 the new
+      Lean), each FIT-annotated EXACT/SUBSET. PATH DECIDED: model-first
+      (one of the survey's two Aeneas blockers fell to R4's AssocMap;
+      the map_operands twin is the prepared upgrade), with the model gap
+      stated in every Lean file's header. THE BAR, restated for the
+      model path — a nix-provisioned toolchain and one real theorem,
+      lake-green — is CLEARED: lean/ at the repo root (lean4 from
+      nixpkgs in the devshell, no elan), with the dedup model and FOUR
+      sorry-free theorems: sublist, passthrough-verbatim, per-wire
+      tightest-bound (hence solution-set) preservation, idempotence —
+      the R4 stream specimens' dedup half discharged UNBOUNDED. A lean
+      job added to CI.)
 - [ ] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
       Agda proof → Lean (holes closed where the LLM-writability axis
       allows) → the Rust type-system invariant that constrains the feature
