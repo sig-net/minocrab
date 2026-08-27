@@ -511,7 +511,7 @@ fn withdraw_refund_commitment(
     c: &mut Circuit3,
     sk: &common::SecretKey<Private>,
     request_id: &signet::RequestId<Private>,
-) -> B32<Private> {
+) -> common::RefundCommitment<Private> {
     let sk = sk.bytes();
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
@@ -524,7 +524,7 @@ fn withdraw_refund_commitment(
             request_id.bytes().lo,
         ]);
         let (hi, lo) = c.div_mod_power_of_two(f, 248);
-        B32 { hi, lo }
+        common::RefundCommitment(B32 { hi, lo })
     })
 }
 
@@ -1060,7 +1060,7 @@ fn refund_surrendered_value(
         // The AMBIENT guard is the in-branch assert: this whole function runs
         // inside `c.when(refunding, ..)`, so the condition binds only where
         // the branch is taken and nothing here names the guard.
-        c.assert(b32_eq(&rc, &stored.private()).message("Not the withdrawer"));
+        c.assert(b32_eq(&rc.bytes(), &stored.private().bytes()).message("Not the withdrawer"));
     });
 
     // assert(signatureRequest.txParams.calldata.is_some)
@@ -1183,7 +1183,7 @@ pub fn complete_swap(
         let sk = common::witness_sk(c);
         let rc = withdraw_refund_commitment(c, &sk, &request_id.private());
         let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
-        c.assert(b32_eq(&rc, &stored.private()).message("Not the swapper"));
+        c.assert(b32_eq(&rc.bytes(), &stored.private().bytes()).message("Not the swapper"));
         VAULT.swap_refund_commitment.remove(c, &request_id);
     });
 
@@ -1406,8 +1406,8 @@ pub fn refund(
         let sw_stored = VAULT
             .swap_refund_commitment
             .lookup_guarded(c, swapping, &request_id).or_default();
-        let stored = B32::cond_select(c, is_withdrawal, &wd_stored, &sw_stored);
-        c.assert(b32_eq(&rc, &stored.private()).message("Not the claimant"));
+        let stored = common::RefundCommitment::cond_select(c, is_withdrawal, &wd_stored, &sw_stored);
+        c.assert(b32_eq(&rc.bytes(), &stored.private().bytes()).message("Not the claimant"));
     });
 
     // The commitment-map removes, guarded per route (ledger EFFECT ops).

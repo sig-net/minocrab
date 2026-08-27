@@ -138,10 +138,10 @@ pub struct Vault {
     /// `sealed ledger deployer: Bytes<32>`. Sealed means write-once at
     /// deployment; the READ is an ordinary cell read, so the slot is typed.
     pub deployer: LedgerCell<common::UserCommitment<Public>>,
-    pub refund_commitment: LedgerMap<signet::RequestId<Public>, B32<Public>>,
+    pub refund_commitment: LedgerMap<signet::RequestId<Public>, common::RefundCommitment<Public>>,
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
     pub swap_event_map: LedgerMap<signet::RequestId<Public>, SwapRecord>,
-    pub swap_refund_commitment: LedgerMap<signet::RequestId<Public>, B32<Public>>,
+    pub swap_refund_commitment: LedgerMap<signet::RequestId<Public>, common::RefundCommitment<Public>>,
 }
 
 /// The vault's ledger block. A `const`: the whole thing is field indices, so
@@ -544,7 +544,7 @@ fn withdraw_refund_commitment(
     c: &mut Circuit3,
     sk: &common::SecretKey<Private>,
     request_id: &signet::RequestId<Private>,
-) -> B32<Private> {
+) -> common::RefundCommitment<Private> {
     let sk = sk.bytes();
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
@@ -564,7 +564,7 @@ fn withdraw_refund_commitment(
                 request_id.bytes().lo.erase(),
             ],
         );
-        B32::from_typed(c, digest)
+        common::RefundCommitment(B32::from_typed(c, digest))
     })
 }
 
@@ -1160,8 +1160,8 @@ fn refund_surrendered_value(
         let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.refund_commitment.lookup(c, request_id);
-        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+        let eq_hi = c.test_eq(rc.bytes().hi, stored.bytes().hi.private());
+        let eq_lo = c.test_eq(rc.bytes().lo, stored.bytes().lo.private());
         let is_withdrawer = c.mul(eq_hi, eq_lo);
         c.assert_with(is_withdrawer, Some("Not the withdrawer"));
     });
@@ -1290,8 +1290,8 @@ pub fn complete_swap(
         let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
-        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+        let eq_hi = c.test_eq(rc.bytes().hi, stored.bytes().hi.private());
+        let eq_lo = c.test_eq(rc.bytes().lo, stored.bytes().lo.private());
         let is_swapper = c.mul(eq_hi, eq_lo);
         c.assert(is_swapper);
         VAULT.swap_refund_commitment.remove(c, &request_id);
@@ -1430,8 +1430,8 @@ pub fn refund(
             let rid_priv = request_id.private();
             let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
             let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
-            let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-            let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+            let eq_hi = c.test_eq(rc.bytes().hi, stored.bytes().hi.private());
+            let eq_lo = c.test_eq(rc.bytes().lo, stored.bytes().lo.private());
             let is_swapper = c.mul(eq_hi, eq_lo);
             c.assert(is_swapper);
             VAULT.swap_refund_commitment.remove(c, &request_id);

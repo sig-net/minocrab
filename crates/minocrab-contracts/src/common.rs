@@ -32,6 +32,14 @@ b32_newtype! {
     /// have "silently restranded every derived account"
     /// (notes/vault-vocabulary.org §0).
     UserCommitment,
+    /// A refund commitment — `withdrawRefundCommitment(sk, requestId)`,
+    /// covering both the withdraw and swap variants (same derivation; the
+    /// two `LedgerMap`s distinguish which route holds one). Produced only
+    /// by the forks' `withdraw_refund_commitment`, stored and looked up as
+    /// this type, so a [`UserCommitment`] (or any other 32-byte value) can
+    /// no longer satisfy a withdrawer/swapper/claimant gate —
+    /// newtype-survey hazard A4.
+    RefundCommitment,
 }
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a

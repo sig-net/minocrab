@@ -468,7 +468,7 @@ fn withdraw_refund_commitment(
     c: &mut Circuit3,
     sk: &common::SecretKey<Private>,
     request_id: &signet::RequestId<Private>,
-) -> B32<Private> {
+) -> common::RefundCommitment<Private> {
     let sk = sk.bytes();
     c.region("refund commitment hash", |c| {
         let pad = B32::pad(c, REFUND_PAD);
@@ -481,7 +481,7 @@ fn withdraw_refund_commitment(
             request_id.bytes().lo,
         ]);
         let (hi, lo) = c.div_mod_power_of_two(f, 248);
-        B32 { hi, lo }
+        common::RefundCommitment(B32 { hi, lo })
     })
 }
 
@@ -1129,8 +1129,8 @@ fn refund_surrendered_value(
         let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.refund_commitment.lookup(c, request_id);
-        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+        let eq_hi = c.test_eq(rc.bytes().hi, stored.bytes().hi.private());
+        let eq_lo = c.test_eq(rc.bytes().lo, stored.bytes().lo.private());
         let is_withdrawer = c.mul(eq_hi, eq_lo);
         c.assert_with(is_withdrawer, Some("Not the withdrawer"));
     });
@@ -1259,8 +1259,8 @@ pub fn complete_swap(
         let rid_priv = request_id.private();
         let rc = withdraw_refund_commitment(c, &sk, &rid_priv);
         let stored = VAULT.swap_refund_commitment.lookup(c, &request_id);
-        let eq_hi = c.test_eq(rc.hi, stored.hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored.lo.private());
+        let eq_hi = c.test_eq(rc.bytes().hi, stored.bytes().hi.private());
+        let eq_lo = c.test_eq(rc.bytes().lo, stored.bytes().lo.private());
         let is_swapper = c.mul(eq_hi, eq_lo);
         c.assert(is_swapper);
         VAULT.swap_refund_commitment.remove(c, &request_id);
@@ -1495,10 +1495,10 @@ pub fn refund(
         let sw_stored = VAULT
             .swap_refund_commitment
             .lookup_guarded(c, swapping, &request_id).or_default();
-        let stored_hi = c.cond_select(is_withdrawal, wd_stored.hi, sw_stored.hi);
-        let stored_lo = c.cond_select(is_withdrawal, wd_stored.lo, sw_stored.lo);
-        let eq_hi = c.test_eq(rc.hi, stored_hi.private());
-        let eq_lo = c.test_eq(rc.lo, stored_lo.private());
+        let stored_hi = c.cond_select(is_withdrawal, wd_stored.bytes().hi, sw_stored.bytes().hi);
+        let stored_lo = c.cond_select(is_withdrawal, wd_stored.bytes().lo, sw_stored.bytes().lo);
+        let eq_hi = c.test_eq(rc.bytes().hi, stored_hi.private());
+        let eq_lo = c.test_eq(rc.bytes().lo, stored_lo.private());
         let is_claimant = c.mul(eq_hi, eq_lo);
         c.assert(is_claimant);
     });
