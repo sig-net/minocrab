@@ -10,6 +10,7 @@ members = [
     "crates/minocrab-contracts",
     "crates/minocrab-sim",
     "crates/minocrab-bench",
+    "crates/minocrab-cli",
     "crates/minocrab-abi",
     "crates/minocrab-interface-gen",
     # Interface crates (M12): one per callee contract, each a
