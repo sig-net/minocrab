@@ -386,7 +386,7 @@ _with` where the port calls `..._to_key`, `commitment_short`,
 caller must know to reach for — the same shape as the `_under`/`_guarded`
 halves staging step 3 retires. So the milestone's real question is which
 suffixes can stop being lexical and become AMBIENT.
-- [ ] Design note first (the method every milestone since M14 has used):
+- [X] Design note first (the method every milestone since M14 has used):
       which of the opt vocabulary is a PROFILE and which is a genuinely
       different operation. First pass, to be checked rather than trusted:
       (a) `_with` (threaded `kernel.self()`) is MEMOIZATION, and its
@@ -405,7 +405,7 @@ suffixes can stop being lexical and become AMBIENT.
       (d) The M10 rungs that changed the SPEC (derived changeNonce,
       injective domain separator, Poseidon refund commitments) are not
       candidates at all — they are decisions, not spellings.
-- [ ] THE PRIZE, and the reason this is a milestone rather than a cleanup:
+- [X] THE PRIZE, and the reason this is a milestone rather than a cleanup:
       if the choice is a profile rather than a spelling, `erc20_vault_opt`
       stops needing to be a separate SOURCE. The recurring cost in this
       repo is not that opt reads worse — it is that FOUR FORKS are edited
@@ -434,6 +434,16 @@ Exit criteria: the opt artifact is written in the same vocabulary as the
 port, with every remaining twin justified by a protocol or spec difference
 rather than by cost — and the four-fork lockstep either gone or explicitly
 priced. Not one instrument weaker than it is today.
+MET 2026-08-27 — notes/ergonomic-parity.org. The classifications checked
+(and one corrected: the packed/padded commitments are a per-deployment
+VALUE choice, not instruction selection): the threaded kernel.self is the
+one true profile, landed as cache_self_address over a new Circuit3 gadget
+scratch map — the _with twins deleted, one mint vocabulary for all four
+artifacts, dump-gated byte-identical across all 209 circuits. Remaining
+twins are value/protocol differences and say so (assert_deployer_packed
+completes the naming). The fork does not collapse (spec divergences);
+the lockstep is priced: it is now confined to spec-changing edits. One
+instrument STRONGER: tests/v3_kernel_cache.rs.
 
 * M19 — API safety survey and the fixes it ranks (dmd, 2026-08-16)
 Survey: =notes/api-safety-survey.org=. THE METHOD, since it is reusable:

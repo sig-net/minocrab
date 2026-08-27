@@ -18,3 +18,8 @@ midnight-base-crypto.workspace = true
 # For constructing zkir-v3's TypedIdentifier through its serde form (its
 # fields are pub(crate) upstream) — see v3::typed_identifier.
 serde_json.workspace = true
+
+# The Kani harnesses live under cfg(kani), which only the Kani driver sets
+# (see kani.sh at the repo root); tell rustc's cfg checker it is expected.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

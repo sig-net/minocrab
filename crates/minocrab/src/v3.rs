@@ -777,6 +777,8 @@ pub struct Circuit3 {
     /// already the conjunction of itself and everything below it, so the top
     /// is the effective guard and reading it costs nothing.
     guards: Vec<Val>,
+    /// Gadget scratch state — see [`Circuit3::ext_insert`].
+    ext: std::collections::BTreeMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
 /// A finished v3 circuit: the lowered ZKIR plus its disclosure record.
@@ -815,7 +817,32 @@ impl Circuit3 {
             queued_outputs: Vec::new(),
             assert_messages: Vec::new(),
             guards: Vec::new(),
+            ext: std::collections::BTreeMap::new(),
         }
+    }
+
+    // --- gadget scratch state ---------------------------------------------------
+
+    /// Store one value of type `T` on the circuit, replacing any previous
+    /// one — GADGET SCRATCH STATE, keyed by type.
+    ///
+    /// A gadget that wants per-circuit memoisation (the kernel.self cache
+    /// is the in-tree example; a third-party gadget crate has the same
+    /// need and no fork to put a field in) parks its state here under its
+    /// own private type, so two gadgets can never collide and nothing here
+    /// is nameable from outside the module that owns the type. This is
+    /// metadata for CONSTRUCTION only: nothing in the extension map
+    /// reaches the lowered [`Compiled3`].
+    pub fn ext_insert<T: std::any::Any>(&mut self, value: T) {
+        self.ext
+            .insert(std::any::TypeId::of::<T>(), Box::new(value));
+    }
+
+    /// The stored `T`, if [`Circuit3::ext_insert`] has run for it.
+    pub fn ext_get<T: std::any::Any>(&self) -> Option<&T> {
+        self.ext
+            .get(&std::any::TypeId::of::<T>())
+            .and_then(|b| b.downcast_ref())
     }
 
     // --- circuit arguments (witness data, like v2 args) -------------------------

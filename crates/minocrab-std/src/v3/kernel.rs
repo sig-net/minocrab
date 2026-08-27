@@ -105,9 +105,45 @@ impl UnshieldedToken<Public> {
 
 // ---- the kernel primitives --------------------------------------------------
 
-/// `kernel.self()` — the contract's own address.
+/// The cached `kernel.self()` answer — populated ONLY by
+/// [`cache_self_address`], parked in the circuit's gadget scratch state
+/// under this private type so nothing outside this module can touch it.
+struct CachedSelfAddress(ContractAddress<Public>);
+
+/// `kernel.self()` — the contract's own address. Reads fresh, unless this
+/// circuit earlier called [`cache_self_address`], in which case the cached
+/// wires come back and no read is emitted.
+///
+/// A circuit that never caches CANNOT be affected: nothing else populates
+/// the cache, so the compat ports' per-call-site reads (compactc parity)
+/// are reproduced by construction, not by discipline.
 pub fn self_address(c: &mut Circuit3) -> ContractAddress<Public> {
+    if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
+        return cached.0;
+    }
     self_address_under(c, STRAIGHT_LINE)
+}
+
+/// Read `kernel.self()` ONCE and make it the ambient answer for every
+/// later [`self_address`] call in this circuit (M18).
+///
+/// The soundness paragraph is M10 rung i's, unchanged: the address is
+/// constant for the transaction and read count is FRAMING, not protocol —
+/// every read that IS emitted still reconciles through the ledger's
+/// `process_read`. This is the typed CSE notes/ir-passes.org §3 assigns to
+/// a gadget rather than a pass: the caller states the intent once, at the
+/// top of the circuit, instead of threading the address through every
+/// helper (`…_with` twins) — and a circuit whose helpers make their OWN
+/// reads today must keep plain [`self_address`], because the cache would
+/// swallow those reads and move the stream (the dump gate enforces this
+/// per circuit).
+///
+/// Guarded reads ([`self_address_under`], [`self_address_guarded`]) are
+/// different instructions and never consult the cache.
+pub fn cache_self_address(c: &mut Circuit3) -> ContractAddress<Public> {
+    let me = self_address_under(c, STRAIGHT_LINE);
+    c.ext_insert(CachedSelfAddress(me));
+    me
 }
 
 /// [`self_address`] under a branch condition.

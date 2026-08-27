@@ -73,7 +73,6 @@ use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
 // `CircuitBorsh` names both the trait and the derive macro (different
 // namespaces, one path), as `serde::Serialize` does.
 use minocrab_std::v3::kernel;
-use minocrab_std::v3::ContractAddress;
 use minocrab_std::v3::borsh::{CircuitBorsh, Tag};
 use minocrab_std::v3::{
     CoinColor, CoinNonce, TokenDomainSeparator,
@@ -343,7 +342,7 @@ pub fn deposit(
     let request_nonce = VAULT.signet_request_nonce.read(c);
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
-    let me = kernel::self_address(c);
+    let me = kernel::cache_self_address(c);
     let caip2 = VAULT.caip2_id.read(c);
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
@@ -356,7 +355,7 @@ pub fn deposit(
         RESPONSE_KIND_CLAIM as u8,
     );
 
-    record_and_notify(c, one, me, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
+    record_and_notify(c, one, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -452,7 +451,6 @@ fn insert_request<const WORDS: usize>(
 fn notify_signet(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: ContractAddress<Public>,
     request_id: &signet::RequestId<Public>,
     notify_path: [u8; 4],
 ) {
@@ -463,6 +461,7 @@ fn notify_signet(
         // inside `call`, which is where Rust's argument-first evaluation
         // would otherwise land it.
         let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
+        let me = kernel::self_address(c);
         let notification = construct_notification_v1::<Public>(c, &me.bytes(), 1, notify_path);
         signer.sign_bidirectional(c, one, *request_id, notification);
     });
@@ -473,14 +472,13 @@ fn notify_signet(
 fn record_and_notify<const WORDS: usize>(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: ContractAddress<Public>,
     request: &signet::SignBidirectionalEventV2<Private, WORDS>,
     map: &LedgerMap<signet::RequestId<Public>, signet::EventRecordV2<WORDS>>,
     notify_path: [u8; 4],
 ) -> signet::RequestId<Public> {
     let request_id = check_fresh_request(c, request, map);
     insert_request(c, request, map, &request_id);
-    notify_signet(c, one, me, &request_id, notify_path);
+    notify_signet(c, one, &request_id, notify_path);
     request_id
 }
 
@@ -601,7 +599,7 @@ pub fn withdraw(
     // THE kernel.self read of this circuit (rung i): the colour derivation,
     // the event's sender, the receive, the burn and the notification all
     // want the same address, and the port read it five times.
-    let me = kernel::self_address(c);
+    let me = kernel::cache_self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
     c.assert(eq(coin.value.field(), amount));
@@ -671,7 +669,7 @@ pub fn withdraw(
     let rc = rc.disclose_as::<WithdrawerRefundCommitment>(c);
     VAULT.refund_commitment.insert(c, &request_id, &rc);
 
-    notify_signet(c, one, me, &request_id, [0, 0, 0, 0]);
+    notify_signet(c, one, &request_id, [0, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -740,7 +738,7 @@ pub fn swap(
     let domain_sep = vault_token_domain_separator(c, token_in);
     // THE kernel.self read of this circuit (rung i) — as in `withdraw`, the
     // port read the same address five times.
-    let me = kernel::self_address(c);
+    let me = kernel::cache_self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
     c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
     c.assert(eq(coin.value.field(), amount_in_max));
@@ -821,7 +819,7 @@ pub fn swap(
     let rc = rc.disclose_as::<SwapperRefundCommitment>(c);
     VAULT.swap_refund_commitment.insert(c, &request_id, &rc);
 
-    notify_signet(c, one, me, &request_id, [11, 0, 0, 0]);
+    notify_signet(c, one, &request_id, [11, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -896,7 +894,7 @@ pub fn approve_router(
     // Signed by the VAULT account: path = pad(32, "vault").
     let request_nonce = VAULT.signet_request_nonce.read(c);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
-    let me = kernel::self_address(c);
+    let me = kernel::cache_self_address(c);
     let caip2 = VAULT.caip2_id.read(c);
     let path = common::SigningPath::vault_path(c).private();
     // The response kind is APPROVE — the one REQUEST-ONLY kind: an approve is
@@ -913,7 +911,7 @@ pub fn approve_router(
         RESPONSE_KIND_APPROVE as u8,
     );
 
-    record_and_notify(c, one, me, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
+    record_and_notify(c, one, &request, &SIGN_EVENT_MAP_V2, [0, 0, 0, 0]);
 
     Discloses::of(())
 }
@@ -1195,7 +1193,8 @@ pub fn complete_swap(
     // assert(signatureRequest.txParams.calldata.is_some)
     c.assert(ev.calldata_is_some());
     // ONE kernel.self read for BOTH mints (rung i).
-    let me = kernel::self_address(c);
+    // The circuit's ONE kernel.self read (rung i), cached for the mints below.
+    kernel::cache_self_address(c);
     let recipient = own_public_key(c).disclose_as::<SwapRecipient>(c);
 
     // Mint the EXACT amountOut of tokenOut: word 4 of tokenOut (word 1).
@@ -1208,9 +1207,7 @@ pub fn complete_swap(
     // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
     // locally (notes/api-safety-survey.org §B4's correction) — first in
     // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &ds_out, Uint::<64, Public>::from_field_unchecked(amount_out), &mint_nonce, &recipient,
-    );
+    common::mint_shielded_token_to_key(c, &ds_out, Uint::<64, Public>::from_field_unchecked(amount_out), &mint_nonce, &recipient);
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
@@ -1236,9 +1233,7 @@ pub fn complete_swap(
     // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
     // locally (notes/api-safety-survey.org §B4's correction) — first in
     // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &ds_in, Uint::<64, Public>::from_field_unchecked(change), &change_nonce, &recipient,
-    );
+    common::mint_shielded_token_to_key(c, &ds_in, Uint::<64, Public>::from_field_unchecked(change), &change_nonce, &recipient);
 
     Discloses::of(())
 }
@@ -1374,7 +1369,8 @@ pub fn refund(
     // ONE UNGUARDED kernel.self read dominating both branches (rung i).
     // Exactly one branch runs, so the transcript still carries exactly one
     // kernel.self answer — but the circuit now carries one read, not two.
-    let me = kernel::self_address(c);
+    // The circuit's ONE kernel.self read (rung i), cached for the mints below.
+    kernel::cache_self_address(c);
     let mint_nonce = args.mint_nonce.disclose_as::<RefundMintNonce>(c);
 
     // Withdrawal-route record consume (guarded): the VaultRecord and its
@@ -1463,9 +1459,7 @@ pub fn refund(
     // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
     // locally (notes/api-safety-survey.org §B4's correction) — first in
     // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key_with(
-        c, 1u64, me, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &own_pk,
-    );
+    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &own_pk);
 
     Discloses::of(())
 }

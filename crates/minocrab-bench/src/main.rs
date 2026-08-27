@@ -640,14 +640,19 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
 
-    /// The optimized side covers the nine vault circuits and nothing else,
-    /// and a side with no artifact for a target drops out of the run rather
-    /// than failing it.
+    /// The optimized and borsh sides cover the nine vault circuits and
+    /// nothing else, and a side with no artifact for a target drops out of
+    /// the run rather than failing it.
     #[test]
     fn the_optimized_side_covers_the_vault_targets_only() {
         let vault_targets = targets().iter().filter(|t| t.opt.is_some()).count();
         assert_eq!(vault_targets, 9, "the vault has nine circuits");
-        assert_eq!(cells().len(), targets().len() * 2 + vault_targets);
+        assert_eq!(
+            targets().iter().filter(|t| t.borsh.is_some()).count(),
+            vault_targets,
+            "the borsh side mirrors the optimized side's coverage"
+        );
+        assert_eq!(cells().len(), targets().len() * 2 + vault_targets * 2);
 
         let opt = side("opt").expect("the side is declared");
         let vault = targets().into_iter().find(|t| t.name == "claim").unwrap();

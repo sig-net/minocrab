@@ -175,7 +175,7 @@ pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserC
 
 /// [`assert_deployer`] against the SHORT identity commitment
 /// ([`commitment_packed_tag`]) — the optimized initialize's deployer gate.
-pub fn assert_deployer_short<V: Visibility + Copy>(
+pub fn assert_deployer_packed<V: Visibility + Copy>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     deployer_field: u8,
@@ -513,24 +513,26 @@ fn assert_if_message<V: minocrab_std::v3::Vis3>(
     c.assert_with(gated, message);
 }
 
-/// The shared body of the static-`left(pk)` mints: compactc folds the
-/// recipient selects and the auto-receive branch; every effects op carries
-/// `guard`.
+/// `mintShieldedToken(domain_sep, value, nonce, left(pk))` straight-line —
+/// the shared body of the static-`left(pk)` mints: compactc folds the
+/// recipient selects and the auto-receive branch.
 ///
-/// Public as the "caller already read `kernel.self()`" form of
-/// [`mint_shielded_token_to_key`]. A
-/// circuit that mints twice (completeSwap) or mints on either of two
-/// branches (refund) needs one read, not one per mint.
-pub fn mint_shielded_token_to_key_with<G: Visibility>(
+/// ONE name for every artifact (M18): the `kernel.self()` read comes from
+/// [`kernel::self_address`], so a compat circuit gets its per-mint read
+/// (compactc parity) and an opt-lineage circuit that opened with
+/// [`kernel::cache_self_address`] gets the cached wires — a circuit that
+/// mints twice (completeSwap) or on either of two branches (refund) states
+/// "one read" once at its top instead of threading `me` through a `_with`
+/// twin.
+pub fn mint_shielded_token_to_key(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    me: ContractAddress<Public>,
     domain_sep: &TokenDomainSeparator<Public>,
     value: Uint<64, Public>,
     nonce: &CoinNonce<Public>,
     pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>,
 ) {
-    let guard = guard.into();
+    let me = kernel::self_address(c);
+    let guard: Operand<FieldT, Public> = STRAIGHT_LINE.into();
     c.region("coin: mint", |c| {
         let color = token_type(c, domain_sep, &me.bytes());
 
@@ -553,19 +555,6 @@ pub fn mint_shielded_token_to_key_with<G: Visibility>(
         let cm = coin_commitment(c, &coin, &left);
         emit(c, guard, &kernel_claim_zswap_coin_spend(&b32_value(&cm)));
     });
-}
-
-/// `mintShieldedToken(domain_sep, value, nonce, left(pk))` straight-line
-/// (completeSwap's two mints).
-pub fn mint_shielded_token_to_key(
-    c: &mut Circuit3,
-    domain_sep: &TokenDomainSeparator<Public>,
-    value: Uint<64, Public>,
-    nonce: &CoinNonce<Public>,
-    pk: &minocrab_std::v3::ZswapCoinPublicKey<Public>,
-) {
-    let me = kernel::self_address(c);
-    mint_shielded_token_to_key_with(c, STRAIGHT_LINE, me, domain_sep, value, nonce, pk);
 }
 
 /// The one-shot gate: `assert(<counter at field> == 0)`.
