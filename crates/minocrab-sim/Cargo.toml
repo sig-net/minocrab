@@ -15,6 +15,12 @@ categories = [
 ]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
+# The gate-count CLI (M24): `minocrab rows|diff <file.zkir>` for people not
+# using the Rust API. Reuses this crate's cost() + minocrab-zkir's read_zkir.
+[[bin]]
+name = "minocrab"
+path = "src/bin/minocrab.rs"
+
 [dependencies]
 minocrab.workspace = true
 minocrab-zkir.workspace = true
