@@ -188,6 +188,13 @@ impl Vis3 for Private {
 //
 // All three are `#[repr(transparent)]` around one wire, and `.field()`
 // unwraps to it without emitting an instruction.
+//
+// The bound arithmetic these leaves encode (the add/mul const-assert
+// thresholds, the subtraction guard, the free widen/to_uint retypes, the
+// guard's comparison width) is machine-checked in `lean/MinocrabStdProofs/
+// Numeric.lean`, shipped with this crate; tests/lean_claims.rs is the
+// drift gate. Model proofs — the transcription gap is stated in the file's
+// header (M25, notes/lean-port.org).
 
 /// Compact's `Uint<0..2^BITS - 1>`: one native slot, `assert_bits(BITS)` on
 /// entry, alignment atom `bytes ceil(BITS/8)`.

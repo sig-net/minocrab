@@ -42,6 +42,7 @@ it in.
 | [interface-crates.org](notes/interface-crates.org) | you touch `#[interface]` or the generated interface crates |
 | [ir-passes.org](notes/ir-passes.org) | you write or judge an IR pass — the accept/reject lists and why CSE/DCE are rejected |
 | [kernel-tokens.org](notes/kernel-tokens.org) | you touch the kernel primitives or token stdlib |
+| [lean-port.org](notes/lean-port.org) | you touch the Lean proofs (`crates/*/lean/`) — the construct inventory, the model-vs-extraction decision, the limitations discussion |
 | [ledger-abi.org](notes/ledger-abi.org) | you touch anything on-chain-facing — state layout, Impact framing, the comm commitment |
 | [ledger-adts.org](notes/ledger-adts.org) | you touch List/Set/Map/MerkleTree lowering |
 | [library-api.org](notes/library-api.org) | you touch the public surface — the tier boundary, the Pass contract, the CLI |

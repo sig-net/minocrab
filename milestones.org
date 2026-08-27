@@ -955,13 +955,35 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       tightest-bound (hence solution-set) preservation, idempotence —
       the R4 stream specimens' dedup half discharged UNBOUNDED. A lean
       job added to CI.)
-- [ ] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
+- [X] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
       Agda proof → Lean (holes closed where the LLM-writability axis
       allows) → the Rust type-system invariant that constrains the feature
       to (a maximal usable subset of) what the proof allows, per THE FIT.
       The type invariant is the milestone's user-facing product; the Lean
       is its warrant. Record per construct whether the types match the
       proof's set exactly or admit a strict subset, and why.
+      (DONE 2026-08-27 — notes/lean-port.org §3 "CORRECTED BY THE PORT"
+      + §5. THE STEP-2 CORRECTION, found by reading the Agda at the
+      pinned rev: rows 1-3 have NOTHING to port — the bound computation
+      is =⊢undeclared= stubs, subtyping is a refl/trans stub with a
+      postulate, disclose types through with no visibility judgment
+      (bycatch: their =⊢>== smart constructor is a copy-paste of
+      =⊢expr-<==). So the warrants are NEW Lean stating compactc's real
+      rules: a second lake package =crates/minocrab-std/lean/=
+      (MinocrabStdProofs), 23 sorry-free theorems green under Lean 4.30
+      and 4.33 — Numeric.lean (add/mul bound asserts sound AND minimal,
+      the sub guard makes field-sub integer-sub with the underflow shape
+      as the counter-theorem, the guard's comparison width, the free
+      retypes) and Visibility.lean (Meet's table is a lattice meet; an
+      expression types Public IFF every private leaf is under a
+      disclose — both directions). Reflection: the type invariants
+      already existed (the const asserts, Meet, Public-only CircuitOut);
+      tests/lean_claims.rs embeds both proofs via lean_proof! as the
+      drift gate; lean/ ships in the crate; CI's lean job builds both
+      packages. FIT recorded per construct in §5: BoundedUint add/mul
+      EXACT (the _minimal theorems discharge maximality), widen/to_uint
+      EXACT, Uint-family SUBSET by design, visibility SUBSET in the
+      strong direction.)
 - [X] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
       preserve-meaning proof (PI/witness stream unchanged, only implied
       range constraints dropped — M23 R4 Kani bounds it first, Lean
@@ -983,7 +1005,7 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       crates/minocrab-ir/lean/ so the proofs ship inside the crate the
       macro embeds them from (Cargo.toml include; CI + flake updated).
       Checked green under both Lean 4.30 (CI devshell) and 4.33.)
-- [ ] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
+- [X] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
       what the Compact repo's spec actually covers and does NOT — static/
       typing only, an unchecked operational SKETCH, nothing on ZKIR,
       =--allow-unsolved-metas= — so PARITY is measured against their real
@@ -992,6 +1014,14 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       APPROACH taken (a property test, a Kani harness, or a type invariant
       argued directly from the protocol) so the feature is still
       constrained, just not by a ported proof.
+      (DONE 2026-08-27 — notes/lean-port.org §6 is the full account
+      (what their spec is, what parity therefore means, what our Lean is
+      NOT); VERIFICATION.md §5's first bullet rewritten from "no
+      machine-checked semantics" to the honest two-sided statement; the
+      README fairness bullet rewritten likewise, and the README pass-
+      authoring section's "planned (Kani, then Lean)" updated to the
+      landed VerifiedPass reality. The other approaches are named per
+      construct in the §3 table rows 4-6.)
 THE AIM (dmd, 2026-08-27): PARITY, not exhaustiveness. The Agda is thin;
 "as many as possible" means match their formal coverage where it is real
 and portable, reach for the other approaches where it is not, and say so.
@@ -1005,3 +1035,19 @@ surface has a machine-checked "preserves meaning" proof reflected in its
 type-level contract. Explicitly OUT: transcribing the unchecked
 operational sketch (porting a =  {!!}= proves nothing) and any Lean the
 §9 bridge does not yet support.
+MET 2026-08-27, with the parity bar RESTATED by what the port found:
+what the Compact spec ACTUALLY proves is well-formedness plumbing and
+constructor coverage (its bound computation, subtyping and visibility
+content are stubs/postulates/transparent — notes/lean-port.org §3
+correction + §6) — that coverage is matched (exhaustive-match
+instruments, the typed I/O artifact-agreement tests) and then exceeded:
+23 sorry-free theorems in MinocrabStdProofs warrant the numeric asserts
+(sound AND minimal) and the disclose gate (sound AND complete over the
+model), 11 in MinocrabProofs warrant the pass layer, reflected as
+VerifiedPass + the lean_claims drift gates. The honest boundary stands
+in every file header: model proofs, transcription-matches-Rust by
+review + instruments, no extraction. Row 8's unbounded interval twins
+deliberately left at Kani (§5, the recorded decision). No proof was
+PORTED — the milestone's premise dissolved on contact with the real
+Agda, and the loop's deliverable (proof + type invariant per construct)
+landed anyway, which is the outcome the FIT rule was written for.

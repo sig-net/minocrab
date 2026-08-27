@@ -106,7 +106,8 @@
             # machine's /usr/bin/gcc is an xcrun shim with no CLT behind it.
             (pkgs.writeShellScriptBin "gcc" ''exec ${pkgs.clang}/bin/clang "$@"'')
             pkgs.rustup
-            # M25: the Lean proofs under crates/minocrab-ir/lean/ —
+            # M25: the Lean proofs under crates/minocrab-ir/lean/ (passes)
+            # and crates/minocrab-std/lean/ (numeric/visibility) —
             # nix-provisioned (no elan).
             pkgs.lean4
           ];

@@ -90,6 +90,36 @@ construct has NOTHING to port, name the other approach"; rows 7-8 are the
 new-Lean prongs (row 7 is the milestone's own; row 8 is R4's natural
 unbounded continuation and the cheapest first win).
 
+CORRECTED BY THE PORT (2026-08-27), reading the Agda at the pinned rev
+rather than trusting this table's step-2 column: rows 1-3's "checked
+Agda" is checked in the sense of COMPILING, but the content that would
+make them ports is missing —
+- Row 1: =IsNumeric=/=UIntType= are real =data= declarations (two
+  constructors each, one TODO), but the bound computation the Lean
+  target names is a STUB: =_⟨+⟩_=, =_⟨*⟩_=, =_⟨-⟩_= all return
+  =⊢undeclared= under "**TODO: define bound computation**", so every
+  arithmetic expression in the checked spec has result type
+  "undeclared". The prose says "we take the sum of their size bounds";
+  the formal content does not.
+- Row 2: =Castable= has ONE constructor deferring to =⊑=, and =⊑=
+  itself is "TODO: define subtyping" — =refl= and =trans= only, with
+  the order-theoretic fact =⊑-⊢⇔⊏-⊢= a =postulate=.
+- Row 3: the disclose rule is TRANSPARENT — =Γ ⊢expr expr ⦂ τ → Γ
+  ⊢expr disclose expr ⦂ τ= — and NO judgment anywhere in the static
+  semantics marks witness taint or restricts what reaches public
+  output. "PARTIAL" overstated it: there is no visibility content at
+  all.
+- Bycatch: the comparison smart constructor =⊢>== is defined via
+  =⊢expr-<== — a copy-paste bug in their checked code (benign for
+  type-soundness, wrong syntax node in the derivation).
+So rows 1-3 became NEW Lean stating the rules compactc actually
+implements (=infer-types.ss=, notes/builtin-lowering.org §9), with the
+Agda cited as precedent-shape only — which the milestone's limitations
+clause anticipated for rows 4-6 and turns out to govern rows 1-3 too.
+The per-construct loop still delivered both halves (proof + type
+invariant); only the provenance changed: nothing was PORTED, because
+there was nothing to port.
+
 * 4. The ZKIR-pass prong (new Lean)
 
 MODEL: =Instruction= as a small inductive — =copy (dst : Name) (src :
@@ -204,3 +234,120 @@ The reflection, in =minocrab_ir::v3::passes=:
   cannot claim verification (FIT's shortfall clause).
 CI's lean job and flake comment updated for the move. Both builtins
 implement =VerifiedPass= citing their four theorems each.
+
+2026-08-27 (rows 1-3) — the higher-level construct loop run, and the
+step-2 corrections above recorded. A SECOND lake package,
+=crates/minocrab-std/lean/= (=MinocrabStdProofs=), same shape as the
+first, green under both devshell Lean 4.30 and ambient 4.33 on the
+first build (=omega= + case analysis carries almost everything; the one
+external fact used is core's =Nat.log2_lt=):
+- =Numeric.lean= (rows 1-2): =sum_bound_sound=/=_minimal= and
+  =product_bound_sound=/=_minimal= — the =add=/=mul= const asserts are
+  EXACT (sound and the narrowest admissible threshold);
+  =field_sub_eq_nat_sub= (under the guard, field subtraction IS integer
+  subtraction) and =field_sub_underflow= (without it, the result is
+  =p − (b − a)= — §B1's bug as a theorem); =sub_result_bound= (result
+  keeps the operand bound, compactc's =Uint<maxa>= rule);
+  =guard_width_sound= via =lt_two_pow_log2_succ= (the predicate layer's
+  =max(1, intlen(BOUND−1))= comparison width admits every in-bound
+  operand); =widen_sound=/=uint_widen_sound=/=to_uint_sound= (the free
+  retypes' tautology arguments).
+- =Visibility.lean= (row 3): =meet= as =Meet='s four-impl table;
+  comm/assoc/idem, =Public= identity, =Private= absorbing,
+  =meet_eq_pub_iff=, and glb w.r.t. the two-point order; then the
+  taint theorem over the tiny expression model —
+  =vis_pub_iff_no_undisclosed_priv= (an expression types Public IFF
+  every private leaf sits under a disclose; both directions, so the
+  discipline is sound AND not conservative) with
+  =undisclosed_priv_is_private= as the API-facing contrapositive.
+- REFLECTION: the invariants already existed in the types (the const
+  asserts, =Meet=, Public-only =CircuitOut=) — the loop's step 3 was
+  verifying alignment, not new Rust. The drift gate is
+  =minocrab-std/tests/lean_claims.rs=: both proofs embedded via
+  =minocrab_ir::lean_proof!= (dev-dep; a deleted proof file is a build
+  error) with the claims test mirroring minocrab-ir's. The crate SHIPS
+  =lean/= (Cargo.toml include), =.lake/= gitignored, CI's lean job
+  builds both packages.
+- FIT, per construct: =BoundedUint= add/mul EXACT (the =_minimal=
+  theorems discharge the "maximal usable subset" clause — no admissible
+  value is excluded); =widen=/=to_uint= EXACT; =Uint= as a family
+  SUBSET (no implicit widening, M9 decision A — stricter than Compact
+  by design); visibility SUBSET in the STRONG direction (the model
+  covers the lattice+gate core; the Rust enforces labels and declared
+  sets on top, and the spec's own typing rule enforces nothing).
+- ROW 8 (=Interval.lean=) LEFT AT KANI, by decision: the unbounded
+  twins of the ten interval proofs mean re-deriving 4-limb carry-chain
+  correctness for add and a 4×4 schoolbook multiply in plain Lean —
+  hundreds of lines with no parity content (the Agda has nothing
+  there, and no milestone bullet owes it; the table listed it as the
+  cheapest first win when the plan was written, before the pass prong
+  landed first). The ten Kani proofs stand at their stated bounds
+  (0.24s..522s, R4's record); the unbounded discharge is the named
+  NEXT strengthening if anyone wants it, not a gap in this
+  milestone's claim.
+
+* 6. The limitations discussion (the milestone's honest-writeup bullet)
+
+The record PARITY is measured against, stated bluntly so nobody scopes
+this work on the Agda's reputation. Public-facing summary in
+VERIFICATION.md §5; this section is the full account.
+
+** What the Compact repo's spec actually is
+
+9,194 lines of Agda across 21 files, of which the CI-checked core is
+the Lsrc STATIC/TYPING semantics (~4,700 lines) plus =Coverage.agda=.
+Within that checked core, at our pinned rev:
+
+- WELL-FORMEDNESS PLUMBING IS REAL: the syntax is fully represented
+  (generated from the compiler's own grammar), ~20 inductive typing
+  relations exist, and =Coverage.agda= (=--safe=) machine-checks that
+  the typing relation covers every syntax constructor. That last item
+  is genuine and we stole the idea (exhaustive matches in =passes.rs= /
+  =taint.rs= / =returned_identifiers=).
+- THE SEMANTIC CONTENT IS LARGELY ABSENT where it would matter to us:
+  arithmetic result types are =⊢undeclared= stubs ("TODO: define bound
+  computation"); subtyping is =refl=/=trans= with "TODO: define
+  subtyping" and a load-bearing =postulate=; =Castable= is one
+  constructor over that stub; =disclose= types through with no
+  visibility judgment anywhere — the witness-taint discipline Compact
+  actually enforces lives in the compiler, OUTSIDE the spec.
+- =Lsrc.lagda.md= carries =--allow-unsolved-metas= (not =--safe=), 29
+  TODOs, and describes language 0.16.103 — nine minors behind the
+  compiler we pin.
+- The OPERATIONAL semantics is an unchecked sketch (=fetch = {!!}=, no
+  importer); there is NOTHING about ZKIR, lowering, or optimisation.
+- Bycatch of reading closely: =⊢>== is defined via =⊢expr-<== — a
+  copy-paste bug in checked code, harmless to their theorems (there
+  are none about comparisons) but indicative: a spec nothing consumes
+  does not get read.
+
+** What parity therefore means, and where we stand
+
+Their formal coverage that is REAL: syntax representation, typing-rule
+plumbing, constructor coverage. Ours: the coverage idea is adopted as
+build-breaking exhaustive matches; the typing rules that carry content
+(numeric bounds, casts, visibility) exist in our TYPE SYSTEM as
+enforcement (const asserts, =Meet=, the disclose gate, Public-only
+=CircuitOut=) with Lean warrants BEHIND them (=MinocrabStdProofs=) —
+which is coverage their spec does not have: their bound computation is
+undeclared, ours is proven sound AND minimal; their disclose rule is
+transparent, our gate discipline is proven sound and complete over the
+model. Where their spec has nothing and so do our types, the OTHER
+APPROACHES hold the line and are named in §3's table (rows 4-6:
+artifact-agreement tests, instruction-level differentials,
+byte-equality twins + the survey's fixed bug classes).
+
+Beyond parity, on ground they do not cover at all: the ZKIR pass layer
+(=MinocrabProofs=, six syntactic + one semantic + four dedup theorems,
+reflected as =VerifiedPass=) and the Kani-bounded interval arithmetic
+under the taint lint.
+
+** What our Lean is NOT, restated
+
+Every proof here is a MODEL proof: it warrants the algorithm/rule as
+transcribed, and the transcription-matches-Rust claim rests on review
+plus the Rust-side instruments (each file's header says so). No
+extraction, no proof about the running binary, and no operational
+semantics of ZKIR on either side. And the proofs are LLM-written and
+LLM-maintained under review — the LLM-writability axis was the design
+constraint, not a caveat discovered later.

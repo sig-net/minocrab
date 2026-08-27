@@ -9,7 +9,21 @@ rust-version.workspace = true
 readme = "README.md"
 keywords = ["midnight", "zero-knowledge", "circuit", "stdlib", "borsh"]
 categories = ["cryptography::cryptocurrencies", "cryptography"]
-include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+# lean/ is the machine-checked proof development for the numeric and
+# visibility invariants (M25) — the warrant behind the leaves' const
+# asserts, shipped with the crate the way minocrab-ir ships its pass
+# proofs (tests/lean_claims.rs is the in-repo drift gate; .lake/ build
+# artifacts must not ship).
+include = [
+    "src/**/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "lean/lakefile.toml",
+    "lean/lake-manifest.json",
+    "lean/MinocrabStdProofs.lean",
+    "lean/MinocrabStdProofs/*.lean",
+]
 
 [dependencies]
 minocrab.workspace = true

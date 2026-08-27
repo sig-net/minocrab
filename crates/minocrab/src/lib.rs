@@ -108,6 +108,12 @@ impl Visibility for Private {
 }
 
 /// Visibility join: public only if both sides are public.
+///
+/// The four impls below are a two-point lattice meet, and the discipline
+/// they enforce — an expression types `Public` iff every private leaf
+/// sits under a `disclose` — is machine-checked in
+/// `minocrab-std/lean/MinocrabStdProofs/Visibility.lean` (a model proof;
+/// see the file's header for the honest boundary).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a wire visibility, so it has no meet with `{B}`",
     label = "expected `Public` or `Private`",

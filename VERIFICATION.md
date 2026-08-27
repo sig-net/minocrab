@@ -310,8 +310,26 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 
 ## 5. The honest limits
 
-- **No machine-checked semantics.** Compact ships an Agda specification in-tree
-  with CI; MinoCrab has no formal-verification parity. The compensating control
+- **Machine-checked semantics: partial, model-level, and honestly bounded.**
+  Compact ships an Agda specification in-tree with CI. Read at our pinned rev,
+  its checked content is well-formedness plumbing — syntax representation,
+  typing-rule skeletons, constructor coverage — while the semantic content
+  that would matter here is absent: arithmetic result types are `⊢undeclared`
+  stubs ("TODO: define bound computation"), subtyping is a refl/trans stub
+  with a load-bearing `postulate`, `disclose` types through with no
+  visibility judgment, the operational semantics is an unchecked sketch, and
+  nothing covers ZKIR ([notes/lean-port.org §6](notes/lean-port.org), the
+  full account). MinoCrab's machine-checked layer is Lean **models**:
+  the pass contract (subsequence/passthrough/solution-set/idempotence for
+  constraint dedup; skeleton/observables preservation for copy folding,
+  reflected as `VerifiedPass`), and the numeric/visibility invariants behind
+  the typed leaves (`crates/minocrab-std/lean/` — the `add`/`mul` bound
+  asserts proven sound *and minimal*, the subtraction guard proven to make
+  field subtraction integer subtraction, the disclose gate proven sound and
+  complete over a small expression model). These warrant the *algorithms and
+  rules as modelled*, not the running Rust — the transcription gap is stated
+  in every proof file's header, and extraction is the only thing that would
+  close it. For everything the models do not reach, the compensating control
   is the differential warrant (§2c/d) plus the property warrant (§2e), and — for
   the class differentials structurally cannot see — the **method** of
   [notes/api-safety-survey.org §0](notes/api-safety-survey.org): look where a
