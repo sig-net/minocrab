@@ -2296,3 +2296,58 @@ against a small stable API — without forking, and without touching the
 internals tier — and measure the result through the crate API (Rust) or
 the release CLI (non-Rust); the pass surface is shaped so the deferred
 Kani/Lean verification of "preserves meaning" bolts on without redesign.
+
+* M25 — Port the Compact repo's Agda proofs to Lean (dmd, 2026-08-27)
+THE FINAL milestone, and the machine-checked-spec endgame of
+notes/formal-verification-options.org's staging (compile-fail tests →
+Kani → Lean). dmd's directive: directly port as many Agda proofs from the
+Compact repo to Lean as possible, prioritising those that represent ZKIR
+PASSES or anything HIGHER LEVEL. dmd is partial to Lean; any proof here is
+LLM-written and LLM-maintained under review, so LLM-writability is the
+main axis. Do NOT start until the earlier rungs (M23 R4 Kani, and M24's
+pure/total pass surface) are in place — this is deliberately last.
+
+THE HONEST GROUND, from notes/formal-verification-options.org — record it
+so the milestone is not scoped on the Agda's reputation:
+- The CHECKED Agda is Compact's STATIC + TYPING semantics of Lsrc
+  (=Lsrc.lagda.md= 2899 lines, =Lsrc-Typing.lagda.md= 1447,
+  =Coverage.agda= 340). That is the "anything higher level" content, and
+  it is what is DIRECTLY PORTABLE — the SOURCE-language semantics, not
+  ZKIR. Caveat: =Lsrc.lagda.md= carries =--allow-unsolved-metas= and is
+  not =--safe=, so a port must decide per hole whether to carry it or
+  close it (closing is the higher-value act and the LLM-writability test).
+- "Where they represent ZKIR passes": THE AGDA HAS NONE. It says nothing
+  whatever about ZKIR, and the one part that could relate — the
+  operational/CEK semantics with its witness oracle — is an UNCHECKED
+  SKETCH: =Machine.agda= has unfilled holes (=fetch/deref/>>= = {!!}=),
+  no module imports it, it may not compile. So the ZKIR-pass half is NOT
+  a port; it is NEW Lean, built on the footing M24 laid deliberately: the
+  =Pass= trait's =transform= is pure/total /so that/ a Lean model of "the
+  output PI/witness stream ≡ the input's" and "only implied constraints
+  dropped" can target it. The Agda's value here is a MODELLING PRECEDENT
+  (the witness oracle is exactly M19 §A3's guarded-witness bug shape),
+  not code to transcribe.
+- The Lean BRIDGE is not yet load-bearing (formal-verification-options.org
+  §9's named bar). This milestone assumes that bar has cleared; if it has
+  not, the milestone's prerequisite is clearing it, not porting.
+
+- [ ] Design note first (the house method), extending
+      notes/formal-verification-options.org: which Agda modules port
+      1:1, which close a hole in the porting, and which ZKIR-pass Lean is
+      NEW (with the =Pass= trait as its subject). State the §9 bridge bar
+      and confirm it is cleared before any Lean lands.
+- [ ] Port the CHECKED higher-level Agda (Lsrc static + typing +
+      Coverage) to Lean, hole-closing where the LLM-writability axis
+      allows, as the modelling foundation.
+- [ ] Build the NEW ZKIR-pass Lean on M24's pure/total =Pass= surface:
+      the reference passes (=fold_immediate_copies=,
+      =dedup_range_constraints=) proven to preserve the PI/witness stream
+      and to drop only implied range constraints — the properties M23 R4
+      Kani bounds first and Lean discharges unbounded.
+Exit criteria: the higher-level source-semantics Agda that is worth
+porting is in Lean (holes closed or explicitly carried), and the M24 pass
+surface has a machine-checked "preserves meaning" proof in Lean for the
+reference passes — the endgame the whole verification staging was for.
+Explicitly OUT: transcribing the unchecked operational sketch (porting a
+=  {!!}= proves nothing) and any Lean that the §9 bridge does not yet
+support.
