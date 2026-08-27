@@ -663,6 +663,11 @@ proved at stated bounds with runtimes recorded; then the M11 hardening
 stage and BENCHMARK refresh clear the last known-open items and the
 super review runs against a tree with no known-open defects and no
 stale published claims.
+STATUS 2026-08-27: the queue is CLEAR — R1/R2/R4 ticked, the M11
+hardening and BENCHMARK refresh landed. What remains is dmd's: the R3
+ruling (notes/taint-lint.org ranks the options; the lint is live with
+its frozen baseline meanwhile) and launching the super review
+(/code-review ultra).
 
 * M24 — MinoCrab as a library: the GHC-API model (dmd, 2026-08-27)
 The identity shift, dmd's: "this is primarily a library like the GHC API"
