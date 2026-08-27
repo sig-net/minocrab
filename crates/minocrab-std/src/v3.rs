@@ -1234,6 +1234,12 @@ impl<V: Vis3> ContractAddress<V> {
     pub fn bytes(self) -> B32<V> {
         self.0
     }
+
+    /// Forget that both limbs are public — [`B32::private`] for the pair.
+    /// Zero instructions.
+    pub fn private(self) -> ContractAddress<Private> {
+        ContractAddress(self.0.private())
+    }
 }
 
 /// Compact's `UserAddress` — a struct of one `Bytes<32>`, and the non-contract

@@ -19,8 +19,11 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::{
-    pow2_const, secp256k1_ecdsa_verify, BytesN, LedgerRepr, Secp256k1EcdsaSignature, Vis3, B32,
+    pow2_const, secp256k1_ecdsa_verify, BytesN, ContractAddress, LedgerRepr,
+    Secp256k1EcdsaSignature, Vis3, B32,
 };
+
+use super::common::{Caip2Id, SigningPath};
 
 /// The signer's request id — the keccak of a whole signing record, and the
 /// key every event map and every refund commitment is filed under.
@@ -142,17 +145,17 @@ pub struct SignBidirectionalEvent<
     const LEN_OUT: usize,
     const LEN_RESPOND: usize,
 > {
-    pub sender: B32<V>,
+    pub sender: ContractAddress<V>,
     pub request_nonce: Wire3<FieldT, V>,
     pub key_version: Wire3<FieldT, V>,
-    pub path: B32<V>,
+    pub path: SigningPath<V>,
     pub algo: Wire3<FieldT, V>,
     pub dest: Wire3<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
     pub params: BytesN<V, PARAMS_LEN>,
     pub tx_param_type: Wire3<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
-    pub caip2_id: B32<V>,
+    pub caip2_id: Caip2Id<V>,
     pub output_deserialization_schema: BytesN<V, LEN_OUT>,
     pub respond_serialization_schema: BytesN<V, LEN_RESPOND>,
 }
@@ -245,20 +248,20 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
     /// The record's FAB limbs, slot order ([`Self::LIMBS`] of them).
     pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
         let mut l = vec![
-            self.sender.hi,
-            self.sender.lo,
+            self.sender.bytes().hi,
+            self.sender.bytes().lo,
             self.request_nonce,
             self.key_version,
-            self.path.hi,
-            self.path.lo,
+            self.path.bytes().hi,
+            self.path.bytes().lo,
             self.algo,
             self.dest,
         ];
         l.extend(self.params.limbs().iter().copied());
         l.push(self.tx_param_type);
         l.extend(self.tx_params.limbs());
-        l.push(self.caip2_id.hi);
-        l.push(self.caip2_id.lo);
+        l.push(self.caip2_id.bytes().hi);
+        l.push(self.caip2_id.bytes().lo);
         l.extend(self.output_deserialization_schema.limbs().iter().copied());
         l.extend(self.respond_serialization_schema.limbs().iter().copied());
         debug_assert_eq!(l.len(), Self::LIMBS);
@@ -323,17 +326,17 @@ pub const RECORD_FORMAT_VERSION: u8 = 0x80;
 pub struct SignBidirectionalEventV2<V: Vis3, const WORDS: usize> {
     /// [`RECORD_FORMAT_VERSION`] — a `Uint<8>`, the first byte a decoder reads.
     pub format_version: Wire3<FieldT, V>,
-    pub sender: B32<V>,
+    pub sender: ContractAddress<V>,
     pub request_nonce: Wire3<FieldT, V>,
     pub key_version: Wire3<FieldT, V>,
-    pub path: B32<V>,
+    pub path: SigningPath<V>,
     pub algo: Wire3<FieldT, V>,
     pub dest: Wire3<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill today.
     pub params: BytesN<V, PARAMS_LEN>,
     pub tx_param_type: Wire3<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
-    pub caip2_id: B32<V>,
+    pub caip2_id: Caip2Id<V>,
     /// The response KIND this request expects — one Borsh byte, the same
     /// enumeration the attested output carries (the vault's
     /// `erc20_vault_borsh::RESPONSE_KIND_*`). A raw wire rather than a
@@ -418,20 +421,20 @@ impl<V: Vis3, const WORDS: usize> SignBidirectionalEventV2<V, WORDS> {
     pub fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
         let mut l = vec![
             self.format_version,
-            self.sender.hi,
-            self.sender.lo,
+            self.sender.bytes().hi,
+            self.sender.bytes().lo,
             self.request_nonce,
             self.key_version,
-            self.path.hi,
-            self.path.lo,
+            self.path.bytes().hi,
+            self.path.bytes().lo,
             self.algo,
             self.dest,
         ];
         l.extend(self.params.limbs().iter().copied());
         l.push(self.tx_param_type);
         l.extend(self.tx_params.limbs());
-        l.push(self.caip2_id.hi);
-        l.push(self.caip2_id.lo);
+        l.push(self.caip2_id.bytes().hi);
+        l.push(self.caip2_id.bytes().lo);
         l.push(self.response_kind);
         debug_assert_eq!(l.len(), Self::LIMBS);
         l
@@ -446,12 +449,13 @@ pub struct EventRecordV2<const WORDS: usize>(Vec<Wire3<FieldT, Public>>);
 impl<const WORDS: usize> EventRecordV2<WORDS> {
     pub const LIMBS: usize = layout_v2::limbs(WORDS);
 
-    /// `path` — the depositor's identity commitment.
-    pub fn path(&self) -> B32<Public> {
-        B32 {
+    /// `path` — the record's signing path (the depositor's identity
+    /// commitment on the deposit route, the vault path elsewhere).
+    pub fn path(&self) -> SigningPath<Public> {
+        SigningPath(B32 {
             hi: self.0[layout_v2::PATH],
             lo: self.0[layout_v2::PATH + 1],
-        }
+        })
     }
 
     /// `txParams.to`.
@@ -507,12 +511,12 @@ impl<const WORDS: usize> LedgerRepr for EventRecordV2<WORDS> {
 #[allow(clippy::too_many_arguments)]
 pub fn construct_sign_bidirectional_event_v2<V: Vis3, const WORDS: usize>(
     c: &mut Circuit3,
-    sender: B32<V>,
+    sender: ContractAddress<V>,
     request_nonce: Wire3<FieldT, V>,
     key_version: Wire3<FieldT, V>,
-    path: B32<V>,
+    path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
-    caip2_id: B32<V>,
+    caip2_id: Caip2Id<V>,
     response_kind: u8,
 ) -> SignBidirectionalEventV2<V, WORDS> {
     c.region("signet: event assembly", |c| {
@@ -568,12 +572,13 @@ impl<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>
 {
     pub const LIMBS: usize = layout::limbs(WORDS, LEN_OUT, LEN_RESPOND);
 
-    /// `path` — the depositor's identity commitment.
-    pub fn path(&self) -> B32<Public> {
-        B32 {
+    /// `path` — the record's signing path (the depositor's identity
+    /// commitment on the deposit route, the vault path elsewhere).
+    pub fn path(&self) -> SigningPath<Public> {
+        SigningPath(B32 {
             hi: self.0[layout::PATH],
             lo: self.0[layout::PATH + 1],
-        }
+        })
     }
 
     /// `txParams.to`.
@@ -633,12 +638,12 @@ pub fn construct_sign_bidirectional_event<
     const LEN_RESPOND: usize,
 >(
     c: &mut Circuit3,
-    sender: B32<V>,
+    sender: ContractAddress<V>,
     request_nonce: Wire3<FieldT, V>,
     key_version: Wire3<FieldT, V>,
-    path: B32<V>,
+    path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
-    caip2_id: B32<V>,
+    caip2_id: Caip2Id<V>,
     output_deserialization_schema: BytesN<V, LEN_OUT>,
     respond_serialization_schema: BytesN<V, LEN_RESPOND>,
 ) -> SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND> {
@@ -734,6 +739,18 @@ pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
     B32::from_typed(c, rev)
 }
 
+/// The two 32-byte limbs an MPC attestation's ECDSA signature travels as —
+/// big-endian `bigR.x` and `s` — with NAMED fields, so the two same-shaped
+/// halves cannot be transposed positionally on the way into verification
+/// (newtype-survey A7's sub-case). [`Secp256k1EcdsaSignature`] is this pair
+/// one layer down, already reversed into scalars; this is the wire form the
+/// respond event carries.
+#[derive(Clone, Copy)]
+pub struct Secp256k1SigLimbs<V: Vis3> {
+    pub big_r_x: B32<V>,
+    pub s: B32<V>,
+}
+
 /// `verifyRespondBidirectionalEvent(requestId, serializedOutput, event,
 /// mpcResponseKey)` — recompute the attestation digest and verify the
 /// event's ECDSA signature over it. Only `bigR.x` and `s` enter
@@ -742,12 +759,11 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     output_limbs: &[Wire3<FieldT, V>],
-    big_r_x: &B32<V>,
-    s: &B32<V>,
+    sig: &Secp256k1SigLimbs<V>,
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     let digest = calculate_attestation_digest::<V, LEN_OUTPUT>(c, request_id, output_limbs);
-    verify_attestation_signature(c, &digest, big_r_x, s, mpc_response_key)
+    verify_attestation_signature(c, &digest, sig, mpc_response_key)
 }
 
 /// The signature half of [`verify_respond_bidirectional_event`], over an
@@ -763,13 +779,12 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
 fn verify_attestation_signature<V: Vis3>(
     c: &mut Circuit3,
     digest: &B32<V>,
-    big_r_x: &B32<V>,
-    s: &B32<V>,
+    sig: &Secp256k1SigLimbs<V>,
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     c.region("signet: attestation verify (ecdsa)", |c| {
-        let r_le = reverse_bytes32(c, big_r_x);
-        let s_le = reverse_bytes32(c, s);
+        let r_le = reverse_bytes32(c, &sig.big_r_x);
+        let s_le = reverse_bytes32(c, &sig.s);
         let r_typed = r_le.to_typed(c);
         let s_typed = s_le.to_typed(c);
         let sig = Secp256k1EcdsaSignature {
@@ -822,12 +837,11 @@ pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     output: &T,
-    big_r_x: &B32<V>,
-    s: &B32<V>,
+    sig: &Secp256k1SigLimbs<V>,
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     let digest = calculate_attestation_digest_borsh(c, request_id, output);
-    verify_attestation_signature(c, &digest, big_r_x, s, mpc_response_key)
+    verify_attestation_signature(c, &digest, sig, mpc_response_key)
 }
 
 // ---- ABI calldata word utilities --------------------------------------------
@@ -930,10 +944,10 @@ mod tests {
         let b32 = B32 { hi: zero, lo: zero };
         let zeros = |n: usize| vec![zero; n];
         SignBidirectionalEvent {
-            sender: b32,
+            sender: ContractAddress(b32),
             request_nonce: zero,
             key_version: zero,
-            path: b32,
+            path: SigningPath(b32),
             algo: zero,
             dest: zero,
             params: BytesN::from_limbs(zeros(BytesN::<Public, PARAMS_LEN>::LIMBS)),
@@ -954,7 +968,7 @@ mod tests {
                 },
                 access_list_entry_count: zero,
             },
-            caip2_id: b32,
+            caip2_id: Caip2Id(b32),
             output_deserialization_schema: BytesN::from_limbs(zeros(
                 BytesN::<Public, LEN_OUT>::LIMBS,
             )),
@@ -1086,10 +1100,10 @@ mod tests {
         let b32 = B32 { hi: z, lo: z };
         let ev = SignBidirectionalEventV2::<Public, 2> {
             format_version: z,
-            sender: b32,
+            sender: ContractAddress(b32),
             request_nonce: z,
             key_version: z,
-            path: b32,
+            path: SigningPath(b32),
             algo: z,
             dest: z,
             params: BytesN::from_limbs(vec![z; BytesN::<Public, PARAMS_LEN>::LIMBS]),
@@ -1110,7 +1124,7 @@ mod tests {
                 },
                 access_list_entry_count: z,
             },
-            caip2_id: b32,
+            caip2_id: Caip2Id(b32),
             response_kind: z,
         };
         assert_eq!(ev.limbs().len(), 31);

@@ -41,6 +41,38 @@ b32_newtype! {
     /// no longer satisfy a withdrawer/swapper/claimant gate —
     /// newtype-survey hazard A4.
     RefundCommitment,
+    /// The MPC's SIGNING PATH — slot 5 of the sign-bidirectional event
+    /// record, the value the MPC derives its signing key from. Genuinely
+    /// polymorphic (deposit signs from the depositor's [`UserCommitment`];
+    /// withdraw/swap/approveRouter from the constant vault path), which is
+    /// why it is ONE type with exactly two constructors —
+    /// `SigningPath::from(user_commitment)` and [`SigningPath::vault_path`]
+    /// — rather than four: nothing else fits the slot, so the
+    /// sender/path/caip2 transposition of newtype-survey hazard A7 no
+    /// longer compiles.
+    SigningPath,
+    /// A CAIP-2 chain id — slot 7 of the event record and the vault's
+    /// `caip2Id` cell. Distinct from [`SigningPath`] so the MPC can never
+    /// be asked to derive a signing key from a chain id (hazard A7's
+    /// sharpest transposition).
+    Caip2Id,
+}
+
+/// A depositor's identity commitment IS a signing path — deposit's event
+/// signs from it. The only conversion into [`SigningPath`] besides
+/// [`SigningPath::vault_path`].
+impl<V: minocrab_std::v3::Vis3> From<UserCommitment<V>> for SigningPath<V> {
+    fn from(commitment: UserCommitment<V>) -> Self {
+        SigningPath(commitment.bytes())
+    }
+}
+
+impl SigningPath<Public> {
+    /// `pad(32, "vault")` — the contract-authored path the non-deposit
+    /// circuits sign from.
+    pub fn vault_path(c: &mut Circuit3) -> Self {
+        SigningPath(B32::pad(c, super::erc20_vault::VAULT_PATH))
+    }
 }
 
 /// A `Secp256k1Point`'s FAB alignment: x as b24+b8, y as b24+b8, plus a

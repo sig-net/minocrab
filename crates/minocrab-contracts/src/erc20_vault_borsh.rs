@@ -369,29 +369,23 @@ pub fn deposit(
     // ONE kernel.self read: the event's sender and the notification's
     // callerAddress are the same address (rung i).
     let me = kernel::self_address(c);
-    let sender = B32 {
-        hi: me.bytes().hi.private(),
-        lo: me.bytes().lo.private(),
-    };
+    let sender = me.private();
     let caip2 = cell_read(
         c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
     );
-    let caip2 = B32 {
+    let caip2 = common::Caip2Id(B32 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
-    };
+    });
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
         sender,
         request_nonce.private(),
         key_version,
-        B32 {
-            hi: caller.bytes().hi.private(),
-            lo: caller.bytes().lo.private(),
-        },
+        common::SigningPath::from(caller.private()),
         tx_params,
         caip2,
         RESPONSE_KIND_CLAIM as u8,
@@ -647,25 +641,18 @@ pub fn withdraw(
 
     // The event, keyed under the vault's OWN derivation path.
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = B32 {
-        hi: me.bytes().hi.private(),
-        lo: me.bytes().lo.private(),
-    };
+    let sender = me.private();
     let caip2 = cell_read(
         c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
     );
-    let caip2 = B32 {
+    let caip2 = common::Caip2Id(B32 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
-    };
-    let path = B32::pad(c, VAULT_PATH);
-    let path = B32::<Private> {
-        hi: path.hi.private(),
-        lo: path.lo.private(),
-    };
+    });
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is WITHDRAW: `completeWithdraw` is what settles this
     // request (or `refund`, on the FAILURE kind, which every request may get).
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
@@ -850,25 +837,18 @@ pub fn swap(
     };
 
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
-    let sender = B32 {
-        hi: me.bytes().hi.private(),
-        lo: me.bytes().lo.private(),
-    };
+    let sender = me.private();
     let caip2 = cell_read(
         c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
     );
-    let caip2 = B32 {
+    let caip2 = common::Caip2Id(B32 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
-    };
-    let path = B32::pad(c, VAULT_PATH);
-    let path = B32::<Private> {
-        hi: path.hi.private(),
-        lo: path.lo.private(),
-    };
+    });
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is SWAP — the one kind whose response carries a
     // PAYLOAD (the attested `amountIn`), which is what the two wider schema
     // strings used to say: `uint256` in on the EVM side, `uint64` back.
@@ -997,25 +977,18 @@ pub fn approve_router(
     let request_nonce = counter_read(c, one, SIGNET_REQUEST_NONCE);
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
     let me = kernel::self_address(c);
-    let sender = B32 {
-        hi: me.bytes().hi.private(),
-        lo: me.bytes().lo.private(),
-    };
+    let sender = me.private();
     let caip2 = cell_read(
         c,
         one,
         CAIP2_ID,
         vec![AlignmentAtom::Bytes { length: 32 }],
     );
-    let caip2 = B32 {
+    let caip2 = common::Caip2Id(B32 {
         hi: caip2[0].private(),
         lo: caip2[1].private(),
-    };
-    let path = B32::pad(c, VAULT_PATH);
-    let path = B32::<Private> {
-        hi: path.hi.private(),
-        lo: path.lo.private(),
-    };
+    });
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is APPROVE — the one REQUEST-ONLY kind: an approve is
     // fire-and-forget, no settle circuit accepts it, and giving it its own
     // kind is what says so on the wire (see [`RESPONSE_KIND_APPROVE`]).
@@ -1258,8 +1231,7 @@ fn verify_attestation<T: CircuitBorsh<Private>>(
         c,
         &rid_priv,
         output,
-        &args.big_r_x,
-        &args.sig_s,
+        &signet::Secp256k1SigLimbs { big_r_x: args.big_r_x, s: args.sig_s },
         mpc_key.private(),
     );
     c.assert(valid);
@@ -1786,8 +1758,7 @@ pub fn claim(
         c,
         &rid_priv,
         &serialized_output,
-        &big_r_x,
-        &sig_s,
+        &signet::Secp256k1SigLimbs { big_r_x, s: sig_s },
         mpc_key.private(),
     );
     c.assert(valid);
@@ -1807,8 +1778,8 @@ pub fn claim(
         let sk = common::witness_sk(c);
         let caller = common::commitment_packed_tag(c, &sk).bytes();
         let path = ev.path();
-        let eq_hi = c.test_eq(caller.hi, path.hi.private());
-        let eq_lo = c.test_eq(caller.lo, path.lo.private());
+        let eq_hi = c.test_eq(caller.hi, path.bytes().hi.private());
+        let eq_lo = c.test_eq(caller.lo, path.bytes().lo.private());
         let is_depositor = c.mul(eq_hi, eq_lo);
         c.assert(is_depositor);
     });

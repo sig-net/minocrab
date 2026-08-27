@@ -161,7 +161,7 @@ pub fn initialize(
     vault_evm: Bytes<20>,
     swap_router: Bytes<20>,
     chain_id: Uint<64>,
-    chain_caip2_id: B32<Private>,
+    chain_caip2_id: common::Caip2Id<Private>,
     response_key: Secp256k1Point,
 ) -> Discloses<(VaultEvmAddress, UniswapRouter, EvmChainId, Caip2Id, MpcResponseKey)> {
     // NOTHING is unwrapped here. The arguments stay TYPED all the way to the
@@ -346,10 +346,10 @@ pub fn deposit(
     let caip2 = VAULT.caip2_id.read(c);
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
-        me.bytes().private(),
+        me.private(),
         request_nonce.field().private(),
         key_version.field(),
-        caller.bytes().private(),
+        common::SigningPath::from(caller.private()),
         tx_params,
         caip2.private(),
         RESPONSE_KIND_CLAIM as u8,
@@ -635,12 +635,12 @@ pub fn withdraw(
     // The event, keyed under the vault's OWN derivation path.
     let request_nonce = VAULT.signet_request_nonce.read(c);
     let caip2 = VAULT.caip2_id.read(c);
-    let path = B32::pad(c, VAULT_PATH).private();
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is WITHDRAW: `completeWithdraw` is what settles this
     // request (or `refund`, on the FAILURE kind, which every request may get).
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
-        me.bytes().private(),
+        me.private(),
         request_nonce.field().private(),
         key_version.field(),
         path,
@@ -785,13 +785,13 @@ pub fn swap(
 
     let request_nonce = VAULT.signet_request_nonce.read(c);
     let caip2 = VAULT.caip2_id.read(c);
-    let path = B32::pad(c, VAULT_PATH).private();
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is SWAP — the one kind whose response carries a
     // PAYLOAD (the attested `amountIn`), which is what the two wider schema
     // strings used to say: `uint256` in on the EVM side, `uint64` back.
     let request: SwapEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
-        me.bytes().private(),
+        me.private(),
         request_nonce.field().private(),
         key_version.field(),
         path,
@@ -897,13 +897,13 @@ pub fn approve_router(
     // ONE kernel.self read (rung i): sender and callerAddress coincide.
     let me = kernel::self_address(c);
     let caip2 = VAULT.caip2_id.read(c);
-    let path = B32::pad(c, VAULT_PATH).private();
+    let path = common::SigningPath::vault_path(c).private();
     // The response kind is APPROVE — the one REQUEST-ONLY kind: an approve is
     // fire-and-forget, no settle circuit accepts it, and giving it its own
     // kind is what says so on the wire (see [`RESPONSE_KIND_APPROVE`]).
     let request: VaultEventV2<Private> = signet::construct_sign_bidirectional_event_v2(
         c,
-        me.bytes().private(),
+        me.private(),
         request_nonce.field().private(),
         key_version.field(),
         path,
@@ -1030,8 +1030,7 @@ fn verify_attestation<T: CircuitBorsh<Private>>(
         c,
         &request_id.private(),
         output,
-        &args.big_r_x,
-        &args.sig_s,
+        &signet::Secp256k1SigLimbs { big_r_x: args.big_r_x, s: args.sig_s },
         mpc_key.point().private(),
     );
     c.assert(valid);
@@ -1535,8 +1534,7 @@ pub fn claim(
         c,
         &request_id.private(),
         &serialized_output,
-        &big_r_x,
-        &sig_s,
+        &signet::Secp256k1SigLimbs { big_r_x, s: sig_s },
         mpc_key.point().private(),
     );
     c.assert(valid);
@@ -1555,7 +1553,7 @@ pub fn claim(
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
         let caller = common::commitment_packed_tag(c, &sk).bytes();
-        c.assert(b32_eq(&caller, &ev.path().private()).message("Not the depositor"));
+        c.assert(b32_eq(&caller, &ev.path().private().bytes()).message("Not the depositor"));
     });
 
     // assert(request.txParams.calldata.is_some)
