@@ -30,7 +30,7 @@ pub use abi::{
 /// Typed disclosure declarations — `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns (see the module docs).
 pub use disclose::{
-    assert_declared_disclosures, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
+    assert_declared_disclosures, assert_discloses_nothing, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
     LabelSet,
 };
 

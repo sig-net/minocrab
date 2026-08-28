@@ -8,7 +8,7 @@
 
 use minocrab::v3::{Circuit3, Compiled3};
 use minocrab::{Private, Public};
-use minocrab_std::v3::{circuit, entry, entry_out, Bytes, CircuitArg, Uint, B32};
+use minocrab_std::v3::{circuit, entry, entry_out, Bytes, CircuitArg, Disclose, Discloses, Uint, B32};
 use minocrab_zkir::v3::to_zkir_string;
 
 fn zkir(compiled: &Compiled3) -> String {
@@ -65,11 +65,16 @@ fn an_attributed_circuit_lowers_like_the_explicit_entry_call() {
 
 // ---- a circuit that returns a value -----------------------------------------
 
+minocrab::label!(Seed = "seed");
+
+// Declared, because every `#[circuit]` now carries a disclosure test — one
+// without a `Discloses<..>` must disclose nothing. The declaration is
+// type-level (no slot, no instruction), so the byte-identity below holds.
 #[circuit(output = "event hash")]
-fn attributed_output(c: &mut Circuit3, seed: Uint<64>) -> B32<Public> {
-    let hi = c.disclose(seed.field(), "seed");
+fn attributed_output(c: &mut Circuit3, seed: Uint<64>) -> Discloses<(Seed,), B32<Public>> {
+    let hi = seed.disclose_as::<Seed>(c).field();
     let lo = c.constant(2u64);
-    B32 { hi, lo }
+    Discloses::of(B32 { hi, lo })
 }
 
 fn explicit_output() -> Compiled3 {

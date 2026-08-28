@@ -215,6 +215,54 @@ unchecked to mirror compactc.
   395); 22 files match =*differential*.rs= today (19 contracts + 3
   ledger). Fix the number or define what counts.
 
+** AS BUILT — items 4, 5, 6, 7, 8 (review-fixes, 2026-08-28)
+- Item 5 (§7.4): =tests/circuit_closure.rs= walks =src/= for every
+  =#[circuit]= attribute and asserts =module::fn= is in =circuits()=.
+  Fired on first run: =xcall::call_emit= was unlisted (byte-identical
+  to =call_once=, which is why nothing noticed). Listed; interface
+  snapshot +11 lines, row snapshot +1, taint baseline unchanged (the
+  xcall circuits record no findings). No existing circuit moved.
+- Item 6 (§3.4): =corpus_roundtrip= asserts =(806 files, 84 v3)=. The
+  =zkir= skip stays until CI.
+- Item 8 + bookkeeping: README/VERIFICATION say 806 artifacts / 315
+  contracts / 22 differential targets / seven unchecked sites per vault
+  lineage (31 in all). The from_field_checked conversion is still a
+  decision, not taken.
+- Item 4 (§3.5, §4.5): =#[circuit]= now emits a test for EVERY circuit —
+  set-equality for a =Discloses<..>= return, "discloses nothing" for
+  every other — so a missing declaration is a statement, never an
+  opt-out; =assert_discloses_nothing= in =minocrab::v3::disclose=. All
+  200 circuits pass it: no undeclared circuit discloses anything.
+  A first draft also REJECTED DUPLICATE LABELS (one label, one value) —
+  twelve corpus circuits failed it, and they were right: a label names a
+  VALUE TYPE, and a compound value records several entries under it
+  (=disclose_as::<Coin>= records the fields and the Merkle index apart;
+  an =Either= recipient records both arms). The set semantics stand, by
+  design. The residual §4.5 hole — a bare =c.disclose(w, "coin")=
+  satisfying a declared =Coin= — is a KIND distinction, not a count:
+  bare disclosures are three sites in =hashing.rs= and nothing else;
+  closing it means a =DisclosedBare= kind that never satisfies a
+  declaration, deferred as a follow-up (item 4b below).
+- Item 7 (§3.8): ONE comparator, =minocrab_sim::v3::assert_call_compatible=
+  (schema + pis/pi_skips + upstream check on both sides); the twelve
+  local copies deleted and the opt fork's weaker =assert_pi_equal_to_corpus=
+  now delegates to it — its first run with the full criterion is the
+  proof the opt lineage's schema matches compactc's. In minocrab-sim
+  because M24 point 3 wants the harness as public API; this is its
+  first function.
+
+** 4b. §4.5 residual — bare disclosures should not satisfy a declaration
+Open. =Circuit3::disclose(w, "label")= / =disclose_all("label", ..)= record
+the same =DisclosureKind::Disclosed= as the typed path, so a bare string
+with a declared label's text passes the set-equality test without the
+type-level link. Proposed: typed core entry points
+(=disclose_as::<L>= / =disclose_all_as::<L>= on =Circuit3=) recording
+=Disclosed=; the bare pair records a new =DisclosedBare= that the
+assertions always report ("disclosed without a label type — give it one").
+Sites to convert: std =disclose.rs= ×2 (they already have =L=), ledger
+=contract_call= ×1, =hashing.rs= ×3 (bare by intent, M9 closure — need
+three label types). Small; separate commit.
+
 ** 10. §3.2 / §7.5 — the compactc anchor is thin on the optimised lineage
 Confirmed by construction (erc20_vault_spec.rs header: PI-equality is
 re-anchored to OUR reference op stream). Proposed: drive the spec

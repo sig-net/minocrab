@@ -76,7 +76,7 @@ pub use predicate::{
 /// `use minocrab_std::v3::…` brings the whole vocabulary in.
 pub use minocrab::label;
 pub use minocrab::v3::{
-    assert_declared_disclosures, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
+    assert_declared_disclosures, assert_discloses_nothing, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
     LabelSet,
 };
 
@@ -139,8 +139,10 @@ pub mod __private {
     pub use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
     pub use minocrab::{AlignmentAtom, Private, Public, Visibility};
 
-    /// The body of the disclosure-declaration test `#[circuit]` generates.
-    pub use super::assert_declared_disclosures;
+    /// The bodies of the disclosure tests `#[circuit]` generates: the
+    /// set-equality one for a `Discloses<..>` return, the discloses-nothing
+    /// one for every other.
+    pub use super::{assert_declared_disclosures, assert_discloses_nothing};
 }
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable

@@ -292,6 +292,38 @@ pub fn disclosed_labels(compiled: &Compiled3) -> BTreeSet<&str> {
         .collect()
 }
 
+/// A label names a VALUE TYPE, not a record: one `disclose_as::<Coin>` on a
+/// qualified coin records its fields and its Merkle index separately, and an
+/// `Either` recipient records both arms, all under the one label. So the
+/// declaration is a SET of labels by design, and "the same label twice" is
+/// the normal shape of a compound value — not a second value slipping out.
+/// (A first draft rejected duplicates; twelve corpus circuits said otherwise.)
+/// What the set cannot distinguish is a bare `c.disclose(w, "coin")` from the
+/// typed path — that is closed by kind, not by counting: see
+/// [`DisclosureKind`] and the bare-label report in the assertions below.
+/// Assert that a circuit with NO `Discloses<..>` declaration disclosed
+/// nothing — the test `#[circuit]` generates for such a circuit, so that a
+/// missing declaration is a statement ("this circuit makes no private value
+/// public") and not an opt-out. A `c.disclose` in an undeclared circuit
+/// fails here with the labels it would have to declare.
+pub fn assert_discloses_nothing(circuit: &str, compiled: &Compiled3) {
+    let actual = disclosed_labels(compiled);
+    assert!(
+        actual.is_empty(),
+        "{circuit}: declares no disclosures (its return type is not `Discloses<..>`) but \
+         disclosed {} label(s): {actual:?}\n  fix: declare them — `-> Discloses<({})>` \
+         with a `label!` type per label — so the circuit's audit surface names every \
+         private value it makes public. A missing declaration means \"discloses nothing\", \
+         and this test is what makes that true.",
+        actual.len(),
+        actual
+            .iter()
+            .map(|l| format!("/* {l:?} */ L"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
 /// Assert that a circuit disclosed exactly what its `Discloses<..>`
 /// declaration says — the body of the test `#[circuit]` generates, and the
 /// one an `entry()`-built family calls by hand, once per instantiation (see

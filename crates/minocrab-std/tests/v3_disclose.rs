@@ -46,8 +46,21 @@ fn declaring(c: &mut Circuit3, request: Request) -> Discloses<(RequestId, Amount
     Discloses::of(())
 }
 
+minocrab::label!(RequestIdHiBare = "request id (hi)");
+minocrab::label!(RequestIdLoBare = "request id (lo)");
+minocrab::label!(AmountBare = "amount");
+
+/// The free-string twin: the same circuit spelled with bare `c.disclose`
+/// calls. It DECLARES its labels too (a declaration is type-level, no
+/// slot, no instruction, so the byte-equality below is unaffected) because
+/// every `#[circuit]` now carries a disclosure test and one without a
+/// declaration must disclose nothing — which is exactly what this one is
+/// for showing it does not.
 #[circuit]
-fn undeclared(c: &mut Circuit3, request: Request) {
+fn undeclared(
+    c: &mut Circuit3,
+    request: Request,
+) -> Discloses<(RequestIdHiBare, RequestIdLoBare, AmountBare)> {
     let request_id = B32 {
         hi: c.disclose(request.request_id.hi, "request id (hi)"),
         lo: c.disclose(request.request_id.lo, "request id (lo)"),
@@ -56,6 +69,7 @@ fn undeclared(c: &mut Circuit3, request: Request) {
     let sum = c.add(request_id.hi, amount);
     c.assert_bits(sum, 129);
     let _ = request_id.lo;
+    Discloses::of(())
 }
 
 /// The zero-cost claim, stated as byte equality: a declaration and typed
