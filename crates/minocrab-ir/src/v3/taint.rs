@@ -22,9 +22,45 @@
 //! arithmetic is itself constrained-or-constant, which is exactly §B3's
 //! precondition, checked mechanically.
 //!
-//! Honest boundary: the lint proves BOUNDS, not shift-layout disjointness.
-//! A packing whose segments overlap bit ranges is the serializer's own
-//! layout invariant, pinned by its byte-equality tests — not this lint's.
+//! # The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28)
+//!
+//! A wire embedded in an UNCONDITIONAL `popeq`/`popeqc` Impact op is bounded
+//! to its limb's byte width. The warrant is EXTERNAL and two-linked: the
+//! verifier checks the pushed elements against the transaction's declared
+//! transcript, and the ledger accepts the transaction only if the
+//! transcript's expected value equals the normalized stored value actually
+//! read (`process_read`). Guarded reads are NOT marked — a false guard
+//! pushes zeros, the comparison passes, and the wire is genuinely free.
+//! See `mark_popeq` in this file for the exact parse and conditions.
+//!
+//! # Limitations, stated plainly
+//!
+//! What a clean run does and does not prove:
+//!
+//! - BOUNDS, not shift-layout disjointness. A packing whose segments overlap
+//!   bit ranges is the serializer's own layout invariant, pinned by its
+//!   byte-equality tests — not this lint's.
+//! - The popeq bounds are CONDITIONAL ON THE LEDGER. Unlike every other
+//!   marking rule (each cited to an in-circuit constraint), the popeq rule's
+//!   chain runs through the ledger's normalization invariant and the
+//!   transcript equality check — outside the circuit. A clean run therefore
+//!   reads: "every hash-preimage limb is bounded in-circuit, or is an
+//!   unconditional ledger read the platform binds". If the ledger's
+//!   invariant broke, the lint would not know.
+//! - Guard recognition is SYNTACTIC: only an immediate non-zero Impact guard
+//!   counts as unconditional. A variable guard that is provably always 1
+//!   still leaves its read unmarked (over-fires, never under-fires).
+//! - popeq ONLY. Wires embedded in pushes (`push`/`pushs` cell contents) and
+//!   dynamic `idx` keys also flow to the transcript, but their in-range
+//!   argument is different (transaction well-formedness, not a read of
+//!   normalized state) and is NOT encoded; such wires stay unbounded unless
+//!   something in-circuit bounds them.
+//! - Field-absorbing hashes (`TransientHash`, `HashToCurve`) are out of
+//!   scope by design — no byte atoms, no packing-injectivity question.
+//! - The operand↔atom mapping follows the in-circuit decoder's own
+//!   consumption rule; a stream the decoder would reject (option/compress
+//!   segments, arity mismatches) is reported as unmappable, not audited
+//!   around.
 //!
 //! # Scope
 //!
@@ -113,6 +149,15 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 }
                 if let Operand::Variable(id) = high {
                     note(&mut bound, id, Max::all_ones(8));
+                }
+            }
+            // The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): an
+            // UNCONDITIONAL popeq[c] binds each embedded wire to the ledger
+            // read it witnesses — see `mark_popeq` for the parse, the guard
+            // condition, and the honest scope of the warrant.
+            Instruction::Impact { guard, inputs } => {
+                if matches!(guard, Operand::Immediate(g) if Max::from_fr(g).bits() != 0) {
+                    mark_popeq(inputs, &mut bound);
                 }
             }
             _ => {}
@@ -245,10 +290,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::PublicInput { val_t, output, .. }
             | Instruction::PrivateInput { val_t, output, .. } => {
                 // The witnessed VALUE is free; only its shape is `val_t`
-                // (the instruction's own doc), so nothing is bounded here —
-                // a `PublicInput` is bound to the transcript by an `Impact`
-                // elsewhere, a warrant that is the ledger's, not the
-                // circuit's, and NOT marked (see the module docs).
+                // (the instruction's own doc), so nothing is bounded HERE.
+                // A `PublicInput` embedded in an UNCONDITIONAL popeq is
+                // bounded by pass A's Impact arm (`mark_popeq`) — via the
+                // ledger's external warrant, per the M23 R3 ruling — and a
+                // guarded one stays free, deliberately.
                 if *val_t == IrType::Bytes32 {
                     is_bytes32.insert(output.0.clone());
                 }
@@ -432,6 +478,90 @@ fn check_limb(
     }
 }
 
+/// The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): if `inputs`
+/// parses EXACTLY as `popeq`/`popeqc` — `[0x0c|0x0d, atom count, one
+/// alignment element per atom, then the limbs]` (`Op::field_repr`,
+/// ops.rs:477-480; header encoding fab.rs:596-608: `bytes<n>` → n,
+/// `compress` → p−1, `field` → p−2) — bound each `bytes` limb WIRE to its
+/// limb's byte width.
+///
+/// THE WARRANT, and why it is EXTERNAL: the caller has checked the Impact's
+/// guard is an immediate non-zero, so the instruction unconditionally pushes
+/// these very elements into the public-input stream, where the verifier
+/// checks them against the transaction's declared transcript op — and the
+/// ledger accepts that transaction only if the transcript's expected value
+/// equals the value actually read from state (`process_read`), whose
+/// `ValueAtom`s are normalized in-range for their atoms. So the wire equals
+/// a stored, normalized limb: ≤ its byte width. Nothing IN THE CIRCUIT
+/// enforces this — the chain runs through the ledger's own invariant, which
+/// is why guarded reads are NOT marked here (a false guard pushes
+/// `select(guard, x, 0) = 0`, the comparison passes on zero, and the wire is
+/// genuinely free). A VARIABLE guard that happens to always be 1 is also not
+/// marked — conservatively, since the lint cannot prove it.
+///
+/// The FAB limbing (`AlignedValue::field_repr`, fab.rs:486-511): `bytes<n>`
+/// is stray-FIRST — the leftover `n mod 31` most-significant bytes, then
+/// `n / 31` full 31-byte limbs — and `bytes<0>` is ONE zero limb (the
+/// `atom_limbs` floor; its stored value normalizes to zero, so the bound is
+/// exactly 0). `field` and `compress` atoms occupy one field-wide limb each
+/// and bound nothing. Anything that does not parse cleanly — wrong opcode,
+/// non-immediate header, limb count mismatch, leftover elements — marks
+/// NOTHING: under-marking is the safe direction.
+fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
+    let small = |op: &Operand| -> Option<u64> {
+        match op {
+            Operand::Immediate(v) => {
+                let m = Max::from_fr(v);
+                (m.bits() <= 32).then(|| m.low_u64())
+            }
+            Operand::Variable(_) => None,
+        }
+    };
+    if inputs.len() < 2 || small(&inputs[0]).is_none_or(|op| op != 0x0c && op != 0x0d) {
+        return;
+    }
+    let Some(atom_count) = small(&inputs[1]).map(|n| n as usize) else {
+        return;
+    };
+    if inputs.len() < 2 + atom_count {
+        return;
+    }
+    let compress_elem = field_max(); // p − 1 (fab.rs: `compress` → −1)
+    let field_elem = Max::from_fr(&(Fr::from(0u64) - Fr::from(2u64))); // p − 2
+    // Per limb: Some(width bytes) for a bytes limb, None for field/compress.
+    let mut widths: Vec<Option<usize>> = Vec::new();
+    for header in &inputs[2..2 + atom_count] {
+        let Operand::Immediate(v) = header else {
+            return;
+        };
+        let m = Max::from_fr(v);
+        if m == compress_elem || m == field_elem {
+            widths.push(None);
+        } else if m.bits() <= 32 {
+            let n = m.low_u64() as usize;
+            if n == 0 {
+                widths.push(Some(0));
+            } else {
+                if n % LIMB_BYTES != 0 {
+                    widths.push(Some(n % LIMB_BYTES));
+                }
+                widths.extend(std::iter::repeat_n(Some(LIMB_BYTES), n / LIMB_BYTES));
+            }
+        } else {
+            return;
+        }
+    }
+    let limbs = &inputs[2 + atom_count..];
+    if limbs.len() != widths.len() {
+        return;
+    }
+    for (op, width) in limbs.iter().zip(widths) {
+        if let (Operand::Variable(id), Some(width)) = (op, width) {
+            note(bound, id, Max::all_ones(8 * width as u32));
+        }
+    }
+}
+
 /// Merge a newly proven maximum for `id`, keeping the tightest.
 fn note(bound: &mut BTreeMap<String, Max>, id: &Identifier, m: Max) {
     bound
@@ -561,6 +691,12 @@ impl Max {
             limbs[i] = v;
         }
         Max(limbs)
+    }
+
+    /// The low limb — the whole value when `bits() ≤ 64`, which is the only
+    /// way it is used (small-integer recognition in the popeq parse).
+    fn low_u64(&self) -> u64 {
+        self.0[0]
     }
 
     fn le(&self, other: &Max) -> bool {
@@ -789,6 +925,150 @@ mod tests {
         assert_eq!(audit(&short).len(), 1);
         let long = vec![keccak(vec![bytes_atom(1)], vec![imm(1), imm(2)])];
         assert_eq!(audit(&long).len(), 1);
+    }
+
+    // ---- the Impact/popeq warrant (M23 R3 ruling) ---------------------------
+
+    /// A `public_input` gate for `name`, unguarded.
+    fn pi(name: &str) -> Instruction {
+        Instruction::PublicInput {
+            guard: None,
+            val_t: IrType::Native,
+            output: id(name),
+        }
+    }
+
+    /// `popeq` (0x0c) expecting one `bytes<8>` limb wire — the u64 cell
+    /// read shape — under the given guard.
+    fn popeq_u64(guard: Operand, wire: &str) -> Instruction {
+        Instruction::Impact {
+            guard,
+            // [opcode, atom count, bytes<8> header, the limb]
+            inputs: vec![imm(0x0c), imm(1), imm(8), var(wire)],
+        }
+    }
+
+    #[test]
+    fn unconditional_popeq_bounds_the_read() {
+        // The class-1 shape: a ledger read's %pi wire straight into a hash.
+        let stream = vec![
+            pi("pi"),
+            popeq_u64(imm(1), "pi"),
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&stream), vec![]);
+        // popeqc (0x0d) carries the same warrant.
+        let cached = vec![
+            pi("pi"),
+            Instruction::Impact {
+                guard: imm(1),
+                inputs: vec![imm(0x0d), imm(1), imm(8), var("pi")],
+            },
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&cached), vec![]);
+        // And the bound is the LIMB's, not "anything": the same read feeding
+        // a narrower atom still fires.
+        let narrower = vec![
+            pi("pi"),
+            popeq_u64(imm(1), "pi"),
+            keccak(vec![bytes_atom(4)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&narrower).len(), 1);
+    }
+
+    #[test]
+    fn guarded_popeq_stays_free() {
+        // A variable guard — even one that is in fact always 1 — marks
+        // nothing: when the guard is false the Impact pushes zeros and the
+        // wire is genuinely free. This is the ruling's `guarded reads keep
+        // firing` half.
+        let variable = vec![
+            pi("pi"),
+            popeq_u64(var("g"), "pi"),
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&variable).len(), 1);
+        // An immediate-ZERO guard is a dead op, not a warrant.
+        let dead = vec![
+            pi("pi"),
+            popeq_u64(imm(0), "pi"),
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&dead).len(), 1);
+    }
+
+    #[test]
+    fn popeq_limbs_follow_the_fab_rule() {
+        // bytes<32> = stray byte FIRST (8 bits), then the 31-byte limb
+        // (248 bits) — and a multi-atom popeq maps positions exactly.
+        // Alignment: [bytes<32>, field, bytes<8>] → limbs
+        // [hi (1B), lo (31B), f (field-wide), n (8B)].
+        let stream = vec![
+            pi("hi"),
+            pi("lo"),
+            pi("f"),
+            pi("n"),
+            Instruction::Impact {
+                guard: imm(1),
+                inputs: vec![
+                    imm(0x0c),
+                    imm(3),
+                    imm(32),
+                    Operand::Immediate(Fr::from(0u64) - Fr::from(2u64)), // field
+                    imm(8),
+                    var("hi"),
+                    var("lo"),
+                    var("f"),
+                    var("n"),
+                ],
+            },
+            keccak(
+                vec![bytes_atom(32), bytes_atom(8)],
+                vec![var("hi"), var("lo"), var("n")],
+            ),
+            // The field-wide limb got NO bound: absorbing it in a byte atom
+            // fires.
+            keccak(vec![bytes_atom(8)], vec![var("f")]),
+        ];
+        assert_eq!(audit(&stream).len(), 1);
+    }
+
+    #[test]
+    fn malformed_popeq_marks_nothing() {
+        let hash = keccak(vec![bytes_atom(8)], vec![var("pi")]);
+        // Limb count disagrees with the header: one bytes<8> atom is one
+        // limb, two supplied.
+        let extra = vec![
+            pi("pi"),
+            Instruction::Impact {
+                guard: imm(1),
+                inputs: vec![imm(0x0c), imm(1), imm(8), var("pi"), imm(0)],
+            },
+            hash.clone(),
+        ];
+        assert_eq!(audit(&extra).len(), 1);
+        // A non-popeq opcode (push, 0x10) embedding the wire is not a read
+        // and carries no normalization warrant.
+        let push = vec![
+            pi("pi"),
+            Instruction::Impact {
+                guard: imm(1),
+                inputs: vec![imm(0x10), imm(1), imm(8), var("pi")],
+            },
+            hash.clone(),
+        ];
+        assert_eq!(audit(&push).len(), 1);
+        // A wire in the HEADER position is malformed, not a warrant.
+        let header_wire = vec![
+            pi("pi"),
+            Instruction::Impact {
+                guard: imm(1),
+                inputs: vec![imm(0x0c), imm(1), var("pi"), var("pi")],
+            },
+            hash,
+        ];
+        assert_eq!(audit(&header_wire).len(), 1);
     }
 }
 

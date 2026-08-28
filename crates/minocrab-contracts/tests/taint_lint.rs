@@ -8,24 +8,27 @@
 //!
 //! # The recorded findings, and why they are frozen rather than fixed
 //!
-//! The first run (2026-08-27, notes/taint-lint.org) classified every firing:
-//! ZERO findings on free-witness wires (`%w.*`, `private_input`) — every
-//! prover-controlled limb that reaches a hash is constrained in-circuit —
-//! and every finding rooted in PUBLIC-TRANSCRIPT wires (`%pi.*`, the popeq
-//! ledger reads and cross-contract results, plus `sel`/`add`/`div` wires
-//! derived from them). Those carry an EXTERNAL warrant: the wire must equal
-//! a value the ledger itself stored normalized, so an out-of-range value
-//! can never verify against a real transcript — but that warrant is the
-//! ledger's, not an in-circuit constraint, and compactc's own artifacts
-//! have the identical property (27 of the 84 v3 corpus artifacts fire the
-//! same way; `cargo run -p minocrab-ir --example taint_corpus`). Whether the
-//! lint should encode that warrant (and how guarded reads — whose wires are
-//! genuinely FREE when the guard is false — are treated) is dmd's call, per
-//! the M23 R3 spec: findings go to dmd; no allowlist without a ruling.
+//! The first run (2026-08-27, notes/taint-lint.org) found 329, all rooted
+//! in public-transcript wires and ZERO on free-witness wires (`%w.*`,
+//! `private_input`). dmd's M23 R3 ruling (2026-08-28, option 1): encode the
+//! Impact/popeq warrant for UNCONDITIONAL reads — the wire must equal a
+//! value the ledger stored normalized, an EXTERNAL warrant the lint now
+//! accepts with its limitations stated in the module docs — while guarded
+//! reads keep firing, because a false guard pushes zeros and the wire is
+//! genuinely free. That dropped the baseline to 101, every one classified
+//! (notes/taint-lint.org §7): 74 wires read under a VARIABLE guard, 20
+//! derived (`sel`/`add`) from such reads, and 7 computed values embedded in
+//! unconditional ledger WRITES (`push`, whose in-range argument is
+//! transaction well-formedness, deliberately not encoded). compactc's own
+//! artifacts retain the identical residue — 4 of 84 v3 corpus artifacts,
+//! 85 findings, the same guarded-read circuits
+//! (`cargo run -p minocrab-ir --example taint_corpus`).
 //!
-//! Until that ruling, the recorded findings are FROZEN as a baseline, the
-//! way the row snapshot freezes rows: any NEW finding fails this test, so
-//! the instrument still audits every change and every future circuit.
+//! The remaining findings are FROZEN as a baseline, the way the row
+//! snapshot freezes rows: any NEW finding fails this test, so the
+//! instrument still audits every change and every future circuit. Per the
+//! R3 spec there is still no allowlist: resolving a baseline entry means
+//! extending the rules with a cited warrant, or a ruling from dmd.
 
 mod support;
 

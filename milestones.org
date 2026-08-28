@@ -623,7 +623,7 @@ stage declares movement, notes as-built.
       sharpest closures: a swapped mint nonce/recipient (a coin minted
       to a key nobody holds) and the event triple whose transposition
       inverted the deposit authorisation model no longer compile.)
-- [ ] R3 — THE TAINT LINT, a new instrument (dmd approved 2026-08-17):
+- [X] R3 — THE TAINT LINT, a new instrument (dmd approved 2026-08-17):
       ~150-line pass over Vec<Instruction> per circuit — mark every
       range-constrained wire (constrain_bits/boolean directly;
       intrinsically-bounded instruction outputs: div_mod, byte
@@ -653,6 +653,19 @@ stage declares movement, notes as-built.
       shifts where the chip's absorption check is what enforces the
       slot. AWAITING dmd's ruling on the extension options ranked in
       the note; unticked for that reason only.)
+      (RULED 2026-08-28, option 1 — "less noise is better, but let's be
+      clear about the limitations of the lint in the current form" —
+      and LANDED, notes/taint-lint.org §7: the Impact/popeq warrant for
+      immediate-guard reads (mark_popeq; variable guards keep firing,
+      syntactically), the module docs gain a "Limitations, stated
+      plainly" section naming the one external rule for what it is.
+      Baseline 329 → 101, all classified: 74 guarded reads, 20 derived
+      from them, 7 write-embedded computed values; class 2's 12
+      resolved themselves once the inputs had real bounds. Corpus
+      parity re-measured: compactc 27/195 → 4/85, same residue. Four
+      new unit tests; zero movement. Bycatch fixed: minocrab-contracts
+      now declares its minocrab-sim dev-dep's =unstable= instead of
+      leaning on sibling feature unification.)
 - [X] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
       harnesses that plain cargo test never compiles, run as the opt-in
@@ -687,10 +700,9 @@ proved at stated bounds with runtimes recorded; then the M11 hardening
 stage and BENCHMARK refresh clear the last known-open items and the
 super review runs against a tree with no known-open defects and no
 stale published claims.
-STATUS 2026-08-27: the queue is CLEAR — R1/R2/R4 ticked, the M11
-hardening and BENCHMARK refresh landed. What remains is dmd's: the R3
-ruling (notes/taint-lint.org ranks the options; the lint is live with
-its frozen baseline meanwhile) and launching the super review
+STATUS 2026-08-28: the queue is CLEAR — R1/R2/R3/R4 all ticked (R3's
+ruling landed as the option-1 extension, notes/taint-lint.org §7). The
+one remaining act is dmd's: launching the super review
 (/code-review ultra).
 
 * M24 — MinoCrab as a library: the GHC-API model (dmd, 2026-08-27)
