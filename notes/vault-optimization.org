@@ -633,8 +633,16 @@ inactive sibling segments) — so the guard is against regression.
   =chainId > 0= and =swapRouter != 0= but has no analogous check on
   =responseKey=. Deployer-gated and one-shot, so misconfiguration-class,
   not attacker-reachable — but it is a missing check of exactly the kind
-  the contract makes elsewhere. Test asserts the CURRENT behaviour, so
-  adding the check will fail the test and force this note to be updated.
+  the contract makes elsewhere. CLOSED on the opt / borsh / modern
+  lineages (review-fixes, 2026-08-28, external review §4.5): =initialize=
+  extracts the key's coordinates (=into_coordinates=), which the identity
+  has none of — the prover cannot build the preimage and the gadget admits
+  none — so the extraction is the check. The PORT keeps compactc's shape
+  (no check), for parity. The adversarial test pins both: the port accepts
+  an identity key, the other three reject it; and with an identity key
+  STORED (the scenario writes state directly) every lineage's =claim=
+  still verifies a d = 0 signature, because the settle circuits trust the
+  stored key — which is why the check belongs at =initialize=.
 - NO COUNTER-OVERFLOW GUARD. At =signetRequestNonce == u64::MAX= every
   circuit assert still passes; it is the Impact VM that refuses (=Addi= →
   =ArithmeticOverflow=). Circuit acceptance and ledger acceptance genuinely

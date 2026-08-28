@@ -241,10 +241,12 @@ unchecked to mirror compactc.
   =contract_recipient= helpers and =common.rs:393=: 48 call sites (35
   pass the value on, 5 =.bytes()=, 4 =.private()=), zero rows. DECISION
   for dmd — moderate sweep, modest win.
-- Identity =mpcResponseKey=: still pinned as CURRENT behaviour
-  (erc20_vault_adversarial.rs:391). A point-at-infinity check in
-  =initialize= is cheap on the opt/borsh/modern lineages (moves their
-  rows, keeps PI-equality); the port stays as compactc has it. Decision.
+- Identity =mpcResponseKey=: FIXED on opt/borsh/modern (dmd's decision
+  2026-08-28): =initialize= extracts the key's coordinates, which the
+  identity has none of (upstream's =into_coordinates= refuses it and the
+  gadget admits no affine pair), so the extraction is the check; the port
+  keeps compactc's shape. Adversarial test pins both behaviours;
+  notes/vault-optimization.org's finding entry closed.
 - Cross-contract entry-point hash witnessed, not constant: admitted
   (VERIFICATION.md:345). A "hardened" =contract_call= that constrains the
   =&'static str= hash as an immediate is a design item, not a bug.

@@ -185,6 +185,17 @@ pub fn initialize(
     // assert(swapRouter as Field != 0 as Field, "Router cannot be zero")
     c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
 
+    // NOT in compactc's initialize (the port keeps its shape): an IDENTITY
+    // mpcResponseKey authenticates anything — ECDSA under secret key 0
+    // verifies for every digest — and nothing stopped a deployer storing
+    // one. `into_coordinates` has no answer for the identity: the prover
+    // cannot supply affine coordinates and the gadget admits none, so
+    // extracting them IS the check (external review §4.5; the adversarial
+    // suite pins both behaviours).
+    c.region("response key is a point", |c| {
+        let _ = c.into_coordinates(response_key.point());
+    });
+
     // initialized.increment(1)
     VAULT.initialized.increment(c, 1);
 
