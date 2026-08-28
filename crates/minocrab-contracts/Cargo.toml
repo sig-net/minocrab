@@ -27,7 +27,10 @@ xcall-target-interface = { path = "../xcall-target-interface" }
 # cross-check calls minocrab-std's schema module, which is feature-gated so
 # that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.
 minocrab-std = { path = "../minocrab-std", features = ["borsh-schema"] }
-minocrab-sim = { path = "../minocrab-sim" }
+# The simulator is minocrab-sim's internal tier (M24): without the feature,
+# `cargo test -p minocrab-contracts --test <differential>` cannot see
+# `simulate` and only compiles under `--workspace` feature unification.
+minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
 # The callee-side interface check (M12 stage 6): our own built IrSource
 # against the schema signet-signer-interface publishes.
 minocrab-abi = { path = "../minocrab-abi" }

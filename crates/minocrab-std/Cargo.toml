@@ -53,7 +53,7 @@ borsh-schema = ["dep:borsh"]
 all-features = true
 
 [dev-dependencies]
-minocrab-sim = { path = "../minocrab-sim" }
+minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
 minocrab-ir = { path = "../minocrab-ir", features = ["unstable"] }
 minocrab-zkir = { path = "../minocrab-zkir" }
 # v3 secp tests generate ECDSA signatures through zkir-v3's own off-circuit

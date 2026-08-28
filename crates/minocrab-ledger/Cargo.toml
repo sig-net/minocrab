@@ -21,6 +21,6 @@ midnight-base-crypto.workspace = true
 midnight-transient-crypto.workspace = true
 
 [dev-dependencies]
-minocrab-sim = { path = "../minocrab-sim" }
+minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
 minocrab-zkir = { path = "../minocrab-zkir" }
 serde_json.workspace = true
