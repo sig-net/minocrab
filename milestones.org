@@ -1051,3 +1051,35 @@ deliberately left at Kani (§5, the recorded decision). No proof was
 PORTED — the milestone's premise dissolved on contact with the real
 Agda, and the loop's deliverable (proof + type invariant per construct)
 landed anyway, which is the outcome the FIT rule was written for.
+
+* M26 — External-review follow-ups not taken on the review-fixes branch (dmd, 2026-08-28)
+The review-fixes branch (notes/external-review-triage.org, one commit per
+finding) closed the external review's correctness items. What it
+deliberately left, with the reasoning, so it is a milestone and not a
+note in a drawer:
+- [ ] =when_private= — a private-condition scope for bodies with NO
+      on-chain effect (assert / witness only). Compact allows
+      =if (privateBit) { assert(...) }= without =disclose=; since §4.1's
+      =OnChainGuard= bound, MinoCrab does not — a private condition must
+      be disclosed to branch on at all. Zero uses in the workspace today,
+      which is why it was not built; it is a PARITY gap, not a safety one.
+      The shape when needed: =when_private(cond, body)= accepting any
+      visibility, pushing a private-scope marker; the on-chain emitters
+      (=emit_impact=, =emit_public_input= in =v3/effects.rs=) fail at
+      build time inside it with the disclose-first message (the ladder's
+      last rung, because the scope stack is dynamic and the type system
+      cannot reach it without a type-state =Circuit3=, which ripples
+      through every =&mut Circuit3= helper). Gate: the guard-scope suite's
+      byte-identity idiom plus a =compile_fail= that an =impact= inside
+      =when_private= is rejected.
+- [ ] The authoring path the review's §5 found missing: a typed
+      contract-testing harness in minocrab-sim (distil the vault's
+      6,611-line private support), a from-scratch template/tutorial, and
+      the keygen/deploy binding. Explicitly deferred by dmd (2026-08-28):
+      not before the super review.
+- [ ] =minocrab-ledger/src/lib.rs= at 3,700 lines — a split by concern
+      (Impact encoding / ledger ops / calls). Cosmetic; zero-movement by
+      construction (the dump gate).
+Exit criteria: =when_private= lands with its gates or is refused in writing
+with a measured reason; the authoring-path items are scheduled into their
+own milestone after the super review.
