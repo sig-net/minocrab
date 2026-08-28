@@ -47,6 +47,12 @@ last extraction blocker; it is the same verification-motivated shape as
 the AssocMap change. Do it when (if) extraction is attempted; the model
 does not need it.
 
+CONFIRMED by dmd 2026-08-28, after reviewing the tradeoffs: extraction
+stays deferred — "this is going to hurt ergonomics too much for now, we
+can revisit later." The deciding weight was proof ergonomics (extracted
+state-passing definitions vs the clean models, against the LLM-written/
+LLM-maintained axis); the preparation steps above stay as recorded.
+
 THE HONEST GAP a model carries, stated once and inherited by every proof:
 a Lean model proof warrants the ALGORITHM, and the claim that the Rust
 implements that algorithm rests on review plus the Rust-side instruments
