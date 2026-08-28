@@ -1097,3 +1097,160 @@ note in a drawer:
 Exit criteria: =when_private= lands with its gates or is refused in writing
 with a measured reason; the authoring-path items are scheduled into their
 own milestone after the super review.
+
+* M27 — ZKIR semantics in Lean, and the vault's leakage ground layer
+(dmd, 2026-08-28.) Reopens the ladder M25 called final — deliberately:
+(Numbered M27 at the push-day merge: the review-fixes branch had
+already claimed M26 for the review follow-ups above.)
+extraction (Aeneas) was reviewed and DEFERRED for proof ergonomics
+(notes/lean-port.org §1, dmd's confirmation recorded), and this is the
+other route to proofs about the running system: do not extract the Rust
+— give the ARTIFACT a semantics, and check facts of the actual =.zkir=
+directly. Two prongs that pay for each other: a machine-checked,
+corpus-validated semantics of ZKIR in Lean (the layer NOTHING upstream
+covers — Compact's Agda says nothing about ZKIR, M25's honest ground),
+and its first real consumer — the per-circuit LEAKAGE INVENTORY of the
+erc20 vault that the SigNet unlinkability analysis stands on.
+
+THE MOTIVATING DOCUMENT: "Unlinkability of SigNet Cross-Chain System"
+(=Midnight_UnlinkabilityAnalysis-4.pdf=, draft read 2026-08-28; held
+OUTSIDE the repo like the external review report — it is someone
+else's working draft). It proves withdrawer/swapper unlinkability by a
+hybrid argument whose reductions land on multi-user PRF security,
+commitment hiding, and ZK simulation. THE SPLIT THAT DEFINES THIS
+MILESTONE'S SCOPE: that game-level layer is probabilistic relational
+reasoning (EasyCrypt/SSProve territory; no mature Lean framework, and
+the paper itself defers its crypto assumptions to Midnight's proofs) —
+explicitly OUT. But the proof's GROUND LAYER — the §4.12 τ-tables
+inventorying, per circuit, every published transcript component and
+its classification (identical =f(p⃗)= / challenger randomness / hiding
+/ depends on b) — is a set of DETERMINISTIC claims about our own
+artifacts, hand-maintained in the draft and dotted with red "check
+this" annotations. Machine-checking that layer, drift-gated, is
+exactly this repo's kind of work: the hybrid argument stays a paper
+proof, and every per-circuit fact it cites becomes a checked artifact.
+
+DECISIONS OF RECORD (dmd, 2026-08-28):
+- SCHEDULING: dmd runs this milestone on SATURDAYS AND SUNDAYS with
+  the week's leftover tokens. Sessions should therefore leave clean
+  per-rung stopping points; nothing in this milestone may block
+  weekday work.
+- SHELVABLE BY CONSTRUCTION: every rung below has standalone value and
+  a hard gate; stopping after any rung is a valid end state, recorded
+  as such, not a failure.
+- The game-based hybrid proof is OUT (above). No PPT adversaries, no
+  probability, no crypto-assumption discharge in Lean.
+- Byte-exactness is CORPUS-GATED FOREVER: a Lean parser/printer that
+  disagrees with the 788-artifact corpus on one byte is red — the
+  reimplemented-serializer hazard is the same one M21 refused to risk
+  with vendoring, and the corpus is the instrument that contains it.
+- =Fr= is =ZMod p= in the semantics; Montgomery form is a
+  SERIALIZATION detail and stays on the parsing side. Intrinsics
+  (hashes, curve ops) enter as uninterpreted functions at rung 3 and
+  become concrete only at rung 4, ported mechanically, validated
+  differentially — never re-derived.
+- If the Lean side becomes load-bearing CI, lake/lean enter the M8
+  churn perimeter (version-bump surface) — priced then, not now.
+
+ESTIMATE, recorded 2026-08-28 (Fable sessions, this repo's measured
+velocity): rungs 1-2 ~1 day, rung 3 ~2 days, rung 4 ~3-4 days with the
+intrinsics as the variance driver; the vault prong overlaps rung 3
+substantially. Weekend-sized chunks exist at every boundary.
+
+- [ ] DESIGN NOTE FIRST (the house method): =notes/zkir-semantics.org=
+      — the instruction inventory with per-instruction operand/output
+      arity and the consumption rules already decoded (taint.rs, the
+      FAB notes), the two semantic readings (evaluation vs constraint)
+      and which theorems need which, the intrinsic-function boundary,
+      the preimage-dump interface for rung 4's differential, and the
+      vault-prong claim list frozen from the analysis draft (so the
+      milestone's targets do not drift with the draft).
+- [ ] RUNG 1 — SYNTAX: the real-IR inductive + parse/print for the
+      =.zkir= wire format in Lean. GATE: byte-exact round-trip over
+      all 788 corpus artifacts (722 v2 may be SKIPPED by decision —
+      v3 is the target; if so, say so and gate on the 84+ v3 files).
+      Standalone value: a machine-checked ZKIR grammar with a
+      corpus-proven parser — more formal ZKIR coverage than exists
+      anywhere upstream.
+- [ ] RUNG 2 — DATAFLOW: total operands/defines functions over the
+      inductive (the Lean twin of =operands_mut= /
+      =returned_identifiers=, kernel-checked exhaustive). GATE: agree
+      with the Rust functions on every corpus instruction.
+- [ ] RUNG 3 — OBSERVABLE SEMANTICS: the environment-passing walk over
+      the real IR with intrinsics uninterpreted; observables = the
+      PI/witness/output streams. Re-prove the eight pass theorems
+      (dedup 4, fold 3+1) OVER THE REAL IR TYPE — closing the pass
+      prong's model gap without extraction — and state the
+      constraint-side reading (solution sets) beside the
+      evaluation-side one, with the completeness lemma (honest
+      evaluation satisfies constraints) for the instructions that
+      carry both. GATE: lake-green sorry-free; the =VerifiedPass=
+      citations move to the real-IR theorems.
+- [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
+      p= arithmetic; keccak/persistent/transient hash and jubjub ops
+      ported mechanically), giving a Lean reference interpreter.
+      GATE: differential agreement with =IrSource::check= /
+      minocrab-sim on the corpus-verified preimage dumps (the bench
+      pipeline already produces them) — PI streams equal, accept/
+      reject equal. The variance rung; shelve-point before it is
+      explicitly fine.
+- [ ] THE VAULT PRONG — the leakage inventory, machine-checked
+      against the artifacts of all four vault forks (port as the
+      differential anchor; borsh lineage as deployed-shape). From the
+      analysis draft's §4/§4.12 tables, the claims to discharge per
+      circuit (deposit, completeDeposit, withdraw,
+      refundSurrenderedValue, completeWithdraw, refund, swap,
+      completeSwap, approveRouter):
+      - COMPLETENESS of the inventory: the public statement =x= is
+        EXACTLY the listed components — the PI stream contains what
+        the table says and NOTHING else (the claim their tables
+        assert by hand; ours derives from rung 3's semantics, or
+        rung 2's dataflow as the weaker pre-rung-3 form).
+      - DEPENDENCY CLASSIFICATION: which emitted components are
+        functions of which inputs — in particular, the withdraw
+        flow's ONLY vault-emitted =userSk=-dependent component is
+        the =refundComm(userSk, reqId)= marker (their τ_mark row),
+        with the coin-layer components keyed by =coinSk=/nonces
+        (Midnight's layer, blue in the draft) separated out
+        mechanically.
+      - =keyPath= CONSTANCY: withdraw/swap/approveRouter write the
+        LITERAL "vault"; deposit alone writes =userComm(userSk)= —
+        the fact their §4.2 table states and the pseudonym analysis
+        rides on.
+      - =reqId= ONE-TIME USE: =reqCounter= strictly increments per
+        request (a ledger state-machine invariant over the op
+        semantics), so =refundComm='s input is fresh per request —
+        the freshness premise of their Hybrid 2.
+      - WITNESS INVENTORIES per circuit, mechanically derived — which
+        makes their §5.3 Gap 2 ("a successful withdrawal can be
+        settled by ANYONE": completeWithdraw's success branch takes
+        no secret witness) a surfaced fact rather than a footnote;
+        Gap 1's three-value-event swap shape likewise read off the
+        transcript inventory.
+      - INJECTIVE PACKING under every commitment/digest in the flow
+        (userComm, refundComm, coinCommit, coinNull, attDigest,
+        domSep): already mechanized by the taint lint + the M10
+        injective-domain-separator work — CITE, do not rebuild; the
+        prong's new work is the inventory, not the packing.
+      GATE: the inventory is GENERATED from the artifacts and frozen
+      like every snapshot (between-markers regen, reviewable diff);
+      a circuit edit that changes the leakage surface is a gate
+      failure naming the moved component. Deliverable doubles as the
+      drift-proof replacement for the draft's hand-maintained tables,
+      handed back to its authors.
+- [ ] THE HONEST-BOUNDARY WRITEUP, published where the claims are:
+      what is machine-checked (the ground layer), what is not (the
+      hybrids, the crypto assumptions), and what the semantics'
+      authority rests on (corpus round-trip + differential agreement
+      — the same external-warrant epistemics as the popeq rule and
+      the M3 harness, stated with the same bluntness).
+Exit criteria: the ladder climbed to a recorded stopping rung with
+every climbed rung's gate green; the pass theorems re-anchored to the
+real IR if rung 3 is reached; the vault leakage inventory generated,
+frozen, and drift-gated against the four forks' artifacts with every
+draft-table claim above either DISCHARGED, corrected (a wrong claim in
+the draft is a finding, reported to its authors), or recorded as
+blocked with the missing rung named; and the honest-boundary writeup
+published. Explicitly OUT: the game-level hybrid argument, any
+crypto-assumption discharge, and any new packing analysis duplicating
+the taint lint.
