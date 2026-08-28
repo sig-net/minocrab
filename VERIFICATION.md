@@ -36,7 +36,7 @@ make specific error classes unwritable rather than merely untested.
 - **Claim** — every artifact the pinned compactc produces parses, re-emits and
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
-  over all 788 `.zkir` in `corpus/zkir` (722 v2 + 66 v3), plus
+  over all 806 `.zkir` in `corpus/zkir` (722 v2 + 84 v3, and the test asserts that count), plus
   [toolchain_accepts.rs](crates/minocrab-zkir/tests/toolchain_accepts.rs), a
   hand-built circuit through the pinned `zkir mock-compile`.
 - **Command** — `cargo test -p minocrab-zkir`
@@ -65,7 +65,7 @@ make specific error classes unwritable rather than merely untested.
 - **Criterion** — same typed I/O schema, identical `pis`/`pi_skips` on a shared
   preimage, agreement on guard rejections and on tampered inputs. Instruction
   streams are explicitly free ([notes/ledger-abi.org §6](notes/ledger-abi.org)).
-- **Instrument** — 19 test targets named `*differential*` across
+- **Instrument** — 22 test targets named `*differential*` (19, 1 and 2 respectively) across
   `minocrab-contracts`, `minocrab-ledger` and `minocrab-std`.
 - **Stronger, for seven fixtures** — `adts` (31 circuits), `bounded`, `opaque`
   (14 circuits), `kernel` (24 circuits), `coins` (3 circuits), `nested`
@@ -253,7 +253,7 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 | failure class | fires | silent |
 |---|---|---|
 | wrong instruction stream, same statement | row snapshot; zkir dump; the four instruction-for-instruction fixtures | the differentials (instruction streams are free under PI-equality) |
-| wrong PI framing / transcript shape | the 18 differential targets; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
+| wrong PI framing / transcript shape | the 22 differential targets; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
 | missing guard, assert or range check | the type-level constructions in §2(g); `v3_predicates`; `v3_guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
 | witness-stream drift (a read on the untaken branch) | interface snapshot (`wit` lines, `(guarded)` marked); the differentials, once the private transcript diverges | row snapshot, if the counts happen to match |
 | undeclared disclosure | the generated set-equality test per circuit | everything else — the labels are not in the ZKIR |
@@ -279,10 +279,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 - **The rev is a hypothesis; the corpus is the proof.** Our pin equals neither
   rev upstream pins, because all `midnight-*` crates must share one for their
   `Fr` / `ProofPreimage` / `IrSource` types to unify. What makes that safe is
-  instrument (a): 788 of compactc's own artifacts round-trip through these
-  bindings, and 18 differential suites agree with its lowering.
+  instrument (a): 806 of compactc's own artifacts round-trip through these
+  bindings, and 22 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
-  the 788 ZKIR circuits (312 contracts, 618 circuit names) the pinned compactc
+  the 806 ZKIR circuits (315 contracts) the pinned compactc
   produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
   in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
   corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
@@ -387,8 +387,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   a range constraint implied by an earlier one on the same wire finds **zero**,
   so turning the flag on today would remove nothing
   ([notes/ir-passes.org §11](notes/ir-passes.org)).
-- **Four `from_field_unchecked` sites rest on a whole-contract argument.** The
-  vault's settle mints claim `Uint<64>` on a word locally bounded only to
+- **Seven `from_field_unchecked` sites per vault lineage (ten in the modern
+  twin, 31 in all) rest on a whole-contract argument.** The vault's settle
+  mints — `claim`, `refund`, four in `complete_swap`, one in
+  `refund_surrendered_value` — claim `Uint<64>` on a word locally bounded only to
   `< 2^128`; the claim holds because every request circuit bounds its amounts
   before a record enters the map — an invariant of the contract as a whole, not
   of the site. Each carries a comment saying so, and they are first in line for
@@ -408,9 +410,9 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 **Morning — run the gates, cheapest and most diagnostic first.**
 
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
-2. `cargo test -p minocrab-zkir` — 788 artifacts round-trip. If this is red, stop.
-3. `cargo test -p minocrab-ledger` — entry-point hash rule over 312 contracts / 618 circuit names, plus the Impact op baseline.
-4. `cargo test --workspace` — the 18 differentials, the fork gates, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
+2. `cargo test -p minocrab-zkir` — 806 artifacts round-trip, count asserted. If this is red, stop.
+3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
+4. `cargo test --workspace` — the 22 differentials, the fork gates, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
 6. `PROPTEST_CASES=20000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (~a few minutes). The full gate is `PROPTEST_CASES=1000000`, ~52 minutes, and is the number quoted in §2(e).
 7. `./corpus/compile.sh` — recompile the corpus with the pinned compiler and check `git status --short corpus/zkir` is empty (3 m 11 s). This is the determinism claim, verified rather than trusted.
