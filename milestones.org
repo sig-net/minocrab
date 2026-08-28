@@ -701,9 +701,11 @@ stage and BENCHMARK refresh clear the last known-open items and the
 super review runs against a tree with no known-open defects and no
 stale published claims.
 STATUS 2026-08-28: the queue is CLEAR — R1/R2/R3/R4 all ticked (R3's
-ruling landed as the option-1 extension, notes/taint-lint.org §7). The
-one remaining act is dmd's: launching the super review
-(/code-review ultra).
+ruling landed as the option-1 extension, notes/taint-lint.org §7).
+M23 CLOSED. The super review itself is OFF this repo's milestones
+(dmd, 2026-08-28): an external party is running it for us — the
+milestone's job was readiness, and the tree it hands over has no
+known-open defects and no stale published claims.
 
 * M24 — MinoCrab as a library: the GHC-API model (dmd, 2026-08-27)
 The identity shift, dmd's: "this is primarily a library like the GHC API"
