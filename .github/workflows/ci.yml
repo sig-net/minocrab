@@ -11,6 +11,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# A newer push to the same ref supersedes the run in flight.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The routine loop: plain `cargo test` (deps are optimized under dev via
   # the workspace profile override), inside the nix devshell so the
@@ -22,7 +27,22 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - uses: Swatinem/rust-cache@v2
-      - run: nix develop -c cargo test --workspace
+      # --no-fail-fast: a red binary must not hide the ones after it — the
+      # review-fixes branch found two std failures that way.
+      - run: nix develop -c cargo test --workspace --no-fail-fast
+
+  # Everything that compiles but does not run under `cargo test`: benches
+  # and the binaries, plus the examples' signatures against the API. A
+  # return-type change once broke minocrab-sim's cryptocost example and
+  # nothing in the routine loop said so.
+  check-all-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop -c cargo check --workspace --all-targets
 
   # The heavy gates: the frozen (k, rows) and interface tables, --release
   # as the testing docs prescribe.
