@@ -310,7 +310,7 @@ pub trait SignetSigner {
 
 The second forges only the compiled circuit — `contract-info.json` and the pin stay correct — and is caught by reading the instruction stream the prover executes.
 
-Limit: the circuit binds neither the entry point nor the argument types. `callOnce` and `callEmit` compile to byte-identical ZKIR under different entry points, asserted by a test. What protects the verifier is the ledger's `(address, entry point, commitment)` match.
+Limit: the circuit binds neither the entry point nor the argument types unless it asks to. `callOnce` and `callEmit` compile to byte-identical ZKIR under different entry points, asserted by a test; what protects the verifier there is the ledger's `(address, entry point, commitment)` match. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode — every typed call in that circuit then constrains the entry-point hash to the declared circuit's (two `constrain_eq`), pinned by `xcall::call_once_bound`. Argument types stay unbound.
 
 ## Porting kit
 

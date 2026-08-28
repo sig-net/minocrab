@@ -2413,6 +2413,37 @@ pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
     args: &[Wire3<FieldT, Public>],
     results: &[LimbConstraint],
 ) -> Vec<Wire3<FieldT, Public>> {
+    contract_call_with(c, guard, addr, args, results, None)
+}
+
+/// Marker: this circuit BINDS every cross-contract call's entry point
+/// in-circuit — see [`bind_entry_points`].
+pub struct BindEntryPoints;
+
+/// Opt this circuit into HARDENED cross-contract calls: every typed
+/// [`call`] after this line constrains the two witnessed entry-point-hash
+/// limbs to the constants its [`EntryPoint`] hashes to — two
+/// `constrain_eq`, no public input. Without it a call's entry point is a
+/// prover-supplied witness (compactc's own shape, which the corpus ports
+/// mirror) and any two same-shaped entry points of the callee are
+/// interchangeable in the proof; the ledger's `(address, entry point,
+/// commitment)` match is what binds them there (external review §4.5,
+/// notes/interface-crates.org §Honest limits #1). A contract that wants
+/// the proof to say which circuit it called says so here.
+pub fn bind_entry_points(c: &mut Circuit3) {
+    c.ext_insert(BindEntryPoints);
+}
+
+/// [`contract_call`] with the entry point BOUND: `bind` carries the hash's
+/// two limbs the witnessed ones must equal.
+fn contract_call_with<V: Visibility + Copy + minocrab::OnChainGuard>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    addr: [Wire3<FieldT, Public>; 2],
+    args: &[Wire3<FieldT, Public>],
+    results: &[LimbConstraint],
+    bind: Option<[Fr; 2]>,
+) -> Vec<Wire3<FieldT, Public>> {
     // Every witness of the call is read UNDER THE CALL'S GUARD, as the op
     // that claims it is emitted under it: a call inside a branch consumes
     // the prover's cc-rand, entry-point limbs and results only where the
@@ -2433,6 +2464,11 @@ pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
     c.assert_bits(ep_hi, 8);
     let ep_lo = c.witness_guarded::<FieldT, V>(guard);
     c.assert_bits(ep_lo, 248);
+    if let Some([hi, lo]) = bind {
+        // The hardened mode: the prover's entry point IS the declared one.
+        c.assert_eq(ep_hi, hi);
+        c.assert_eq(ep_lo, lo);
+    }
 
     let mut preimage = vec![cc_rand];
     preimage.extend(args.iter().map(|w| w.private()));
@@ -2531,6 +2567,7 @@ impl Callee {
 /// check, because it never writes either down.
 ///
 /// `entry_point` is the callee circuit's name. THE CIRCUIT DOES NOT BIND IT
+/// unless it opted in with [`bind_entry_points`]
 /// (notes/interface-crates.org §Honest limits #1): the entry-point hash is
 /// a prover-supplied witness, which is exactly why `xcall`'s `callOnce` and
 /// `callEmit` compile to the same circuit. What binds it is the LEDGER's
@@ -2544,14 +2581,20 @@ pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy + minocrab::OnChain
     entry_point: EntryPoint,
     args: A,
 ) -> R {
-    let _ = entry_point;
+    // Bound only where the circuit asked for it (`bind_entry_points`);
+    // otherwise the entry point names the callee for the transaction
+    // builder and the type checker, and the proof leaves it to the ledger.
+    let bind = c
+        .ext_get::<BindEntryPoints>()
+        .is_some()
+        .then(|| entry_point.limbs());
     let addr = callee.address(c, guard);
     let arg_slots = args.call_slots();
     let constraints: Vec<LimbConstraint> = R::prims()
         .into_iter()
         .map(Prim::constraint)
         .collect();
-    let results = contract_call(c, guard, addr, &arg_slots, &constraints);
+    let results = contract_call_with(c, guard, addr, &arg_slots, &constraints, bind);
     debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
     R::from_call_slots(&results)
 }

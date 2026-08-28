@@ -361,9 +361,15 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   ([notes/interface-crates.org §"Honest limits" #3](notes/interface-crates.org)).
   Planned, not done.
 - **Cross-contract calls: the circuit binds neither the entry point nor the
-  argument types.** `callOnce` and `callEmit` compile to byte-identical ZKIR
-  under different entry points, asserted by a test. What protects the verifier
-  is the ledger's `(address, entry point, commitment)` match.
+  argument types — unless it asks to.** `callOnce` and `callEmit` compile to
+  byte-identical ZKIR under different entry points, asserted by a test; what
+  protects the verifier there is the ledger's `(address, entry point,
+  commitment)` match, and the corpus ports keep that shape because compactc
+  has it. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode:
+  every typed `call` in the circuit then constrains the witnessed entry-point
+  limbs to the declared circuit's hash (two `constrain_eq`, no public input);
+  `xcall::call_once_bound` pins that it rejects `depositEmit`'s preimage where
+  `call_once` accepts it. Argument types remain unbound.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
   reached through a NESTED path (the arms themselves landed at M22 stage A and
   nesting at stage B, but no fixture circuit compiles the combination, so the

@@ -468,3 +468,32 @@ fn call_once_rejects_tampering() {
     }
     assert_eq!(disagreements, 0, "acceptance disagreement on tampering");
 }
+
+/// THE HARDENED MODE (external review §4.5): with `bind_entry_points` the
+/// proof says which circuit was called. `call_once_bound` accepts the
+/// honest preimage, rejects one claiming `depositEmit`, and is no longer
+/// the same circuit as `call_once` — which, unbound, accepts both (the
+/// interchangeability `call_once_and_call_emit_are_the_same_circuit`
+/// pins, and compactc's own shape).
+#[test]
+fn a_bound_call_rejects_another_entry_point_of_the_callee() {
+    let bound = xcall::call_once_bound().ir;
+    let unbound = xcall::call_once().ir;
+    let mut s = Scenario::new(); // ep = deposit
+    assert!(simulate(&bound, &s.preimage_call_n(1)).is_ok(), "the declared entry point");
+    assert!(simulate(&unbound, &s.preimage_call_n(1)).is_ok());
+    s.ep = ep_hash("depositEmit");
+    assert!(
+        simulate(&bound, &s.preimage_call_n(1)).is_err(),
+        "bound: another entry point of the same callee must not prove"
+    );
+    assert!(
+        simulate(&unbound, &s.preimage_call_n(1)).is_ok(),
+        "unbound: the entry point is the prover's to claim (compactc parity)"
+    );
+    assert_ne!(
+        to_zkir_string(&bound).expect("serializes"),
+        to_zkir_string(&unbound).expect("serializes"),
+        "binding is two constrain_eq the unbound circuit does not have"
+    );
+}
