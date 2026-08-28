@@ -10,31 +10,63 @@ were found (pointers at the bottom).
 Every entry: what, evidence (checkable, not remembered), impact, and whether
 anything deployed is affected.
 
-* 1. BUG-ADJACENT — a cast in argument position emits no range check
+RE-CHECKED 2026-08-28 (dmd: "many of them might be stale"), against the
+first genuinely different compiler since our pin: compactc 0.34.0
+(language 0.26.0) shipped 2026-08-25 as a FULL release. Method: the
+0.34.0 binary fetched to a scratchpad, probe contracts compiled under
+BOTH compilers, artifacts read with the new
+=cargo run -p minocrab-ir --example zkir_text= disassembler (born for
+this re-check); ledger status via crates.io + the midnight-ledger repo.
+One pin fact worth its own line: 0.34.0's flake.lock pins zkir-v3 at
+=04c9c5d9bceb= — EXACTLY our Cargo pin — and our bindings parse 0.34.0's
+output (probes round-trip), so a compactc bump does not move the ledger
+pins. Per-finding status below; finding 1 is WITHDRAWN as wrong.
 
-=amount as Uint<64>= compiles to NOTHING when the cast is an argument rather
-than an assignment. The erc20-vault writes it at all four settle mints
-(claim/completeWithdraw/refund/completeSwap) on a value locally bounded only
-to < 2^128, and the compiled artifacts contain no 64-bit constraint anywhere
-between the ABI-word decode and the mint — the only 64-bit op in each circuit
-is the =initialized >= 1= counter guard. Verified instruction by instruction
-in the artifacts, 2026-08-16.
+* 1. WITHDRAWN 2026-08-28 — "a cast in argument position emits no range check" was a mis-read
 
-The general downcast rule ("assignment to a declared =Uint<N>= inserts
-=downcast-unsigned="; =infer-types.ss=) therefore does NOT cover argument
-position, and a cast that reads as checked is not. The vault happens to be
-safe because every request circuit bounds its amounts to u64::MAX before a
-record enters the map (=erc20-vault.compact:263/431/801-802=) — a
-whole-contract invariant the compiler neither states nor checks, and which a
-contract author has no way to know they are relying on.
+THE ORIGINAL CLAIM (2026-08-16): =amount as Uint<64>= compiles to
+nothing in argument position; the vault's four settle mints carry no
+64-bit constraint; safety rests on a whole-contract map invariant.
 
-Impact: silent unsoundness pattern available to every Compact author; the
-failure needs a malformed record in state, so honest deployments are safe
-until some other path can write one. Evidence: notes/api-safety-survey.org
-§B4 ("CORRECTED BY THE REVIEW"), notes/builtin-lowering.org §9 (REFINED
-block, with the artifact scan described).
+REFUTED by probe and by re-reading the same artifacts:
+- Probes (=scratchpad probes, argcast/chaincast/branchcast.compact=,
+  compiled under 0.33.0-rc.2 AND 0.34.0): a =Uint<128> as Uint<64>= in
+  argument position emits =constrain_bits 64= straight-line, and inside
+  a conditional branch emits the GUARDED form —
+  =cond_select(branch, ·, amount)= → =less_than(·, 2^64, bits=128)= →
+  guarded =assert=. Both compilers, identical shapes.
+- The corpus artifacts contain exactly that: claim has
+  =ConstrainBits{amount, 64}= (instr 445), completeSwap four of them,
+  and completeWithdraw/refund — whose mints sit on conditional branches
+  — carry the guarded =LessThan(·, 2^64, bits:128)= + assert
+  (completeWithdraw instr 477-480, refund instr 476-479).
+
+WHY THE 2026-08-16 CHECK MISSED IT: it searched for a "64-bit op", and
+the branched downcast runs its comparison at =bits: 128= against the
+immediate =2^64= — the check was present, spelled in a shape the scan
+did not recognize. The corrected understanding: compactc's downcast
+check DOES cover argument position; in guarded contexts it lowers to
+select/less_than/assert rather than =constrain_bits=.
+
+CONSEQUENCES, corrected in the same sweep: the vault's settle mints are
+LOCALLY sound (no whole-contract-invariant story needed);
+notes/api-safety-survey.org §B4 and notes/builtin-lowering.org §9 carry
+matching corrections; =BoundedUint::narrow='s rustdoc no longer claims
+to emit "the check compactc omits" (it emits the same class of check
+Compact's own downcast does — its value is making the checked/free
+split explicit in OUR raw-wire API, which Compact's surface language
+never exposes). What SURVIVES of the original concern: our API's
+=from_field_unchecked= path (survey §A1) can still spell the unchecked
+narrowing — but that is a fact about MinoCrab's escape hatch, not about
+compactc, and it never belonged on this list.
 
 * 2. GAP — kernel.checkpoint() cannot be compiled for ZKIR v3
+
+STATUS 2026-08-28: STANDS at 0.34.0, probe-verified — the same
+=failed assertion not-implemented= internal error (now at
+reduce-to-zkir.ss:612 after the v3-pass restructuring; an
+"unimplemented: ... ckpt" line names the construct in scheme-record
+form, still no source location or flag named).
 
 compactc's v2 backend assembles =ckpt= to 255 (=zkir-passes/
 print-zkir.ss:546=); the v3 backend has no =ckpt= case, so
@@ -47,6 +79,11 @@ Impact: any v3 contract using checkpoint. Evidence: notes/kernel-tokens.org
 (M17 design note, failure quoted in the fixture header).
 
 * 3. HAZARD — Boolean deserialization accepts non-canonical bytes
+
+STATUS 2026-08-28: STANDS at 0.34.0, source-verified — the Boolean
+arm of deserialize lowers to =(== byte 1)=
+(analysis-passes/expand-serialize.ss:266-272 at the tag): any byte is
+accepted and everything ≠ 1 is falsy, unchanged.
 
 =deserialize<T, N>= does not constrain a deserialized Boolean to {0,1}: a
 byte of 0x02 is accepted, and downstream =!b=-style routing then treats it as
@@ -64,6 +101,13 @@ finding), notes/borsh-format.org §"Site classification" (the 0x02 hazard).
 
 * 4. INEFFICIENCY — serialization lowering explodes bytes it could shift
 
+STATUS 2026-08-28: NOT RE-MEASURED. 0.34.0's changelog notes
+"circuit generation ... sometimes produces smaller circuits" and better
+CSE, so the numbers may have moved; the honest re-check is the
+bump-time bench (compile the Signet singleton under 0.34.0 and re-run
+the row comparison), which belongs to a version-bump session, not this
+sweep.
+
 compactc lowers byte-reordering through full explode/rebuild chains (~150
 rows per exploded byte) where ZKIR's own =ReverseBytes= (~150 rows TOTAL) or
 algebraic div_mod shifts do the same work: measured, the mirrored chains cost
@@ -80,6 +124,15 @@ numbers), BENCHMARK.md (the presentable three-way).
 
 * 5. HAZARD — midnight-ledger main dropped instructions we (and they) ship
 
+STATUS 2026-08-28: STANDS and has WIDENED — main's v3
+=Instruction= enum now also lacks =Keccak256=, =IntoBytes32=/
+=FromBytes32= and =Bytes32FromLowHigh=/=IntoLowHigh= (the whole
+byte-plumbing family), gains a =Decode=, and stamps SerdeVersion 3.0.
+Meanwhile the RELEASE line is at ledger-9.1.0.0-rc.4 (2026-08-11,
+pre-release) and compactc 0.34.0 still pins zkir-v3 at =04c9c5d= (our
+pin), so nothing shipping is affected yet — but the divergence between
+main and every shipping artifact is now larger, not smaller.
+
 A bump dry-run against midnight-ledger main (diverged from the release line;
 merge base 2026-06-25) found it renamed midnight-ledger-v9, DROPPED
 =Instruction::ReverseBytes= and the secp256r1/Curve25519 IrTypes. ReverseBytes
@@ -93,6 +146,10 @@ with the worktree transcript).
 
 * 6. RELEASE HYGIENE — identical version strings, different code
 
+STATUS 2026-08-28: NOT RE-CHECKED for 0.34.0 (verifying
+binary-vs-crate ancestry is bump-work); the class is mitigated on our
+side by =bump.sh pins= either way.
+
 The ledger rc.3 tag's zkir-v3 crate PREDATES the binary bundled in the same
 release despite carrying an identical version string — resolving "which code
 built this binary" required reading the release's own flake.lock and asking
@@ -104,6 +161,11 @@ notes/version-bump.org (the version-string trap; =bump.sh pins= exists
 because of it).
 
 * 7. MINOR — constant naming is frontend-driven, not rule-driven
+
+STATUS 2026-08-28: NOT RE-CHECKED in detail; 0.34.0's CSE/folding
+changes make movement here LIKELY, which is fine — the normalisation
+(=fold_immediate_copies= over both sides) is version-agnostic by
+design.
 
 compactc sometimes names a constant (=copy 0x00= then uses the name) and
 sometimes inlines the same constant, with the choice driven by frontend
@@ -117,6 +179,10 @@ Evidence: notes/ir-passes.org §8 ("§1's table was WRONG, and the fixture
 that proved it").
 
 * 8. LATENT — the coin-arm `dup` reach overflows its nibble past depth 5
+
+STATUS 2026-08-28: STANDS at 0.34.0 verbatim — the same "note that
+if `f` is longer than 5, this exceeds the limit of 15" comment over the
+same unchecked =dup= (midnight-ledger.ss:577 at the tag).
 
 The `insertCoin`/`pushFrontCoin` lowering computes its `dup` reach from the
 field path length, and the encoding has room for a nibble; a source comment at

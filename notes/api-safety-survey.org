@@ -294,6 +294,23 @@ CORRECTED BY THE REVIEW (2026-08-16), in two parts, both artifact-verified:
    1's design: =BoundedUint::to_uint= is exactly the place OUR api can be
    stricter than Compact by emitting the check compactc omits.
 
+RE-CORRECTED 2026-08-28 (notes/compact-findings.org §1, WITHDRAWN):
+point 2 above — and with it the whole-contract half of point 1 — was a
+MIS-READ of the artifacts. compactc DOES range-check the
+argument-position cast at all four settle mints: straight-line as
+=constrain_bits 64= (claim instr 445; completeSwap ×4), and on the
+branched mints as the GUARDED shape =cond_select= →
+=less_than(·, 2^64, bits: 128)= → guarded =assert= (completeWithdraw
+477-480, refund 476-479) — which the 2026-08-16 scan missed because it
+looked for a "64-bit op" and the guarded comparison runs at bits 128.
+Probe-verified under 0.33.0-rc.2 and 0.34.0 both
+(=zkir_text= disassembler; probes in the re-check record). So the
+settle mints are LOCALLY sound in Compact, and "stricter than Compact
+by emitting the check compactc omits" is withdrawn — our =narrow= emits
+the same class of check their downcast does; its real value is making
+the checked/free split explicit in OUR raw-wire API (which can still
+spell A1's unchecked form — that part of this survey stands).
+
 * 2. FOOTGUNS (question 1)
 
 ** A1. =from_field= IS AN UNAUDITED =unsafe=, AND IT IS THE HOLE EVERY OTHER

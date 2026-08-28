@@ -365,6 +365,18 @@ Types carry *max values*, not widths (=tunsigned max=). Rules
   before the record enters the map (erc20-vault.compact:263/431/801-802) —
   a whole-contract argument compactc neither makes nor checks. See
   notes/api-safety-survey.org §B4.
+  THE REFINEMENT WITHDRAWN (2026-08-28, notes/compact-findings.org §1):
+  the downcast check DOES cover argument position — the 2026-08-16 scan
+  missed its GUARDED spelling. Straight-line, the cast is
+  =constrain_bits N=; inside a conditional branch it lowers to
+  =cond_select(branch, ·, val)= → =less_than(·, 2^N, bits = source
+  width)= → guarded =assert= — the comparison runs at the SOURCE's
+  width, which is why a "64-bit op" search found nothing. Probe-verified
+  under 0.33.0-rc.2 and 0.34.0; the four settle mints all carry their
+  checks (claim/completeSwap as constrain_bits, completeWithdraw/refund
+  as the guarded shape). The §1 rule therefore reads: downcast inserts
+  the range check in EVERY position, constrain-style straight-line,
+  select/less_than/assert-style under a guard.
 - =-=: inserts an explicit guard *before* the subtraction:
   =assert(a >= b, "result of subtraction would be negative")= with
   bits = max(1, intlen(max(maxa,maxb))), then field subtraction lowered as

@@ -655,8 +655,7 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     }
 
     /// `x as Uint<BITS>` when the bound does NOT fit — the CHECKED
-    /// narrowing, and the one place this API is deliberately STRICTER THAN
-    /// COMPACT.
+    /// narrowing.
     ///
     /// Emits exactly the range constraint compactc emits for a `Uint<BITS>`
     /// argument (`Prim::Uint { bits }`, so `constrain_bits BITS`, or
@@ -664,18 +663,17 @@ impl<const BOUND: u128, V: Vis3> BoundedUint<BOUND, V> {
     /// [`Self::constrain_input`] uses), and nothing else. That is the whole
     /// cost, and it is visible: ~BITS/4 rows.
     ///
-    /// WHY IT IS STRICTER, and the discovery that made it a design decision
-    /// (notes/api-safety-survey.org §B4, "CORRECTED BY THE REVIEW",
-    /// artifact-verified 2026-08-16): **compactc emits NO check for a cast in
-    /// ARGUMENT position.** The vault's source writes `amount as Uint<64>` at
-    /// all four settle mints on a value locally bounded only to `< 2^128`,
-    /// and the artifacts contain no 64-bit constraint anywhere between the
-    /// decode and the mint. Compact's safety there rests on a WHOLE-CONTRACT
-    /// argument — every record in the map was written by a request circuit
-    /// that bounded it — which compactc neither makes nor checks. So the
-    /// downcast rule of notes/builtin-lowering.org §9 does not cover that
-    /// position, and a narrowing that looks checked is not. This method emits
-    /// the check compactc omits.
+    /// This matches Compact's own downcast, which checks in EVERY position —
+    /// `constrain_bits` straight-line, and a guarded
+    /// `cond_select`/`less_than`/`assert` chain inside conditional branches
+    /// (probe-verified under the pinned compactc and 0.34.0;
+    /// notes/builtin-lowering.org §9, corrected 2026-08-28 — an earlier
+    /// claim here that compactc omits the check in argument position was a
+    /// mis-read of the artifacts, withdrawn in notes/compact-findings.org
+    /// §1). What Compact's surface language CANNOT spell, and this API can,
+    /// is the unchecked narrowing (`from_field_unchecked`): the value of
+    /// `narrow`/`to_uint` is making the checked/free split an explicit
+    /// choice a reviewer can read off the call site.
     ///
     /// For the FREE direction (`2^BITS >= BOUND`, where every legal value
     /// already fits and a constraint would be a tautology) this is an
