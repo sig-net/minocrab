@@ -24,6 +24,9 @@ path = "src/bin/minocrab.rs"
 [dependencies]
 minocrab.workspace = true
 minocrab-zkir.workspace = true
+# The CLI's `pass` subcommand runs the published passes over a .zkir file
+# (M24 point 4); a regular dependency since then, not just the tests'.
+minocrab-ir = { workspace = true, features = ["unstable"] }
 midnight-zkir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
 # crypto crates its interpreter calls (see src/v3.rs).
@@ -38,10 +41,18 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
+[features]
+# The INTERNAL tier (M24 tier boundary, notes/library-api.org §1): the
+# simulator VM (`simulate`, `Run3`, the report machinery). No stability
+# promise; the stable surface is the measurement API — `cost`, `profile`,
+# `assert_max_k`, `rowcost` — and the `minocrab` CLI. In-workspace crates
+# enable this.
+unstable = []
+
 [dev-dependencies]
+# Enable the internal tier for this crate's own tests and examples.
+minocrab-sim = { path = ".", features = ["unstable"] }
 anyhow.workspace = true
 proptest.workspace = true
-# v3 end-to-end tests build their circuits with the typed Builder3.
-minocrab-ir = { path = "../minocrab-ir" }
 # The opcost example prices minocrab-std's byte-plumbing shapes.
 minocrab-std = { path = "../minocrab-std" }

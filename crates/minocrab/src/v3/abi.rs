@@ -126,7 +126,11 @@ pub enum LimbConstraint {
 }
 
 impl LimbConstraint {
-    /// Emit this constraint on `w`, in the shape compactc emits it.
+    /// Emit this constraint on `w`, in the shape compactc emits it, and
+    /// return THE CONSTRAINED WIRE — `w` itself, except that a bit or boolean
+    /// constraint inside a [`Circuit3::when`] constrains `select(guard, w,
+    /// 0)` and returns that (see [`Circuit3::assert_bits`]); a checked
+    /// constructor carries the returned wire, not `w`.
     ///
     /// The bounds are INLINE IMMEDIATES ([`Operand`](crate::v3::Operand)), not named constants,
     /// so the instruction stream matches compactc's slot for slot.
@@ -134,15 +138,19 @@ impl LimbConstraint {
         self,
         c: &mut Circuit3,
         w: Wire3<FieldT, V>,
-    ) {
+    ) -> Wire3<FieldT, V> {
         match self {
-            LimbConstraint::None => {}
-            LimbConstraint::Zero => c.assert_eq(w, 0u64),
+            LimbConstraint::None => w,
+            LimbConstraint::Zero => {
+                c.assert_eq(w, 0u64);
+                w
+            }
             LimbConstraint::Boolean => c.assert_boolean(w),
             LimbConstraint::Bits(bits) => c.assert_bits(w, bits),
             LimbConstraint::Bounded { bound, bits } => {
                 let in_range = c.less_than(w, fr_from_u128(bound), bits);
                 c.assert(in_range);
+                w
             }
         }
     }

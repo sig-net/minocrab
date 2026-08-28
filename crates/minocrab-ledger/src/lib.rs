@@ -38,6 +38,12 @@
 //!   wires and record their disclosure
 //! - [`contract_call`] — a cross-contract call, and the labels it discloses
 //!   ([`XcallEntryPointHash`], [`XcallCommitment`], [`XcallResult`])
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! INTERNAL TIER, whole crate: the Impact op layer is the eDSL's
+//! implementation detail (reached through `minocrab-std`'s typed ledger
+//! surface) and carries no stability promise.
 
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
@@ -1281,7 +1287,7 @@ pub fn swap(n: u8) -> ImpactOp {
 /// The guard is an OPERAND (M9 phase 8): a branch condition's wire, or the
 /// native `1u64` for a straight-line operation, which inlines as an
 /// immediate rather than naming a `Copy` — see [`Circuit3::impact_mixed`].
-pub fn emit<V: Visibility>(
+pub fn emit<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     ops: &[ImpactOp],
@@ -1307,7 +1313,7 @@ pub fn emit<V: Visibility>(
 /// branch condition for reads inside a conditional (compactc puts the SAME
 /// guard on the gates and the op's impact instructions — completeWithdraw
 /// .zkir:292-297); `None` for straight-line reads (guard printed as null).
-pub fn mint_read_with<V: Visibility + Copy>(
+pub fn mint_read_with<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Option<Wire3<FieldT, V>>,
     atoms: Vec<AlignmentAtom>,
@@ -1335,7 +1341,7 @@ const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 /// (midnight-ledger.ss:547-551): `dup 0; idx [field]; popeq` — both the idx
 /// and the popeq uncached (`f-cached` = #f). `atoms` is the cell type's FAB
 /// alignment; returns one wire per limb, in slot order.
-pub fn cell_read<V: Visibility>(
+pub fn cell_read<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1345,7 +1351,7 @@ pub fn cell_read<V: Visibility>(
 }
 
 /// [`cell_read`] on a general path.
-pub fn cell_read_at<V: Visibility>(
+pub fn cell_read_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1367,7 +1373,7 @@ pub fn cell_read_at<V: Visibility>(
 /// limbs with an `encode` instruction (claim.zkir:29-33), so the limbs are
 /// computed rather than read and the caller has to build the value itself.
 /// Both end here.
-pub fn cell_read_embedded<V: Visibility>(
+pub fn cell_read_embedded<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1377,7 +1383,7 @@ pub fn cell_read_embedded<V: Visibility>(
 }
 
 /// [`cell_read_embedded`] on a general path.
-pub fn cell_read_embedded_at<V: Visibility>(
+pub fn cell_read_embedded_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1393,7 +1399,7 @@ pub fn cell_read_embedded_at<V: Visibility>(
 /// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
 /// `dup 0; idx [field]; popeqc` — the popeq is cached even on the first
 /// access (unlike Cell.read). Returns the u64 counter value.
-pub fn counter_read<V: Visibility>(
+pub fn counter_read<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1402,7 +1408,7 @@ pub fn counter_read<V: Visibility>(
 }
 
 /// [`counter_read`] on a general path.
-pub fn counter_read_at<V: Visibility>(
+pub fn counter_read_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1419,7 +1425,7 @@ pub fn counter_read_at<V: Visibility>(
 
 /// `Counter.lessThan(threshold)` (midnight-ledger.ss:595-600):
 /// `dup 0; idx [field]; push threshold (u64 cell); lt; popeqc` → Boolean.
-pub fn counter_less_than<V: Visibility>(
+pub fn counter_less_than<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1429,7 +1435,7 @@ pub fn counter_less_than<V: Visibility>(
 }
 
 /// [`counter_less_than`] on a general path.
-pub fn counter_less_than_at<V: Visibility>(
+pub fn counter_less_than_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1453,7 +1459,7 @@ pub fn counter_less_than_at<V: Visibility>(
 
 /// `Map.member(key)` on field `index` (midnight-ledger.ss:649-655):
 /// `dup 0; idx [field]; push key; member; popeqc` → Boolean.
-pub fn map_member<V: Visibility>(
+pub fn map_member<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1463,7 +1469,7 @@ pub fn map_member<V: Visibility>(
 }
 
 /// [`map_member`] on a general path.
-pub fn map_member_at<V: Visibility>(
+pub fn map_member_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1489,7 +1495,7 @@ pub fn map_member_at<V: Visibility>(
 /// (midnight-ledger.ss:741-747): `dup 0; idx [field]; idx {key}; popeq` —
 /// the key descent and the popeq both uncached. `value_atoms` is the value
 /// type's FAB alignment.
-pub fn map_lookup<V: Visibility>(
+pub fn map_lookup<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1506,7 +1512,7 @@ pub fn map_lookup<V: Visibility>(
 /// midnight-ledger.ss:745-746). A leaf lookup does not append its key to
 /// `f`; only an INTERMEDIATE `lookup` — the one whose result is another ADT —
 /// does, and that one emits nothing at all.
-pub fn map_lookup_at<V: Visibility>(
+pub fn map_lookup_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1530,7 +1536,7 @@ pub fn map_lookup_at<V: Visibility>(
 
 /// `Map.size()` on field `index` (midnight-ledger.ss:728-733):
 /// `dup 0; idx [field]; size; popeqc` → Uint64.
-pub fn map_size<V: Visibility>(
+pub fn map_size<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1539,7 +1545,7 @@ pub fn map_size<V: Visibility>(
 }
 
 /// [`map_size`] on a general path.
-pub fn map_size_at<V: Visibility>(
+pub fn map_size_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1561,7 +1567,7 @@ pub fn map_size_at<V: Visibility>(
 
 /// `Map.isEmpty()` on field `index` (midnight-ledger.ss:720-727):
 /// `dup 0; idx [field]; size; push 0 (u64 cell); eq; popeqc` → Boolean.
-pub fn map_is_empty<V: Visibility>(
+pub fn map_is_empty<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1570,7 +1576,7 @@ pub fn map_is_empty<V: Visibility>(
 }
 
 /// [`map_is_empty`] on a general path.
-pub fn map_is_empty_at<V: Visibility>(
+pub fn map_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1595,7 +1601,7 @@ pub fn map_is_empty_at<V: Visibility>(
 
 /// `set.size()` / `set.isEmpty()` — the `Map` streams, exactly
 /// ([`set_remove`] carries the argument).
-pub fn set_size<V: Visibility>(
+pub fn set_size<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1604,7 +1610,7 @@ pub fn set_size<V: Visibility>(
 }
 
 /// [`set_size`] on a general path.
-pub fn set_size_at<V: Visibility>(
+pub fn set_size_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1613,7 +1619,7 @@ pub fn set_size_at<V: Visibility>(
 }
 
 /// See [`set_size`].
-pub fn set_is_empty<V: Visibility>(
+pub fn set_is_empty<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1622,7 +1628,7 @@ pub fn set_is_empty<V: Visibility>(
 }
 
 /// [`set_is_empty`] on a general path.
-pub fn set_is_empty_at<V: Visibility>(
+pub fn set_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1634,7 +1640,7 @@ pub fn set_is_empty_at<V: Visibility>(
 
 /// `list.length()` on field `index`: `dup 0; idx [field]; idx [2]; popeqc`
 /// → Uint64. The length is a stored cell, not a computed `size`.
-pub fn list_length<V: Visibility>(
+pub fn list_length<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1643,7 +1649,7 @@ pub fn list_length<V: Visibility>(
 }
 
 /// [`list_length`] on a general path.
-pub fn list_length_at<V: Visibility>(
+pub fn list_length_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1671,7 +1677,7 @@ pub fn list_length_at<V: Visibility>(
 /// reads as "the tail is null", which is what an empty list's tail is. See
 /// notes/ledger-adts.org §1, which also disposes of the upstream comment
 /// claiming `1` encodes a cell.
-pub fn list_is_empty<V: Visibility>(
+pub fn list_is_empty<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1680,7 +1686,7 @@ pub fn list_is_empty<V: Visibility>(
 }
 
 /// [`list_is_empty`] on a general path.
-pub fn list_is_empty_at<V: Visibility>(
+pub fn list_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1722,7 +1728,7 @@ const TYPE_NULL: u8 = 1;
 ///            pop; push (cell [0u8, default T])
 /// popeqc <Maybe<T>>
 /// ```
-pub fn list_head<V: Visibility>(
+pub fn list_head<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1732,7 +1738,7 @@ pub fn list_head<V: Visibility>(
 }
 
 /// [`list_head`] on a general path.
-pub fn list_head_at<V: Visibility>(
+pub fn list_head_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1795,7 +1801,7 @@ fn max_sizeof(atoms: &[AlignmentAtom]) -> u32 {
 /// `mt.isFull()` / `hmt.isFull()` on field `index`: `dup 0; idx [field];
 /// idx [1]; push 2^depth (u64 cell); lt; neg; popeqc` → Boolean, i.e.
 /// `!(next < 2^depth)`.
-pub fn merkle_tree_is_full<V: Visibility>(
+pub fn merkle_tree_is_full<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1805,7 +1811,7 @@ pub fn merkle_tree_is_full<V: Visibility>(
 }
 
 /// [`merkle_tree_is_full`] on a general path.
-pub fn merkle_tree_is_full_at<V: Visibility>(
+pub fn merkle_tree_is_full_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1833,7 +1839,7 @@ pub fn merkle_tree_is_full_at<V: Visibility>(
 /// `mt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [0]; root;
 /// push rt (field cell); eq; popeqc` → Boolean. `root` is the CURRENT root,
 /// so this is an equality — the historic twin is [`historic_merkle_tree_check_root`].
-pub fn merkle_tree_check_root<V: Visibility>(
+pub fn merkle_tree_check_root<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1843,7 +1849,7 @@ pub fn merkle_tree_check_root<V: Visibility>(
 }
 
 /// [`merkle_tree_check_root`] on a general path.
-pub fn merkle_tree_check_root_at<V: Visibility>(
+pub fn merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1871,7 +1877,7 @@ pub fn merkle_tree_check_root_at<V: Visibility>(
 /// push rt; member; popeqc` → Boolean. A `member` on the HISTORY map, not an
 /// `eq` on the current root — which is the whole difference between the two
 /// tree ADTs at read time.
-pub fn historic_merkle_tree_check_root<V: Visibility>(
+pub fn historic_merkle_tree_check_root<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     index: u8,
@@ -1881,7 +1887,7 @@ pub fn historic_merkle_tree_check_root<V: Visibility>(
 }
 
 /// [`historic_merkle_tree_check_root`] on a general path.
-pub fn historic_merkle_tree_check_root_at<V: Visibility>(
+pub fn historic_merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
@@ -1939,7 +1945,7 @@ pub enum BalanceCmp {
 /// never held is `0` rather than a failure. Note the balance is the one at
 /// the START of execution — the effect accumulator's entries do not feed back
 /// into it, which is the caveat Compact's own stdlib comment carries.
-pub fn kernel_balance<V: Visibility>(
+pub fn kernel_balance<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     token_type: &LedgerValue,
@@ -2010,7 +2016,7 @@ pub fn idx_key_cached(key: &LedgerValue) -> ImpactOp {
 ///
 /// The `dup 3` rather than `dup 2` in the greater-than form is the pushed `t`
 /// sitting on the stack already.
-pub fn kernel_block_time<V: Visibility>(
+pub fn kernel_block_time<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
     time: &LedgerValue,
@@ -2047,7 +2053,7 @@ pub fn kernel_block_time<V: Visibility>(
 /// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
-pub fn kernel_self<V: Visibility>(
+pub fn kernel_self<V: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, V>>,
 ) -> [Wire3<FieldT, Public>; 2] {
@@ -2075,7 +2081,7 @@ pub fn kernel_self<V: Visibility>(
 // (completeWithdraw reads field 9 first at :295, `0x50` under the guard).
 
 /// Guarded [`cell_read`].
-pub fn cell_read_guarded<V: Visibility + Copy>(
+pub fn cell_read_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     index: u8,
@@ -2085,7 +2091,7 @@ pub fn cell_read_guarded<V: Visibility + Copy>(
 }
 
 /// [`cell_read_guarded`] on a general path.
-pub fn cell_read_guarded_at<V: Visibility + Copy>(
+pub fn cell_read_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     path: &[LedgerKey],
@@ -2101,7 +2107,7 @@ pub fn cell_read_guarded_at<V: Visibility + Copy>(
 }
 
 /// Guarded [`counter_read`].
-pub fn counter_read_guarded<V: Visibility + Copy>(
+pub fn counter_read_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     index: u8,
@@ -2110,7 +2116,7 @@ pub fn counter_read_guarded<V: Visibility + Copy>(
 }
 
 /// [`counter_read_guarded`] on a general path.
-pub fn counter_read_guarded_at<V: Visibility + Copy>(
+pub fn counter_read_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     path: &[LedgerKey],
@@ -2125,7 +2131,7 @@ pub fn counter_read_guarded_at<V: Visibility + Copy>(
 }
 
 /// Guarded [`map_member`].
-pub fn map_member_guarded<V: Visibility + Copy>(
+pub fn map_member_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     index: u8,
@@ -2135,7 +2141,7 @@ pub fn map_member_guarded<V: Visibility + Copy>(
 }
 
 /// [`map_member_guarded`] on a general path.
-pub fn map_member_guarded_at<V: Visibility + Copy>(
+pub fn map_member_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     path: &[LedgerKey],
@@ -2157,7 +2163,7 @@ pub fn map_member_guarded_at<V: Visibility + Copy>(
 }
 
 /// Guarded [`map_lookup`].
-pub fn map_lookup_guarded<V: Visibility + Copy>(
+pub fn map_lookup_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     index: u8,
@@ -2168,7 +2174,7 @@ pub fn map_lookup_guarded<V: Visibility + Copy>(
 }
 
 /// [`map_lookup_guarded`] on a general path.
-pub fn map_lookup_guarded_at<V: Visibility + Copy>(
+pub fn map_lookup_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     path: &[LedgerKey],
@@ -2190,7 +2196,7 @@ pub fn map_lookup_guarded_at<V: Visibility + Copy>(
 }
 
 /// Guarded [`kernel_self`].
-pub fn kernel_self_guarded<V: Visibility + Copy>(
+pub fn kernel_self_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
 ) -> [Wire3<FieldT, Public>; 2] {
@@ -2400,33 +2406,76 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
 /// Returns the callee's result wires. They are disclosed: the claim binds
 /// them publicly (under cc-rand hiding) via `comm`, and Compact treats
 /// them as public downstream.
-pub fn contract_call<V: Visibility + Copy>(
+pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     addr: [Wire3<FieldT, Public>; 2],
     args: &[Wire3<FieldT, Public>],
     results: &[LimbConstraint],
 ) -> Vec<Wire3<FieldT, Public>> {
+    contract_call_with(c, guard, addr, args, results, None)
+}
+
+/// Marker: this circuit BINDS every cross-contract call's entry point
+/// in-circuit — see [`bind_entry_points`].
+pub struct BindEntryPoints;
+
+/// Opt this circuit into HARDENED cross-contract calls: every typed
+/// [`call`] after this line constrains the two witnessed entry-point-hash
+/// limbs to the constants its [`EntryPoint`] hashes to — two
+/// `constrain_eq`, no public input. Without it a call's entry point is a
+/// prover-supplied witness (compactc's own shape, which the corpus ports
+/// mirror) and any two same-shaped entry points of the callee are
+/// interchangeable in the proof; the ledger's `(address, entry point,
+/// commitment)` match is what binds them there (external review §4.5,
+/// notes/interface-crates.org §Honest limits #1). A contract that wants
+/// the proof to say which circuit it called says so here.
+pub fn bind_entry_points(c: &mut Circuit3) {
+    c.ext_insert(BindEntryPoints);
+}
+
+/// [`contract_call`] with the entry point BOUND: `bind` carries the hash's
+/// two limbs the witnessed ones must equal.
+fn contract_call_with<V: Visibility + Copy + minocrab::OnChainGuard>(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, V>,
+    addr: [Wire3<FieldT, Public>; 2],
+    args: &[Wire3<FieldT, Public>],
+    results: &[LimbConstraint],
+    bind: Option<[Fr; 2]>,
+) -> Vec<Wire3<FieldT, Public>> {
+    // Every witness of the call is read UNDER THE CALL'S GUARD, as the op
+    // that claims it is emitted under it: a call inside a branch consumes
+    // the prover's cc-rand, entry-point limbs and results only where the
+    // branch runs, or the private transcript shifts for everything after
+    // it (the external review's §4.3; the same class the choke point closed
+    // for the scope-based reads). Straight-line callers pass a constant
+    // true, which lowers to compactc's own `guard: null`.
     let results: Vec<_> = results
         .iter()
         .map(|&constraint| {
-            let w = c.witness::<FieldT>();
+            let w = c.witness_guarded::<FieldT, V>(guard);
             constraint.emit(c, w);
             w
         })
         .collect();
-    let cc_rand = c.witness::<FieldT>();
-    let ep_hi = c.witness::<FieldT>();
+    let cc_rand = c.witness_guarded::<FieldT, V>(guard);
+    let ep_hi = c.witness_guarded::<FieldT, V>(guard);
     c.assert_bits(ep_hi, 8);
-    let ep_lo = c.witness::<FieldT>();
+    let ep_lo = c.witness_guarded::<FieldT, V>(guard);
     c.assert_bits(ep_lo, 248);
+    if let Some([hi, lo]) = bind {
+        // The hardened mode: the prover's entry point IS the declared one.
+        c.assert_eq(ep_hi, hi);
+        c.assert_eq(ep_lo, lo);
+    }
 
     let mut preimage = vec![cc_rand];
     preimage.extend(args.iter().map(|w| w.private()));
     preimage.extend(results.iter().copied());
     let comm = c.transient_hash(&preimage);
 
-    let [ep_hi, ep_lo] = c.disclose_all(XcallEntryPointHash::LABEL, [ep_hi, ep_lo]);
+    let [ep_hi, ep_lo] = c.disclose_all_as::<XcallEntryPointHash, _, 2>([ep_hi, ep_lo]);
     let comm = comm.disclose_as::<XcallCommitment>(c);
 
     let addr_ep_comm = LedgerValue::new(
@@ -2486,12 +2535,12 @@ impl Callee {
     /// arguments emit nothing (every other call site in the corpus),
     /// `Field` resolved inside [`call`] gives the same stream and is the
     /// simpler spelling.
-    pub fn pin<V: Visibility + Copy>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> Callee {
+    pub fn pin<V: Visibility + Copy + minocrab::OnChainGuard>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> Callee {
         Callee::Pinned(self.address(c, guard))
     }
 
     /// The address limbs — for [`Callee::Field`], the fresh uncached read.
-    fn address<V: Visibility + Copy>(
+    fn address<V: Visibility + Copy + minocrab::OnChainGuard>(
         self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,
@@ -2518,27 +2567,34 @@ impl Callee {
 /// check, because it never writes either down.
 ///
 /// `entry_point` is the callee circuit's name. THE CIRCUIT DOES NOT BIND IT
+/// unless it opted in with [`bind_entry_points`]
 /// (notes/interface-crates.org §Honest limits #1): the entry-point hash is
 /// a prover-supplied witness, which is exactly why `xcall`'s `callOnce` and
 /// `callEmit` compile to the same circuit. What binds it is the LEDGER's
 /// `(address, entry_point, comm)` match against the callee's own
 /// transaction. Naming it here types the developer's call and tells the
 /// transaction builder which circuit to run; it is not a proof obligation.
-pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy>(
+pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     callee: Callee,
     entry_point: EntryPoint,
     args: A,
 ) -> R {
-    let _ = entry_point;
+    // Bound only where the circuit asked for it (`bind_entry_points`);
+    // otherwise the entry point names the callee for the transaction
+    // builder and the type checker, and the proof leaves it to the ledger.
+    let bind = c
+        .ext_get::<BindEntryPoints>()
+        .is_some()
+        .then(|| entry_point.limbs());
     let addr = callee.address(c, guard);
     let arg_slots = args.call_slots();
     let constraints: Vec<LimbConstraint> = R::prims()
         .into_iter()
         .map(Prim::constraint)
         .collect();
-    let results = contract_call(c, guard, addr, &arg_slots, &constraints);
+    let results = contract_call_with(c, guard, addr, &arg_slots, &constraints, bind);
     debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
     R::from_call_slots(&results)
 }

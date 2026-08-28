@@ -9,12 +9,10 @@
 //! changed in that move.
 
 use midnight_onchain_vm::ops::Op;
-use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault;
-use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::IrSource;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 
 mod support;
 mod vault;
@@ -23,30 +21,6 @@ use vault::model::*;
 use vault::tamper;
 use vault::prims::*;
 
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
-}
 #[test]
 fn claim_matches_corpus() {
     let theirs = corpus_zkir_named("claim");

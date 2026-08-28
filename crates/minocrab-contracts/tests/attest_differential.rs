@@ -14,7 +14,7 @@ use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
@@ -26,7 +26,7 @@ use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::attest;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -110,31 +110,6 @@ fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>) -> ProofPreimage {
         communications_commitment: Some((comm, rand)),
         key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
     }
-}
-
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
 }
 
 #[test]

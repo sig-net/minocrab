@@ -36,7 +36,7 @@ make specific error classes unwritable rather than merely untested.
 - **Claim** — every artifact the pinned compactc produces parses, re-emits and
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
-  over all 788 `.zkir` in `corpus/zkir` (722 v2 + 66 v3), plus
+  over all 806 `.zkir` in `corpus/zkir` (722 v2 + 84 v3, and the test asserts that count), plus
   [toolchain_accepts.rs](crates/minocrab-zkir/tests/toolchain_accepts.rs), a
   hand-built circuit through the pinned `zkir mock-compile`.
 - **Command** — `cargo test -p minocrab-zkir`
@@ -65,7 +65,7 @@ make specific error classes unwritable rather than merely untested.
 - **Criterion** — same typed I/O schema, identical `pis`/`pi_skips` on a shared
   preimage, agreement on guard rejections and on tampered inputs. Instruction
   streams are explicitly free ([notes/ledger-abi.org §6](notes/ledger-abi.org)).
-- **Instrument** — 19 test targets named `*differential*` across
+- **Instrument** — 22 test targets named `*differential*` (19, 1 and 2 respectively) across
   `minocrab-contracts`, `minocrab-ledger` and `minocrab-std`.
 - **Stronger, for seven fixtures** — `adts` (31 circuits), `bounded`, `opaque`
   (14 circuits), `kernel` (24 circuits), `coins` (3 circuits), `nested`
@@ -191,10 +191,10 @@ cannot express.
 | `BoundedUint<BOUND>` `add`/`mul` | a result bound too small to hold the value — an inline-const `E0080` at the call site; bound arithmetic is `checked_*`, so an overflowing bound is itself a compile error | [v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs) |
 | `BoundedUint::narrow::<BITS>` | an unchecked narrowing downcast — MinoCrab **additionally emits** the range check at this seam (one `Prim::Uint { bits }`, ~BITS/4 rows), and asking `narrow` for the free direction is an `E0080` pointing at `to_uint` | [v3_bounded.rs](crates/minocrab-std/tests/v3_bounded.rs) |
 | `CheckOperand::MAX` | a comparison against a literal outside the operand's bound (which would make the comparison constant) | [v3_predicates.rs](crates/minocrab-std/tests/v3_predicates.rs), 22 tests |
-| `ContractAddress<Public>` | passing an arbitrary `B32` where `kernel.self()` was meant; only `kernel::self_address` and its guarded twin produce one | zero rows, dump unchanged ([notes/api-safety-survey.org §A4](notes/api-safety-survey.org)) |
+| `ContractAddress<Public>` | passing a bare `B32` where `kernel.self()` was meant — the `_with` twins take the typed address, so a raw pair of limbs no longer type-checks there. NOT a proof of self: `ContractAddress` is Compact's value type (recipients, call targets, `Either` arms) and is built from any `B32` in a dozen places. The proof of self is `kernel::SelfAddress` — a private-field newtype only the `self_address*` readers produce, taken by the helpers that act AS the contract (`contract_recipient`, `burn_body`); `.address()` is the way down to the value type ([notes/api-safety-survey.org §3 item 5](notes/api-safety-survey.org)) | zero rows, dump unchanged ([notes/api-safety-survey.org §A4](notes/api-safety-survey.org)) |
 | `Opaque<T: TsType>` | mixing two TypeScript-side types | compile_fail doctest, [v3.rs](crates/minocrab-std/src/v3.rs) |
 | `from_field_unchecked` | *nothing* — it is the escape hatch, named as an assertion. `from_field_checked(c, w)` is the constrained twin (`Uint`, `BoundedUint`, `Bool`, `Bytes`, Borsh `Tag<K>`); there is no bare `from_field` left, so every site chose | [notes/api-safety-survey.org §A1](notes/api-safety-survey.org) |
-| guard scoping | an assertion or witness inside `c.when` escaping the guard — the ambient guard reaches reads, witnesses and assertions, none of which name it | [v3_guard_scope.rs](crates/minocrab-std/tests/v3_guard_scope.rs), 20 tests, each asserting the scoped form is byte-identical to the hand-threaded one |
+| guard scoping | an effect inside `c.when` escaping the guard — every witness read, transcript read, Impact op and check (`assert`, `assert_eq`, `assert_bits`, `assert_boolean`), scoped or `_guarded`, resolves its guard through ONE private choke point ([v3/effects.rs](crates/minocrab/src/v3/effects.rs)); the only way to reach an emitter is with the resolved guard in hand, and a test pins that nothing bypasses it | [v3_guard_scope.rs](crates/minocrab-std/tests/v3_guard_scope.rs), 26 tests, each asserting the scoped form is byte-identical to the hand-threaded one |
 
 The Borsh layer belongs here as a safety feature in its own right:
 
@@ -253,7 +253,7 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 | failure class | fires | silent |
 |---|---|---|
 | wrong instruction stream, same statement | row snapshot; zkir dump; the four instruction-for-instruction fixtures | the differentials (instruction streams are free under PI-equality) |
-| wrong PI framing / transcript shape | the 18 differential targets; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
+| wrong PI framing / transcript shape | the 22 differential targets; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
 | missing guard, assert or range check | the type-level constructions in §2(g); `v3_predicates`; `v3_guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
 | witness-stream drift (a read on the untaken branch) | interface snapshot (`wit` lines, `(guarded)` marked); the differentials, once the private transcript diverges | row snapshot, if the counts happen to match |
 | undeclared disclosure | the generated set-equality test per circuit | everything else — the labels are not in the ZKIR |
@@ -279,10 +279,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 - **The rev is a hypothesis; the corpus is the proof.** Our pin equals neither
   rev upstream pins, because all `midnight-*` crates must share one for their
   `Fr` / `ProofPreimage` / `IrSource` types to unify. What makes that safe is
-  instrument (a): 788 of compactc's own artifacts round-trip through these
-  bindings, and 18 differential suites agree with its lowering.
+  instrument (a): 806 of compactc's own artifacts round-trip through these
+  bindings, and 22 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
-  the 788 ZKIR circuits (312 contracts, 618 circuit names) the pinned compactc
+  the 806 ZKIR circuits (315 contracts) the pinned compactc
   produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
   in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
   corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
@@ -310,8 +310,26 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 
 ## 5. The honest limits
 
-- **No machine-checked semantics.** Compact ships an Agda specification in-tree
-  with CI; MinoCrab has no formal-verification parity. The compensating control
+- **Machine-checked semantics: partial, model-level, and honestly bounded.**
+  Compact ships an Agda specification in-tree with CI. Read at our pinned rev,
+  its checked content is well-formedness plumbing — syntax representation,
+  typing-rule skeletons, constructor coverage — while the semantic content
+  that would matter here is absent: arithmetic result types are `⊢undeclared`
+  stubs ("TODO: define bound computation"), subtyping is a refl/trans stub
+  with a load-bearing `postulate`, `disclose` types through with no
+  visibility judgment, the operational semantics is an unchecked sketch, and
+  nothing covers ZKIR ([notes/lean-port.org §6](notes/lean-port.org), the
+  full account). MinoCrab's machine-checked layer is Lean **models**:
+  the pass contract (subsequence/passthrough/solution-set/idempotence for
+  constraint dedup; skeleton/observables preservation for copy folding,
+  reflected as `VerifiedPass`), and the numeric/visibility invariants behind
+  the typed leaves (`crates/minocrab-std/lean/` — the `add`/`mul` bound
+  asserts proven sound *and minimal*, the subtraction guard proven to make
+  field subtraction integer subtraction, the disclose gate proven sound and
+  complete over a small expression model). These warrant the *algorithms and
+  rules as modelled*, not the running Rust — the transcription gap is stated
+  in every proof file's header, and extraction is the only thing that would
+  close it. For everything the models do not reach, the compensating control
   is the differential warrant (§2c/d) plus the property warrant (§2e), and — for
   the class differentials structurally cannot see — the **method** of
   [notes/api-safety-survey.org §0](notes/api-safety-survey.org): look where a
@@ -343,9 +361,15 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   ([notes/interface-crates.org §"Honest limits" #3](notes/interface-crates.org)).
   Planned, not done.
 - **Cross-contract calls: the circuit binds neither the entry point nor the
-  argument types.** `callOnce` and `callEmit` compile to byte-identical ZKIR
-  under different entry points, asserted by a test. What protects the verifier
-  is the ledger's `(address, entry point, commitment)` match.
+  argument types — unless it asks to.** `callOnce` and `callEmit` compile to
+  byte-identical ZKIR under different entry points, asserted by a test; what
+  protects the verifier there is the ledger's `(address, entry point,
+  commitment)` match, and the corpus ports keep that shape because compactc
+  has it. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode:
+  every typed `call` in the circuit then constrains the witnessed entry-point
+  limbs to the declared circuit's hash (two `constrain_eq`, no public input);
+  `xcall::call_once_bound` pins that it rejects `depositEmit`'s preimage where
+  `call_once` accepts it. Argument types remain unbound.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
   reached through a NESTED path (the arms themselves landed at M22 stage A and
   nesting at stage B, but no fixture circuit compiles the combination, so the
@@ -369,9 +393,14 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   a range constraint implied by an earlier one on the same wire finds **zero**,
   so turning the flag on today would remove nothing
   ([notes/ir-passes.org §11](notes/ir-passes.org)).
-- **Four `from_field_unchecked` sites rest on a whole-contract argument.** The
-  vault's settle mints claim `Uint<64>` on a word locally bounded only to
-  `< 2^128`; the claim holds because every request circuit bounds its amounts
+- **The PORT's settle mints rest on a whole-contract argument; the three
+  optimised lineages check.** Five `from_field_unchecked` mint sites per
+  lineage — `claim`, `refund`, `complete_swap`'s two, `refund_surrendered_value`
+  — claim `Uint<64>` on a word locally bounded only to `< 2^128`. On
+  `erc20_vault_opt` / `_borsh` / `_modern` they are `from_field_checked` since
+  the review-fixes branch (one `constrain_bits 64` each); the port keeps the
+  unchecked spelling for compactc parity, so on the port alone the claim
+  holds because the claim holds because every request circuit bounds its amounts
   before a record enters the map — an invariant of the contract as a whole, not
   of the site. Each carries a comment saying so, and they are first in line for
   the checked spelling
@@ -390,9 +419,9 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 **Morning — run the gates, cheapest and most diagnostic first.**
 
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
-2. `cargo test -p minocrab-zkir` — 788 artifacts round-trip. If this is red, stop.
-3. `cargo test -p minocrab-ledger` — entry-point hash rule over 312 contracts / 618 circuit names, plus the Impact op baseline.
-4. `cargo test --workspace` — the 18 differentials, the fork gates, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
+2. `cargo test -p minocrab-zkir` — 806 artifacts round-trip, count asserted. If this is red, stop.
+3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
+4. `cargo test --workspace` — the 22 differentials, the fork gates, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
 6. `PROPTEST_CASES=20000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (~a few minutes). The full gate is `PROPTEST_CASES=1000000`, ~52 minutes, and is the number quoted in §2(e).
 7. `./corpus/compile.sh` — recompile the corpus with the pinned compiler and check `git status --short corpus/zkir` is empty (3 m 11 s). This is the determinism claim, verified rather than trusted.

@@ -16,12 +16,12 @@ use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::fab::ValueReprAlignedValue;
 use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::{events, xcall};
 use minocrab_ledger::ep_hash;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -340,31 +340,6 @@ impl Scenario {
     }
 }
 
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
-}
-
 #[test]
 fn local_base_matches_corpus() {
     let theirs = corpus_zkir("caller", "localBase");
@@ -492,4 +467,33 @@ fn call_once_rejects_tampering() {
         }
     }
     assert_eq!(disagreements, 0, "acceptance disagreement on tampering");
+}
+
+/// THE HARDENED MODE (external review §4.5): with `bind_entry_points` the
+/// proof says which circuit was called. `call_once_bound` accepts the
+/// honest preimage, rejects one claiming `depositEmit`, and is no longer
+/// the same circuit as `call_once` — which, unbound, accepts both (the
+/// interchangeability `call_once_and_call_emit_are_the_same_circuit`
+/// pins, and compactc's own shape).
+#[test]
+fn a_bound_call_rejects_another_entry_point_of_the_callee() {
+    let bound = xcall::call_once_bound().ir;
+    let unbound = xcall::call_once().ir;
+    let mut s = Scenario::new(); // ep = deposit
+    assert!(simulate(&bound, &s.preimage_call_n(1)).is_ok(), "the declared entry point");
+    assert!(simulate(&unbound, &s.preimage_call_n(1)).is_ok());
+    s.ep = ep_hash("depositEmit");
+    assert!(
+        simulate(&bound, &s.preimage_call_n(1)).is_err(),
+        "bound: another entry point of the same callee must not prove"
+    );
+    assert!(
+        simulate(&unbound, &s.preimage_call_n(1)).is_ok(),
+        "unbound: the entry point is the prover's to claim (compactc parity)"
+    );
+    assert_ne!(
+        to_zkir_string(&bound).expect("serializes"),
+        to_zkir_string(&unbound).expect("serializes"),
+        "binding is two constrain_eq the unbound circuit does not have"
+    );
 }

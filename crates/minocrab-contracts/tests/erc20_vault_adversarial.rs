@@ -370,8 +370,9 @@ fn signature_scalars_above_the_order_reject_for(art: Art) {
     );
 }
 
-/// FINDING: an identity `mpcResponseKey` authenticates ANYTHING, and
-/// `initialize` does not reject one.
+/// FINDING: an identity `mpcResponseKey` authenticates ANYTHING — and
+/// compactc's `initialize` does not reject one; ours does, on the three
+/// optimised lineages.
 ///
 /// With `Q = O` (the point at infinity, i.e. secret key 0), ECDSA
 /// verification of a signature made with `d = 0` recomputes
@@ -381,25 +382,35 @@ fn signature_scalars_above_the_order_reject_for(art: Art) {
 /// gate would then be open: claim would mint on demand, refund would
 /// re-mint on demand.
 ///
-/// `initialize` validates `chainId > 0` and `swapRouter != 0` but has no
-/// analogous check on `responseKey`, so this is reachable by a deployer
-/// mistake (it is deployer-gated and one-shot, so not by an attacker).
-/// Recorded in notes/vault-optimization.org §"As built — step 1"; the
-/// test asserts the CURRENT behaviour so the day a check is added, this
-/// test fails and the note gets updated.
+/// compactc's `initialize` validates `chainId > 0` and `swapRouter != 0`
+/// but has no analogous check on `responseKey`, so on the PORT this is
+/// reachable by a deployer mistake (deployer-gated and one-shot, so not
+/// by an attacker) — kept, for parity, and pinned here. The opt / borsh /
+/// modern lineages extract the key's coordinates in `initialize`, which
+/// the identity has none of: the prover cannot build the preimage
+/// (external review §4.5, review-fixes). Recorded in
+/// notes/vault-optimization.org §"As built — step 1".
 #[test]
 fn an_identity_response_key_authenticates_anything() {
     for art in ARTS {
-        // initialize accepts it: no guard on the response key.
         let mut s = Scenario::new().with_art(art);
         s.point = identity_point();
-        assert!(
-            simulate(&Circuit::Initialize.ir(art), &s.preimage(0)).is_ok(),
-            "{art:?}: initialize rejects an identity responseKey — the gap \
-             is closed, update notes/vault-optimization.org"
-        );
+        let accepted = simulate(&Circuit::Initialize.ir(art), &s.preimage(0)).is_ok();
+        match art {
+            Art::Compat => assert!(
+                accepted,
+                "the port's initialize must keep compactc's shape (no identity check)"
+            ),
+            _ => assert!(
+                !accepted,
+                "{art:?}: initialize must reject an identity responseKey — \
+                 into_coordinates has no answer for it"
+            ),
+        }
 
-        // ...and with it stored, a signature made under secret key 0 verifies.
+        // ...and with it STORED (the scenario writes the state directly, so
+        // this holds on every lineage), a signature under secret key 0
+        // verifies: the settle circuits trust whatever key is stored.
         let mut c = ClaimScenario::new().with_art(art);
         c.key_seed = 0;
         assert!(

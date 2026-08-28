@@ -30,7 +30,7 @@
 //! contract wants.
 
 use minocrab::v3::{AnyWire3, Circuit3, FieldT, Guarded, Operand, Wire3};
-use minocrab::{AlignmentAtom, Fr, Public, Visibility};
+use minocrab::{AlignmentAtom, Fr, Private, Public, Visibility};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
     kernel_claim_zswap_coin_receive, kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier,
@@ -41,7 +41,7 @@ use minocrab_ledger::{
 use super::hash;
 use super::ledger::LedgerRepr;
 use super::predicate::is_true;
-use super::{
+use super::{Select, 
     coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinColor,
     CoinNonce, CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3,
     ShieldedCoinInfo3, ShieldedSendResult, TokenDomainSeparator, Uint, UserAddress, B32,
@@ -105,28 +105,106 @@ impl UnshieldedToken<Public> {
 
 // ---- the kernel primitives --------------------------------------------------
 
-/// `kernel.self()` — the contract's own address.
-pub fn self_address(c: &mut Circuit3) -> ContractAddress<Public> {
+/// The cached `kernel.self()` answer — populated ONLY by
+/// [`cache_self_address`], parked in the circuit's gadget scratch state
+/// under this private type so nothing outside this module can touch it.
+struct CachedSelfAddress(SelfAddress);
+
+/// `kernel.self()` as a PROOF OF SELF — a value only the three
+/// `self_address*` readers produce, because `ContractAddress<Public>` is
+/// Compact's value type and is built from any `B32` (recipients, `Either`
+/// arms, call targets), so it cannot carry that meaning. A helper that
+/// means "mint to / burn from / notify AS this contract" takes a
+/// `SelfAddress`; anything that merely wants an address takes
+/// `.address()`. Zero rows: the same two limbs. (External review §4.5 and
+/// notes/api-safety-survey.org §3 item 5.)
+#[derive(Clone, Copy)]
+pub struct SelfAddress(ContractAddress<Public>);
+
+impl SelfAddress {
+    /// The address, as the value type every other API takes.
+    pub fn address(self) -> ContractAddress<Public> {
+        self.0
+    }
+
+    /// [`ContractAddress::bytes`].
+    pub fn bytes(self) -> B32<Public> {
+        self.0.bytes()
+    }
+
+    /// [`ContractAddress::private`] — forget it is public and self.
+    pub fn private(self) -> ContractAddress<Private> {
+        self.0.private()
+    }
+}
+
+impl From<SelfAddress> for ContractAddress<Public> {
+    fn from(me: SelfAddress) -> Self {
+        me.0
+    }
+}
+
+/// A guarded self-address read is still a self-address where the guard
+/// held (and the zero address where it did not) — `Guarded::or` needs this.
+impl Select<Public> for SelfAddress {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, Public>, a: Self, b: Self) -> Self {
+        SelfAddress(Select::select(c, bit, a.0, b.0))
+    }
+}
+
+/// `kernel.self()` — the contract's own address. Reads fresh, unless this
+/// circuit earlier called [`cache_self_address`], in which case the cached
+/// wires come back and no read is emitted.
+///
+/// A circuit that never caches CANNOT be affected: nothing else populates
+/// the cache, so the compat ports' per-call-site reads (compactc parity)
+/// are reproduced by construction, not by discipline.
+pub fn self_address(c: &mut Circuit3) -> SelfAddress {
+    if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
+        return cached.0;
+    }
     self_address_under(c, STRAIGHT_LINE)
 }
 
+/// Read `kernel.self()` ONCE and make it the ambient answer for every
+/// later [`self_address`] call in this circuit (M18).
+///
+/// The soundness paragraph is M10 rung i's, unchanged: the address is
+/// constant for the transaction and read count is FRAMING, not protocol —
+/// every read that IS emitted still reconciles through the ledger's
+/// `process_read`. This is the typed CSE notes/ir-passes.org §3 assigns to
+/// a gadget rather than a pass: the caller states the intent once, at the
+/// top of the circuit, instead of threading the address through every
+/// helper (`…_with` twins) — and a circuit whose helpers make their OWN
+/// reads today must keep plain [`self_address`], because the cache would
+/// swallow those reads and move the stream (the dump gate enforces this
+/// per circuit).
+///
+/// Guarded reads ([`self_address_under`], [`self_address_guarded`]) are
+/// different instructions and never consult the cache.
+pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
+    let me = self_address_under(c, STRAIGHT_LINE);
+    c.ext_insert(CachedSelfAddress(me));
+    me
+}
+
 /// [`self_address`] under a branch condition.
-pub fn self_address_under<G: Visibility>(
+pub fn self_address_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
-) -> ContractAddress<Public> {
-    ContractAddress::from_limbs(kernel_self(c, guard))
+) -> SelfAddress {
+    SelfAddress(ContractAddress::from_limbs(kernel_self(c, guard)))
 }
 
 /// [`self_address`] inside a conditional branch, where the READ itself is
 /// guarded — so the answer is the zero address wherever the guard was off,
 /// which is why it comes back in a [`Guarded`].
-pub fn self_address_guarded<G: Visibility + Copy>(
+pub fn self_address_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, G>,
-) -> Guarded<ContractAddress<Public>, G> {
+) -> Guarded<SelfAddress, G> {
     Guarded::new(
-        ContractAddress::from_limbs(kernel_self_guarded(c, guard)),
+        SelfAddress(ContractAddress::from_limbs(kernel_self_guarded(c, guard))),
         guard,
     )
 }
@@ -137,7 +215,7 @@ pub fn mint_shielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>
 }
 
 /// [`mint_shielded`] under a branch condition.
-pub fn mint_shielded_under<G: Visibility>(
+pub fn mint_shielded_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     domain_sep: &TokenDomainSeparator<Public>,
@@ -154,7 +232,7 @@ pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Publi
 }
 
 /// [`mint_unshielded`] under a branch condition.
-pub fn mint_unshielded_under<G: Visibility>(
+pub fn mint_unshielded_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     domain_sep: &TokenDomainSeparator<Public>,
@@ -175,7 +253,7 @@ pub fn inc_unshielded_inputs(
 }
 
 /// [`inc_unshielded_inputs`] under a branch condition.
-pub fn inc_unshielded_inputs_under<G: Visibility>(
+pub fn inc_unshielded_inputs_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -196,7 +274,7 @@ pub fn inc_unshielded_outputs(
 }
 
 /// [`inc_unshielded_outputs`] under a branch condition.
-pub fn inc_unshielded_outputs_under<G: Visibility>(
+pub fn inc_unshielded_outputs_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -219,7 +297,7 @@ pub fn claim_unshielded_coin_spend(
 }
 
 /// [`claim_unshielded_coin_spend`] under a branch condition.
-pub fn claim_unshielded_coin_spend_under<G: Visibility>(
+pub fn claim_unshielded_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -249,7 +327,7 @@ pub fn balance(c: &mut Circuit3, token: &UnshieldedToken<Public>) -> Uint<128, P
 }
 
 /// [`balance`] under a branch condition.
-pub fn balance_under<G: Visibility>(
+pub fn balance_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -268,7 +346,7 @@ pub fn balance_less_than(
 }
 
 /// [`balance_less_than`] under a branch condition.
-pub fn balance_less_than_under<G: Visibility>(
+pub fn balance_less_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -294,7 +372,7 @@ pub fn balance_greater_than(
 }
 
 /// [`balance_greater_than`] under a branch condition.
-pub fn balance_greater_than_under<G: Visibility>(
+pub fn balance_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -316,7 +394,7 @@ pub fn block_time_less_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool<Pu
 }
 
 /// [`block_time_less_than`] under a branch condition.
-pub fn block_time_less_than_under<G: Visibility>(
+pub fn block_time_less_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     time: Uint<64, Public>,
@@ -331,7 +409,7 @@ pub fn block_time_greater_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool
 }
 
 /// [`block_time_greater_than`] under a branch condition.
-pub fn block_time_greater_than_under<G: Visibility>(
+pub fn block_time_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     time: Uint<64, Public>,
@@ -529,7 +607,7 @@ pub fn claim_zswap_nullifier(c: &mut Circuit3, nullifier: &B32<Public>) {
 }
 
 /// [`claim_zswap_nullifier`] under a branch condition.
-pub fn claim_zswap_nullifier_under<G: Visibility>(
+pub fn claim_zswap_nullifier_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     nullifier: &B32<Public>,
@@ -545,7 +623,7 @@ pub fn claim_zswap_coin_spend(c: &mut Circuit3, commitment: &B32<Public>) {
 }
 
 /// [`claim_zswap_coin_spend`] under a branch condition.
-pub fn claim_zswap_coin_spend_under<G: Visibility>(
+pub fn claim_zswap_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     commitment: &B32<Public>,
@@ -562,7 +640,7 @@ pub fn claim_zswap_coin_receive(c: &mut Circuit3, commitment: &B32<Public>) {
 }
 
 /// [`claim_zswap_coin_receive`] under a branch condition.
-pub fn claim_zswap_coin_receive_under<G: Visibility>(
+pub fn claim_zswap_coin_receive_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     commitment: &B32<Public>,
@@ -617,8 +695,12 @@ fn checked_sub(
 /// Compact's `x as Uint<128>` on a value just computed: the range constraint,
 /// then the `Copy` the cast names its result with.
 fn as_uint128(c: &mut Circuit3, w: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
-    Uint::<128, Public>::from_field_unchecked(w).constrain_input(c);
-    c.copy(w)
+    // Inside a `when` the checked value is the selected one; that is the
+    // value the cast names and everything downstream (the commitment, the
+    // ledger op) consumes — compactc's branch semantics, and what keeps the
+    // hash preimage provably bounded for the taint lint.
+    let checked = Uint::<128, Public>::from_field_checked(c, w);
+    c.copy(checked.field())
 }
 
 /// ```text

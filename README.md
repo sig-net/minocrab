@@ -310,11 +310,11 @@ pub trait SignetSigner {
 
 The second forges only the compiled circuit — `contract-info.json` and the pin stay correct — and is caught by reading the instruction stream the prover executes.
 
-Limit: the circuit binds neither the entry point nor the argument types. `callOnce` and `callEmit` compile to byte-identical ZKIR under different entry points, asserted by a test. What protects the verifier is the ledger's `(address, entry point, commitment)` match.
+Limit: the circuit binds neither the entry point nor the argument types unless it asks to. `callOnce` and `callEmit` compile to byte-identical ZKIR under different entry points, asserted by a test; what protects the verifier there is the ledger's `(address, entry point, commitment)` match. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode — every typed call in that circuit then constrains the entry-point hash to the declared circuit's (two `constrain_eq`), pinned by `xcall::call_once_bound`. Argument types stay unbound.
 
 ## Porting kit
 
-- `corpus/` is 673 pinned `.compact` sources and the 788 ZKIR circuits (312 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
+- `corpus/` is 673 pinned `.compact` sources and the 806 ZKIR circuits (315 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
 - Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not against your reading of the source
 - The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ because of our optimiser. Guard rejections and tampered inputs must agree too.
 
@@ -366,7 +366,7 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
 - Nested **coin arms** — `insertCoin` / `pushFrontCoin` reached *through* a nested path, e.g. `ms.lookup(k).insertCoin(coin, r)`. Nesting itself landed at M22: `TREASURY.balances.at_key(c, &user).lookup(c, &token)` chains to any depth, over every shape Compact accepts — `Map<K, Map<..>>`, `Map<K, List<V>>`, `Map<K, Set<T>>`, `Map<K, Counter>` and both Merkle trees — with all thirty circuits byte-equal to compactc. (`Map` is the only nestable ADT, and that is *compactc's* kind-checker, not ours: `Set<List<T>>` is its own compile error.) What is missing is only the coin arms at depth: the lowering has them and the `dup` reach is pinned as a function of path length, but no fixture circuit compiles one, so the typed methods stop at declared slots ([the investigation](notes/coin-arms-nested-adts.org)).
-- A machine-checked semantics. Compact has an Agda spec in-tree with CI; our warrant is differential and property testing — laid out end to end in [VERIFICATION.md](VERIFICATION.md), honest limits included. Not formal-verification parity.
+- A machine-checked semantics *of the source language's static plumbing*. Compact's in-tree Agda spec machine-checks its syntax representation, typing-rule skeletons and constructor coverage; MinoCrab has no counterpart of that skeleton. Read closely, the spec's semantic content stops there — its arithmetic bound computation is a `TODO` stub, its subtyping a `postulate`-backed placeholder, `disclose` typing-transparent, nothing on ZKIR — while MinoCrab's machine-checked layer runs the other way: Lean models warrant the optimisation passes (reflected as `VerifiedPass`), the numeric bound asserts (sound *and* minimal) and the disclose gate, on top of the differential and property warrant. Both sides' coverage, measured against each other honestly: [VERIFICATION.md](VERIFICATION.md) §5 and [notes/lean-port.org](notes/lean-port.org) §6.
 
 ## Layout
 
@@ -384,7 +384,7 @@ crates/minocrab-abi             the interface/artifact agreement checker
 crates/minocrab-interface-gen   compactc artifact → interface crate (CLI)
 crates/signet-signer-interface  an interface crate: the Signet singleton
 crates/xcall-target-interface   an interface crate, generated from a contract nobody ported
-corpus/                         673 pinned Compact sources + 788 compactc artifacts
+corpus/                         673 pinned Compact sources + 806 compactc artifacts
 spec/                           the Borsh-subset specification, golden vectors, generated TS
 ```
 
@@ -413,11 +413,23 @@ MinoCrab is a library first — like the [GHC API](https://hackage.haskell.org/p
 
 Consume it today as a **git dependency** (crates.io is blocked on upstream — see [PUBLISHING.md](PUBLISHING.md)). The API is **tiered**: a small, stable-*ish* public surface, kept small deliberately while users are few, and an internals tier that may move.
 
+**Stability tiers**, concretely (v1 of the boundary — each crate's docs open with its own tier statement):
+
+| tier | what | where |
+|---|---|---|
+| **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
+| **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
+| **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
+| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs — gated behind an `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
+| **internal** | the Impact ledger-op layer, the interface generator, the v2 layers | `minocrab-ledger`, `minocrab-interface-gen`, v2 modules |
+
+The `unstable` gate is a hard wall exactly where it matters most: a **pass or lint crate depending on `minocrab-ir` alone** never sees the internals. Graphs that include the full eDSL activate the feature transitively (cargo feature unification), so there the tier lives in the docs and the semver commitment rather than the compiler. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise — the line widens by decision, never by accident.
+
 **Three ways to extend it à la carte, no fork:**
 
 1. **Write a super-optimised gadget** — a crate depending on `minocrab-std` that builds a circuit fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is the highest-ceiling extension point: the real performance in MinoCrab comes from *typed-layer instruction selection* (native `ReverseBytes`, in-chip keccak packing, `div_mod` byte shifts, guarded read-as-zero), which needs the type information the eDSL has and type-erased ZKIR does not. Prove it equivalent to a reference with the differential / spec harness.
 
-2. **Write an optimisation pass** — implement `minocrab_ir::v3::passes::Pass` (a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`), compose passes as an ordinary `Vec<Box<dyn Pass>>` through `passes::run_pipeline`, and run built-ins by name with `passes::by_name`. Passes see *type-erased* ZKIR, so they are the uniform-transform tail (guards, constants, range constraints) — real, but not where the speed is. **The report is your safety net**: `Pass::run` always returns a `PassReport` whose `warnings` flag anything dangerous — dropping an instruction can move the public-input / witness stream, which is the correctness oracle. A *valid* optimisation can still warn; read it and verify. Machine-checked verification of "preserves meaning" is planned (Kani, then Lean), which is exactly why passes are pure/total — write yours the same way.
+2. **Write an optimisation pass** — implement `minocrab_ir::v3::passes::Pass` (a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`), compose passes as an ordinary `Vec<Box<dyn Pass>>` through `passes::run_pipeline`, and run built-ins by name with `passes::by_name`. Passes see *type-erased* ZKIR, so they are the uniform-transform tail (guards, constants, range constraints) — real, but not where the speed is. **The report is your safety net**: `Pass::run` always returns a `PassReport` whose `warnings` flag anything dangerous — dropping an instruction can move the public-input / witness stream, which is the correctness oracle. A *valid* optimisation can still warn; read it and verify. The built-in passes carry machine-checked "preserves meaning" proofs (Kani-bounded, then Lean unbounded — `crates/minocrab-ir/lean/`), reflected as the `VerifiedPass` marker `passes::run_pipeline_verified` requires; passes are pure/total exactly so a proof can target them — write yours the same way, and cite your own proof with `lean_proof!` if you write one.
 
 3. **Measure** — `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
 

@@ -23,7 +23,7 @@
 //!
 //! # v2 and v3
 //!
-//! [`simulate`] is the v2 simulator. **[`v3::simulate`] is the current one**,
+//! [`simulate`] is the v2 simulator. **`v3::simulate` is the current one**,
 //! and it mirrors v3's reference semantics rather than v2's: it *verifies* a
 //! complete `ProofPreimage` instead of generating the transcript.
 //!
@@ -38,8 +38,17 @@
 //!   alone)
 //! - [`cost`] and [`profile`] — `(k, rows)` for a circuit, and [`Profile`],
 //!   the per-region breakdown the benchmark charts
-//! - [`v3::simulate`] and [`v3::Run3`] — the v3 pair
+//! - `v3::simulate` and `v3::Run3` — the v3 pair
 //! - [`v3::rowcost`] — the calibrated primitive costs behind [`cost`]
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! STABLE TIER (semver commitment): the measurement API — [`v3::cost`],
+//! [`v3::profile`], [`v3::assert_max_k`], the calibrated [`v3::rowcost`]
+//! tables, [`Profile`]/[`RegionCost`], and the `minocrab` gate-count CLI.
+//! INTERNAL TIER, gated behind the `unstable` cargo feature: the simulator
+//! VMs (`simulate`, `Run3`, the report machinery) — the correctness
+//! harness's engine, not a public contract.
 
 pub mod v3;
 
@@ -481,6 +490,7 @@ pub fn report(run: &Run, disclosures: &[Disclosure]) -> Report {
                 label: d.label.clone(),
                 kind: match d.kind {
                     minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
                     minocrab::DisclosureKind::Statement => "statement",
                     minocrab::DisclosureKind::Output => "output",
                 },

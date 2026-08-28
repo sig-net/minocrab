@@ -1,0 +1,172 @@
+#+title: M18 — ergonomic parity for the optimized vault: the design, checked
+
+dmd's question (2026-08-16): "what optimisations would make the opt version
+of the erc-20 vault as ergonomic as the non-opt version?" The milestone's
+premise correction stands measured: the opt lineage is ALREADY the
+ergonomic one (=erc20_vault_modern= is the shortest artifact and every M10
+optimisation is under it); what it costs is a PARALLEL VOCABULARY. This
+note classifies that vocabulary — the milestone's first-pass guesses (a)-(d)
+checked against the code rather than trusted — and states what unifies,
+what keeps two names, and what happens to the four-fork lockstep.
+
+* 1. The vocabulary, enumerated
+
+The complete parallel surface, from a sweep of the four artifacts:
+
+| opt-lineage spelling | port spelling | differs by |
+|---|---|---|
+| =mint_shielded_token_to_key_with(c, one, me, …)= | =mint_shielded_token_to_key(c, …)= | a threaded =kernel.self()= |
+| =notify_signet(c, one, me, …)= (×3 fork-local) | =notify_signet(c, one, …)= | same |
+| =record_and_notify(c, one, me, …)= (×3 fork-local) | (port's own, reads internally) | same |
+| =assert_deployer_short= | =assert_deployer= | WHICH commitment: packed vs padded tag |
+| =commitment_packed_tag= | =commitment_padded_tag= | same (already value-named) |
+| =burn_spend= | =burn_coin= | protocol shape: one claimed spend vs custody |
+| derived changeNonce, injective domain separator, Poseidon refund commitments | SHA forms | the SPEC |
+
+All ten =_with= call sites pass guard = =one= (checked): the guard
+parameter of the =_with= twin is vestigial.
+
+* 2. The classifications, checked
+
+** (a) The threaded =kernel.self()= — a PROFILE, confirmed
+
+The milestone's guess was memoization, and the check agrees: the =_with=
+family exists ONLY to carry one already-read address into shared helpers,
+and its soundness paragraph is M10 rung i's (read count is framing, not
+protocol — every emitted read still reconciles through =process_read=).
+This is the typed CSE ir-passes §3 assigns to a gadget.
+
+THE MECHANISM, chosen for having no mode flag at all: a CACHE THAT ONLY
+THE CALLER CAN POPULATE.
+
+- =Circuit3= gains a small typed extension map (=ext_insert::<T>= /
+  =ext_get::<T>=, =TypeId=-keyed) — gadget scratch state, deliberately a
+  LIBRARY feature: a third-party gadget crate (M24 point 1) has exactly
+  the same need and no fork to put a field in.
+- =kernel::cache_self_address(c)= reads =kernel.self()= once, stores the
+  address in the extension map, returns it.
+- =kernel::self_address(c)= consults the cache first and reads only on a
+  miss.
+
+The PORT never calls =cache_self_address=, so nothing populates the cache
+and every =self_address= call reads fresh — its streams cannot move. An
+opt-lineage circuit opens with =let me = kernel::cache_self_address(c);=
+exactly where its =let me = kernel::self_address(c);= sits today (the
+read position is unchanged), keeps =me= as an ordinary value where the
+value is used (event senders), and DROPS the threading: helper-internal
+=self_address= calls return the SAME wires the threading used to pass, so
+the streams are byte-identical — dump-gated, not argued.
+
+Guarded reads (=self_address_under=/=_guarded=) are different
+instructions and never consult the cache.
+
+PER-CIRCUIT OPT-IN, because byte-identity demands it: a circuit that
+today calls a helper with an INTERNAL read (=mint_shielded_token= in
+claim) must not cache — the cache would swallow that helper's read and
+move the stream. Rule: =cache_self_address= appears exactly in the
+circuits that thread =me= today; everything else keeps plain
+=self_address=. The dump gate enforces the rule circuit by circuit.
+
+** (b) =_short= — NOT instruction selection; a value difference, renamed
+
+The milestone's first pass called this "instruction selection from the
+type". The check says otherwise: =commitment_packed_tag= and
+=commitment_padded_tag= produce DIFFERENT DIGESTS (43-byte vs 64-byte
+preimage), the digest is the MPC's key-derivation path, and the two
+therefore belong to DIFFERENT DEPLOYMENTS (=common.rs= says so at the
+definitions, with the vault-vocabulary §0 incident as the reason the
+names are value-named). A builder cannot "pick the cheapest limbing"
+without silently restranding accounts — this is category (d), a spec
+decision per deployment, and two names is correct.
+
+What was still wrong is that ONE name in the family named the COST:
+=assert_deployer_short= says "cheaper", not "which value". Renamed
+=assert_deployer_packed=, completing the padded/packed vocabulary. Zero
+instructions.
+
+** (c) =burn_spend= vs =burn_coin= — two operations, docs already say so
+
+Confirmed as the milestone expected: different protocol shape (one
+claimed spend of the burn output vs receive-custody + nullifier +
+send), different well-formedness warrant
+(=tests/erc20_vault_opt_burn_wellformed.rs=). The doc comments on both
+already state the names are not a cost distinction and cross-reference
+each other. Two names stay; no rename needed — =burn_spend= says its
+shape, =burn_coin= says the stdlib operation it mirrors
+(=sendImmediateShielded='s folded custody burn).
+
+** (d) The spec rungs — not candidates, as stated
+
+Derived changeNonce, the injective domain separator, Poseidon refund
+commitments (and, since M11, the whole wire format) are decisions, not
+spellings. Nothing to do.
+
+* 3. THE PRIZE, answered honestly: the vocabulary unifies, the fork does not
+
+The forks cannot collapse, and the governing constraint decides it
+without appeal to taste:
+
+- =erc20_vault= (compat) is the differential warrant — untouchable.
+- port → opt diverges on (d)'s SPEC rungs; a spec divergence cannot be a
+  profile. opt stays a source.
+- opt → borsh diverges on the wire format (Borsh outputs, the kind-tagged
+  record, the settle hardening) — spec again. borsh stays a source.
+- borsh → modern is byte-identical by GATE — the one lexical-only fork —
+  and it exists to be the showcase; collapsing it deletes the README's
+  subject.
+
+What the milestone CAN price down is the lockstep's per-edit surface,
+and this design does: the =_with= twins are deleted (one shared
+=mint_shielded_token_to_key= for all four artifacts), the three
+fork-local =notify_signet= / =record_and_notify= lose their threading
+parameter, and the remaining lockstep is exactly the SPEC surface — the
+thing that SHOULD take four edits, because each fork's divergence ledger
+has to see it. Stated as the answer: the four-fork lockstep is not gone;
+it is now confined to edits that change what a circuit says, never to
+edits that change how a helper is called.
+
+* 4. Gates
+
+Zero movement, checked the strong way: zkir dumps byte-identical for all
+209 circuits before/after (the cache is designed to reproduce the
+threaded wires exactly; the port cannot be affected by construction),
+row/interface snapshots untouched, workspace suite green. The rename is
+dump-invisible. Any circuit where the cache conversion is NOT
+byte-identical keeps plain =self_address= and is listed here.
+
+* 5. As built — 2026-08-27
+
+Landed in one commit, gates green as §4 demanded: ZKIR dumps
+byte-identical for ALL 209 circuits before/after (verified, not
+argued), snapshots untouched, workspace suite green (94 suites — one
+new: =v3_kernel_cache=).
+
+WHAT LANDED:
+- =Circuit3::ext_insert= / =ext_get= — the typed gadget-scratch map
+  (=TypeId=-keyed, construction-only, nothing reaches =Compiled3=).
+- =kernel::cache_self_address= + the cache-consulting
+  =kernel::self_address=, with the rung-i soundness paragraph at the
+  definition and the port-cannot-be-affected argument (nothing else
+  populates the cache).
+- =mint_shielded_token_to_key_with= DELETED; one
+  =mint_shielded_token_to_key= for all four artifacts (all ten =_with=
+  call sites passed guard = =one=, so the vestigial guard parameter went
+  with it).
+- The three fork-local =notify_signet= / =record_and_notify= lost their
+  =me= threading parameter; the six circuits that thread today open with
+  =cache_self_address= (two of them as a bare statement where the value
+  itself was only ever threaded), everything else keeps plain
+  =self_address=.
+- =assert_deployer_short= → =assert_deployer_packed=, completing the
+  padded/packed value-naming.
+
+ONE BUG THE DUMP GATE CAUGHT, kept as the record of why the gate is not
+a formality: the first cut accidentally spelled =notify_signet='s
+internal read =cache_self_address= (a blanket rename hit a line the
+same edit had just inserted) — which always READS, so twelve circuits
+grew a second kernel.self read. The gate reported exactly those twelve;
+a three-line probe test pinned the cache as innocent; the fix restored
+byte-identity. The probe became =tests/v3_kernel_cache.rs=.
+
+THE PRIZE, as §3 predicted: the vocabulary unifies, the fork does not —
+and the lockstep is now confined to spec-changing edits.

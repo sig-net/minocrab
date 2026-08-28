@@ -666,11 +666,11 @@ type Shape = (&'static str, fn(&mut Circuit3, &Frame));
 /// framing, byte-plumbing and ledger-op regions are made of.
 fn generic_shapes() -> Vec<Shape> {
     vec![
-        ("constrain_bits(8)", |c, f| c.assert_bits(f.byte, 8)),
-        ("constrain_bits(20)", |c, f| c.assert_bits(f.wide, 20)),
-        ("constrain_bits(64)", |c, f| c.assert_bits(f.wide, 64)),
-        ("constrain_bits(128)", |c, f| c.assert_bits(f.wide, 128)),
-        ("constrain_bits(248)", |c, f| c.assert_bits(f.wide, 248)),
+        ("constrain_bits(8)", |c, f| { c.assert_bits(f.byte, 8); }),
+        ("constrain_bits(20)", |c, f| { c.assert_bits(f.wide, 20); }),
+        ("constrain_bits(64)", |c, f| { c.assert_bits(f.wide, 64); }),
+        ("constrain_bits(128)", |c, f| { c.assert_bits(f.wide, 128); }),
+        ("constrain_bits(248)", |c, f| { c.assert_bits(f.wide, 248); }),
         ("div_mod_power_of_two(248-bit, 8)", |c, f| {
             let _ = c.div_mod_power_of_two(f.wide, 8);
         }),

@@ -226,12 +226,14 @@ fn discloses_test(
     root: &TokenStream,
     owner: Option<&syn::Type>,
 ) -> Option<TokenStream> {
-    let ReturnType::Type(_, ty) = &sig.output else {
-        return None;
+    // No declaration is a STATEMENT, not an opt-out: a circuit whose return
+    // type is not `Discloses<..>` gets a test asserting it disclosed nothing,
+    // so a `c.disclose` in an undeclared circuit is a red test, never
+    // silence (the external review's §3.5).
+    let declared: Option<&syn::Type> = match &sig.output {
+        ReturnType::Type(_, ty) if is_discloses(ty) => Some(ty),
+        _ => None,
     };
-    if !is_discloses(ty) {
-        return None;
-    }
     let module = format_ident!("__{bare}_discloses", span = name.span());
     // The constructor's path from inside the generated module: an associated
     // function of the contract, or a free function beside it.
@@ -241,6 +243,14 @@ fn discloses_test(
     };
     let circuit = name.to_string();
     let circuit = circuit.strip_prefix("r#").unwrap_or(&circuit).to_string();
+    let assertion = match declared {
+        Some(ty) => quote! {
+            #root::__private::assert_declared_disclosures::<#ty>(#circuit, &#build());
+        },
+        None => quote! {
+            #root::__private::assert_discloses_nothing(#circuit, &#build());
+        },
+    };
     Some(quote! {
         #[cfg(test)]
         #[allow(non_snake_case)]
@@ -250,7 +260,7 @@ fn discloses_test(
 
             #[test]
             fn the_declared_disclosures_are_the_ones_the_circuit_makes() {
-                #root::__private::assert_declared_disclosures::<#ty>(#circuit, &#build());
+                #assertion
             }
         }
     })
@@ -645,11 +655,16 @@ mod tests {
     }
 
     #[test]
-    fn a_circuit_without_a_declaration_gets_no_test() {
+    fn a_circuit_without_a_declaration_gets_a_discloses_nothing_test() {
         let expanded = expansion(syn::parse_quote! {
             pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>) {}
         });
-        assert!(!expanded.contains("discloses"), "{expanded}");
+        assert!(expanded.contains("mod __deposit_discloses"), "{expanded}");
+        assert!(
+            expanded.contains("assert_discloses_nothing (\"deposit\" , & super :: deposit ())"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("assert_declared_disclosures"), "{expanded}");
 
         let expanded = expand(
             attr(quote!(output = "event hash")),
@@ -657,7 +672,7 @@ mod tests {
         )
         .expect("expands")
         .to_string();
-        assert!(!expanded.contains("discloses"), "{expanded}");
+        assert!(expanded.contains("assert_discloses_nothing (\"hash\""), "{expanded}");
     }
 
     #[test]

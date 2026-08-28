@@ -21,7 +21,7 @@ mkdir -p "$MINOCRAB_DUMP_PREIMAGES"
 
 cargo test --release -p minocrab-contracts \
   --test erc20_vault_differential --test signet_contract_differential \
-  --test erc20_vault_opt_fork \
+  --test erc20_vault_opt_fork --test erc20_vault_borsh_fork \
   -- --quiet
 
 cargo run --release -p minocrab-bench

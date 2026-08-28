@@ -1,0 +1,25 @@
+# The elevated property sweep (M20): the spec harness at a case count the
+# PR loop cannot afford. The gating standard for spec-anchored artifacts
+# remains PROPTEST_CASES=1000000, run manually (see VERIFICATION.md).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  elevated-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: >
+          PROPTEST_CASES=100000 nix develop -c cargo test --release
+          -p minocrab-contracts --test erc20_vault_spec
+          --test erc20_vault_adversarial
+      - run: >
+          PROPTEST_CASES=20000 nix develop -c cargo test --release
+          -p minocrab-contracts --test serialization_conformance

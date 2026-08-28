@@ -101,6 +101,11 @@ manager; static interfaces (dmd-approved).
    elements in the comm). The typing protects the developer and tx
    builder; the VERIFIER's protection is the ledger's (addr, ep, comm)
    match. State this in the README section.
+   SINCE review-fixes (2026-08-28): the ep half is OPT-IN bound —
+   =minocrab_ledger::bind_entry_points(c)= makes every typed =call= in
+   the circuit constrain the witnessed limbs to the declared circuit's
+   hash (two constrain_eq). Off by default for compactc parity;
+   =xcall::call_once_bound= pins it. Arg types stay unbound.
 2. Static interfaces; call_dynamic representable but deliberately not
    built.
 3. Callee upgrades: VK is versioned per (address, ep); same-signature

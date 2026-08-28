@@ -1,0 +1,5 @@
+name = "minocrab-std-proofs"
+defaultTargets = ["MinocrabStdProofs"]
+
+[[lean_lib]]
+name = "MinocrabStdProofs"

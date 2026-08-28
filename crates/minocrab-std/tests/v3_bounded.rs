@@ -85,7 +85,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_eq(x, 0u64);
         }),
-        ir_of(|c| BoundedUint::<1>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { BoundedUint::<1>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
     // `Uint<0..2>` is `Boolean`.
     assert_eq!(
@@ -93,7 +93,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_boolean(x);
         }),
-        ir_of(|c| BoundedUint::<2>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { BoundedUint::<2>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
     // A bound that IS a power of two is a BIT WIDTH, not a `less_than` —
     // so `BoundedUint<256>` and `Uint<8>` are the same instruction.
@@ -102,11 +102,11 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
             let x: Wire3<FieldT, Private> = c.arg("x");
             c.assert_bits(x, 8);
         }),
-        ir_of(|c| BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
     assert_eq!(
-        ir_of(|c| Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c)),
-        ir_of(|c| BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
+        ir_of(|c| { BoundedUint::<256>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
     );
     // Everything else is `less_than v BOUND bits` + `assert`, with
     // compactc's EVEN-ROUNDED width and the bound as an inline immediate.
@@ -118,10 +118,10 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
                 c.assert(ok);
             }),
             match bound {
-                10 => ir_of(|c| BoundedUint::<10>::from_field_unchecked(c.arg("x")).constrain_input(c)),
-                255 => ir_of(|c| BoundedUint::<255>::from_field_unchecked(c.arg("x")).constrain_input(c)),
-                300 => ir_of(|c| BoundedUint::<300>::from_field_unchecked(c.arg("x")).constrain_input(c)),
-                _ => ir_of(|c| BoundedUint::<1000>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+                10 => ir_of(|c| { BoundedUint::<10>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
+                255 => ir_of(|c| { BoundedUint::<255>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
+                300 => ir_of(|c| { BoundedUint::<300>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
+                _ => ir_of(|c| { BoundedUint::<1000>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
             },
             "Uint<0..{bound}>"
         );
@@ -135,7 +135,7 @@ fn each_bound_lowers_to_compactc_s_own_constraint() {
 fn the_derived_constraint_is_the_leafs_own() {
     fn both<const BOUND: u128>() {
         assert_eq!(
-            ir_of(|c| BoundedUint::<BOUND>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+            ir_of(|c| { BoundedUint::<BOUND>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
             ir_of(|c| {
                 let x = <BoundedUint<BOUND, Private> as CircuitArg>::declare(
                     c,
@@ -199,7 +199,7 @@ fn the_three_widths_are_three_numbers() {
         BoundedUint::<70_000, Private>::prims(),
         vec![Prim::UintMax { maxval: 69_999 }]
     );
-    assert!(ir_of(|c| BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c))
+    assert!(ir_of(|c| { BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c); })
         .contains("\"bits\":18"));
     // … while a COMPARISON of two of them runs at 17.
     assert!(ir_of(|c| {
@@ -305,7 +305,7 @@ fn borsh_serializes_at_the_next_primitive_width() {
     // `constrain_canonical` is `constrain_input` — no extra bound, unlike
     // `Tag<K>`. So a value that entered as an argument is already canonical.
     assert_eq!(
-        ir_of(|c| BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { BoundedUint::<70_000>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
         ir_of(|c| {
             let x = BoundedUint::<70_000, Private>::from_field_unchecked(c.arg("x"));
             <BoundedUint<70_000, Private> as CircuitBorsh<Private>>::constrain_canonical(&x, c);
@@ -452,7 +452,7 @@ fn narrow_emits_the_check_compactc_omits() {
     );
     // …and it is the SAME instruction `Uint<8>` constrains an argument with.
     assert_eq!(
-        ir_of(|c| Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c)),
+        ir_of(|c| { Uint::<8>::from_field_unchecked(c.arg("x")).constrain_input(c); }),
         ir_of(|c| {
             let _ = BoundedUint::<300>::from_field_unchecked(c.arg("x")).narrow::<8>(c);
         }),

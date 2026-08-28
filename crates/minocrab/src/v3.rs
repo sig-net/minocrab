@@ -16,10 +16,11 @@ use minocrab_ir::v3::{Arg, Builder3, IrSource, IrType, Val};
 pub use minocrab_ir::v3::{Alignment, Identifier};
 use minocrab_ir::Fr;
 
-use crate::{DisclosureKind, Meet, Private, Public, Region, Visibility};
+use crate::{DisclosureKind, Meet, OnChainGuard, Private, Public, Region, Visibility};
 
 mod abi;
 mod disclose;
+mod effects;
 
 pub use abi::{
     uint_atom_bytes, uint_compare_bits, CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint,
@@ -29,7 +30,7 @@ pub use abi::{
 /// Typed disclosure declarations — `label!` types, `.disclose_as::<L>(c)`,
 /// and the `Discloses<D, R>` a circuit returns (see the module docs).
 pub use disclose::{
-    assert_declared_disclosures, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
+    assert_declared_disclosures, assert_discloses_nothing, disclosed_labels, Declared, Disclose, DisclosureLabel, Discloses,
     LabelSet,
 };
 
@@ -430,6 +431,18 @@ impl<V: Visibility> Select<V> for Wire3<FieldT, V> {
     }
 }
 
+/// A PUBLIC condition choosing between PRIVATE values — the shape every
+/// `when_value` over private data has, now that a scope's condition must be
+/// [`OnChainGuard`]. The result is private (the values are); the selection
+/// itself is the same `cond_select`. The other mixed case — a private bit
+/// over public values — is deliberately absent: the selected value would
+/// reveal the bit, so it has no `Select<Private>` for a public `Self`.
+impl Select<Public> for Wire3<FieldT, Private> {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, Public>, taken: Self, fallback: Self) -> Self {
+        Wire3::new(c.b.cond_select(bit.val, taken.val, fallback.val))
+    }
+}
+
 /// An if / else-if / else chain that produces a VALUE — see
 /// [`Circuit3::when_value`].
 /// Unfinished, it produces nothing — so leaving off `otherwise` is a warning
@@ -492,6 +505,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # let mut c = Circuit3::new();
     /// # let g = c.arg::<FieldT>("g");
+    /// # let g = c.disclose(g, "g");
     /// # let x = c.arg::<FieldT>("x");
     /// c.when_value(g, |_c| x).otherwise(|_c| x);
     /// ```
@@ -501,6 +515,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # let mut c = Circuit3::new();
     /// # let g = c.arg::<FieldT>("g");
+    /// # let g = c.disclose(g, "g");
     /// # let x = c.arg::<FieldT>("x");
     /// let chosen = c.when_value(g, |_c| x).otherwise(|_c| x);
     /// c.assert(chosen.into_inner());
@@ -777,6 +792,8 @@ pub struct Circuit3 {
     /// already the conjunction of itself and everything below it, so the top
     /// is the effective guard and reading it costs nothing.
     guards: Vec<Val>,
+    /// Gadget scratch state — see [`Circuit3::ext_insert`].
+    ext: std::collections::BTreeMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
 /// A finished v3 circuit: the lowered ZKIR plus its disclosure record.
@@ -815,7 +832,32 @@ impl Circuit3 {
             queued_outputs: Vec::new(),
             assert_messages: Vec::new(),
             guards: Vec::new(),
+            ext: std::collections::BTreeMap::new(),
         }
+    }
+
+    // --- gadget scratch state ---------------------------------------------------
+
+    /// Store one value of type `T` on the circuit, replacing any previous
+    /// one — GADGET SCRATCH STATE, keyed by type.
+    ///
+    /// A gadget that wants per-circuit memoisation (the kernel.self cache
+    /// is the in-tree example; a third-party gadget crate has the same
+    /// need and no fork to put a field in) parks its state here under its
+    /// own private type, so two gadgets can never collide and nothing here
+    /// is nameable from outside the module that owns the type. This is
+    /// metadata for CONSTRUCTION only: nothing in the extension map
+    /// reaches the lowered [`Compiled3`].
+    pub fn ext_insert<T: std::any::Any>(&mut self, value: T) {
+        self.ext
+            .insert(std::any::TypeId::of::<T>(), Box::new(value));
+    }
+
+    /// The stored `T`, if [`Circuit3::ext_insert`] has run for it.
+    pub fn ext_get<T: std::any::Any>(&self) -> Option<&T> {
+        self.ext
+            .get(&std::any::TypeId::of::<T>())
+            .and_then(|b| b.downcast_ref())
     }
 
     // --- circuit arguments (witness data, like v2 args) -------------------------
@@ -841,7 +883,6 @@ impl Circuit3 {
 
     /// Read the next witness value from the private transcript.
     pub fn witness<T: IrTy>(&mut self) -> Wire3<T, Private> {
-        self.witnesses += 1;
         // THE AMBIENT GUARD REACHES WITNESSES, and it has to: a guarded
         // private input yields the default and does NOT consume the private
         // transcript when its guard is false, so a witness read unguarded
@@ -850,29 +891,34 @@ impl Circuit3 {
         // witness stream itself moves — and it is invisible to a differential
         // on an honest preimage, which is the failure mode guard scoping
         // exists to close (`Circuit3::guarded`'s third bullet).
-        let guard = self.ambient().map(Arg::Val);
-        Wire3::new(self.b.private_input(T::ir_type(), guard))
+        let guard = self.effect_guard(None);
+        Wire3::new(self.emit_private_input(T::ir_type(), guard))
     }
 
     /// Read the next witness value under a guard (false ⇒ default value,
     /// transcript not consumed).
+    ///
+    /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, like every
+    /// effect's does ([`Circuit3::effect_guard`]): inside a
+    /// [`Circuit3::when`], the witness is consumed only where BOTH hold.
+    /// Passed through verbatim, as it once was, a `_guarded` witness under
+    /// a scope consumed the private transcript on the path not taken
+    /// whenever its own guard was true — shifting every later witness, and
+    /// invisible to a differential on an honest preimage.
     pub fn witness_guarded<T: IrTy, V: Visibility>(
         &mut self,
         guard: Wire3<FieldT, V>,
     ) -> Wire3<T, Private> {
-        self.witnesses += 1;
-        Wire3::new(
-            self.b
-                .private_input(T::ir_type(), Some(Arg::Val(guard.val))),
-        )
+        let guard = self.effect_guard(Some(Arg::Val(guard.val)));
+        Wire3::new(self.emit_private_input(T::ir_type(), guard))
     }
 
     /// Read the next value from the public transcript (visible on-chain).
     pub fn public_transcript_input<T: IrTy>(&mut self) -> Wire3<T, Public> {
         // Picks up the ambient guard, so a read inside `guarded` needs no
         // `_guarded` variant at the call site.
-        let guard = self.ambient().map(Arg::Val);
-        Wire3::new(self.b.public_input(T::ir_type(), guard))
+        let guard = self.effect_guard(None);
+        Wire3::new(self.emit_public_input(T::ir_type(), guard))
     }
 
     /// Guarded public-transcript read.
@@ -880,7 +926,7 @@ impl Circuit3 {
     /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, exactly as an
     /// emitted op's does — without this, a `_guarded` read inside
     /// [`Circuit3::when`] would fire its gates on the raw condition while
-    /// its op embed (which goes through [`Circuit3::resolve_guard`]) stays
+    /// its op embed (which goes through [`Circuit3::effect_guard`]) stays
     /// correctly skipped, shifting every later read's public inputs by the
     /// orphaned gates. Found by the AA manager port: `sendUnshielded`'s
     /// auto-receive `kernel.self` read is guarded by `recipient.is_left`,
@@ -889,12 +935,12 @@ impl Circuit3 {
     /// call has `is_left` true while the arm is off. Straight-line callers
     /// are untouched — with no ambient guard the operand passes through
     /// unchanged.
-    pub fn public_transcript_input_guarded<T: IrTy, V: Visibility>(
+    pub fn public_transcript_input_guarded<T: IrTy, V: OnChainGuard>(
         &mut self,
         guard: Wire3<FieldT, V>,
     ) -> Wire3<T, Public> {
-        let guard = self.resolve_guard(Arg::Val(guard.val));
-        Wire3::new(self.b.public_input(T::ir_type(), Some(guard)))
+        let guard = self.effect_guard(Some(Arg::Val(guard.val)));
+        Wire3::new(self.emit_public_input(T::ir_type(), guard))
     }
 
     /// A native-field constant, NAMED: `Copy imm` into a reusable wire.
@@ -1223,38 +1269,51 @@ impl Circuit3 {
     /// check instead of printing an instruction index. ZKIR has nowhere to
     /// put it, which is why it lives beside the stream rather than in it.
     pub fn assert_with<V: Visibility>(&mut self, cond: Wire3<FieldT, V>, message: Option<&str>) {
-        if let Some(message) = message {
-            self.assert_messages.push(AssertMessage {
-                instruction: self.b.len(),
-                message: message.to_string(),
-            });
-        }
         // An assertion inside a guarded scope holds only where the guard
         // does: `assert(select(guard, cond, 1))`. See [`Circuit3::guarded`].
-        let cond = match self.ambient() {
-            Some(guard) => self.b.cond_select(guard, cond.val, Fr::from(1u64)),
-            None => cond.val,
-        };
-        self.b.assert(cond);
+        let guard = self.effect_guard(None);
+        self.emit_assert(cond.val, message, guard);
     }
 
     /// `constrain_eq a b` — either side may be an inline immediate, which is
     /// compactc's own `(constrain_eq ,var-name ,0)` shape: `c.assert_eq(w,
     /// 0u64)` names no constant and so emits no `Copy`.
+    ///
+    /// Inside a [`Circuit3::when`] it holds only where the guard does, like
+    /// every check: `constrain_eq` has no value to select on, so the scoped
+    /// form is `test_eq` + `assert(select(guard, eq, 1))` — compactc's own
+    /// lowering of `assert(a == b)` in a branch. Straight-line code emits
+    /// the direct instruction as before.
     pub fn assert_eq<T: EqAddTy, A: Visibility, B: Visibility>(
         &mut self,
         a: impl Into<Operand<T, A>>,
         b: impl Into<Operand<T, B>>,
     ) {
-        self.b.constrain_eq(a.into().arg(), b.into().arg());
+        let guard = self.effect_guard(None);
+        self.emit_constrain_eq(a.into().arg(), b.into().arg(), guard);
     }
 
-    pub fn assert_bits<V: Visibility>(&mut self, w: Wire3<FieldT, V>, bits: u32) {
-        self.b.constrain_bits(w.val, bits);
+    /// `constrain_bits w bits`. Inside a [`Circuit3::when`] the value checked
+    /// is `select(guard, w, 0)`, so the constraint holds trivially where the
+    /// guard is off — a range check on a value that is only meaningful in
+    /// the branch cannot brick the proof outside it.
+    ///
+    /// RETURNS THE WIRE IT CONSTRAINED: `w` in straight-line code, the
+    /// selected wire inside a scope. That selected wire is the branch's
+    /// value in compactc's semantics, and it is the one a checked
+    /// constructor must hand on — `w` itself is not covered by the check on
+    /// the path not taken. Statement-position callers (an entry constraint
+    /// on an argument or a guarded read, where the two coincide) may drop it.
+    pub fn assert_bits<V: Visibility>(&mut self, w: Wire3<FieldT, V>, bits: u32) -> Wire3<FieldT, V> {
+        let guard = self.effect_guard(None);
+        Wire3::new(self.emit_constrain_bits(w.val, bits, guard))
     }
 
-    pub fn assert_boolean<V: Visibility>(&mut self, w: Wire3<FieldT, V>) {
-        self.b.constrain_to_boolean(w.val);
+    /// `constrain_to_boolean w`; guarded, and returning the constrained wire,
+    /// exactly as [`Circuit3::assert_bits`].
+    pub fn assert_boolean<V: Visibility>(&mut self, w: Wire3<FieldT, V>) -> Wire3<FieldT, V> {
+        let guard = self.effect_guard(None);
+        Wire3::new(self.emit_constrain_boolean(w.val, guard))
     }
 
     // --- disclosure: the only Private → Public gate --------------------------------------
@@ -1271,19 +1330,51 @@ impl Circuit3 {
         out
     }
 
+    /// [`Circuit3::disclose`] under a LABEL TYPE — the record every
+    /// `Discloses<..>` declaration is checked against. The bare-string form
+    /// records [`DisclosureKind::DisclosedUntyped`], which no declaration
+    /// accepts (external review §4.5: a string that spells a declared label
+    /// must not pass for it); this one records [`DisclosureKind::Disclosed`].
+    pub fn disclose_as<L: DisclosureLabel, T: IrTy>(&mut self, w: Wire3<T, Private>) -> Wire3<T, Public> {
+        let [out] = self.disclose_all_as::<L, T, 1>([w]);
+        out
+    }
+
+    /// [`Circuit3::disclose_all`] under a label type — see
+    /// [`Circuit3::disclose_as`].
+    pub fn disclose_all_as<L: DisclosureLabel, T: IrTy, const N: usize>(
+        &mut self,
+        wires: [Wire3<T, Private>; N],
+    ) -> [Wire3<T, Public>; N] {
+        self.record_disclosure(L::LABEL, DisclosureKind::Disclosed, &wires);
+        wires.map(|w| Wire3::new(w.val))
+    }
+
+    /// [`Circuit3::disclose_slice`] under a label type — see
+    /// [`Circuit3::disclose_as`].
+    pub fn disclose_slice_as<L: DisclosureLabel, T: IrTy>(
+        &mut self,
+        wires: &[Wire3<T, Private>],
+    ) -> Vec<Wire3<T, Public>> {
+        self.record_disclosure(L::LABEL, DisclosureKind::Disclosed, wires);
+        wires.iter().map(|w| Wire3::new(w.val)).collect()
+    }
+
     /// Disclose the wires of ONE logical value under ONE label — a
     /// `Bytes<32>`'s `[hi, lo]` pair becomes a single record rather than a
     /// `"… (hi)"` / `"… (lo)"` pair (see [`Disclosure3`]).
     ///
-    /// The typed layer above (`minocrab_std::v3::Disclose`) is what call
-    /// sites use; this is the primitive it fans out through, and the only
-    /// place a `Disclosed` record is created.
+    /// The BARE-STRING form: its record is [`DisclosureKind::DisclosedUntyped`],
+    /// which satisfies no `Discloses<..>` declaration. Call sites that
+    /// declare use [`Circuit3::disclose_all_as`] (the typed layer,
+    /// `minocrab_std::v3::Disclose`, fans out through it); this one is for
+    /// hand-built circuits and tests that declare nothing.
     pub fn disclose_all<T: IrTy, const N: usize>(
         &mut self,
         label: &str,
         wires: [Wire3<T, Private>; N],
     ) -> [Wire3<T, Public>; N] {
-        self.record_disclosure(label, &wires);
+        self.record_disclosure(label, DisclosureKind::DisclosedUntyped, &wires);
         wires.map(|w| Wire3::new(w.val))
     }
 
@@ -1294,7 +1385,7 @@ impl Circuit3 {
         label: &str,
         wires: &[Wire3<T, Private>],
     ) -> Vec<Wire3<T, Public>> {
-        self.record_disclosure(label, wires);
+        self.record_disclosure(label, DisclosureKind::DisclosedUntyped, wires);
         wires.iter().map(|w| Wire3::new(w.val)).collect()
     }
 
@@ -1312,14 +1403,19 @@ impl Circuit3 {
     /// A value with no wires discloses nothing (a cross-contract call to a
     /// `[]`-returning circuit has an empty result list), and recording it
     /// anyway would put a label in the disclosed set that no value backs.
-    fn record_disclosure<T: IrTy>(&mut self, label: &str, wires: &[Wire3<T, Private>]) {
+    fn record_disclosure<T: IrTy>(
+        &mut self,
+        label: &str,
+        kind: DisclosureKind,
+        wires: &[Wire3<T, Private>],
+    ) {
         if wires.is_empty() {
             return;
         }
         let values = wires.iter().map(|&w| self.disclosed_wire(w.val)).collect();
         self.disclosures.push(Disclosure3 {
             label: label.to_string(),
-            kind: DisclosureKind::Disclosed,
+            kind,
             values,
         });
     }
@@ -1328,7 +1424,7 @@ impl Circuit3 {
 
     /// Declare a guarded block of native public inputs (one Impact
     /// instruction). The full ledger-op encoding layer sits above this.
-    pub fn impact<V: Visibility>(
+    pub fn impact<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
         inputs: &[Wire3<FieldT, Public>],
@@ -1348,7 +1444,7 @@ impl Circuit3 {
     /// straight-line circuit), so the immediate form is a deliberate
     /// departure — zero rows, one fewer instruction, and no longer
     /// byte-identical to compactc's stream.
-    pub fn impact_mixed<V: Visibility>(
+    pub fn impact_mixed<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
         elems: &[ImpactElem],
@@ -1368,8 +1464,8 @@ impl Circuit3 {
                 }
             })
             .collect();
-        let guard = self.resolve_guard(guard.into().arg());
-        self.b.impact(guard, &args);
+        let guard = self.effect_guard(Some(guard.into().arg()));
+        self.emit_impact(guard, &args);
     }
 
     /// Queue a wire as a circuit output (the single v3 Output terminator is
@@ -1410,11 +1506,16 @@ impl Circuit3 {
     /// 1. Impact instructions ([`Circuit3::impact_mixed`]).
     /// 2. Public-transcript reads ([`Circuit3::public_transcript_input`]),
     ///    which yield the type's default when the guard is off.
-    /// 3. **Assertions.** `assert(x)` inside a guarded scope lowers as
-    ///    `assert(select(guard, x, 1))` — it holds only where the guard does.
-    ///    Written by hand this is the caller's job and nothing checks it, so
-    ///    an assert placed inside a conditional fires unconditionally and no
-    ///    differential test on an honest preimage can see the mistake.
+    /// 3. **Checks — every one of them.** `assert(x)` inside a guarded scope
+    ///    lowers as `assert(select(guard, x, 1))`; `assert_bits` and
+    ///    `assert_boolean` check `select(guard, w, 0)`; `assert_eq` becomes
+    ///    `test_eq` + a guarded assert. Each holds only where the guard
+    ///    does. Written by hand this is the caller's job and nothing checks
+    ///    it, so a check placed inside a conditional fires unconditionally
+    ///    and no differential test on an honest preimage can see the
+    ///    mistake. There is no unguarded spelling: every effect resolves its
+    ///    guard through one private choke point (`v3/effects.rs`), and a
+    ///    test pins that nothing bypasses it.
     ///
     /// NESTING is Compact's `&&`: the inner scope's guard is `select(outer,
     /// inner, 0)`, computed ONCE on entry rather than per operation. So
@@ -1431,14 +1532,9 @@ impl Circuit3 {
         cond: Wire3<FieldT, V>,
         body: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let effective = match self.guards.last() {
-            // `outer && inner`, the `cond_select` lowering compactc uses.
-            Some(&outer) => self.b.cond_select(outer, cond.val, Fr::from(0u64)),
-            None => cond.val,
-        };
-        self.guards.push(effective);
+        self.push_guard(cond.val);
         let result = body(self);
-        self.guards.pop();
+        self.pop_guard();
         result
     }
 
@@ -1465,7 +1561,7 @@ impl Circuit3 {
     /// ran" is not a thing the stream can express — build it with
     /// [`Circuit3::cond_select`] on the arms' results instead, where the
     /// selection is visible.
-    pub fn when<V: Visibility>(
+    pub fn when<V: OnChainGuard>(
         &mut self,
         cond: impl GuardCond<V>,
         body: impl FnOnce(&mut Self),
@@ -1531,7 +1627,7 @@ impl Circuit3 {
     /// the others and you would rather pay for that work once,
     /// unconditionally — because the chain will pay for it regardless of
     /// which way the condition goes.
-    pub fn when_value<V: Visibility, T: Select<V>>(
+    pub fn when_value<V: OnChainGuard, T: Select<V>>(
         &mut self,
         cond: impl GuardCond<V>,
         body: impl FnOnce(&mut Self) -> T,
@@ -1543,31 +1639,6 @@ impl Circuit3 {
             last: cond,
             prior: None,
             chosen,
-        }
-    }
-
-    /// The effective ambient guard, if any.
-    fn ambient(&self) -> Option<Val> {
-        self.guards.last().copied()
-    }
-
-    /// Resolve an explicitly-passed guard operand against the ambient one.
-    ///
-    /// The straight-line immediate `1` YIELDS to the ambient guard, which is
-    /// what makes a plain method call inside [`Circuit3::guarded`] pick the
-    /// scope up. An explicit non-trivial guard inside a scope is conjoined
-    /// with it — correct, but it costs an instruction per call, so the plain
-    /// form is the one to use inside a scope.
-    fn resolve_guard(&mut self, guard: Arg) -> Arg {
-        match (self.ambient(), guard) {
-            (None, g) => g,
-            (Some(ambient), Arg::Imm(imm)) if imm == Fr::from(1u64) => Arg::Val(ambient),
-            (Some(ambient), Arg::Val(v)) => Arg::Val(self.b.cond_select(ambient, v, Fr::from(0u64))),
-            (Some(ambient), Arg::Imm(imm)) => {
-                // A guard that is a constant OTHER than 1 is either always-off
-                // or nonsense; `ambient && imm` is still the honest answer.
-                Arg::Val(self.b.cond_select(ambient, Arg::Imm(imm), Fr::from(0u64)))
-            }
         }
     }
 

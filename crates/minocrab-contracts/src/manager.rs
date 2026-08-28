@@ -42,6 +42,7 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Private, Public};
 use minocrab_std::v3::kernel;
+use minocrab_std::v3::kernel::SelfAddress;
 use minocrab_std::v3::{
     CoinColor, CoinNonce,
     circuit, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
@@ -185,12 +186,12 @@ fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3
 
 /// `right<ZswapCoinPublicKey, ContractAddress>(addr)` as the tag-and-arms
 /// shape the coin gadgets select over.
-fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
         left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
-        right: me,
+        right: me.address(),
     }
 }
 

@@ -4,10 +4,10 @@
 //! interpreter: `IrSource::preprocess` in `zkir-v3/src/ir_vm.rs` (rev
 //! 04c9c5d9, line 185), which upstream keeps `pub(crate)`. Unlike the v2
 //! simulator ([`crate::simulate`]), which *generates* the public transcript,
-//! v3's reference semantics *verify* a complete [`ProofPreimage`]: circuit
+//! v3's reference semantics *verify* a complete `ProofPreimage`: circuit
 //! arguments are decoded from `preimage.inputs` per the input schema, and
 //! `Impact` public inputs are checked against
-//! `preimage.public_transcript_inputs` as they accumulate. [`Run3`] surfaces
+//! `preimage.public_transcript_inputs` as they accumulate. `Run3` surfaces
 //! everything upstream's `Preprocessed` carries (memory, pis, pi_skips,
 //! binding input, communications commitment) plus the circuit outputs and
 //! the counters the v2 [`crate::Run`] tracks.
@@ -27,36 +27,64 @@
 //! cross-checks every run against upstream `IrSource::check`, which is
 //! `preprocess(..)?.pi_skips` verbatim (zkir-v3/src/ir.rs:75-81).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+#[cfg(feature = "unstable")]
+use std::collections::HashMap;
 
 pub mod rowcost;
 
+#[cfg(feature = "unstable")]
 use group::Group;
+#[cfg(feature = "unstable")]
 use midnight_base_crypto::repr::BinaryHashRepr;
+#[cfg(feature = "unstable")]
 use midnight_curves::{curve25519, k256, p256, Fr as JubjubFr, JubjubSubgroup};
+#[cfg(feature = "unstable")]
 use midnight_transient_crypto::curve::{Fr, FR_BITS, FR_BYTES_STORED};
+#[cfg(feature = "unstable")]
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
+#[cfg(feature = "unstable")]
 use midnight_transient_crypto::hash::{hash_to_curve, transient_commit, transient_hash};
-use midnight_transient_crypto::proofs::ProofPreimage;
+#[cfg(feature = "unstable")]
+use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::constrain_eq::constrain_eq_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::encode::{
     decode_offcircuit, encode_offcircuit, native_to_jubjub_scalar,
 };
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::eq::test_eq_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::from_coordinates::from_coordinates_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::neg::neg_offcircuit;
+#[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::select::select_offcircuit;
-use minocrab_zkir::v3::{Identifier, Instruction as I, IrSource, IrType, IrValue, Operand};
+use minocrab_zkir::v3::{Instruction as I, IrSource};
+
+#[cfg(feature = "unstable")]
+use minocrab_zkir::v3::{Identifier, IrType, IrValue, Operand};
+#[cfg(feature = "unstable")]
 use sha2::Sha256;
+#[cfg(feature = "unstable")]
 use sha3::{Digest, Keccak256};
 
+#[cfg(feature = "unstable")]
 #[derive(Debug, thiserror::Error)]
 pub enum Sim3Error {
     #[error("instruction {at} ({op}): {message}")]
@@ -76,6 +104,7 @@ pub enum Sim3Error {
     CommCommitment(String),
 }
 
+#[cfg(feature = "unstable")]
 fn fail(at: usize, op: &'static str, message: impl Into<String>) -> Sim3Error {
     Sim3Error::Failed {
         at,
@@ -84,6 +113,7 @@ fn fail(at: usize, op: &'static str, message: impl Into<String>) -> Sim3Error {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// The result of simulating one v3 circuit run — upstream's `Preprocessed`
 /// (ir_vm.rs:71-77) with `pis` kept as [`Fr`] instead of unwrapped
 /// `outer::Scalar`, plus outputs and run metrics.
@@ -152,6 +182,7 @@ pub fn op_name(ins: &I) -> &'static str {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Runtime type of a value — mirror of the `pub(crate)`
 /// `IrValue::get_type` (ir_types.rs:161-180).
 fn ir_type_of(value: &IrValue) -> IrType {
@@ -172,6 +203,7 @@ fn ir_type_of(value: &IrValue) -> IrType {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Default (zero/identity) value of a type, produced by guarded-off
 /// transcript reads — mirror of the `pub(crate)` `IrValue::default`
 /// (ir_types.rs:182-203).
@@ -195,6 +227,7 @@ fn default_ir_value(val_t: &IrType) -> IrValue {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// One circuit argument: `TypedIdentifier`'s fields are `pub(crate)`
 /// upstream, so recover them through its serde form (`{"name", "type"}`),
 /// the same trick `minocrab_ir::v3::typed_identifier` uses to build them.
@@ -205,6 +238,7 @@ struct InputSchema {
     val_t: IrType,
 }
 
+#[cfg(feature = "unstable")]
 fn input_schema(ir: &IrSource) -> Result<Vec<InputSchema>, Sim3Error> {
     ir.inputs
         .iter()
@@ -218,6 +252,7 @@ fn input_schema(ir: &IrSource) -> Result<Vec<InputSchema>, Sim3Error> {
 
 // --- operand resolution (ir_vm.rs:227-278) ---------------------------------------
 
+#[cfg(feature = "unstable")]
 fn get(
     memory: &HashMap<Identifier, IrValue>,
     id: &Identifier,
@@ -230,6 +265,7 @@ fn get(
         .ok_or_else(|| fail(at, op, format!("variable not found: {id:?}")))
 }
 
+#[cfg(feature = "unstable")]
 fn operand(
     memory: &HashMap<Identifier, IrValue>,
     o: &Operand,
@@ -242,6 +278,7 @@ fn operand(
     }
 }
 
+#[cfg(feature = "unstable")]
 fn operand_fr(
     memory: &HashMap<Identifier, IrValue>,
     o: &Operand,
@@ -253,6 +290,7 @@ fn operand_fr(
         .map_err(|e| fail(at, op, format!("{e}")))
 }
 
+#[cfg(feature = "unstable")]
 fn operand_bool(
     memory: &HashMap<Identifier, IrValue>,
     o: &Operand,
@@ -269,6 +307,7 @@ fn operand_bool(
     }
 }
 
+#[cfg(feature = "unstable")]
 fn bits_of(val: Fr) -> Vec<bool> {
     val.as_le_bytes()
         .into_iter()
@@ -280,6 +319,7 @@ fn bits_of(val: Fr) -> Vec<bool> {
         .collect()
 }
 
+#[cfg(feature = "unstable")]
 fn operand_bits(
     memory: &HashMap<Identifier, IrValue>,
     o: &Operand,
@@ -301,11 +341,13 @@ fn operand_bits(
     Ok(bits)
 }
 
+#[cfg(feature = "unstable")]
 fn from_bits(bits: impl DoubleEndedIterator<Item = bool>) -> Fr {
     bits.rev()
         .fold(Fr::from(0u64), |acc, bit| acc * Fr::from(2u64) + Fr::from(bit as u64))
 }
 
+#[cfg(feature = "unstable")]
 /// Read `width` raw elements from a transcript, or fail. Upstream slices
 /// unchecked (`&transcript[i..i + w]`, ir_vm.rs:359, 378) and therefore
 /// *panics* on exhaustion; this is the one place the port surfaces an error
@@ -323,6 +365,49 @@ fn take_raw<'t>(
         .ok_or_else(|| fail(at, op, format!("ran out of {what}")))
 }
 
+#[cfg(feature = "unstable")]
+/// THE DIFFERENTIAL COMPARATOR — call-compatibility of two artifacts on one
+/// preimage, the criterion every `*differential*` suite gates on
+/// (VERIFICATION.md §3(c), notes/ledger-abi.org §6):
+///
+/// 1. the typed interface — input types in order, and the outputs;
+/// 2. the PI stream — identical `pis` and `pi_skips` from this simulator on
+///    both artifacts;
+/// 3. upstream agreement — Midnight's own `IrSource::check` accepts both and
+///    reports the same `pi_skips` this simulator computed, so a simulator bug
+///    cannot hide behind the comparison it performs.
+///
+/// It lives here, once, because the external review (§3.8) found eleven
+/// copies of it across the test crates and one that had drifted weaker (the
+/// opt fork's dropped the schema check and `theirs.check`). One body is what
+/// a third-party pass will call to ship its own proof of preservation (M24
+/// point 3) — the harness as public API starts with this function.
+pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
+    let types = |ir: &IrSource| {
+        serde_json::to_value(&ir.inputs)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|ti| ti["type"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(types(ours), types(theirs), "input schemas differ");
+    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
+
+    let our_run = simulate(ours, pi).expect("our artifact accepts");
+    let their_run = simulate(theirs, pi).expect("the other artifact accepts");
+    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
+    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
+
+    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
+    assert_eq!(
+        theirs.check(pi).expect("upstream accepts theirs"),
+        their_run.pi_skips
+    );
+}
+
+#[cfg(feature = "unstable")]
 /// Simulate one run of `ir` against a complete proof preimage, mirroring
 /// `IrSource::preprocess` (ir_vm.rs:185-691) instruction for instruction.
 ///
@@ -856,6 +941,7 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
 
 // --- reporting -------------------------------------------------------------------
 
+#[cfg(feature = "unstable")]
 /// A resolved disclosure: what the circuit made public, by label and by the
 /// value it took in this run — the v3 twin of [`crate::DisclosedValue`].
 ///
@@ -870,6 +956,7 @@ pub struct DisclosedValue3 {
     pub values: Vec<String>,
 }
 
+#[cfg(feature = "unstable")]
 /// Structured simulation report: what ran, what it cost, what it disclosed
 /// — the v3 twin of [`crate::Report`].
 #[derive(Debug, Clone, serde::Serialize)]
@@ -885,6 +972,7 @@ pub struct Report3 {
     pub disclosures: Vec<DisclosedValue3>,
 }
 
+#[cfg(feature = "unstable")]
 fn value_display(value: &IrValue) -> String {
     match value {
         IrValue::Native(fr) => format!("{fr:?}"),
@@ -892,6 +980,7 @@ fn value_display(value: &IrValue) -> String {
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Build the structured report for a v3 run — the v3 twin of
 /// [`crate::report`].
 ///
@@ -913,6 +1002,7 @@ pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 
                 label: d.label.clone(),
                 kind: match d.kind {
                     minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
                     minocrab::DisclosureKind::Statement => "statement",
                     minocrab::DisclosureKind::Output => "output",
                 },
@@ -935,6 +1025,7 @@ pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 
     }
 }
 
+#[cfg(feature = "unstable")]
 /// Simulate a compiled v3 circuit and produce the structured report — the
 /// v3 twin of [`crate::simulate_compiled`].
 pub fn simulate_compiled(
@@ -946,6 +1037,7 @@ pub fn simulate_compiled(
     Ok((run, report))
 }
 
+#[cfg(feature = "unstable")]
 /// A failed `assert` that was written with a MESSAGE says what it meant.
 ///
 /// ZKIR has nowhere to put Compact's `assert(cond, "message")` second

@@ -242,14 +242,33 @@ NOTE: stage 7 was held by dmd pending discussion; implemented 2026-08-16
 and the hold LIFTED EXPLICITLY 2026-08-17 ("Lift the hold on M11 stage 7,
 I'm happy with it"). Nothing is deployed on either side. Two items remain
 open:
-- [ ] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
+- [X] Stage 7 HARDENING (queued by the 2026-08-17 code review, which
       found the docs claiming checks the circuits do not make — the
       docs now tell the truth): bind `record.kind == output.kind` and
       assert the record's version byte in each settle circuit — two
       wire equalities per circuit, its own gate (rows move, snapshots
       regen, elevated spec run), both twins in lockstep.
-- [ ] BENCHMARK.md refresh (the stage-7 tick's honest remainder): a
+      (DONE 2026-08-27 — assert_record_binds over new EventRecordV2
+      kind/version accessors, all four settle circuits, borsh+modern
+      byte-identical throughout. refund's bind is ROUTE-selected
+      (WITHDRAW/SWAP by the pending-marker bit) because its output kind
+      is FAILURE — the one circuit where record.kind and output.kind
+      legitimately differ, said so at the site. Movement: +6 rows
+      claim/completeWithdraw/completeSwap, +9 refund, no k moves;
+      taint baseline renumbered only (verified by normalized diff);
+      elevated spec 20k×9 green.)
+- [X] BENCHMARK.md refresh (the stage-7 tick's honest remainder): a
       fresh bench run now that swap crossed k16→k15.
+      (DONE 2026-08-27 — the benchmark gained a FOURTH side: borsh,
+      superseding stage 4's not-benched decision (which predated the
+      crossing). minocrab-bench Artifacts::Borsh + per-side preimages
+      dumped by the borsh fork gate; fresh single-session 42-cell run.
+      THE NUMBER: swap k15, prove 5.27s / 788MB — −40.5% / −46% vs opt,
+      −67% / −73% vs compactc — the crossing M10 stopped 51 rows short
+      of, paid for by the stage-7 kind-for-schemas record change. All
+      other borsh cells within noise of opt, as byte-identity predicts;
+      the hardened settle circuits are what is priced. BENCHMARK.md
+      rewritten as the four-artifact report.)
 
 * M12 — Interface crates: import a contract's crate to call it
 (dmd: NEAR-style — "import someone else's crate and use it for your
@@ -367,7 +386,7 @@ _with` where the port calls `..._to_key`, `commitment_short`,
 caller must know to reach for — the same shape as the `_under`/`_guarded`
 halves staging step 3 retires. So the milestone's real question is which
 suffixes can stop being lexical and become AMBIENT.
-- [ ] Design note first (the method every milestone since M14 has used):
+- [X] Design note first (the method every milestone since M14 has used):
       which of the opt vocabulary is a PROFILE and which is a genuinely
       different operation. First pass, to be checked rather than trusted:
       (a) `_with` (threaded `kernel.self()`) is MEMOIZATION, and its
@@ -386,7 +405,7 @@ suffixes can stop being lexical and become AMBIENT.
       (d) The M10 rungs that changed the SPEC (derived changeNonce,
       injective domain separator, Poseidon refund commitments) are not
       candidates at all — they are decisions, not spellings.
-- [ ] THE PRIZE, and the reason this is a milestone rather than a cleanup:
+- [X] THE PRIZE, and the reason this is a milestone rather than a cleanup:
       if the choice is a profile rather than a spelling, `erc20_vault_opt`
       stops needing to be a separate SOURCE. The recurring cost in this
       repo is not that opt reads worse — it is that FOUR FORKS are edited
@@ -415,6 +434,16 @@ Exit criteria: the opt artifact is written in the same vocabulary as the
 port, with every remaining twin justified by a protocol or spec difference
 rather than by cost — and the four-fork lockstep either gone or explicitly
 priced. Not one instrument weaker than it is today.
+MET 2026-08-27 — notes/ergonomic-parity.org. The classifications checked
+(and one corrected: the packed/padded commitments are a per-deployment
+VALUE choice, not instruction selection): the threaded kernel.self is the
+one true profile, landed as cache_self_address over a new Circuit3 gadget
+scratch map — the _with twins deleted, one mint vocabulary for all four
+artifacts, dump-gated byte-identical across all 209 circuits. Remaining
+twins are value/protocol differences and say so (assert_deployer_packed
+completes the naming). The fork does not collapse (spec divergences);
+the lockstep is priced: it is now confined to spec-changing edits. One
+instrument STRONGER: tests/v3_kernel_cache.rs.
 
 * M19 — API safety survey and the fixes it ranks (dmd, 2026-08-16)
 Survey: =notes/api-safety-survey.org=. THE METHOD, since it is reusable:
@@ -457,7 +486,7 @@ ledger entry when a circuit leaves its predecessor's coverage. If the new
 team edits like a normal repo, the instruments decay into noise and the
 correctness story dies quietly. Items chosen by dmd from the handoff
 survey (his picks: 1, 2, 3, 5, 7).
-- [ ] CONTRIBUTING.md — the working method written down, because the
+- [X] CONTRIBUTING.md — the working method written down, because the
       process is load-bearing. How to make a change (the loop above); what
       each instrument MEANS when it fires (point at version-bump.org's
       drift taxonomy, do not duplicate it); when a divergence-ledger entry
@@ -465,33 +494,47 @@ survey (his picks: 1, 2, 3, 5, 7).
       regenerate snapshots (between-markers, reviewable diff, never a
       paste); the api-safety-survey §0 method for the class tests cannot
       see; the escape-hatch greps as the code-review checklist.
-- [ ] CI — the gate ladder in GitHub Actions, nix-provisioned. On PR:
+- [X] CI — the gate ladder in GitHub Actions, nix-provisioned. On PR:
       workspace tests, --release row/interface snapshots, the zkir dump
       comparison against the base branch. Nightly: elevated
       PROPTEST_CASES. Weekly: corpus determinism (compile.sh, zero of 788
       artifacts moved). The point for a team that does not yet trust the
       codebase: instruments that run on their PRs without being asked.
-- [ ] ONBOARDING.md — the day-one reading path (README → VERIFICATION.md →
+- [X] ONBOARDING.md — the day-one reading path (README → VERIFICATION.md →
       ledger-abi.org §6 → architecture.org, then review-queue.org for
       what has had human eyes), a map of the notes/ files with one line
       each of "read this when …", and a GLOSSARY for the first hour's
       jargon: PI-equality, FAB, the four vault artifacts and why four
       forks in lockstep is a feature, zero movement, the fold, k/rows,
       Impact, the M-numbering. Assembly, not writing.
-- [ ] Issue-ize the known debt — everything deferred lives in notes prose
+- [X] Issue-ize the known debt — everything deferred lives in notes prose
       where their boards cannot see it: the `_with` caching profile (M18's
       loose end), Q5's map value-typing (51 rows), the 27 guarded sites,
       e2e-on-a-network and the reference client (the expert-audience
       roadmap), M19's open fixes, the review-queue items. One issue each,
       linking back to the note section that holds the reasoning — the
       issue is a pointer, the note stays the record.
-- [ ] Publish rustdoc now — cargo doc to GitHub Pages from CI, not gated
+- [X] Publish rustdoc now — cargo doc to GitHub Pages from CI, not gated
       on crates.io (which waits on upstream publishing the ledger-9.1
       line; see PUBLISHING.md). The API docs are good; they are locked
       behind a local build.
 Exit criteria: a new engineer reaches their first gated, explained,
 reviewable change without asking anyone anything — and their PR runs the
 instruments without them knowing the instruments exist.
+LANDED 2026-08-27, with one honest caveat: CONTRIBUTING.md (the loop,
+the taxonomy pointers, the ledger rule, the survey method, the greps),
+ONBOARDING.md (the day-one path, all 32 notes mapped, the glossary),
+four workflows (.github/workflows/: ci — workspace + release snapshots
++ the base-branch zkir-dump comparison that fails exactly on the
+hidden-movement class; nightly elevated PROPTEST; weekly corpus
+determinism; docs → Pages, ENABLED at sig-net.github.io/minocrab,
+workflow build type, via gh api), the flake made cross-platform for
+linux runners (compactc hashes + target mapping for all four systems),
+and the known debt filed as issues #1–#9, each a pointer to the note
+that holds the reasoning (the M18 _with item was NOT filed — it closed
+today; Q5 filed with its superseded-for-borsh framing). THE CAVEAT: the
+workflows have not yet RUN — they run on the next push to GitHub, and
+their first green is the exit criterion's real test.
 
 * M21 — crates.io readiness (dmd, 2026-08-17: "ready to be deployed")
 - [X] Everything on our side prepared so publish day is a `cargo publish`
@@ -610,18 +653,32 @@ stage declares movement, notes as-built.
       shifts where the chip's absorption check is what enforces the
       slot. AWAITING dmd's ruling on the extension options ranked in
       the note; unticked for that reason only.)
-- [ ] R4 — KANI on the passes (dmd approved, conditional on not
+- [X] R4 — KANI on the passes (dmd approved, conditional on not
       bloating test times — satisfied by construction: #[cfg(kani)]
-      harnesses that plain cargo test never compiles, run as an opt-in
-      instrument `cargo kani -p minocrab-ir`, a separate job when CI
-      exists). Targets: fold_immediate_copies (folded streams
-      semantics-preserving: no dropped non-copy instruction, every
-      substituted operand equals the copy's immediate, output/disclosure
-      names preserved), dedup_range_constraints (only implied
-      constraints dropped; tightest bound kept), and R3's taint pass
-      itself. Bounds stated per property; MEASURED RUNTIMES in the
-      report; a property that cannot close at a useful bound is scoped
-      down honestly, never ground.
+      harnesses that plain cargo test never compiles, run as the opt-in
+      `./kani.sh`, a separate job when CI exists). Targets:
+      fold_immediate_copies, dedup_range_constraints, and R3's taint
+      pass. Bounds stated per property; measured runtimes; a property
+      that cannot close at a useful bound is scoped down honestly.
+      (DONE 2026-08-27 — notes/formal-verification-options.org §"As
+      built — M23 R4". CLOSED: the taint lint's exact interval
+      arithmetic, ten proofs at stated bounds (0.24s..522s — the 16-bit
+      multiplier dominates; sum/shift/bits/order against exact u128 and
+      closed-form oracles, cross-limb carries at full width). DOES NOT
+      CLOSE, recorded with the mechanism named: the two stream-level
+      pass properties — CBMC must unwind Vec<Instruction> drop glue,
+      which statically reaches the RECURSIVE Alignment type, and a fully
+      CONCRETE two-instruction harness exceeds 25 min — so they are
+      retained as bounded SPECIMENS whose unbounded discharge is M25's
+      ZKIR-pass prong. Byproduct kept: the passes' internal maps are now
+      an insertion-ordered AssocMap (RandomState-seeded HashMap is
+      opaque to any model checker; BTreeMap defeats symex), the statable
+      shape Lean wants too; workspace green, taint baseline unchanged.
+      Provisioning per dmd: rustup FROM NIX (flake devshell, ordered
+      behind the pinned toolchain) + a gcc→clang alias for CBMC; kani
+      via its supported rustup path; two temporary shims for kani-0.67's
+      pre-1.95 nightly vs sysinfo 0.39, documented in kani.sh, both dead
+      when kani's nightly catches up.)
 - [ ] NOTED, NOT YET (dmd): cargo-semver-checks on the interface crates
       in CI — waits for CI (M20 item 2).
 Exit criteria: R1-R4 landed with their gates; the taint lint green over
@@ -630,6 +687,11 @@ proved at stated bounds with runtimes recorded; then the M11 hardening
 stage and BENCHMARK refresh clear the last known-open items and the
 super review runs against a tree with no known-open defects and no
 stale published claims.
+STATUS 2026-08-27: the queue is CLEAR — R1/R2/R4 ticked, the M11
+hardening and BENCHMARK refresh landed. What remains is dmd's: the R3
+ruling (notes/taint-lint.org ranks the options; the lint is live with
+its frozen baseline meanwhile) and launching the super review
+(/code-review ultra).
 
 * M24 — MinoCrab as a library: the GHC-API model (dmd, 2026-08-27)
 The identity shift, dmd's: "this is primarily a library like the GHC API"
@@ -704,7 +766,7 @@ DECISIONS OF RECORD (dmd, 2026-08-27):
       Say so in the public docs. Build order, least-work-first: CLI seed →
       =Pass= trait → tier boundary → gadget cookbook + rustdoc.
 The four extension points (à la carte, no fork):
-- [ ] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
+- [X] 1. GADGET / CIRCUIT LIBRARIES (the highest ceiling, Layer 1): a
       third party publishes a crate depending on minocrab/minocrab-std
       with a hand-tuned keccak, a cheaper Merkle path, a smaller ABI
       encoder. Works TODAY over a git dependency; what this milestone owes
@@ -717,10 +779,11 @@ The four extension points (à la carte, no fork):
       (COOKBOOK LANDED 2026-08-27, step 4 first half: OPTIMIZATION.md at
       the repo root — the ten levers de-jargoned for external gadget
       authors, each grounded in a real API + the measured note behind it,
-      linked from the README library section. REMAINING for point 1: the
-      stable authoring-surface decision itself, which is the step-3 tier
-      boundary.)
-- [ ] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
+      linked from the README library section.
+      CLOSED 2026-08-27 with tier boundary v1: the stable authoring
+      surface is decided and documented — the README's Stability-tiers
+      table + a tier statement opening every crate's docs.)
+- [X] 2. IR PASSES (Layer 2, "compiler rules à la carte"): promote the
       pass layer from today's free-functions + `dedup_range_constraints`
       builder flag to a stable `Pass` trait (`IR -> IR` + a report) with
       ordinary-Rust composition (a `Vec<Box<dyn Pass>>` or a builder — NO
@@ -739,14 +802,19 @@ The four extension points (à la carte, no fork):
       names=. Report OPTIONAL to consume; a VALID dedup still trips the
       drop-warning, as dmd anticipated. Exposed by default (stable-ish);
       the =unstable= internals sweep is step 3, not this. Tests green.)
-- [ ] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
+- [X] 3. VERIFICATION HOOKS: the differential / spec / taint harness as
       public API, so a third-party pass can ship WITH its own proof it
       preserved meaning. NOT built now (soundness is deferred), but the
       extension surface in points 1-2 must not PRECLUDE it — this is the
       "build with it in mind" clause made concrete, and it converges with
       M23 R3 (taint lint) and R4 (Kani on the passes), which this
       milestone pulls forward.
-- [ ] 4. COST / MEASUREMENT: `cost()` / `profile()` / the calibrated
+      (SATISFIED BY DESIGN 2026-08-27: R3 and R4 are landed, the taint
+      lint IS stable public API (minocrab_ir::v3::taint), passes stayed
+      pure/total throughout (the AssocMap refactor made them MORE
+      statable), and nothing in the tier boundary precludes exposing the
+      differential/spec harness later — the deferred-build clause holds.)
+- [X] 4. COST / MEASUREMENT: `cost()` / `profile()` / the calibrated
       primitive-cost tables as stable API, plus the release-only nix flake
       CLI over `.zkir` (measure, region-profile, diff two circuits, run a
       published pass) per the decisions above.
@@ -755,17 +823,36 @@ The four extension points (à la carte, no fork):
       own crate) — `rows <file.zkir>...` (k, rows, instr, in/out + total)
       and `diff <a> <b>` (row/k delta). Compiler-agnostic (reads compactc's
       ZKIR). Region-profile deliberately NOT over `.zkir` — it needs the
-      annotated Compiled3, so it stays the Rust `profile()` path. Flake
-      packaging deferred to CI/release. REMAINING: mark cost/profile as
-      stable API when the tier boundary lands, the flake app, and a
-      `pass <name>` subcommand — now unblocked (the `Pass` trait exists),
-      pending minocrab-ir promoted to a regular dep of minocrab-sim.)
-- [ ] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
+      annotated Compiled3, so it stays the Rust `profile()` path.
+      CLOSED 2026-08-27: cost/profile/assert_max_k/rowcost are the stable
+      measurement tier (tier boundary v1); `pass <name> <file.zkir>
+      [-o out]` landed (minocrab-ir a regular dep of minocrab-sim; runs a
+      published pass over any ZKIR — compactc's included — reporting the
+      instruction/k/row delta and the pass's warnings, writing only with
+      -o). The FLAKE APP is SKIPPED BY DECISION, per dmd's pre-authorised
+      branch: nixpkgs' importCargoLock cannot vendor a workspace whose two
+      pinned midnight-ledger git revs export identical crate
+      name-versions — recorded in flake.nix at the spot; the CLI stays a
+      plain cargo binary.)
+- [X] TIER BOUNDARY + DOCS, the foundation for all four: draw the stable
       vs internals line (a proposed MINIMAL stable set: the eDSL surface,
       the `Pass` trait, the cost API — everything else internal, dmd to
       confirm in/out), and publish rustdoc — for a compiler-as-a-library
       the DOCS ARE THE PRODUCT, so M20's "publish rustdoc" item becomes
       central here rather than a handoff chore.
+      (LANDED 2026-08-27 as TIER BOUNDARY v1 — notes/library-api.org
+      §"As built: the tier boundary". The proposed minimal set is
+      IMPLEMENTED: an `unstable` cargo feature gates the named internals
+      (minocrab-ir's Builder3/Val layers, minocrab-sim's simulator VMs),
+      every crate's docs open with its tier statement, and the README
+      carries the Stability-tiers table. The honest mechanics are
+      recorded: cargo feature-unification makes the gate a hard wall
+      exactly for the à-la-carte pass/lint-crate graph (minocrab-ir
+      alone) and a docs/semver declaration elsewhere. The std
+      contract-authoring surface (ledger/kernel/borsh/disclosure) is
+      explicitly NOT yet promised — the in/out call that remains dmd's.
+      `cargo doc --no-deps` builds warning-free on the stable tier;
+      PUBLISHING rustdoc to Pages stays with M20's CI item.)
 Exit criteria: a third party can, from a git dependency and the published
 rustdoc, write both a ZKIR gadget crate and an optimisation-pass crate
 against a small stable API — without forking, and without touching the
@@ -848,26 +935,77 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
   Lean proof, and a type-system invariant that makes only proven-safe
   usage spellable (the maximal usable subset, per THE FIT above).
 
-- [ ] Design note first (the house method), extending
+- [X] Design note first (the house method), extending
       notes/formal-verification-options.org: the construct inventory (the
       step-1 map), which constructs have checked Agda proofs (step 2), and
       for each the target Lean module AND the Rust type invariant it
       becomes (step 3). State the §9 bridge bar and confirm it is cleared
       before any Lean lands.
-- [ ] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
+      (DONE 2026-08-27 — notes/lean-port.org. The eight-row inventory
+      (rows 1-3 the portable Agda: numeric hierarchy, Castable,
+      visibility; rows 4-6 the named OTHER APPROACHES; rows 7-8 the new
+      Lean), each FIT-annotated EXACT/SUBSET. PATH DECIDED: model-first
+      (one of the survey's two Aeneas blockers fell to R4's AssocMap;
+      the map_operands twin is the prepared upgrade), with the model gap
+      stated in every Lean file's header. THE BAR, restated for the
+      model path — a nix-provisioned toolchain and one real theorem,
+      lake-green — is CLEARED: lean/ at the repo root (lean4 from
+      nixpkgs in the devshell, no elan), with the dedup model and FOUR
+      sorry-free theorems: sublist, passthrough-verbatim, per-wire
+      tightest-bound (hence solution-set) preservation, idempotence —
+      the R4 stream specimens' dedup half discharged UNBOUNDED. A lean
+      job added to CI.)
+- [X] Run the loop over the HIGHER-LEVEL (static/typing) constructs:
       Agda proof → Lean (holes closed where the LLM-writability axis
       allows) → the Rust type-system invariant that constrains the feature
       to (a maximal usable subset of) what the proof allows, per THE FIT.
       The type invariant is the milestone's user-facing product; the Lean
       is its warrant. Record per construct whether the types match the
       proof's set exactly or admit a strict subset, and why.
-- [ ] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
+      (DONE 2026-08-27 — notes/lean-port.org §3 "CORRECTED BY THE PORT"
+      + §5. THE STEP-2 CORRECTION, found by reading the Agda at the
+      pinned rev: rows 1-3 have NOTHING to port — the bound computation
+      is =⊢undeclared= stubs, subtyping is a refl/trans stub with a
+      postulate, disclose types through with no visibility judgment
+      (bycatch: their =⊢>== smart constructor is a copy-paste of
+      =⊢expr-<==). So the warrants are NEW Lean stating compactc's real
+      rules: a second lake package =crates/minocrab-std/lean/=
+      (MinocrabStdProofs), 23 sorry-free theorems green under Lean 4.30
+      and 4.33 — Numeric.lean (add/mul bound asserts sound AND minimal,
+      the sub guard makes field-sub integer-sub with the underflow shape
+      as the counter-theorem, the guard's comparison width, the free
+      retypes) and Visibility.lean (Meet's table is a lattice meet; an
+      expression types Public IFF every private leaf is under a
+      disclose — both directions). Reflection: the type invariants
+      already existed (the const asserts, Meet, Public-only CircuitOut);
+      tests/lean_claims.rs embeds both proofs via lean_proof! as the
+      drift gate; lean/ ships in the crate; CI's lean job builds both
+      packages. FIT recorded per construct in §5: BoundedUint add/mul
+      EXACT (the _minimal theorems discharge maximality), widen/to_uint
+      EXACT, Uint-family SUBSET by design, visibility SUBSET in the
+      strong direction.)
+- [X] The ZKIR-PASS prong (new Lean, no Agda to map): the =Pass= trait's
       preserve-meaning proof (PI/witness stream unchanged, only implied
       range constraints dropped — M23 R4 Kani bounds it first, Lean
       discharges it unbounded), reflected as the type-level pass CONTRACT
       (M24 §3) so a third-party pass that violates it does not type-check
       as far as the type system can reach.
-- [ ] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
+      (DONE 2026-08-27, in three landings — notes/lean-port.org §5:
+      dedup's four sorry-free theorems; fold's SYNTACTIC half
+      (=fold_outputs=/=fold_skeleton=/=foldRun_is_filter_map=); and
+      fold's SEMANTIC half — =fold_preserves_observables=, sorry-free,
+      under a =WellFormed= that is exactly Builder3's SSA guarantee
+      (Nodup dsts + defs-before-uses), via a shared =envStep= so the
+      observer and =namedOf= agree by construction. The R4 stream
+      specimens are both discharged UNBOUNDED. The REFLECTION landed as
+      designed: =ProofRef= + =lean_proof!= (proof file EMBEDDED at
+      compile time — a deleted proof is a build error), =VerifiedPass=,
+      =run_pipeline_verified= with theorem-drift surfaced as report
+      warnings and a builtin-claims test. The lake project MOVED to
+      crates/minocrab-ir/lean/ so the proofs ship inside the crate the
+      macro embeds them from (Cargo.toml include; CI + flake updated).
+      Checked green under both Lean 4.30 (CI devshell) and 4.33.)
+- [X] THE LIMITATIONS DISCUSSION (dmd, 2026-08-27): an honest writeup of
       what the Compact repo's spec actually covers and does NOT — static/
       typing only, an unchecked operational SKETCH, nothing on ZKIR,
       =--allow-unsolved-metas= — so PARITY is measured against their real
@@ -876,6 +1014,14 @@ the payoff lands in the TYPE SYSTEM rather than in a Lean file in a drawer:
       APPROACH taken (a property test, a Kani harness, or a type invariant
       argued directly from the protocol) so the feature is still
       constrained, just not by a ported proof.
+      (DONE 2026-08-27 — notes/lean-port.org §6 is the full account
+      (what their spec is, what parity therefore means, what our Lean is
+      NOT); VERIFICATION.md §5's first bullet rewritten from "no
+      machine-checked semantics" to the honest two-sided statement; the
+      README fairness bullet rewritten likewise, and the README pass-
+      authoring section's "planned (Kani, then Lean)" updated to the
+      landed VerifiedPass reality. The other approaches are named per
+      construct in the §3 table rows 4-6.)
 THE AIM (dmd, 2026-08-27): PARITY, not exhaustiveness. The Agda is thin;
 "as many as possible" means match their formal coverage where it is real
 and portable, reach for the other approaches where it is not, and say so.
@@ -889,3 +1035,51 @@ surface has a machine-checked "preserves meaning" proof reflected in its
 type-level contract. Explicitly OUT: transcribing the unchecked
 operational sketch (porting a =  {!!}= proves nothing) and any Lean the
 §9 bridge does not yet support.
+MET 2026-08-27, with the parity bar RESTATED by what the port found:
+what the Compact spec ACTUALLY proves is well-formedness plumbing and
+constructor coverage (its bound computation, subtyping and visibility
+content are stubs/postulates/transparent — notes/lean-port.org §3
+correction + §6) — that coverage is matched (exhaustive-match
+instruments, the typed I/O artifact-agreement tests) and then exceeded:
+23 sorry-free theorems in MinocrabStdProofs warrant the numeric asserts
+(sound AND minimal) and the disclose gate (sound AND complete over the
+model), 11 in MinocrabProofs warrant the pass layer, reflected as
+VerifiedPass + the lean_claims drift gates. The honest boundary stands
+in every file header: model proofs, transcription-matches-Rust by
+review + instruments, no extraction. Row 8's unbounded interval twins
+deliberately left at Kani (§5, the recorded decision). No proof was
+PORTED — the milestone's premise dissolved on contact with the real
+Agda, and the loop's deliverable (proof + type invariant per construct)
+landed anyway, which is the outcome the FIT rule was written for.
+
+* M26 — External-review follow-ups not taken on the review-fixes branch (dmd, 2026-08-28)
+The review-fixes branch (notes/external-review-triage.org, one commit per
+finding) closed the external review's correctness items. What it
+deliberately left, with the reasoning, so it is a milestone and not a
+note in a drawer:
+- [ ] =when_private= — a private-condition scope for bodies with NO
+      on-chain effect (assert / witness only). Compact allows
+      =if (privateBit) { assert(...) }= without =disclose=; since §4.1's
+      =OnChainGuard= bound, MinoCrab does not — a private condition must
+      be disclosed to branch on at all. Zero uses in the workspace today,
+      which is why it was not built; it is a PARITY gap, not a safety one.
+      The shape when needed: =when_private(cond, body)= accepting any
+      visibility, pushing a private-scope marker; the on-chain emitters
+      (=emit_impact=, =emit_public_input= in =v3/effects.rs=) fail at
+      build time inside it with the disclose-first message (the ladder's
+      last rung, because the scope stack is dynamic and the type system
+      cannot reach it without a type-state =Circuit3=, which ripples
+      through every =&mut Circuit3= helper). Gate: the guard-scope suite's
+      byte-identity idiom plus a =compile_fail= that an =impact= inside
+      =when_private= is rejected.
+- [ ] The authoring path the review's §5 found missing: a typed
+      contract-testing harness in minocrab-sim (distil the vault's
+      6,611-line private support), a from-scratch template/tutorial, and
+      the keygen/deploy binding. Explicitly deferred by dmd (2026-08-28):
+      not before the super review.
+- [ ] =minocrab-ledger/src/lib.rs= at 3,700 lines — a split by concern
+      (Impact encoding / ledger ops / calls). Cosmetic; zero-movement by
+      construction (the dump gate).
+Exit criteria: =when_private= lands with its gates or is refused in writing
+with a measured reason; the authoring-path items are scheduled into their
+own milestone after the super review.

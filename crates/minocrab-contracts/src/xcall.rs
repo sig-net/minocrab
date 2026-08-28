@@ -153,6 +153,24 @@ fn call_n_times(n: usize) -> Compiled3 {
     })
 }
 
+/// `callOnce` in the HARDENED mode: the same circuit with
+/// `bind_entry_points`, so the proof itself says the callee circuit is
+/// `deposit` — two `constrain_eq` on the entry-point limbs. Not a corpus
+/// port (compactc witnesses the entry point); it exists to pin that the
+/// mode closes the interchangeability `callOnce`/`callEmit` demonstrate
+/// (external review §4.5, `xcall_differential`).
+pub fn call_once_bound() -> Compiled3 {
+    entry(|c, args: DepositArgs| -> CallDisclosures {
+        minocrab_ledger::bind_entry_points(c);
+        let (r, a) = disclose_args(c, args);
+        let one = c.constant(1u64);
+
+        emit(c, one, &counter_increment(CALL_COUNT, 1));
+        TARGET_CONTRACT.deposit(c, one, r, Uint::from_field_unchecked(a));
+        Discloses::of(())
+    })
+}
+
 /// The set-equality test `#[circuit]` would have generated for this family,
 /// hand-written per instantiation — see [`crate::events`]'s twin for the
 /// reasoning.
@@ -163,6 +181,7 @@ mod call_n_times_discloses {
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {
+        assert_declared_disclosures::<CallDisclosures>("call_once_bound", &call_once_bound());
         for n in [1, 2] {
             assert_declared_disclosures::<CallDisclosures>(
                 &format!("call_n_times({n})"),

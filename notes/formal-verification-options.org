@@ -836,3 +836,109 @@ not-wrong side. See notes/contract-api.org §"As built — M23 R1" (e).
 - *And it does not cover the macros' generated code*, the ledger ABI
   agreement, or anything about the proving system — the same gaps
   =api-safety-survey.org= §4 lists.
+
+* As built — M23 R4: Kani on the passes (2026-08-27)
+
+The staging's second rung, landed. The instrument is =./kani.sh= at the
+repo root (opt-in, never the routine loop — plain =cargo test= compiles
+none of the =#[cfg(kani)]= modules), whose header carries the per-machine
+setup and the two TEMPORARY shims kani 0.67 needs on this workspace.
+
+** Provisioning (dmd's ruling, this session)
+
+Kani is not in nixpkgs and its bundle is pinned byte-for-byte to one
+rustc nightly, so the supported path is rustup: the flake now provides
+=pkgs.rustup= (LAST in the devshell package list, so its proxy shims sit
+behind the pinned rust-overlay toolchain on PATH — verified: =cargo=
+still resolves to the nix rust) plus a =gcc=→clang alias for CBMC's
+preprocessor (this machine's =/usr/bin/gcc= is an xcrun shim with no CLT
+behind it). The curl-installed rustup was removed from =~/.cargo/bin=;
+=~/.rustup= holds only kani's nightly, as rustup's cache. A fully
+nix-provisioned kani (release-tarball fetch + rust-overlay nightly +
+=cargo kani setup --use-local-bundle --use-local-toolchain=) is possible
+and was declined as disproportionate for now.
+
+** The two shims, and when they die
+
+Kani 0.67 pins nightly-2025-11-21 (rustc 1.93); the workspace's
+transitive dep =sysinfo 0.39= (via midnight-storage, non-optional)
+declares =rust-version = 1.95= and uses =cfg_select=, stabilized after
+1.93. Both shims die the day kani's nightly reaches 1.95:
+1. =kani.sh= doubles as a =RUSTC_WRAPPER= appending
+   =-Zcrate-attr=feature(cfg_select)= to kani-compiler invocations only
+   (kani builds under =RUSTC_BOOTSTRAP=1=, so declaring suffices).
+2. A shim at =~/.kani/kani-*/toolchain/bin/cargo= injects
+   =--ignore-rust-version= into build-like subcommands — kani calls that
+   cargo binary directly (no =$CARGO=, no PATH lookup), so a wrapper
+   there is the only lever. =kani.sh= checks it is present and prints
+   the recipe when not.
+
+** What CLOSED — the taint lint's interval arithmetic, ten proofs
+
+The lint's soundness rests on =Max= (=taint.rs=): an exact upper bound
+that under-reports would prove a bound that does not hold — the false
+negative the instrument exists to prevent. All ten verify — the full
+=./kani.sh= run: 10 of 10 successful, 8m59s wall:
+
+| harness | bound | time |
+|---|---|---|
+| =add_matches_u128= | ≤127-bit operands, exact u128 oracle | 0.83s |
+| =add_carries_across_limbs= | every n < 256, closed form 2^n−1 + 1 = 2^n | 0.96s |
+| =add_overflow_is_none= | full 256-bit width | 0.28s |
+| =mul_matches_u128= | 16-bit operands, exact oracle | 522s |
+| =mul_carries_across_limbs= | (2^64−1)² closed form, all four limbs | 0.91s |
+| =shr_matches_u128= | SYMBOLIC 64-bit value × every concrete shift 0..=64 | 3.4s |
+| =shr_limb_boundaries= | all_ones(256) at every 32-multiple shift | 4.9s |
+| =bits_matches_leading_zeros= | symbolic 128-bit value, leading_zeros oracle | 0.24s |
+| =all_ones_bits_roundtrip= | every n ≤ 256 | 0.45s |
+| =le_total_order_and_min_max= | FULL symbolic 256-bit width | 3.2s |
+
+Scope-downs, honest per the R4 spec: =mul= at 16-bit because neither
+64×64 nor 32×32 closed in 900s — the 4×4 limb loop embeds sixteen 64-bit
+partial-product multipliers in the SAT formula regardless of assumed
+operand width, and wide multiplication is the canonical SAT-hard
+circuit; the cross-limb carry the narrow oracle cannot see is pinned by
+the closed-form square. =shr= with a concrete-shift sweep because a
+fully symbolic shift amount (a four-limb barrel shifter) did not close
+in 900s at any width — and the sweep is in fact the lint's exact shape:
+=div = val >> bits= always has a CONCRETE =bits= from the instruction.
+
+** What does NOT close — stream-level pass properties, and why
+
+The two stream harnesses (dedup: subsequence + passthrough + per-wire
+tightest-bound preservation; fold: observable kind/order/operand-value
+preservation + verbatim =Output= lists) are written, bounded, and
+RETAINED AS SPECIMENS in =passes.rs= without =#[kani::proof]=. They do
+not close at ANY bound tried — N=4 down to a fully CONCRETE
+two-instruction stream, >25 min each. The diagnosis, from the verbose
+symex log: CBMC must unwind the drop glue of =Vec<Instruction>=, whose
+static reach includes the RECURSIVE =Alignment= type
+(=Option(Vec<Alignment>)= → =Vec<AlignmentSegment>= → …) through the
+hash variants — for every instruction drop, including the pass's own
+=continue= on a skipped constraint, whatever the dynamic variant is.
+Leaking the harness's vectors does not rescue it.
+
+Two byproducts of the attempt, KEPT because they serve the endgame:
+- The passes' internal maps are now an =AssocMap= (a =Vec= of pairs with
+  linear scan) — std's =HashMap= seeds SipHash from =RandomState=, which
+  a model checker treats as an unconstrained symbol, and =BTreeMap='s
+  node machinery defeats symex outright (both measured). Linear scan at
+  a circuit's copy counts is unmeasurable, the behavior is bit-identical
+  (workspace suite green, taint baseline unchanged), and the shape is
+  the statable one both Kani and M25's Lean want.
+- The property STATEMENTS themselves, which are exactly the obligations
+  M25's ZKIR-pass prong discharges unboundedly — where a prover reasons
+  about the semantics and never sees drop glue.
+
+The taint lint's own stream walk (=audit=) hits the same wall and is not
+harnessed; its arithmetic core is the nine proofs above, and its
+end-to-end behavior is the 209-circuit gate.
+
+** The R4 exit criteria, against this
+
+Proofs at stated bounds with runtimes recorded: the nine above.
+Properties that cannot close at a useful bound, scoped down honestly:
+the two stream specimens, with the mechanism named and the unbounded
+discharge assigned to M25. Test times not bloated: =cfg(kani)= is
+invisible to =cargo test=. The full =./kani.sh= run: 10 of 10
+verified in 8m59s, dominated by the 16-bit multiplier.

@@ -352,7 +352,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
         };
         quote! {
             #( #attrs )*
-            pub fn #ident<__V: #private::Visibility + ::core::marker::Copy>(
+            pub fn #ident<__V: #private::OnChainGuard + ::core::marker::Copy>(
                 self,
                 c: &mut #private::Circuit3,
                 guard: #private::Wire3<#private::FieldT, __V>,
@@ -389,7 +389,7 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             /// Resolve an [`Self::at_field`] handle's address NOW — for the
             /// call whose argument expressions emit instructions, where
             /// compactc's receiver-first evaluation order is visible.
-            pub fn pin<__V: #private::Visibility + ::core::marker::Copy>(
+            pub fn pin<__V: #private::OnChainGuard + ::core::marker::Copy>(
                 self,
                 c: &mut #private::Circuit3,
                 guard: #private::Wire3<#private::FieldT, __V>,

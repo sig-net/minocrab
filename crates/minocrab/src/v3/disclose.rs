@@ -223,8 +223,7 @@ impl<T: IrTy> Disclose for Wire3<T, Private> {
     type Public = Wire3<T, Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Wire3<T, Public> {
-        let [out] = c.disclose_all(L::LABEL, [self]);
-        out
+        c.disclose_as::<L, T>(self)
     }
 }
 
@@ -234,7 +233,7 @@ impl<T: IrTy> Disclose for Vec<Wire3<T, Private>> {
     type Public = Vec<Wire3<T, Public>>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> Vec<Wire3<T, Public>> {
-        c.disclose_slice(L::LABEL, &self)
+        c.disclose_slice_as::<L, _>(&self)
     }
 }
 
@@ -292,6 +291,50 @@ pub fn disclosed_labels(compiled: &Compiled3) -> BTreeSet<&str> {
         .collect()
 }
 
+/// The labels disclosed under a BARE STRING (`c.disclose(w, "…")`), which
+/// no declaration accepts — see [`DisclosureKind::DisclosedUntyped`].
+pub fn untyped_labels(compiled: &Compiled3) -> BTreeSet<&str> {
+    compiled
+        .disclosures
+        .iter()
+        .filter(|d| d.kind == DisclosureKind::DisclosedUntyped)
+        .map(|d| d.label.as_str())
+        .collect()
+}
+
+/// A label names a VALUE TYPE, not a record: one `disclose_as::<Coin>` on a
+/// qualified coin records its fields and its Merkle index separately, and an
+/// `Either` recipient records both arms, all under the one label. So the
+/// declaration is a SET of labels by design, and "the same label twice" is
+/// the normal shape of a compound value — not a second value slipping out.
+/// (A first draft rejected duplicates; twelve corpus circuits said otherwise.)
+/// What the set cannot distinguish is a bare `c.disclose(w, "coin")` from the
+/// typed path — that is closed by kind, not by counting: see
+/// [`DisclosureKind`] and the bare-label report in the assertions below.
+/// Assert that a circuit with NO `Discloses<..>` declaration disclosed
+/// nothing — the test `#[circuit]` generates for such a circuit, so that a
+/// missing declaration is a statement ("this circuit makes no private value
+/// public") and not an opt-out. A `c.disclose` in an undeclared circuit
+/// fails here with the labels it would have to declare.
+pub fn assert_discloses_nothing(circuit: &str, compiled: &Compiled3) {
+    let mut actual = disclosed_labels(compiled);
+    actual.extend(untyped_labels(compiled));
+    assert!(
+        actual.is_empty(),
+        "{circuit}: declares no disclosures (its return type is not `Discloses<..>`) but \
+         disclosed {} label(s): {actual:?}\n  fix: declare them — `-> Discloses<({})>` \
+         with a `label!` type per label — so the circuit's audit surface names every \
+         private value it makes public. A missing declaration means \"discloses nothing\", \
+         and this test is what makes that true.",
+        actual.len(),
+        actual
+            .iter()
+            .map(|l| format!("/* {l:?} */ L"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
 /// Assert that a circuit disclosed exactly what its `Discloses<..>`
 /// declaration says — the body of the test `#[circuit]` generates, and the
 /// one an `entry()`-built family calls by hand, once per instantiation (see
@@ -304,6 +347,7 @@ pub fn disclosed_labels(compiled: &Compiled3) -> BTreeSet<&str> {
 pub fn assert_declared_disclosures<T: Declared>(circuit: &str, compiled: &Compiled3) {
     let declared = T::declared();
     let actual = disclosed_labels(compiled);
+    let untyped = untyped_labels(compiled);
 
     let missing: Vec<&str> = declared
         .iter()
@@ -315,7 +359,7 @@ pub fn assert_declared_disclosures<T: Declared>(circuit: &str, compiled: &Compil
         .copied()
         .filter(|l| !declared.contains(l))
         .collect();
-    if missing.is_empty() && extra.is_empty() {
+    if missing.is_empty() && extra.is_empty() && untyped.is_empty() {
         return;
     }
 
@@ -350,6 +394,20 @@ pub fn assert_declared_disclosures<T: Declared>(circuit: &str, compiled: &Compil
                  disclosure is still a bare `c.disclose(w, {label:?})`, give it a label \
                  type first — `label!(SomeName = {label:?});` — and call \
                  `w.disclose_as::<SomeName>(c)`.\n"
+            ));
+        }
+    }
+    if !untyped.is_empty() {
+        message.push_str(&format!(
+            "\n  DISCLOSED WITHOUT A LABEL TYPE ({}):\n",
+            untyped.len()
+        ));
+        for label in &untyped {
+            message.push_str(&format!(
+                "    {label:?}\n      \
+                 fix: a bare `c.disclose(w, {label:?})` satisfies no declaration, even one \
+                 whose label spells the same text — give it a label type \
+                 (`label!(SomeName = {label:?});`) and call `w.disclose_as::<SomeName>(c)`.\n"
             ));
         }
     }
@@ -396,7 +454,7 @@ mod tests {
         let mut c = Circuit3::new();
         let hi = c.arg::<FieldT>("v_hi");
         let lo = c.arg::<FieldT>("v_lo");
-        let [hi, lo] = c.disclose_all(Alpha::LABEL, [hi, lo]);
+        let [hi, lo] = c.disclose_all_as::<Alpha, _, 2>([hi, lo]);
         c.output(hi, "hi");
         c.output(lo, "lo");
         let compiled = c.finish(false);
@@ -425,7 +483,7 @@ mod tests {
         let w = c.arg::<FieldT>("w");
         let before = c.instruction_count();
         let _ = w.disclose_as::<Beta>(&mut c);
-        let _ = c.disclose_slice(Gamma::LABEL, &[w, w, w]);
+        let _ = c.disclose_slice_as::<Gamma, _>(&[w, w, w]);
         assert_eq!(c.instruction_count(), before);
     }
 
@@ -433,7 +491,14 @@ mod tests {
         let mut c = Circuit3::new();
         let w = c.arg::<FieldT>("w");
         for label in labels {
-            c.disclose_slice(label, &[w]);
+            // The known labels disclose TYPED; anything else is the bare
+            // string, which is exactly what the untyped category is for.
+            match *label {
+                "alpha" => drop(w.disclose_as::<Alpha>(&mut c)),
+                "beta" => drop(w.disclose_as::<Beta>(&mut c)),
+                "gamma" => drop(w.disclose_as::<Gamma>(&mut c)),
+                other => drop(c.disclose_slice(other, &[w])),
+            }
         }
         let compiled = c.finish(false);
         std::panic::catch_unwind(|| assert_declared_disclosures::<T>("demo", &compiled))
@@ -465,6 +530,23 @@ mod tests {
         assert!(message.contains("\"gamma\""), "{message}");
         assert!(message.contains("label!(SomeName = \"gamma\");"), "{message}");
         assert!(message.contains("add its label type to `demo`'s"), "{message}");
+    }
+
+    /// A bare string that spells a declared label satisfies nothing: it is
+    /// reported as its own category, and the declared label stays missing.
+    #[test]
+    fn a_bare_string_never_satisfies_a_declaration() {
+        let message = declared_vs::<Discloses<(Alpha,)>>(&["alpha-as-a-bare-string"]);
+        assert!(message.contains("DISCLOSED WITHOUT A LABEL TYPE (1)"), "{message}");
+        assert!(message.contains("satisfies no declaration"), "{message}");
+        assert!(message.contains("DECLARED BUT NEVER DISCLOSED (1)"), "{message}");
+
+        let mut c = Circuit3::new();
+        let w = c.arg::<FieldT>("w");
+        let _ = c.disclose(w, "alpha");
+        let compiled = c.finish(false);
+        assert_eq!(disclosed_labels(&compiled), [].into());
+        assert_eq!(untyped_labels(&compiled), ["alpha"].into());
     }
 
     /// Outputs and ledger statements are not disclosures of private values,

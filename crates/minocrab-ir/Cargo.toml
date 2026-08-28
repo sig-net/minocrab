@@ -9,7 +9,19 @@ rust-version.workspace = true
 readme = "README.md"
 keywords = ["midnight", "zkir", "circuit", "zero-knowledge", "compiler"]
 categories = ["cryptography::cryptocurrencies", "compilers"]
-include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+# lean/ is the machine-checked proof development for the pass layer
+# (M25); passes.rs embeds the proof files via lean_proof!, so they must
+# ship with the crate (and .lake/ build artifacts must not).
+include = [
+    "src/**/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "lean/lakefile.toml",
+    "lean/lake-manifest.json",
+    "lean/MinocrabProofs.lean",
+    "lean/MinocrabProofs/*.lean",
+]
 
 [dependencies]
 minocrab-zkir.workspace = true
@@ -18,3 +30,20 @@ midnight-base-crypto.workspace = true
 # For constructing zkir-v3's TypedIdentifier through its serde form (its
 # fields are pub(crate) upstream) — see v3::typed_identifier.
 serde_json.workspace = true
+
+[dev-dependencies]
+# Enable the internal tier for this crate's own tests.
+minocrab-ir = { path = ".", features = ["unstable"] }
+
+[features]
+# The INTERNAL tier (M24 tier boundary, notes/library-api.org §1): the raw
+# `Builder3`/`Val` layers under the eDSL. No stability promise; the stable
+# surface is the `Pass` trait, the taint lint, and the re-exported ZKIR
+# types. In-workspace crates enable this; a third-party pass crate
+# depending on minocrab-ir alone builds against the stable tier only.
+unstable = []
+
+# The Kani harnesses live under cfg(kani), which only the Kani driver sets
+# (see kani.sh at the repo root); tell rustc's cfg checker it is expected.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

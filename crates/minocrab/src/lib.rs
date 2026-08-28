@@ -59,6 +59,16 @@
 //! - [`v3::Discloses`] — a circuit's disclosure manifest, checked against
 //!   what it actually disclosed (see [`v3::assert_declared_disclosures`])
 //! - [`Compiled`] — a finished circuit: the IR plus its disclosure record
+//!
+//! # Stability (M24 tier boundary)
+//!
+//! STABLE TIER (semver commitment): the v3 eDSL authoring core —
+//! [`v3::Circuit3`] and its instruction-emitting methods, [`v3::Wire3`] /
+//! [`v3::AnyWire3`], the visibility types, the FAB alignment re-exports,
+//! and [`v3::Compiled3`]. INTERNAL TIER (no stability promise): the v2
+//! [`Circuit`] layer, kept for the v2 corpus work. The proposed stable
+//! set is deliberately small (notes/library-api.org §1) and grows only
+//! by decision, never by accident.
 
 use std::marker::PhantomData;
 
@@ -79,6 +89,26 @@ pub trait Visibility: sealed::Sealed + 'static {
     const IS_PUBLIC: bool;
 }
 
+/// A visibility that may GUARD AN ON-CHAIN EFFECT — an Impact op or a
+/// public-transcript read. Only [`Public`].
+///
+/// Whether a guarded op ran, and whether a guarded transcript read consumed
+/// a value, is visible on chain: the guard bit is published by the effect
+/// it guards. So a private condition guarding one is a disclosure, and the
+/// disclosure type system has to see it — compactc's own rule ("performing
+/// this ledger operation might disclose the boolean value of the witness
+/// value … the conditional branch"), which the external review's §4.1 found
+/// this API let through silently. Disclose the condition first
+/// (`.disclose_as::<L>(c)`), then branch on the public wire; the manifest
+/// then names it. Sealed: the two visibilities are the only ones.
+#[diagnostic::on_unimplemented(
+    message = "a `{Self}` value cannot guard an on-chain effect — whether the effect ran is visible on chain, so the condition is a disclosure",
+    label = "private guard on an on-chain effect (Impact op, public-transcript read, or a `when` scope)",
+    note = "disclose the condition first — `let cond = cond.disclose_as::<L>(c);` with `L` in the circuit's `Discloses<(..)>` — and guard on the public wire; a `Private` guard is allowed only on effects nothing on chain can see (`witness_guarded`)"
+)]
+pub trait OnChainGuard: Visibility {}
+impl OnChainGuard for Public {}
+
 /// Value derived only from constants and disclosed/public values.
 /// (Clone/Copy so `#[derive(Clone, Copy)]` works on types generic over a
 /// visibility — derives bound every type parameter.)
@@ -98,6 +128,12 @@ impl Visibility for Private {
 }
 
 /// Visibility join: public only if both sides are public.
+///
+/// The four impls below are a two-point lattice meet, and the discipline
+/// they enforce — an expression types `Public` iff every private leaf
+/// sits under a `disclose` — is machine-checked in
+/// `minocrab-std/lean/MinocrabStdProofs/Visibility.lean` (a model proof;
+/// see the file's header for the honest boundary).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a wire visibility, so it has no meet with `{B}`",
     label = "expected `Public` or `Private`",
@@ -173,8 +209,14 @@ pub struct Disclosure {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisclosureKind {
-    /// `disclose()` — a private value became public inside the circuit.
+    /// `disclose_as::<L>()` — a private value became public inside the
+    /// circuit, under a LABEL TYPE the circuit's `Discloses<..>` names.
     Disclosed,
+    /// `disclose(w, "text")` — the same, under a bare string. It never
+    /// satisfies a declaration: a declared label is a type, and a string
+    /// that happens to spell it is exactly the shadowing the manifest must
+    /// not accept (external review §4.5). The test names the fix.
+    DisclosedUntyped,
     /// Declared as part of the public statement (public input block).
     Statement,
     /// Returned as a circuit output.
