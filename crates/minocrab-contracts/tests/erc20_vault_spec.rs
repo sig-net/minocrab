@@ -36,7 +36,7 @@
 use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab_contracts::erc20_vault;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::IrSource;
 use proptest::prelude::*;
 
@@ -72,7 +72,22 @@ fn counter_would_overflow(effects: &[Effect], pre: &PreState) -> bool {
 
 /// The whole per-case check. Returns `Err(reason)` so proptest reports the
 /// failing scenario rather than panicking inside a helper.
+/// compactc's own artifact for `circuit`, parsed once — the fifth link's
+/// oracle for the port lineage.
+fn corpus_twin(circuit: Circuit) -> &'static IrSource {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static TWINS: OnceLock<HashMap<&'static str, IrSource>> = OnceLock::new();
+    &TWINS.get_or_init(|| {
+        Circuit::ALL
+            .iter()
+            .map(|c| (c.zkir_name(), vault::prims::corpus_zkir_named(c.zkir_name())))
+            .collect()
+    })[circuit.zkir_name()]
+}
+
 fn check_case(
+    circuit: Circuit,
     art: Art,
     ir: &IrSource,
     outcome: &Outcome,
@@ -104,6 +119,15 @@ fn check_case(
         .map_err(|e| format!("simulator accepted but the reference VM rejected: {e}"))?;
     if skips != run.pi_skips {
         return Err("reference VM and simulator disagree on pi_skips".into());
+    }
+
+    // --- 5. compactc, on the PORT: the generated preimage through THE
+    // comparator against compactc's own artifact (external review §3.2 /
+    // §7.5: the property scale used to run only against our own spec and
+    // op stream). The optimised lineages have no compactc twin — that is
+    // what the fork ledgers record — so for them the spec stays the oracle.
+    if let Art::Compat = art {
+        assert_call_compatible(ir, corpus_twin(circuit), pi);
     }
 
     // --- 2. PI-equality, re-anchored to OUR op stream -------------------
@@ -153,7 +177,7 @@ proptest! {
             let ir = Circuit::Initialize.ir(art);
             let outcome = spec::spec_initialize(&s, count);
             // initialize reads no kernel.self, so the address is arbitrary.
-            let r = check_case(art, &ir, &outcome, &s.pre_state(count), &[0u8; 32], &s.ops(count), &s.preimage(count));
+            let r = check_case(Circuit::Initialize, art, &ir, &outcome, &s.pre_state(count), &[0u8; 32], &s.ops(count), &s.preimage(count));
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -164,7 +188,7 @@ proptest! {
             let d = d.clone().with_art(art);
             let ir = Circuit::Deposit.ir(art);
             let outcome = spec::spec_deposit(&d);
-            let r = check_case(art, &ir, &outcome, &d.pre_state(), &d.self_addr, &d.ops(), &d.preimage());
+            let r = check_case(Circuit::Deposit, art, &ir, &outcome, &d.pre_state(), &d.self_addr, &d.ops(), &d.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -175,7 +199,7 @@ proptest! {
             let a = a.clone().with_art(art);
             let ir = Circuit::ApproveRouter.ir(art);
             let outcome = spec::spec_approve_router(&a);
-            let r = check_case(art, &ir, &outcome, &a.pre_state(), &a.self_addr, &a.ops(), &a.preimage());
+            let r = check_case(Circuit::ApproveRouter, art, &ir, &outcome, &a.pre_state(), &a.self_addr, &a.ops(), &a.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -186,7 +210,7 @@ proptest! {
             let w = w.clone().with_art(art);
             let ir = Circuit::Withdraw.ir(art);
             let outcome = spec::spec_withdraw(&w);
-            let r = check_case(art, &ir, &outcome, &w.pre_state(), &w.self_addr, &w.ops(), &w.preimage());
+            let r = check_case(Circuit::Withdraw, art, &ir, &outcome, &w.pre_state(), &w.self_addr, &w.ops(), &w.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -197,7 +221,7 @@ proptest! {
             let s = s.clone().with_art(art);
             let ir = Circuit::Swap.ir(art);
             let outcome = spec::spec_swap(&s);
-            let r = check_case(art, &ir, &outcome, &s.pre_state(), &s.self_addr, &s.ops(), &s.preimage());
+            let r = check_case(Circuit::Swap, art, &ir, &outcome, &s.pre_state(), &s.self_addr, &s.ops(), &s.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -210,7 +234,7 @@ proptest! {
             let outcome = spec::spec_claim(&c);
             let ops = c.ops(u8::from(c.found));
             let pi = c.preimage_with_member(u8::from(c.found));
-            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.d.self_addr, &ops, &pi);
+            let r = check_case(Circuit::Claim, art, &ir, &outcome, &c.pre_state(), &c.d.self_addr, &ops, &pi);
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -221,7 +245,7 @@ proptest! {
             let c = c.clone().with_art(art);
             let ir = Circuit::CompleteWithdraw.ir(art);
             let outcome = spec::spec_complete_withdraw(&c);
-            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.w.self_addr, &c.ops(), &c.preimage());
+            let r = check_case(Circuit::CompleteWithdraw, art, &ir, &outcome, &c.pre_state(), &c.w.self_addr, &c.ops(), &c.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -232,7 +256,7 @@ proptest! {
             let c = c.clone().with_art(art);
             let ir = Circuit::CompleteSwap.ir(art);
             let outcome = spec::spec_complete_swap(&c);
-            let r = check_case(art, &ir, &outcome, &c.pre_state(), &c.s.self_addr, &c.ops(), &c.preimage());
+            let r = check_case(Circuit::CompleteSwap, art, &ir, &outcome, &c.pre_state(), &c.s.self_addr, &c.ops(), &c.preimage());
             prop_assert!(r.is_ok(), "{art:?}: {r:?}");
         }
     }
@@ -244,7 +268,7 @@ proptest! {
             let ir = Circuit::Refund.ir(art);
             let outcome = spec::spec_refund(&r);
             let self_addr = r.self_addr();
-            let res = check_case(art, &ir, &outcome, &r.pre_state(), &self_addr, &r.ops(), &r.preimage());
+            let res = check_case(Circuit::Refund, art, &ir, &outcome, &r.pre_state(), &self_addr, &r.ops(), &r.preimage());
             prop_assert!(res.is_ok(), "{art:?}: {res:?}");
         }
     }

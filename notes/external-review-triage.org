@@ -337,6 +337,25 @@ three label types). Small; separate commit.
   opt ≡ borsh ≡ modern move together so the fork ledgers keep every
   entry; rows re-frozen; VERIFICATION §5 bullet restated.
 
+** AS BUILT — the entry-point binding and item 10 (review-fixes, 2026-08-28)
+- Entry-point binding (§4.5 / §7.6, "a hardened mode"):
+  =minocrab_ledger::bind_entry_points(c)= sets a circuit-scoped marker;
+  the typed =call= then passes the =EntryPoint='s two hash limbs into
+  =contract_call_with=, which =constrain_eq=s the witnessed limbs to them.
+  Off by default (compactc parity for the ports; the ledger match binds
+  it there). =xcall::call_once_bound= is the pinned example: accepts the
+  honest preimage, rejects =depositEmit='s, differs from =call_once= by
+  the two constraints; listed in =circuits()= (snapshots/taint gained its
+  rows). Argument types stay unbound — a different mechanism (the
+  communications commitment already binds the VALUES).
+- Item 10: =check_case= gained a fifth link for =Art::Compat=: every
+  accepted generated preimage also runs through
+  =minocrab_sim::v3::assert_call_compatible= against compactc's own
+  artifact (parsed once per circuit). The optimised lineages have no
+  compactc twin, so the spec stays their oracle. The default 48 cases per
+  property now carry the anchor; the nightly's 100k and the manual 1M
+  carry it at scale.
+
 ** 10. §3.2 / §7.5 — the compactc anchor is thin on the optimised lineage
 Confirmed by construction (erc20_vault_spec.rs header: PI-equality is
 re-anchored to OUR reference op stream). Proposed: drive the spec
