@@ -329,6 +329,9 @@ pub fn circuits() -> Vec<Circuit> {
         c!("hashing::persistent_vec8", || hashing::persistent_vec8()),
         c!("xcall::local_base", || xcall::local_base()),
         c!("xcall::call_once", || xcall::call_once()),
+        // Byte-identical to call_once (xcall_differential pins it); listed so
+        // the instruments see it under its own name (tests/circuit_closure.rs).
+        c!("xcall::call_emit", || xcall::call_emit()),
         c!("xcall::call_twice", || xcall::call_twice()),
         c!("xcall::call_big", || xcall::call_big()),
         c!("xcall::target_deposit", || xcall::target_deposit()),

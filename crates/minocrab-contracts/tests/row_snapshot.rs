@@ -107,6 +107,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("hashing::persistent_vec8", 14, 10147),
     ("xcall::local_base", 8, 180),
     ("xcall::call_once", 9, 297),
+    ("xcall::call_emit", 9, 297),
     ("xcall::call_twice", 9, 442),
     ("xcall::call_big", 10, 851),
     ("xcall::target_deposit", 8, 180),

@@ -1194,6 +1194,17 @@ wit Scalar<BLS12-381>
 ",
     ),
     (
+        "xcall::call_emit",
+        "\
+in  recipient_hi: Scalar<BLS12-381>
+in  recipient_lo: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
         "xcall::call_twice",
         "\
 in  recipient_hi: Scalar<BLS12-381>
