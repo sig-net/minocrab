@@ -535,6 +535,10 @@ that holds the reasoning (the M18 _with item was NOT filed — it closed
 today; Q5 filed with its superseded-for-borsh framing). THE CAVEAT: the
 workflows have not yet RUN — they run on the next push to GitHub, and
 their first green is the exit criterion's real test.
+CAVEAT RETIRED 2026-08-28: first push day. ci and docs both green on
+main (the review-fixes PR also exercised the PR-only zkir-dump job,
+which did its job — the branch's runs surfaced real failures before
+merge). The gate ladder is live.
 
 * M21 — crates.io readiness (dmd, 2026-08-17: "ready to be deployed")
 - [X] Everything on our side prepared so publish day is a `cargo publish`
