@@ -137,7 +137,7 @@ pub use minocrab_macros::interface;
 #[doc(hidden)]
 pub mod __private {
     pub use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-    pub use minocrab::{AlignmentAtom, Private, Public, Visibility};
+    pub use minocrab::{AlignmentAtom, OnChainGuard, Private, Public, Visibility};
 
     /// The bodies of the disclosure tests `#[circuit]` generates: the
     /// set-equality one for a `Discloses<..>` return, the discloses-nothing
@@ -1386,6 +1386,31 @@ select_via_field! {
         is_some: Select::select(c, bit, a.is_some, b.is_some),
         value: Select::select(c, bit, a.value, b.value),
     },
+}
+
+/// [`Select`] with a PUBLIC bit over PRIVATE leaves — what a `when_value`
+/// over private data is, since a scope's condition must be an
+/// `OnChainGuard`. Each delegates to the leaf's own `Select<Private>` with
+/// the bit demoted, so the instruction is the same `cond_select`; the
+/// result stays private. See `Select<Public> for Wire3<FieldT, Private>`.
+macro_rules! select_public_over_private {
+    ($( [$($gen:tt)*] $ty:ty ),* $(,)?) => {$(
+        impl<$($gen)*> Select<Public> for $ty {
+            fn select(c: &mut Circuit3, bit: Wire3<FieldT, Public>, a: Self, b: Self) -> Self {
+                <Self as Select<Private>>::select(c, bit.private(), a, b)
+            }
+        }
+    )*};
+}
+
+select_public_over_private! {
+    [] Bool<Private>,
+    [const BITS: u32] Uint<BITS, Private>,
+    [const N: usize] Bytes<N, Private>,
+    [] B32<Private>,
+    [] ContractAddress<Private>,
+    [] UserAddress<Private>,
+    [T: Select<Private>] Maybe<T, Private>,
 }
 
 /// Explode a limb into `nbytes` byte wires, least-significant first: a

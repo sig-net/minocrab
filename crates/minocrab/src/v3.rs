@@ -16,7 +16,7 @@ use minocrab_ir::v3::{Arg, Builder3, IrSource, IrType, Val};
 pub use minocrab_ir::v3::{Alignment, Identifier};
 use minocrab_ir::Fr;
 
-use crate::{DisclosureKind, Meet, Private, Public, Region, Visibility};
+use crate::{DisclosureKind, Meet, OnChainGuard, Private, Public, Region, Visibility};
 
 mod abi;
 mod disclose;
@@ -431,6 +431,18 @@ impl<V: Visibility> Select<V> for Wire3<FieldT, V> {
     }
 }
 
+/// A PUBLIC condition choosing between PRIVATE values — the shape every
+/// `when_value` over private data has, now that a scope's condition must be
+/// [`OnChainGuard`]. The result is private (the values are); the selection
+/// itself is the same `cond_select`. The other mixed case — a private bit
+/// over public values — is deliberately absent: the selected value would
+/// reveal the bit, so it has no `Select<Private>` for a public `Self`.
+impl Select<Public> for Wire3<FieldT, Private> {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, Public>, taken: Self, fallback: Self) -> Self {
+        Wire3::new(c.b.cond_select(bit.val, taken.val, fallback.val))
+    }
+}
+
 /// An if / else-if / else chain that produces a VALUE — see
 /// [`Circuit3::when_value`].
 /// Unfinished, it produces nothing — so leaving off `otherwise` is a warning
@@ -493,6 +505,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # let mut c = Circuit3::new();
     /// # let g = c.arg::<FieldT>("g");
+    /// # let g = c.disclose(g, "g");
     /// # let x = c.arg::<FieldT>("x");
     /// c.when_value(g, |_c| x).otherwise(|_c| x);
     /// ```
@@ -502,6 +515,7 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
     /// # use minocrab::v3::{Circuit3, FieldT};
     /// # let mut c = Circuit3::new();
     /// # let g = c.arg::<FieldT>("g");
+    /// # let g = c.disclose(g, "g");
     /// # let x = c.arg::<FieldT>("x");
     /// let chosen = c.when_value(g, |_c| x).otherwise(|_c| x);
     /// c.assert(chosen.into_inner());
@@ -921,7 +935,7 @@ impl Circuit3 {
     /// call has `is_left` true while the arm is off. Straight-line callers
     /// are untouched — with no ambient guard the operand passes through
     /// unchanged.
-    pub fn public_transcript_input_guarded<T: IrTy, V: Visibility>(
+    pub fn public_transcript_input_guarded<T: IrTy, V: OnChainGuard>(
         &mut self,
         guard: Wire3<FieldT, V>,
     ) -> Wire3<T, Public> {
@@ -1373,7 +1387,7 @@ impl Circuit3 {
 
     /// Declare a guarded block of native public inputs (one Impact
     /// instruction). The full ledger-op encoding layer sits above this.
-    pub fn impact<V: Visibility>(
+    pub fn impact<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
         inputs: &[Wire3<FieldT, Public>],
@@ -1393,7 +1407,7 @@ impl Circuit3 {
     /// straight-line circuit), so the immediate form is a deliberate
     /// departure — zero rows, one fewer instruction, and no longer
     /// byte-identical to compactc's stream.
-    pub fn impact_mixed<V: Visibility>(
+    pub fn impact_mixed<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
         elems: &[ImpactElem],
@@ -1510,7 +1524,7 @@ impl Circuit3 {
     /// ran" is not a thing the stream can express — build it with
     /// [`Circuit3::cond_select`] on the arms' results instead, where the
     /// selection is visible.
-    pub fn when<V: Visibility>(
+    pub fn when<V: OnChainGuard>(
         &mut self,
         cond: impl GuardCond<V>,
         body: impl FnOnce(&mut Self),
@@ -1576,7 +1590,7 @@ impl Circuit3 {
     /// the others and you would rather pay for that work once,
     /// unconditionally — because the chain will pay for it regardless of
     /// which way the condition goes.
-    pub fn when_value<V: Visibility, T: Select<V>>(
+    pub fn when_value<V: OnChainGuard, T: Select<V>>(
         &mut self,
         cond: impl GuardCond<V>,
         body: impl FnOnce(&mut Self) -> T,

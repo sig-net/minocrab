@@ -60,6 +60,39 @@ divergence from compactc (api-safety-survey §0(b)). The fix should
 reproduce that rule at the type level: a public (disclosed) guard on
 every on-chain effect.
 
+** AS BUILT — item 1 (review-fixes, 2026-08-28)
+=minocrab::OnChainGuard=: a sealed marker on the one visibility that may
+guard an on-chain effect (=Public=), with an =on_unimplemented= that
+names the fix. Bounded at the three choke-point entries — =when= /
+=when_value= (the scope), =impact= / =impact_mixed= (the op),
+=public_transcript_input_guarded= (the read) — and carried by the
+compiler through every generic forwarder: 134 signatures across 7 files
+— 50 in the ledger (=emit=, the =_under= family), 68 in the stdlib
+(=ledger.rs=, =kernel.rs=), 4 in =contracts/common.rs=, 2 in the
+=#[interface]= macro's generated methods, 5 hand-written forwarders in
+=tests/interface_macro.rs=, and the 5 core entries. Each is a =+ OnChainGuard= on the guard's
+visibility parameter, placed where rustc pointed (a scripted loop, so
+the sweep is exactly the compiler's closure, no more). =witness_guarded=
+keeps any visibility — consuming the private transcript is not visible.
+- Zero library meaning changed: a probe restricting the bound found
+  callers only in tests (no circuit in the workspace guards an on-chain
+  effect on a private value). The tests that used raw =arg= wires as
+  guards disclose them first; =c.disclose= is a record, not an
+  instruction, so every byte-identity assertion in =v3_guard_scope.rs=
+  still holds unchanged.
+- One API gap the bound exposed, closed: a =when_value= over PRIVATE
+  values under a (now necessarily public) condition needs
+  =Select<Public>= for the private leaves — added for =Wire3=, =Bool=,
+  =Uint=, =Bytes=, =B32=, =ContractAddress=, =UserAddress=, =Maybe=,
+  each delegating to the leaf's =Select<Private>= with the bit demoted
+  (same =cond_select=). The other mixed case — a private bit over public
+  values — is deliberately absent: the result would reveal the bit.
+- NOT provided: a private-condition scope for bodies with no on-chain
+  effect (assert / witness only). Compact allows it; nothing here uses
+  it; the API stays small. The shape if needed: =when_private(cond,
+  body)= with any visibility, on-chain emitters failing at build time
+  inside it (the ladder's last rung, since the scope stack is dynamic).
+
 ** 2. §4.2 MEDIUM — three assert entry points bypass the ambient guard
 Confirmed unchanged: =assert= goes through =assert_with= →
 =self.ambient()= (v3.rs:1234); =assert_eq= (1244), =assert_bits= (1252),
@@ -199,8 +232,15 @@ unchecked to mirror compactc.
 ** 9. §4.5 — the small ones
 - =ContractAddress<V>(pub B32<V>)= + =pub fn from_limbs= (std v3.rs:1217,
   1226) contradict VERIFICATION.md:194 "only =kernel::self_address= and
-  its guarded twin produce one". Fix: private field, =from_limbs=
-  pub(crate) (check callers first), or soften the claim. Zero rows.
+  its guarded twin produce one". CHECKED 2026-08-28: the claim is the
+  wrong half — =ContractAddress= is Compact's VALUE type, wrapped from a
+  bare =B32= at 12 contract sites (recipients, =Either= arms, call
+  targets), so it cannot be a proof of self. VERIFICATION.md now says
+  so. The real closure is the survey's own §3 item 5, a =SelfAddress=
+  newtype only =kernel::self_address*= produce, taken by the two
+  =contract_recipient= helpers and =common.rs:393=: 48 call sites (35
+  pass the value on, 5 =.bytes()=, 4 =.private()=), zero rows. DECISION
+  for dmd — moderate sweep, modest win.
 - Identity =mpcResponseKey=: still pinned as CURRENT behaviour
   (erc20_vault_adversarial.rs:391). A point-at-infinity check in
   =initialize= is cheap on the opt/borsh/modern lineages (moves their
@@ -210,6 +250,13 @@ unchecked to mirror compactc.
   =&'static str= hash as an immediate is a design item, not a bug.
 - Simulator error strings interpolate wire values (sim lib.rs:127,156,
   268 …): local tooling; note it in the sim's rustdoc, nothing more now.
+- =minocrab_ledger::contract_call= (lib.rs:2403), the function §4.3
+  names for mixing guard regimes, has NO callers anywhere in the
+  workspace (the typed call path is =minocrab-std/src/v3/call.rs=, which
+  reads its witnesses through the scope-aware core). Dead public API;
+  its witnesses are ambient-only while its op takes the explicit guard.
+  Delete or route through =witness_guarded= — DECISION for dmd (it is
+  pub in the ledger crate).
 - minocrab-ledger/src/lib.rs is still one 3,657-line file. Cosmetic.
 - Differential bookkeeping: VERIFICATION.md says 18 (lines 256, 283,
   395); 22 files match =*differential*.rs= today (19 contracts + 3
@@ -232,7 +279,10 @@ unchecked to mirror compactc.
   set-equality for a =Discloses<..>= return, "discloses nothing" for
   every other — so a missing declaration is a statement, never an
   opt-out; =assert_discloses_nothing= in =minocrab::v3::disclose=. All
-  200 circuits pass it: no undeclared circuit discloses anything.
+  200 contract circuits pass it: no undeclared circuit discloses
+  anything. It caught one in the stdlib's own tests (=v3_circuit.rs='s
+  =attributed_output= disclosed a bare "seed" behind an =output=
+  attribute) — declared, per the message the test prints.
   A first draft also REJECTED DUPLICATE LABELS (one label, one value) —
   twelve corpus circuits failed it, and they were right: a label names a
   VALUE TYPE, and a compound value records several entries under it

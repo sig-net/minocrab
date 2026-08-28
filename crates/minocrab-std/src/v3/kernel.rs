@@ -147,7 +147,7 @@ pub fn cache_self_address(c: &mut Circuit3) -> ContractAddress<Public> {
 }
 
 /// [`self_address`] under a branch condition.
-pub fn self_address_under<G: Visibility>(
+pub fn self_address_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
 ) -> ContractAddress<Public> {
@@ -157,7 +157,7 @@ pub fn self_address_under<G: Visibility>(
 /// [`self_address`] inside a conditional branch, where the READ itself is
 /// guarded — so the answer is the zero address wherever the guard was off,
 /// which is why it comes back in a [`Guarded`].
-pub fn self_address_guarded<G: Visibility + Copy>(
+pub fn self_address_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, G>,
 ) -> Guarded<ContractAddress<Public>, G> {
@@ -173,7 +173,7 @@ pub fn mint_shielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>
 }
 
 /// [`mint_shielded`] under a branch condition.
-pub fn mint_shielded_under<G: Visibility>(
+pub fn mint_shielded_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     domain_sep: &TokenDomainSeparator<Public>,
@@ -190,7 +190,7 @@ pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Publi
 }
 
 /// [`mint_unshielded`] under a branch condition.
-pub fn mint_unshielded_under<G: Visibility>(
+pub fn mint_unshielded_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     domain_sep: &TokenDomainSeparator<Public>,
@@ -211,7 +211,7 @@ pub fn inc_unshielded_inputs(
 }
 
 /// [`inc_unshielded_inputs`] under a branch condition.
-pub fn inc_unshielded_inputs_under<G: Visibility>(
+pub fn inc_unshielded_inputs_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -232,7 +232,7 @@ pub fn inc_unshielded_outputs(
 }
 
 /// [`inc_unshielded_outputs`] under a branch condition.
-pub fn inc_unshielded_outputs_under<G: Visibility>(
+pub fn inc_unshielded_outputs_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -255,7 +255,7 @@ pub fn claim_unshielded_coin_spend(
 }
 
 /// [`claim_unshielded_coin_spend`] under a branch condition.
-pub fn claim_unshielded_coin_spend_under<G: Visibility>(
+pub fn claim_unshielded_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -285,7 +285,7 @@ pub fn balance(c: &mut Circuit3, token: &UnshieldedToken<Public>) -> Uint<128, P
 }
 
 /// [`balance`] under a branch condition.
-pub fn balance_under<G: Visibility>(
+pub fn balance_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -304,7 +304,7 @@ pub fn balance_less_than(
 }
 
 /// [`balance_less_than`] under a branch condition.
-pub fn balance_less_than_under<G: Visibility>(
+pub fn balance_less_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -330,7 +330,7 @@ pub fn balance_greater_than(
 }
 
 /// [`balance_greater_than`] under a branch condition.
-pub fn balance_greater_than_under<G: Visibility>(
+pub fn balance_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     token: &UnshieldedToken<Public>,
@@ -352,7 +352,7 @@ pub fn block_time_less_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool<Pu
 }
 
 /// [`block_time_less_than`] under a branch condition.
-pub fn block_time_less_than_under<G: Visibility>(
+pub fn block_time_less_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     time: Uint<64, Public>,
@@ -367,7 +367,7 @@ pub fn block_time_greater_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool
 }
 
 /// [`block_time_greater_than`] under a branch condition.
-pub fn block_time_greater_than_under<G: Visibility>(
+pub fn block_time_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     time: Uint<64, Public>,
@@ -565,7 +565,7 @@ pub fn claim_zswap_nullifier(c: &mut Circuit3, nullifier: &B32<Public>) {
 }
 
 /// [`claim_zswap_nullifier`] under a branch condition.
-pub fn claim_zswap_nullifier_under<G: Visibility>(
+pub fn claim_zswap_nullifier_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     nullifier: &B32<Public>,
@@ -581,7 +581,7 @@ pub fn claim_zswap_coin_spend(c: &mut Circuit3, commitment: &B32<Public>) {
 }
 
 /// [`claim_zswap_coin_spend`] under a branch condition.
-pub fn claim_zswap_coin_spend_under<G: Visibility>(
+pub fn claim_zswap_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     commitment: &B32<Public>,
@@ -598,7 +598,7 @@ pub fn claim_zswap_coin_receive(c: &mut Circuit3, commitment: &B32<Public>) {
 }
 
 /// [`claim_zswap_coin_receive`] under a branch condition.
-pub fn claim_zswap_coin_receive_under<G: Visibility>(
+pub fn claim_zswap_coin_receive_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
     commitment: &B32<Public>,

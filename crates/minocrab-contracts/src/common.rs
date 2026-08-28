@@ -175,7 +175,7 @@ pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserC
 
 /// [`assert_deployer`] against the SHORT identity commitment
 /// ([`commitment_packed_tag`]) — the optimized initialize's deployer gate.
-pub fn assert_deployer_packed<V: Visibility + Copy>(
+pub fn assert_deployer_packed<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     deployer_field: u8,
@@ -288,7 +288,7 @@ pub fn write_coin_to_self(
 /// `Cell<Secp256k1Point>.read()` of a top-level field: the gate is a
 /// single typed `public_input`, whose `encode` limbs the uncached popeq
 /// embeds (claim.zkir:29-33 — the mpcResponseKey read).
-pub fn cell_read_point<V: Visibility + Copy>(
+pub fn cell_read_point<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     index: u8,
@@ -558,7 +558,7 @@ pub fn mint_shielded_token_to_key(
 }
 
 /// The one-shot gate: `assert(<counter at field> == 0)`.
-pub fn assert_counter_zero<V: Visibility + Copy>(
+pub fn assert_counter_zero<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     field: u8,
@@ -571,7 +571,7 @@ pub fn assert_counter_zero<V: Visibility + Copy>(
 
 /// The deployer gate: `assert(commitment(prefix, <witnessed sk>) ==
 /// <Bytes<32> cell at deployer_field>)`.
-pub fn assert_deployer<V: Visibility + Copy>(
+pub fn assert_deployer<V: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, V>,
     prefix: &str,

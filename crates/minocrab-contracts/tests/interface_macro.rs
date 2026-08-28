@@ -42,7 +42,7 @@ impl HandToken {
         }
     }
 
-    fn deposit<V: Visibility + Copy>(
+    fn deposit<V: Visibility + Copy + minocrab::OnChainGuard>(
         self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,
@@ -67,13 +67,13 @@ impl HandSigner {
         }
     }
 
-    fn pin<V: Visibility + Copy>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> HandSigner {
+    fn pin<V: Visibility + Copy + minocrab::OnChainGuard>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> HandSigner {
         HandSigner {
             callee: self.callee.pin(c, guard),
         }
     }
 
-    fn sign_bidirectional<V: Visibility + Copy>(
+    fn sign_bidirectional<V: Visibility + Copy + minocrab::OnChainGuard>(
         self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,
@@ -104,7 +104,7 @@ impl HandXcallTarget {
         }
     }
 
-    fn deposit_big<V: Visibility + Copy>(
+    fn deposit_big<V: Visibility + Copy + minocrab::OnChainGuard>(
         self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,
@@ -128,7 +128,7 @@ impl HandPaymentTarget {
         }
     }
 
-    fn notify<V: Visibility + Copy>(
+    fn notify<V: Visibility + Copy + minocrab::OnChainGuard>(
         self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, V>,

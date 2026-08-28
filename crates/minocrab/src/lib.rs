@@ -89,6 +89,26 @@ pub trait Visibility: sealed::Sealed + 'static {
     const IS_PUBLIC: bool;
 }
 
+/// A visibility that may GUARD AN ON-CHAIN EFFECT — an Impact op or a
+/// public-transcript read. Only [`Public`].
+///
+/// Whether a guarded op ran, and whether a guarded transcript read consumed
+/// a value, is visible on chain: the guard bit is published by the effect
+/// it guards. So a private condition guarding one is a disclosure, and the
+/// disclosure type system has to see it — compactc's own rule ("performing
+/// this ledger operation might disclose the boolean value of the witness
+/// value … the conditional branch"), which the external review's §4.1 found
+/// this API let through silently. Disclose the condition first
+/// (`.disclose_as::<L>(c)`), then branch on the public wire; the manifest
+/// then names it. Sealed: the two visibilities are the only ones.
+#[diagnostic::on_unimplemented(
+    message = "a `{Self}` value cannot guard an on-chain effect — whether the effect ran is visible on chain, so the condition is a disclosure",
+    label = "private guard on an on-chain effect (Impact op, public-transcript read, or a `when` scope)",
+    note = "disclose the condition first — `let cond = cond.disclose_as::<L>(c);` with `L` in the circuit's `Discloses<(..)>` — and guard on the public wire; a `Private` guard is allowed only on effects nothing on chain can see (`witness_guarded`)"
+)]
+pub trait OnChainGuard: Visibility {}
+impl OnChainGuard for Public {}
+
 /// Value derived only from constants and disclosed/public values.
 /// (Clone/Copy so `#[derive(Clone, Copy)]` works on types generic over a
 /// visibility — derives bound every type parameter.)

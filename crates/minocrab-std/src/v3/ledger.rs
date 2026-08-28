@@ -139,7 +139,7 @@ pub trait LedgerRepr: Sized {
     /// FAB-aligned record does. The one type that overrides it is
     /// [`Secp256k1Point`]: a point cell mints ONE TYPED gate and DERIVES its
     /// five limbs with `encode`, so its read is not a limb read at all.
-    fn witness_read<V: Visibility + Copy>(
+    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
         c: &mut Circuit3,
         guard: Option<Wire3<FieldT, V>>,
     ) -> (Self, LedgerValue) {
@@ -249,7 +249,7 @@ impl LedgerRepr for Secp256k1Point<Public> {
         )
     }
 
-    fn witness_read<V: Visibility + Copy>(
+    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
         c: &mut Circuit3,
         guard: Option<Wire3<FieldT, V>>,
     ) -> (Self, LedgerValue) {
@@ -295,7 +295,7 @@ impl LedgerRepr for JubjubPoint<Public> {
         )
     }
 
-    fn witness_read<V: Visibility + Copy>(
+    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
         c: &mut Circuit3,
         guard: Option<Wire3<FieldT, V>>,
     ) -> (Self, LedgerValue) {
@@ -880,7 +880,7 @@ impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::member`] under a branch condition.
-    pub fn member_under<G: Visibility>(
+    pub fn member_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -891,7 +891,7 @@ impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::member`] inside a conditional branch.
-    pub fn member_guarded<G: Visibility + Copy>(
+    pub fn member_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
@@ -910,7 +910,7 @@ impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::remove`] under a branch condition.
-    pub fn remove_under<G: Visibility>(
+    pub fn remove_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -935,7 +935,7 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::lookup`] under a branch condition.
-    pub fn lookup_under<G: Visibility>(
+    pub fn lookup_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -946,7 +946,7 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::lookup`] inside a conditional branch.
-    pub fn lookup_guarded<G: Visibility + Copy>(
+    pub fn lookup_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
@@ -970,7 +970,7 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility>(
+    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -999,7 +999,7 @@ impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::insert_default`] under a branch condition.
-    pub fn insert_default_under<G: Visibility>(
+    pub fn insert_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1043,7 +1043,7 @@ impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
     }
 
     /// [`LedgerMap::insert_coin`] under a branch condition.
-    pub fn insert_coin_under<G: Visibility>(
+    pub fn insert_coin_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1065,7 +1065,7 @@ impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::size`] under a branch condition.
-    pub fn size_under<G: Visibility>(
+    pub fn size_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1079,7 +1079,7 @@ impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility>(
+    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1099,7 +1099,7 @@ impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
     }
 
     /// [`LedgerMap::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1195,7 +1195,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility>(
+    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1214,7 +1214,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::member`] under a branch condition.
-    pub fn member_under<G: Visibility>(
+    pub fn member_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1230,7 +1230,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::remove`] under a branch condition.
-    pub fn remove_under<G: Visibility>(
+    pub fn remove_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1264,7 +1264,7 @@ impl<T: CoinArm> LedgerSet<T> {
     }
 
     /// [`LedgerSet::insert_coin`] under a branch condition.
-    pub fn insert_coin_under<G: Visibility>(
+    pub fn insert_coin_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1283,7 +1283,7 @@ impl<T, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::size`] under a branch condition.
-    pub fn size_under<G: Visibility>(
+    pub fn size_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1297,7 +1297,7 @@ impl<T, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility>(
+    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1311,7 +1311,7 @@ impl<T, P: LedgerPath> LedgerSet<T, P> {
     }
 
     /// [`LedgerSet::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1393,7 +1393,7 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::pop_front`] under a branch condition.
-    pub fn pop_front_under<G: Visibility>(
+    pub fn pop_front_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1408,7 +1408,7 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::length`] under a branch condition.
-    pub fn length_under<G: Visibility>(
+    pub fn length_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1423,7 +1423,7 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility>(
+    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1437,7 +1437,7 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1457,7 +1457,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::push_front`] under a branch condition.
-    pub fn push_front_under<G: Visibility>(
+    pub fn push_front_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1473,7 +1473,7 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
     }
 
     /// [`LedgerList::head`] under a branch condition.
-    pub fn head_under<G: Visibility>(
+    pub fn head_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1517,7 +1517,7 @@ impl<T: CoinArm> LedgerList<T> {
     }
 
     /// [`LedgerList::push_front_coin`] under a branch condition.
-    pub fn push_front_coin_under<G: Visibility>(
+    pub fn push_front_coin_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1634,7 +1634,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerMerkleTree::is_full`] under a branch condition.
-    pub fn is_full_under<G: Visibility>(
+    pub fn is_full_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1648,7 +1648,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerMerkleTree::check_root`] under a branch condition.
-    pub fn check_root_under<G: Visibility>(
+    pub fn check_root_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1665,7 +1665,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerMerkleTree::insert_hash`] under a branch condition.
-    pub fn insert_hash_under<G: Visibility>(
+    pub fn insert_hash_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1687,7 +1687,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerMerkleTree::insert_hash_index`] under a branch condition.
-    pub fn insert_hash_index_under<G: Visibility>(
+    pub fn insert_hash_index_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1709,7 +1709,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerMerkleTree::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1726,7 +1726,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P
     }
 
     /// [`LedgerMerkleTree::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility>(
+    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1742,7 +1742,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P
     }
 
     /// [`LedgerMerkleTree::insert_index`] under a branch condition.
-    pub fn insert_index_under<G: Visibility>(
+    pub fn insert_index_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1760,7 +1760,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P
     }
 
     /// [`LedgerMerkleTree::insert_index_default`] under a branch condition.
-    pub fn insert_index_default_under<G: Visibility>(
+    pub fn insert_index_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1847,7 +1847,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerHistoricMerkleTree::is_full`] under a branch condition.
-    pub fn is_full_under<G: Visibility>(
+    pub fn is_full_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1861,7 +1861,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerHistoricMerkleTree::check_root`] under a branch condition.
-    pub fn check_root_under<G: Visibility>(
+    pub fn check_root_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1880,7 +1880,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerHistoricMerkleTree::insert_hash`] under a branch condition.
-    pub fn insert_hash_under<G: Visibility>(
+    pub fn insert_hash_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1902,7 +1902,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
 
     /// [`LedgerHistoricMerkleTree::insert_hash_index`] under a branch
     /// condition.
-    pub fn insert_hash_index_under<G: Visibility>(
+    pub fn insert_hash_index_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1924,7 +1924,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     }
 
     /// [`LedgerHistoricMerkleTree::reset_history`] under a branch condition.
-    pub fn reset_history_under<G: Visibility>(
+    pub fn reset_history_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1940,7 +1940,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
 
     /// [`LedgerHistoricMerkleTree::reset_to_default`] under a branch
     /// condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1956,7 +1956,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEP
     }
 
     /// [`LedgerHistoricMerkleTree::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility>(
+    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1972,7 +1972,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEP
     }
 
     /// [`LedgerHistoricMerkleTree::insert_index`] under a branch condition.
-    pub fn insert_index_under<G: Visibility>(
+    pub fn insert_index_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -1990,7 +1990,7 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEP
 
     /// [`LedgerHistoricMerkleTree::insert_index_default`] under a branch
     /// condition.
-    pub fn insert_index_default_under<G: Visibility>(
+    pub fn insert_index_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2091,7 +2091,7 @@ impl<T: LedgerRepr> LedgerCell<T> {
     }
 
     /// [`LedgerCell::read`] under a branch condition.
-    pub fn read_under<G: Visibility>(
+    pub fn read_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2102,7 +2102,7 @@ impl<T: LedgerRepr> LedgerCell<T> {
     }
 
     /// [`LedgerCell::read`] inside a conditional branch.
-    pub fn read_guarded<G: Visibility + Copy>(
+    pub fn read_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
@@ -2118,7 +2118,7 @@ impl<T: LedgerRepr> LedgerCell<T> {
     }
 
     /// [`LedgerCell::write`] under a branch condition.
-    pub fn write_under<G: Visibility>(
+    pub fn write_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2185,7 +2185,7 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// [`LedgerCounter::read`] under a branch condition.
-    pub fn read_under<G: Visibility>(
+    pub fn read_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2194,7 +2194,7 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// [`LedgerCounter::read`] inside a conditional branch.
-    pub fn read_guarded<G: Visibility + Copy>(
+    pub fn read_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: Wire3<FieldT, G>,
@@ -2216,7 +2216,7 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// [`LedgerCounter::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility>(
+    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2230,7 +2230,7 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// [`LedgerCounter::increment`] under a branch condition.
-    pub fn increment_under<G: Visibility>(
+    pub fn increment_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
@@ -2246,7 +2246,7 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// [`LedgerCounter::less_than`] under a branch condition.
-    pub fn less_than_under<G: Visibility>(
+    pub fn less_than_under<G: Visibility + minocrab::OnChainGuard>(
         &self,
         c: &mut Circuit3,
         guard: impl Into<Operand<FieldT, G>>,
