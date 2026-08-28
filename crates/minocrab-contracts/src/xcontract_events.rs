@@ -96,7 +96,7 @@ pub fn deposit_via_vault(
     // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
     // `token` cell is read inside the call, as compactc reads it.
     let event_hash: B32<Public> =
-        Token::at_field(TOKEN).deposit(c, one, Uint::from_field_unchecked(a), me);
+        Token::at_field(TOKEN).deposit(c, one, Uint::from_field_unchecked(a), me.address());
     emit(
         c,
         one,

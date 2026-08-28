@@ -8,6 +8,7 @@ use minocrab_ledger::{
     popeq, ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::kernel;
+use minocrab_std::v3::kernel::SelfAddress;
 use minocrab_std::v3::{
     CoinNonce, TokenDomainSeparator,
     b32_newtype, coin_commitment, coin_nullifier_contract, token_type, CircuitAbi, CoinRecipient,
@@ -214,12 +215,12 @@ fn self_recipient(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> CoinRecipie
 }
 
 /// [`self_recipient`] against an address the caller already read.
-fn contract_recipient(c: &mut Circuit3, me: ContractAddress<Public>) -> CoinRecipient<Public> {
+fn contract_recipient(c: &mut Circuit3, me: SelfAddress) -> CoinRecipient<Public> {
     let zero = c.constant(0u64);
     CoinRecipient {
         is_left: zero,
         left: minocrab_std::v3::ZswapCoinPublicKey(B32 { hi: zero, lo: zero }),
-        right: me,
+        right: me.address(),
     }
 }
 
@@ -390,7 +391,7 @@ pub fn burn_coin(
 fn burn_body(
     c: &mut Circuit3,
     one: Wire3<FieldT, Public>,
-    me: ContractAddress<Public>,
+    me: SelfAddress,
     coin: &ShieldedCoinInfo3<Public>,
 ) {
     {

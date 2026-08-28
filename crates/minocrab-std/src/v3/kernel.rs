@@ -30,7 +30,7 @@
 //! contract wants.
 
 use minocrab::v3::{AnyWire3, Circuit3, FieldT, Guarded, Operand, Wire3};
-use minocrab::{AlignmentAtom, Fr, Public, Visibility};
+use minocrab::{AlignmentAtom, Fr, Private, Public, Visibility};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
     kernel_claim_zswap_coin_receive, kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier,
@@ -41,7 +41,7 @@ use minocrab_ledger::{
 use super::hash;
 use super::ledger::LedgerRepr;
 use super::predicate::is_true;
-use super::{
+use super::{Select, 
     coin_commitment_to, coin_commitment_to_contract, coin_nullifier_contract, Bool, CoinColor,
     CoinNonce, CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3,
     ShieldedCoinInfo3, ShieldedSendResult, TokenDomainSeparator, Uint, UserAddress, B32,
@@ -108,7 +108,49 @@ impl UnshieldedToken<Public> {
 /// The cached `kernel.self()` answer — populated ONLY by
 /// [`cache_self_address`], parked in the circuit's gadget scratch state
 /// under this private type so nothing outside this module can touch it.
-struct CachedSelfAddress(ContractAddress<Public>);
+struct CachedSelfAddress(SelfAddress);
+
+/// `kernel.self()` as a PROOF OF SELF — a value only the three
+/// `self_address*` readers produce, because `ContractAddress<Public>` is
+/// Compact's value type and is built from any `B32` (recipients, `Either`
+/// arms, call targets), so it cannot carry that meaning. A helper that
+/// means "mint to / burn from / notify AS this contract" takes a
+/// `SelfAddress`; anything that merely wants an address takes
+/// `.address()`. Zero rows: the same two limbs. (External review §4.5 and
+/// notes/api-safety-survey.org §3 item 5.)
+#[derive(Clone, Copy)]
+pub struct SelfAddress(ContractAddress<Public>);
+
+impl SelfAddress {
+    /// The address, as the value type every other API takes.
+    pub fn address(self) -> ContractAddress<Public> {
+        self.0
+    }
+
+    /// [`ContractAddress::bytes`].
+    pub fn bytes(self) -> B32<Public> {
+        self.0.bytes()
+    }
+
+    /// [`ContractAddress::private`] — forget it is public and self.
+    pub fn private(self) -> ContractAddress<Private> {
+        self.0.private()
+    }
+}
+
+impl From<SelfAddress> for ContractAddress<Public> {
+    fn from(me: SelfAddress) -> Self {
+        me.0
+    }
+}
+
+/// A guarded self-address read is still a self-address where the guard
+/// held (and the zero address where it did not) — `Guarded::or` needs this.
+impl Select<Public> for SelfAddress {
+    fn select(c: &mut Circuit3, bit: Wire3<FieldT, Public>, a: Self, b: Self) -> Self {
+        SelfAddress(Select::select(c, bit, a.0, b.0))
+    }
+}
 
 /// `kernel.self()` — the contract's own address. Reads fresh, unless this
 /// circuit earlier called [`cache_self_address`], in which case the cached
@@ -117,7 +159,7 @@ struct CachedSelfAddress(ContractAddress<Public>);
 /// A circuit that never caches CANNOT be affected: nothing else populates
 /// the cache, so the compat ports' per-call-site reads (compactc parity)
 /// are reproduced by construction, not by discipline.
-pub fn self_address(c: &mut Circuit3) -> ContractAddress<Public> {
+pub fn self_address(c: &mut Circuit3) -> SelfAddress {
     if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
         return cached.0;
     }
@@ -140,7 +182,7 @@ pub fn self_address(c: &mut Circuit3) -> ContractAddress<Public> {
 ///
 /// Guarded reads ([`self_address_under`], [`self_address_guarded`]) are
 /// different instructions and never consult the cache.
-pub fn cache_self_address(c: &mut Circuit3) -> ContractAddress<Public> {
+pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
     let me = self_address_under(c, STRAIGHT_LINE);
     c.ext_insert(CachedSelfAddress(me));
     me
@@ -150,8 +192,8 @@ pub fn cache_self_address(c: &mut Circuit3) -> ContractAddress<Public> {
 pub fn self_address_under<G: Visibility + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: impl Into<Operand<FieldT, G>>,
-) -> ContractAddress<Public> {
-    ContractAddress::from_limbs(kernel_self(c, guard))
+) -> SelfAddress {
+    SelfAddress(ContractAddress::from_limbs(kernel_self(c, guard)))
 }
 
 /// [`self_address`] inside a conditional branch, where the READ itself is
@@ -160,9 +202,9 @@ pub fn self_address_under<G: Visibility + minocrab::OnChainGuard>(
 pub fn self_address_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
     c: &mut Circuit3,
     guard: Wire3<FieldT, G>,
-) -> Guarded<ContractAddress<Public>, G> {
+) -> Guarded<SelfAddress, G> {
     Guarded::new(
-        ContractAddress::from_limbs(kernel_self_guarded(c, guard)),
+        SelfAddress(ContractAddress::from_limbs(kernel_self_guarded(c, guard))),
         guard,
     )
 }

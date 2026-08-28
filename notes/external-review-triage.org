@@ -239,8 +239,12 @@ unchecked to mirror compactc.
   so. The real closure is the survey's own §3 item 5, a =SelfAddress=
   newtype only =kernel::self_address*= produce, taken by the two
   =contract_recipient= helpers and =common.rs:393=: 48 call sites (35
-  pass the value on, 5 =.bytes()=, 4 =.private()=), zero rows. DECISION
-  for dmd — moderate sweep, modest win.
+  pass the value on, 5 =.bytes()=, 4 =.private()=), zero rows. BUILT
+  (dmd's decision 2026-08-28): =kernel::SelfAddress=, private field,
+  four producers, three self-meaning consumers; only THREE pass-through
+  sites needed =.address()= (the rest go through =.bytes()= /
+  =.private()=, which the newtype forwards). Every circuit
+  byte-identical.
 - Identity =mpcResponseKey=: FIXED on opt/borsh/modern (dmd's decision
   2026-08-28): =initialize= extracts the key's coordinates, which the
   identity has none of (upstream's =into_coordinates= refuses it and the
