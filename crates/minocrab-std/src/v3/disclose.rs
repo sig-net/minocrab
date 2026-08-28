@@ -56,7 +56,7 @@ impl Disclose for B32<Private> {
     type Public = B32<Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> B32<Public> {
-        let [hi, lo] = c.disclose_all(L::LABEL, [self.hi, self.lo]);
+        let [hi, lo] = c.disclose_all_as::<L, _, 2>([self.hi, self.lo]);
         B32 { hi, lo }
     }
 }
@@ -136,7 +136,7 @@ impl<const N: usize> Disclose for BytesN<Private, N> {
     type Public = BytesN<Public, N>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> BytesN<Public, N> {
-        BytesN::from_limbs(c.disclose_slice(L::LABEL, self.limbs()))
+        BytesN::from_limbs(c.disclose_slice_as::<L, _>(self.limbs()))
     }
 }
 
@@ -145,8 +145,7 @@ impl Disclose for ShieldedCoinInfo3<Private> {
     type Public = ShieldedCoinInfo3<Public>;
 
     fn disclose_as<L: DisclosureLabel>(self, c: &mut Circuit3) -> ShieldedCoinInfo3<Public> {
-        let [nonce_hi, nonce_lo, color_hi, color_lo, value] = c.disclose_all(
-            L::LABEL,
+        let [nonce_hi, nonce_lo, color_hi, color_lo, value] = c.disclose_all_as::<L, _, 5>(
             [
                 self.nonce.bytes().hi,
                 self.nonce.bytes().lo,

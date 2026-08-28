@@ -62,10 +62,10 @@ fn undeclared(
     request: Request,
 ) -> Discloses<(RequestIdHiBare, RequestIdLoBare, AmountBare)> {
     let request_id = B32 {
-        hi: c.disclose(request.request_id.hi, "request id (hi)"),
-        lo: c.disclose(request.request_id.lo, "request id (lo)"),
+        hi: c.disclose_as::<RequestIdHiBare, _>(request.request_id.hi),
+        lo: c.disclose_as::<RequestIdLoBare, _>(request.request_id.lo),
     };
-    let amount = c.disclose(request.amount.field(), "amount");
+    let amount = c.disclose_as::<AmountBare, _>(request.amount.field());
     let sum = c.add(request_id.hi, amount);
     c.assert_bits(sum, 129);
     let _ = request_id.lo;

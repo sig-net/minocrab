@@ -490,6 +490,7 @@ pub fn report(run: &Run, disclosures: &[Disclosure]) -> Report {
                 label: d.label.clone(),
                 kind: match d.kind {
                     minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
                     minocrab::DisclosureKind::Statement => "statement",
                     minocrab::DisclosureKind::Output => "output",
                 },

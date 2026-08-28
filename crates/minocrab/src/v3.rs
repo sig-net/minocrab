@@ -1330,19 +1330,51 @@ impl Circuit3 {
         out
     }
 
+    /// [`Circuit3::disclose`] under a LABEL TYPE — the record every
+    /// `Discloses<..>` declaration is checked against. The bare-string form
+    /// records [`DisclosureKind::DisclosedUntyped`], which no declaration
+    /// accepts (external review §4.5: a string that spells a declared label
+    /// must not pass for it); this one records [`DisclosureKind::Disclosed`].
+    pub fn disclose_as<L: DisclosureLabel, T: IrTy>(&mut self, w: Wire3<T, Private>) -> Wire3<T, Public> {
+        let [out] = self.disclose_all_as::<L, T, 1>([w]);
+        out
+    }
+
+    /// [`Circuit3::disclose_all`] under a label type — see
+    /// [`Circuit3::disclose_as`].
+    pub fn disclose_all_as<L: DisclosureLabel, T: IrTy, const N: usize>(
+        &mut self,
+        wires: [Wire3<T, Private>; N],
+    ) -> [Wire3<T, Public>; N] {
+        self.record_disclosure(L::LABEL, DisclosureKind::Disclosed, &wires);
+        wires.map(|w| Wire3::new(w.val))
+    }
+
+    /// [`Circuit3::disclose_slice`] under a label type — see
+    /// [`Circuit3::disclose_as`].
+    pub fn disclose_slice_as<L: DisclosureLabel, T: IrTy>(
+        &mut self,
+        wires: &[Wire3<T, Private>],
+    ) -> Vec<Wire3<T, Public>> {
+        self.record_disclosure(L::LABEL, DisclosureKind::Disclosed, wires);
+        wires.iter().map(|w| Wire3::new(w.val)).collect()
+    }
+
     /// Disclose the wires of ONE logical value under ONE label — a
     /// `Bytes<32>`'s `[hi, lo]` pair becomes a single record rather than a
     /// `"… (hi)"` / `"… (lo)"` pair (see [`Disclosure3`]).
     ///
-    /// The typed layer above (`minocrab_std::v3::Disclose`) is what call
-    /// sites use; this is the primitive it fans out through, and the only
-    /// place a `Disclosed` record is created.
+    /// The BARE-STRING form: its record is [`DisclosureKind::DisclosedUntyped`],
+    /// which satisfies no `Discloses<..>` declaration. Call sites that
+    /// declare use [`Circuit3::disclose_all_as`] (the typed layer,
+    /// `minocrab_std::v3::Disclose`, fans out through it); this one is for
+    /// hand-built circuits and tests that declare nothing.
     pub fn disclose_all<T: IrTy, const N: usize>(
         &mut self,
         label: &str,
         wires: [Wire3<T, Private>; N],
     ) -> [Wire3<T, Public>; N] {
-        self.record_disclosure(label, &wires);
+        self.record_disclosure(label, DisclosureKind::DisclosedUntyped, &wires);
         wires.map(|w| Wire3::new(w.val))
     }
 
@@ -1353,7 +1385,7 @@ impl Circuit3 {
         label: &str,
         wires: &[Wire3<T, Private>],
     ) -> Vec<Wire3<T, Public>> {
-        self.record_disclosure(label, wires);
+        self.record_disclosure(label, DisclosureKind::DisclosedUntyped, wires);
         wires.iter().map(|w| Wire3::new(w.val)).collect()
     }
 
@@ -1371,14 +1403,19 @@ impl Circuit3 {
     /// A value with no wires discloses nothing (a cross-contract call to a
     /// `[]`-returning circuit has an empty result list), and recording it
     /// anyway would put a label in the disclosed set that no value backs.
-    fn record_disclosure<T: IrTy>(&mut self, label: &str, wires: &[Wire3<T, Private>]) {
+    fn record_disclosure<T: IrTy>(
+        &mut self,
+        label: &str,
+        kind: DisclosureKind,
+        wires: &[Wire3<T, Private>],
+    ) {
         if wires.is_empty() {
             return;
         }
         let values = wires.iter().map(|&w| self.disclosed_wire(w.val)).collect();
         self.disclosures.push(Disclosure3 {
             label: label.to_string(),
-            kind: DisclosureKind::Disclosed,
+            kind,
             values,
         });
     }

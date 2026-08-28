@@ -2439,7 +2439,7 @@ pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
     preimage.extend(results.iter().copied());
     let comm = c.transient_hash(&preimage);
 
-    let [ep_hi, ep_lo] = c.disclose_all(XcallEntryPointHash::LABEL, [ep_hi, ep_lo]);
+    let [ep_hi, ep_lo] = c.disclose_all_as::<XcallEntryPointHash, _, 2>([ep_hi, ep_lo]);
     let comm = comm.disclose_as::<XcallCommitment>(c);
 
     let addr_ep_comm = LedgerValue::new(

@@ -209,8 +209,14 @@ pub struct Disclosure {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisclosureKind {
-    /// `disclose()` — a private value became public inside the circuit.
+    /// `disclose_as::<L>()` — a private value became public inside the
+    /// circuit, under a LABEL TYPE the circuit's `Discloses<..>` names.
     Disclosed,
+    /// `disclose(w, "text")` — the same, under a bare string. It never
+    /// satisfies a declaration: a declared label is a type, and a string
+    /// that happens to spell it is exactly the shadowing the manifest must
+    /// not accept (external review §4.5). The test names the fix.
+    DisclosedUntyped,
     /// Declared as part of the public statement (public input block).
     Statement,
     /// Returned as a circuit output.

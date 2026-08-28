@@ -1002,6 +1002,7 @@ pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 
                 label: d.label.clone(),
                 kind: match d.kind {
                     minocrab::DisclosureKind::Disclosed => "disclosed",
+                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
                     minocrab::DisclosureKind::Statement => "statement",
                     minocrab::DisclosureKind::Output => "output",
                 },

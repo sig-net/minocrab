@@ -43,6 +43,9 @@ use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
 use minocrab_std::v3::{circuit, BytesNDyn, Disclose, Discloses, B32};
 
+label!(TheDigestHi = "the digest (hi)");
+label!(TheDigestLo = "the digest (lo)");
+label!(TheFieldDigest = "the field digest");
 label! {
     /// [`persistent_vec8`]'s digest. The `Bytes<len>` sweep below discloses
     /// the same value under the same string, but through the free-string
@@ -99,15 +102,15 @@ fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
                 _ => c.keccak256(alignment, &inputs),
             };
             let digest = B32::from_typed(&mut c, typed);
-            let hi = c.disclose(digest.hi, "the digest (hi)");
-            let lo = c.disclose(digest.lo, "the digest (lo)");
+            let hi = c.disclose_as::<TheDigestHi, _>(digest.hi);
+            let lo = c.disclose_as::<TheDigestLo, _>(digest.lo);
             let value = LedgerValue::bytes(32, vec![ImpactElem::Wire(hi), ImpactElem::Wire(lo)]);
             emit(&mut c, one, &cell_write(DIGEST, &value));
         }
         HashKind::Transient => {
             let limbs: Vec<Wire3<_, Private>> = data.limbs.clone();
             let f = c.transient_hash(&limbs);
-            let f = c.disclose(f, "the field digest");
+            let f = c.disclose_as::<TheFieldDigest, _>(f);
             let value = LedgerValue::new(vec![AlignmentAtom::Field], vec![ImpactElem::Wire(f)]);
             emit(&mut c, one, &cell_write(FDIGEST, &value));
         }
