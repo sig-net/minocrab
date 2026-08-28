@@ -1075,10 +1075,12 @@ fn refund_surrendered_value(
     let domain_sep = vault_token_domain_separator(c, ev.to());
     let own_pk = own_public_key(c);
     let own_pk = own_pk.disclose_as::<RefundRecipient>(c);
-    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
-    // locally (notes/api-safety-survey.org §B4's correction) — first in
-    // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), mint_nonce, &own_pk);
+    // CHECKED (review §4.4): the `Uint<64>` claim is constrained HERE — one
+    // `constrain_bits 64` — rather than inherited from the request circuits'
+    // bounds as a whole-contract invariant. The port keeps the unchecked
+    // spelling for compactc parity; this lineage pays the rows.
+    let amount = Uint::<64, Public>::from_field_checked(c, amount);
+    common::mint_shielded_token_to_key(c, &domain_sep, amount, mint_nonce, &own_pk);
 }
 
 /// `export circuit completeWithdraw(requestId, respondBidirectionalEvent,
@@ -1204,10 +1206,12 @@ pub fn complete_swap(
     let token_out = signet::abi_word_low20(c, &word1);
     let ds_out = vault_token_domain_separator(c, token_out);
     let mint_nonce = args.mint_nonce.disclose_as::<SwapMintNonce>(c);
-    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
-    // locally (notes/api-safety-survey.org §B4's correction) — first in
-    // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key(c, &ds_out, Uint::<64, Public>::from_field_unchecked(amount_out), &mint_nonce, &recipient);
+    // CHECKED (review §4.4): the `Uint<64>` claim is constrained HERE — one
+    // `constrain_bits 64` — rather than inherited from the request circuits'
+    // bounds as a whole-contract invariant. The port keeps the unchecked
+    // spelling for compactc parity; this lineage pays the rows.
+    let amount_out = Uint::<64, Public>::from_field_checked(c, amount_out);
+    common::mint_shielded_token_to_key(c, &ds_out, amount_out, &mint_nonce, &recipient);
 
     // Change: amountInMaximum (word 5) − attested amountIn, of tokenIn
     // (word 0), under a nonce derived from mintNonce.
@@ -1230,10 +1234,12 @@ pub fn complete_swap(
     let token_in = signet::abi_word_low20(c, &word0);
     let ds_in = vault_token_domain_separator(c, token_in);
     let change_nonce = change_nonce(c, &mint_nonce);
-    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
-    // locally (notes/api-safety-survey.org §B4's correction) — first in
-    // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key(c, &ds_in, Uint::<64, Public>::from_field_unchecked(change), &change_nonce, &recipient);
+    // CHECKED (review §4.4): the `Uint<64>` claim is constrained HERE — one
+    // `constrain_bits 64` — rather than inherited from the request circuits'
+    // bounds as a whole-contract invariant. The port keeps the unchecked
+    // spelling for compactc parity; this lineage pays the rows.
+    let change = Uint::<64, Public>::from_field_checked(c, change);
+    common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
 
     Discloses::of(())
 }
@@ -1456,10 +1462,12 @@ pub fn refund(
     let token = c.cond_select(is_withdrawal, ev.to(), token_sw);
     let domain_sep = vault_token_domain_separator(c, token);
     let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
-    // locally (notes/api-safety-survey.org §B4's correction) — first in
-    // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token_to_key(c, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &own_pk);
+    // CHECKED (review §4.4): the `Uint<64>` claim is constrained HERE — one
+    // `constrain_bits 64` — rather than inherited from the request circuits'
+    // bounds as a whole-contract invariant. The port keeps the unchecked
+    // spelling for compactc parity; this lineage pays the rows.
+    let amount = Uint::<64, Public>::from_field_checked(c, amount);
+    common::mint_shielded_token_to_key(c, &domain_sep, amount, &mint_nonce, &own_pk);
 
     Discloses::of(())
 }
@@ -1616,10 +1624,12 @@ pub fn claim(
     // mintShieldedToken(domainSep, amount as Uint<64>, disclose(mintNonce),
     //   claimRecipient)
     let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-    // The `Uint<64>` claim here is justified by REQUEST-TIME bounds, not
-    // locally (notes/api-safety-survey.org §B4's correction) — first in
-    // line for `from_field_checked` once there's a spec-anchored artifact.
-    common::mint_shielded_token(c, one, &domain_sep, Uint::<64, Public>::from_field_unchecked(amount), &mint_nonce, &recipient);
+    // CHECKED (review §4.4): the `Uint<64>` claim is constrained HERE — one
+    // `constrain_bits 64` — rather than inherited from the request circuits'
+    // bounds as a whole-contract invariant. The port keeps the unchecked
+    // spelling for compactc parity; this lineage pays the rows.
+    let amount = Uint::<64, Public>::from_field_checked(c, amount);
+    common::mint_shielded_token(c, one, &domain_sep, amount, &mint_nonce, &recipient);
 
     Discloses::of(())
 }

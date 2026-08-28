@@ -316,6 +316,21 @@ Sites to convert: std =disclose.rs= ×2 (they already have =L=), ledger
 =contract_call= ×1, =hashing.rs= ×3 (bare by intent, M9 closure — need
 three label types). Small; separate commit.
 
+** AS BUILT — items 4b and 8 (review-fixes, 2026-08-28)
+- 4b: =DisclosureKind::DisclosedUntyped= for the bare =disclose= /
+  =disclose_all= / =disclose_slice=; typed core entries
+  =disclose_as::<L>= / =disclose_all_as= / =disclose_slice_as= record
+  =Disclosed=. =assert_declared_disclosures= reports untyped ones as
+  "DISCLOSED WITHOUT A LABEL TYPE" with the fix; =assert_discloses_nothing=
+  counts both kinds. Typed everywhere a declaration exists (std =Disclose=
+  impls, the ledger's =XcallEntryPointHash=, =hashing.rs='s three bare
+  sites now =TheDigestHi= / =TheDigestLo= / =TheFieldDigest=). Zero
+  movement (records, not instructions).
+- 8 (dmd: convert on opt/borsh/modern, port stays): the five mint sites
+  per lineage are =from_field_checked=; one =constrain_bits 64= each;
+  opt ≡ borsh ≡ modern move together so the fork ledgers keep every
+  entry; rows re-frozen; VERIFICATION §5 bullet restated.
+
 ** 10. §3.2 / §7.5 — the compactc anchor is thin on the optimised lineage
 Confirmed by construction (erc20_vault_spec.rs header: PI-equality is
 re-anchored to OUR reference op stream). Proposed: drive the spec

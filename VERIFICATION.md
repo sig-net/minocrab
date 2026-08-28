@@ -387,11 +387,14 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   a range constraint implied by an earlier one on the same wire finds **zero**,
   so turning the flag on today would remove nothing
   ([notes/ir-passes.org §11](notes/ir-passes.org)).
-- **Seven `from_field_unchecked` sites per vault lineage (ten in the modern
-  twin, 31 in all) rest on a whole-contract argument.** The vault's settle
-  mints — `claim`, `refund`, four in `complete_swap`, one in
-  `refund_surrendered_value` — claim `Uint<64>` on a word locally bounded only to
-  `< 2^128`; the claim holds because every request circuit bounds its amounts
+- **The PORT's settle mints rest on a whole-contract argument; the three
+  optimised lineages check.** Five `from_field_unchecked` mint sites per
+  lineage — `claim`, `refund`, `complete_swap`'s two, `refund_surrendered_value`
+  — claim `Uint<64>` on a word locally bounded only to `< 2^128`. On
+  `erc20_vault_opt` / `_borsh` / `_modern` they are `from_field_checked` since
+  the review-fixes branch (one `constrain_bits 64` each); the port keeps the
+  unchecked spelling for compactc parity, so on the port alone the claim
+  holds because the claim holds because every request circuit bounds its amounts
   before a record enters the map — an invariant of the contract as a whole, not
   of the site. Each carries a comment saying so, and they are first in line for
   the checked spelling
