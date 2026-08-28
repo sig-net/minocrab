@@ -2413,18 +2413,25 @@ pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
     args: &[Wire3<FieldT, Public>],
     results: &[LimbConstraint],
 ) -> Vec<Wire3<FieldT, Public>> {
+    // Every witness of the call is read UNDER THE CALL'S GUARD, as the op
+    // that claims it is emitted under it: a call inside a branch consumes
+    // the prover's cc-rand, entry-point limbs and results only where the
+    // branch runs, or the private transcript shifts for everything after
+    // it (the external review's §4.3; the same class the choke point closed
+    // for the scope-based reads). Straight-line callers pass a constant
+    // true, which lowers to compactc's own `guard: null`.
     let results: Vec<_> = results
         .iter()
         .map(|&constraint| {
-            let w = c.witness::<FieldT>();
+            let w = c.witness_guarded::<FieldT, V>(guard);
             constraint.emit(c, w);
             w
         })
         .collect();
-    let cc_rand = c.witness::<FieldT>();
-    let ep_hi = c.witness::<FieldT>();
+    let cc_rand = c.witness_guarded::<FieldT, V>(guard);
+    let ep_hi = c.witness_guarded::<FieldT, V>(guard);
     c.assert_bits(ep_hi, 8);
-    let ep_lo = c.witness::<FieldT>();
+    let ep_lo = c.witness_guarded::<FieldT, V>(guard);
     c.assert_bits(ep_lo, 248);
 
     let mut preimage = vec![cc_rand];

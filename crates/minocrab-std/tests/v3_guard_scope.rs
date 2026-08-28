@@ -723,3 +723,44 @@ fn an_assert_message_inside_a_scope_names_the_assert() {
         "the select carries no message"
     );
 }
+
+/// A NAMED constant 1 as an explicit guard inside a scope yields to the
+/// scope exactly as the literal does — `cond_select(ambient, one, 0)` is
+/// the ambient guard, and is no longer emitted (nine of them left
+/// manager::execute when this landed).
+#[test]
+fn a_named_one_guard_yields_to_the_scope() {
+    let literal = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        c.when(g, |c| c.impact_mixed(1u64, &op()));
+    });
+    let named = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        let one = c.constant(1u64);
+        c.when(g, |c| c.impact_mixed(one, &op()));
+    });
+    assert_eq!(literal, named);
+}
+
+/// A read under the constant-true guard is an UNGUARDED read (`guard:
+/// null`) — compactc's own byte for the witnesses of a straight-line
+/// cross-contract call, whose ops carry the `0x01` and whose reads carry
+/// nothing.
+#[test]
+fn a_read_under_a_constant_true_guard_is_unguarded() {
+    let plain = zkir(|c| {
+        // Same identifier budget as the other side: the named constant is
+        // a `Copy` the fold inlines, but it still numbers a wire.
+        let _one = c.constant(1u64);
+        let _w = c.witness::<FieldT>();
+        let _p = c.public_transcript_input::<FieldT>();
+    });
+    let named = zkir(|c| {
+        let one = c.constant(1u64);
+        let _w = c.witness_guarded::<FieldT, _>(one);
+        let _p = c.public_transcript_input_guarded::<FieldT, _>(one);
+    });
+    assert_eq!(plain, named);
+}

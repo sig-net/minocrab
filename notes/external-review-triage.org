@@ -251,16 +251,19 @@ unchecked to mirror compactc.
 - Simulator error strings interpolate wire values (sim lib.rs:127,156,
   268 …): local tooling; note it in the sim's rustdoc, nothing more now.
 - =minocrab_ledger::contract_call= (lib.rs:2403), the function §4.3
-  names for mixing guard regimes, has NO callers anywhere in the
-  workspace (the typed call path is =minocrab-std/src/v3/call.rs=, which
-  reads its witnesses through the scope-aware core). Dead public API;
-  its witnesses are ambient-only while its op takes the explicit guard.
-  Delete or route through =witness_guarded= — DECISION for dmd (it is
-  pub in the ledger crate).
-- minocrab-ledger/src/lib.rs is still one 3,657-line file. Cosmetic.
-- Differential bookkeeping: VERIFICATION.md says 18 (lines 256, 283,
-  395); 22 files match =*differential*.rs= today (19 contracts + 3
-  ledger). Fix the number or define what counts.
+  names for mixing guard regimes: its one caller is the ledger's typed
+  =call= (lib.rs:2547), behind every =#[interface]= method. FIXED
+  (review-fixes, 2026-08-28): its four witnesses (results, cc-rand, the
+  entry-point limbs) are read with =witness_guarded(guard)=, so a call
+  inside a branch consumes the private transcript only where the branch
+  runs. Two rules in the choke point make that free for straight-line
+  callers: a NAMED constant 1 as an explicit guard is the immediate 1
+  (yields to the scope; nine redundant =cond_select(ambient, 1, 0)= left
+  =manager::execute=, −9 rows), and a read under the constant-true guard
+  lowers to =guard: null= — compactc's own byte for a straight-line
+  call's witnesses (its ops carry =0x01=, its reads carry nothing).
+  209 of 210 circuits byte-identical; tests in =v3_guard_scope.rs= and
+  =minocrab-ledger/tests/contract_call_guard.rs=.
 
 ** AS BUILT — items 4, 5, 6, 7, 8 (review-fixes, 2026-08-28)
 - Item 5 (§7.4): =tests/circuit_closure.rs= walks =src/= for every

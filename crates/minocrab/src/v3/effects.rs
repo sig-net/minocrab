@@ -70,6 +70,16 @@ impl Circuit3 {
     /// scope the explicit guard passes through untouched, so straight-line
     /// callers are byte-for-byte what they were.
     pub(super) fn effect_guard(&mut self, explicit: Option<Arg>) -> EffectGuard {
+        // A NAMED constant 1 (`c.constant(1)`, the `one` every straight-line
+        // port threads the way compactc does) is the immediate 1: it yields
+        // to the ambient scope exactly as the literal does, instead of
+        // costing a `cond_select(ambient, one, 0)` that conjoins nothing.
+        let explicit = match explicit {
+            Some(Arg::Val(v)) if self.b.immediate_of(v) == Some(Fr::from(1u64)) => {
+                Some(Arg::Imm(Fr::from(1u64)))
+            }
+            other => other,
+        };
         EffectGuard(match (self.ambient(), explicit) {
             (None, explicit) => explicit,
             (Some(ambient), None) => Some(Arg::Val(ambient)),
@@ -118,13 +128,24 @@ impl Circuit3 {
 
     // --- the raw emitters, one each ------------------------------------------------------
 
+    /// A READ under the constant-true guard is an unguarded read: `guard:
+    /// null`, which is what compactc emits for the witnesses of a
+    /// straight-line cross-contract call (its ops carry the `0x01`, its
+    /// reads carry nothing). Same meaning, and the byte compactc chose.
+    fn read_guard(guard: EffectGuard) -> Option<Arg> {
+        match guard.0 {
+            Some(Arg::Imm(imm)) if imm == Fr::from(1u64) => None,
+            g => g,
+        }
+    }
+
     pub(super) fn emit_private_input(&mut self, ty: IrType, guard: EffectGuard) -> Val {
         self.witnesses += 1;
-        self.b.private_input(ty, guard.0)
+        self.b.private_input(ty, Self::read_guard(guard))
     }
 
     pub(super) fn emit_public_input(&mut self, ty: IrType, guard: EffectGuard) -> Val {
-        self.b.public_input(ty, guard.0)
+        self.b.public_input(ty, Self::read_guard(guard))
     }
 
     pub(super) fn emit_impact(&mut self, guard: EffectGuard, inputs: &[Arg]) {

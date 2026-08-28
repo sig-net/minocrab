@@ -246,7 +246,7 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("manager::pool_has_colour", 8, 129),
     ("manager::deposit_shielded", 16, 38488),
     ("manager::deposit_unshielded", 13, 4150),
-    ("manager::execute", 18, 209334),
+    ("manager::execute", 18, 209316),
     // GENERATED END
 ];
 
