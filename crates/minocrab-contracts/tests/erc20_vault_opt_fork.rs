@@ -29,8 +29,8 @@
 //! differential suite dumps the shared ones: a benchmarked preimage should
 //! be one a test has already accepted.
 
-use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
-use minocrab_sim::v3::simulate;
+use midnight_transient_crypto::proofs::ProofPreimage;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 mod support;
@@ -74,13 +74,11 @@ fn preimages() -> Vec<(Circuit, ProofPreimage)> {
 }
 
 /// compactc's golden accepts the same preimage with the same PI vector —
-/// `erc20_vault_differential.rs`'s comparator, applied to the opt side.
+/// THE comparator (`minocrab_sim::v3::assert_call_compatible`), applied to
+/// the opt side. This used to be a local copy that had drifted weaker (no
+/// schema check, no `theirs.check`); the external review's §3.8 caught it.
 fn assert_pi_equal_to_corpus(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let our_run = simulate(ours, pi).expect("the optimized artifact accepts");
-    let their_run = simulate(theirs, pi).expect("the corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
+    assert_call_compatible(ours, theirs, pi);
 }
 
 /// Every circuit the ledger calls `Identical` really is byte-identical to

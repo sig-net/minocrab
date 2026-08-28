@@ -21,12 +21,12 @@ use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_state::state::StateValue;
 use midnight_storage::arena::Sp;
 use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::{Circuit3, FieldT};
 use minocrab::Fr;
 use minocrab_ledger::{cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue, VmOp};
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::assert_call_compatible;
 
 fn corpus_zkir(rel: &str) -> minocrab_zkir::v3::IrSource {
     let path = format!("{}/../../corpus/zkir/{rel}", env!("CARGO_MANIFEST_DIR"));
@@ -72,40 +72,6 @@ fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>, rand: Fr) -> ProofPreimage {
         communications_commitment: Some((comm, rand)),
         key_location: KeyLocation(Cow::Borrowed("minocrab-ledger-test")),
     }
-}
-
-/// Simulate both artifacts on the same preimage; assert full §6
-/// call-compatibility.
-fn assert_call_compatible(
-    ours: &minocrab_zkir::v3::IrSource,
-    theirs: &minocrab_zkir::v3::IrSource,
-    pi: &ProofPreimage,
-) {
-    // 1. Typed interface: same input/output types in the same order.
-    let types = |ir: &minocrab_zkir::v3::IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    // 2. PI stream: identical pis and pi_skips.
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    // 3. Upstream check() agrees with both.
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
 }
 
 const IDX_FIELD0: fn() -> VmOp = || Op::Idx {

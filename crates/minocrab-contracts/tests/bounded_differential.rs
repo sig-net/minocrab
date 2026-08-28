@@ -48,7 +48,7 @@ use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::Compiled3;
 use minocrab::Fr;
 use minocrab_contracts::bounded;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -124,36 +124,6 @@ fn flag_write_transcript(less: bool) -> Vec<Fr> {
             n: 1,
         },
     ])
-}
-
-/// The notes/ledger-abi.org §6 criterion, verbatim from the crate's other
-/// differentials.
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("compactc's artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(
-        ours.check(pi).expect("upstream accepts ours"),
-        our_run.pi_skips
-    );
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts compactc's"),
-        their_run.pi_skips
-    );
 }
 
 /// Serialized ZKIR with every `%name.index` identifier replaced by

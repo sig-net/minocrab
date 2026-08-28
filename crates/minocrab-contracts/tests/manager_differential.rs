@@ -20,11 +20,11 @@ use midnight_onchain_state::state::StateValue;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::Fr;
 use minocrab_contracts::manager;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::IrSource;
 use sha2::{Digest, Sha256};
 
@@ -39,31 +39,6 @@ fn corpus_zkir(name: &str) -> IrSource {
         env!("CARGO_MANIFEST_DIR")
     );
     minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
-}
-
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
 }
 
 /// Both artifacts must REJECT the preimage.

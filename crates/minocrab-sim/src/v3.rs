@@ -46,7 +46,7 @@ use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 #[cfg(feature = "unstable")]
 use midnight_transient_crypto::hash::{hash_to_curve, transient_commit, transient_hash};
 #[cfg(feature = "unstable")]
-use midnight_transient_crypto::proofs::ProofPreimage;
+use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 #[cfg(feature = "unstable")]
@@ -363,6 +363,48 @@ fn take_raw<'t>(
     transcript
         .get(idx..idx + width)
         .ok_or_else(|| fail(at, op, format!("ran out of {what}")))
+}
+
+#[cfg(feature = "unstable")]
+/// THE DIFFERENTIAL COMPARATOR — call-compatibility of two artifacts on one
+/// preimage, the criterion every `*differential*` suite gates on
+/// (VERIFICATION.md §3(c), notes/ledger-abi.org §6):
+///
+/// 1. the typed interface — input types in order, and the outputs;
+/// 2. the PI stream — identical `pis` and `pi_skips` from this simulator on
+///    both artifacts;
+/// 3. upstream agreement — Midnight's own `IrSource::check` accepts both and
+///    reports the same `pi_skips` this simulator computed, so a simulator bug
+///    cannot hide behind the comparison it performs.
+///
+/// It lives here, once, because the external review (§3.8) found eleven
+/// copies of it across the test crates and one that had drifted weaker (the
+/// opt fork's dropped the schema check and `theirs.check`). One body is what
+/// a third-party pass will call to ship its own proof of preservation (M24
+/// point 3) — the harness as public API starts with this function.
+pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
+    let types = |ir: &IrSource| {
+        serde_json::to_value(&ir.inputs)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|ti| ti["type"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(types(ours), types(theirs), "input schemas differ");
+    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
+
+    let our_run = simulate(ours, pi).expect("our artifact accepts");
+    let their_run = simulate(theirs, pi).expect("the other artifact accepts");
+    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
+    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
+
+    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
+    assert_eq!(
+        theirs.check(pi).expect("upstream accepts theirs"),
+        their_run.pi_skips
+    );
 }
 
 #[cfg(feature = "unstable")]

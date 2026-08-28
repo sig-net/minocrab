@@ -16,7 +16,7 @@ use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
+use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
@@ -24,7 +24,7 @@ use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
 use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::test_caller;
-use minocrab_sim::v3::simulate;
+use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
@@ -185,31 +185,6 @@ fn preimage(inputs: Vec<Fr>, witnesses: Vec<Fr>, transcript: Vec<Fr>, outputs: V
         communications_commitment: Some((comm, rand)),
         key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
     }
-}
-
-fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    let types = |ir: &IrSource| {
-        serde_json::to_value(&ir.inputs)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|ti| ti["type"].clone())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(types(ours), types(theirs), "input schemas differ");
-    assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
-
-    let our_run = simulate(ours, pi).expect("our artifact accepts");
-    let their_run = simulate(theirs, pi).expect("corpus artifact accepts");
-    assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
-    assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
-
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
 }
 
 /// The concrete scenario every test shares: a deployer secret, its
