@@ -1161,7 +1161,7 @@ velocity): rungs 1-2 ~1 day, rung 3 ~2 days, rung 4 ~3-4 days with the
 intrinsics as the variance driver; the vault prong overlaps rung 3
 substantially. Weekend-sized chunks exist at every boundary.
 
-- [ ] DESIGN NOTE FIRST (the house method): =notes/zkir-semantics.org=
+- [X] DESIGN NOTE FIRST (the house method): =notes/zkir-semantics.org=
       — the instruction inventory with per-instruction operand/output
       arity and the consumption rules already decoded (taint.rs, the
       FAB notes), the two semantic readings (evaluation vs constraint)
@@ -1169,6 +1169,17 @@ substantially. Weekend-sized chunks exist at every boundary.
       the preimage-dump interface for rung 4's differential, and the
       vault-prong claim list frozen from the analysis draft (so the
       milestone's targets do not drift with the draft).
+      (DONE 2026-08-30 — notes/zkir-semantics.org. Decisions recorded
+      there: v2 SKIPPED, gate is the 84 v3 corpus files (the "788/66"
+      above predates the last corpus refresh: 806 = 722 v2 + 84 v3);
+      byte-exactness is against compactc's OWN printer (json.ss
+      =print-json-compact= + print-zkir-v3.ss key orders), which forces
+      the syntax tree to keep SIGNED immediate literals (=-0x01= occurs
+      in 36 files; the Rust writer never emits a minus); =Fr= spelled
+      =Fin p= (= =ZMod p=, mathlib-free like the other two packages);
+      third lake package at crates/minocrab-zkir/lean/; nine frozen
+      vault claims V1-V9 with the rung that discharges each, and two
+      grep-level pre-checks flagged for the inventory to settle.)
 - [ ] RUNG 1 — SYNTAX: the real-IR inductive + parse/print for the
       =.zkir= wire format in Lean. GATE: byte-exact round-trip over
       all 788 corpus artifacts (722 v2 may be SKIPPED by decision —

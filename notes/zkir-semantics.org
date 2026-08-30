@@ -1,0 +1,478 @@
+#+title: M27 — ZKIR semantics in Lean: design of record
+
+The milestone's first bullet (milestones.org M27, "DESIGN NOTE FIRST"):
+the instruction inventory with operand/output arity, the consumption
+rules already decoded, the two semantic readings and which theorems need
+which, the intrinsic-function boundary, the rung-4 differential
+interface, and the vault-prong claim list FROZEN from the analysis draft.
+Everything here is checkable against a cited file; nothing is scoped on
+reputation. Written 2026-08-30 (Sunday session, per the milestone's
+weekend rule); §9 is the running as-built record.
+
+* 0. Ground, restated in one paragraph
+
+The thing being given a semantics is the ARTIFACT: a =.zkir= v3 file as
+compactc writes it and as =zkir-v3= / the proof server read it. Its
+de-facto spec is Rust (notes/zkir.org "Where ZKIR is defined"): the
+=Instruction= enum with per-variant doc comments in
+=zkir-v3/src/ir.rs= (rev 04c9c5d9, the rev Cargo.toml pins and the
+bundled binary is built from), and the two walks in
+=zkir-v3/src/ir_vm.rs= — =preprocess= (off-circuit, lines 185-691) and
+=circuit= (in-circuit, lines 705-1210). No Agda, no prose spec, nothing
+upstream says anything formal about it (lean-port.org §0). Our own
+readers are re-exports (=minocrab-zkir/src/v3.rs=: =IrSource::load=
+plus the version-envelope rewrite), so the Lean is not modelling our
+code — it is modelling THEIRS, and the corpus is the instrument that
+keeps the model honest (M27 decision: corpus-gated forever).
+
+* 1. The wire format, exactly (rung 1's target)
+
+** 1.1 Envelope
+=IrSource= (ir.rs:59-72): =version= (minor, serde =u8=; on disk wrapped
+as ={"major": 3, "minor": 0}= — =IrSource::load= rewrites inward,
+=minocrab_zkir::v3::to_disk_form= outward), =inputs : Vec<TypedIdentifier>=
+(={"name", "type"}=), =outputs : Vec<IrType>=, =do_communications_commitment
+: bool=, =instructions=. The only minor that exists is 0
+(=IrMinorVersion::V0=, =#[non_exhaustive]=; =load= accepts =3.0..=0=
+only). Corpus: 84/84 files are 3.0.
+
+** 1.2 Lexemes
+- Identifier: a string starting with =%= (ir.rs:258-265 rejects
+  anything else); compactc mints =%<sym>.<counter>= (print-zkir-v3.ss
+  =var->string=). The Lean type is just =String=; the =%= rule is a
+  parse-time check, not a structural invariant (the Rust type is
+  =Identifier(pub String)= too).
+- Immediate: ="0x"= + lowercase hex, LITTLE-ENDIAN BYTES of the
+  integer, minimal length with at least one byte (=0x00= is zero), and
+  an optional leading =-= (print-zkir-v3.ss =zkir-field-rep->string=:
+  compactc holds a signed Scheme integer and prints =-0x…= for
+  negatives). Corpus: 10,476 immediates, all even-length, all
+  lowercase, no =0X=; 36 files carry negatives, all of them =-0x01= or
+  =-0x02=; the widest is 31 bytes (66 chars) — every corpus immediate
+  has |v| < 2^248 < p. The Rust reader maps both forms to one =Fr=
+  (ir.rs:225-267: =Fr::from_le_bytes= then negate), and the Rust
+  WRITER never emits a minus (ir.rs:210-223 prints the reduced
+  element's bytes). THEREFORE: byte-exactness forces the syntax tree
+  to keep the SIGNED LITERAL (=Int=), and the semantics maps it into
+  the field (§4). Two syntax trees (=-0x01= and =0x<p−1 as bytes>=)
+  denote one field element; that is a property of the semantics, not
+  a parser ambiguity. Rung-1 lemma to state: every corpus immediate is
+  in (−p, p) (so the mapping is the obvious one, no reduction hidden).
+- Operand = Identifier | Immediate, distinguished by the first char
+  (ir.rs:232-266).
+- Types: the 13 =IrType= names, serde-renamed (ir_types.rs:36-88):
+  =Scalar<BLS12-381>=, =Bytes<32>=, =Point<Jubjub>=, =Scalar<Jubjub>=,
+  =Point<Secp256k1>=, =Base<Secp256k1>=, =Scalar<Secp256k1>=,
+  =Point<Secp256r1>=, =Base<Secp256r1>=, =Scalar<Secp256r1>=,
+  =Point<Curve25519>=, =Base<Curve25519>=, =Scalar<Curve25519>=. Corpus
+  uses three: =Scalar<BLS12-381>= (1141 sites), =Point<Secp256k1>=
+  (12), =Scalar<Secp256k1>= (41). The inductive carries all 13; the
+  printer is total over them; only three are corpus-exercised (say so
+  in the gate output).
+- Alignment (FAB, =base_crypto::fab::Alignment=): a vector of segments;
+  compactc emits only ={"tag": "atom", "value": {…}}= with atom values
+  ={"length": n, "tag": "bytes"}=, ={"tag": "field"}=, ={"tag":
+  "compress"}= (print-zkir-v3.ss =alignment-atom->alist=; NOTE the key
+  order =length= BEFORE =tag= inside a bytes atom). =Option= segments
+  exist in the Rust type but compactc never prints them and the
+  in-circuit decoder rejects them (ir_vm.rs:114-119). Corpus: 666 atoms,
+  ALL =bytes=; no =field=, no =compress=, no option. The Lean inductive
+  carries =bytes n | field | compress= plus an =option= segment
+  constructor only if rung 1 needs it to PARSE — it does not (corpus),
+  so: OMIT it and let the parser reject it, recorded as a deliberate
+  SUBSET of the Rust type (a file using it cannot synthesize anyway).
+
+** 1.3 Layout — compactc's =print-json-compact= (json.ss:399-472)
+Byte-exactness is against THIS printer, not serde's. It is a 40-line
+depth-driven function, transcribable verbatim into Lean:
+- objects: ={= then each pair; at depth ≤ 1 (the top object) pairs go
+  on their own line indented 2·depth, else inline with one leading
+  space; ="key": value=; pairs comma-separated; close =}= on its own
+  line at the top, else preceded by one space.
+- vectors: =[= then elements; at depth ≤ 2 each element starts on a
+  new indented line (this is why every instruction and every input is
+  one 4-space-indented line, and why a non-empty =outputs= list prints
+  one type per line); deeper vectors are inline with a single space
+  after each comma and NO space inside the brackets (=["0x30"]=,
+  =[{ "tag": "atom", … }, { … }]=). Close =]= on its own line when the
+  vector's own depth ≤ 1 — hence the empty-outputs shape =[\n  ]=.
+- strings escaped per lines 402-420 (none of the escapes occur in the
+  corpus; the Lean printer implements them anyway, they are six cases).
+- integers =~d=; booleans; =null= for the absent guard (compactc prints
+  =(void)= — "warty", their comment, print-zkir-v3.ss:141).
+- a trailing newline after the top object.
+Instruction objects follow compactc's KEY ORDER PER OP (print-zkir-v3.ss
+=Instruction=), which is NOT the Rust enum's field order (e.g.
+=cond_select= prints =output, bit, a, b=; =public_input= prints =type,
+output, guard=). The per-op order table is part of the printer, cited
+line by line. The Rust reader is order-insensitive (serde), so this is
+invisible to Rust and load-bearing only for us.
+
+** 1.4 The corpus, and the v2 decision
+806 =.zkir= files = 722 v2 + 84 v3 (corpus_roundtrip.rs asserts the
+count; the milestone text's "788 / 66" predates the last corpus
+refresh — the v3 count is the one that matters and it grew). v3 by
+source: aa-midnight-evm-experiment 18, signet-midnight-examples 9 (THE
+VAULT: the nine circuits below), signet-midnight-experiments 47,
+signet-midnight-integration 10.
+DECISION (the milestone's explicit option): v2 IS SKIPPED. v2 is a
+different enum (memory indices, =LoadImm=, separate pi ops; lib.rs of
+minocrab-zkir), no consumer of this milestone needs it (the vault forks
+are v3; the pass proofs are over v3), and the vault prong is the whole
+point. Rung 1's gate is the 84 v3 files, byte-exact.
+Op histogram over the 84 (what the semantics is exercised on):
+reconstitute_field 5264, div_mod_power_of_two 4698, impact 2085,
+cond_select 2013, constrain_bits 647, public_input 509, copy 441,
+assert 213, test_eq 136, bytes32_into_low_high 135, add 111, mul 110,
+persistent_hash 96, private_input 83, less_than 54, from_bytes32 39,
+bytes32_from_low_high 38, keccak256 27, transient_hash 25, output 17,
+into_bytes32 13, into_coordinates 12, ec_mul_generator 11, inv 10,
+ec_mul 10, encode 8, constrain_to_boolean 6, neg 4. ABSENT from the
+corpus (5 of 33): hash_to_curve, from_coordinates, reverse_bytes, not,
+jubjub_scalar_from_native. Guards: 1394 immediate =0x01=, 895 variable,
+388 =null= (input guards). Those five ops get parser/printer coverage
+from hand-written round-trip cases, not from the corpus — say so.
+
+* 2. The instruction inventory
+
+Per instruction: JSON key order (= compactc's), operand positions
+(READS, the =operands_mut= list in passes.rs:316-361, which is
+exhaustive by construction), DEFINES (the =output(s)= identifiers),
+class, and the semantic facts the two readings need, with the ir_vm.rs
+line of the off-circuit arm. "UB" = the Rust doc says undefined and the
+two walks may disagree (§4.3 lists those).
+
+| op | keys (in order) | reads | defines | class | off-circuit semantics (preprocess) | in-circuit note |
+|---|---|---|---|---|---|---|
+| encode | outputs, input | input | outputs[] (len = encoded_len(type of input), ir.rs:383-408) | compute | 287: =encode_offcircuit=; error if arity mismatches | same |
+| assert | cond | cond | — | check | 337: cond must resolve to exactly 0/1, and be 1 | 830: =assert_non_zero= — UB divergence for cond ∉ {0,1} |
+| cond_select | output, bit, a, b | bit, a, b | output | compute | 331: bit ∈ {0,1} else error; select | 835: =convert= to bit constrains bit boolean |
+| constrain_bits | val, bits | val | — | constraint | 392: val < 2^bits else error; bits ≥ FR_BITS(255) is an error | 844: bit decomposition of length bits |
+| constrain_eq | a, b | a, b | — | constraint | 326: =constrain_eq_offcircuit= (typed equality) | 854 |
+| constrain_to_boolean | val | val | — | constraint | 391: val ∈ {0,1} | 859: "yes, this does insert a constraint" |
+| copy | output, val | val | output | compute | 387 | 865 |
+| impact | guard, inputs | guard, inputs[] | — | PI-EMITTING | 507-543: guard ∈ {0,1}; true: push each input (must be Native) to =pis=, advance =public_transcript_inputs_idx= by n, =pi_skips.push(None)=, and CHECK each pushed value equals =preimage.public_transcript_inputs[idx]= (mismatch = reject); false: push n zeros, =pi_skips.push(Some(n))=, cursor NOT advanced | 869: =select(guard, x, 0)= per input, then all constrained as public inputs |
+| ec_mul | output, a, scalar | a, scalar | output | intrinsic | 553 | |
+| ec_mul_generator | output, scalar | scalar | output | intrinsic | 559: generator chosen by scalar's type (Jubjub, Secp256k1 only) | |
+| hash_to_curve | output, inputs | inputs[] | output | intrinsic | 544: inputs Native; Jubjub point | |
+| into_coordinates | outputs(2), point | point | outputs.0, outputs.1 | intrinsic | 569; identity errors on Weierstrass | |
+| from_coordinates | output, inputs(2) | inputs.0, inputs.1 | output | intrinsic | 575 | |
+| into_bytes32 | output, input | input | output | compute (Native) / intrinsic (foreign) | 581: LE canonical bytes | |
+| from_bytes32 | type, output, bytes | bytes | output | compute (Native) / intrinsic (foreign) | 586: non-canonical accepted, reduced | |
+| reverse_bytes | output, bytes | bytes | output | compute | 596 | |
+| bytes32_into_low_high | outputs(2), bytes | bytes | outputs.0 (low = bytes[0..31] LE), outputs.1 (high = bytes[31]) | compute | 602: NO error possible | 1131: "imposes no in-circuit constraints" (ir.rs:651) |
+| bytes32_from_low_high | output, inputs(2) | inputs.0 (low), inputs.1 (high) | output | compute+constraint | 611: low < 2^248 and high < 256 else error | 1140: byte 31 of low fixed to 0; high converted to a byte |
+| div_mod_power_of_two | outputs(2), val, bits | val | outputs[0] = val >> bits, outputs[1] = val mod 2^bits | compute | 395: exactly 2 outputs; bits ≤ 248 | 1005: canonical bit decomposition enforced (=assigned_to_le_bits(None, true)=) |
+| reconstitute_field | output, divisor, modulus, bits | divisor, modulus | output = divisor·2^bits + modulus | compute+constraint | 412: modulus < 2^bits, divisor < 2^(255−bits), and the composite ≤ p−1, else error | 1025: both range asserts in-circuit (this is the taint lint's cited warrant, taint.rs:133-144) |
+| transient_hash | output, inputs | inputs[] | output (Native) | intrinsic | 468: Poseidon over Natives | |
+| persistent_hash | output, alignment, inputs | inputs[] | output (Bytes32) | intrinsic over FAB bytes | 478-506: operands → alignment (§3.2) → bytes → SHA-256 | 893: in-circuit decoder range-checks every limb |
+| keccak256 | output, alignment, inputs | inputs[] | output (Bytes32) | intrinsic over FAB bytes | same arm, Keccak-256 | same |
+| test_eq | output, a, b | a, b | output (0/1) | compute | 342 | |
+| add / mul / neg / inv | output, a[, b] | a[, b] | output | compute (Native) / intrinsic (foreign) | 300-321; inv errors on 0 | |
+| not | output, a | a | output | compute | 322: a ∈ {0,1} | 951 |
+| less_than | output, a, b, bits | a, b | output (0/1) | compute | 454: BOTH operands checked < 2^bits (error otherwise) | 959: width rounded to even, ≥ 4 — UB divergence for out-of-range |
+| jubjub_scalar_from_native | output, native | native | output | intrinsic | 463 | |
+| public_input | type, output, guard | guard? | output | INPUT (public_transcript_outputs) | 348-366: guard absent/true: decode =encoded_len(type)= elements from =public_transcript_outputs= at the cursor, advance; guard false: =IrValue::default(type)=, cursor NOT advanced | 978: witnessed free; guard NOT constrained (ir.rs:894) |
+| private_input | type, output, guard | guard? | output | INPUT (private_transcript) | 367-386: same over =private_transcript= | same |
+| output | vals | vals[] | — | TERMINATOR (but does not stop the walk — it is just the last instruction compactc emits) | 625-644: arity = =IrSource.outputs=, per-position type check, values collected | 1151 |
+
+Bookends of the walk (ir_vm.rs), part of the semantics though not
+instructions:
+- PROLOGUE 189-211: =memory= is seeded from =preimage.inputs= decoded
+  per =inputs= type (=encoded_len= each: Native 1, Bytes32 2,
+  JubjubPoint 2, JubjubScalar 1, foreign base/scalar 2, Weierstrass
+  point 5, Edwards point 4; ir_types.rs:92-111); leftover raw inputs
+  = reject. =pis= starts as =[binding_input]= ++ =[comm_comm.0]= if
+  =do_communications_commitment=.
+- EPILOGUE 648-681: every one of the three transcript vectors must be
+  EXACTLY consumed (reject otherwise); if commitment: =comm_comm.0 =
+  transient_commit(inputs ++ encode(outputs), comm_comm.1)= (reject
+  otherwise).
+- RESULT: =Preprocessed { memory, pis, pi_skips, binding_input,
+  comm_comm }=; =IrSource::check = preprocess(..)?.pi_skips= (ir.rs:97).
+
+Memory is a map =Identifier → IrValue= with plain insert (no rebinding
+check off-circuit; the in-circuit =mem_insert= 761-781 checks
+agreement with the preprocess memory). ZKIR v3 from compactc/Builder3
+is SSA (taint.rs "Pass A" argument); the semantics does NOT assume it —
+rebinding is just overwrite — and the SSA fact is a rung-2 lemma about
+the corpus, not an axiom.
+
+* 3. Consumption rules already decoded (nothing new here; collected)
+
+** 3.1 The four streams and their cursors
+A =ProofPreimage= (transient-crypto/src/proofs.rs:716-732) carries
+=inputs=, =private_transcript=, =public_transcript_inputs=,
+=public_transcript_outputs=, =binding_input=,
+=communications_commitment : Option<(Fr, Fr)>=. Consumers, from §2:
+=inputs= → prologue only; =private_transcript= → =private_input=
+(guard-true), width =encoded_len(type)=; =public_transcript_outputs= →
+=public_input= (guard-true), same width; =public_transcript_inputs= →
+=impact= (guard-true), one element per operand, checked for equality
+as consumed. A false guard consumes NOTHING from its stream but still
+contributes zeros to =pis= (impact) or a default value (inputs). The
+OBSERVABLE PI STREAM is therefore a deterministic function of the
+instruction list and the guard values: =pis = [binding, comm?] ++
+concat(for each impact: guard ? inputs : zeros)=.
+
+** 3.2 FAB alignment ↔ operand mapping (taint.rs:337-416 =audit_hash=,
+transcribed from ir_vm.rs:125-180 =fab_decode_to_bytes_atom=)
+Per alignment segment, in order: =field= atom consumes ONE operand
+(31-byte-capable field element, whole value); =bytes{length}= consumes
+=ceil(length/31)= operands: if =length mod 31 ≠ 0= the FIRST operand
+is the stray limb of width =length mod 31=, then =length div 31=
+full 31-byte limbs — and IN-CIRCUIT the full limbs are read in REVERSED
+operand order (=inputs[chunks-1-i]=, 167) while the stray limb's bytes
+are appended AFTER them (170); =compress= and =option= are rejected.
+Leftover operands = malformed. Off-circuit the same value is built by
+=alignment.parse_field_repr(&inputs)= then =binary_repr= (493-498);
+the two must agree on the byte string — the ONE place where rung 3's
+"uninterpreted hash" needs a concrete PRE-function (operands → bytes)
+so that the inventory can say WHICH operands a digest binds. The
+byte-string builder is therefore CONCRETE at rung 3 (it is bit
+manipulation, no crypto); only SHA-256/Keccak are uninterpreted.
+The lint's limb-width bound (=bits(m) ≤ 8·w=) rides on this same
+mapping (M23 R3) — cite, do not rebuild.
+
+** 3.3 Typed value encoding
+=encode_offcircuit= / =decode_offcircuit= (ir_instructions/encode.rs)
+turn an =IrValue= into =encoded_len= Natives and back: Native ↦ itself;
+Bytes32 ↦ (low 31 bytes as LE Native, high byte) — the same split as
+=bytes32_into_low_high=; foreign elements ↦ two limbs; points ↦
+coordinate limbs (+ identity flag on Weierstrass). Rung 3 needs
+Native/Bytes32 concrete (they are the corpus) and the foreign cases as
+uninterpreted =encode_T / decode_T= with the arity fixed.
+
+* 4. The two semantic readings, and who needs which
+
+** 4.1 EVALUATION (the =preprocess= reading) — rung 3's primary
+A total function
+  =run : Program → Preimage → Except Reject Result=
+where =Result = { memory, pis : List Fr, pi_skips : List (Option Nat),
+outputs : List Value }=, defined by folding =step= over the instruction
+list with state =(memory, pis, pi_skips, cursors × 3, outputs)= exactly
+as §2's column, then the epilogue checks. Immediates are =Int= in the
+syntax and are mapped to =Fr= at =resolve_operand= (ir_vm.rs:235-239:
+an immediate always resolves as =Native=). Observables (the milestone's
+"PI/witness/output streams"): =pis=, =pi_skips=, =outputs=, the
+accept/reject bit, and — for the inventory — the CONSUMED PREFIXES of
+the three transcripts (which is what "the witness inventory per
+circuit" means mechanically: the private_input instructions on the
+taken guard path, with their types).
+
+** 4.2 CONSTRAINT (the =circuit= reading) — stated beside it
+The solution set: for a program and a fixed PI vector, the set of
+memory assignments (one value per defined identifier, of its type)
+that satisfy every constraint the in-circuit arm lays down. Stated as a
+predicate =Sat : Program → PIs → Assignment → Prop= over the same
+inductive, one clause per constraint-bearing instruction (§2 rows
+"constraint", "compute+constraint", the =convert=-to-bit sites, the
+public-input equalities, and the epilogue's commitment equality).
+Compute instructions become functional equations (=mem[output] =
+f(mem[operands])=); intrinsics appear as the same uninterpreted symbols
+as in 4.1 (one =Model= record, §5, shared by both readings — that
+sharing is what makes the completeness lemma statable).
+COMPLETENESS LEMMA (rung 3 gate item): honest evaluation satisfies the
+constraints — =run P π = ok r → Sat P r.pis r.memory= — proved per
+instruction for the ones that carry both readings. Not soundness
+(constraints ⇒ evaluation): that direction is exactly the UB/divergence
+list in 4.3 and is NOT claimed.
+
+** 4.3 Where the two walks are known to differ (recorded, not hidden)
+- =assert=: off-circuit requires cond ∈ {0,1} and =1; in-circuit
+  =assert_non_zero= — a cond of 2 is rejected by =check= but satisfiable
+  in-circuit (ir.rs:415 "UB").
+- =less_than=: off-circuit rejects operands ≥ 2^bits; in-circuit
+  compares at width =max(bits + bits mod 2, 4)= with UB beyond
+  (ir.rs:863-865, ir_vm.rs:960-966).
+- =public_input= / =private_input= guards are NOT constrained in-circuit
+  (ir.rs:894): a guarded-off input is a free witness in the constraint
+  reading and a typed default in the evaluation reading.
+- =bytes32_into_low_high=: no constraint at all in-circuit (ir.rs:651).
+- =cond_select=, =not=, =impact= guards: in-circuit the =convert= to
+  =AssignedBit= constrains booleanness; off-circuit a non-boolean is a
+  reject. (Agree on the 0/1 domain; differ on what happens outside it.)
+These are facts about upstream's design, useful to the honest-boundary
+writeup; none is a finding to report (they are documented UB).
+
+** 4.4 Which theorems need which reading
+| consumer | reading | why |
+|---|---|---|
+| dedup_range_constraints (4 theorems, re-proved over the real IR) | CONSTRAINT | "per-wire tightest bound unchanged" is a solution-set statement; =constrain_bits= has no evaluation content beyond a check |
+| fold_immediate_copies (3+1, re-proved over the real IR) | EVALUATION | "observables preserved" = =run (fold P) π = run P π= on the observable projection; the WF apparatus (Fold.lean) transfers |
+| =VerifiedPass= citations | both | the marker's claims move from the model theorems to the real-IR ones (rung 3 gate) |
+| vault inventory: COMPLETENESS of =x= | EVALUATION (rung 3) or DATAFLOW (rung 2, weaker) | the PI stream is 4.1's =pis=; the rung-2 form is "the list of impact operands on the unconditional path" |
+| vault: DEPENDENCY classification | DATAFLOW (rung 2) + the FAB pre-function (3.2) | "component c is a function of inputs S" = backward slice of c hits exactly S among the input/witness definitions |
+| vault: keyPath constancy, reqCounter increment | EVALUATION over Impact operands (constancy is syntactic: an immediate operand in the push); the counter increment is an =add= of =0x01= on a =public_input= wire that is then pushed — evaluation reading with the ledger read as an axiom (§7) |
+| vault: witness inventories | DATAFLOW (guard-path-aware): the =private_input= instructions and their guard operands |
+| rung 4 differential | EVALUATION, intrinsics concrete | =pis=, =pi_skips=, accept/reject vs =IrSource::check= |
+
+* 5. The intrinsic-function boundary (rung 3 uninterpreted, rung 4 concrete)
+
+Value domain at rung 3:
+  =Value = native (Fr) | bytes32 (Vector UInt8 32) | jubjubPoint (J) |
+  jubjubScalar (Js) | k256Point | k256Base | k256Scalar | p256… |
+  c25519…=
+with =Fr := Fin p= (p the BLS12-381 scalar modulus, a literal) — the
+milestone says =ZMod p=; in Mathlib =ZMod p= for =p > 0= IS =Fin p= by
+definition, and the two Lean packages already in the repo are
+mathlib-free by decision (lean-port.org §5: "plain Lean 4 so the check
+loop is seconds"). =Fin p= gives =+ * -= modulo p from core; =inv= is
+defined by exponentiation to =p − 2= (total, =inv 0 = 0=, matching the
+off-circuit =bail= only through the =Except= wrapper). Bytes32 is
+concrete. The foreign carriers are OPAQUE types at rung 3: fields of a
+=Model= structure, with the intrinsics as further fields:
+  =transientHash : List Fr → Fr=, =sha256, keccak256 : List UInt8 →
+  Vector UInt8 32=, =hashToCurve : List Fr → J=, =ecMul= per curve,
+  =ecMulGen= (Jubjub, k256), =intoCoords / fromCoords= per curve,
+  =intoBytes32_T / fromBytes32_T= for the six foreign fields,
+  =jubjubScalarFromNative=, =encode_T / decode_T= for the foreign
+  types, =transientCommit : List Fr → Fr → Fr=, plus the foreign
+  =add/mul/neg/inv/eq/select=.
+Everything Native/Bytes32 is concrete at rung 3 already: =add mul neg
+inv=, =test_eq=, =cond_select=, =not=, =less_than= (Nat comparison of
+=Fin= values under the bit checks), =div_mod_power_of_two=
+(=val / 2^bits=, =val % 2^bits= on the Nat), =reconstitute_field=,
+=into/from_bytes32= on Native (LE bytes of the canonical Nat; the
+=from= direction reduces mod p), =reverse_bytes=, the low/high pair,
+and 3.2's FAB byte builder. So rung 3 is a REAL interpreter for every
+corpus circuit that uses no curve op and no hash — and, with the
+hashes uninterpreted, the inventory's "component c = H(these
+operands)" statements are exactly what rung 3 proves.
+Rung 4 instantiates the =Model=: SHA-256 and Keccak-256 ported
+mechanically (pure byte algorithms, LLM-writable, differential-
+validated against the Rust digests on the corpus preimages); Poseidon
+(=transient_hash=, midnight's parameters) ported mechanically from
+transient-crypto; Jubjub arithmetic (twisted Edwards over =Fin p=)
+likewise; the secp256k1/r1/curve25519 ops ONLY if a corpus preimage
+exercises them (12 + 41 type sites, all in the signet-integration
+ECDSA circuits) — otherwise left uninterpreted at rung 4 too, said so.
+That is the variance rung and the milestone's estimate driver; its
+shelve-point is explicitly fine.
+
+* 6. The rung-4 differential interface (preimage dumps)
+
+What exists: =MINOCRAB_DUMP_PREIMAGES=<dir>= makes the differential
+tests write =<circuit>.preimage= = =midnight_serialize::tagged_serialize
+(ProofPreimage)= (contracts/tests/support/mod.rs:501-521), per side
+(=preimages/=, =preimages/opt/=, =preimages/borsh/=); =bench.sh= runs
+that and the bench binary loads them (bench/src/main.rs:228-240). The
+sim's =Run3= surfaces everything =Preprocessed= carries plus outputs
+(minocrab-sim/src/v3.rs header) and is cross-checked against upstream
+=IrSource::check= in =tests/v3_end_to_end.rs=.
+Lean should NOT parse the tagged binary (a second serializer for a
+format we refused to re-implement at M21). INTERFACE: a Rust
+regenerator (an =--ignored= test beside the snapshot regenerators, the
+house pattern of row_snapshot.rs / interface_snapshot.rs) reads each
+dumped preimage + its artifact and writes one plain-text RUN RECORD
+per (side, circuit):
+  =inputs=, =private_transcript=, =public_transcript_inputs=,
+  =public_transcript_outputs=, =binding_input=, =comm_comm= (each
+  =Fr= as =0x= LE hex, the artifact's own lexeme), then the EXPECTED
+  result computed by upstream =check= through the sim: =accept|reject=,
+  =pis=, =pi_skips=, =outputs=.
+plus TAMPERED records: the vault harness's =tamper.rs= already produces
+rejected preimages (wrong transcript element, truncated stream) — dump
+those too so "reject equal" is exercised, not just "accept equal". The
+Lean side is a =lake exe zkir-run= that reads =.zkir= + record and
+prints its own result line; the gate is a diff (a shell loop in CI's
+lean job, or a Rust test that shells out to the built exe — decide at
+rung 4; the diff is the gate either way). Records are checked in
+under =crates/minocrab-zkir/lean/differential/= (small: tens of
+circuits × a few KB) so the gate runs without the bench pipeline.
+
+* 7. The vault prong — claim list FROZEN from the analysis draft
+
+Source: "Unlinkability of SigNet Cross-Chain System", draft v4
+(=Midnight_UnlinkabilityAnalysis-4.pdf=, read 2026-08-28 and again
+today; outside the repo). Circuit names, draft → ours: C1 initialize,
+C2 approveRouter, C3 deposit, C4 completeDeposit = our =claim=, C5
+withdraw, C6 refundSurrenderedValue (NOT exported — an internal circuit
+inlined into C7/C8; it has no artifact, its rows are discharged inside
+its callers' inventories, which is how the draft itself accounts for
+it: "merged into the caller circuit's statement"), C7 completeWithdraw,
+C8 refund, C9 swap, C10 completeSwap. Nine artifacts per fork
+(contracts/tests/vault/artifact.rs =Circuit::ALL=), four forks
+(=Compat= = the port, the differential anchor PI-equal to compactc;
+=Opt=; =Borsh=; =Modern= — deployed shape is the borsh lineage).
+
+Frozen claims (draft §4.2, §4.5-4.6, §4.8-4.12, §5.3), each with the
+artifact-level statement and the rung that discharges it:
+
+| # | claim (draft) | artifact-level formulation | rung |
+|---|---|---|---|
+| V1 | COMPLETENESS: =x= for each circuit is EXACTLY the τ-components the §4.12 table lists, and nothing else | the =pis= stream of the circuit (4.1) segments, in order, into the listed components; every element belongs to one listed component (an unlisted push is a finding either way: theirs if the table missed it, ours if the circuit emits more than the draft's design) | 3 (2 as the weaker unconditional-path form) |
+| V2 | DEPENDENCY: withdraw's ONLY vault-emitted =userSk=-dependent component is =τ_mark = refundComm(userSk, reqId)= | backward slice from each pushed operand; the set hitting the =userSk= private_input wires is exactly the persistent_hash("vault:refund:" ‖ userSk ‖ reqId) limbs. Coin-layer components (Midnight's, blue rows) are NOT in the vault's circuit at all — they are the wallet's; the artifact-level claim is that NO push depends on =coinSk= (there is no such witness in the vault circuit) — expected trivially true and worth stating because the draft's τ_fund/τ_chg rows are then mechanically "not ours" | 2 + 3.2 |
+| V3 | keyPath CONSTANCY: withdraw, swap, approveRouter write the LITERAL "vault"; deposit alone writes =userComm(userSk)= (§4.2 table) | the bytes-of-"vault" immediate (0x7661756c74) appears as a hash-preimage/push operand in exactly those three (pre-check today: 2 occurrences each in withdraw/swap/approveRouter, 0 elsewhere, in compactc's artifacts); deposit's keyPath limbs are the persistent_hash("vault:user:" ‖ userSk) output (pre-check: present, deposit.zkir) | 2 |
+| V4 | reqId ONE-TIME USE: =reqCounter= strictly increments per request | in every request circuit (deposit, withdraw, swap, approveRouter): the counter is a =public_input= wire read from the ledger, pushed back as =old + 1=, and =reqId = keccak(req)= has that wire in its preimage — an =add= of immediate =0x01= on the read wire feeding the push. The LEDGER side of the invariant (the read returns the stored value; the write stores the push) is Midnight's =process_read= / popeq warrant — the same external warrant taint.rs's popeq rule stands on; cited, not proved | 2 + the external warrant |
+| V5 | WITNESS INVENTORIES per circuit; in particular Gap 2: completeWithdraw's success branch takes NO secret witness (=w = ⊥= when ok = 1) | the =private_input= instructions of each circuit with their guards; for completeWithdraw the userSk/mintNonce inputs are guarded by the ¬ok wire (guarded-off ⇒ default value, nothing consumed). PRE-CHECK FLAG: compactc's approveRouter.zkir has THREE =private_input= instructions while the draft's C2 says "Witness: none" — first thing the inventory settles (they may be nonce/randomness witnesses the draft folds into "aux", or a real correction to report) | 2 |
+| V6 | Gap 1: swap's three-value-event shape (surrender amtMax, mint amtOut, mint amtChange) | read off completeSwap's transcript inventory: two mint pushes, amounts from =req= / evmOut | 2/3 |
+| V7 | the C4 "??? req appears a second time" note: whether the settlement call republishes =req= | the claim/completeDeposit =pis= either contains the req limbs (a ledger read pushed back) or only reqId; the inventory answers it | 3 |
+| V8 | INJECTIVE PACKING under userComm, refundComm, coinCommit, coinNull, attDigest, domSep | ALREADY MECHANIZED: taint lint (M23 R3) + the M10 injective domain-separator work — CITED from the inventory, nothing rebuilt (milestone's explicit OUT) | — |
+| V9 | the τ-class table (identical =f(p⃗)= / challenger randomness / hiding / depends on b) | ours is the DETERMINISTIC half only: "depends on which inputs" (V2). The class assignment "identical across worlds" follows for components whose slice contains no =b=-dependent input; we emit that column derived, and leave "hiding" (τ_comCallIO, τ_ped) and "challenger randomness" as the draft's own, un-machine-checked, said so | 2 |
+
+Out, per the milestone and repeated here so the list cannot drift: the
+hybrid argument, PRF/hiding/ZK assumptions, anything probabilistic.
+
+DELIVERABLE SHAPE: =crates/minocrab-contracts/tests/leakage_inventory.rs=
+— the inventory GENERATED from the four forks' artifacts (the =Art= ×
+=Circuit= grid the vault harness already iterates), FROZEN between
+=GENERATED BEGIN/END= markers like row_snapshot.rs, regenerated by an
+=--ignored= test and by =./bump.sh accept=; the check compares the
+live inventory to the frozen table and names the moved component on
+failure. The rung-2 Lean twin proves the dataflow function the
+generator uses; until rung 3 lands the generator is Rust (the
+=operands_mut=/=returned_identifiers= family) and the Lean agreement
+gate (rung 2) is what makes it more than a snapshot. A one-page
+rendering of the frozen table in the draft's own τ-symbols is the
+hand-back to its authors.
+
+* 8. The Lean package: where, what, gates
+
+WHERE: a third lake package at =crates/minocrab-zkir/lean/=
+(=MinocrabZkir=), beside the reader it models — L0 is where the wire
+format lives (architecture.org), the two existing packages sit beside
+the crates whose code they warrant, and the crate SHIPS =lean/= like
+the others (Cargo.toml =include=, =.lake/= gitignored). Mathlib-free
+(§5). =import Lean.Data.Json= (core, not Mathlib) for the parse side:
+the gate is on the PRINTER (=print (decode (Json.parse s)) = s=), so a
+lenient generic parser is fine and reusing core's is the
+reuse-before-writing rule applied.
+MODULES: =Syntax.lean= (the inductive: =IrType=, =Operand=, =Segment=,
+=Instr= — 33 constructors — =Program=), =Print.lean= (json.ss's layout
++ print-zkir-v3.ss's key orders, both cited), =Parse.lean= (Json →
+Syntax), =Dataflow.lean= (=reads=, =defines=, =guardOf=,
+=impactPushes=; exhaustive by =match=), =Semantics.lean= (§4.1 =run=,
+§4.2 =Sat=, the =Model= record), =Passes.lean= (the eight theorems over
+=Instr=; imports the existing =MinocrabProofs= models only as
+documentation — the real-IR theorems replace them), =Intrinsics/*.lean=
+(rung 4). Executables: =zkir-roundtrip= (rung 1 gate over a directory),
+=zkir-dataflow= (rung 2 dump), =zkir-run= (rung 4).
+GATES, as commands:
+- R1: =lake exe zkir-roundtrip ../../../corpus/zkir= prints
+  =84 ok, 0 diff=; a Rust test in minocrab-zkir shells out to it when
+  the exe exists (skips with a loud message otherwise, like the corpus
+  round-trip does without a corpus) — so =cargo test= and CI both see
+  it; CI's lean job builds the package and runs the exe.
+- R2: Rust =--ignored= regenerator dumps =reads/defines= per corpus
+  instruction to =lean/dataflow/*.txt=; =zkir-dataflow= regenerates
+  the same; =diff= is the gate.
+- R3: =lake build= sorry-free; =VerifiedPass= claims re-pointed at
+  =MinocrabZkir.Passes= theorem names (=lean_proof!= makes the file's
+  existence a build error, the claims test the theorem names).
+- R4: §6.
+- Vault: §7's frozen table green on all four forks.
+SHELVE POINTS: after R1 (a corpus-proven grammar), after R2 (a
+kernel-checked dataflow + the Rust inventory generator gated by it —
+the vault prong's rung-2 forms V3/V4/V5 already dischargeable), after
+R3 (pass proofs over the real IR + V1/V2/V7), after R4. The vault
+prong can start once R2 lands; it does not wait for R3.
+
+* 9. As built (running record)
+
+2026-08-30 — this note. Corpus profile and format facts above computed
+from the checked-out corpus (=corpus/zkir=, 84 v3 files) and the
+checked-out compactc source (=corpus/src/compact/compiler/=). Pre-checks
+recorded in §7 (V3's literal counts, V5's approveRouter witness count)
+are grep-level observations on compactc's artifacts, not discharged
+claims. No Lean written yet; rung 1 is next.
