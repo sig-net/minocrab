@@ -77,7 +77,8 @@ jobs:
       - run: >
           nix develop -c bash -c
           'crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip corpus/zkir
-          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip crates/minocrab-zkir/lean/fixtures'
+          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip crates/minocrab-zkir/lean/fixtures
+          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-wellformed corpus/zkir'
 
   # The instrument the snapshots cannot replace: byte-comparison of every
   # circuit's serialized ZKIR against the PR's base. Movement is ALLOWED —

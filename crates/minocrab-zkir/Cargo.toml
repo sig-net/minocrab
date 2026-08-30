@@ -22,6 +22,8 @@ include = [
     "lean/MinocrabZkir.lean",
     "lean/MinocrabZkir/*.lean",
     "lean/Roundtrip.lean",
+    "lean/DataflowDump.lean",
+    "lean/Wellformed.lean",
     "lean/fixtures/*.zkir",
 ]
 

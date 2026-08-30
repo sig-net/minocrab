@@ -1,5 +1,5 @@
 name = "minocrab-zkir-lean"
-defaultTargets = ["MinocrabZkir", "zkir-roundtrip", "zkir-dataflow"]
+defaultTargets = ["MinocrabZkir", "zkir-roundtrip", "zkir-dataflow", "zkir-wellformed"]
 
 [[lean_lib]]
 name = "MinocrabZkir"
@@ -16,3 +16,9 @@ root = "Roundtrip"
 [[lean_exe]]
 name = "zkir-dataflow"
 root = "DataflowDump"
+
+# SSA well-formedness of the corpus (rung 3's precondition; the real-IR
+# form of Fold.lean's WellFormed), reported per file.
+[[lean_exe]]
+name = "zkir-wellformed"
+root = "Wellformed"

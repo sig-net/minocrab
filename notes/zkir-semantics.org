@@ -536,3 +536,51 @@ this rung (recorded as next, not as a gap): the SSA-of-the-corpus lemma
 (no identifier defined twice; each read of a defined wire after its
 definition) — a one-pass check over =defines=/=reads= that the fold
 proof's =WellFormed= will want in real-IR form at rung 3.
+
+2026-08-30 (end of session) — RUNG 3 FOUNDATION laid, not gated:
+=Semantics.lean= is the evaluation reading of §4.1 over the real
+=Instr=, transcribed from =preprocess= arm by arm (ir_vm.rs:284-646):
+=Fr := Fin p= with =ofInt= (the signed literal's one reduction site),
+=neg=, =pow=/=inv= (=a^(p−2)=, total); =Carriers= (eleven opaque foreign
+types) and =Value C= (the 13-way =IrValue=); the =Model C= record of
+uninterpreted intrinsics (§5's list, plus =eqF=/=addF=/… for foreign
+arithmetic, =encodeF=/=decodeF=/=defaultF= for foreign encodings);
+=Preimage=, =State= (overwrite-on-insert memory, =pis=, =piSkips=, the
+three cursors, outputs); =fabAtom=/=fabBytes= (§3.2's in-circuit rule:
+stray limb first from the first operand, full limbs in REVERSED
+operand order, stray bytes appended last); =step= for all 33
+instructions; =prologue=/=run= with the epilogue's full-consumption and
+commitment checks. It COMPILES; there are NO theorems yet, and the
+claims below are what the next session owes before rung 3 can be
+called: (i) a second read of every arm against ir_vm.rs — three places
+were inferred rather than transcribed and are marked for rung 4's
+differential: =decode .bytes32='s range checks (upstream
+=decode_offcircuit= may or may not reject a low limb ≥ 2^248), the
+=field= atom's 32-byte width, and =cond_select='s same-type check;
+(ii) =Sat= (§4.2) and the completeness lemma; (iii) the eight pass
+theorems over =Instr=.
+EVIDENCE that the walk is right where it is concrete: =Smoke.lean= —
+seven build-time =#guard= checks on a hand-traced six-instruction
+program (unguarded =public_input= consuming the outputs stream, =add=
+on =Fin p=, a true-guarded =impact= pushing AND checking against
+=public_transcript_inputs=, a false-guarded =impact= pushing a zero and
+recording =some 1=, then four rejects: a mismatching transcript, a
+leftover transcript element, an input above its =constrain_bits=
+width, too few raw inputs; plus =-0x01 + 1 = 0= and =inv 3 · 3 = 1=).
+=#guard= verified to fail the build on a false check.
+CORPUS FACT, new: =zkir-wellformed= (exe, in CI's lean job) — every
+one of the 84 v3 files is SSA in the sense Fold.lean's =WellFormed=
+needs in real-IR form: input names distinct and never redefined, no
+identifier defined twice, every wire read defined earlier or an input.
+"84 well-formed, 0 violating (16815 instructions)". taint.rs's "ZKIR
+v3 is SSA" and dedup's position-independence argument now rest on a
+checked fact for the corpus (and on Builder3 minting fresh names for
+our own streams — unchanged).
+Lean-4.30 lessons added to the pile: a =def= inside =namespace Eval=
+named =State.insert= is =Eval.State.insert=, not a field of =State= —
+put structure helpers before the namespace; =pure (x = y)= at type
+=R Bool= needs =decide= explicitly when the match arms would otherwise
+unify to =Prop=; =Vector UInt8 32= equality compares via =toList=.
+SHELVE STATE at end of day: rungs 1-2 green and gated; rung 3 has a
+compiling model with smoke evidence and its precondition established
+on the corpus; nothing half-proved is committed.

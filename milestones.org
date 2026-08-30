@@ -1215,6 +1215,17 @@ substantially. Weekend-sized chunks exist at every boundary.
       evaluation satisfies constraints) for the instructions that
       carry both. GATE: lake-green sorry-free; the =VerifiedPass=
       citations move to the real-IR theorems.
+      (IN PROGRESS 2026-08-30 — the evaluation reading is transcribed
+      and compiles (=MinocrabZkir.Semantics=: =Fr := Fin p=, opaque
+      carriers, the =Model= of uninterpreted intrinsics, =step=/=run=
+      for all 33 instructions with the four stream cursors and the
+      epilogue checks), with seven build-time =#guard= smoke checks
+      (=Smoke.lean=) and the corpus proved SSA-well-formed by
+      =zkir-wellformed= (84/84, 16,815 instructions). NO theorems yet;
+      the constraint reading, completeness lemma and the eight pass
+      theorems over the real IR are the remaining gate. Three arms
+      inferred rather than transcribed are flagged for rung 4 —
+      notes/zkir-semantics.org §9.)
 - [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
       p= arithmetic; keccak/persistent/transient hash and jubjub ops
       ported mechanically), giving a Lean reference interpreter.
