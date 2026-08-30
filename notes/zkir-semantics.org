@@ -664,6 +664,31 @@ misleading "No goals" further down. Status: MinocrabProofs 0 sorries,
 8 of 8 pass theorems over the real IR; =Fold.lean= / =Passes.lean= kept
 as the M25 record. Rung 3's remaining gate items: =Sat= and the
 completeness lemma.
+NEXT SESSION STARTS HERE — =Sat= design settled from reading the =step=
+arms, not yet written (nothing half-defined is committed):
+- ONE final assignment, not a trace: the corpus is SSA (=zkir-wellformed=)
+  so =Sat P pis mem= ranges over a single =List (Ident × Value C)= with
+  =lookup=; a =step=-shaped trace would double the proof work for
+  nothing.
+- One clause per instruction, =SatInstr : Model C → Program → Preimage →
+  List Fr → Nat → mem → Instr → Prop=, folded with a running PI cursor
+  (=impact= is the only PI-advancing instruction; =publicInput= /
+  =privateInput= read the transcripts and are UNCONSTRAINED in-circuit,
+  §4.3 — their clause is only "out is bound to a value of type ty").
+  Compute rows are the functional equation with the SAME =Model=
+  symbols =step= uses (=lookup mem out = some (f …)=); the seven
+  in-circuit divergences of §4.3 are written as stated there
+  (=assert=: cond ≠ 0; =lessThan= at the padded width;
+  =bytes32IntoLowHigh=: no clause; the =convert=-to-bit sites: value ∈
+  {0,1}).
+- COMPLETENESS =run M P π = .ok r → Sat M P r.pis r.memory= wants, per
+  arm, an inversion lemma =step … = .ok st' → …= over the =Except=
+  =do=-blocks (=Except.bind= unfolds by =simp [bind, Except.bind]= after
+  =cases= on each =resolve= result); prove =resolve_ok= / =asNative_ok=
+  / =resolveBool_ok= first, then the arms. Memory is prepend-on-insert,
+  so the SSA hypothesis (no redefinition) is what makes =lookup= of an
+  earlier wire stable across later inserts — that lemma
+  (=lookup_insert_other=) comes before any arm.
 
 * 10. Open inconsistencies — come back to these (dmd, 2026-08-30)
 
