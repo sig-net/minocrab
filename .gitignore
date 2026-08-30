@@ -4,3 +4,6 @@
 crates/minocrab-ir/lean/.lake/
 crates/minocrab-std/lean/.lake/
 crates/minocrab-zkir/lean/.lake/
+
+# nix build .#compactc output link (corpus/compile.sh reads ../result/bin/compactc)
+result
