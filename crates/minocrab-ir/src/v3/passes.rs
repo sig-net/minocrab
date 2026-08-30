@@ -55,7 +55,7 @@ impl<V> AssocMap<V> {
     }
 }
 
-use minocrab_zkir::v3::{Instruction, IrSource, Operand};
+use minocrab_zkir::v3::{Identifier, Instruction, IrSource, Operand};
 
 /// Fold every `Copy` of an immediate into its consumers and drop it.
 ///
@@ -357,6 +357,75 @@ fn operands_mut(instruction: &mut Instruction) -> Vec<&mut Operand> {
         // NOT folded: see the pass's docs. The terminator's own operands are
         // left alone, which is what keeps a returned constant named.
         Instruction::Output { vals: _ } => vec![],
+    }
+}
+
+// ============================================================================
+// Read-only dataflow twins — M27 rung 2's Rust side of the Lean gate
+// ============================================================================
+//
+// `MinocrabZkir.Dataflow` (crates/minocrab-zkir/lean/) defines `operands`,
+// `returned` and `defines` over the real IR; `tests/lean_dataflow.rs` dumps
+// both sides over every corpus instruction and diffs them. The two reads
+// below go THROUGH `operands_mut` / `returned_operands` on a clone rather
+// than restating the match, so there is exactly one exhaustive list per
+// question on the Rust side and the Lean gate is comparing against it.
+
+/// Every operand position `operands_mut` lists, in its order (all reads
+/// except the `Output` terminator's — see [`returned`]).
+pub fn operands(instruction: &Instruction) -> Vec<Operand> {
+    let mut owned = instruction.clone();
+    operands_mut(&mut owned).into_iter().map(|op| op.clone()).collect()
+}
+
+/// The operand positions through which a value leaves the circuit named:
+/// the `Output` terminator's, and nothing else.
+pub fn returned(instruction: &Instruction) -> Vec<Operand> {
+    returned_operands(instruction).to_vec()
+}
+
+/// The identifiers an instruction binds, in output order.
+///
+/// Exhaustive by construction like [`operands_mut`]: an upstream variant
+/// that defines a value this list does not know about breaks the build.
+pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
+    match instruction {
+        Instruction::Encode { outputs, .. } => outputs.clone(),
+        Instruction::DivModPowerOfTwo { outputs, .. } => outputs.clone(),
+        Instruction::IntoCoordinates { outputs, .. }
+        | Instruction::Bytes32IntoLowHigh { outputs, .. } => {
+            vec![outputs.0.clone(), outputs.1.clone()]
+        }
+        Instruction::CondSelect { output, .. }
+        | Instruction::Copy { output, .. }
+        | Instruction::EcMul { output, .. }
+        | Instruction::EcMulGenerator { output, .. }
+        | Instruction::HashToCurve { output, .. }
+        | Instruction::FromCoordinates { output, .. }
+        | Instruction::IntoBytes32 { output, .. }
+        | Instruction::FromBytes32 { output, .. }
+        | Instruction::ReverseBytes { output, .. }
+        | Instruction::Bytes32FromLowHigh { output, .. }
+        | Instruction::ReconstituteField { output, .. }
+        | Instruction::TransientHash { output, .. }
+        | Instruction::PersistentHash { output, .. }
+        | Instruction::Keccak256 { output, .. }
+        | Instruction::TestEq { output, .. }
+        | Instruction::Add { output, .. }
+        | Instruction::Mul { output, .. }
+        | Instruction::Neg { output, .. }
+        | Instruction::Inv { output, .. }
+        | Instruction::Not { output, .. }
+        | Instruction::LessThan { output, .. }
+        | Instruction::JubjubScalarFromNative { output, .. }
+        | Instruction::PublicInput { output, .. }
+        | Instruction::PrivateInput { output, .. } => vec![output.clone()],
+        Instruction::Assert { .. }
+        | Instruction::ConstrainBits { .. }
+        | Instruction::ConstrainEq { .. }
+        | Instruction::ConstrainToBoolean { .. }
+        | Instruction::Impact { .. }
+        | Instruction::Output { .. } => vec![],
     }
 }
 

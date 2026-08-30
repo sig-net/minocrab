@@ -514,3 +514,25 @@ CI's lean job builds the package and runs the exe over =corpus/zkir=
 Cargo =include=. SHELVE POINT 1 reached: a machine-checked ZKIR v3
 grammar with a corpus-proven printer. Next: rung 2 (Dataflow.lean +
 the Rust reads/defines dump + diff).
+
+2026-08-30 (later still) — RUNG 2 LANDED, gate green. =Dataflow.lean=:
+=Instr.operands= (the =operands_mut= list, its order), =Instr.returned=
+(the terminator's), =Instr.reads= (their concatenation), =Instr.defines=,
+=Instr.readWires=, =Instr.guardOf= — =operands= and =defines= are
+wildcard-free matches, so the kernel checks the 33-way coverage. Rust
+side: =minocrab_ir::v3::passes::{operands, returned, defined_identifiers}=
+— the first two go THROUGH =operands_mut= / =returned_operands= on a
+clone (one exhaustive list per question, no drift between a read-only
+twin and the pass), the third is new and exhaustive. The gate is a
+TEXT DIFF, not a snapshot: =zkir-dataflow= (Lean exe) and
+=minocrab-ir/tests/lean_dataflow.rs= (Rust) each print one line per
+corpus instruction — path, index, operands, returned, defines, wires by
+name and immediates as =#= — and the test asserts the two texts equal
+and the line count (16,815). Immediates are opaque here on purpose:
+their VALUE is rung 3's business, and the Rust side holds them reduced
+while the Lean side holds the signed literal (§1.2), so a value column
+would compare two different things. SHELVE POINT 2 reached. Not done at
+this rung (recorded as next, not as a gap): the SSA-of-the-corpus lemma
+(no identifier defined twice; each read of a defined wire after its
+definition) — a one-pass check over =defines=/=reads= that the fold
+proof's =WellFormed= will want in real-IR form at rung 3.

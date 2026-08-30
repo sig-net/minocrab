@@ -1196,10 +1196,15 @@ substantially. Weekend-sized chunks exist at every boundary.
       =cargo test= (tests/lean_roundtrip.rs, count asserted) and from
       CI's lean job over the tracked corpus + a hand fixture for the
       five corpus-absent ops. notes/zkir-semantics.org §9.)
-- [ ] RUNG 2 — DATAFLOW: total operands/defines functions over the
+- [X] RUNG 2 — DATAFLOW: total operands/defines functions over the
       inductive (the Lean twin of =operands_mut= /
       =returned_identifiers=, kernel-checked exhaustive). GATE: agree
       with the Rust functions on every corpus instruction.
+      (DONE 2026-08-30 — =MinocrabZkir.Dataflow= (operands / returned /
+      reads / defines / guardOf, wildcard-free where it counts) vs the
+      new read-only Rust twins in passes.rs, diffed as text over all
+      16,815 corpus instructions by minocrab-ir/tests/lean_dataflow.rs;
+      green. notes/zkir-semantics.org §9.)
 - [ ] RUNG 3 — OBSERVABLE SEMANTICS: the environment-passing walk over
       the real IR with intrinsics uninterpreted; observables = the
       PI/witness/output streams. Re-prove the eight pass theorems

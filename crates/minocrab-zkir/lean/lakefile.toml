@@ -1,5 +1,5 @@
 name = "minocrab-zkir-lean"
-defaultTargets = ["MinocrabZkir", "zkir-roundtrip"]
+defaultTargets = ["MinocrabZkir", "zkir-roundtrip", "zkir-dataflow"]
 
 [[lean_lib]]
 name = "MinocrabZkir"
@@ -10,3 +10,9 @@ name = "MinocrabZkir"
 [[lean_exe]]
 name = "zkir-roundtrip"
 root = "Roundtrip"
+
+# Rung 2's dump: reads/returned/defines per corpus instruction, diffed
+# against the Rust functions by minocrab-ir/tests/lean_dataflow.rs.
+[[lean_exe]]
+name = "zkir-dataflow"
+root = "DataflowDump"
