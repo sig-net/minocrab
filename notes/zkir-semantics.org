@@ -584,3 +584,32 @@ unify to =Prop=; =Vector UInt8 32= equality compares via =toList=.
 SHELVE STATE at end of day: rungs 1-2 green and gated; rung 3 has a
 compiling model with smoke evidence and its precondition established
 on the corpus; nothing half-proved is committed.
+
+2026-08-30 (last landing) — THE PASS PRONG'S FIRST HALF OVER THE REAL IR:
+=crates/minocrab-ir/lean/MinocrabProofs/DedupIr.lean= restates the four
+dedup theorems (=dedup_sublist=, =dedup_passthrough=, =dedup_bound=,
+=dedup_idem=) on =MinocrabZkir.Instr=; the M25 proofs went through
+UNCHANGED — they were parametric in what =established= returns =none=
+for, so the model gap for dedup closes by re-stating, not re-proving.
+=established= now inspects the real constructors (=constrainBits (.var
+n) b=, =constrainToBoolean (.var n)=). Packaging decision taken: the
+real-IR theorems live in minocrab-ir's lake package (they are about
+THAT crate's passes and ship with it), which now =require=s the zkir
+package by PATH (=../../minocrab-zkir/lean=; lake-manifest updated).
+The published minocrab-ir crate still embeds the proof text via
+=lean_proof!= — that only needs the file — but building it with lake
+needs the sibling checkout, which is the same situation as the corpus
+tests and is said in the lakefile. =DEDUP_PROOF='s citation moved to
+=DedupIr.lean=; =the_builtin_proofs_declare_every_claimed_theorem= and
+the drift test pass. FOLD's four theorems stay on the model until the
+real-IR =mapOperands= (33 arms) and =fold= are transcribed — the
+syntactic half should port like dedup did; the semantic half's
+=WellFormed= is exactly what =zkir-wellformed= now checks on the
+corpus, in real-IR form. Also settled from upstream source today, for
+the §9 flags: =select_offcircuit= DOES reject mismatched operand types
+(select.rs:43-52, the Lean's check is faithful); =decode_offcircuit=
+for Bytes32 does not error on a low limb ≥ 2^248 — it =assert_eq!=s,
+i.e. PANICS the prover (encode.rs:150-165); the Lean rejects instead.
+Both are "not accept", but a crash-versus-error difference in
+=IrSource::check= on a malformed preimage is worth a line in the
+honest-boundary writeup and possibly an upstream note.

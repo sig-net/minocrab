@@ -1,6 +1,13 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
- "packages": [],
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "«minocrab-zkir-lean»",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../minocrab-zkir/lean",
+   "configFile": "lakefile.toml"}],
  "name": "«minocrab-proofs»",
  "lakeDir": ".lake",
  "fixedToolchain": false}

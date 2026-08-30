@@ -741,7 +741,11 @@ pub static FOLD_PROOF: ProofRef = lean_proof! {
 /// unchanged (`dedup_bound`), and idempotence (`dedup_idem`). These are the
 /// M23 R4 stream specimens discharged UNBOUNDED.
 pub static DEDUP_PROOF: ProofRef = lean_proof! {
-    file: "../../lean/MinocrabProofs/Passes.lean",
+    // M27 rung 3: the citation moved from the three-constructor model
+    // (`Passes.lean`, kept as the M25 record) to the same four theorems
+    // over the REAL instruction set (`DedupIr.lean`, stated on
+    // `MinocrabZkir.Instr`, the inductive that round-trips the corpus).
+    file: "../../lean/MinocrabProofs/DedupIr.lean",
     theorems: [
         "dedup_sublist",
         "dedup_passthrough",

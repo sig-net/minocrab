@@ -1223,9 +1223,13 @@ substantially. Weekend-sized chunks exist at every boundary.
       (=Smoke.lean=) and the corpus proved SSA-well-formed by
       =zkir-wellformed= (84/84, 16,815 instructions). NO theorems yet;
       the constraint reading, completeness lemma and the eight pass
-      theorems over the real IR are the remaining gate. Three arms
-      inferred rather than transcribed are flagged for rung 4 —
-      notes/zkir-semantics.org §9.)
+      theorems over the real IR are the remaining gate — of which
+      DEDUP's four are DONE the same day (=DedupIr.lean=, the M25
+      proofs unchanged on the real =Instr=; =DEDUP_PROOF= re-cited,
+      claims test green); fold's four remain on the model. Two of the
+      three inferred arms settled against upstream source; one
+      (=field= atom width) left for rung 4 — notes/zkir-semantics.org
+      §9.)
 - [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
       p= arithmetic; keccak/persistent/transient hash and jubjub ops
       ported mechanically), giving a Lean reference interpreter.
