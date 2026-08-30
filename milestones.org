@@ -1205,7 +1205,7 @@ substantially. Weekend-sized chunks exist at every boundary.
       new read-only Rust twins in passes.rs, diffed as text over all
       16,815 corpus instructions by minocrab-ir/tests/lean_dataflow.rs;
       green. notes/zkir-semantics.org §9.)
-- [ ] RUNG 3 — OBSERVABLE SEMANTICS: the environment-passing walk over
+- [X] RUNG 3 — OBSERVABLE SEMANTICS: the environment-passing walk over
       the real IR with intrinsics uninterpreted; observables = the
       PI/witness/output streams. Re-prove the eight pass theorems
       (dedup 4, fold 3+1) OVER THE REAL IR TYPE — closing the pass
@@ -1233,10 +1233,14 @@ substantially. Weekend-sized chunks exist at every boundary.
       with the generic instruction packed into a 33-arm
       =mapOperands_congr=; =FOLD_PROOF= now cites =FoldIr.lean=, the
       claims/drift tests green). ALL EIGHT pass theorems are over the
-      real IR. What the gate still owes: =Sat= (§4.2) and the
-      completeness lemma. Two of the three inferred arms settled
-      against upstream source; one (=field= atom width) left for rung
-      4 — notes/zkir-semantics.org §9.)
+      real IR. DONE 2026-08-30 (night): =Sat= (=Constraint.lean=,
+      transcribed from the in-circuit walk) and =completeness=
+      (=Completeness.lean=, sorry-free, under =SSA= + the new
+      =ImpactsNative= hypothesis — §10 I5); =SatCommitment= stated,
+      its completeness deferred to rung 4's Model round-trip. Two of
+      the three inferred arms settled against upstream source; one
+      (=field= atom width) and the two gadget widths left for rung 4 —
+      notes/zkir-semantics.org §9. GATE GREEN; shelve point 3.)
 - [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
       p= arithmetic; keccak/persistent/transient hash and jubjub ops
       ported mechanically), giving a Lean reference interpreter.

@@ -239,6 +239,46 @@ def checkBits (x : Fr) (n : Nat) : R Unit := do
   if n ≥ frBits then throw "Excessive bit bound"
   if x.val ≥ 2 ^ n then throw s!"Bit bound failed: {x.val} is not {n}-bit"
 
+/-! The typed value operations both readings share (§4.2: "the same
+uninterpreted symbols"): native concretely, foreign through the model.
+`step` calls these; `Constraint.SatInstr` states its functional
+equations with them. -/
+
+def addV : Value C → Value C → R (Value C)
+  | .native x, .native y => pure (.native (x + y))
+  | a, b => M.addF a b
+
+def mulV : Value C → Value C → R (Value C)
+  | .native x, .native y => pure (.native (x * y))
+  | a, b => M.mulF a b
+
+def negV : Value C → R (Value C)
+  | .native x => pure (.native (Fr.neg x))
+  | a => M.negF a
+
+def invV : Value C → R (Value C)
+  | .native x => if x = 0 then throw "Cannot invert zero" else pure (.native (Fr.inv x))
+  | a => M.invF a
+
+/-- Typed equality (`constrain_eq_offcircuit` / `test_eq`). -/
+def eqV : Value C → Value C → R Bool
+  | .native x, .native y => pure (decide (x = y))
+  | .bytes32 x, .bytes32 y => pure (decide (x.toList = y.toList))
+  | a, b => M.eqF a b
+
+def intoBytes32V : Value C → R Bytes32
+  | .native x => pure (Bytes32.ofLE x.val)
+  | v => M.intoBytes32F v
+
+def fromBytes32V (ty : IrType) (b : Bytes32) : R (Value C) :=
+  match ty with
+  | .native => pure (.native (Fr.ofNat (leToNat b.toList)))
+  | ty => M.fromBytes32F ty b
+
+/-- 31 LE bytes of `lo` then the byte `hi` (both readings' Bytes32 shape). -/
+def bytesOfLowHigh (lo hi : Fr) : Bytes32 :=
+  ⟨(natToLE lo.val 31 ++ [UInt8.ofNat hi.val]).toArray, by simp [natToLE]⟩
+
 /-- `encode_offcircuit` for the concrete types; foreign via the model. -/
 def encode (v : Value C) : List Fr :=
   match v with
@@ -255,7 +295,7 @@ def decode (ty : IrType) (raw : List Fr) : R (Value C) :=
   | .bytes32, [lo, hi] => do
     if lo.val ≥ 2 ^ 248 then throw "Bytes32 low limb exceeds 31 bytes"
     if hi.val ≥ 256 then throw "Bytes32 high limb exceeds a byte"
-    pure (.bytes32 ⟨(natToLE lo.val 31 ++ [UInt8.ofNat hi.val]).toArray, by simp [natToLE]⟩)
+    pure (.bytes32 (bytesOfLowHigh lo hi))
   | ty, raw => M.decodeF ty raw
 
 /-- `IrValue::default` (ir_types.rs:168-186). -/
@@ -314,34 +354,28 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
   | .add out a b =>
     let a ← resolve st a
     let b ← resolve st b
-    match a, b with
-    | .native x, .native y => pure (st.insert out (.native (x + y)))
-    | a, b => pure (st.insert out (← M.addF a b))
+    let r ← addV M a b
+    pure (st.insert out r)
   | .mul out a b =>
     let a ← resolve st a
     let b ← resolve st b
-    match a, b with
-    | .native x, .native y => pure (st.insert out (.native (x * y)))
-    | a, b => pure (st.insert out (← M.mulF a b))
+    let r ← mulV M a b
+    pure (st.insert out r)
   | .neg out a =>
-    match ← resolve st a with
-    | .native x => pure (st.insert out (.native (Fr.neg x)))
-    | a => pure (st.insert out (← M.negF a))
+    let a ← resolve st a
+    let r ← negV M a
+    pure (st.insert out r)
   | .inv out a =>
-    match ← resolve st a with
-    | .native x =>
-      if x = 0 then throw "Cannot invert zero" else pure (st.insert out (.native (Fr.inv x)))
-    | a => pure (st.insert out (← M.invF a))
+    let a ← resolve st a
+    let r ← invV M a
+    pure (st.insert out r)
   | .not out a =>
     let b ← resolveBool st a
     pure (st.insert out (.native (if b then 0 else 1)))
   | .constrainEq a b =>
     let a ← resolve st a
     let b ← resolve st b
-    let eq : Bool ← match a, b with
-      | .native x, .native y => pure (decide (x = y))
-      | .bytes32 x, .bytes32 y => pure (decide (x.toList = y.toList))
-      | a, b => M.eqF a b
+    let eq ← eqV M a b
     if eq then pure st else throw "Failed equality constraint"
   | .condSelect out bit a b =>
     let bit ← resolveBool st bit
@@ -354,10 +388,7 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
   | .testEq out a b =>
     let a ← resolve st a
     let b ← resolve st b
-    let eq : Bool ← match a, b with
-      | .native x, .native y => pure (decide (x = y))
-      | .bytes32 x, .bytes32 y => pure (decide (x.toList = y.toList))
-      | a, b => M.eqF a b
+    let eq ← eqV M a b
     pure (st.insert out (.native (if eq then 1 else 0)))
   | .publicInput ty out guard =>
     let take ← match guard with
@@ -430,11 +461,12 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
     if ← resolveBool st guard then
       let xs ← inputs.mapM fun o => do asNative (← resolve st o)
       let base := st.pubInIdx
-      for (k, x) in (List.range n).zip xs do
-        let expected := π.publicTranscriptInputs[base + k]?
-        if expected ≠ some x then
-          throw s!"Public transcript input mismatch for input {base + k}"
-      pure { st with pis := st.pis ++ xs, piSkips := st.piSkips ++ [none], pubInIdx := base + n }
+      -- every pushed value must equal the transcript's at its position
+      -- (ir_vm.rs:528-540; the loop's reject condition, as one check)
+      if ((List.range n).zip xs).all (fun (k, x) => π.publicTranscriptInputs[base + k]? == some x) then
+        pure { st with pis := st.pis ++ xs, piSkips := st.piSkips ++ [none], pubInIdx := base + n }
+      else
+        throw "Public transcript input mismatch"
     else
       pure { st with pis := st.pis ++ List.replicate n 0, piSkips := st.piSkips ++ [some n] }
   | .hashToCurve out inputs =>
@@ -455,14 +487,13 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
     let y ← resolve st iy
     pure (st.insert out (← M.fromCoordinates x y))
   | .intoBytes32 out input =>
-    match ← resolve st input with
-    | .native x => pure (st.insert out (.bytes32 (Bytes32.ofLE x.val)))
-    | v => pure (st.insert out (.bytes32 (← M.intoBytes32F v)))
+    let v ← resolve st input
+    let b ← intoBytes32V M v
+    pure (st.insert out (.bytes32 b))
   | .fromBytes32 ty out bytes =>
     let b ← asBytes32 (← resolve st bytes)
-    match ty with
-    | .native => pure (st.insert out (.native (Fr.ofNat (leToNat b.toList))))
-    | ty => pure (st.insert out (← M.fromBytes32F ty b))
+    let r ← fromBytes32V M ty b
+    pure (st.insert out r)
   | .reverseBytes out bytes =>
     let b ← asBytes32 (← resolve st bytes)
     pure (st.insert out (.bytes32 b.reverse))
@@ -477,7 +508,7 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
     let hi ← asNative (← resolve st ihi)
     if lo.val ≥ 2 ^ 248 ∨ hi.val ≥ 256 then
       throw "Bytes32FromLowHigh: low operand must fit in 31 bytes and high operand in a single byte"
-    pure (st.insert out (.bytes32 ⟨(natToLE lo.val 31 ++ [UInt8.ofNat hi.val]).toArray, by simp [natToLE]⟩))
+    pure (st.insert out (.bytes32 (bytesOfLowHigh lo hi)))
   | .output vals =>
     if vals.length ≠ prog.outputs.length then
       throw s!"Output: signature declares {prog.outputs.length} return values but instruction has {vals.length}"
@@ -488,42 +519,56 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
     pure { st with outputs := st.outputs ++ vs }
 
 /-- ir_vm.rs:189-211: seed memory from `preimage.inputs` per the typed
-input list; leftovers are a reject. -/
-def prologue (prog : Program) (π : Preimage) : R (List (Ident × Value C)) := do
-  let mut mem : List (Ident × Value C) := []
-  let mut idx := 0
-  for (name, ty) in prog.inputs do
+input list; leftovers are a reject. (The `for` loop as structural
+recursion, so the completeness proof can induct on it.) -/
+def prologueLoop (π : Preimage) :
+    List (Ident × IrType) → Nat → List (Ident × Value C) → R (List (Ident × Value C) × Nat)
+  | [], idx, mem => pure (mem, idx)
+  | (name, ty) :: rest, idx, mem => do
     let w := ty.encodedLen
     if idx + w > π.inputs.length then
       throw s!"Not enough raw inputs: ran out at index {idx} while decoding {name}"
     let v ← decode M ty ((π.inputs.drop idx).take w)
-    mem := (name, v) :: mem
-    idx := idx + w
+    prologueLoop π rest (idx + w) ((name, v) :: mem)
+
+def prologue (prog : Program) (π : Preimage) : R (List (Ident × Value C)) := do
+  let (mem, idx) ← prologueLoop M π prog.inputs 0 []
   if idx ≠ π.inputs.length then
     throw s!"Expected {idx} raw inputs, received {π.inputs.length}"
   pure mem
 
-/-- The whole of `preprocess`: prologue, the walk, the epilogue checks. -/
-def run (prog : Program) (π : Preimage) : R (Result C) := do
-  let mem ← prologue M prog π
-  let pis0 ← match π.communicationsCommitment, prog.doCommunicationsCommitment with
-    | _, false => pure [π.bindingInput]
-    | some (c, _), true => pure [π.bindingInput, c]
-    | none, true => throw "Expected communications commitment"
-  let st0 : State C :=
-    { memory := mem, pis := pis0, piSkips := [], privIdx := 0, pubOutIdx := 0, pubInIdx := 0, outputs := [] }
-  let st ← prog.instructions.foldlM (step M prog π) st0
+/-- `pis` starts as the binding input, then the commitment if declared
+(ir_vm.rs:804-817). -/
+def initialPis (prog : Program) (π : Preimage) : R (List Fr) :=
+  match π.communicationsCommitment, prog.doCommunicationsCommitment with
+  | _, false => pure [π.bindingInput]
+  | some (c, _), true => pure [π.bindingInput, c]
+  | none, true => throw "Expected communications commitment"
+
+/-- The epilogue checks (ir_vm.rs:648-681): full consumption of the
+three transcripts, then the commitment equality. -/
+def epilogue (prog : Program) (π : Preimage) (st : State C) : R (Result C) :=
   if π.publicTranscriptInputs.length ≠ st.pubInIdx
       ∨ π.publicTranscriptOutputs.length ≠ st.pubOutIdx
       ∨ π.privateTranscript.length ≠ st.privIdx then
     throw "Transcripts not fully consumed"
-  if prog.doCommunicationsCommitment then
+  else if prog.doCommunicationsCommitment then
     match π.communicationsCommitment with
     | none => throw "Expected communications randomness"
     | some (c, rand) =>
-      let preimage := π.inputs ++ st.outputs.flatMap (encode M)
-      if c ≠ M.transientCommit preimage rand then throw "Communications commitment mismatch"
-  pure { memory := st.memory, pis := st.pis, piSkips := st.piSkips, outputs := st.outputs }
+      if c ≠ M.transientCommit (π.inputs ++ st.outputs.flatMap (encode M)) rand then
+        throw "Communications commitment mismatch"
+      else pure { memory := st.memory, pis := st.pis, piSkips := st.piSkips, outputs := st.outputs }
+  else pure { memory := st.memory, pis := st.pis, piSkips := st.piSkips, outputs := st.outputs }
+
+/-- The whole of `preprocess`: prologue, the walk, the epilogue checks. -/
+def run (prog : Program) (π : Preimage) : R (Result C) := do
+  let mem ← prologue M prog π
+  let pis0 ← initialPis prog π
+  let st0 : State C :=
+    { memory := mem, pis := pis0, piSkips := [], privIdx := 0, pubOutIdx := 0, pubInIdx := 0, outputs := [] }
+  let st ← prog.instructions.foldlM (step M prog π) st0
+  epilogue M prog π st
 
 end Eval
 

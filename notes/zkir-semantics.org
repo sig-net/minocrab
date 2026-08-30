@@ -690,6 +690,53 @@ arms, not yet written (nothing half-defined is committed):
   earlier wire stable across later inserts — that lemma
   (=lookup_insert_other=) comes before any arm.
 
+2026-08-30 (night) — THE CONSTRAINT READING AND ITS COMPLETENESS LEMMA,
+rung 3's last gate items. =MinocrabZkir.Constraint=: =Sat M P pis mem=
+over ONE assignment (§9 plan above), transcribed from ir_vm.rs:705-1200
+=circuit= arm by arm — =SatInstr= with the PI cursor, =SatBody=,
+=pisBase= (1 or 2 prologue pushes), =totalAdvance=, =SatInputs=; and
+=SatCommitment= (the epilogue's equality, preimage read back from the
+INPUT WIRES as the circuit does) stated separately. Value operations
+the two readings share (=addV=/=mulV=/=negV=/=invV=/=eqV=/
+=intoBytes32V=/=fromBytes32V=/=bytesOfLowHigh=) now live in
+Semantics.lean and =step= calls them — §4.2's "same uninterpreted
+symbols", made literal. =MinocrabZkir.Completeness=:
+=completeness : run M P π = .ok r → SSA P → ImpactsNative P r.memory →
+Sat M P r.pis r.memory=, sorry-free, via =step_sat= (33 arms; each
+yields =StepShape= — bindings preserved, nothing outside =defines=
+touched, PIs only grow, by exactly =advance= — plus the clause under any
+larger assignment) and =foldl_sat= along the fold. HYPOTHESES, honestly:
+=SSA= is what =zkir-wellformed= checks; =ImpactsNative= is new (I5
+below). NOT in the lemma: =SatCommitment= (needs =encode ∘ decode = id=
+on the raw inputs — a =Model= property for rung 4). Two gadget widths
+transcribed, to confirm at rung 4: =lower_than= range-checks both
+operands at =max(bits + bits mod 2, 4)=; =assigned_to_le_bits= with
+=bits ≥ FR_BITS= constrains only canonicity. Typing of transcript inputs
+and =decodeF= results is NOT claimed (their clauses say "bound").
+Restatements of =Semantics.lean= made for provability, all re-checked
+by Smoke's =#guard=s: =prologue='s =for= as =prologueLoop= recursion;
+=impact='s per-element check as one =List.all=; =run= split into
+=initialPis= / =foldlM= / =epilogue= (the last written do-free).
+PROOF LESSONS (the expensive ones): (1) the =do= elaborator DUPLICATES
+the continuation into both branches of =if c then throw e= (no join
+point), so the shape is =(if c then throw >>= k else pure () >>= k) =
+ok st'= — =split at h= FIRST, then the =Except= inversion simp set
+(=bind_eq_ok=, =pure_eq_ok=, =throw_eq_ok=, =exists_eq_left'=,
+=true_and= because =() = b= becomes =True= before =exists_eq_left'=
+can fire, =reduceCtorEq= for a =throw= already unfolded to
+=Except.error=); (2) a =let x ← match …= likewise inlines the rest
+into every arm, so =cases= the discriminant first — or pull the match
+into its own =def= (=initialPis=), which is why =run= was split;
+(3) an =rcases= pattern with too many components on an =Eq= makes
+=cases= try to solve the equation and reports "Dependent elimination
+failed … Decidable.rec" — the shape was fine, the pattern was wrong;
+(4) =cases g= on a =Bool= a hypothesis depends on: =revert h; cases g
+<;> intro h=; (5) a =macro= that =intro=s names is hygienic — the names
+are invisible to the arm; expand it or pass the names; (6) =nomatch h,
+f= parses as a two-discriminant =nomatch=; (7) =split at h= picks an
+INNER =if= when the outer's branches duplicate it — a do-free
+definition (=epilogue=) makes any order fine. RUNG 3 GATE: green.
+
 * 10. Open inconsistencies — come back to these (dmd, 2026-08-30)
 
 Each checked against OUR vault the same day (the four forks' artifacts
@@ -703,3 +750,13 @@ owe them a line.
 | I2 | =decode_offcircuit= for Bytes32 PANICS (=assert_eq!=) on a low limb ≥ 2^248 or a high limb ≥ 256 (encode.rs:150-165) instead of returning an error: a malformed preimage crashes =IrSource::check= rather than rejecting. Lean's =decode= rejects. | midnight-ledger zkir-v3 rev 04c9c5d9 | no: no vault artifact declares or reads a =Bytes<32>= (0 of 9 compactc files, 0 of 36 of ours) | honest-boundary writeup (crash-vs-error is a difference in kind); consider an upstream note; rung 4's differential treats panic as "not accept" |
 | I3 | =field= alignment atom's byte width in the Lean FAB rule (32 LE bytes) is INFERRED from =assigned_to_le_bytes(.., None)=, not transcribed from the off-circuit =parse_field_repr=. | Semantics.lean =fabAtom= | no: every vault atom is =bytes= (247/247 compactc, all ours) | rung 4 differential, or read =base_crypto::fab= once |
 | I4 | =assert= / =less_than= / input-guard UB divergences between the two walks (§4.3) | upstream by design | vault's =assert= conds all come from =cond_select=/=test_eq=/=less_than= outputs (boolean by construction) — to be CONFIRMED mechanically by the rung-2 inventory, not by eye | the constraint reading states them; V1's completeness proof needs the boolean-by-construction fact per =assert= |
+
+- I5 (2026-08-30, found writing =Sat='s =impact= clause): in-circuit
+  =impact= resolves and =try_into=s every input to a native whatever
+  the guard (ir_vm.rs:877-892); off-circuit, a guarded-OFF =impact=
+  never resolves its inputs (ir_vm.rs:507-543 pushes zeros). A program
+  whose guarded-off impact names an unbound or non-native wire passes
+  =IrSource::check= and fails synthesis. Static (keygen fails too), so
+  not a soundness issue; for us it is the =ImpactsNative= hypothesis of
+  =completeness=. To do: check it on the corpus (rung-2 dataflow +
+  input/definition types suffice) and drop it to a corpus fact.
