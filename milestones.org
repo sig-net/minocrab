@@ -1226,7 +1226,10 @@ substantially. Weekend-sized chunks exist at every boundary.
       theorems over the real IR are the remaining gate — of which
       DEDUP's four are DONE the same day (=DedupIr.lean=, the M25
       proofs unchanged on the real =Instr=; =DEDUP_PROOF= re-cited,
-      claims test green); fold's four remain on the model. Two of the
+      claims test green), and FOLD's three syntactic ones too
+      (=FoldIr.lean=: outputs verbatim, skeleton preserved, exactly
+      filter-then-substitute); only =fold_preserves_observables=
+      remains on the model, so =FOLD_PROOF= still cites it. Two of the
       three inferred arms settled against upstream source; one
       (=field= atom width) left for rung 4 — notes/zkir-semantics.org
       §9.)

@@ -613,3 +613,26 @@ i.e. PANICS the prover (encode.rs:150-165); the Lean rejects instead.
 Both are "not accept", but a crash-versus-error difference in
 =IrSource::check= on a malformed preimage is worth a line in the
 honest-boundary writeup and possibly an upstream note.
+
+2026-08-30 (actually last) — FOLD's SYNTACTIC HALF over the real IR:
+=MinocrabProofs/FoldIr.lean= — =mapOperands= (the substitution on
+exactly the =operands_mut= positions, 33 arms, the terminator's
+untouched by definition), =namedOf=/=returnedOf=/=substOp=/=foldRun=/
+=fold= transcribed over =Instr= with =Int= immediates, and
+=fold_outputs=, =fold_skeleton=, =foldRun_is_filter_map= (plus
+=fold_is_filter_map=) sorry-free. Proof shape that worked, for the
+semantic half next time: =cases i <;> simp only [foldRun] <;> (try
+split)= then a per-goal closer; the two lemmas that make the 32
+non-copy cases uniform are =mapOperands_mapOperands= (=cases i <;>
+simp [mapOperands, List.map_map, Option.map_map]=) and
+=isCopy_mapOperands= (=cases i <;> rfl=) — and =isCopy= must NOT be in
+the simp set before =isCopy_mapOperands= has fired, or the left side
+unfolds into a stuck =match= (the one failure of the day). =skeleton=
+is defined recursively (=if isCopy i then … else erase i :: …=), not
+as =filter=-then-=map=, so =simp= can step it. =FOLD_PROOF= still
+cites the model file because its four claimed theorems include
+=fold_preserves_observables=, which is not yet restated; when the
+semantic half lands the citation moves like dedup's did. Lean status
+at end of day: MinocrabZkir 0 sorries (no theorems beyond =#guard=
+evidence), MinocrabProofs 0 sorries, 7 of the 8 pass theorems over
+the real IR.
