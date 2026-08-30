@@ -1285,6 +1285,11 @@ substantially. Weekend-sized chunks exist at every boundary.
       failure naming the moved component. Deliverable doubles as the
       drift-proof replacement for the draft's hand-maintained tables,
       handed back to its authors.
+- [ ] OPEN INCONSISTENCIES I1-I4 (notes/zkir-semantics.org §10) each
+      closed or discharged: I1 witness classification in V5's
+      inventory, I2 in the writeup (+ upstream note), I3 at rung 4, I4
+      confirmed mechanically. None affects the vault (checked
+      2026-08-30 against all four forks' artifacts).
 - [ ] THE HONEST-BOUNDARY WRITEUP, published where the claims are:
       what is machine-checked (the ground layer), what is not (the
       hybrids, the crypto assumptions), and what the semantics'
@@ -1301,3 +1306,50 @@ blocked with the missing rung named; and the honest-boundary writeup
 published. Explicitly OUT: the game-level hybrid argument, any
 crypto-assumption discharge, and any new packing analysis duplicating
 the taint lint.
+
+* M28 — Vault refresh: port the Aave-lending extension (dmd, 2026-08-30)
+Upstream =sig-net/midnight-examples= moved 2c929a1b → a37d686b (pulled
+2026-08-30 on the =vault-refresh= branch; corpus recompiled, 811
+artifacts / 89 v3, Lean rungs 1-2 green on the new files). The vault
+gained stataUSDC lending, and every derived contract in this repo —
+=erc20_vault= (the PI-equal port), =_opt=, =_borsh=, =_modern= — plus
+the spec harness, snapshots and the vault prong's inventory must
+follow. On that branch all 15 =*_matches_corpus= differentials fail
+until they do, which is why it is a branch and not main.
+WHAT CHANGED UPSTREAM (the inventory, from the 456-line source diff):
+- Five new exported circuits: =approveStata=, =supply=,
+  =completeSupply=, =redeem=, =completeRedeem= (9 → 14).
+- Six new ledger fields (11 → 17 exported; 19 total): =stataUnderlying=,
+  =stataToken= (=Bytes<20>=, pinned at initialize), =supplyEventMap= /
+  =supplyRefundCommitment=, =redeemEventMap= / =redeemRefundCommitment=
+  (=SignBidirectionalEventMap<EvmType2TxParams<2|3,0,0>, 36, 35>=).
+- The state tree is now CHUNKED (past the 15-field flat limit): every
+  notification path went from depth 1 to depth 2 — =[0,0,0,0]= at
+  depth 2 for signBidirectionalEventMap, =[1,7,0,0]= swapEventMap,
+  =[1,11,0,0]= supplyEventMap, =[1,13,0,0]= redeemEventMap. This alone
+  moves the PI stream of every existing request circuit, which is why
+  even =deposit= fails its differential.
+- =initialize= takes two more arguments (=stataUnderlyingAddr=,
+  =stataTokenAddr=) with non-zero asserts and two more disclosed
+  writes.
+- New schemas/structs: =supplyOutputSchema=/=supplyRespondSchema=,
+  =redeemOutputSchema=/=redeemRespondSchema= (36/35 bytes),
+  =DepositReturnValue=, =RedeemReturnValue=; =export pure circuit
+  unlimitedAllowance(): Uint<128>= (2^128−1) shared by both approve
+  circuits.
+- [ ] Port the ledger/state changes to =erc20_vault= (the compat port)
+      first: fields, chunked paths, =initialize=; get the nine existing
+      circuits PI-equal again before adding any new one.
+- [ ] Port the five new circuits to the compat fork, each with its
+      =*_matches_corpus= differential and guard/tamper twins.
+- [ ] Propagate to =_opt=, =_borsh=, =_modern= per the fork ledgers
+      (=fork_status= / =borsh_fork_status= / =modern_fork_status=,
+      tests/vault/artifact.rs), extending =Circuit::ALL= to 14 and the
+      spec harness, row/interface snapshots, disclosure report, taint
+      baseline, bench targets.
+- [ ] Merge =vault-refresh= into main only when the whole grid is
+      green; then re-freeze M27's vault-prong claim list against the
+      14-circuit vault (the draft's τ-tables predate lending).
+Exit criteria: corpus pin at a37d686b on main; all four forks cover
+all 14 circuits with the differential/fork/spec/snapshot gates green;
+M27's V-list re-frozen.

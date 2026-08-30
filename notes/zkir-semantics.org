@@ -636,3 +636,17 @@ semantic half lands the citation moves like dedup's did. Lean status
 at end of day: MinocrabZkir 0 sorries (no theorems beyond =#guard=
 evidence), MinocrabProofs 0 sorries, 7 of the 8 pass theorems over
 the real IR.
+
+* 10. Open inconsistencies — come back to these (dmd, 2026-08-30)
+
+Each checked against OUR vault the same day (the four forks' artifacts
+dumped via =zkir_dump=): NONE affects it. Kept here so they are not
+lost; the vault prong's inventory and the honest-boundary writeup both
+owe them a line.
+
+| # | inconsistency | where seen | our vault? | owed |
+|---|---|---|---|---|
+| I1 | =approveRouter= WITNESSES: the draft's C2 says "Witness: none"; compactc's artifact has three =private_input=s — =%cc-rand= (communications-commitment randomness), =%ep-mod=, =%ep-div= (the cross-call entry-point binding limbs): compiler-internal, not user secrets. OUR forks' =approveRouter= has ZERO =private_input=s (our lowering binds those differently), so the witness inventories of compactc's artifact and ours differ by compiler-internal witnesses on every cross-calling circuit. | corpus =approveRouter.zkir= vs the draft §4.8 | no user-secret witness either way | V5's inventory must classify witnesses as USER (userSk, nonces) vs COMPILER-INTERNAL, and report both; the draft's claim is right at the user level — say so in the hand-back |
+| I2 | =decode_offcircuit= for Bytes32 PANICS (=assert_eq!=) on a low limb ≥ 2^248 or a high limb ≥ 256 (encode.rs:150-165) instead of returning an error: a malformed preimage crashes =IrSource::check= rather than rejecting. Lean's =decode= rejects. | midnight-ledger zkir-v3 rev 04c9c5d9 | no: no vault artifact declares or reads a =Bytes<32>= (0 of 9 compactc files, 0 of 36 of ours) | honest-boundary writeup (crash-vs-error is a difference in kind); consider an upstream note; rung 4's differential treats panic as "not accept" |
+| I3 | =field= alignment atom's byte width in the Lean FAB rule (32 LE bytes) is INFERRED from =assigned_to_le_bytes(.., None)=, not transcribed from the off-circuit =parse_field_repr=. | Semantics.lean =fabAtom= | no: every vault atom is =bytes= (247/247 compactc, all ours) | rung 4 differential, or read =base_crypto::fab= once |
+| I4 | =assert= / =less_than= / input-guard UB divergences between the two walks (§4.3) | upstream by design | vault's =assert= conds all come from =cond_select=/=test_eq=/=less_than= outputs (boolean by construction) — to be CONFIRMED mechanically by the rung-2 inventory, not by eye | the constraint reading states them; V1's completeness proof needs the boolean-by-construction fact per =assert= |
