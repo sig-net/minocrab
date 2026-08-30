@@ -1228,11 +1228,15 @@ substantially. Weekend-sized chunks exist at every boundary.
       proofs unchanged on the real =Instr=; =DEDUP_PROOF= re-cited,
       claims test green), and FOLD's three syntactic ones too
       (=FoldIr.lean=: outputs verbatim, skeleton preserved, exactly
-      filter-then-substitute); only =fold_preserves_observables=
-      remains on the model, so =FOLD_PROOF= still cites it. Two of the
-      three inferred arms settled against upstream source; one
-      (=field= atom width) left for rung 4 — notes/zkir-semantics.org
-      §9.)
+      filter-then-substitute), and the SEMANTIC one as well
+      (=fold_preserves_observables= over =Instr=, the model's proof
+      with the generic instruction packed into a 33-arm
+      =mapOperands_congr=; =FOLD_PROOF= now cites =FoldIr.lean=, the
+      claims/drift tests green). ALL EIGHT pass theorems are over the
+      real IR. What the gate still owes: =Sat= (§4.2) and the
+      completeness lemma. Two of the three inferred arms settled
+      against upstream source; one (=field= atom width) left for rung
+      4 — notes/zkir-semantics.org §9.)
 - [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
       p= arithmetic; keccak/persistent/transient hash and jubjub ops
       ported mechanically), giving a Lean reference interpreter.

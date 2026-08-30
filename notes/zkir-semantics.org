@@ -637,6 +637,34 @@ at end of day: MinocrabZkir 0 sorries (no theorems beyond =#guard=
 evidence), MinocrabProofs 0 sorries, 7 of the 8 pass theorems over
 the real IR.
 
+2026-08-30 (evening, 30-minute slot) — FOLD's SEMANTIC HALF over the real
+IR: =fold_preserves_observables= in =FoldIr.lean=, sorry-free, and
+=FOLD_PROOF= re-cited to it (claims + drift tests green). Design that
+made it a transcription rather than a re-proof: the model's =Obs= becomes
+the real =Instr= with every =operands_mut= position resolved under the
+copy environment (=resolve e i = mapOperands (substOp e) i=, the
+=output= list resolved too, exactly as the model did); =observe= and the
+induction split on =isCopy= instead of on the constructor, so the walk
+has TWO cases (copy / not) and the 33-way reasoning sits in one lemma,
+=mapOperands_congr= (substitutions agreeing on =Instr.operands= give the
+same instruction — =cases i <;> simp only [Instr.operands, mapOperands]
+at h ⊢ <;> (try rename_i p; obtain ⟨_, _⟩ := p) <;> simp_all=, the
+=obtain= for the two pair-carrying constructors). The generic case then
+reads =resolve_of_ne_output= + =mapOperands_mapOperands= +
+=mapOperands_congr=; =WellFormed= is the model's (=copyDsts= nodup, no
+use before a copy's def) with =usesOf i = varsOf i.operands ++ varsOf
+(returned)= — the real-IR form =zkir-wellformed= checks on the corpus
+(that check is strictly stronger: every definition, not only copies).
+Small Lean-4.30 notes: a stuck =match= on =mapOperands f (.encode ..)=
+needs the constructor case unfolded before =resolve= reduces (hence the
+=resolve_of_ne_output= lemma rather than =simp only [resolve]=); inside
+=cases … with=, a stray =·= bullet where a =| false =>= alternative was
+due reports as "Alternative `false` has not been provided" plus a
+misleading "No goals" further down. Status: MinocrabProofs 0 sorries,
+8 of 8 pass theorems over the real IR; =Fold.lean= / =Passes.lean= kept
+as the M25 record. Rung 3's remaining gate items: =Sat= and the
+completeness lemma.
+
 * 10. Open inconsistencies — come back to these (dmd, 2026-08-30)
 
 Each checked against OUR vault the same day (the four forks' artifacts

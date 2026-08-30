@@ -726,7 +726,12 @@ macro_rules! lean_proof {
 /// instruction consumes the same resolved operand values, on the SSA shape
 /// `Builder3` emits).
 pub static FOLD_PROOF: ProofRef = lean_proof! {
-    file: "../../lean/MinocrabProofs/Fold.lean",
+    // M27 rung 3: the citation moved from the three-constructor model
+    // (`Fold.lean`, kept as the M25 record) to the same four theorems over
+    // the REAL instruction set (`FoldIr.lean`, on `MinocrabZkir.Instr`);
+    // `fold_preserves_observables` there resolves every instruction's
+    // `operands_mut` positions under the copy environment (33 arms).
+    file: "../../lean/MinocrabProofs/FoldIr.lean",
     theorems: [
         "fold_outputs",
         "fold_skeleton",
