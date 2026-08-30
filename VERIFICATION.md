@@ -322,7 +322,15 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   full account). MinoCrab's machine-checked layer is Lean **models**:
   the pass contract (subsequence/passthrough/solution-set/idempotence for
   constraint dedup; skeleton/observables preservation for copy folding,
-  reflected as `VerifiedPass`), and the numeric/visibility invariants behind
+  reflected as `VerifiedPass` — and, since M27, the dedup half is stated over
+  the *real* ZKIR v3 instruction set rather than a three-constructor model:
+  `crates/minocrab-zkir/lean/` defines the 33-instruction syntax that
+  round-trips every v3 corpus artifact byte for byte against compactc's own
+  printer, a dataflow that agrees with the Rust `operands_mut` family on
+  every corpus instruction, and the evaluation semantics of `preprocess` with
+  the intrinsics uninterpreted, each gated from `cargo test` and CI;
+  [notes/zkir-semantics.org](notes/zkir-semantics.org) is the design of
+  record and its §9 the honest state of each rung), and the numeric/visibility invariants behind
   the typed leaves (`crates/minocrab-std/lean/` — the `add`/`mul` bound
   asserts proven sound *and minimal*, the subtraction guard proven to make
   field subtraction integer subtraction, the disclose gate proven sound and
