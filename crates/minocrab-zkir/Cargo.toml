@@ -11,7 +11,19 @@ keywords = ["midnight", "zkir", "zero-knowledge", "zk-snark", "bindings"]
 categories = ["cryptography::cryptocurrencies", "api-bindings", "encoding"]
 # src + the round-trip fixture the unit test embeds. `tests/` proper walks
 # ../../corpus, which no downstream checkout has.
-include = ["src/**/*.rs", "tests/fixtures/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+include = [
+    "src/**/*.rs",
+    "tests/fixtures/**",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "lean/lakefile.toml",
+    "lean/lake-manifest.json",
+    "lean/MinocrabZkir.lean",
+    "lean/MinocrabZkir/*.lean",
+    "lean/Roundtrip.lean",
+    "lean/fixtures/*.zkir",
+]
 
 [dependencies]
 midnight-zkir.workspace = true

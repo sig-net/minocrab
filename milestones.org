@@ -1180,13 +1180,22 @@ substantially. Weekend-sized chunks exist at every boundary.
       third lake package at crates/minocrab-zkir/lean/; nine frozen
       vault claims V1-V9 with the rung that discharges each, and two
       grep-level pre-checks flagged for the inventory to settle.)
-- [ ] RUNG 1 — SYNTAX: the real-IR inductive + parse/print for the
+- [X] RUNG 1 — SYNTAX: the real-IR inductive + parse/print for the
       =.zkir= wire format in Lean. GATE: byte-exact round-trip over
       all 788 corpus artifacts (722 v2 may be SKIPPED by decision —
       v3 is the target; if so, say so and gate on the 84+ v3 files).
       Standalone value: a machine-checked ZKIR grammar with a
       corpus-proven parser — more formal ZKIR coverage than exists
       anywhere upstream.
+      (DONE 2026-08-30 — crates/minocrab-zkir/lean/ (=MinocrabZkir=:
+      Syntax, Print, Parse + the =zkir-roundtrip= exe). v2 SKIPPED by
+      decision; gate = the 84 v3 files, BYTE-EXACT against compactc's
+      own printer (json.ss + print-zkir-v3.ss transcribed): "84 ok, 0
+      failed, 722 v2 skipped". Mutation-checked (key order, one space,
+      =-0x00=, =0X=, trailing spaces all red). Driven from
+      =cargo test= (tests/lean_roundtrip.rs, count asserted) and from
+      CI's lean job over the tracked corpus + a hand fixture for the
+      five corpus-absent ops. notes/zkir-semantics.org §9.)
 - [ ] RUNG 2 — DATAFLOW: total operands/defines functions over the
       inductive (the Lean twin of =operands_mut= /
       =returned_identifiers=, kernel-checked exhaustive). GATE: agree

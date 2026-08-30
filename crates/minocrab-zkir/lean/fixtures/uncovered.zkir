@@ -1,0 +1,48 @@
+{
+  "version": { "major": 3, "minor": 0 },
+  "do_communications_commitment": false,
+  "inputs": [
+    { "name": "%a.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%b.1", "type": "Bytes<32>" },
+    { "name": "%c.2", "type": "Point<Jubjub>" },
+    { "name": "%d.3", "type": "Scalar<Jubjub>" },
+    { "name": "%e.4", "type": "Point<Secp256k1>" },
+    { "name": "%f.5", "type": "Base<Secp256k1>" },
+    { "name": "%g.6", "type": "Scalar<Secp256k1>" },
+    { "name": "%h.7", "type": "Point<Secp256r1>" },
+    { "name": "%i.8", "type": "Base<Secp256r1>" },
+    { "name": "%j.9", "type": "Scalar<Secp256r1>" },
+    { "name": "%k.10", "type": "Point<Curve25519>" },
+    { "name": "%l.11", "type": "Base<Curve25519>" },
+    { "name": "%m.12", "type": "Scalar<Curve25519>" }
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>",
+    "Point<Jubjub>"
+  ],
+  "instructions": [
+    { "op": "hash_to_curve", "output": "%p.13", "inputs": ["%a.0", "-0x01", "0x00"] },
+    { "op": "into_coordinates", "outputs": ["%x.14", "%y.15"], "point": "%p.13" },
+    { "op": "from_coordinates", "output": "%q.16", "inputs": ["%x.14", "%y.15"] },
+    { "op": "reverse_bytes", "output": "%r.17", "bytes": "%b.1" },
+    { "op": "test_eq", "output": "%t.18", "a": "%a.0", "b": "-0x0201" },
+    { "op": "not", "output": "%n.19", "a": "%t.18" },
+    { "op": "jubjub_scalar_from_native", "output": "%s.20", "native": "%a.0" },
+    { "op": "ec_mul", "output": "%u.21", "a": "%c.2", "scalar": "%s.20" },
+    { "op": "ec_mul_generator", "output": "%v.22", "scalar": "%d.3" },
+    { "op": "private_input", "type": "Bytes<32>", "output": "%w.23", "guard": "%n.19" },
+    { "op": "public_input", "type": "Scalar<Jubjub>", "output": "%z.24", "guard": "0x01" },
+    { "op": "persistent_hash", "output": "%h.25", "alignment": [{ "tag": "atom", "value": { "tag": "field" } }, { "tag": "atom", "value": { "tag": "compress" } }, { "tag": "atom", "value": { "length": 33, "tag": "bytes" } }], "inputs": ["%a.0", "%x.14", "0xff", "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e"] },
+    { "op": "keccak256", "output": "%h.26", "alignment": [], "inputs": [] },
+    { "op": "transient_hash", "output": "%h.27", "inputs": [] },
+    { "op": "encode", "outputs": ["%e.28", "%e.29", "%e.30", "%e.31", "%e.32"], "input": "%e.4" },
+    { "op": "from_bytes32", "type": "Base<Curve25519>", "output": "%f.33", "bytes": "%r.17" },
+    { "op": "into_bytes32", "output": "%f.34", "input": "%f.33" },
+    { "op": "constrain_eq", "a": "%f.34", "b": "%r.17" },
+    { "op": "constrain_to_boolean", "val": "%n.19" },
+    { "op": "inv", "output": "%i.35", "a": "%a.0" },
+    { "op": "neg", "output": "%i.36", "a": "%i.35" },
+    { "op": "impact", "guard": "%n.19", "inputs": [] },
+    { "op": "output", "vals": ["%i.36", "%u.21"] }
+  ]
+}

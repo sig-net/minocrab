@@ -476,3 +476,41 @@ checked-out compactc source (=corpus/src/compact/compiler/=). Pre-checks
 recorded in §7 (V3's literal counts, V5's approveRouter witness count)
 are grep-level observations on compactc's artifacts, not discharged
 claims. No Lean written yet; rung 1 is next.
+
+2026-08-30 (later) — RUNG 1 LANDED, gate green: =crates/minocrab-zkir/lean/=
+(=MinocrabZkir=: Syntax / Print / Parse, plus the =zkir-roundtrip= exe).
+=lake exe zkir-roundtrip corpus/zkir= → "84 ok, 0 failed, 722 v2
+skipped" in 0.2s, on the FIRST run of the transcribed printer — which
+says the layout rules in §1.3 were read correctly, not that they were
+easy. What the gate is: =print (decode (Json.parse s)) = s= as
+=String= equality, so byte-for-byte. Mutation check done by hand
+(scratchpad, not committed): reordering one instruction's keys, one
+extra space inside a bracket, =-0x00= for =0x00=, =0X= for =0x=, and
+two trailing spaces each fail with the offending line shown; the
+untouched copy passes. Lessons for the next Lean file:
+- Inside =def Instr.toJ= the namespace =Instr= is open, so a pattern
+  variable named =output= silently means the constructor =Instr.output=
+  ("not enough arguments"); likewise a helper called =field= collided
+  with =Segment.field= inside =Segment.decode=. Name pattern variables
+  =out= and helpers =key=.
+- Lean 4.30: =String.drop= returns =String.Slice=; =String.mk= is
+  deprecated for =String.ofList=. The operand lexer works on
+  =s.toList= instead.
+- =Lean.Json= (core, mathlib-free) parses the corpus fine; numbers come
+  back through =getNat?=, =null= is =Json.null=, objects are
+  key-addressed with =getObjVal?=.
+Coverage honesty: the five ops absent from the corpus, the =field= and
+=compress= atoms, ten of the thirteen types, a non-empty =outputs=
+list, a false commitment flag and guarded inputs are exercised by
+=lean/fixtures/uncovered.zkir= — HAND-WRITTEN in compactc's layout, so
+it proves parse/print consistency and the transcribed key orders
+against print-zkir-v3.ss by reading, not against a compactc output.
+Wiring: =tests/lean_roundtrip.rs= (cargo test; builds the package with
+=lake= when on PATH, asserts the "84 ok, 0 failed, 722 v2 skipped"
+summary so a partial corpus is not green, then the fixture dir; skips
+loudly without =lake= or corpus — same policy as corpus_roundtrip.rs);
+CI's lean job builds the package and runs the exe over =corpus/zkir=
+(tracked) and the fixtures; =.lake/= gitignored; =lean/= shipped via
+Cargo =include=. SHELVE POINT 1 reached: a machine-checked ZKIR v3
+grammar with a corpus-proven printer. Next: rung 2 (Dataflow.lean +
+the Rust reads/defines dump + diff).

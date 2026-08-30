@@ -61,7 +61,10 @@ jobs:
   # pass proofs — passes.rs embeds them via lean_proof!) and
   # crates/minocrab-std/lean/ (the numeric/visibility warrants —
   # tests/lean_claims.rs is their drift gate) must stay green — a proof
-  # that stops checking is a claim that stopped being one.
+  # that stops checking is a claim that stopped being one. M27 adds
+  # crates/minocrab-zkir/lean/ (the ZKIR v3 syntax + semantics): its
+  # rung-1 gate is byte-exact round-trip of every v3 corpus artifact,
+  # run here directly and from cargo test (tests/lean_roundtrip.rs).
   lean:
     runs-on: ubuntu-latest
     steps:
@@ -70,6 +73,11 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - run: nix develop -c bash -c 'cd crates/minocrab-ir/lean && lake build'
       - run: nix develop -c bash -c 'cd crates/minocrab-std/lean && lake build'
+      - run: nix develop -c bash -c 'cd crates/minocrab-zkir/lean && lake build'
+      - run: >
+          nix develop -c bash -c
+          'crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip corpus/zkir
+          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip crates/minocrab-zkir/lean/fixtures'
 
   # The instrument the snapshots cannot replace: byte-comparison of every
   # circuit's serialized ZKIR against the PR's base. Movement is ALLOWED —

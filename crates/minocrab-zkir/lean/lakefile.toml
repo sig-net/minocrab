@@ -1,0 +1,12 @@
+name = "minocrab-zkir-lean"
+defaultTargets = ["MinocrabZkir", "zkir-roundtrip"]
+
+[[lean_lib]]
+name = "MinocrabZkir"
+
+# Rung 1's gate (notes/zkir-semantics.org §8): parse, print, and compare
+# byte-for-byte every v3 `.zkir` under a directory.
+#   lake exe zkir-roundtrip ../../../corpus/zkir
+[[lean_exe]]
+name = "zkir-roundtrip"
+root = "Roundtrip"
