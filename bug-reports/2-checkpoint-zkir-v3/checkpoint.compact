@@ -1,0 +1,12 @@
+// Repro: kernel.checkpoint() cannot be compiled with --feature-zkir-v3.
+// The v2 backend assembles `ckpt`; the v3 backend has no case for it and
+// dies with a bare `failed assertion not-implemented` instead of an error
+// naming the unsupported construct and the flag that made it so.
+//
+//   compactc checkpoint.compact out            # succeeds (v2)
+//   compactc --feature-zkir-v3 checkpoint.compact out   # assertion failure
+import CompactStandardLibrary;
+
+export circuit doCheckpoint(): [] {
+  kernel.checkpoint();
+}

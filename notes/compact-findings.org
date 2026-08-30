@@ -28,7 +28,9 @@ THE ORIGINAL CLAIM (2026-08-16): =amount as Uint<64>= compiles to
 nothing in argument position; the vault's four settle mints carry no
 64-bit constraint; safety rests on a whole-contract map invariant.
 
-REFUTED by probe and by re-reading the same artifacts:
+First refuted 2026-08-19 (dmd session, against 0.33.0-rc.2, recorded
+on the compact-bug-reports branch); re-confirmed and written up here
+2026-08-28. REFUTED by probe and by re-reading the same artifacts:
 - Probes (=scratchpad probes, argcast/chaincast/branchcast.compact=,
   compiled under 0.33.0-rc.2 AND 0.34.0): a =Uint<128> as Uint<64>= in
   argument position emits =constrain_bits 64= straight-line, and inside
