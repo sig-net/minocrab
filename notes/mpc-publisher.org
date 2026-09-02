@@ -1,0 +1,185 @@
+#+TITLE: The MPC's Midnight publisher: what the Rust stack replaces, and what it must prove first
+#+DATE: 2026-09-02
+#+STARTUP: overview
+
+Survey taken 2026-09-02 against =sig-net/mpc= (worktree of
+=origin/dry/midnight-publisher-ts= at 1f99fd78, 2026-08-29, which merges
+develop) and this repo at fff97c0. Feeds M29 and M30. dmd's framing:
+the signet contract is NOT deployed yet, so the deployment is the
+minocrab-optimised artifact, and the engineers do not want a "proof
+server" process on the MPC.
+
+* 1. What exists on the MPC side
+
+No single Midnight branch merged; the work has landed on =develop=
+through PRs since #1059 (#1075 Chain::Midnight, #1129 the stdio
+publisher, #1113 the Rust response publisher, #1142 the intent client,
+#1189 FAB responses). Unmerged: =feat/chain-midnight=,
+=feat/midnight-publisher=, =feat/midnight-respond-intent-seam= (all
+July), and =dry/midnight-publisher-ts= (a refactor over develop).
+
+Rust, =chain-signatures/chain-midnight= (8.4k lines): indexer, reader
+(decodes signBidirectional records and response events from block
+bodies over subxt HTTP RPC — =midnight_block=, =midnight_block_body=,
+=midnight_block_events=), EVM tx assembly, the publisher
+(=publisher.rs=, 256 non-test lines, talks to an =IntentClient= trait),
+and =intent_gen.rs= (643 non-test lines), the NDJSON-over-stdio client
+of the sidecar.
+
+TypeScript, =chain-signatures/midnight-publisher-ts= (920 src, 1343
+test, 486 devtools lines). Node 22 child of the Rust node; three ops:
+- =ready=: protocol handshake, starts the funding-wallet sync.
+- =build=: runs compactc's generated JS executor
+  (=@sig-net/midnight-contract-deploy='s =signetContractCompiledContract=)
+  for =respond= / =respondBidirectional= on the contract state Rust
+  pinned at a finalized hash; checks the deployed verifier key's hash
+  against the package's =expectedVk=; wraps the call in
+  =ContractCallPrototype= (ledger-v9 WASM) with
+  =encodeContractKeyLocation({address, circuitId, verifierKeyHash})=;
+  returns =Intent.new(ttl).addCall(..).serialize()=.
+- =submit=: =Transaction.fromParts(networkId, none, none, intent)=;
+  =transaction.prove(provider, initialCostModel)= where the provider
+  POSTs =/check= and =/prove= to the proof server with
+  =keys/<circuit>.prover=, =keys/<circuit>.verifier=,
+  =zkir/<circuit>.bzkir= read from the package's managed dir; then the
+  wallet-SDK facade =balanceUnboundTransaction(tx, {tokenKindsToBalance:
+  ["dust"]})=, =signRecipe=, =finalizeRecipe=, =submitTransaction=. The
+  facade needs the INDEXER (dust UTXOs are derived by replaying ledger
+  events). One submit at a time (single DUST UTXO); 360 s absolute
+  budget; four retry classes (=wallet_unsynced=, =proving_timeout=,
+  =state_conflict=, =ambiguous_submit=; duplicates declared acceptable).
+
+Its own justification (=intent.ts= header): "the one step that cannot
+move to Rust: the compiled contract's bindings and executor are
+JavaScript." That is the claim this repo makes false.
+
+* 2. Piece by piece against the Rust stack
+
+| sidecar step        | Rust today                                                          | status   |
+|---------------------+---------------------------------------------------------------------+----------|
+| transcript          | =signet_contract::respond= etc.; call-compatible with the corpus      | covered  |
+|                     | artifacts (tests/signet_contract_differential.rs, 6 tests, re-run     |          |
+|                     | green 2026-09-02); emit-only, no witnesses, no state reads            |          |
+| intent / tx         | =midnight_ledger::construct::{PreTranscript, partition_transcripts,   | covered  |
+|                     | ContractCallPrototype}=, =Intent::new=, =Transaction::new= — the      |          |
+|                     | burn well-formedness test does exactly this                          |          |
+| proving             | =Zkir::prove= on =IrSource= (minocrab-bench keygen+prove+verify       | covered  |
+|                     | in-process); ledger =test_utilities= has =LocalProvingProvider=-based |          |
+|                     | =CombinedProofProvider= and an HTTP =ProofServerProvider=            |          |
+| DUST fee balancing  | =ledger::dust::DustLocalState= {replay_events, spend, process_ttls,   | GAP      |
+|                     | wallet_balance}, =Transaction::balance=, =seal=; test_utilities'      |          |
+|                     | =balance_tx= shows the calls. No wallet around it anywhere in Rust    |          |
+| sign                | =Intent::sign= / =add_signature= (construct.rs), =data_to_sign=        | covered  |
+| submit              | subxt extrinsic; mpc already holds an =OnlineClient=. Pallet call     | to write |
+|                     | name to be verified against midnight-node                             |          |
+
+Proving is a plain async Rust function. zkir-v3, transient-crypto and
+base-crypto never touch =std::process=; parallelism is rayon threads in
+the caller's process. Midnight's "proof server" is an HTTP wrapper
+(=proof-server= crate, tokio worker pool) around the same function,
+for JS/browser clients. The one external touch is the KZG params
+(=MidnightDataProvider=: fetched from =srs.midnight.network= on first
+use, SHA-256 checked against compiled-in hashes, cached at =$MIDNIGHT_PP=
+/ =$XDG_CACHE_HOME/midnight/zk-params= / =~/.cache/midnight/zk-params=;
+=MIDNIGHT_PARAM_SOURCE= overrides the host). Ship the params in the
+image and no network access is needed.
+
+Memory is k-driven (BENCHMARK.md, single process, median of 3):
+| respond           |  k |   rows | prove  | peak RSS |
+| compactc artifact | 16 | 40,931 | ~3.5 s | ~855 MB  |
+| minocrab artifact | 10 |  1,004 | ~0.12 s|  ~46 MB  |
+
+* 3. Using the minocrab ZKIR with the sidecar UNCHANGED
+
+Possible, and it is the tested combination. The sidecar never
+interprets the IR: compactc's JS executor produces args + transcript,
+the ledger's =construct_proof= (=ledger/src/construct.rs:515-573=)
+turns them into the =ProofPreimage= (=inputs= = field vec of the
+arguments, empty =private_transcript= for a witness-free circuit,
+=public_transcript_inputs= = op field_repr, comm_comm from the
+prototype's randomness, =binding_input= 0), and whatever IR sits at
+=zkir/<circuit>.bzkir= proves it. Call-compatibility (ledger-abi.org §6:
+same preimage → identical =pis= and =pi_skips= on both IRs,
+=IrSource::check= accepts both, tamper twins reject) is exactly "our IR
+accepts the executor's preimage".
+
+Changes, none in the mpc repo:
+1. Artifacts: =minocrab_zkir::v3::write_zkir= → =.zkir= JSON in compactc's
+   on-disk form → the pinned =zkir-v3= binary (the flake's, the same
+   tool compactc invokes; =compile-many= does keygen) → =.bzkir= +
+   prover/verifier keys.
+2. =@sig-net/midnight-contract= ships them under =keys/= and =zkir/=
+   with the circuit names; regenerate =expectedVk=.
+3. Deploy tooling reads the verifier keys from the same managed dir, so
+   a fresh deployment picks them up. Nothing to migrate.
+
+* 4. How well tested, honestly
+
+- Transcript: 6 differential tests (3 circuits match the corpus; event
+  name swap, signature tamper, event tamper rejected). PI-level, plus
+  =IrSource::check= on both IRs. NO real proof in =cargo test=; only the
+  bench harness proves, and it proves each side's OWN artifact. "Our
+  preimage proves under our key" is inferred from =check=, not shown.
+- Intent/tx assembly: 2 tests, a different call shape (burn spend
+  claim), proofs/signatures/balancing/limits all OFF. Nothing here has
+  built a respond intent, proven it, or applied it to a =LedgerState=.
+- DUST: zero code here. Upstream: 4 tests in =ledger/tests/dust.rs= and
+  the test_utilities balancer (feature flag warns it relaxes some
+  well-formedness).
+- mpc: 41 vitest cases, submit/wallet almost entirely mocked (13/16
+  mocks); 9 Rust publisher tests over stub reads + stub client; ONE
+  real-stack integration test (=midnight_stream::
+  midnight_to_ethereum_to_midnight_consumes_caller_response=, ignored,
+  run in CI on Docker: node, indexer, proof server, Anvil, MPC cluster).
+  That single test is the only end-to-end coverage of prove + balance +
+  submit in either repo.
+
+Captured goldens in mpc worth importing: =chain-midnight/fixtures/
+{notify-tx-156, respond-tx-161, respond-bidirectional-tx-181}.mn= (real
+transactions), =caller-post-state-156.mn=, =golden-state-caller-156.json=.
+
+* 5. Trust: a stateless, untrusted DA layer
+
+The MPC keeps no Midnight state; everything comes from an RPC endpoint
+it does not verify. =indexer.rs:120-132= gathers a =BlockProofSeed=
+(header, body, system events) and =drop()=s it: "no verifier or
+persistence policy yet".
+1. READER is the exposure: a lying endpoint can fabricate a
+   signBidirectional request and the MPC signs an attacker-chosen EVM
+   tx. Independent of TS vs Rust. Fix: verify the seed (extrinsics root
+   vs header, header vs finality) or quorum over endpoints.
+2. Publisher reads fail safe for respond: transcript independent of
+   contract state; a lie yields a rejected tx or a vk mismatch (keep
+   the =expectedVk= gate). A lie about ledger parameters skews the fee,
+   bounded by the wallet balance.
+3. A Rust DUST wallet replayed from untrusted events: no theft without
+   the key; phantom UTXOs → repeated invalid submits, hidden UTXOs →
+   stall, stale Merkle root → spend fails. Persisted state must be
+   rebuildable from genesis. The funding seed is a hot key either way.
+4. Submission: silent drops, "invalid" after inclusion → retries;
+   duplicates are by design acceptable; stranded DUST on the 5-min
+   recipe TTL is the cost.
+5. Version drift between the pinned ledger crate and the live network
+   → silent rejections. Both repos are on rc tags.
+The port removes the proof server as a network dependency and stops
+executing an npm package's JS as trusted code on the signing path.
+
+* 6. Version pins (the reconciliation M29 F must settle)
+
+| crate                      | this repo (rev 04c9c5d, 2026-07-31) | mpc                                    |
+| midnight-ledger-v9         | 1.0.0 at that rev                    | tag crate-ledger-9.1.0.0-rc.3 (85e769a) |
+| midnight-transient-crypto  | 3.0.0                                | tag transient-crypto-3.0.0-rc.2 (29f5c5d), plus 2.2.0-rc.1 for zkir v2 |
+| midnight-zkir-v3           | 04c9c5d                              | zkir-2.2.0-rc.3 (v2 only)              |
+| sidecar npm                | —                                    | @midnightntwrk/ledger-v9 1.0.0-rc.3, compact-runtime 0.18.0-rc.1, compactc 0.33 toolkit |
+
+* 7. Size of the switch (estimate, mpc repo)
+
+Delete ≈4,500 lines (sidecar src/tests/devtools/config ≈3,000;
+=intent_gen.rs= 1,378; publisher env plumbing ≈60). Add ≈1,800
+production Rust (intent build 250, proving 200, DUST wallet 700-1,000,
+sign+seal 80, submit 200, funding bootstrap 200, Cargo 50) and
+≈1,500-2,000 tests. The =IntentClient= seam keeps =publisher.rs= and
+its tests. Outside mpc: deploy tooling in signet-midnight-integration
+carries our artifacts (or a Rust =ContractDeploy= path, ≈150 lines);
+this repo publishes a ≈100-150-line respond-call surface (M30 A). The
+DUST number is the one to distrust.

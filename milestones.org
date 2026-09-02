@@ -1361,3 +1361,111 @@ WHAT CHANGED UPSTREAM (the inventory, from the 456-line source diff):
 Exit criteria: corpus pin at a37d686b on main; all four forks cover
 all 14 circuits with the differential/fork/spec/snapshot gates green;
 M27's V-list re-frozen.
+
+* M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
+Survey and decisions: notes/mpc-publisher.org. The signet contract is
+not deployed yet, so the deployment is OUR artifact (respond at k=10 /
+1,004 rows vs compactc's k=16 / 40,931; ~46 MB vs ~855 MB to prove).
+Felipe's TypeScript sidecar in =sig-net/mpc= (=midnight-publisher-ts=)
+never interprets the IR: compactc's JS executor makes the preimage and
+whatever sits at =zkir/<circuit>.bzkir= proves it, so the swap needs
+no mpc change — only the artifact files, their verifier-key hashes,
+and the deploy tooling in signet-midnight-integration. What is NOT yet
+shown, anywhere: that a respond intent built the way the ledger builds
+it proves under our key and applies to a =LedgerState=. Every existing
+gate is PI-level (=IrSource::check=), or has proofs switched off. This
+milestone ships the artifacts AND closes that gap, before M30 puts a
+Rust publisher on them.
+- [ ] DESIGN NOTE: notes/mpc-publisher.org (written 2026-09-02, §3 the
+      swap path, §4 the honest test inventory, §6 the pins).
+- [ ] A. Artifact pipeline: emit =.zkir= for the three signer circuits
+      (=signBidirectional=, =respond=, =respondBidirectional=) from
+      =signet_contract= via =minocrab_zkir::v3::write_zkir=; run the
+      flake's pinned =zkir-v3= (=compile-many=, the same step compactc
+      runs) for =.bzkir= + =.prover= + =.verifier=; lay them out as the
+      managed dir the sidecar and deploy tooling read
+      (=keys/<circuit>.prover|.verifier=, =zkir/<circuit>.bzkir=).
+      Commit the =.zkir= and =.verifier= (small, reviewable); a
+      generated-equals-committed gate on both, like =spec/ts=; the
+      prover key and =.bzkir= regenerate deterministically at package
+      time (record their SHA-256 so drift is visible).
+- [ ] B. Verifier-key hashes: emit the =expectedVk= table (circuit →
+      hash) the sidecar's =build= and =prove= paths check against; pin
+      the exact hash function to compact-js's =hashVerifierKey= by a
+      test on a corpus =.verifier= whose hash the mpc fixtures carry.
+- [ ] C. Construction gate — the ledger's preimage, not a hand-built one:
+      build each signer call through =ContractCallPrototype= and the
+      ledger's =construct_proof= (=ContractCallExt for ProofPreimage=,
+      construct.rs:515-573), so the preimage under test is byte for byte
+      what the sidecar and any Rust publisher produce; assert
+      call-compatibility on THAT preimage for all three circuits. The
+      differential test keeps its tamper twins; the hand-built
+      =preimage()= helper retires.
+- [ ] D. Ledger-apply gate: =ContractDeploy= with OUR verifier keys into a
+      =LedgerState=; build the respond =Intent= / =Transaction=;
+      =well_formed= then =apply= under the proof-preimage marker; the
+      emitted Misc bytes must equal the layout mpc's reader decodes —
+      import =chain-midnight/fixtures/respond-tx-161.mn= and
+      =respond-bidirectional-tx-181.mn= as goldens and compare the call
+      transcript to theirs.
+- [ ] E. Real-proving gate (=--release=, ignored by default, with
+      =row_snapshot=): keygen from our IR, =Transaction::prove= through an
+      in-process =ProvingProvider= (=LocalProvingProvider= +
+      =MidnightDataProvider=, params pre-warmed), then =well_formed= with
+      =verify_contract_proofs= ON against the deployed key, all three
+      circuits. Record prove time and peak RSS beside BENCHMARK.md's
+      numbers. This is the first real proof in the test suite.
+- [ ] F. Pin reconciliation: this repo (rev 04c9c5d) vs mpc
+      (crate-ledger-9.1.0.0-rc.3 / transient-crypto-3.0.0-rc.2) —
+      choose one, build =minocrab-contracts= against it, record the
+      decision in notes/zkir.org's pin table.
+Exit criteria: the managed-dir artifacts and =expectedVk= table
+generated and gated; C, D, E green (E under =--release=); the pin
+settled; the sidecar's real-stack test in mpc run once with our
+package deployed (dmd or Felipe runs it; the result recorded in
+notes/mpc-publisher.org).
+
+* M30 — A Rust publisher for the MPC: retire the TypeScript sidecar (dmd, 2026-09-02)
+Scope decided 2026-09-02: the publisher's pure core lives HERE as a
+library crate that mpc's =chain-midnight= consumes behind its existing
+=IntentClient= seam; the node I/O (subxt extrinsic, event ingestion)
+stays in mpc. Proving is a Rust function call — no proof server, no
+child process; the only network touch (KZG params) is removed by
+shipping the params in the image (notes/mpc-publisher.org §2). The
+gap is the DUST fee wallet: every primitive exists in
+=midnight_ledger::dust= but no Rust wallet has been written around
+them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
+- [ ] A. Public surface here: one function per respond circuit taking
+      =(request_id, signature)= and returning the =ContractCallPrototype=
+      inputs (args as =AlignedValue=, transcript ops, key location) —
+      the M29 C path made a library; disclosure manifest unchanged;
+      =Discloses= gate still generated.
+- [ ] B. =minocrab-publisher= crate (name open): build → =Intent= with
+      TTL; prove → in-process =ProvingProvider= with a disk =Resolver=
+      for our keys and =DustResolver= for the fee proof; sign
+      (=Intent::sign=) and =seal=. Pure over (contract state, ledger
+      parameters, funding keys, dust state); no node I/O, so every step
+      is unit-testable on the M29 D fixtures.
+- [ ] C. DUST wallet: =DustLocalState= replayed from ledger =Event=s,
+      persisted and REBUILDABLE from genesis (untrusted source, §5);
+      =Transaction::balance= → dust spend → =DustActions=;
+      =process_ttls=; single-UTXO gate; readiness = sync time past the
+      pinned block. Tests on event fixtures captured from the mpc real
+      stack (add the capture to the real-stack driver).
+- [ ] D. Submission seam (in mpc): the extrinsic the wallet SDK posts
+      (verify the pallet call against midnight-node before writing);
+      error classification preserving the sidecar README's contract
+      (=wallet_unsynced=, =proving_timeout=, =state_conflict=,
+      =ambiguous_submit=) since =publisher.rs='s retry logic keys on it.
+- [ ] E. Integration in mpc: in-process =IntentClient= replacing
+      =intent_gen.rs=; sidecar, its CI workflow and Dockerfile stage
+      deleted; publisher config shrinks to params dir, key dir, funding
+      seed; real-stack test green.
+- [ ] F. Recorded, not ours: the reader's dropped =BlockProofSeed=
+      (indexer.rs:120-132) is the MPC's real exposure to a lying
+      endpoint (§5.1). Raise with the mpc team as the follow-up that
+      the publisher port does not address.
+Exit criteria: mpc's real-stack test passes with no Node process in
+the image; the sidecar directory is gone; A-C have unit gates here on
+captured fixtures; prove runs in the MPC process within the M29 E
+budget.
