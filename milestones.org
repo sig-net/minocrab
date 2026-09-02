@@ -1421,15 +1421,16 @@ Rust publisher on them.
       decision in notes/zkir.org's pin table.
 Exit criteria: the managed-dir artifacts and =expectedVk= table
 generated and gated; C, D, E green (E under =--release=); the pin
-settled; the sidecar's real-stack test in mpc run once with our
-package deployed (dmd or Felipe runs it; the result recorded in
-notes/mpc-publisher.org).
+settled. Deploying the package and running mpc's real-stack test
+against it is mpc's work, tracked there (dmd, 2026-09-02: these
+milestones track this repo only).
 
 * M30 — A Rust publisher for the MPC: retire the TypeScript sidecar (dmd, 2026-09-02)
 Scope decided 2026-09-02: the publisher's pure core lives HERE as a
 library crate that mpc's =chain-midnight= consumes behind its existing
-=IntentClient= seam; the node I/O (subxt extrinsic, event ingestion)
-stays in mpc. Proving is a Rust function call — no proof server, no
+=IntentClient= seam; the node I/O (subxt extrinsic, event ingestion),
+the swap-in, the sidecar's deletion and the real-stack test are mpc's
+work and are tracked in the mpc repo, not here. Proving is a Rust function call — no proof server, no
 child process; the only network touch (KZG params) is removed by
 shipping the params in the image (notes/mpc-publisher.org §2). The
 gap is the DUST fee wallet: every primitive exists in
@@ -1452,20 +1453,18 @@ them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
       =process_ttls=; single-UTXO gate; readiness = sync time past the
       pinned block. Tests on event fixtures captured from the mpc real
       stack (add the capture to the real-stack driver).
-- [ ] D. Submission seam (in mpc): the extrinsic the wallet SDK posts
-      (verify the pallet call against midnight-node before writing);
-      error classification preserving the sidecar README's contract
-      (=wallet_unsynced=, =proving_timeout=, =state_conflict=,
-      =ambiguous_submit=) since =publisher.rs='s retry logic keys on it.
-- [ ] E. Integration in mpc: in-process =IntentClient= replacing
-      =intent_gen.rs=; sidecar, its CI workflow and Dockerfile stage
-      deleted; publisher config shrinks to params dir, key dir, funding
-      seed; real-stack test green.
-- [ ] F. Recorded, not ours: the reader's dropped =BlockProofSeed=
-      (indexer.rs:120-132) is the MPC's real exposure to a lying
-      endpoint (§5.1). Raise with the mpc team as the follow-up that
-      the publisher port does not address.
-Exit criteria: mpc's real-stack test passes with no Node process in
-the image; the sidecar directory is gone; A-C have unit gates here on
-captured fixtures; prove runs in the MPC process within the M29 E
-budget.
+Out of scope here, for the mpc side (recorded so the seam is
+explicit): the extrinsic the wallet SDK posts (verify the pallet call
+against midnight-node first); error classification preserving the
+sidecar README's four codes (=wallet_unsynced=, =proving_timeout=,
+=state_conflict=, =ambiguous_submit=), which =publisher.rs='s retry
+logic keys on; the in-process =IntentClient= replacing =intent_gen.rs=;
+the reader's dropped =BlockProofSeed= (indexer.rs:120-132), the MPC's
+real exposure to a lying endpoint (notes/mpc-publisher.org §5.1),
+which the publisher port does not address.
+Exit criteria: A-C published from this workspace with unit gates on
+the captured fixtures; a respond intent goes build → prove → sign →
+seal → =well_formed= (proofs verified) in one process, inside the M29 E
+time and RSS budget, with no network access when the params are on
+disk; the DUST wallet rebuilds its state from an event log and spends
+against a =LedgerState= in a test.
