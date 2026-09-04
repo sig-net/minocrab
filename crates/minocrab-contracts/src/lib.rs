@@ -15,6 +15,7 @@ pub mod erc20_vault;
 pub mod erc20_vault_borsh;
 pub mod erc20_vault_modern;
 pub mod erc20_vault_opt;
+pub mod erc20_vault_pending;
 pub mod events;
 pub mod events_borsh;
 pub mod hashing;

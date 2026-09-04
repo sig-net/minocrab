@@ -453,6 +453,115 @@ pub struct Outcome<Env, R, const WORDS: usize> {
     pub record: EventRecordV2<WORDS>,
 }
 
+/// The filing every request does, whatever the slot: read the context,
+/// assemble the record with `kind`, hash it, assert freshness, bump the
+/// nonce, store the record, run `after_insert` (a `Pending` stores its
+/// environment there), notify the MPC with the record map's own path.
+fn file_request<const WORDS: usize>(
+    c: &mut Circuit3,
+    signet: &Signet,
+    records: &LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
+    req: SignRequest<WORDS>,
+    kind: u8,
+    after_insert: impl FnOnce(&mut Circuit3, RequestId<Public>),
+) -> RequestId<Public> {
+    let one = c.constant(1u64);
+    let zero = c.constant(0u64);
+    let me = kernel::cache_self_address(c);
+    let nonce = signet.request_nonce.read(c);
+    let caip2 = signet.caip2_id.read(c);
+    let chain_id = signet.evm_chain_id.read(c);
+    let tx = req.tx;
+    let tx_params = EvmType2TxParams::<Private, WORDS> {
+        chain_id: chain_id.field().private(),
+        nonce: tx.nonce,
+        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+        max_fee_per_gas: tx.max_fee_per_gas,
+        gas_limit: tx.gas_limit,
+        to: tx.to,
+        value: tx.value,
+        calldata_is_some: tx.calldata_is_some,
+        calldata: tx.calldata,
+        access_list_entry_count: zero.private(),
+    };
+    let record = signet::construct_sign_bidirectional_event_v2(
+        c,
+        me.private(),
+        nonce.field().private(),
+        req.key_version.field(),
+        req.path,
+        tx_params,
+        caip2.private(),
+        kind,
+    );
+
+    let request_id = c.region("signet flow: file", |c| {
+        let request_id =
+            signet::calculate_request_id_v2(c, &record).disclose_as::<RequestIdFiled>(c);
+        let exists = records.member(c, &request_id);
+        c.assert(not(is_true(exists)).message("Request already exists"));
+        signet.request_nonce.increment(c, 1);
+        let stored = EventRecordV2::from_limbs(record.limbs().disclose_as::<RequestRecordFiled>(c));
+        records.insert(c, &request_id, &stored);
+        after_insert(c, request_id);
+        request_id
+    });
+
+    c.region("signet flow: notify", |c| {
+        // Receiver first (compactc's order; the argument below emits).
+        let signer = signet.signer().pin(c, one);
+        let path = records.field_path();
+        let mut bytes = [0u8; 4];
+        bytes[..path.as_slice().len()].copy_from_slice(path.as_slice());
+        let notification = construct_notification_v1::<Public>(c, &me.bytes(), path.depth(), bytes);
+        signer.sign_bidirectional(c, one, request_id, notification);
+    });
+    request_id
+}
+
+/// A request that is NEVER settled — Sig Network's fire-and-forget shape
+/// (the vault's `approveRouter`): one ledger field, the record map, and
+/// [`Fired::request`] as its only operation. No settle method exists, so
+/// "no circuit settles this kind" is a fact about the type rather than a
+/// convention; the kind is still claimed in `KINDS`, so no settling slot
+/// of the block can share it.
+pub struct Fired<Resp, const WORDS: usize = 2> {
+    records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
+    _resp: PhantomData<fn() -> Resp>,
+}
+
+impl<Resp, const WORDS: usize> Fired<Resp, WORDS> {
+    /// The slot's field at flat index `index` of a block of `total` fields.
+    pub const fn at_block(total: usize, index: usize) -> Self {
+        Fired {
+            records: LedgerMap::at_block(total, index),
+            _resp: PhantomData,
+        }
+    }
+
+    /// The record map's ledger path: the notification's `depth ‖ path`.
+    pub const fn record_path(&self) -> FieldPath {
+        self.records.field_path()
+    }
+}
+
+impl<Resp: Response, const WORDS: usize> LedgerWidth for Fired<Resp, WORDS> {
+    const KINDS: &'static [u8] = &[Resp::KIND];
+}
+
+impl<Resp: Response, const WORDS: usize> Fired<Resp, WORDS> {
+    /// File a request and notify the MPC; nothing is kept for a settle.
+    /// Discloses [`Requested`].
+    pub fn request(
+        &self,
+        c: &mut Circuit3,
+        signet: &Signet,
+        req: SignRequest<WORDS>,
+    ) -> RequestId<Public> {
+        file_request(c, signet, &self.records, req, Resp::KIND, |_, _| {})
+    }
+}
+
 impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WORDS> {
     /// File a request and notify the MPC. Returns the disclosed request id.
     ///
@@ -471,64 +580,12 @@ impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WOR
         req: SignRequest<WORDS>,
         env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
-        let one = c.constant(1u64);
-        let zero = c.constant(0u64);
-        let me = kernel::cache_self_address(c);
-        let nonce = signet.request_nonce.read(c);
-        let caip2 = signet.caip2_id.read(c);
-        let chain_id = signet.evm_chain_id.read(c);
-        let tx = req.tx;
-        let tx_params = EvmType2TxParams::<Private, WORDS> {
-            chain_id: chain_id.field().private(),
-            nonce: tx.nonce,
-            max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
-            max_fee_per_gas: tx.max_fee_per_gas,
-            gas_limit: tx.gas_limit,
-            to: tx.to,
-            value: tx.value,
-            calldata_is_some: tx.calldata_is_some,
-            calldata: tx.calldata,
-            access_list_entry_count: zero.private(),
-        };
-        let record = signet::construct_sign_bidirectional_event_v2(
-            c,
-            me.private(),
-            nonce.field().private(),
-            req.key_version.field(),
-            req.path,
-            tx_params,
-            caip2.private(),
-            Resp::KIND,
-        );
-
-        let request_id = c.region("signet flow: file", |c| {
-            let request_id = signet::calculate_request_id_v2(c, &record)
-                .disclose_as::<RequestIdFiled>(c);
-            let exists = self.records.member(c, &request_id);
-            c.assert(not(is_true(exists)).message("Request already exists"));
-            signet.request_nonce.increment(c, 1);
-            let stored = EventRecordV2::from_limbs(
-                record.limbs().disclose_as::<RequestRecordFiled>(c),
-            );
-            self.records.insert(c, &request_id, &stored);
+        file_request(c, signet, &self.records, req, Resp::KIND, |c, request_id| {
             // The environment is built AFTER the id exists, so a
             // [`Commit`] in it can bind to this request and no other.
             let env = env(c, request_id);
             self.envs.insert(c, &request_id, &env);
-            request_id
-        });
-
-        c.region("signet flow: notify", |c| {
-            // Receiver first (compactc's order; the argument below emits).
-            let signer = signet.signer().pin(c, one);
-            let path = self.records.field_path();
-            let mut bytes = [0u8; 4];
-            bytes[..path.as_slice().len()].copy_from_slice(path.as_slice());
-            let notification =
-                construct_notification_v1::<Public>(c, &me.bytes(), path.depth(), bytes);
-            signer.sign_bidirectional(c, one, request_id, notification);
-        });
-        request_id
+        })
     }
 
     /// Settle under this slot's response: verify the attestation, consume

@@ -493,3 +493,45 @@ What landed, against §4 and §8, with the deviations said plainly.
   (=ticket_requestId=…); the wire is positional so nothing changes on
   the wire, but the interface snapshot labels differ from the
   hand-declared vault's.
+
+** Rung C as built (2026-09-05): =erc20_vault_pending=
+Ten circuits (=refund= split per slot; =approveRouter= on a =Fired=
+slot — a request-only type with NO settle method), a sixteen-field
+block (segmented, as the upstream vault has been since M28's lending
+extension), every settle through =settle= / =settle_failed= /
+=Commit::open=. The generated disclosure gates pass for all ten.
+
+THE COST RULE, restated from measurement. The milestone said "not
+above the current optimised lineage PER CIRCUIT". Measured (rows, k
+unchanged everywhere):
+
+| circuit            | pending | modern | Δ    |
+|--------------------+---------+--------+------|
+| initialize         |   2,446 |  2,412 |  +34 |
+| deposit            |  15,666 | 15,614 |  +52 |
+| claim              |  41,813 | 42,075 | −262 |
+| withdraw           |  23,732 | 23,689 |  +43 |
+| complete_withdraw  |  39,888 | 40,182 | −294 |
+| swap               |  28,678 | 28,625 |  +53 |
+| complete_swap      |  49,402 | 50,297 | −895 |
+| approve_router     |  13,341 | 13,314 |  +27 |
+| refund_withdrawal  |  39,881 | 40,814 | −933 |
+| refund_swap        |  39,912 | 40,814 | −902 |
+
+The request-side excess has two named sources, separated by
+experiment: with a FIFTEEN-field block =initialize= is row-identical
+to modern (2,412) and deposit/withdraw are +22/+16 — that remainder is
+the environment insert (typed continuation state, written once), and
+the rest (~30/circuit) is the segmented block's two-element paths,
+which the deployed vault pays anyway. Every settle is 260-930 rows
+cheaper (no calldata re-parse, no second marker map). So the gate
+became PER PAIR (request + the settle that consumes it: all five pairs
+cheaper, 210-890 rows) plus per-circuit =k= never rising, plus a
+64-row segmentation allowance for the two settle-less circuits. dmd
+to confirm the restated rule.
+
+NOT DONE in C: the spec harness (=tests/vault=, the shared model) is
+not extended to this lineage — its =PreState= and =Scenario= are
+written against the thirteen-field layout and the per-circuit
+argument shapes; extending them is the same size as the harness's own
+last extension (M11 stage 5). Recorded, not started.
