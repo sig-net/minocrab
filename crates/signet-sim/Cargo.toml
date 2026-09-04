@@ -1,0 +1,24 @@
+[package]
+name = "signet-sim"
+description = "The Sig Network MPC as a pure function, for testing Midnight contracts that use it: the MPC's own reader (translated and pinned), its key derivation, and a Responder that signs attestations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+midnight-onchain-state.workspace = true
+midnight-storage.workspace = true
+midnight-base-crypto.workspace = true
+midnight-serialize.workspace = true
+midnight-transient-crypto.workspace = true
+k256 = { version = "0.13", default-features = false, features = ["arithmetic", "std"] }
+sha3.workspace = true
+hex = "0.4"
+anyhow.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

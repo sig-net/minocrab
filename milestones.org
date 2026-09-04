@@ -1521,7 +1521,7 @@ Decisions of record (dmd, 2026-09-05):
       measured (=row_snapshot=) and NOT above the current optimised
       lineage per circuit — the calls do what the circuits do today,
       so any excess is a bug in the API, not a price of it.
-- [ ] D. =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
+- [-] D. (2026-09-05: the responder half DONE as =crates/signet-sim=; the state-driving half BLOCKED on the v3 transcript executor dmd holds in M26 — §9) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
       (singleton event, caller ledger state, =EvmOutcome=) →
       attestation; ONE root key with the real =derive_epsilon_midnight=
       so =initialize='s response key is derived, not arbitrary; the
@@ -1536,7 +1536,7 @@ Decisions of record (dmd, 2026-09-05):
       post → respond → settle under plain =cargo test=; real proofs +
       =LedgerState= + =Transaction::apply= (the cross-contract call and
       the singleton's event for real) under =--release=, on M29 D/E.
-- [ ] E. Tests that come with the type: for every =Pending= slot in a
+- [ ] E. (BLOCKED 2026-09-05 on the same executor as D; the drift gate and the adversarial refusals exist at the attestation level) Tests that come with the type: for every =Pending= slot in a
       contract, a GENERATED round trip (request → sim → settle accepts)
       plus the adversarial suite (each responder → the expected guard)
       plus an unread-field sweep over the ticket (every field read by

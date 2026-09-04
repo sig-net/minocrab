@@ -23,6 +23,7 @@ signet-signer-interface = { path = "../signet-signer-interface" }
 xcall-target-interface = { path = "../xcall-target-interface" }
 
 [dev-dependencies]
+signet-sim = { path = "../signet-sim" }
 # The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated
 # cross-check calls minocrab-std's schema module, which is feature-gated so
 # that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.

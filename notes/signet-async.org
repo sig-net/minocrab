@@ -535,3 +535,56 @@ not extended to this lineage — its =PreState= and =Scenario= are
 written against the thirteen-field layout and the per-circuit
 argument shapes; extending them is the same size as the harness's own
 last extension (M11 stage 5). Recorded, not started.
+
+** Rung D as built (2026-09-05): =crates/signet-sim=, the responder half
+- =Responder= trait: (singleton event payload, caller =StateValue=,
+  =EvmOutcome=) → =Attestation= | =Refusal=. =SigNetSim= implements it
+  with ONE root scalar: the MPC's OWN reader (=reader.rs=, =records.rs=,
+  =request_id.rs= — mechanical translations of
+  =chain-signatures/chain-midnight= at mpc =b940f0a7=, plus the stage-7
+  decode per the MPC's work order), the real epsilon derivation
+  (=kdf.rs=, translated from =signet-crypto=, pinned by the MPC's own
+  golden vectors — all pass), and an ECDSA signer in the singleton's
+  wire shape (bigR as a point, s, recovery id; nonce deterministic).
+  The response key is derived exactly as the node does it: requester =
+  the CALLER CONTRACT's address, path "midnight response key", so what
+  =initialize= should store is =sim.response_key(key_version, caller)=.
+- Fixtures copied verbatim from mpc (=caller-post-state-156.mn=, the
+  epsilon golden). The translated reader decodes the MPC's captured
+  DEPLOYED-format record at field 4 and recomputes its id — the MPC's
+  own regression, now kept here against the same bytes. The stage-7
+  decoder refuses that record BY NAME ("record-version").
+- THE DRIFT GATE (tests/signet_flow.rs): the atoms
+  =SignBidirectionalEventV2= declares — what a =Pending= slot stores —
+  decode through the translated reader into the same fields, and the
+  recomputed id is keccak over exactly those bytes. A record-format
+  drift between this repo and the reader fails there.
+- Refusals are the reader's drop reasons by name (absent, spoofed
+  "rid-mismatch", "request-index-not-a-map", "record-version",
+  notification version/depth).
+
+TWO FINDINGS for dmd, from reading the MPC:
+1. =convert.rs= REJECTS any record whose 64-byte =params= is non-zero
+   ("params is reserved and must be blank"). §8 item 14 (hash(Env) in
+   params) was struck on security grounds; it would also have been
+   refused outright. Struck, twice over.
+2. The MPC's reader at develop decodes the DEPLOYED format only. Every
+   stage-7 record (borsh, modern, pending lineages) is dropped by it
+   as "record-undecodable" (the version byte sits where it reads
+   =tx_param_type= at atom 7). This is the coordinated release
+   borsh-format.org §"THE READER CONSTANTS" already calls for; the sim
+   implements the reader the MPC WILL ship, and says so.
+
+BLOCKED, the state-driving half (§6 "two speeds"): there is NO Rust
+executor that produces a v3 circuit's public transcript from ledger
+state — =minocrab-sim::v3::simulate= VERIFIES a complete preimage, and
+the ledger reads' values come from the transcript, not the circuit.
+The vault harness supplies transcripts from its 3.8k-line hand model.
+Building an executor (the v3 instruction walk in gather mode: on the
+=public_input= gates of a read, run the op's Impact block against the
+live state with =ResultModeGather= and feed the answer back) is the
+"contract-testing harness in minocrab-sim" item dmd HELD in M26 ("not
+before the super review"; the 2026-09-04 note asks whether the
+external review lifted it). Not built unilaterally. Until it exists,
+the round trip stops at the attestation; rung E (generated per-slot
+round trips) is blocked on the same thing.

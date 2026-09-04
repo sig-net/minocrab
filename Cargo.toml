@@ -5,6 +5,7 @@ members = [
     "crates/minocrab-ir",
     "crates/minocrab",
     "crates/minocrab-macros",
+    "crates/signet-sim",
     "crates/minocrab-std",
     "crates/minocrab-ledger",
     "crates/minocrab-contracts",

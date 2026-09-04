@@ -2283,6 +2283,7 @@ dependencies = [
  "sha2 0.11.0",
  "sha3",
  "signet-signer-interface",
+ "signet-sim",
  "xcall-target-interface",
 ]
 
@@ -3373,6 +3374,23 @@ dependencies = [
  "minocrab-abi",
  "minocrab-ledger",
  "minocrab-std",
+]
+
+[[package]]
+name = "signet-sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "k256",
+ "midnight-base-crypto",
+ "midnight-onchain-state",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.0",
+ "serde_json",
+ "sha3",
+ "thiserror",
 ]
 
 [[package]]

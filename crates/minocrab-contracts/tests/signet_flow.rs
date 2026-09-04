@@ -187,3 +187,77 @@ fn the_circuits_build_at_a_finite_cost() {
     assert!(rows_req > 0 && rows_claim > rows_req, "{rows_req} {rows_claim}");
     assert!(k_req <= 14 && k_wd <= 14 && k_claim <= 15 && k_ref <= 15, "{k_req} {k_wd} {k_claim} {k_ref}");
 }
+
+// ---- the record the circuit files vs the reader the MPC runs ----------------------
+
+/// THE DRIFT GATE: the atoms `SignBidirectionalEventV2` declares (what a
+/// `Pending` slot stores, limb for limb) are decoded by the MPC reader's
+/// stage-7 twin (`signet_sim::reader`, translated from the MPC's own code)
+/// into the same fields, and the id the reader recomputes is keccak over
+/// exactly those bytes — which is what the circuit hashes.
+#[test]
+fn the_filed_record_is_what_the_mpc_reader_decodes() {
+    use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentSegment, Value, ValueAtom};
+    use midnight_onchain_state::state::StateValue;
+    use midnight_storage::arena::Sp;
+    use minocrab_contracts::signet::SignBidirectionalEventV2;
+    use signet_sim::records::{CompactMaybe, EvmCalldata, EvmType2TxParams, SignBidirectionalRecordV2, RECORD_FORMAT_VERSION};
+    use signet_sim::reader::decode_record_v2;
+    use signet_sim::request_id::{binary_repr_v2, compute_request_id_v2};
+
+    let record = SignBidirectionalRecordV2 {
+        format_version: RECORD_FORMAT_VERSION,
+        sender: [0xe4; 32],
+        request_nonce: 9,
+        key_version: 1,
+        path: [0x77; 32],
+        algo: 0,
+        dest: 0,
+        params: [0u8; 64],
+        tx_param_type: 0,
+        tx_params: EvmType2TxParams {
+            chain_id: 1,
+            nonce: 2,
+            max_priority_fee_per_gas: 3,
+            max_fee_per_gas: 4,
+            gas_limit: 5,
+            to: [0x42; 20],
+            value: 0,
+            calldata: CompactMaybe {
+                is_some: true,
+                value: EvmCalldata { selector: [0xa9, 0x05, 0x9c, 0xbb], no_words: 2, words: vec![[6u8; 32], [7u8; 32]] },
+            },
+            access_list_entry_count: 0,
+            access_list: vec![],
+        },
+        caip2_id: [0x33; 32],
+        response_kind: 0,
+    };
+
+    // The cell as the ledger holds it: the CIRCUIT's declared atoms, filled
+    // from the reader's own byte layout, trailing zeros trimmed.
+    let atoms = SignBidirectionalEventV2::<Public, 2>::atoms();
+    let bytes = binary_repr_v2(&record);
+    let mut at = 0usize;
+    let mut alignment = Vec::new();
+    let mut value = Vec::new();
+    for atom in &atoms {
+        let midnight_base_crypto::fab::AlignmentAtom::Bytes { length } = atom else {
+            panic!("signet records declare Bytes atoms only")
+        };
+        let width = *length as usize;
+        let mut v = bytes[at..at + width].to_vec();
+        while v.last() == Some(&0) {
+            v.pop();
+        }
+        alignment.push(AlignmentSegment::Atom(atom.clone()));
+        value.push(ValueAtom(v));
+        at += width;
+    }
+    assert_eq!(at, bytes.len(), "the declared atoms cover exactly the reader's preimage");
+    let cell = StateValue::Cell(Sp::new(AlignedValue { alignment: Alignment(alignment), value: Value(value) }));
+
+    let decoded = decode_record_v2(&cell).expect("the MPC reader decodes what the circuit files");
+    assert_eq!(decoded, record);
+    assert_eq!(compute_request_id_v2(&decoded), signet_sim::request_id::hash_payload(&bytes));
+}
