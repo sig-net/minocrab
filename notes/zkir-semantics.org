@@ -760,3 +760,85 @@ owe them a line.
   not a soundness issue; for us it is the =ImpactsNative= hypothesis of
   =completeness=. To do: check it on the corpus (rung-2 dataflow +
   input/definition types suffice) and drop it to a corpus fact.
+
+* 11. Upstream's own spec and mechanisation — PRs 16/17 (read 2026-09-04, OPEN)
+
+Two OPEN pull requests on =midnightntwrk/midnight-zkir= (the crate's
+new home since it was split out of midnight-ledger), both by jmchapman,
+both opened 2026-09-04, both unmerged at the time of reading. Re-read
+the live diff before acting on anything below; the check-back is in
+milestones.org M27 "UPSTREAM SPEC WATCH" (~2026-09-18).
+
+- #16 =zkir-spec/docs/zkir-v3-spec.md= (1,529 lines): types (13),
+  encoding, abstract syntax (34 instructions), well-formedness WF1-WF5,
+  preprocess semantics (§6, tabular per instruction), circuit
+  semantics as chip CONTRACTS (§7.0 decision: chips trusted for their
+  results, not re-derived), properties (§8): P1-P4 operational, O1-O4
+  producer obligations, P5 faithfulness, statement soundness and
+  extraction, P6-P10 protocol-level (left to the Halo2 backend), §8.6
+  trust base. §5.2 (concrete JSON layout) is INFORMATIVE only — our
+  rung 1 remains the only machine-checked account of the wire format.
+- #17 =zkir-spec/src/zkir-v3/*.agda= (21,513 lines, 23 files):
+  =--safe=, no postulates; trust base = one =Assumptions= record taken
+  as a module parameter (carriers, chip contracts, =1 ≠ 0=, encoding
+  round-trip laws). Proven: =circuit-faithful= (both directions),
+  =statement-sound= (pis-form: an arbitrary satisfying witness of
+  shape =WShape= yields a unique preimage/run agreeing on the PI
+  stream; exact-equality extraction is FALSE for v3 because transcript
+  reads and their guards are unconstrained in-circuit — the same fact
+  as our §4.3), =statement-unique=, =extractor-complete=, and runnable
+  checkers =producer-SA?= / =producer-WT?= / =producer-WF2?= /
+  =WShape?=. CI typechecks =Main.agda= via a nix flake
+  (input-output-hk/agda.nix), path-filtered to =zkir-spec/**=.
+
+** The pin, checked
+Their pin is midnight-zkir =5b593d1=, whose =zkir/src/ir_vm.rs= they
+state is byte-identical to midnight-ledger =92e8bdd3='s
+=zkir-v3/src/ir_vm.rs=. Verified via the GitHub contents API: the blob
+SHA is =8ae673493ceee69d907100ac3887efaeb1b9a917= (59,732 bytes) at
+=92e8bdd3=, at OUR rev =04c9c5d9=, and at =5b593d1=. So the surface
+they specify is exactly the one =MinocrabZkir.Semantics= transcribes
+and the one compactc 0.34.0 emits (its flake.lock pins =04c9c5d=).
+Their pin PREDATES their PR #10 (merged 2026-08-28): =LoadConstant=,
+=And=/=Or=/=Xor= + a =Bool= type, a =Byte= type, =Bytes32 → Bytes(n)=
+with =Nth=/=Concat=/=Slice= and generalised =ReverseBytes=, =Sha512=,
+stricter =decode= canonicity. None of that is in any compactc release
+yet. When a release adopts it, three things move together: our
+bindings (=minocrab-zkir= re-exports the crate through the ledger git
+pin — see version-bump.org pin 5), the 34-arm Lean, their Agda.
+
+** What it settles in §10, conditional on merge
+| # | their text | disposition |
+|---|---|---|
+| I1 | out of their scope (contract level) | unchanged |
+| I2 | §4.1: the Bytes32 decoder "panics (=assert_eq!=, encode.rs:126-131) rather than returning an error … The intended semantics is failure" | CLOSE by citation; the upstream note we owed is written by upstream. Their #10's stricter decode may fix it at tip — check when re-pinning |
+| I3 | =Alignment= "defined externally in base_crypto::fab and treated abstractly here" | unchanged; rung 4 |
+| I4 | §6.6(d) and O4 list the SAME unenforced premises as our §4.3 (=Assert= ≠0 only, ignored transcript-read guards, =ReconstituteField= overflow, exact =LessThan= bounds — width =max(bits + bits%2, 4)= as ours) and classify =CondSelect=/=Not=/=Impact= guards as constrained | the STATEMENT is upstream-endorsed; the vault-specific boolean-by-construction fact per =assert= is still ours (vault prong) |
+| I5 | O2 value typing: "the type of every cell a static property of the source" | =ImpactsNative= becomes a corpus/workspace fact via an O2 checker, not a hypothesis of =completeness= |
+
+** What it does NOT cover, i.e. what stays ours
+- IR-to-IR transformations: nothing about passes. The eight
+  =VerifiedPass= theorems over the real =Instr= are unaffected.
+- Validation against artifacts: §9.1 says "comparing what this
+  specification … describes against what the pinned Rust actually
+  does, instruction by instruction, is out of scope for this document
+  by design." Our rung 1 (84 files byte-for-byte) and rung 2 (16,815
+  instructions of dataflow diffed against the Rust) are exactly that,
+  and rung 4's differential would validate both developments.
+- The contract-level layer: taint lint (packing injectivity),
+  disclosure gate, guard scopes.
+- The chip layer: same boundary as ours (intrinsics uninterpreted /
+  chips at contract level). Neither development says anything about
+  Halo2 gates.
+
+** Relationship to our Lean, stated plainly
+Agda does not import into Lean. The value is a SECOND INDEPENDENT
+TRANSCRIPTION of the same =ir_vm.rs= to diff our =step= arms against
+(M27 item (a)), plus theorems we should CITE rather than re-prove
+(faithfulness, statement soundness — the theorem the vault leakage
+inventory rests on: the PI stream is the statement). Our =Sat= +
+=completeness= (Constraint.lean / Completeness.lean, 1,139 lines) are
+one direction of their P5 on a smaller model; keep them as the minimal
+thing the pass theorems need, do not extend them. Count to reconcile:
+they say 34 instructions; several of our notes say 33 (our
+=Syntax.lean= inductive should be counted, not trusted from prose).

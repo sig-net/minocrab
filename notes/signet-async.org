@@ -1,0 +1,429 @@
+#+TITLE: The Signet round trip as a typed future (design of record for M35)
+#+DATE: 2026-09-05
+#+STARTUP: overview
+
+Milestone: M35 (milestones.org), filed 2026-09-05.
+
+dmd asked (2026-09-05) whether checkpointing could feed a circuit more
+inputs "like Rust async", and then how a fundamentally asynchronous
+cross-chain transaction should be represented in the eDSL. This records
+the answer; it became M35 the same day.
+
+* 1. Checkpoint is not the primitive
+
+=kernel.checkpoint()= emits one =ckpt= into the PUBLIC transcript
+(midnight-ledger.ss:212-215: "marks all execution up to this point as
+being a single atomic unit, allowing partial transaction failures to be
+split across it"). The verifier requires the fallible transcript to
+start with it and =binding_input= commits the guaranteed length
+(ledger-abi.org §"Guaranteed/fallible split"). It partitions on-chain
+EFFECTS for atomicity; the circuit neither sees it nor learns from it.
+A circuit is one relation proven in one pass with every input in hand:
+there is no suspension point. (And compactc's v3 backend cannot emit it
+anyway: bug-reports/2-checkpoint-zkir-v3, kernel-tokens.org (a).)
+
+* 2. The round trip the vault already implements by hand
+
+Each vault operation is one future split across two transactions
+(erc20_vault_modern.rs):
+
+| half    | circuits                                        | steps                                                                                                                                |
+|---------+-------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------|
+| request | deposit, withdraw, swap, approve_router         | build tx params → calculate_request_id → freshness → nonce++ → map.insert(record) → SignetSigner.sign_bidirectional(id, notification) |
+| settle  | claim, complete_withdraw, complete_swap, refund | verify attestation vs mpc key → assert kind → member/lookup/remove → assert_record_binds (kind, version) → re-witness auth → logic    |
+
+The map entry IS the suspended continuation; the attestation is the
+resolved value. Hand-synchronised across the eight circuits: the kind
+constants (=RESPONSE_KIND_*=), =RECORD_FORMAT_VERSION=, the notification
+path bytes + depth (=[0,0,0,0]=, 1) that tell the MPC where in the
+caller's state the record sits, and the per-op pending maps
+(=refund_commitment=, =swap_refund_commitment=).
+
+* 3. What NOT to build
+
+A literal =.await= that a proc macro splits into two circuits. The
+second half is proven in another transaction, possibly by another
+party, with FRESH witnesses — the depositor/withdrawer gates re-witness
+=sk= rather than capture it, and must. The captured environment has to
+be explicitly typed public ledger state.
+
+dmd's actual motive for =.await= (2026-09-05): a marker that the
+stack no longer exists past that point. Rust's =async= does the
+OPPOSITE — it silently captures every live local into the state
+machine, which is exactly what must not happen here: a wire from the
+request circuit exists only inside that proof, and anything that
+crosses to the settle circuit has to be disclosed and written to the
+ledger, i.e. made PUBLIC. Implicit capture would be a privacy footgun
+(a local secret silently becomes ledger state). The property wanted is
+"the continuation sees nothing but what was explicitly handed over",
+and a function with a parameter list already gives it: =claim= can see
+its arguments and the =Env= that =settle= returns, nothing else. If the
+two halves should sit together textually, a =flow!= macro can expand a
+request block and a settle block into two =fn= items; or the settle
+half can be required to coerce to a =fn= pointer type, which a closure
+that captures anything fails to do — a compile error, per the
+house rule. A literal =.await= split would need a body-rewriting proc
+macro with type information it does not have, and is unwanted anyway.
+
+* 4. The sketch: =Pending<Env, Resp>=
+
+- Request side: one call taking tx params + an =Env= value, returning
+  the request id. Map, notification path and depth derive from =Env='s
+  ledger slot — the hand-passed path bytes go away.
+- Settle side: one call taking request id + attestation; does verify,
+  kind, version, lookup, remove; returns typed =Env= and typed =Resp=.
+  The kind tag is an associated const of =Resp=, so pairing a withdraw
+  =Env= with a claim =Resp= fails to unify (compile error > panic).
+  The in-circuit kind assert stays — the input is untrusted — but the
+  caller can no longer pick the wrong constant.
+- Split the record: the MPC-facing part has a FROZEN wire format (the
+  MPC reads it out of the caller's state via the notification path);
+  the caller's continuation state is free-form. Today settle recovers
+  =amount= by re-parsing calldata word 1 (=abi_word_to_uint128=); store
+  what settle needs directly.
+- NO deadline. dmd (2026-09-05): the vault has no timeout path and that
+  is DELIBERATE — refund happens only on an ATTESTED failure. Do not add
+  a block-time =cancel=.
+- Executor: a =Responder= trait implemented by minocrab-sim (test key)
+  and by the M30 Rust publisher, so one test drives request → sign →
+  settle. That is the end-to-end coverage mpc-publisher.org §4 says
+  neither repo has.
+
+* 5. Timing
+
+Signet is not deployed and the vault is ours (mpc-publisher.org §0), so
+the record format and interface are movable during M29 and frozen the
+moment either ships.
+
+* 6. Simulating Sig in tests (dmd asked 2026-09-05)
+
+** What exists
+- =tests/vault= (6.6k lines): per-circuit proptest, spec ≡ circuit ≡
+  Impact VM ≡ reference VM. Settle pre-states are SEEDED with a record
+  built from a request scenario, never produced by running the request
+  circuit; the attestation is signed by =prims::sign= under a per-case
+  random key seed. Nothing chains request → settle through state, and
+  nothing plays the MPC.
+- mpc repo: ONE end-to-end test (Docker: node, indexer, proof server,
+  Anvil, cluster), =integration-tests/tests/cases/midnight_stream.rs=,
+  ignored by default.
+
+** What the MPC actually does between the two halves
+Read off =~/mpc/chain-signatures/{chain-midnight,node}=:
+1. Sees Signet's =SignBidirectionalEvent= (version ‖ requestId ‖
+   notification = callerAddress ‖ depth ‖ path[4]).
+2. Walks the CALLER's ledger tree along =path= to the map, looks up
+   =requestId=, decodes the record (=reader.rs: decode_record=) and
+   RECOMPUTES the request id from it; a mismatch is "spoofed or wrongly
+   filed" and is dropped (=resolve_verified_record=).
+3. =derive_epsilon_midnight(key_version, requester = the address the
+   record was read from, record.path)= → the user's key / EVM address.
+4. Signs keccak(serialized EVM tx) → Signet =respond=.
+5. Someone submits the EVM tx; the Ethereum indexer watches the receipt
+   and produces =serialized_output= (for a failed tx:
+   =MAGIC_ERROR_PREFIX ‖ borsh(true)=, node/respond_bidirectional.rs).
+6. Signs keccak(requestId ‖ serialized_output) under the FIXED path
+   "midnight response key" (= the vault's =mpcResponseKey= cell) →
+   Signet =respondBidirectional(requestId, signature)=.
+7. The user submits the settle circuit with (requestId, signature,
+   serialized_output).
+
+** The design: simulate at the PROTOCOL boundary, not the circuit boundary
+The boundary is (Signet event, caller ledger state, EVM outcome) →
+(attestation). Make that one trait, implemented twice:
+
+#+begin_src rust
+/// Everything the MPC does between seeing SignBidirectionalEvent and
+/// calling respondBidirectional. Pure: no I/O, no clocks.
+pub trait Responder {
+    fn respond(
+        &mut self,
+        event: &SignBidirectionalEvent,      // as emitted by the singleton
+        caller_state: &StateValue,           // the caller's ledger tree
+        outcome: EvmOutcome,                 // the oracle, see below
+    ) -> Result<Attestation, Refusal>;       // Refusal = what the reader drops
+}
+pub enum EvmOutcome { Executed { success: bool, ret: Vec<u8> }, Reverted, NeverExecuted }
+pub struct Attestation { request_id, signature: Secp256k1Sig, output: Vec<u8> }
+#+end_src
+
+- =SigNetSim { root: Scalar }= in minocrab-sim (=unstable= feature):
+  ONE root key, the REAL kdf (=derive_epsilon_midnight=), so derived
+  user addresses and the response key equal what the cluster would
+  derive for that root; =initialize='s =mpcResponseKey= is derived, not
+  arbitrary. The read side runs the MPC's OWN reader (step 2 above:
+  path walk by the notification's bytes, decode, recompute id). If the
+  caller's record drifts from what the reader decodes, the sim fails
+  the way production would. That is the whole value of the exercise.
+- The M30 Rust publisher implements the same trait with the real
+  signer. Same conformance tests, same inputs, byte-equal respond calls.
+- The EVM is an ORACLE, never simulated: the test (or proptest) picks
+  the outcome; the sim turns it into output bytes exactly as
+  =node/respond_bidirectional.rs= does, including the failure prefix.
+- Adversarial responders are just other impls: wrong key, wrong kind,
+  replayed attestation, double response, response to an id never
+  filed. The spec's tamper set (=tests/vault/tamper.rs=) moves up a
+  level.
+- No timeout is a legitimate terminal state: "pending forever" must
+  hold every invariant (no leak, a late response still settles).
+
+** State: drive the real ledger, at two speeds
+- =cargo test=: =tests/vault/exec.rs= already runs the Impact VM on a
+  real =StateValue= and returns =post=. Chain it: request ops → post →
+  =Responder= reads =post= via the notification path → settle ops
+  against =post=. No proofs. Circuit acceptance via the v3 simulator on
+  each call's preimage, as today.
+- =--release= gate: real proofs (=Zkir::prove=, in-process) and
+  =LedgerState= + =Transaction::apply= so the cross-contract call to the
+  singleton, its event, and DUST all happen for real. The burn
+  well-formedness test already builds the transaction half of this.
+
+** Code reuse / dependency direction (open)
+=chain-midnight/src/{reader,records,request_id}.rs= are I/O-free Rust.
+Reusing them is the honest reader, but mpc will depend on minocrab in
+M30, so a dev-dependency back on mpc is a repo-level cycle. Options:
+factor them into a small I/O-free crate both depend on, or move them
+here as part of M30 alongside the publisher pieces. dmd to pick.
+
+* 7. Interface sketch — before and after (dmd asked 2026-09-05)
+
+Condensed from =erc20_vault_modern.rs=; deposit/claim, the simplest
+pair. Names are placeholders. Everything the =Pending= calls do is
+what the two circuits do today, so the row cost is the same; what
+changes is who owns the invariants.
+
+** Before
+
+#+begin_src rust
+#[circuit]
+pub fn deposit(c, evm_nonce, gas_limit, max_fee, max_prio, key_version, req: DepositRequest)
+    -> Discloses<(DepositorCommitment, RequestId, RequestRecord, XcallEntryPointHash, XcallCommitment)>
+{
+    // guards ...
+    let caller = user_commitment(c, &witness_sk(c)).disclose_as::<DepositorCommitment>(c);
+    let tx = signet::EvmType2TxParams { /* transfer(vaultEvmAddress, amount) */ };
+    let request = signet::construct_sign_bidirectional_event_v2(
+        c, me, VAULT.signet_request_nonce.read(c), key_version,
+        SigningPath::from(caller), tx, caip2, RESPONSE_KIND_CLAIM as u8);   // kind constant, by hand
+
+    // ---- the suspension, by hand, repeated in withdraw/swap/approve_router ----
+    let id = signet::calculate_request_id_v2(c, &request).disclose_as::<RequestId>(c);
+    c.assert(not(is_true(SIGN_EVENT_MAP_V2.member(c, &id))).message("Request already exists"));
+    VAULT.signet_request_nonce.increment(c, 1);
+    SIGN_EVENT_MAP_V2.insert(c, &id, &EventRecordV2::from_limbs(request.limbs().disclose_as::<RequestRecord>(c)));
+    let signer = SignetSigner::at_field(SIGNET_SIGNER).pin(c, one);
+    signer.sign_bidirectional(c, one, id,
+        construct_notification_v1(c, &me, 1, [0, 0, 0, 0]));          // depth + path bytes, by hand
+}
+
+#[circuit]
+pub fn claim(c, request_id: RequestId<Private>,
+             #[arg(name = "respond")] sig: RespondSignature,
+             serialized_output: VaultResponse, mint_nonce, recipient)
+    -> Discloses<(ClaimRequestId, /* 5 recipient labels */, ClaimMintNonce)>
+{
+    // ---- the resumption, by hand, repeated in complete_withdraw/complete_swap/refund ----
+    let id = request_id.disclose_as::<ClaimRequestId>(c);
+    assert_initialized(c);
+    assert_kind(c, serialized_output.kind, RESPONSE_KIND_CLAIM);         // kind constant, by hand
+    let mpc_key = VAULT.mpc_response_key.read(c);
+    c.assert(verify_respond_bidirectional_event_borsh(c, &id, &serialized_output, &limbs(sig), mpc_key));
+    c.assert(is_true(SIGN_EVENT_MAP_V2.member(c, &id)).message("Request not found"));
+    let ev = SIGN_EVENT_MAP_V2.lookup(c, &id);
+    SIGN_EVENT_MAP_V2.remove(c, &id);
+    assert_record_binds(c, &ev, serialized_output.kind);                 // kind + RECORD_FORMAT_VERSION
+
+    // ---- the business logic ----
+    c.assert(is_true(serialized_output.success).message("The MPC attested a failure"));
+    c.assert(b32_eq(&user_commitment(c, &witness_sk(c)), &ev.path()));  // fresh witness, as it must be
+    let amount = signet::abi_word_to_uint128(c, &ev.word(1));            // re-parse calldata for the amount
+    let sep = vault_token_domain_separator(c, ev.to());
+    mint_shielded_token(c, one, &sep, Uint::<64>::from_field_checked(c, amount), &mint_nonce, &recipient);
+}
+#+end_src
+
+** After
+
+#+begin_src rust
+/// What `claim` needs back. Typed continuation state, stored beside the
+/// MPC-facing record (whose format is the MPC's and stays frozen).
+#[derive(LedgerRepr)]
+struct DepositEnv { depositor: UserCommitment<Public>, erc20: Bytes<20, Public>, amount: Uint<64, Public> }
+
+/// The attested output of a deposit. The kind byte is an associated
+/// const of the TYPE, so it is written once and cannot be mis-paired.
+#[derive(CircuitBorsh, Response)]
+#[response(kind = 0)]
+struct ClaimResponse { success: Bool }
+
+ledger! { VAULT {
+    // ...
+    deposits: Pending<DepositEnv, ClaimResponse>,   // ONE slot: request map, env, nonce
+    signet: Sealed<SignetSigner>,
+    mpc_response_key: Secp256k1Point,
+}}
+
+#[circuit]
+pub fn deposit(c, evm_nonce, gas_limit, max_fee, max_prio, key_version, req: DepositRequest)
+    -> Discloses<(DepositorCommitment, Requested<DepositEnv>)>      // the request's labels, as one type
+{
+    // guards ... (unchanged)
+    let caller = user_commitment(c, &witness_sk(c)).disclose_as::<DepositorCommitment>(c);
+    let tx = signet::EvmType2TxParams { /* unchanged */ };
+    VAULT.deposits.request(
+        c, &VAULT.signet,
+        SignRequest { key_version, path: caller.into(), tx },            // kind comes from ClaimResponse::KIND
+        DepositEnv { depositor: caller, erc20: req.erc20_address, amount: req.amount.narrow(c) },
+    );
+    // request(): id = hash(record); freshness; nonce++; insert record + env;
+    //            notification depth/path DERIVED from the slot; xcall signet.
+}
+
+#[circuit]
+pub fn claim(c, ticket: Settle<DepositEnv, ClaimResponse>,           // (request_id, signature, output), wire order
+             mint_nonce, recipient)
+    -> Discloses<(Settled<DepositEnv>, /* recipient labels */, ClaimMintNonce)>
+{
+    let (env, resp) = VAULT.deposits.settle(c, &VAULT.mpc_response_key, ticket);
+    // settle(): disclose id; verify keccak(id ‖ borsh(resp)) under the key;
+    //           assert kind == ClaimResponse::KIND and record version;
+    //           member + lookup + remove; return typed env and resp.
+
+    c.assert(is_true(resp.success).message("The MPC attested a failure"));
+    c.assert(eq(user_commitment(c, &witness_sk(c)), env.depositor));     // still a fresh witness
+    let sep = vault_token_domain_separator(c, env.erc20);
+    mint_shielded_token(c, one, &sep, env.amount, &mint_nonce, &recipient);
+}
+
+// Pairing withdraw's environment with a claim response no longer compiles:
+//   VAULT.deposits.settle(c, key, ticket: Settle<WithdrawEnv, ClaimResponse>)
+//   ^ expected Settle<DepositEnv, ClaimResponse>
+#+end_src
+
+** What moved where
+| invariant                         | before                                   | after                          |
+|-----------------------------------+------------------------------------------+--------------------------------|
+| response kind byte                | =RESPONSE_KIND_*= at 8 sites             | =Response::KIND= on the type   |
+| record format version             | =assert_record_binds= at 4 sites         | inside =settle=                |
+| notification depth + path bytes   | =[0,0,0,0]=, =1= at 4 sites              | derived from the slot          |
+| request map / env / nonce         | 3 fields, hand-typed                     | one =Pending= slot             |
+| amount, token for settle          | re-parsed from calldata word 1           | typed =Env= field              |
+| verify → kind → lookup → remove   | 4 copies                                 | one =settle=                   |
+| authorisation (fresh witness)     | in the circuit                           | in the circuit, unchanged      |
+| assert_initialized                | in the circuit                           | in the circuit, unchanged      |
+
+** Open questions
+- =Requested<Env>= / =Settled<Env>= as label types: the =Discloses=
+  list is type-level; a =Pending= call has to contribute a fixed tuple
+  of labels. Needs a small extension of the label machinery.
+- Env storage: same map entry as the MPC record (one insert, record
+  format gains a caller-private tail the reader ignores) or a sibling
+  map keyed by the same id (two inserts, reader untouched). The reader
+  refuses records whose declared widths are not a signet record's, so
+  the sibling map is the safe default.
+- Whether =SignRequest= keeps the raw =EvmType2TxParams= or a typed
+  calldata builder (=Erc20::transfer(to, amount)=) sits in front.
+
+* 8. Safety features the =Pending= API can carry (dmd asked 2026-09-05)
+
+Principle: TYPES CONSTRAIN THE AUTHOR, ASSERTS CONSTRAIN THE PROVER.
+Nothing below replaces an in-circuit assert on untrusted input; the
+API's job is to make the assert impossible to forget, and to make the
+wrong pairing fail to compile. Ranked per the house rule (missing
+impl / non-unifying types > inline-const assert > build-time panic),
+each tied to a hazard the vault harness or the MPC reader already
+exhibits.
+
+** A. Can't mis-pair (compile errors)
+1. Kind by type. =Response::KIND= is an associated const; =settle= on
+   =Pending<Env, Resp>= takes =Settle<Env, Resp>=. Closes the
+   =WrongResponseKind= class at authoring time; the in-circuit kind
+   assert stays for the prover.
+2. Kind uniqueness per contract. Two =Response= types with one KIND in
+   a ledger block make the MPC's kind byte ambiguous. Inline-const
+   assert over the block's =Pending= slots (E0080).
+3. The response key is part of the slot, not an argument. A
+   =MpcResponseKey= newtype cell; =settle= reads it from the =Pending=
+   config, so the uniswap router or any other =B32= cannot be passed
+   where the key belongs.
+4. The ticket is ONE argument block in wire order. =Settle<Env, Resp>=
+   derives =CircuitArg= with a frozen layout (id, signature, output),
+   so the interface-schema freeze covers it and (id, sig) cannot be
+   reordered per circuit.
+
+** B. Can't skip a step (structure)
+5. =settle= is the only constructor of a typed =Resp=. No public
+   constructor for =Attested<Resp>=; the circuit cannot read =success=
+   off an unverified argument. Verification, kind, record version,
+   member, lookup, remove are one call, atomically ordered.
+6. =request= is the only constructor of a request id. The caller never
+   passes an id; it is =hash(record)= over the bytes actually stored,
+   which is what the MPC reader recomputes.
+7. Consume-once. =settle= takes the ticket by value and removes the
+   entry; there is no =peek= returning a mintable =Env=. Closes
+   "forgot the remove" double-claim.
+8. Outcome must be handled. =settle= returns an outcome the circuit has
+   to match on (attested success / attested failure, the node's
+   =MAGIC_ERROR_PREFIX= form as its own variant); =.expect_success(c)=
+   is the explicit assert for circuits with no failure branch. The
+   0x02 =NonBooleanSuccess= hazard is closed one level lower: the
+   =Response= derive requires =CircuitBorsh=, whose =Bool= is 0/1 by
+   construction.
+
+** C. Can't leak (privacy by type)
+9. =Env: LedgerRepr= requires every field =Public=. A =Private= wire in
+   an =Env= fails to unify — the await-capture footgun (§3) as a type
+   error.
+10. =Commit<T>= for what must survive privately. =env.withdrawer:
+    Commit<SecretKey>= with =open(c, &witness)= on the settle side,
+    domain-separated by the =Env= type's path automatically. The
+    withdrawer/swapper/depositor gates become one library op and no
+    two flows can share a commitment domain by accident.
+11. Fixed disclosure labels. =Requested<Env>= / =Settled<Env>= are the
+    complete label sets =request= and =settle= publish, so M27's
+    per-circuit leakage inventory is computed once per type, and a
+    flow cannot publish something its label set does not name.
+
+** D. Can't drift from the MPC (const asserts + pinned tests)
+12. Notification path derived from the slot AND checked against the
+    compiled contract-info's field path (artifact-agreement test, like
+    the interface crates' =pin.json=). A wrong path is a silent
+    "record not found" on the MPC.
+13. Path depth ≤ 4 as a const assert. The notification carries four
+    path bytes (=MAX_LEDGER_PATH_DEPTH=), and compactc CHUNKS ledger
+    blocks past 15 fields, deepening the path. A block whose =Pending=
+    slot lands deeper than 4 must fail to compile, not at the MPC.
+14. Env bound into the MPC-verified id. The record's 64-byte =params=
+    field is unused; putting =hash(Env)= there makes the reader's
+    id-recompute cover the caller's continuation state too, and the
+    reader's width check still passes (record shape unchanged).
+15. Sender and caip2 from context, never arguments. =request= reads
+    =kernel.self= and the slot's chain id itself, so the request id
+    always binds the calling contract and chain; an attestation for
+    contract A cannot settle at B by construction.
+16. Record version owned by the API. =RECORD_FORMAT_VERSION= is
+    written by =request= and checked by =settle=; a caller has no
+    handle to it.
+
+** E. Tests that come with the type
+17. Per-slot round trip, generated. For every =Pending= in a contract:
+    request → =SigNetSim= responds → settle accepts; and each
+    adversarial =Responder= (wrong key, wrong kind, replay, double
+    response, unfiled id, non-boolean success) → settle rejects with
+    the expected guard. Generic over =Env=/=Resp=, so a new flow gets
+    the tamper suite for free rather than 6.6k lines of harness.
+18. Unread-field audit, generated. =bigR.y= and =recoveryId= are
+    declared and unread today (taint-lint class 2). For every =Settle=
+    type, an =accepts_with= sweep asserts each ticket field is either
+    read by verification or listed as unread in the type.
+19. Counter overflow recorded, not hidden. =request= owns the nonce
+    increment; the harness's finding (circuit accepts at =u64::MAX=,
+    ledger rejects) is documented on the =Pending= type rather than
+    rediscovered per contract.
+
+** What stays a build-time panic, and what stays in the circuit
+- Build-time panic: nothing value-dependent is known at build time
+  here; the only candidates are const-known (2, 13) and take E0080.
+- In the circuit, unchanged: initialization gate, authorization with a
+  fresh witness, business guards (amount > 0, gas > 0), and every
+  assert =settle= performs on the untrusted ticket.

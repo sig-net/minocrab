@@ -22,6 +22,21 @@ independently.
 The first two are coupled and the coupling is the whole hazard surface: the
 crates must describe the ZKIR that the *binaries* speak. Hazard 1.
 
+PIN 5, noted 2026-09-04 (not yet a moving part, will be): the =zkir=
+crate has been SPLIT OUT of midnight-ledger into
+=midnightntwrk/midnight-zkir= (default branch =zkir-v3=). We still
+reach =midnight-zkir-v3= through the ledger git rev, which works only
+as long as the ledger rev we pin still vendors it. midnight-zkir's tip
+already carries an instruction batch (their PR #10, merged 2026-08-28:
+=LoadConstant=, =And=/=Or=/=Xor= + =Bool=, =Byte=, =Bytes(n)= +
+=Nth=/=Concat=/=Slice=, =Sha512=, stricter decode) that no compactc
+release uses — compactc 0.34.0 still pins zkir-v3 at =04c9c5d=. When a
+release adopts it, the corpus, our bindings, the 34-arm Lean semantics
+(=crates/minocrab-zkir/lean=) and upstream's Agda spec (their PRs
+16/17, notes/zkir-semantics.org §11) all move in one bump. Add the
+midnight-zkir rev to =./bump.sh pins= when the crate is pinned
+directly.
+
 * The checklist
 Run everything inside the direnv/nix shell (=nix develop -c …= also works).
 Nix supplies BINARIES ONLY; every build is plain cargo.

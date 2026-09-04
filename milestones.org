@@ -8,6 +8,10 @@ in place.
 Closed milestones are kept in SUMMARY form: what they were, the headline
 outcome, and where the full as-built record lives (the =notes/*.org= file
 each names, plus git history). Open milestones are kept in full.
+Open milestones are ordered by PRIORITY, not number (dmd, 2026-09-04):
+the quick wins M31-M34 sit ahead of the long-running Lean work (M27),
+which is filed last. Session start = the first open milestone in file
+order.
 
 * M0 — Foundations, corpus, and layer map
 Research and setup, no eDSL code: the pinned toolchain, the corpus, and the
@@ -1094,13 +1098,472 @@ note in a drawer:
       contract-testing harness in minocrab-sim (distil the vault's
       6,611-line private support), a from-scratch template/tutorial, and
       the keygen/deploy binding. Explicitly deferred by dmd (2026-08-28):
-      not before the super review.
+      not before the super review. NOTE 2026-09-04: M23's closing line
+      records that the super review is now run by an external party;
+      whether that satisfies the hold is dmd's call — an agent can
+      build this item once it is lifted (best-effort shape: distil the
+      vault's =tests/support= into a typed harness first, the tutorial
+      second, the deploy binding after M29 D/E exist).
 - [ ] =minocrab-ledger/src/lib.rs= at 3,700 lines — a split by concern
       (Impact encoding / ledger ops / calls). Cosmetic; zero-movement by
       construction (the dump gate).
 Exit criteria: =when_private= lands with its gates or is refused in writing
 with a measured reason; the authoring-path items are scheduled into their
 own milestone after the super review.
+
+* M28 — Vault refresh: port the Aave-lending extension (dmd, 2026-08-30)
+Upstream =sig-net/midnight-examples= moved 2c929a1b → a37d686b (pulled
+2026-08-30 on the =vault-refresh= branch; corpus recompiled, 811
+artifacts / 89 v3, Lean rungs 1-2 green on the new files). The vault
+gained stataUSDC lending, and every derived contract in this repo —
+=erc20_vault= (the PI-equal port), =_opt=, =_borsh=, =_modern= — plus
+the spec harness, snapshots and the vault prong's inventory must
+follow. On that branch all 15 =*_matches_corpus= differentials fail
+until they do, which is why it is a branch and not main.
+WHAT CHANGED UPSTREAM (the inventory, from the 456-line source diff):
+- Five new exported circuits: =approveStata=, =supply=,
+  =completeSupply=, =redeem=, =completeRedeem= (9 → 14).
+- Six new ledger fields (11 → 17 exported; 19 total): =stataUnderlying=,
+  =stataToken= (=Bytes<20>=, pinned at initialize), =supplyEventMap= /
+  =supplyRefundCommitment=, =redeemEventMap= / =redeemRefundCommitment=
+  (=SignBidirectionalEventMap<EvmType2TxParams<2|3,0,0>, 36, 35>=).
+- The state tree is now CHUNKED (past the 15-field flat limit): every
+  notification path went from depth 1 to depth 2 — =[0,0,0,0]= at
+  depth 2 for signBidirectionalEventMap, =[1,7,0,0]= swapEventMap,
+  =[1,11,0,0]= supplyEventMap, =[1,13,0,0]= redeemEventMap. This alone
+  moves the PI stream of every existing request circuit, which is why
+  even =deposit= fails its differential.
+- =initialize= takes two more arguments (=stataUnderlyingAddr=,
+  =stataTokenAddr=) with non-zero asserts and two more disclosed
+  writes.
+- New schemas/structs: =supplyOutputSchema=/=supplyRespondSchema=,
+  =redeemOutputSchema=/=redeemRespondSchema= (36/35 bytes),
+  =DepositReturnValue=, =RedeemReturnValue=; =export pure circuit
+  unlimitedAllowance(): Uint<128>= (2^128−1) shared by both approve
+  circuits.
+- [ ] Port the ledger/state changes to =erc20_vault= (the compat port)
+      first: fields, chunked paths, =initialize=; get the nine existing
+      circuits PI-equal again before adding any new one.
+- [ ] Port the five new circuits to the compat fork, each with its
+      =*_matches_corpus= differential and guard/tamper twins.
+- [ ] Propagate to =_opt=, =_borsh=, =_modern= per the fork ledgers
+      (=fork_status= / =borsh_fork_status= / =modern_fork_status=,
+      tests/vault/artifact.rs), extending =Circuit::ALL= to 14 and the
+      spec harness, row/interface snapshots, disclosure report, taint
+      baseline, bench targets.
+- [ ] Merge =vault-refresh= into main only when the whole grid is
+      green; then re-freeze M27's vault-prong claim list against the
+      14-circuit vault (the draft's τ-tables predate lending).
+Exit criteria: corpus pin at a37d686b on main; all four forks cover
+all 14 circuits with the differential/fork/spec/snapshot gates green;
+M27's V-list re-frozen.
+
+* M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
+Survey and decisions: notes/mpc-publisher.org. The signet contract is
+not deployed yet, so the deployment is OUR artifact (respond at k=10 /
+1,004 rows vs compactc's k=16 / 40,931; ~46 MB vs ~855 MB to prove).
+Felipe's TypeScript sidecar in =sig-net/mpc= (=midnight-publisher-ts=)
+never interprets the IR: compactc's JS executor makes the preimage and
+whatever sits at =zkir/<circuit>.bzkir= proves it, so the swap needs
+no mpc change — only the artifact files, their verifier-key hashes,
+and the deploy tooling in signet-midnight-integration. What is NOT yet
+shown, anywhere: that a respond intent built the way the ledger builds
+it proves under our key and applies to a =LedgerState=. Every existing
+gate is PI-level (=IrSource::check=), or has proofs switched off. This
+milestone ships the artifacts AND closes that gap, before M30 puts a
+Rust publisher on them.
+- [ ] DESIGN NOTE: notes/mpc-publisher.org (written 2026-09-02, §3 the
+      swap path, §4 the honest test inventory, §6 the pins).
+- [ ] A. Artifact pipeline: emit =.zkir= for the three signer circuits
+      (=signBidirectional=, =respond=, =respondBidirectional=) from
+      =signet_contract= via =minocrab_zkir::v3::write_zkir=; run the
+      flake's pinned =zkir-v3= (=compile-many=, the same step compactc
+      runs) for =.bzkir= + =.prover= + =.verifier=; lay them out as the
+      managed dir the sidecar and deploy tooling read
+      (=keys/<circuit>.prover|.verifier=, =zkir/<circuit>.bzkir=).
+      Commit the =.zkir= and =.verifier= (small, reviewable); a
+      generated-equals-committed gate on both, like =spec/ts=; the
+      prover key and =.bzkir= regenerate deterministically at package
+      time (record their SHA-256 so drift is visible).
+- [ ] B. Verifier-key hashes: emit the =expectedVk= table (circuit →
+      hash) the sidecar's =build= and =prove= paths check against; pin
+      the exact hash function to compact-js's =hashVerifierKey= by a
+      test on a corpus =.verifier= whose hash the mpc fixtures carry.
+- [ ] C. Construction gate — the ledger's preimage, not a hand-built one:
+      build each signer call through =ContractCallPrototype= and the
+      ledger's =construct_proof= (=ContractCallExt for ProofPreimage=,
+      construct.rs:515-573), so the preimage under test is byte for byte
+      what the sidecar and any Rust publisher produce; assert
+      call-compatibility on THAT preimage for all three circuits. The
+      differential test keeps its tamper twins; the hand-built
+      =preimage()= helper retires.
+- [ ] D. Ledger-apply gate: =ContractDeploy= with OUR verifier keys into a
+      =LedgerState=; build the respond =Intent= / =Transaction=;
+      =well_formed= then =apply= under the proof-preimage marker; the
+      emitted Misc bytes must equal the layout mpc's reader decodes —
+      import =chain-midnight/fixtures/respond-tx-161.mn= and
+      =respond-bidirectional-tx-181.mn= as goldens and compare the call
+      transcript to theirs.
+- [ ] E. Real-proving gate (=--release=, ignored by default, with
+      =row_snapshot=): keygen from our IR, =Transaction::prove= through an
+      in-process =ProvingProvider= (=LocalProvingProvider= +
+      =MidnightDataProvider=, params pre-warmed), then =well_formed= with
+      =verify_contract_proofs= ON against the deployed key, all three
+      circuits. Record prove time and peak RSS beside BENCHMARK.md's
+      numbers. This is the first real proof in the test suite.
+- [ ] F. Pin reconciliation: this repo (rev 04c9c5d) vs mpc
+      (crate-ledger-9.1.0.0-rc.3 / transient-crypto-3.0.0-rc.2) —
+      choose one, build =minocrab-contracts= against it, record the
+      decision in notes/zkir.org's pin table.
+Exit criteria: the managed-dir artifacts and =expectedVk= table
+generated and gated; C, D, E green (E under =--release=); the pin
+settled. Deploying the package and running mpc's real-stack test
+against it is mpc's work, tracked there (dmd, 2026-09-02: these
+milestones track this repo only).
+
+* M30 — A Rust publisher for the MPC: retire the TypeScript sidecar (dmd, 2026-09-02)
+Scope decided 2026-09-02: the publisher's pure core lives HERE as a
+library crate that mpc's =chain-midnight= consumes behind its existing
+=IntentClient= seam; the node I/O (subxt extrinsic, event ingestion),
+the swap-in, the sidecar's deletion and the real-stack test are mpc's
+work and are tracked in the mpc repo, not here. Proving is a Rust function call — no proof server, no
+child process; the only network touch (KZG params) is removed by
+shipping the params in the image (notes/mpc-publisher.org §2). The
+gap is the DUST fee wallet: every primitive exists in
+=midnight_ledger::dust= but no Rust wallet has been written around
+them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
+- [ ] A. Public surface here: one function per respond circuit taking
+      =(request_id, signature)= and returning the =ContractCallPrototype=
+      inputs (args as =AlignedValue=, transcript ops, key location) —
+      the M29 C path made a library; disclosure manifest unchanged;
+      =Discloses= gate still generated.
+- [ ] B. =minocrab-publisher= crate (name open): build → =Intent= with
+      TTL; prove → in-process =ProvingProvider= with a disk =Resolver=
+      for our keys and =DustResolver= for the fee proof; sign
+      (=Intent::sign=) and =seal=. Pure over (contract state, ledger
+      parameters, funding keys, dust state); no node I/O, so every step
+      is unit-testable on the M29 D fixtures.
+- [ ] C. DUST wallet: =DustLocalState= replayed from ledger =Event=s,
+      persisted and REBUILDABLE from genesis (untrusted source, §5);
+      =Transaction::balance= → dust spend → =DustActions=;
+      =process_ttls=; single-UTXO gate; readiness = sync time past the
+      pinned block. Tests on event fixtures captured from the mpc real
+      stack (add the capture to the real-stack driver).
+Out of scope here, for the mpc side (recorded so the seam is
+explicit): the extrinsic the wallet SDK posts (verify the pallet call
+against midnight-node first); error classification preserving the
+sidecar README's four codes (=wallet_unsynced=, =proving_timeout=,
+=state_conflict=, =ambiguous_submit=), which =publisher.rs='s retry
+logic keys on; the in-process =IntentClient= replacing =intent_gen.rs=;
+the reader's dropped =BlockProofSeed= (indexer.rs:120-132), the MPC's
+real exposure to a lying endpoint (notes/mpc-publisher.org §5.1),
+which the publisher port does not address.
+Exit criteria: A-C published from this workspace with unit gates on
+the captured fixtures; a respond intent goes build → prove → sign →
+seal → =well_formed= (proofs verified) in one process, inside the M29 E
+time and RSS budget, with no network access when the params are on
+disk; the DUST wallet rebuilds its state from an event log and spends
+against a =LedgerState= in a test.
+
+* M31 — The first REAL compactc bump: 0.33.0-rc.2 → 0.34.0 (language 0.26.0) (dmd, 2026-09-04)
+M8 built the churn-resilience workflow and left one honest remainder:
+"no corpus diff from a genuinely different compiler has been read yet,
+because upstream hasn't shipped one since we pinned." Upstream has:
+compactc 0.34.0 shipped 2026-08-25 as a FULL release (language 0.26.0).
+notes/compact-findings.org already probed it (2026-08-28) and
+established the one fact that bounds the blast radius — 0.34.0's own
+flake.lock pins zkir-v3 at =04c9c5d9bceb=, EXACTLY our Cargo pin, and
+our bindings round-trip its output — so this is a compactc-only bump:
+the ledger pins do not move (version-bump.org "The four pins").
+Nothing deployed is affected either way (nothing is deployed).
+This is the milestone that tests whether the drift taxonomy is real:
+twelve instruments whose meanings were written down against a DRY RUN
+and synthetic firings, now read against a compiler that changed for
+its own reasons. Follow notes/version-bump.org "The checklist" step by
+step; =./bump.sh pins= / =gates= / =accept= is the runnable half.
+- [ ] 0. Look before touching: =./bump.sh pins= output recorded; the
+      0.34.0 release notes / language 0.26.0 changelog read and the
+      items that could plausibly move a corpus artifact listed BEFORE
+      the recompile (so the reading in step 4 is a prediction checked,
+      not a story fitted afterwards). Hazard 1 (version string vs rev)
+      and hazard 2 (=--version= drops the suffix) re-read.
+- [ ] 1. Move the pin: =compactcVersion= in flake.nix, release hashes
+      for ALL FOUR systems (the M20 cross-platform flake — a linux
+      hash left stale breaks CI, not the laptop), =notes/zkir.org='s
+      pin table.
+- [ ] 2. Recompile the corpus (=corpus/compile.sh=) and READ
+      =compile-report.tsv='s diff first: language 0.26.0 may reject
+      sources that compiled under 0.33 — a source that stops compiling
+      is DATA (recorded, not patched), but a sig-net contract that
+      stops compiling is a finding for its owners, said so in
+      notes/corpus-sources.org.
+- [ ] 3. Gates in taxonomy order (=./bump.sh gates=); every failing
+      instrument classified by notes/version-bump.org "Drift taxonomy"
+      1-12 BEFORE anything is regenerated.
+- [ ] 4. The reading, written up as version-bump.org "Bump 1 —
+      2026-09-xx" beside the dry run: per moved artifact, which
+      taxonomy class, and the evidence (the new
+      =cargo run -p minocrab-ir --example zkir_text= disassembler is
+      how to read one). The three answers each firing can have:
+      (a) upstream lowering changed, statement preserved → our port
+      keeps PI-equality, the instruction-level fixtures (adts, kernel,
+      opaque, bounded, coins, nested, wide) may legitimately move and
+      say so per circuit; (b) upstream FIXED something we mirrored →
+      the mirror moves with it, ledger entry; (c) a wire-contract
+      change → stop, dmd decides.
+- [ ] 5. Accept only what step 4 justified (=./bump.sh accept= is
+      EVERYTHING — the reviewed diff is the between-markers regen, per
+      CONTRIBUTING.md, never a blanket accept). Snapshot diffs read.
+- [ ] 6. Numbers: the bump-time bench compact-findings.org deferred
+      here — the Signet singleton and the vault's nine under 0.34.0,
+      one row-comparison table; BENCHMARK.md's compactc column
+      re-stamped only if rows moved.
+- [ ] 7. Commit shape per version-bump.org §7: the pin commit, the
+      corpus commit, the accepted-baseline commit, the write-up —
+      separately reviewable. Then tick M8's honest remainder in place.
+BEST-EFFORT COMPROMISE, stated up front: if step 3 fires broadly (a
+lowering change across hundreds of artifacts), the milestone's
+deliverable becomes the CLASSIFIED READING plus a decision list for
+dmd, with the pin bump left on a branch — not a forced accept. A
+half-read bump accepted on main is hazard 8 (a diff that is not the
+bump) at scale.
+ORDERING CONSTRAINT: land on main BEFORE M28's =vault-refresh= branch
+rebases — that branch already moves one pin (midnight-examples), and
+two pins moving in one diff is the thing the taxonomy cannot separate.
+After M31, M28 recompiles its corpus under 0.34.0.
+Exit criteria: the pin is 0.34.0 on main with CI green on all
+platforms; every instrument that fired has a taxonomy class and a
+sentence of evidence in the write-up; M8's remainder ticked; or, on
+the compromise path, the classified reading and decision list exist
+and the branch waits on dmd.
+
+* M32 — Circuit-set completeness: =#[contract]= everywhere, and a test that the set is complete (dmd, 2026-09-04)
+VERIFICATION.md §5 lists it as a known hole: =support::circuits()= is
+hand-written (200 entries) and feeds row_snapshot, interface_snapshot,
+the zkir dump and the adversarial suite; a circuit added and not
+listed is covered by NOTHING and nothing fires. The fix in progress is
+=#[contract]= deriving the set from the impl block (review-queue.org);
+adoption today is 57 of 198 =#[circuit]= attributes (kernel_tokens,
+coins, nested). Two halves, both zero-movement by construction under
+the dump gate.
+- [ ] A. Adoption: every remaining =#[circuit]= in
+      =crates/minocrab-contracts/src= moves under a =#[contract]= block;
+      =support::circuits()= becomes the union of the derived sets plus
+      ONE explicit remainder — the =entry()=-built families (the hashing
+      width sweep rig) that carry no attribute — each remainder entry
+      with a comment saying why it cannot be derived. Gate per file:
+      dump byte-identical, both snapshots unchanged.
+- [ ] B. The completeness assertion, the half that closes the hole:
+      a test asserting that every =#[circuit]= attribute in the
+      workspace SOURCE appears in the derived union. The honest cheap
+      version is a source scan (walk =crates/*/src=, collect the fn
+      names under =#[circuit]=, compare) — crude, but it is the same
+      class of instrument as the escape-hatch greps CONTRIBUTING.md
+      already relies on, and it runs in plain =cargo test=. If the scan
+      proves brittle (cfg'd-out circuits, doc examples), the upgrade is
+      link-time registration (=linkme= distributed slice populated by
+      the =#[circuit]= expansion; no build.rs, so docs.rs stays clean)
+      — decide in writing, do not do both.
+- [ ] C. Mutation check, the way every instrument here is born: add a
+      =#[circuit]= to a test-only module and leave it unlisted; the test
+      must fail. Record the run.
+- [ ] D. VERIFICATION.md §5's bullet rewritten from "known hole" to
+      the instrument, §3's failure-class map gains the row; the
+      review-queue entry closed.
+BEST-EFFORT COMPROMISE: A is mechanical but touches every contracts
+file; if the weekend runs short, B + C over the CURRENT partial
+adoption already closes the hole (the scan compares against the union
+PLUS the hand list), and A becomes cleanup. B is the milestone; A is
+the tidy.
+Exit criteria: the mutation in C fails the build; the dump and both
+snapshots are byte-identical to the pre-milestone baseline;
+VERIFICATION.md no longer lists the hole.
+
+* M33 — The trusted-computing-base inventory: what a human must read, in what order (dmd, 2026-09-04)
+Preparation for the human audit that no agent can do. Most of the tree
+is warranted by the differentials against compactc; the part that is
+not is small and nameable, but no document names it — VERIFICATION.md
+§5 lists the limits, architecture.org lists the layers, and neither
+says "these files, this many lines, this order". Reviewer time from
+people who know the ledger's =preprocess= and Impact internals is the
+scarce resource in the whole production plan; this document is what
+makes an hour of it count.
+- [ ] A. =notes/trust-base.org= (design of record) + a short
+      =TRUST.md= at the root for the reviewer: per crate and per module
+      within the big ones (=minocrab-ledger/src/lib.rs= at 3,700 lines,
+      =minocrab-std= at 10k, =minocrab-macros= at 3.2k), three columns —
+      lines; what warrants it (PI-equal differential / instruction-level
+      differential / spec+property / Lean model / NOTHING BUT READING);
+      and the failure that would hide there if it were wrong. The
+      "nothing but reading" rows ARE the trusted computing base.
+      First-pass expectation, to be checked not trusted: the IR builder
+      and passes, =Circuit3= with the disclosure gate and guard scopes,
+      the Impact/ledger-op encoding, the macros' generated code beyond
+      shape, and the =minocrab-ir=/ZKIR boundary — the four things §5
+      already says the safety survey never covered.
+- [ ] B. The read order with a time budget: which files first, what
+      question each answers, what to compare it against in the ledger
+      source (file and function, with the pinned rev), and the
+      escape-hatch greps as the checklist. VERIFICATION.md §6's one-day
+      audit path is the seed; this is the multi-day version for
+      someone who will sign their name.
+- [ ] C. Numbers generated, not typed: the line counts and the
+      warrant column are regenerated between markers (the same
+      reviewable-diff rule as the snapshots) from a script, so the
+      document cannot rot silently; a test asserts the generated
+      region is current.
+- [ ] D. Cross-link: VERIFICATION.md §5 points at it; ONBOARDING.md's
+      reading path gains it after VERIFICATION.md; the M20 issue list
+      gains one issue pointing at it for the reviewer's board.
+BEST-EFFORT COMPROMISE: the warrant classification for the two big
+crates can be done at module granularity rather than per function;
+a wrong "differential-warranted" claim is the one error the document
+must not contain, so where unsure the row says READING and the
+reviewer downgrades it, never the reverse.
+Exit criteria: a reviewer with the pinned ledger checkout and this
+document can start reading with no questions asked; every row's
+warrant claim names the test or proof that backs it, or says READING;
+the generated region has a currency test.
+
+* M34 — CI closure: clippy and semver checks on the interface crates (dmd, 2026-09-04)
+Two small gaps in the gate ladder the external review and M23 both
+noted and nothing scheduled.
+- [ ] A. Clippy in CI: =cargo clippy --workspace --all-targets --
+      -D warnings= as a ci.yml job. First re-measure the review's
+      "3 clippy warnings" remark (never re-measured, triage §"Process
+      findings"); fix each finding zero-movement (dump gate), or
+      =allow= it at the site with a one-line reason — no crate-wide
+      allows. Lints that would fight the API's deliberate shapes
+      (=too_many_arguments= on circuit entry points, say) get one
+      workspace-level decision in Cargo.toml's =[workspace.lints]=,
+      recorded in CONTRIBUTING.md.
+- [ ] B. =cargo-semver-checks= on =signet-signer-interface= and
+      =xcall-target-interface= (issue #6): the binary from the flake
+      devshell (a tool, not packaging — the nix-light-touch rule), run
+      on PRs with =--baseline-rev= the base branch, since nothing is on
+      crates.io yet (issue #9). An interface crate's surface is
+      governed by the callee's deployed artifact, so a break there is a
+      wire-compat event; the job says so in its name. Prove it fires:
+      one PR-shaped run against a branch that renames a circuit method,
+      recorded in notes/interface-crates.org.
+- [ ] C. Close issue #6 with the workflow link; CONTRIBUTING.md's
+      instrument list gains both rows, pointing at what a firing MEANS
+      (clippy: style, fix or allow with reason; semver: wire-compat,
+      stop and read the artifact-agreement test).
+Exit criteria: both jobs green on main and shown to fire on a
+synthetic break; issue #6 closed.
+
+* M35 — The Signet round trip as a typed future: =Pending<Env, Resp>=, and a Sig simulator (dmd, 2026-09-05)
+Design of record: notes/signet-async.org (§3 why not =.await=, §4 the
+sketch, §6 simulating Sig, §7 before/after, §8 the safety catalogue).
+THE AIM, in dmd's words: make this interface AS IDIOT-PROOF AS
+POSSIBLE, because it is a complicated one. Every vault operation is
+one future split across two transactions — a request circuit that
+files a record and cross-calls the singleton, and a settle circuit
+that verifies the MPC's attestation and consumes the record — and
+today the suspension is hand-rolled four times over with eight
+invariants kept in sync by eye (§7's table: kind bytes, record
+version, notification path bytes, map/env/nonce triples, calldata
+re-parsing, the verify→kind→lookup→remove sequence). The principle:
+TYPES CONSTRAIN THE AUTHOR, ASSERTS CONSTRAIN THE PROVER — nothing
+here removes an in-circuit check on untrusted input; the API makes
+the check impossible to forget and the wrong pairing impossible to
+compile. Ranked per the house rule: missing impl / non-unifying types
+first, inline-const asserts for the const-known (duplicate kinds,
+path depth), build-time panics for nothing.
+Decisions of record (dmd, 2026-09-05):
+- NO TIMEOUT. The vault has no cancel path and that is deliberate;
+  refund only on an ATTESTED failure. "Pending forever" is a legal
+  terminal state and must hold every invariant.
+- Two explicit halves, not an =.await= split. Rust's async captures
+  the stack implicitly; here anything that crosses is public ledger
+  state, so capture must be explicit and typed (§3).
+- The EVM is an ORACLE in tests, never simulated.
+- The singleton's three circuits (=signBidirectional=, =respond=,
+  =respondBidirectional=) are UNCHANGED — M29's artifacts are not
+  blocked. What moves is the CALLER side, before the vault deploys.
+- [ ] A. The types, with a =compile_fail= gate for each §8.A/§8.C item:
+      =#[derive(Response)]= (an associated =KIND=, requires
+      =CircuitBorsh= so =Bool= is 0/1 by construction); =Env:
+      LedgerRepr= with every field =Public= (a =Private= wire fails to
+      unify); =Pending<Env, Resp>= as a =ledger!= slot owning request
+      map, env map, nonce and the =MpcResponseKey= newtype cell;
+      =Settle<Env, Resp>= as ONE =CircuitArg= ticket in frozen wire
+      order; =Requested<Env>= / =Settled<Env>= as the complete label
+      sets (the label machinery's extension). Inline-const assert: two
+      =Response= kinds equal in one block; =Pending= slot path deeper
+      than the notification's four bytes (compactc chunks past 15
+      fields).
+- [ ] B. =request= and =settle=: the only constructors of a request id
+      and of a typed =Resp=; atomic step order (freshness, nonce,
+      insert record + env, derived notification, xcall; disclose id,
+      verify keccak(id ‖ borsh(resp)), kind, version, member, lookup,
+      remove); ticket consumed by value, no =peek=; outcome returned
+      as a value the circuit must match on, =expect_success(c)= the
+      explicit assert; sender and caip2 read from context inside
+      =request=; =RECORD_FORMAT_VERSION= owned by the API; =hash(Env)=
+      in the record's unused 64-byte =params= so the MPC reader's own
+      id-recompute covers the continuation state — CONFIRM FIRST
+      against =chain-midnight/src/reader.rs= that the recompute spans
+      =params= and the width check accepts it (§8 item 14's caveat);
+      =Commit<T>= with =open(c, &witness)=, domain-separated by the
+      slot, for what survives privately (the three "not the
+      depositor/withdrawer/swapper" gates become one op). Notification
+      path derived from the slot AND pinned by an artifact-agreement
+      test against the compiled contract-info's field path (a wrong
+      path is a silent "record not found" on the MPC).
+- [ ] C. The vault re-expressed: all four request/settle pairs on
+      =Pending= (deposit/claim, withdraw/completeWithdraw,
+      swap/completeSwap, approveRouter/refund), as a new lineage the
+      spec harness runs like =Art::Opt= — the shared spec stays the
+      oracle, its model extended for the env map and the =params=
+      binding; every guard in =spec::Guard= still enumerated. Row cost
+      measured (=row_snapshot=) and NOT above the current optimised
+      lineage per circuit — the calls do what the circuits do today,
+      so any excess is a bug in the API, not a price of it.
+- [ ] D. =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
+      (singleton event, caller ledger state, =EvmOutcome=) →
+      attestation; ONE root key with the real =derive_epsilon_midnight=
+      so =initialize='s response key is derived, not arbitrary; the
+      read side runs the MPC's OWN reader logic (path walk by the
+      notification's bytes, decode, id recompute) — the
+      dependency-direction decision (factor an I/O-free crate, or move
+      =reader/records/request_id= here with M30) recorded in the note;
+      failure output built exactly as =node/respond_bidirectional.rs=
+      does; adversarial responders (wrong key, wrong kind, replay,
+      double response, unfiled id, non-boolean success). State driven
+      two ways: the Impact VM on a real =StateValue= chained request →
+      post → respond → settle under plain =cargo test=; real proofs +
+      =LedgerState= + =Transaction::apply= (the cross-contract call and
+      the singleton's event for real) under =--release=, on M29 D/E.
+- [ ] E. Tests that come with the type: for every =Pending= slot in a
+      contract, a GENERATED round trip (request → sim → settle accepts)
+      plus the adversarial suite (each responder → the expected guard)
+      plus an unread-field sweep over the ticket (every field read by
+      verification or declared unread — =bigR.y=, =recoveryId= today),
+      generic over =Env=/=Resp=, wired for the vault's four.
+- [ ] F. The idiot-proofing pass, made measurable: write one NEW flow
+      from the public API and docs alone (mpc's =submit_is_even=
+      caller is the candidate — the shape its real-stack test drives),
+      with a log of every point a mistake was POSSIBLE; close each as a
+      compile error or an inline-const assert, or record it for dmd as
+      a build-time panic with a prescriptive message. Target: the
+      hand-maintained invariants per flow drop from §7's eight to
+      authorization-with-a-fresh-witness and the business guards, and
+      nothing else. The M30 publisher implements =Responder= too and
+      passes E's suite byte-for-byte — tracked in M30, noted here so
+      the seam is explicit.
+Exit criteria: the vault's four pairs on =Pending= at row cost not
+above today's, spec harness green on the new lineage; a =compile_fail=
+test for every §8.A and §8.C item; =SigNetSim= round trip and
+adversarial suite green for all four flows, two speeds; the
+notification-path artifact-agreement gate; §8 item 14 confirmed or
+struck against the mpc reader; the new flow of rung F written with
+zero hand-synced constants, its mistake log closed or handed to dmd.
+Ordering: filed after M34 and before M27 as the default; dmd to move
+it up if the vault's deployment date approaches, since the caller
+record format freezes when the vault deploys, not when the singleton
+does.
 
 * M27 — ZKIR semantics in Lean, and the vault's leakage ground layer
 (dmd, 2026-08-28.) Reopens the ladder M25 called final — deliberately:
@@ -1304,6 +1767,63 @@ substantially. Weekend-sized chunks exist at every boundary.
       authority rests on (corpus round-trip + differential agreement
       — the same external-warrant epistemics as the popeq rule and
       the M3 harness, stated with the same bluntness).
+- [ ] UPSTREAM SPEC WATCH (dmd, 2026-09-04) — two OPEN PRs on
+      =midnightntwrk/midnight-zkir= by jmchapman, both opened
+      2026-09-04: #16 (a 1,529-line markdown spec of ZKIR v3) and #17
+      (a 21,513-line Agda mechanisation: =--safe=, no postulates, the
+      trust base one =Assumptions= record; faithfulness both
+      directions, statement soundness, extraction uniqueness, and
+      DECIDABLE producer obligations O1-O4). THE PIN FACT, checked:
+      their pinned =ir_vm.rs= is the SAME git blob (=8ae67349=) as the
+      one at our rev =04c9c5d9= and at compactc 0.34.0's — they
+      specify exactly the 34-instruction surface our Lean models.
+      Full reading: notes/zkir-semantics.org §11. NOT MERGED; the
+      items below are CONDITIONAL on merge and are not to be acted on
+      before then. CHECK BACK ~2026-09-18 (a week or two, dmd): if
+      merged, tick the items in; if still open or changed, re-read §11
+      against the new diff before doing anything.
+      (a) SPEC DIFF: our 34 =step= arms against their §6.3 instruction
+          table and =Semantics.agda=, one row per instruction, deltas
+          recorded in §9. A second independent transcription of the
+          same Rust; worth more than any port. (Their count is 34;
+          our notes say 33 in places — reconcile the count first.)
+      (b) CLOSE BY CITATION: I2 (their §4.1 states the Bytes32 decode
+          PANIC and calls the intended semantics failure — the
+          upstream note we owed is written by upstream); I4 (their
+          §6.6(d) + O4 list the same four unenforced premises as our
+          §4.3, same =less_than= width formula, same guard
+          classification). I5 → an O2 checker (value typing makes
+          =ImpactsNative= a corpus fact, not a hypothesis). I3 and I1
+          get nothing from them; they stay where they are.
+      (c) PRODUCER-OBLIGATION GATE: O2 (value typing) and O3 (bit
+          bounds) as checkers over our =Instr=, beside the existing
+          =zkir-wellformed= (= their O1), run over the corpus AND all
+          200 workspace circuits — "MinoCrab output discharges O1-O3"
+          becomes a cargo-test gate. O4 is a witness-shape condition
+          and belongs to rung 4's differential, not here.
+      (d) RUNG 4 REFRAMED: their §9.1 says comparing the spec to the
+          pinned Rust is OUT OF SCOPE by design — our rungs 1-2 are
+          the corpus validation their development lacks, and the
+          rung-4 differential would validate BOTH. Offer the
+          corpus-verified preimage dumps upstream when it lands.
+      (e) HONEST-BOUNDARY WRITEUP cites, does not re-prove: their P5
+          for the constraint side, statement soundness for "the PI
+          stream IS the statement" (the theorem the vault inventory
+          rests on). Our =Sat= + =completeness= stay as the MINIMAL
+          thing the pass theorems need; not extended.
+      (f) STALE-CLAIM SWEEP, on merge: every "nothing upstream covers
+          ZKIR" sentence (VERIFICATION.md §5, README, lean-port.org,
+          this milestone's preamble) becomes false the day #17 merges.
+          The M13 rule applies: a stale published claim is a finding.
+      UNAFFECTED either way: the eight pass theorems (nothing in
+      either PR is IR-to-IR), the taint lint, the disclosure gate,
+      the guard scopes — all above their circuit-layer perimeter.
+      HAZARD noted regardless of merge (notes/version-bump.org, pin 5):
+      the =zkir= crate now lives in its own repo and their tip already
+      carries a NEW instruction batch (=LoadConstant=, =And=/=Or=/=Xor=
+      + =Bool=, =Byte=, =Bytes(n)= + =Nth=/=Concat=/=Slice=, =Sha512=,
+      stricter decode) that no compactc release uses yet — when one
+      does, our bindings, our 34-arm Lean and their Agda all move.
 Exit criteria: the ladder climbed to a recorded stopping rung with
 every climbed rung's gate green; the pass theorems re-anchored to the
 real IR if rung 3 is reached; the vault leakage inventory generated,
@@ -1314,157 +1834,3 @@ blocked with the missing rung named; and the honest-boundary writeup
 published. Explicitly OUT: the game-level hybrid argument, any
 crypto-assumption discharge, and any new packing analysis duplicating
 the taint lint.
-
-* M28 — Vault refresh: port the Aave-lending extension (dmd, 2026-08-30)
-Upstream =sig-net/midnight-examples= moved 2c929a1b → a37d686b (pulled
-2026-08-30 on the =vault-refresh= branch; corpus recompiled, 811
-artifacts / 89 v3, Lean rungs 1-2 green on the new files). The vault
-gained stataUSDC lending, and every derived contract in this repo —
-=erc20_vault= (the PI-equal port), =_opt=, =_borsh=, =_modern= — plus
-the spec harness, snapshots and the vault prong's inventory must
-follow. On that branch all 15 =*_matches_corpus= differentials fail
-until they do, which is why it is a branch and not main.
-WHAT CHANGED UPSTREAM (the inventory, from the 456-line source diff):
-- Five new exported circuits: =approveStata=, =supply=,
-  =completeSupply=, =redeem=, =completeRedeem= (9 → 14).
-- Six new ledger fields (11 → 17 exported; 19 total): =stataUnderlying=,
-  =stataToken= (=Bytes<20>=, pinned at initialize), =supplyEventMap= /
-  =supplyRefundCommitment=, =redeemEventMap= / =redeemRefundCommitment=
-  (=SignBidirectionalEventMap<EvmType2TxParams<2|3,0,0>, 36, 35>=).
-- The state tree is now CHUNKED (past the 15-field flat limit): every
-  notification path went from depth 1 to depth 2 — =[0,0,0,0]= at
-  depth 2 for signBidirectionalEventMap, =[1,7,0,0]= swapEventMap,
-  =[1,11,0,0]= supplyEventMap, =[1,13,0,0]= redeemEventMap. This alone
-  moves the PI stream of every existing request circuit, which is why
-  even =deposit= fails its differential.
-- =initialize= takes two more arguments (=stataUnderlyingAddr=,
-  =stataTokenAddr=) with non-zero asserts and two more disclosed
-  writes.
-- New schemas/structs: =supplyOutputSchema=/=supplyRespondSchema=,
-  =redeemOutputSchema=/=redeemRespondSchema= (36/35 bytes),
-  =DepositReturnValue=, =RedeemReturnValue=; =export pure circuit
-  unlimitedAllowance(): Uint<128>= (2^128−1) shared by both approve
-  circuits.
-- [ ] Port the ledger/state changes to =erc20_vault= (the compat port)
-      first: fields, chunked paths, =initialize=; get the nine existing
-      circuits PI-equal again before adding any new one.
-- [ ] Port the five new circuits to the compat fork, each with its
-      =*_matches_corpus= differential and guard/tamper twins.
-- [ ] Propagate to =_opt=, =_borsh=, =_modern= per the fork ledgers
-      (=fork_status= / =borsh_fork_status= / =modern_fork_status=,
-      tests/vault/artifact.rs), extending =Circuit::ALL= to 14 and the
-      spec harness, row/interface snapshots, disclosure report, taint
-      baseline, bench targets.
-- [ ] Merge =vault-refresh= into main only when the whole grid is
-      green; then re-freeze M27's vault-prong claim list against the
-      14-circuit vault (the draft's τ-tables predate lending).
-Exit criteria: corpus pin at a37d686b on main; all four forks cover
-all 14 circuits with the differential/fork/spec/snapshot gates green;
-M27's V-list re-frozen.
-
-* M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
-Survey and decisions: notes/mpc-publisher.org. The signet contract is
-not deployed yet, so the deployment is OUR artifact (respond at k=10 /
-1,004 rows vs compactc's k=16 / 40,931; ~46 MB vs ~855 MB to prove).
-Felipe's TypeScript sidecar in =sig-net/mpc= (=midnight-publisher-ts=)
-never interprets the IR: compactc's JS executor makes the preimage and
-whatever sits at =zkir/<circuit>.bzkir= proves it, so the swap needs
-no mpc change — only the artifact files, their verifier-key hashes,
-and the deploy tooling in signet-midnight-integration. What is NOT yet
-shown, anywhere: that a respond intent built the way the ledger builds
-it proves under our key and applies to a =LedgerState=. Every existing
-gate is PI-level (=IrSource::check=), or has proofs switched off. This
-milestone ships the artifacts AND closes that gap, before M30 puts a
-Rust publisher on them.
-- [ ] DESIGN NOTE: notes/mpc-publisher.org (written 2026-09-02, §3 the
-      swap path, §4 the honest test inventory, §6 the pins).
-- [ ] A. Artifact pipeline: emit =.zkir= for the three signer circuits
-      (=signBidirectional=, =respond=, =respondBidirectional=) from
-      =signet_contract= via =minocrab_zkir::v3::write_zkir=; run the
-      flake's pinned =zkir-v3= (=compile-many=, the same step compactc
-      runs) for =.bzkir= + =.prover= + =.verifier=; lay them out as the
-      managed dir the sidecar and deploy tooling read
-      (=keys/<circuit>.prover|.verifier=, =zkir/<circuit>.bzkir=).
-      Commit the =.zkir= and =.verifier= (small, reviewable); a
-      generated-equals-committed gate on both, like =spec/ts=; the
-      prover key and =.bzkir= regenerate deterministically at package
-      time (record their SHA-256 so drift is visible).
-- [ ] B. Verifier-key hashes: emit the =expectedVk= table (circuit →
-      hash) the sidecar's =build= and =prove= paths check against; pin
-      the exact hash function to compact-js's =hashVerifierKey= by a
-      test on a corpus =.verifier= whose hash the mpc fixtures carry.
-- [ ] C. Construction gate — the ledger's preimage, not a hand-built one:
-      build each signer call through =ContractCallPrototype= and the
-      ledger's =construct_proof= (=ContractCallExt for ProofPreimage=,
-      construct.rs:515-573), so the preimage under test is byte for byte
-      what the sidecar and any Rust publisher produce; assert
-      call-compatibility on THAT preimage for all three circuits. The
-      differential test keeps its tamper twins; the hand-built
-      =preimage()= helper retires.
-- [ ] D. Ledger-apply gate: =ContractDeploy= with OUR verifier keys into a
-      =LedgerState=; build the respond =Intent= / =Transaction=;
-      =well_formed= then =apply= under the proof-preimage marker; the
-      emitted Misc bytes must equal the layout mpc's reader decodes —
-      import =chain-midnight/fixtures/respond-tx-161.mn= and
-      =respond-bidirectional-tx-181.mn= as goldens and compare the call
-      transcript to theirs.
-- [ ] E. Real-proving gate (=--release=, ignored by default, with
-      =row_snapshot=): keygen from our IR, =Transaction::prove= through an
-      in-process =ProvingProvider= (=LocalProvingProvider= +
-      =MidnightDataProvider=, params pre-warmed), then =well_formed= with
-      =verify_contract_proofs= ON against the deployed key, all three
-      circuits. Record prove time and peak RSS beside BENCHMARK.md's
-      numbers. This is the first real proof in the test suite.
-- [ ] F. Pin reconciliation: this repo (rev 04c9c5d) vs mpc
-      (crate-ledger-9.1.0.0-rc.3 / transient-crypto-3.0.0-rc.2) —
-      choose one, build =minocrab-contracts= against it, record the
-      decision in notes/zkir.org's pin table.
-Exit criteria: the managed-dir artifacts and =expectedVk= table
-generated and gated; C, D, E green (E under =--release=); the pin
-settled. Deploying the package and running mpc's real-stack test
-against it is mpc's work, tracked there (dmd, 2026-09-02: these
-milestones track this repo only).
-
-* M30 — A Rust publisher for the MPC: retire the TypeScript sidecar (dmd, 2026-09-02)
-Scope decided 2026-09-02: the publisher's pure core lives HERE as a
-library crate that mpc's =chain-midnight= consumes behind its existing
-=IntentClient= seam; the node I/O (subxt extrinsic, event ingestion),
-the swap-in, the sidecar's deletion and the real-stack test are mpc's
-work and are tracked in the mpc repo, not here. Proving is a Rust function call — no proof server, no
-child process; the only network touch (KZG params) is removed by
-shipping the params in the image (notes/mpc-publisher.org §2). The
-gap is the DUST fee wallet: every primitive exists in
-=midnight_ledger::dust= but no Rust wallet has been written around
-them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
-- [ ] A. Public surface here: one function per respond circuit taking
-      =(request_id, signature)= and returning the =ContractCallPrototype=
-      inputs (args as =AlignedValue=, transcript ops, key location) —
-      the M29 C path made a library; disclosure manifest unchanged;
-      =Discloses= gate still generated.
-- [ ] B. =minocrab-publisher= crate (name open): build → =Intent= with
-      TTL; prove → in-process =ProvingProvider= with a disk =Resolver=
-      for our keys and =DustResolver= for the fee proof; sign
-      (=Intent::sign=) and =seal=. Pure over (contract state, ledger
-      parameters, funding keys, dust state); no node I/O, so every step
-      is unit-testable on the M29 D fixtures.
-- [ ] C. DUST wallet: =DustLocalState= replayed from ledger =Event=s,
-      persisted and REBUILDABLE from genesis (untrusted source, §5);
-      =Transaction::balance= → dust spend → =DustActions=;
-      =process_ttls=; single-UTXO gate; readiness = sync time past the
-      pinned block. Tests on event fixtures captured from the mpc real
-      stack (add the capture to the real-stack driver).
-Out of scope here, for the mpc side (recorded so the seam is
-explicit): the extrinsic the wallet SDK posts (verify the pallet call
-against midnight-node first); error classification preserving the
-sidecar README's four codes (=wallet_unsynced=, =proving_timeout=,
-=state_conflict=, =ambiguous_submit=), which =publisher.rs='s retry
-logic keys on; the in-process =IntentClient= replacing =intent_gen.rs=;
-the reader's dropped =BlockProofSeed= (indexer.rs:120-132), the MPC's
-real exposure to a lying endpoint (notes/mpc-publisher.org §5.1),
-which the publisher port does not address.
-Exit criteria: A-C published from this workspace with unit gates on
-the captured fixtures; a respond intent goes build → prove → sign →
-seal → =well_formed= (proofs verified) in one process, inside the M29 E
-time and RSS budget, with no network access when the params are on
-disk; the DUST wallet rebuilds its state from an event log and spends
-against a =LedgerState= in a test.
