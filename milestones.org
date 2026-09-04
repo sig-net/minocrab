@@ -1542,7 +1542,7 @@ Decisions of record (dmd, 2026-09-05):
       plus an unread-field sweep over the ticket (every field read by
       verification or declared unread — =bigR.y=, =recoveryId= today),
       generic over =Env=/=Resp=, wired for the vault's four.
-- [ ] F. The idiot-proofing pass, made measurable: write one NEW flow
+- [X] F. (2026-09-05; tests/is_even_caller.rs carries the mistake log — §9) The idiot-proofing pass, made measurable: write one NEW flow
       from the public API and docs alone (mpc's =submit_is_even=
       caller is the candidate — the shape its real-stack test drives),
       with a log of every point a mistake was POSSIBLE; close each as a

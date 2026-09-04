@@ -588,3 +588,18 @@ before the super review"; the 2026-09-04 note asks whether the
 external review lifted it). Not built unilaterally. Until it exists,
 the round trip stops at the attestation; rung E (generated per-slot
 round trips) is blocked on the same thing.
+
+** Rung F as built (2026-09-05): =tests/is_even_caller.rs=
+The MPC's own integration caller (=test-caller-contract.compact=:
+initialise, submitIsEvenRequest, a verify circuit — the shape
+=midnight_stream.rs= drives against a real cluster), written from the
+public API and its docs alone: three circuits, a seven-field block, 41
+lines of circuit body. The MISTAKE LOG is the file's header — seventeen
+points where a mistake was possible, each with what catches it:
+eleven are compile errors or impossible by construction, one is the
+generated disclosure test, and FOUR are not caught at build: the
+initialization gate and the business check (kept in the circuit by
+design), and two deployment facts (a response key the MPC won't
+derive; caip2/chain id left zero) that fail at settle or at the MPC.
+Hand-maintained invariants per flow went from §7's eight to those
+four, two of which are the ones the design says must stay.
