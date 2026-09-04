@@ -1565,6 +1565,44 @@ it up if the vault's deployment date approaches, since the caller
 record format freezes when the vault deploys, not when the singleton
 does.
 
+* M36 — The eDSL trim for human handover: retire ZKIR v2, cut cruft, read as one system (dmd, 2026-09-05)
+dmd (2026-09-05): "I want to hand this over to human reviewers, so
+making it terser, clearer and removing some cruft is a big plus" —
+scope is THE eDSL ONLY (=minocrab=, =minocrab-std=, =minocrab-macros=,
+=minocrab-ledger=, =minocrab-zkir=, =minocrab-sim='s stable tier), not
+the contracts, harnesses or corpus. Zero movement throughout: every
+differential, snapshot and row gate stays green and byte-identical;
+nothing here changes an artifact.
+- [ ] 0. Inventory before touching: every v2 surface (=minocrab::Compiled=
+      and the v2 builder, =minocrab_sim::simulate=, =minocrab_zkir='s v2
+      reader/writer, the v2 corpus artifacts and the tests that read
+      them) with WHAT DEPENDS ON IT — a table, gate by gate, saying
+      which v2 pieces are load-bearing for a v3 claim (a v2 artifact
+      that a v3 gate compares against stays) and which exist only to
+      test themselves. Same table for duplicated forms (a helper with
+      =_under= / =_guarded= / plain triples that nothing calls in one
+      of its forms), stale re-exports, and doc comments that narrate
+      milestone history ("M9 phase 8, candidate 2") instead of stating
+      the rule. Written to notes/edsl-trim.org.
+- [ ] A. Retire v2 where the table says it is self-supporting: module,
+      tests and corpus readers together, one commit per crate, so a
+      reviewer sees each deletion whole. What a v3 gate still needs is
+      kept and SAID to be kept, in one place.
+- [ ] B. De-cruft the rest: dead forms, stale re-exports, history
+      narration in docs reduced to the rule plus a pointer to the
+      note that holds the history; one spelling per idea (the
+      =Wire3=/=Operand=/=impl Into= forms audited for a single
+      recommended one at each site). Terser, not different: public
+      signatures on the stable tier do not change — =cargo
+      semver-checks= (M34 B) is the gate that says so.
+- [ ] C. The reviewer's path: each eDSL crate's README is the entry
+      point a human reads first, ≤ one screen, pointing at the three
+      files that matter; =cargo doc --no-deps= warning-free; M33's
+      inventory updated to the trimmed tree.
+Exit criteria: v2 gone or explicitly load-bearing per the table; all
+gates green and byte-identical; semver-checks clean on the stable
+tier; the READMEs and M33 inventory reflect the trimmed tree.
+
 * M27 — ZKIR semantics in Lean, and the vault's leakage ground layer
 (dmd, 2026-08-28.) Reopens the ladder M25 called final — deliberately:
 (Numbered M27 at the push-day merge: the review-fixes branch had
