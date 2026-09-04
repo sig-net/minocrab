@@ -2518,6 +2518,9 @@ fn contract_call_with<V: Visibility + Copy + minocrab::OnChainGuard>(
 pub enum Callee {
     /// The ledger field whose cell holds the callee's address.
     Field(u8),
+    /// The same, by ledger field PATH (`elems[..len]`) — a block of sixteen
+    /// fields or more is segmented and its fields have no single index.
+    FieldPath([u8; 3], u8),
     /// The callee's address as FAB limbs `[hi, lo]`.
     Pinned([Wire3<FieldT, Public>; 2]),
 }
@@ -2548,6 +2551,14 @@ impl Callee {
         match self {
             Callee::Field(index) => {
                 let limbs = cell_read(c, guard, index, vec![AlignmentAtom::Bytes { length: 32 }]);
+                [limbs[0], limbs[1]]
+            }
+            Callee::FieldPath(elems, len) => {
+                let path: Vec<LedgerKey> = elems[..usize::from(len)]
+                    .iter()
+                    .map(|&i| LedgerKey::Field(i))
+                    .collect();
+                let limbs = cell_read_at(c, guard, &path, vec![AlignmentAtom::Bytes { length: 32 }]);
                 [limbs[0], limbs[1]]
             }
             Callee::Pinned(limbs) => limbs,

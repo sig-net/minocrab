@@ -38,6 +38,7 @@ mod circuit_arg;
 mod circuit_borsh;
 mod interface;
 mod ledger;
+mod ledger_repr;
 
 /// Derive [`CircuitArg`] (one nested argument) and `CircuitArgs` (a whole
 /// argument list) for a struct with named fields.
@@ -145,6 +146,18 @@ pub fn derive_circuit_borsh(input: TokenStream) -> TokenStream {
 /// (`LedgerMap`/`LedgerCell`/`LedgerCounter`, and `LedgerField` for a field
 /// this layer does not model yet); anything with a `const fn at(u8) -> Self`
 /// works, since that is all the expansion calls.
+/// Make a struct of ledger-storable fields a ledger-storable VALUE (a `Map`
+/// value, a `Cell` type): atoms and limbs in declaration order. Fields must
+/// be `Public` — `LedgerRepr` exists for public leaves only, so a private
+/// field is a type error, not a leak.
+#[proc_macro_derive(LedgerRepr)]
+pub fn derive_ledger_repr(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    ledger_repr::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 #[proc_macro_derive(Ledger)]
 pub fn derive_ledger(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

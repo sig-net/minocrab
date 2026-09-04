@@ -86,12 +86,19 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         ));
     }
 
-    let paths = field_paths(fields.len());
-    let inits = fields.iter().zip(paths).map(|(field, path)| {
+    let width = quote!(::minocrab_std::v3::LedgerWidth);
+    let types: Vec<&syn::Type> = fields.iter().map(|f| &f.ty).collect();
+    // The block's field count and each slot's first flat index are SUMS OF
+    // WIDTHS, evaluated at compile time: a slot that is a group of fields
+    // (`LedgerWidth::WIDTH > 1`) shifts everything after it, and the type
+    // says by how much — nothing is counted by hand.
+    let total = quote!(0usize #( + <#types as #width>::WIDTH )*);
+    let inits = fields.iter().enumerate().map(|(i, field)| {
         let ident = &field.ident;
         let ty = &field.ty;
-        let path = path.iter().map(|i| quote!(#i));
-        quote!(#ident: <#ty>::at_path(&[#(#path),*]))
+        let before = &types[..i];
+        let start = quote!(0usize #( + <#before as #width>::WIDTH )*);
+        quote!(#ident: <#ty>::at_block(__TOTAL, #start))
     });
 
     Ok(quote! {
@@ -101,6 +108,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             /// `const`, so a contract's ledger handle is a `const` item and
             /// costs nothing at run time.
             pub const fn new() -> Self {
+                const __TOTAL: usize = #total;
                 #name { #(#inits),* }
             }
         }
@@ -110,13 +118,22 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 Self::new()
             }
         }
+
+        // No two slots of one block settle under the same Signet response
+        // kind (E0080 if they do).
+        const _: () = ::minocrab_std::v3::assert_distinct_kinds(&[
+            #( <#types as #width>::KINDS ),*
+        ]);
     })
 }
 
 /// compactc's `maximum-ledger-segment-length` (langs.ss:851).
+#[cfg(test)]
 const SEGMENT: usize = 15;
 
-/// EVERY FIELD'S PATH, as `determine-ledger-paths.ss` computes it.
+/// EVERY FIELD'S PATH, as `determine-ledger-paths.ss` computes it — the
+/// reference the expansion's `const` twin (`FieldPath::in_block`, in
+/// minocrab-std) is pinned against by the derive tests below.
 ///
 /// A ledger block is not a flat list of fields: `batch` (that pass's own
 /// helper, verbatim below) folds the fields into a TREE of segments no wider
@@ -150,6 +167,7 @@ const SEGMENT: usize = 15;
 ///
 /// — the REMAINDER leads, as its own short segment, and the full segments
 /// follow; then the list of segments is batched again until it fits.
+#[cfg(test)]
 fn field_paths(fields: usize) -> Vec<Vec<u8>> {
     /// A segment tree over the field indices: `batch` applied until the top
     /// level fits in one segment.
@@ -281,15 +299,18 @@ mod tests {
                 initialized: LedgerCounter,
             }
         });
-        assert!(expanded.contains("event_map : < LedgerMap < B32 < Public > , VaultRecord > > :: at_path (& [0u8])"), "{expanded}");
-        assert!(expanded.contains("signer : < LedgerField > :: at_path (& [1u8])"), "{expanded}");
-        assert!(expanded.contains("initialized : < LedgerCounter > :: at_path (& [2u8])"), "{expanded}");
+        assert!(expanded.contains("event_map : < LedgerMap < B32 < Public > , VaultRecord > > :: at_block (__TOTAL , 0usize)"), "{expanded}");
+        assert!(expanded.contains("signer : < LedgerField > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
+        assert!(expanded.contains("initialized : < LedgerCounter > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
+        assert!(expanded.contains("assert_distinct_kinds"), "{expanded}");
     }
 
-    /// …and a SIXTEEN-field block gets paths, which is the whole of stage
+    /// …and a SIXTEEN-field block is laid out by `at_block` over the
+    /// block's total, whose `const` segmentation (`FieldPath::in_block`)
+    /// is pinned against [`field_paths`] in minocrab-std's tests — stage
     /// B1's correction (ii) on the derive side.
     #[test]
-    fn a_sixteen_field_block_expands_to_two_element_paths() {
+    fn a_sixteen_field_block_is_laid_out_over_its_total() {
         let fields = (0..16u8).map(|i| {
             let ident = quote::format_ident!("f{i}");
             quote!(#ident: LedgerCell<Uint<64, Public>>)
@@ -297,9 +318,8 @@ mod tests {
         let expanded = expansion(syn::parse_quote! {
             struct Wide { #(#fields),* }
         });
-        assert!(expanded.contains("f0 : < LedgerCell < Uint < 64 , Public > > > :: at_path (& [0u8 , 0u8])"), "{expanded}");
-        assert!(expanded.contains("f1 : < LedgerCell < Uint < 64 , Public > > > :: at_path (& [1u8 , 0u8])"), "{expanded}");
-        assert!(expanded.contains("f15 : < LedgerCell < Uint < 64 , Public > > > :: at_path (& [1u8 , 14u8])"), "{expanded}");
+        assert!(expanded.contains("f0 : < LedgerCell < Uint < 64 , Public > > > :: at_block (__TOTAL , 0usize)"), "{expanded}");
+        assert!(expanded.contains("const __TOTAL : usize = 0usize + < LedgerCell < Uint < 64 , Public > > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH"), "{expanded}");
     }
 
     /// A ledger block is one contract's state.

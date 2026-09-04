@@ -381,6 +381,20 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
                 Self { callee: #ledger::Callee::Field(index) }
             }
 
+            /// [`Self::at_field`] by ledger field PATH — the form a block of
+            /// sixteen fields or more needs, since compactc segments it and
+            /// its fields have no single index.
+            pub const fn at_field_path(path: &[u8]) -> Self {
+                ::core::assert!(!path.is_empty() && path.len() <= 3, "a ledger field path has one to three elements");
+                let mut elems = [0u8; 3];
+                let mut i = 0;
+                while i < path.len() {
+                    elems[i] = path[i];
+                    i += 1;
+                }
+                Self { callee: #ledger::Callee::FieldPath(elems, path.len() as u8) }
+            }
+
             /// The callee's address as data.
             pub fn at(address: #std_v3::ContractAddress<#private::Public>) -> Self {
                 Self { callee: #ledger::Callee::Pinned(address.limbs()) }

@@ -26,6 +26,7 @@ pub mod nested;
 pub mod opaque;
 pub mod serde_builtin;
 pub mod signet;
+pub mod signet_flow;
 pub mod signet_contract;
 pub mod test_caller;
 pub mod xcall;

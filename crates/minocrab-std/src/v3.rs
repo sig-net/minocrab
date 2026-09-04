@@ -13,6 +13,15 @@ use minocrab::v3::{
 };
 use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Meet, Private, Public, Visibility};
 
+/// What the derives in `minocrab-macros` name: re-exports only, so an
+/// expansion depends on nothing a user must import.
+#[doc(hidden)]
+pub mod __derive {
+    pub use super::{repr_limbs, LedgerRepr};
+    pub use minocrab::v3::{Circuit3, FieldT, Wire3};
+    pub use minocrab::{AlignmentAtom, Public};
+}
+
 mod call;
 mod disclose;
 mod entry;
@@ -53,10 +62,10 @@ pub use entry::{entry, entry_out, ArgPath, CircuitArg, CircuitArgs, CircuitOut};
 /// [`LedgerAdt`] that splits the value position into plain values and ADT
 /// handles.
 pub use ledger::{
-    leaf_hash, CoinArm, FieldPath, KeyPath, KeyedPath, LedgerAdt, LedgerCell, LedgerCounter,
-    LedgerField, LedgerHistoricMerkleTree, LedgerList, LedgerMap, LedgerMerkleTree, LedgerPath,
-    LedgerRepr, LedgerSet, LedgerSlot, MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING,
-    STRAIGHT_LINE,
+    assert_distinct_kinds, leaf_hash, repr_limbs, CoinArm, FieldPath, KeyPath, KeyedPath, LedgerAdt,
+    LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList, LedgerMap,
+    LedgerMerkleTree, LedgerPath, LedgerRepr, LedgerSet, LedgerSlot, LedgerWidth,
+    MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING, STRAIGHT_LINE,
 };
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
@@ -122,6 +131,41 @@ pub use minocrab_macros::contract;
 /// fields are written in.
 #[cfg(feature = "macros")]
 pub use minocrab_macros::Ledger;
+
+/// `#[derive(LedgerRepr)]` — a struct of `Public` ledger leaves becomes a
+/// storable value (a `Map` value, a `Cell` type), atoms and limbs in
+/// declaration order. The derive and the trait share the name, as
+/// serde's do. A `Private` field has no `LedgerRepr` impl, so it fails to
+/// type-check rather than leaking into state:
+///
+/// ```compile_fail
+/// use minocrab::{Private, Public};
+/// use minocrab_std::v3::{LedgerRepr, Uint, B32};
+///
+/// #[derive(LedgerRepr)]
+/// struct Env {
+///     id: B32<Public>,
+///     secret: B32<Private>,
+/// }
+/// ```
+///
+/// while the all-`Public` form compiles and stores:
+///
+/// ```
+/// use minocrab::Public;
+/// use minocrab_std::v3::{LedgerMap, LedgerRepr, Uint, B32};
+///
+/// #[derive(LedgerRepr)]
+/// struct Env {
+///     id: B32<Public>,
+///     amount: Uint<64, Public>,
+/// }
+///
+/// const ENVS: LedgerMap<B32<Public>, Env> = LedgerMap::at(0);
+/// assert_eq!(Env::atoms().len(), B32::<Public>::atoms().len() + 1);
+/// ```
+#[cfg(feature = "macros")]
+pub use minocrab_macros::LedgerRepr;
 
 /// `#[interface]` — a bodyless trait declaring another contract's circuits
 /// becomes a typed calling handle over `minocrab_ledger::call`. The

@@ -558,6 +558,161 @@ impl FieldPath {
         );
         self.elems[0]
     }
+
+    /// The path's elements.
+    pub const fn as_slice(&self) -> &[u8] {
+        let (path, _) = self.elems.split_at(self.len as usize);
+        path
+    }
+
+    /// How many elements the path has — the DEPTH a notification carries.
+    pub const fn depth(&self) -> u8 {
+        self.len
+    }
+
+    /// The path of flat field `index` in a block of `total` fields, as
+    /// `determine-ledger-paths.ss` computes it — `batch` (langs.ss:851,
+    /// segments of at most fifteen; the remainder leads as its own short
+    /// segment, then the full ones, re-batched until the top level fits)
+    /// walked from the leaf up, in `const` so a ledger block whose slots
+    /// are WIDER than one field (a [`super::LedgerWidth`] above one) can
+    /// still be laid out as a `const` item. The non-`const` twin in
+    /// `minocrab-macros` (`field_paths`) is pinned against this one by the
+    /// derive's tests.
+    pub const fn in_block(total: usize, index: usize) -> Self {
+        assert!(
+            total <= 256,
+            "a ledger block has at most 256 fields (the index is a byte)"
+        );
+        assert!(index < total, "ledger field index out of range for its block");
+        // Reversed: the leaf's position first, the top level last.
+        let mut rev = [0u8; MAX_FIELD_PATH];
+        let mut depth = 0usize;
+        let mut items = total;
+        let mut at = index;
+        while items > SEGMENT {
+            let r = items % SEGMENT;
+            let (group, pos) = if r != 0 {
+                if at < r {
+                    (0, at)
+                } else {
+                    (1 + (at - r) / SEGMENT, (at - r) % SEGMENT)
+                }
+            } else {
+                (at / SEGMENT, at % SEGMENT)
+            };
+            assert!(
+                depth < MAX_FIELD_PATH,
+                "compactc's `batch` is three levels deep at 256 fields"
+            );
+            rev[depth] = pos as u8;
+            depth += 1;
+            items = items / SEGMENT + if r != 0 { 1 } else { 0 };
+            at = group;
+        }
+        rev[depth] = at as u8;
+        depth += 1;
+        let mut elems = [0u8; MAX_FIELD_PATH];
+        let mut i = 0;
+        while i < depth {
+            elems[i] = rev[depth - 1 - i];
+            i += 1;
+        }
+        FieldPath {
+            elems,
+            len: depth as u8,
+        }
+    }
+}
+
+/// compactc's `maximum-ledger-segment-length` (langs.ss:851).
+const SEGMENT: usize = 15;
+
+/// How many wires a stored `T` reads back as — one per FAB limb of its
+/// atoms. `#[derive(LedgerRepr)]` splits a composite read with it.
+pub fn repr_limbs<T: LedgerRepr>() -> usize {
+    T::atoms().iter().map(atom_limbs).sum()
+}
+
+/// How many LEDGER FIELDS a declared slot occupies, and which Signet
+/// response kinds it claims.
+///
+/// Every slot in this module is one field. A slot that is a GROUP of fields
+/// (`signet_flow::Pending`, whose request map and environment map are two
+/// consecutive fields) says so here, and `#[derive(Ledger)]` lays the block
+/// out from these widths: `Self::at_block(total, start)` on each slot type
+/// takes the block's field count and the slot's first flat index, and
+/// [`FieldPath::in_block`] does the segmentation. Nothing is written by
+/// hand — a slot cannot be given the wrong width because the width is the
+/// type's.
+///
+/// `KINDS` is the same trick for the response-kind byte: a slot that
+/// expects an MPC response declares the kind it settles under, and the
+/// derive asserts (at compile time, E0080) that no two slots of one block
+/// claim the same kind — the MPC's kind byte would be ambiguous otherwise.
+pub trait LedgerWidth {
+    /// Consecutive ledger fields this slot occupies.
+    const WIDTH: usize = 1;
+    /// Response kinds this slot settles under (empty for ordinary slots).
+    const KINDS: &'static [u8] = &[];
+}
+
+/// `#[derive(Ledger)]`'s kind-uniqueness check: E0080 when two slots of a
+/// block claim one response kind.
+pub const fn assert_distinct_kinds(kinds: &[&[u8]]) {
+    let mut i = 0;
+    while i < kinds.len() {
+        let mut a = 0;
+        while a < kinds[i].len() {
+            // Against every LATER slot's kinds, and every later kind of the
+            // same slot.
+            let mut j = i;
+            while j < kinds.len() {
+                let mut b = if j == i { a + 1 } else { 0 };
+                while b < kinds[j].len() {
+                    assert!(
+                        kinds[i][a] != kinds[j][b],
+                        "two slots of this ledger block settle under the same \
+                         Signet response kind: the MPC's kind byte could not \
+                         tell their attestations apart. Give each `Response` \
+                         type of the block a distinct `KIND`."
+                    );
+                    b += 1;
+                }
+                j += 1;
+            }
+            a += 1;
+        }
+        i += 1;
+    }
+}
+
+/// `at_block` and a one-field [`LedgerWidth`] for each slot type: the
+/// declared-form constructor `#[derive(Ledger)]` calls.
+macro_rules! one_field_slot {
+    ($( [$($gen:tt)*] $ty:ty ),* $(,)?) => {$(
+        impl<$($gen)*> $ty {
+            /// The slot at flat field `index` of a block of `total` fields,
+            /// its path segmented as compactc segments it
+            /// ([`FieldPath::in_block`]).
+            pub const fn at_block(total: usize, index: usize) -> Self {
+                Self::at_path(FieldPath::in_block(total, index).as_slice())
+            }
+        }
+
+        impl<$($gen)*> LedgerWidth for $ty {}
+    )*};
+}
+
+one_field_slot! {
+    [K, V] LedgerMap<K, V>,
+    [T] LedgerSet<T>,
+    [T] LedgerList<T>,
+    [const DEPTH: u8, T] LedgerMerkleTree<DEPTH, T>,
+    [const DEPTH: u8, T] LedgerHistoricMerkleTree<DEPTH, T>,
+    [T] LedgerCell<T>,
+    [] LedgerCounter,
+    [] LedgerField,
 }
 
 impl sealed::Path for FieldPath {}
@@ -708,6 +863,12 @@ pub struct LedgerMap<K, V, P = FieldPath> {
 }
 
 impl<K, V> LedgerMap<K, V> {
+    /// The declared field's path — what a Signet notification carries so
+    /// the MPC can walk to this map (`signet_flow::Pending`).
+    pub const fn field_path(&self) -> FieldPath {
+        self.path
+    }
+
     /// The map held in ledger field `index` (the derive supplies it).
     pub const fn at(index: u8) -> Self {
         LedgerMap {
@@ -2270,6 +2431,12 @@ pub struct LedgerField {
 }
 
 impl LedgerField {
+    /// The field's path — for a handle that reads it through another API
+    /// (an interface crate's `at_field_path`).
+    pub const fn field_path(&self) -> FieldPath {
+        self.path
+    }
+
     /// The field at ledger index `index`.
     pub const fn at(index: u8) -> Self {
         LedgerField {
@@ -2293,5 +2460,85 @@ impl LedgerField {
     /// their own ops below this layer.
     pub fn ledger_path(&self) -> Vec<LedgerKey> {
         self.path.to_path()
+    }
+}
+
+#[cfg(test)]
+mod block_layout_tests {
+    use super::*;
+
+    /// `determine-ledger-paths.ss`'s `batch`, non-const, as the derive's
+    /// own module transcribes it — the reference `in_block` is pinned to
+    /// for every block size a byte index allows.
+    fn field_paths(fields: usize) -> Vec<Vec<u8>> {
+        enum Tree {
+            Leaf(usize),
+            Node(Vec<Tree>),
+        }
+        fn batch(mut level: Vec<Tree>) -> Vec<Tree> {
+            let n = level.len();
+            if n <= SEGMENT {
+                return level;
+            }
+            let r = n % SEGMENT;
+            let rest: Vec<Tree> = level.split_off(r);
+            let mut grouped: Vec<Tree> = Vec::new();
+            if r != 0 {
+                grouped.push(Tree::Node(level));
+            }
+            let mut rest = rest.into_iter();
+            loop {
+                let chunk: Vec<Tree> = rest.by_ref().take(SEGMENT).collect();
+                if chunk.is_empty() {
+                    break;
+                }
+                grouped.push(Tree::Node(chunk));
+            }
+            batch(grouped)
+        }
+        fn walk(tree: &Tree, prefix: &mut Vec<u8>, out: &mut Vec<(usize, Vec<u8>)>) {
+            match tree {
+                Tree::Leaf(field) => out.push((*field, prefix.clone())),
+                Tree::Node(children) => {
+                    for (i, child) in children.iter().enumerate() {
+                        prefix.push(i as u8);
+                        walk(child, prefix, out);
+                        prefix.pop();
+                    }
+                }
+            }
+        }
+        let top = batch((0..fields).map(Tree::Leaf).collect());
+        let mut out = Vec::new();
+        walk(&Tree::Node(top), &mut Vec::new(), &mut out);
+        out.sort_by_key(|(field, _)| *field);
+        out.into_iter().map(|(_, path)| path).collect()
+    }
+
+    #[test]
+    fn in_block_is_batch_for_every_block_size() {
+        for total in 1..=256usize {
+            let reference = field_paths(total);
+            for (index, path) in reference.iter().enumerate() {
+                assert_eq!(
+                    FieldPath::in_block(total, index).as_slice(),
+                    path.as_slice(),
+                    "block of {total}, field {index}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn in_block_agrees_with_the_pinned_sixteen_field_probe() {
+        assert_eq!(FieldPath::in_block(16, 0).as_slice(), &[0, 0]);
+        assert_eq!(FieldPath::in_block(16, 15).as_slice(), &[1, 14]);
+        assert_eq!(FieldPath::in_block(15, 14).as_slice(), &[14]);
+        assert_eq!(FieldPath::in_block(226, 225).depth(), 3);
+    }
+
+    #[test]
+    fn distinct_kinds_accepts_distinct_and_empty() {
+        const _: () = assert_distinct_kinds(&[&[], &[0], &[1, 2], &[]]);
     }
 }

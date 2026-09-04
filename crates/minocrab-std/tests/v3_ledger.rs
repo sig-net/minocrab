@@ -385,3 +385,58 @@ fn the_cell_and_counter_methods_are_the_explicit_ops() {
 
     assert_eq!(zkir(typed), zkir(explicit));
 }
+
+// ---- #[derive(LedgerRepr)] ---------------------------------------------------
+
+mod derived_repr {
+    use minocrab::v3::Circuit3;
+    use minocrab::Public;
+    use minocrab_std::v3::{repr_limbs, LedgerMap, LedgerRepr, Uint, B32};
+
+    #[derive(LedgerRepr)]
+    struct Env {
+        id: B32<Public>,
+        amount: Uint<64, Public>,
+        flag: Uint<8, Public>,
+    }
+
+    const ENVS: LedgerMap<B32<Public>, Env> = LedgerMap::at(3);
+
+    /// Atoms concatenate in declaration order, and the limb count is the
+    /// sum of the fields'.
+    #[test]
+    fn atoms_and_limbs_are_the_fields_in_order() {
+        let mut expected = B32::<Public>::atoms();
+        expected.extend(Uint::<64, Public>::atoms());
+        expected.extend(Uint::<8, Public>::atoms());
+        assert_eq!(Env::atoms(), expected);
+        assert_eq!(
+            repr_limbs::<Env>(),
+            repr_limbs::<B32<Public>>() + repr_limbs::<Uint<64, Public>>() + 1
+        );
+    }
+
+    /// A lookup hands back a typed value whose limbs are the read's, in
+    /// order; an insert writes them back in the same order.
+    #[test]
+    fn lookup_then_insert_round_trips_the_limbs() {
+        let mut c = Circuit3::new();
+        let key = B32 {
+            hi: c.constant(1u64),
+            lo: c.constant(2u64),
+        };
+        let env = ENVS.lookup(&mut c, &key);
+        let read: Vec<_> = env.limbs(&mut c);
+        assert_eq!(read.len(), repr_limbs::<Env>());
+        let rebuilt = Env::from_limbs(read.clone());
+        let vals = |ws: &[minocrab::v3::Wire3<minocrab::v3::FieldT, Public>]| {
+            ws.iter().map(|w| w.val()).collect::<Vec<_>>()
+        };
+        assert_eq!(vals(&rebuilt.limbs(&mut c)), vals(&read));
+        ENVS.insert(&mut c, &key, &rebuilt);
+        // The typed fields are the slots they were read into.
+        assert_eq!(rebuilt.id.hi.val(), read[0].val());
+        assert_eq!(rebuilt.amount.field().val(), read[2].val());
+        assert_eq!(rebuilt.flag.field().val(), read[3].val());
+    }
+}
