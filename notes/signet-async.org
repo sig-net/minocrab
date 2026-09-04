@@ -427,3 +427,69 @@ exhibits.
 - In the circuit, unchanged: initialization gate, authorization with a
   fresh witness, business guards (amount > 0, gas > 0), and every
   assert =settle= performs on the untrusted ticket.
+
+* 9. As built — M35 rungs A and B (2026-09-05, branch m35-pending)
+
+What landed, against §4 and §8, with the deviations said plainly.
+
+** The slot model
+- =#[derive(Ledger)]= now lays a block out from SLOT WIDTHS
+  (=LedgerWidth::WIDTH=, default 1): a multi-field slot shifts what
+  follows, and =FieldPath::in_block= (compactc's =batch= as a const fn,
+  pinned against the derive's transcription for all 256 block sizes)
+  segments the paths. Nothing is counted by hand.
+- =Signet= is ONE five-field slot (signer, mpcResponseKey,
+  requestNonce, caip2Id, evmChainId). =Pending<Env, Resp, WORDS>= is
+  ONE two-field slot (record map, env map). A vault re-expressed on
+  these has a DIFFERENT field layout from upstream's — expected, it is
+  a new lineage (rung C).
+- =LedgerWidth::KINDS= carries the success kind; the derive emits
+  =assert_distinct_kinds= (E0080, prescriptive message, verified).
+  Failure kinds are NOT in =KINDS= (shared across slots by design).
+
+** The types
+- =Response: CircuitArg + CircuitBorsh<Private> { const KIND: u8 }=;
+  =FailureResponse: Response= marker; =Attested<R> = kind ‖ R= is the
+  signed preimage and the wire shape of =serializedOutput=.
+- =Settle<Env, Resp>= — one =CircuitArg= ticket =(requestId, respond,
+  serializedOutput)=; =Env= phantom so it only fits its slot (E0308,
+  verified).
+- =#[derive(LedgerRepr)]= — the environment derive; =Public= only by
+  the trait's own impl set (compile_fail verified).
+- =Commit<T>= — =transientHash([pad(domain), T's slots, requestId])=,
+  split like the vault's refund commitments; =Commit::to::<Label>= at
+  request time, =open(c, domain, &fresh_witness, id, msg)= at settle.
+  The DOMAIN is a caller literal on purpose (a type-name-derived domain
+  would move under a compiler change and strand open requests).
+- =request(c, &signet, SignRequest, |c, id| Env)= — the environment is
+  built AFTER the id is disclosed so a =Commit= can bind to it (the
+  unlinkability reason: same secret, different values per request).
+- =settle= / =settle_failed<F: FailureResponse>= — both consume; both
+  assert the RECORD's kind is the slot's success kind and its format
+  version is =RECORD_FORMAT_VERSION=; the ticket's kind byte is asserted
+  equal to the settling type's KIND before verification.
+- Label sets: =Requested= = (request id, request record, xcall ep hash,
+  xcall commitment); =Settled= = (settle request id). Fixed tuples, not
+  generic over Env — the env is public state written from public
+  values, so it discloses nothing of its own.
+
+** Struck or deferred, for dmd
+- §8 item 14 (hash(Env) in the record's =params=): STRUCK. The env map
+  is written only by the contract, in the same transaction, under the
+  same id; nothing can substitute an environment, so the binding buys
+  no security and costs a Poseidon per request plus a reader-visible
+  format change. Recorded rather than built.
+- §8 item 12 (artifact-agreement on the notification path): the
+  segmentation is pinned by =in_block= against =batch= for every block
+  size and by the sixteen-field compactc probe; there is no compactc
+  artifact for a Pending-based block to agree with (it is our layout),
+  so the pin is the const-fn one. Depth ≤ 4 holds by =MAX_FIELD_PATH =
+  3=.
+- =refund='s two-map routing in one circuit (guarded lookups over both
+  the withdrawal and swap maps) has no =Pending= spelling yet; rung C
+  writes one refund circuit PER SLOT. A guarded =settle_under= is the
+  follow-up if one circuit is wanted.
+- =Settle= arguments are declared under the parameter's path
+  (=ticket_requestId=…); the wire is positional so nothing changes on
+  the wire, but the interface snapshot labels differ from the
+  hand-declared vault's.

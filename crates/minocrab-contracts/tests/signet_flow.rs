@@ -9,10 +9,11 @@
 
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
-use minocrab_contracts::common::SigningPath;
+use minocrab_contracts::common::{witness_sk, SecretKey, SigningPath};
 use minocrab_contracts::signet::EvmCalldata;
 use minocrab_contracts::signet_flow::{
-    EvmTx, FailureResponse, Pending, Requested, Response, Settle, Settled, SignRequest, Signet,
+    Commit, EvmTx, FailureResponse, Pending, Requested, Response, Settle, Settled, SignRequest,
+    Signet,
 };
 use minocrab_sim::v3::cost;
 use minocrab_std::v3::borsh::CircuitBorsh;
@@ -29,11 +30,15 @@ struct DepositEnv {
     amount: Uint<64, Public>,
 }
 
+/// A withdrawal's environment: the amount, and a COMMITMENT to the
+/// withdrawer's key — the one thing that survives privately.
 #[derive(LedgerRepr)]
 struct WithdrawEnv {
     amount: Uint<64, Public>,
-    to: B32<Public>,
+    withdrawer: Commit<SecretKey<Private>>,
 }
+
+const WITHDRAWER_DOMAIN: &str = "toy:withdrawer:";
 
 /// `{ success: bool }`, kind 0.
 #[derive(CircuitBorsh)]
@@ -76,6 +81,7 @@ const TOY: Toy = Toy::new();
 
 label! {
     Amount = "amount";
+    WithdrawerCommitment = "withdrawer commitment";
 }
 
 fn evm_tx(c: &mut Circuit3, amount: minocrab::v3::Wire3<minocrab::v3::FieldT, Private>) -> EvmTx<2> {
@@ -110,12 +116,28 @@ fn deposit(c: &mut Circuit3, key_version: Uint<8>, amount: Uint<64>) -> Disclose
         hi: c.constant(7u64).private(),
         lo: c.constant(9u64).private(),
     });
-    TOY.deposits.request(
-        c,
-        &TOY.signet,
-        SignRequest { key_version, path, tx },
-        &DepositEnv { amount: Uint::from_field_unchecked(amount_pub) },
-    );
+    TOY.deposits.request(c, &TOY.signet, SignRequest { key_version, path, tx }, |_, _| {
+        DepositEnv { amount: Uint::from_field_unchecked(amount_pub) }
+    });
+    Discloses::of(())
+}
+
+#[circuit]
+fn withdraw(
+    c: &mut Circuit3,
+    key_version: Uint<8>,
+    amount: Uint<64>,
+) -> Discloses<(Amount, WithdrawerCommitment, Requested)> {
+    let amount_pub = amount.field().disclose_as::<Amount>(c);
+    let tx = evm_tx(c, amount.field());
+    let path = SigningPath::vault_path(c).private();
+    let sk = witness_sk(c);
+    TOY.withdrawals.request(c, &TOY.signet, SignRequest { key_version, path, tx }, |c, id| {
+        WithdrawEnv {
+            amount: Uint::from_field_unchecked(amount_pub),
+            withdrawer: Commit::to::<WithdrawerCommitment>(c, WITHDRAWER_DOMAIN, &sk, id),
+        }
+    });
     Discloses::of(())
 }
 
@@ -130,7 +152,13 @@ fn claim(c: &mut Circuit3, ticket: Settle<DepositEnv, ClaimResponse>) -> Disclos
 #[circuit]
 fn refund_withdrawal(c: &mut Circuit3, ticket: Settle<WithdrawEnv, Failure>) -> Discloses<Settled> {
     let outcome = TOY.withdrawals.settle_failed(c, &TOY.signet, ticket);
-    let _to = outcome.env.to;
+    // The withdrawer gate: a FRESH witness against the stored commitment.
+    let sk = witness_sk(c);
+    outcome
+        .env
+        .withdrawer
+        .open(c, WITHDRAWER_DOMAIN, &sk, outcome.request_id, "Not the withdrawer");
+    let _amount = outcome.env.amount;
     Discloses::of(())
 }
 
@@ -153,8 +181,9 @@ fn the_block_is_laid_out_by_slot_width() {
 #[test]
 fn the_circuits_build_at_a_finite_cost() {
     let (k_req, rows_req) = cost(&deposit().ir);
+    let (k_wd, _) = cost(&withdraw().ir);
     let (k_claim, rows_claim) = cost(&claim().ir);
     let (k_ref, _) = cost(&refund_withdrawal().ir);
     assert!(rows_req > 0 && rows_claim > rows_req, "{rows_req} {rows_claim}");
-    assert!(k_req <= 14 && k_claim <= 15 && k_ref <= 15, "{k_req} {k_claim} {k_ref}");
+    assert!(k_req <= 14 && k_wd <= 14 && k_claim <= 15 && k_ref <= 15, "{k_req} {k_wd} {k_claim} {k_ref}");
 }

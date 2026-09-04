@@ -456,18 +456,20 @@ pub struct Outcome<Env, R, const WORDS: usize> {
 impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WORDS> {
     /// File a request and notify the MPC. Returns the disclosed request id.
     ///
-    /// In order: the sender (`kernel.self`), nonce and caip2 id are read;
-    /// the record is assembled with this slot's kind; its id is the keccak
-    /// of the whole record (what the MPC recomputes); freshness is asserted;
-    /// the nonce is incremented; the record and `env` are stored under the
-    /// id; the singleton is called with a notification carrying THIS slot's
-    /// ledger path. Discloses [`Requested`].
+    /// In order: the sender (`kernel.self`), nonce, caip2 id and chain id
+    /// are read; the record is assembled with this slot's kind; its id is
+    /// the keccak of the whole record (what the MPC recomputes); freshness
+    /// is asserted; the nonce is incremented; the record is stored, then
+    /// the environment `env` builds from the disclosed id is stored beside
+    /// it; the singleton is called with a notification carrying THIS
+    /// slot's ledger path. Discloses [`Requested`], plus whatever `env`
+    /// discloses (a [`Commit`]'s label, typically).
     pub fn request(
         &self,
         c: &mut Circuit3,
         signet: &Signet,
         req: SignRequest<WORDS>,
-        env: &Env,
+        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
         let one = c.constant(1u64);
         let zero = c.constant(0u64);
@@ -509,7 +511,10 @@ impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WOR
                 record.limbs().disclose_as::<RequestRecordFiled>(c),
             );
             self.records.insert(c, &request_id, &stored);
-            self.envs.insert(c, &request_id, env);
+            // The environment is built AFTER the id exists, so a
+            // [`Commit`] in it can bind to this request and no other.
+            let env = env(c, request_id);
+            self.envs.insert(c, &request_id, &env);
             request_id
         });
 
@@ -608,6 +613,109 @@ impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WOR
     }
 }
 
-/// A `Bytes<32>` limb pair as the wire type the leaves use — re-exported so
-/// a caller writing an `Env` needs one import.
-pub type Bytes32<V> = B32<V>;
+// ---- what survives privately ------------------------------------------------------------
+
+/// A commitment to a private value, stored in an environment and OPENED on
+/// the settle side with a fresh witness — the one way a secret crosses the
+/// suspension.
+///
+/// `transientHash([pad(32, domain), value, requestId])`: Poseidon over the
+/// domain pad, the value's slots and the request id, split into a
+/// `Bytes<32>` exactly as the vault's refund commitments are. Binding the
+/// REQUEST ID in is what keeps two requests by one withdrawer unlinkable
+/// (the same secret commits to different values), which is why the
+/// environment builder receives the id.
+///
+/// `domain` is a caller-chosen literal, deliberately: a domain derived from
+/// a type name would move under a compiler change and strand every open
+/// request. Two flows in one contract should use two literals.
+///
+/// Poseidon is curve-stable-EXEMPT, which is harmless here for the reason
+/// `erc20_vault_modern::withdraw_refund_commitment` records: the commitment
+/// is contract-internal and lives from one transaction to the next inside
+/// one deployment.
+pub struct Commit<T> {
+    digest: B32<Public>,
+    _t: PhantomData<fn() -> T>,
+}
+
+impl<T> Clone for Commit<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for Commit<T> {}
+
+impl<T: CircuitArg> Commit<T> {
+    fn digest_of(
+        c: &mut Circuit3,
+        domain: &str,
+        value: &T,
+        request_id: RequestId<Public>,
+    ) -> B32<Private> {
+        c.region("signet flow: commitment", |c| {
+            let pad = B32::pad(c, domain);
+            let mut inputs = vec![pad.hi.private(), pad.lo.private()];
+            value.push_slots(&mut inputs);
+            let id = request_id.bytes();
+            inputs.push(id.hi.private());
+            inputs.push(id.lo.private());
+            let f = c.transient_hash(&inputs);
+            let (hi, lo) = c.div_mod_power_of_two(f, 248);
+            B32 { hi, lo }
+        })
+    }
+
+    /// Commit to `value` for this request, disclosing the digest under `L`
+    /// (it is stored, so it is public — the label names it in the
+    /// disclosure inventory).
+    pub fn to<L: minocrab::v3::DisclosureLabel>(
+        c: &mut Circuit3,
+        domain: &str,
+        value: &T,
+        request_id: RequestId<Public>,
+    ) -> Self {
+        let digest = Self::digest_of(c, domain, value, request_id).disclose_as::<L>(c);
+        Commit {
+            digest,
+            _t: PhantomData,
+        }
+    }
+
+    /// Assert that `value` (a FRESH witness on the settle side) is what
+    /// this commitment was made to, for this request. The authorization
+    /// gate of a settle circuit, as one call.
+    pub fn open(
+        &self,
+        c: &mut Circuit3,
+        domain: &str,
+        value: &T,
+        request_id: RequestId<Public>,
+        message: &'static str,
+    ) {
+        let recomputed = Self::digest_of(c, domain, value, request_id);
+        let stored = self.digest.private();
+        c.assert(
+            eq(recomputed.hi, stored.hi)
+                .and(eq(recomputed.lo, stored.lo))
+                .message(message),
+        );
+    }
+}
+
+impl<T> LedgerRepr for Commit<T> {
+    fn atoms() -> Vec<minocrab::AlignmentAtom> {
+        <B32<Public> as LedgerRepr>::atoms()
+    }
+
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        LedgerRepr::push_limbs(&self.digest, c, limbs)
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        Commit {
+            digest: B32::from_limbs(limbs),
+            _t: PhantomData,
+        }
+    }
+}

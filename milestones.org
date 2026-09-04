@@ -1482,7 +1482,7 @@ Decisions of record (dmd, 2026-09-05):
 - The singleton's three circuits (=signBidirectional=, =respond=,
   =respondBidirectional=) are UNCHANGED — M29's artifacts are not
   blocked. What moves is the CALLER side, before the vault deploys.
-- [ ] A. The types, with a =compile_fail= gate for each §8.A/§8.C item:
+- [X] A. (2026-09-05, f0d1935; notes/signet-async.org §9) The types, with a =compile_fail= gate for each §8.A/§8.C item:
       =#[derive(Response)]= (an associated =KIND=, requires
       =CircuitBorsh= so =Bool= is 0/1 by construction); =Env:
       LedgerRepr= with every field =Public= (a =Private= wire fails to
@@ -1494,7 +1494,7 @@ Decisions of record (dmd, 2026-09-05):
       =Response= kinds equal in one block; =Pending= slot path deeper
       than the notification's four bytes (compactc chunks past 15
       fields).
-- [ ] B. =request= and =settle=: the only constructors of a request id
+- [X] B. (2026-09-05; §9 records item 14 STRUCK and the per-slot refund deviation) =request= and =settle=: the only constructors of a request id
       and of a typed =Resp=; atomic step order (freshness, nonce,
       insert record + env, derived notification, xcall; disclose id,
       verify keccak(id ‖ borsh(resp)), kind, version, member, lookup,
