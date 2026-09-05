@@ -48,6 +48,42 @@ counter, two concurrent provers still race on that read, and batching
 removes only one of the two races. TO CONFIRM against sig-net's
 contract when it lands: does the insert read anything shared?
 
+** 2.1 CORRECTION (dmd, 2026-09-06): the counter is REPLAY protection, not entropy
+"The point of the counter is to prevent double spending of a single
+response." Right: the property is LIFETIME UNIQUENESS of request ids, so
+one attestation (the MPC's signature over =(reqId, output)=) settles
+exactly one record, ever. Requester randomness alone opens a self-replay:
+file, settle, file the same content with the same randomness, settle the
+new record with the OLD signature for a transaction that never ran. A
+self-keyed membership check on LIVE records does not see it (the first
+record was consumed). MPC-side dedupe does not see it either — the
+replay is an on-chain settlement of an old signature.
+Entropy a user cannot control, in-circuit: none free — no beacon, block
+time as bounds only, no view of the enclosing transaction; the only
+values a prover cannot pick are those the contract's state assigns
+MONOTONICALLY, and any monotone value READ in a proof is a contention
+point by construction. So the choice is WHERE the one shared read sits.
+THE ANSWER THE BATCH CONTAINS: the flush assigns each transaction an
+EVM nonce from =last_nonce= — monotone for the key's lifetime, read once
+per flush, chosen by the contract. Derive the request id AT FLUSH from
+the pre-record AND the assigned nonce: unique forever, not requester-
+chosen, one record per attestation. Requester randomness is only the
+HANDLE (pre-record + env between insert and flush; the refund commitment
+binds to it); it needs a self-keyed membership check and nothing more,
+because nothing settles against a handle. Insert stays write-only; the
+shared counter goes.
+WHERE THAT DOES NOT REACH: user-derived signing paths (the vault's
+deposit signs from the user's own key, whose EVM nonce is user-owned)
+and any unbatched request. There, lifetime uniqueness without a shared
+counter = a SPENT-ID SET: every filed id inserted into a never-pruned set
+(write-only insert; membership checked on the requester's own key,
+contention-free), a re-filed id rejected before any old attestation can
+be replayed. Cost: one entry per request, forever. If that is
+unacceptable, those flows KEEP the counter, now known to be doing one
+job. Predictions P7: their flush derives the id from the assigned nonce
+(or still from a counter read at insert); P8: deposit keeps a counter or
+gains a spent set.
+
 * 3. The fee policy: an administrator's cell, one read per request
 Today the envelope is a contract constant (1 gwei priority, 30 gwei cap,
 a per-call gas LIMIT). The limit is a property of the call and stays on
