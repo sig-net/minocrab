@@ -156,3 +156,75 @@ $ diff -r /tmp/zkir-before /tmp/zkir-after
   green (=every_circuit_matches_its_frozen_cost=,
   =the_instruction_diff_keeps_only_the_movement_and_caps_it=).
 - =cargo doc -p minocrab-ledger --no-deps=: warning-free.
+
+* B, the one-spelling audit: conditionals (2026-09-05, dmd's ask)
+dmd: "can we do a `when`, then do the guard using the inner c?" — and,
+once the `when` variants were laid out, "weed out any other way of doing
+things conditionally (provided … it doesn't remove expressivity)".
+
+FINDING. The eDSL spelled a conditional read four ways: the scope
+(`c.when(g, |c| …)`), the per-operation guard parameter (`_under`: 40
+methods in minocrab-std, returning the value bare), the per-operation
+guard parameter with a `Guarded` return (`_guarded`: 28 methods in
+std + 5 raw `_guarded[_at]` in minocrab-ledger), and the in-branch
+assert `c.assert(p.when(g))` on `Check`. The raw ledger layer threads
+an explicit `guard: impl Into<Operand>` through 36 functions
+(`STRAIGHT_LINE` at 97 call sites). All four lower identically: the
+effect layer conjoins the ambient scope with any explicit guard
+(`effect_guard`), an immediate-1 explicit guard yields to the ambient
+(`Imm 1` ≡ `None` at `emit_impact` and `read_guard`), and nesting
+conjoins once on entry — so the scope IS the threaded form, byte for
+byte (v3_guard_scope pins every shape). Callers of the threaded forms
+in the contracts: 7 (3 `lookup_guarded`, 2 `own_public_key_guarded`,
+`self_address_under`, `self_address_guarded`).
+
+WHAT WAS MISSING for the scope to be the only spelling: a way to carry a
+READ out of a `when` body with its guard attached and zero instructions.
+`when_value(..).otherwise(..)` selects (one `cond_select` per slot) and
+is exhaustive by construction — right for "the value of the arm that
+matched", wrong for "the read, default where skipped".
+
+DONE (6e1ee5d): `when` / `when_private` bodies return `R`; `Branches<V,
+R>` carries it and ends with `.or_default()` (zero instructions),
+`.or(fallback)` (one select per slot), `.assert_read()` (assert the
+guard) or `.guarded()` (hand on a `Guarded`). `else_when` / `otherwise`
+stay on `Branches<V, ()>`, so a value-carrying chain cannot grow arms
+(type error). A private chain's arms are private scopes (the on-chain
+refusal holds in `otherwise`; pinned). `Bool<V>: GuardCond`, so a
+`when` takes the boolean rather than `.field()`. Zero movement: the
+209-circuit dump is byte-identical.
+
+THE THREE THAT REMAIN and why each: `when` — public condition, effects
+allowed, value or unit; `when_value` — the if-expression, every arm a
+value, `otherwise` mandatory, selects; `when_private` — private
+condition, on-chain emitters refuse at build time (the one rejection
+that is a panic, not a type error: the scope stack is dynamic —
+notes/contract-api.org panic registry entry 5; a type-state `Circuit3`
+is the M26 authoring-path item on dmd's hold).
+
+MISUSE SURFACE, checked: a private guard on `when` → compile error
+(`OnChainGuard`); a value dropped from a `when_value` chain → must_use
+warning (`Selected`, `ValueBranches`); a `Guarded` dropped → must_use;
+an `else_when` after a value body → type error; a witness inside any
+scope picks up the guard (semantic, pinned); a non-boolean guard wire →
+UNSATISFIABLE, not silent (the reference circuit converts every Impact
+and read guard to an assigned bit under an equality constraint —
+midnight-circuits 7.2.4 native_chip.rs `convert`). Not a warning: a
+value returned from a `when` body and never taken (`c.when(g, |c|
+map.lookup(c, k));`) compiles silently, as any discarded expression
+does; the read's effect is still emitted.
+
+NEXT (the removal, delegated with the dump gate): every `_under` /
+`_guarded` method in minocrab-std (ledger.rs, v3.rs, kernel.rs), the
+raw `_guarded[_at]` reads and `kernel_self_guarded` in minocrab-ledger,
+the explicit `guard` parameter on the 36 raw ledger functions and
+`STRAIGHT_LINE`, `Check::when(guard)`, `mint_read_with`'s guard, and
+`Guarded::new` made crate-private; the 7 contract call sites and the
+tests rewritten to the scope. KEPT: `Circuit3::impact` /
+`impact_mixed` / `witness_guarded` / `public_transcript_input_guarded`
+in the core crate — the primitives the scope lowers to, and the twins
+the byte-identity tests compare against; documented as such, not for
+contract code. This is a public-API removal on minocrab-std, which §B's
+"public signatures on the stable tier do not change" did not
+anticipate; dmd asked for it explicitly.
+
