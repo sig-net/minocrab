@@ -135,6 +135,8 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("bounded::b_enum", 6, 41),
     ("bounded::b_struct", 7, 120),
     ("bounded::b_compare", 7, 81),
+    ("bounded_ledger::bl_write", 6, 36),
+    ("bounded_ledger::bl_read", 6, 34),
     ("opaque::op_arg", 6, 32),
     ("opaque::op_ret", 6, 53),
     ("opaque::op_eq", 6, 57),

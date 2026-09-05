@@ -1,0 +1,45 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.34.0",
+  "language-version": "0.26.0",
+  "runtime-version": "0.19.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 876,
+      "hash": "9e6f62cde0d944c597f7afb2a6ea08b674a7b2e0f880c9fc1ff84f8c366d0097"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1683,
+      "hash": "dfe86f56a6124c1c2a97d81f3d58eabc57cf9ee568eef277ebdf3eda587e32a1"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 13097,
+      "hash": "a92e9f9d373e88c2b2dbddd1c62ffff7ea8d13c5a1e276a399e2742db6575b53"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 659,
+      "hash": "e53d94f01e7249887cae0943d6d3da07d39b719b7d83c3d2d00cb7c65e3c0438"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "blRead.zkir": {
+      "type": "file",
+      "size": 536,
+      "hash": "119be4318f4646547cd04c5d1beddc106a02723b1d3aee9abe12658ecc7074ad"
+    },
+    "blWrite.zkir": {
+      "type": "file",
+      "size": 502,
+      "hash": "cd22a24509b4d71fba46464cfcf9f4b4e47efeeb94463061c0f6098a9fbca39b"
+    }
+  }
+}

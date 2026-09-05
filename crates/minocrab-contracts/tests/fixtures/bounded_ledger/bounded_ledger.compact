@@ -1,0 +1,36 @@
+pragma language_version >= 0.25;
+
+// M31 fixture — compactc issue #588, fixed 0.33.108 ("[skip-changelog] Fix
+// alignment width for bounded integers with maxval=0", CHANGELOG.md at
+// compactc-v0.34.0): a `Uint<0..1>` (and a fieldless single-variant enum)
+// gets a ONE-byte alignment on the Impact op when it sits in LEDGER
+// position, where our prior pin (0.33.0-rc.2) gave it zero — still writing
+// one (always-zero) value in the transcript either way. See
+// notes/version-bump.org "Bump 1 — 2026-09-05" §"Family E" and
+// `crates/minocrab/src/v3/abi.rs`'s `uint_atom_bytes`.
+//
+// NOT a corpus contract, for `bounded.compact`'s reason: no compiled corpus
+// artifact stores a `Uint<0..1>` (or a single-variant enum) in ledger
+// position — the ONLY existing probe of it (`bounded.compact`'s `b1`) takes
+// it as a circuit ARGUMENT, which is unaffected (no compiled artifact's
+// `.zkir` moves there). So this is the established tiny.compact-style
+// fallback, compiled with the PINNED compactc and committed beside the
+// test:
+//
+//   nix build .#compactc          # at the repo root, provides ./result
+//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//       crates/minocrab-contracts/tests/fixtures/bounded_ledger/bounded_ledger.compact \
+//       crates/minocrab-contracts/tests/fixtures/bounded_ledger/out
+//
+// One ledger cell of `Uint<0..1>`, written and read back: the write is the
+// Impact op whose alignment operand the M31 probe showed moving
+// (`0x00` -> `0x01`); the read is the mirror check a write-only fixture
+// would miss.
+
+import CompactStandardLibrary;
+
+export ledger cell: Uint<0..1>;
+
+export circuit blWrite(x: Uint<0..1>): [] { cell = disclose(x); }
+
+export circuit blRead(): Uint<0..1> { return cell; }

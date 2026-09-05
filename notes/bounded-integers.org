@@ -174,8 +174,19 @@ The constraint width is even because Plonk's range gadget requires it
 (infer-types.ss:753-771) — verified against the pinned compactc: two
 =Uint<0..70000>= arguments compared emit =less_than … bits=17= while their
 own input constraints are =bits=18= in the same artifact. The FAB width is
-=⌈bits/8⌉= of the MAXVAL, which is why =Uint<0..1>= is a ZERO-byte atom
-(maxval 0) and =Uint<0..1000>= a two-byte one.
+=⌈bits/8⌉= of the MAXVAL, floored at ONE byte, so =Uint<0..1>= (maxval 0)
+is a one-byte atom in LEDGER position and =Uint<0..1000>= a two-byte one.
+
+REVISED 2026-09-05 (M31, the 0.34.0 bump): =Uint<0..1>= used to be
+described here as a ZERO-byte atom, mirroring compactc <= 0.33.107. Issue
+#588 (fixed 0.33.108) gives a =Uint<0..1>= a one-byte alignment when it
+sits in LEDGER position — it still writes one always-zero value in the
+transcript, and the Impact push's alignment operand moves =0x00= ->
+=0x01= for it — while leaving argument position unaffected (no compiled
+artifact's =.zkir= moves). =uint_atom_bytes= (crates/minocrab/src/v3/abi.rs)
+followed: see notes/version-bump.org "Bump 1" §"Family E" and the new
+=crates/minocrab-contracts/tests/fixtures/bounded_ledger/= fixture, which
+pins the byte against a compiled artifact rather than recomputing it.
 
 All three now live as =const fn=s on =Prim= — =constraint()=,
 =compare_bits()=, =atom_bytes()= — beside the constraint table rather than
@@ -236,7 +247,7 @@ declared =u8=/=u16=/=u32=/=u64=/=u128= in the layout table — and
 
 | type              | FAB atom | Borsh =LEN= | Borsh kind |
 |-------------------+----------+-------------+------------|
-| =Uint<0..1>=      | 0 bytes  |           1 | =u8=       |
+| =Uint<0..1>=      | 1 byte   |           1 | =u8=       |
 | =Uint<0..10>=     | 1        |           1 | =u8=       |
 | =Uint<0..300>=    | 2        |           2 | =u16=      |
 | =Uint<0..1000>=   | 2        |           2 | =u16=      |
