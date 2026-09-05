@@ -1,9 +1,9 @@
 {
   "source": "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target",
-  "compiler-version": "0.33.0",
-  "language-version": "0.25.0",
-  "runtime-version": "0.18.0-rc.1",
-  "contract-info-sha256": "a65b0b3f04966aeec80aa9c79f16311e93826e6dc37b28be4dd87a1c19b321cf",
+  "compiler-version": "0.34.0",
+  "language-version": "0.26.0",
+  "runtime-version": "0.19.0",
+  "contract-info-sha256": "ff78362c096cd64d4d71b60a000fbb0c993cc7ef8cf55ff25fe4bdf023227353",
   "circuits": {
     "deposit": {
       "proof": true,
