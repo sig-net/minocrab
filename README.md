@@ -312,59 +312,66 @@ Limit: the circuit binds neither the entry point nor the argument types unless i
 
 A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **settle** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the MPC attests that the transaction never executed. `Pending<Env, Resp>` ([signet_flow.rs](crates/minocrab-contracts/src/signet_flow.rs)) makes the two halves one typed value.
 
-A minimal, illustrative shape — a contract that asks the MPC to call `ping()` on an EVM contract and records who may collect the reply:
+A minimal, illustrative shape — a treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account, and records who may collect the result:
 
 ```rust
-/// What the MPC attests back. The kind byte is the type's: a slot of
-/// `Pending<_, PingReply>` settles under it and nothing else.
+/// What the MPC attests back: the ERC-20 call's `bool` return. The kind
+/// byte is the type's: a slot of `Pending<_, TransferReceipt>` settles
+/// under it and nothing else.
 #[derive(CircuitBorsh)]
-pub struct PingReply { pub ok: Bool }
-impl Response for PingReply { const KIND: u8 = 7; }
+pub struct TransferReceipt { pub ok: Bool }
+impl Response for TransferReceipt { const KIND: u8 = 7; }
 
-/// What crosses the suspension: a commitment to the requester's key,
-/// bound to this request. Only `Public` fields and `Commit<_>` unify here.
+/// What crosses the suspension: a commitment to the sender's key bound to
+/// this request, and the amount to give back if the transfer never ran.
+/// Only `Public` fields and `Commit<_>` unify here.
 #[derive(LedgerRepr)]
-pub struct PingEnv { pub requester: Commit<SecretKey<Private>> }
+pub struct TransferEnv { pub sender: Commit<SecretKey<Private>>, pub amount: Uint<64, Public> }
 
 #[derive(Ledger)]
-pub struct Pinger {
-    pub signet: Signet,                        // signer, MPC key, nonce, chain ids
-    pub pings: Pending<PingEnv, PingReply, 0>, // request map + env map, one slot
+pub struct Treasury {
+    pub signet: Signet,                                      // signer, MPC key, nonce, chain ids
+    pub transfers: Pending<TransferEnv, TransferReceipt, 2>, // 2 ABI words: to, amount
 }
 
-/// Transaction 1: file `target.ping()` and notify the singleton.
+/// Transaction 1: file `token.transfer(to, amount)` and notify the singleton.
 #[circuit]
-pub fn ping(c: &mut Circuit3, evm_nonce: Uint<64>, target: EvmAddress) -> Discloses<(Requested,)> {
-    let tx = evm_call(c, &PING_SELECTOR, target, [], evm_nonce, FixedGas::<100_000>::wires(c));
+pub fn send(c: &mut Circuit3, evm_nonce: Uint<64>, token: EvmAddress, to: EvmAddress, amount: Uint<64>)
+    -> Discloses<(SentAmount, Requested)>
+{
+    let words = [signet::evm_address_abi_word(c, to), signet::numeric_abi_word(c, amount.field())];
+    let tx = erc20_call(c, &TRANSFER_SELECTOR, token, words, evm_nonce, FixedGas::<100_000>::wires(c));
     let sk = witness_sk(c);
-    PINGER.pings.request(c, &PINGER.signet, SignRequest { key_version, path: contract_path, tx },
-        |c, id| PingEnv { requester: Commit::to::<RequesterCommitment>(c, PAD, &sk, id) });
+    let amount = amount.disclose_as::<SentAmount>(c);
+    TREASURY.transfers.request(c, &TREASURY.signet, SignRequest { key_version, path: treasury_path, tx },
+        |c, id| TransferEnv { sender: Commit::to::<SenderCommitment>(c, PAD, &sk, id), amount });
     Discloses::of(())
 }
 
-/// Transaction 2: the MPC attested the reply; only the requester may settle.
+/// Transaction 2: the MPC attested the return value; only the sender may settle.
 #[circuit]
-pub fn collect(c: &mut Circuit3, ticket: Settle<PingEnv, PingReply>) -> Discloses<(Settled, Pinged)> {
-    let outcome = PINGER.pings.settle(c, &PINGER.signet, ticket); // kind, signature, record + env, removal
+pub fn settle(c: &mut Circuit3, ticket: Settle<TransferEnv, TransferReceipt>) -> Discloses<(Settled, Transferred)> {
+    let outcome = TREASURY.transfers.settle(c, &TREASURY.signet, ticket); // kind, signature, record + env, removal
     let sk = witness_sk(c);
-    outcome.env.requester.open(c, PAD, &sk, outcome.request_id, "not the requester");
-    let _ok = outcome.output.ok.disclose_as::<Pinged>(c);
+    outcome.env.sender.open(c, PAD, &sk, outcome.request_id, "not the sender");
+    let _ok = outcome.output.ok.disclose_as::<Transferred>(c);
     Discloses::of(())
 }
 
-/// Transaction 2': the MPC attested "never executed".
+/// Transaction 2': the MPC attested "never executed"; the amount is free again.
 #[circuit]
-pub fn abandon(c: &mut Circuit3, ticket: Settle<PingEnv, Failure>) -> Discloses<(Settled,)> {
-    let outcome = PINGER.pings.settle_failed(c, &PINGER.signet, ticket);
+pub fn abandon(c: &mut Circuit3, ticket: Settle<TransferEnv, Failure>) -> Discloses<(Settled,)> {
+    let outcome = TREASURY.transfers.settle_failed(c, &TREASURY.signet, ticket);
     let sk = witness_sk(c);
-    outcome.env.requester.open(c, PAD, &sk, outcome.request_id, "not the requester");
+    outcome.env.sender.open(c, PAD, &sk, outcome.request_id, "not the sender");
+    // ... re-mint outcome.env.amount to own_public_key()
     Discloses::of(())
 }
 ```
 
 What the type does for the author:
 
-- **Mis-pairing does not compile.** A `Settle<PingEnv, PingReply>` ticket settles `pings` and no other slot; `Settle<PingEnv, Failure>` is the only thing `settle_failed` accepts. The kind check, the version check, the signature check and the removal are inside `settle`, so none can be forgotten.
+- **Mis-pairing does not compile.** A `Settle<TransferEnv, TransferReceipt>` ticket settles `transfers` and no other slot; `Settle<TransferEnv, Failure>` is the only thing `settle_failed` accepts. The kind check, the version check, the signature check and the removal are inside `settle`, so none can be forgotten.
 - **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment bound to the request id; `open` on the settle side takes a fresh witness.
 - **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte is the response type's; the record format version is the API's.
 
