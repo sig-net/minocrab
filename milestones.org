@@ -2046,7 +2046,23 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       the existing word encoders moved under the trait, the selector
       hashed at build time with =sha3=; the fixture: selectors and words
       of the vault's five calls pinned against compactc's calldata.
-- [ ] B. =Pending<Call, Env, WORDS>= (§3): response and kind from the
+- [X] B. (2026-09-06, 09cd0ea..5236e1e merged 269ee95 — evm_flow.rs:
+      =Pending<Call, Env, WORDS>= with =at_block_with_signet=, the derive
+      threading the one =Signet= (two or none: a prescriptive
+      syn::Error), =Contract<Call>=, =Succeeded=/=Failed=, =complete=
+      asserts =succeeded= then =map=s, =refund= takes FAILURE or
+      executed-but-failed; the outcome rule in its decided form
+      (required =succeeded=, =Success: FromReturn= with identity =map=,
+      =always=, =Unit=). FINDINGS: (i) §3's "cost nil" was WRONG — the
+      failure payload is one kind byte, the executed one two, so the
+      Poseidon preimages are 3 vs 4 elements and =refund= hashes both
+      and selects: +46 rows, same k (398 rows over =complete= in all);
+      (ii) tickets are =CircuitArg=s so the predicate runs at =Private=,
+      not §0's =Public=; (iii) =Unit::word= is a BUILD-TIME PANIC where
+      the ladder wants a compile error — separating =Args= from =Return=
+      traits would fix it; recorded for dmd; =()= is not yet a
+      =CircuitArg=, so a =Unit=-return slot cannot form a ticket.)
+      =Pending<Call, Env, WORDS>= (§3): response and kind from the
       call, WORDS checked by inline const, the =Signet= block located by
       the Ledger derive (one per block or a compile error) and threaded
       into each slot, =Contract<Abi>= callee newtype, =Succeeded<Call>= /
@@ -2063,7 +2079,14 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       =succeeded(c, &out) -> Check= on the call (D2) plus =type Success=
       with =map= defaulting to the identity conversion (D4);
       =complete= asserts then maps.
-- [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
+- [X] C. (2026-09-06, 9d77e50 — =Owned<E>=, =request_owned= /
+      =refund_to_owner=, =Commit<T, Tag>= beside the old =Commit= (D
+      migrates); crates/minocrab-contracts/src/treasury.rs is the README
+      example COMPILED: send k11/1,619, complete k15/25,610, refund
+      k15/26,008; tests/treasury.rs 15 tests — the 3×3 attestation ×
+      circuit × caller matrix, anyone completes with an EMPTY private
+      transcript, a false cannot complete, a stranger cannot refund;
+      eleven compile_fail gates.) =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.
 - [ ] D. The vault's Pending lineage re-expressed on A–C: request
