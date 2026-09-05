@@ -375,6 +375,13 @@ impl Registry {
                     render(ty)
                 )))
             }
+            // Unreachable: the `curve_point()` guard at the top of this
+            // function already returns for both of these variants, same as
+            // it does for the `Alias`-of-`Opaque` spelling. Listed for
+            // exhaustiveness rather than folded into a wildcard.
+            CompactType::Secp256k1Point | CompactType::JubjubPoint => unreachable!(
+                "curve_point() intercepts the first-class spelling before this match"
+            ),
             CompactType::Contract { name, .. } => {
                 return Err(Unsupported(format!(
                     "a `Contract` value (`{name}`) cannot cross a contract boundary: an \
@@ -545,6 +552,12 @@ fn render(ty: &CompactType) -> String {
         CompactType::JubjubScalar => "JubjubScalar".into(),
         CompactType::Secp256k1Base => "Secp256k1Base".into(),
         CompactType::Secp256k1Scalar => "Secp256k1Scalar".into(),
+        // compactc >= 0.34.0's first-class spelling for the two curve
+        // POINT types (see `CompactType::curve_point`) — same source name
+        // as the `Alias`-of-`Opaque` spelling renders via the `Alias` arm
+        // above, since both spellings are the same Compact type.
+        CompactType::Secp256k1Point => "Secp256k1Point".into(),
+        CompactType::JubjubPoint => "JubjubPoint".into(),
         CompactType::Contract { name, .. } => name.clone(),
     }
 }
