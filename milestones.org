@@ -1848,7 +1848,22 @@ substantially. Weekend-sized chunks exist at every boundary.
       the three inferred arms settled against upstream source; one
       (=field= atom width) and the two gadget widths left for rung 4 —
       notes/zkir-semantics.org §9. GATE GREEN; shelve point 3.)
-- [ ] RUNG 4 — EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
+- [X] (2026-09-05, four commits 322b9ac..e4b557e, merged ff7c484 —
+      notes/zkir-rung4.org: Poseidon / SHA-256 / Keccak-256 / secp256k1
+      concrete under =MinocrabZkir/Intrinsics/=, each validated against
+      the Rust digests FIRST (73 known-answer vectors); Jubjub, r1,
+      curve25519 left uninterpreted and REFUSED by =Concrete.unsupported=
+      (no record exercises them); 40 run records under
+      =lean/differential/= (17 vault + 3 singleton + 8 manager honest,
+      12 tampered / 11 rejecting) referencing compactc's corpus
+      artifacts by path; =lake exe zkir-run= + =tests/lean_run.rs= the
+      gate, in CI; green on the first run of the records. Disagreements
+      the port surfaced: D1 a bit-reversed scalar caught only by the
+      KAT; D2 the Lean TRUNCATED an over-width FAB limb where both
+      upstream readings reject — fixed and gated; D3 settles I3; D4
+      completeWithdraw's guarded-off witness perturbable with the run
+      still accepting — Gap 2 as an executable observation.) RUNG 4 —
+      EXECUTABLE SEMANTICS: intrinsics made concrete (=ZMod
       p= arithmetic; keccak/persistent/transient hash and jubjub ops
       ported mechanically), giving a Lean reference interpreter.
       GATE: differential agreement with =IrSource::check= /
@@ -1910,7 +1925,8 @@ substantially. Weekend-sized chunks exist at every boundary.
 - [-] OPEN INCONSISTENCIES I1-I4 (notes/zkir-semantics.org §10) each
       closed or discharged: I1 witness classification in V5's
       inventory (DONE 2026-09-05: the =witness= lines of
-      tests/leakage_inventory.rs), I2 in the writeup (+ upstream note), I3 at rung 4, I4
+      tests/leakage_inventory.rs), I2 in the writeup (+ upstream note), I3 at rung 4 (SETTLED
+      2026-09-05 in the Lean's favour — notes/zkir-rung4.org D3), I4
       confirmed mechanically. None affects the vault (checked
       2026-08-30 against all four forks' artifacts).
 - [X] (2026-09-05: VERIFICATION.md §5, first bullet — "The boundary of
