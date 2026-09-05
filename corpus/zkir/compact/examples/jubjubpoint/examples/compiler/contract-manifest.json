@@ -1,14 +1,14 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.33.0",
-  "language-version": "0.25.0",
-  "runtime-version": "0.18.0-rc.1",
+  "compiler-version": "0.34.0",
+  "language-version": "0.26.0",
+  "runtime-version": "0.19.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 1044,
-      "hash": "9ddb1132311a213f33522a93db645a883705ece69cb788ea042b21823209682f"
+      "size": 918,
+      "hash": "6e40a07d56bbdd59fecc865a5bac619b7096f44af0f59d6cb0574767a8d2144c"
     }
   },
   "contract": {
@@ -20,8 +20,8 @@
     },
     "index.js": {
       "type": "file",
-      "size": 9020,
-      "hash": "0c3b2a735d635fc66eefa53c32108dc622b1ce6db83ec8012abbe6d305afdf73"
+      "size": 9015,
+      "hash": "b97cdc9bb645186fd342d0657ff55e67d2b9d16500487e4fba8238fe5241efbd"
     },
     "index.js.map": {
       "type": "file",

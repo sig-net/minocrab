@@ -54,8 +54,11 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     );
     // THE COUNT IS ASSERTED, mirroring corpus_roundtrip.rs: the v3 count
     // moves only when the corpus does; update both in the same commit.
+    // 722 → 739 v2 skipped at the M31 compactc bump (0.33.0-rc.2 → 0.34.0):
+    // compact/examples/types/examples.compact compiles under language 0.26.0
+    // and adds 17 v2 artifacts. The v3 count (92) does not move.
     assert!(
-        stdout.starts_with("92 ok, 0 failed, 722 v2 skipped"),
+        stdout.starts_with("92 ok, 0 failed, 739 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 

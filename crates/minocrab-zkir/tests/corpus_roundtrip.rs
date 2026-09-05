@@ -77,7 +77,13 @@ fn round_trips_entire_corpus() {
         // 806/84 → 814/92 at the M28 corpus refresh (4d9cf61:
         // signet-midnight-examples 0d9c1660, the seventeen-circuit vault, +
         // signet-midnight-integration fff3421c).
-        (814, 92),
+        // 814/92 → 831/92 at the M31 compactc bump (0.33.0-rc.2 → 0.34.0):
+        // compact/examples/types/examples.compact compiles now that Uint<0>
+        // is a legal type (CHANGELOG 0.33.111) and contributes 17 artifacts.
+        // The v3 count does not move — the new ones are v2, since only the
+        // sig-net sources carry --feature-zkir-v3. All 814 pre-existing
+        // artifacts are byte-identical under the new compiler.
+        (831, 92),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

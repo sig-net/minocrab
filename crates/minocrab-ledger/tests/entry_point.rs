@@ -77,9 +77,14 @@ fn corpus_circuit_names() -> (usize, BTreeSet<String>) {
 fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     let (artifacts, names) = corpus_circuit_names();
     // 312 through M22; +3 with the aa-midnight-evm-experiment source (the
-    // AA manager and its two test-support minters, 2026-08-26).
+    // AA manager and its two test-support minters, 2026-08-26); +1 at the
+    // M31 compactc bump (0.33.0-rc.2 → 0.34.0), where
+    // compact/examples/types/examples.compact started compiling because
+    // Uint<0> became a legal type (CHANGELOG 0.33.111). The hash rule
+    // itself did not move: every circuit name in the corpus, the new
+    // source's included, still hashes to upstream's entry point.
     assert_eq!(
-        artifacts, 315,
+        artifacts, 316,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

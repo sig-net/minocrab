@@ -1,0 +1,2252 @@
+{
+  "compiler-version": "0.34.0",
+  "language-version": "0.26.0",
+  "runtime-version": "0.19.0",
+  "circuits": [
+    {
+      "name": "test1",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "t1_f",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test2",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Bytes",
+            "length": 4
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Alias",
+            "name": "t2_Bytes4_a",
+            "type": {
+              "type-name": "Bytes",
+              "length": 4
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 4
+      }
+    },
+    {
+      "name": "test3a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 1
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 226156424291633194186662080095093570025917938800079226639565593765455331327
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 452312848583266388373324160190187140051835877600158453279131187530910662655
+      }
+    },
+    {
+      "name": "test3",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Field"
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t2_f1",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test4a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Struct",
+            "name": "T4a",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t4_b32",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Struct",
+            "name": "T4a",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t4_b32",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "T4a",
+        "elements": [
+          {
+            "name": "a",
+            "type": {
+              "type-name": "Alias",
+              "name": "t4_b32",
+              "type": {
+                "type-name": "Bytes",
+                "length": 32
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test4",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Struct",
+            "name": "T4",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t4_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Struct",
+            "name": "T4",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t4_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Struct",
+            "name": "T4",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t4_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type-name": "Field"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test5",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          },
+          {
+            "type-name": "Alias",
+            "name": "t5_u32_a",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 4294967295
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test6a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Field"
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Field"
+          },
+          {
+            "type-name": "Field"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test6",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t6_boolean_a",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Alias",
+            "name": "t6_boolean_b",
+            "type": {
+              "type-name": "Alias",
+              "name": "t6_boolean_a",
+              "type": {
+                "type-name": "Boolean"
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Alias",
+            "name": "t6_boolean_a",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t6_boolean_b",
+            "type": {
+              "type-name": "Alias",
+              "name": "t6_boolean_a",
+              "type": {
+                "type-name": "Boolean"
+              }
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t6_boolean_b",
+            "type": {
+              "type-name": "Alias",
+              "name": "t6_boolean_a",
+              "type": {
+                "type-name": "Boolean"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test7",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 3
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 15
+          }
+        },
+        {
+          "name": "varc",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test8",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Struct",
+            "name": "T8",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t8_u247",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 226156424291633194186662080095093570025917938800079226639565593765455331327
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Struct",
+            "name": "T8",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t8_u247",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 226156424291633194186662080095093570025917938800079226639565593765455331327
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Uint",
+            "maxval": 452312848583266388373324160190187140051835877600158453279131187530910662655
+          },
+          {
+            "type-name": "Uint",
+            "maxval": 452312848583266388373324160190187140051835877600158453279131187530910662655
+          }
+        ]
+      }
+    },
+    {
+      "name": "test9",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t9_u16",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 65535
+            }
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Alias",
+            "name": "t9_u16",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 65535
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test10a",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "f10",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test10",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "f10",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Alias",
+            "name": "vector_10_f10",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Alias",
+                "name": "f10",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test11",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Struct",
+            "name": "ShieldedCoinInfo",
+            "elements": [
+              {
+                "name": "nonce",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "color",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "varb",
+          "type": {
+            "type-name": "Struct",
+            "name": "ShieldedCoinInfo",
+            "elements": [
+              {
+                "name": "nonce",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "color",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test12",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Field"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Alias",
+            "name": "t12_a",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Field"
+              }
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t12_b",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Alias",
+                "name": "t12_a",
+                "type": {
+                  "type-name": "Vector",
+                  "length": 10,
+                  "type": {
+                    "type-name": "Field"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type-name": "Struct",
+            "name": "T12",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t12_a",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 10,
+                    "type": {
+                      "type-name": "Field"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t12_b",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 10,
+                    "type": {
+                      "type-name": "Alias",
+                      "name": "t12_a",
+                      "type": {
+                        "type-name": "Vector",
+                        "length": 10,
+                        "type": {
+                          "type-name": "Field"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "test13",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Alias",
+            "name": "t13_a",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t13_b",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t13_c",
+            "type": {
+              "type-name": "Vector",
+              "length": 3,
+              "type": {
+                "type-name": "Alias",
+                "name": "t13_b",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            }
+          },
+          {
+            "type-name": "Struct",
+            "name": "T13",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t13_a",
+                  "type": {
+                    "type-name": "Boolean"
+                  }
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t13_b",
+                  "type": {
+                    "type-name": "Field"
+                  }
+                }
+              },
+              {
+                "name": "c",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t13_c",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 3,
+                    "type": {
+                      "type-name": "Alias",
+                      "name": "t13_b",
+                      "type": {
+                        "type-name": "Field"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "name": "d",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t13_d",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "test14",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Enum",
+            "name": "T14",
+            "elements": [
+              "t14_a",
+              "t14_b",
+              "t14_c"
+            ]
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Enum",
+            "name": "T14",
+            "elements": [
+              "t14_a",
+              "t14_b",
+              "t14_c"
+            ]
+          },
+          {
+            "type-name": "Enum",
+            "name": "T14",
+            "elements": [
+              "t14_a",
+              "t14_b",
+              "t14_c"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "test15",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test16",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t16_vector_of_fields",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Field"
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t16_not_a_field",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test17",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t17_boolean",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "test18",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t18_b_16",
+            "type": {
+              "type-name": "Alias",
+              "name": "t18_b",
+              "type": {
+                "type-name": "Bytes",
+                "length": 16
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Vector",
+        "length": 16,
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "test18a",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t18_tuple",
+            "type": {
+              "type-name": "Tuple",
+              "types": [
+                {
+                  "type-name": "Alias",
+                  "name": "t18_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                },
+                {
+                  "type-name": "Alias",
+                  "name": "t18_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                },
+                {
+                  "type-name": "Alias",
+                  "name": "t18_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                },
+                {
+                  "type-name": "Alias",
+                  "name": "t18_u32",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 4294967295
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t18_u32",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 4294967295
+        }
+      }
+    },
+    {
+      "name": "test19",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 128
+      }
+    },
+    {
+      "name": "$test",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t20_boolean",
+        "type": {
+          "type-name": "Boolean"
+        }
+      }
+    },
+    {
+      "name": "test20",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t20_boolean",
+        "type": {
+          "type-name": "Boolean"
+        }
+      }
+    },
+    {
+      "name": "test21",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "test22",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t22_element",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test23",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t23_item",
+            "type": {
+              "type-name": "Bytes",
+              "length": 16
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Struct",
+        "name": "Maybe",
+        "elements": [
+          {
+            "name": "is_some",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Alias",
+              "name": "t23_item",
+              "type": {
+                "type-name": "Bytes",
+                "length": 16
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test24",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Alias",
+            "name": "t24_key",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        },
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t24_value",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test25",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t25_leaf",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test26",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "amount",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test27",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t27_leaf",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "test28",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t28_either",
+        "type": {
+          "type-name": "Struct",
+          "name": "Either",
+          "elements": [
+            {
+              "name": "is_left",
+              "type": {
+                "type-name": "Boolean"
+              }
+            },
+            {
+              "name": "left",
+              "type": {
+                "type-name": "Alias",
+                "name": "t28_left",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 4294967295
+                }
+              }
+            },
+            {
+              "name": "right",
+              "type": {
+                "type-name": "Alias",
+                "name": "t28_right",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 8
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "test29",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t29_value",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t29_maybe",
+        "type": {
+          "type-name": "Struct",
+          "name": "Maybe",
+          "elements": [
+            {
+              "name": "is_some",
+              "type": {
+                "type-name": "Boolean"
+              }
+            },
+            {
+              "name": "value",
+              "type": {
+                "type-name": "Alias",
+                "name": "t29_value",
+                "type": {
+                  "type-name": "Field"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "test30",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t30_vec",
+            "type": {
+              "type-name": "Vector",
+              "length": 5,
+              "type": {
+                "type-name": "Alias",
+                "name": "t30_item",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 255
+                }
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t30_item",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 255
+        }
+      }
+    },
+    {
+      "name": "test31",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t31_result",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test32",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t32_rect",
+        "type": {
+          "type-name": "Tuple",
+          "types": [
+            {
+              "type-name": "Alias",
+              "name": "t32_point",
+              "type": {
+                "type-name": "Tuple",
+                "types": [
+                  {
+                    "type-name": "Field"
+                  },
+                  {
+                    "type-name": "Field"
+                  }
+                ]
+              }
+            },
+            {
+              "type-name": "Alias",
+              "name": "t32_point",
+              "type": {
+                "type-name": "Tuple",
+                "types": [
+                  {
+                    "type-name": "Field"
+                  },
+                  {
+                    "type-name": "Field"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "test33",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "flag",
+          "type": {
+            "type-name": "Boolean"
+          }
+        },
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Alias",
+            "name": "t33_a",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 65535
+            }
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Alias",
+            "name": "t33_a",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 65535
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t33_b",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 4294967295
+        }
+      }
+    },
+    {
+      "name": "test34",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "v",
+          "type": {
+            "type-name": "Alias",
+            "name": "t34_e",
+            "type": {
+              "type-name": "Alias",
+              "name": "t34_d",
+              "type": {
+                "type-name": "Alias",
+                "name": "t34_c",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t34_b",
+                  "type": {
+                    "type-name": "Alias",
+                    "name": "t34_a",
+                    "type": {
+                      "type-name": "Field"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t34_a",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "test35",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Vector",
+            "length": 4,
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          {
+            "type-name": "Bytes",
+            "length": 8
+          }
+        ]
+      }
+    },
+    {
+      "name": "test36",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "k",
+          "type": {
+            "type-name": "Alias",
+            "name": "t36_item",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test37",
+      "pure": false,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t37_either",
+        "type": {
+          "type-name": "Struct",
+          "name": "Either",
+          "elements": [
+            {
+              "name": "is_left",
+              "type": {
+                "type-name": "Boolean"
+              }
+            },
+            {
+              "name": "left",
+              "type": {
+                "type-name": "Alias",
+                "name": "t37_pubkey",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "ZswapCoinPublicKey",
+                  "elements": [
+                    {
+                      "name": "bytes",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "right",
+              "type": {
+                "type-name": "Alias",
+                "name": "t37_address",
+                "type": {
+                  "type-name": "Struct",
+                  "name": "ContractAddress",
+                  "elements": [
+                    {
+                      "name": "bytes",
+                      "type": {
+                        "type-name": "Bytes",
+                        "length": 32
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "test38",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Alias",
+            "name": "t38_value",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Alias",
+            "name": "t38_value",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Alias",
+        "name": "t38_value",
+        "type": {
+          "type-name": "Uint",
+          "maxval": 18446744073709551615
+        }
+      }
+    },
+    {
+      "name": "test39",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+          {
+            "type-name": "Alias",
+            "name": "t39_coin_info",
+            "type": {
+              "type-name": "Struct",
+              "name": "ShieldedCoinInfo",
+              "elements": [
+                {
+                  "name": "nonce",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "color",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type-name": "Alias",
+            "name": "t39_qualified",
+            "type": {
+              "type-name": "Struct",
+              "name": "QualifiedShieldedCoinInfo",
+              "elements": [
+                {
+                  "name": "nonce",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "color",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 340282366920938463463374607431768211455
+                  }
+                },
+                {
+                  "name": "mt_index",
+                  "type": {
+                    "type-name": "Uint",
+                    "maxval": 18446744073709551615
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "test40",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test41_1",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 65535
+      }
+    },
+    {
+      "name": "test42",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Uint",
+        "maxval": 65535
+      }
+    },
+    {
+      "name": "test43",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "test44",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "t17_witness",
+      "arguments": [
+        {
+          "name": "vara",
+          "type": {
+            "type-name": "Alias",
+            "name": "t17_boolean",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Field"
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "t10_map_map",
+      "index": [
+        0,
+        0
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Alias",
+        "name": "f10",
+        "type": {
+          "type-name": "Field"
+        }
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "map_f10_f10",
+        "type": {
+          "type-name": "Map",
+          "key": {
+            "type-name": "Alias",
+            "name": "f10",
+            "type": {
+              "type-name": "Field"
+            }
+          },
+          "value": {
+            "type-name": "Alias",
+            "name": "f10",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "t10_map",
+      "index": [
+        0,
+        1
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Alias",
+        "name": "f10",
+        "type": {
+          "type-name": "Field"
+        }
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "vector_10_f10",
+        "type": {
+          "type-name": "Vector",
+          "length": 10,
+          "type": {
+            "type-name": "Alias",
+            "name": "f10",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "t11_set",
+      "index": [
+        0,
+        2
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Vector",
+        "length": 10,
+        "type": {
+          "type-name": "Alias",
+          "name": "FakeShieldedCoinInfo",
+          "type": {
+            "type-name": "Struct",
+            "name": "ShieldedCoinInfo",
+            "elements": [
+              {
+                "name": "nonce",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "color",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
+                }
+              },
+              {
+                "name": "value",
+                "type": {
+                  "type-name": "Uint",
+                  "maxval": 340282366920938463463374607431768211455
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "t11_set_coin",
+      "index": [
+        1,
+        0
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Struct",
+        "name": "QualifiedShieldedCoinInfo",
+        "elements": [
+          {
+            "name": "nonce",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "color",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          },
+          {
+            "name": "mt_index",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "t11_set_coin_fake",
+      "index": [
+        1,
+        1
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Struct",
+        "name": "QualifiedShieldedCoinInfo",
+        "elements": [
+          {
+            "name": "nonce",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "color",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 340282366920938463463374607431768211455
+            }
+          },
+          {
+            "name": "mt_index",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "t12_map",
+      "index": [
+        1,
+        2
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Field"
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "t12_d",
+        "type": {
+          "type-name": "Map",
+          "key": {
+            "type-name": "Field"
+          },
+          "value": {
+            "type-name": "Struct",
+            "name": "T12",
+            "elements": [
+              {
+                "name": "a",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t12_a",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 10,
+                    "type": {
+                      "type-name": "Field"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "b",
+                "type": {
+                  "type-name": "Alias",
+                  "name": "t12_b",
+                  "type": {
+                    "type-name": "Vector",
+                    "length": 10,
+                    "type": {
+                      "type-name": "Alias",
+                      "name": "t12_a",
+                      "type": {
+                        "type-name": "Vector",
+                        "length": 10,
+                        "type": {
+                          "type-name": "Field"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "t16_sum_of_fields",
+      "index": [
+        1,
+        3
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Field"
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "t16_not_a_field",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "vara",
+      "index": [
+        1,
+        4
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "t21_counter",
+      "index": [
+        1,
+        5
+      ],
+      "exported": true,
+      "storage": "Counter"
+    },
+    {
+      "name": "t22_set",
+      "index": [
+        1,
+        6
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Alias",
+        "name": "t22_element",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "t23_list",
+      "index": [
+        1,
+        7
+      ],
+      "exported": true,
+      "storage": "List",
+      "type": {
+        "type-name": "Alias",
+        "name": "t23_item",
+        "type": {
+          "type-name": "Bytes",
+          "length": 16
+        }
+      }
+    },
+    {
+      "name": "t24_map",
+      "index": [
+        1,
+        8
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Alias",
+        "name": "t24_key",
+        "type": {
+          "type-name": "Field"
+        }
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "t24_value",
+        "type": {
+          "type-name": "Bytes",
+          "length": 32
+        }
+      }
+    },
+    {
+      "name": "t25_tree",
+      "index": [
+        1,
+        9
+      ],
+      "exported": true,
+      "storage": "MerkleTree",
+      "depth": 8,
+      "type": {
+        "type-name": "Alias",
+        "name": "t25_leaf",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "t27_tree",
+      "index": [
+        1,
+        10
+      ],
+      "exported": true,
+      "storage": "HistoricMerkleTree",
+      "depth": 8,
+      "type": {
+        "type-name": "Alias",
+        "name": "t27_leaf",
+        "type": {
+          "type-name": "Field"
+        }
+      }
+    },
+    {
+      "name": "t30_result",
+      "index": [
+        1,
+        11
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Field"
+      }
+    },
+    {
+      "name": "t36_map",
+      "index": [
+        1,
+        12
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Alias",
+        "name": "t36_item",
+        "type": {
+          "type-name": "Field"
+        }
+      },
+      "value": {
+        "type-name": "Alias",
+        "name": "t36_my_list",
+        "type": {
+          "type-name": "List",
+          "type": {
+            "type-name": "Alias",
+            "name": "t36_item",
+            "type": {
+              "type-name": "Field"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "t41_sum",
+      "index": [
+        1,
+        13
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Uint",
+        "maxval": 65535
+      }
+    },
+    {
+      "name": "t42_sum",
+      "index": [
+        1,
+        14
+      ],
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Uint",
+        "maxval": 65535
+      }
+    }
+  ]
+}

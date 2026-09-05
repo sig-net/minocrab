@@ -2,7 +2,7 @@ src/aa-midnight-evm-experiment/contracts/manager.compact	ok
 src/aa-midnight-evm-experiment/contracts/test-support/minter-collide.compact	ok	
 src/aa-midnight-evm-experiment/contracts/test-support/minter.compact	ok	
 src/compact/compiler/standard-library.compact	fail	Exception: src/compact/compiler/standard-library.compact line 24 char 1:
-src/compact/compiler/zkir-v3-library.compact	fail	Exception: src/compact/compiler/zkir-v3-library.compact line 147 char 45:
+src/compact/compiler/zkir-v3-library.compact	fail	Exception: src/compact/compiler/zkir-v3-library.compact line 18 char 6:
 src/compact/examples/adt/exports/counter.compact	ok	
 src/compact/examples/adt/exports/kernel.compact	ok	
 src/compact/examples/adt/exports/list_field.compact	ok	
@@ -260,7 +260,7 @@ src/compact/examples/return/examples.compact	ok
 src/compact/examples/return/negative/example_one.compact	fail	Exception: example_one.compact line 17 char 10:
 src/compact/examples/return/negative/example_three.compact	fail	Exception: example_three.compact line 18 char 3:
 src/compact/examples/return/negative/example_two.compact	fail	Exception: example_two.compact line 16 char 1:
-src/compact/examples/secp256k1/arithmetic.compact	fail	Exception: arithmetic.compact line 18 char 1:
+src/compact/examples/secp256k1/arithmetic.compact	fail	Exception: arithmetic.compact line 46 char 35:
 src/compact/examples/std_lib/block_time.compact	ok	
 src/compact/examples/std_lib/import/test_import_csl.compact	ok	
 src/compact/examples/std_lib/import/test_import_csl_quotes.compact	fail	Exception: test_import_csl_quotes.compact line 16 char 1:
@@ -268,7 +268,7 @@ src/compact/examples/std_lib/import/test_import_std.compact	fail	Exception: test
 src/compact/examples/std_lib/import/test_include_std.compact	fail	Exception: test_include_std.compact line 16 char 1:
 src/compact/examples/std_lib/mint.compact	fail	Exception: mint.compact line 18 char 74:
 src/compact/examples/tiny.compact	ok	
-src/compact/examples/types/examples.compact	fail	Exception: examples.compact line 534 char 35:
+src/compact/examples/types/examples.compact	ok	
 src/compact/examples/types/negative/example_eight.compact	fail	Exception: example_eight.compact line 17 char 1:
 src/compact/examples/types/negative/example_eighteen.compact	fail	Exception: example_eighteen.compact line 17 char 22:
 src/compact/examples/types/negative/example_eleven.compact	fail	Exception: example_eleven.compact line 16 char 22:
