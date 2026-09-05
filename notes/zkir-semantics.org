@@ -470,7 +470,10 @@ otherwise; the rung column is unchanged):
   FALSE at the witness level and TRUE at the constraint level: the
   success branch consumes a secret it does not check, which is still
   "anyone may settle" in effect (the differential's success-case sweep
-  is transcript-only for exactly this reason). The pre-check flag on
+  is transcript-only for exactly this reason). MEASURED (vault-refresh.org
+  §3): moving the witness back inside the =if= compiles to identical k,
+  rows and instruction count — upstream's "one copy of each hash"
+  rationale does not apply; a candidate one-line upstream PR. The pre-check flag on
   =approveRouter='s three =private_input=s is SETTLED: they are
   =cc-rand=, =ep-mod=, =ep-div= — the cross-contract call's commitment
   randomness and the callee's entry-point hash limbs, present in every

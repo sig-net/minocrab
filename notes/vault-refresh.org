@@ -159,3 +159,29 @@ drops ≥1 k level (the 2-word requests three: k14→k11, prove −80..−81%;
 startSwap/startRedeem k16→15, −44..−46%); the nine settles are
 ECDSA-floored at k16 on both sides (rows −12..−16%, prove ±noise);
 =initialise= is row-identical (891). README's benchmark lines updated.
+
+* 3. Upstream's hoisted witness in =completeWithdraw= — measured (2026-09-05)
+The source comment: "These hashes sit outside the if on purpose: the
+proving circuit evaluates both branches, so hoisting them keeps the
+circuit to one copy of each hash." Checked by compiling a variant with
+=myCommitment= (and so =callerSecretKey()=) and =domainSep= moved back
+inside =if (!succeeded)= with the pinned compactc
+(scratch, not committed):
+
+| | upstream =0d9c1660= | variant (inside the if) |
+|---|---|---|
+| k / rows | 16 / 40,553 | 16 / 40,553 |
+| instructions | 187 | 187 |
+| transient_hash / persistent_hash | 3 / 2 | 3 / 2 |
+| private_inputs (guarded) | 4 (2) | 4 (4) |
+
+Identical cost. There is ONE branch and one use of each hash, so nothing
+is duplicated either way — the rationale in the comment does not apply
+to this circuit (it may have been carried over from a two-branch
+sketch). The only effect of the hoist is semantic: the caller's secret
+is consumed unconditionally and left unchecked on the success branch,
+which is what changed the analysis draft's Gap 2 at the witness level
+(notes/zkir-semantics.org §7.1, V5). A one-line upstream PR (move the
+two =const=s back inside the =if=, delete the comment) restores the
+draft's stated property at zero cost; dmd to decide whether to raise it.
+Whatever upstream ships, the compat port follows it (PI-equal).
