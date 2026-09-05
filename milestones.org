@@ -2078,3 +2078,48 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
 Exit criteria: A–D green and byte-identical; the README's cross-chain
 section is compiled code; notes/evm-calls.org as-built per rung.
 
+* M38 — The EVM interface library: generic ERC-20 and the interfaces beyond it (dmd, 2026-09-06)
+dmd: "I want our library to have a generic ERC-20 constructor … what are
+the most popular interfaces for contracts on Ethereum beyond ERC-20, and
+can we define [them]?" Built on M37's =EvmCall= / =AbiType= layer
+(notes/evm-calls.org). An INTERFACE is a callee marker plus a family of
+call types: =Contract<Erc20>= is an address that claims the interface,
+=erc20::Transfer= has =type Callee = Erc20=, so a transfer cannot be
+filed against a =Contract<UniswapV3Router>=; inheritance is a marker impl
+(an ERC-4626 vault IS an ERC-20). Ordered by how often a signer like ours
+calls them, and by what the fixed-width ABI layer can express.
+- [ ] A. The interface marker and =KIND= moved to the slot: =trait
+      Interface= (sealed per library, open to contracts), =EvmCall::
+      Callee: Interface=, =Contract<I>= typed by interface with the
+      inheritance markers; =KIND= leaves the library call type (it is a
+      per-deployment protocol byte) and is named by the contract's slot
+      (=Pending<Call, Env, WORDS, KIND>= or a =Kinded<Call, KIND>=
+      wrapper — decide, keeping the ledger derive's uniqueness assert).
+      The five M37 calls re-homed; zero movement on the treasury and
+      (after M37 D) the vault.
+- [ ] B. ERC-20 in full, static: =transfer=, =approve=, =transferFrom=,
+      =increaseAllowance= / =decreaseAllowance= (OpenZeppelin), ERC-2612
+      =permit= (7 static words — gasless approval, the MPC-signed flow's
+      natural friend), and WETH =deposit= / =withdraw=; the no-return
+      variants (=UsdtLike=) as a sibling interface with =Return = Unit=.
+- [ ] C. ERC-4626 in full (=deposit=, =mint=, =withdraw=, =redeem=),
+      Uniswap V3 router (=exactInputSingle=, =exactOutputSingle= — static
+      struct args), Aave v3 Pool (=supply=, =withdraw=, =borrow=,
+      =repay=), ERC-721's static calls (=transferFrom=, =approve=,
+      =setApprovalForAll=).
+- [ ] D. THE FIXTURE ORACLE: every selector and every word pinned against
+      =alloy='s ABI encoder (the mpc repo already depends on alloy —
+      reuse, not our own encoder as its own witness) on generated values,
+      plus the vault's compactc calldata where it exists.
+- [ ] E. Dynamic ABI types — =bytes=, =string=, =T[]= — the head/tail
+      offset encoding as =AbiType=s with a length bound (the word count
+      must be static for the record: =Bytes<N>= → ceil(N/32)+2 words);
+      unlocks ERC-721 =safeTransferFrom=, ERC-1155 transfers, Safe
+      =execTransaction=, Multicall3 =aggregate3=. ERC-4337 and Permit2
+      stay out until a consumer asks.
+- [ ] F. Docs: one table in README (interface → calls → static/dynamic)
+      and the per-interface =compile_fail= gates (wrong callee, wrong
+      arity, a dynamic call on a static-only slot).
+Exit criteria: A–D green, zero movement on shipped circuits, every
+selector alloy-pinned; E and F as far as a consumer needs.
+
