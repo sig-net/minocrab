@@ -673,3 +673,179 @@ For this design:
   still decodes the schema-string format. =Pending= files stage-7
   records; the sim's =resolve_verified_record_v2= is the reader the
   work order asks for, not the one that exists.
+
+** Rung C, the spec harness (2026-09-05)
+
+The extension rung C's own note left NOT DONE: a =tests/vault_pending=
+harness for =erc20_vault_pending=, parallel to =tests/vault= (the
+compat lineage's), covering all seventeen circuits. Built the same
+shape — a reference model, an executor, a spec and generation
+strategies — retargeted at the =Pending= API. No compactc twin exists
+for this lineage, so the property suite (=tests/erc20_vault_pending_spec.rs=)
+checks four links per generated case rather than five: acceptance
+agreement against =minocrab_sim::v3::simulate=, =IrSource::check= on
+every accepted run, transcript/PI-vector length closure re-anchored to
+the model's own op stream, and =exec::run= against a real Impact-VM
+state with =spec::check_effects=.
+
+*** Layout, numbered once
+
+Twenty-two fields from thirteen declarations, confirmed instruction-
+for-instruction against the dumped =.zkir= (=MINOCRAB_ZKIR_DUMP=...
+cargo test --test zkir_dump -- --ignored=) for =initialize=,
+=approve_router=, =withdraw=, =claim= and =complete_swap=:
+
+| field | name                | field | name             |
+|-------+---------------------+-------+------------------|
+|     0 | initialized (ctr)   |    11 | withdrawals.recs |
+|     1 | deployer            |    12 | withdrawals.envs |
+|     2 | vaultEvmAddress     |    13 | swaps.records    |
+|     3 | uniswapRouter       |    14 | swaps.envs       |
+|     4 | signet.signer       |    15 | approvals (Fired)|
+|     5 | signet.mpcResponseKey |  16 | stataUnderlying  |
+|     6 | signet.requestNonce |    17 | stataToken       |
+|     7 | signet.caip2Id      |    18 | supplies.records |
+|     8 | signet.evmChainId   |    19 | supplies.envs    |
+|     9 | deposits.records    |    20 | redeems.records  |
+|    10 | deposits.envs       |    21 | redeems.envs     |
+
+=tests/vault_pending/ops.rs= is a byte-for-byte copy of the compat
+lineage's =tests/vault/ops.rs= with one constant changed
+(=FIELDS = 22=, so the remainder segment leading rule gives lead = 7,
+matching the lending-extension note); every op BUILDER (read, member,
+lookup, insert, remove, counter_inc, cell_write, claim,
+claim_contract_call, mint_shielded) is unmodified and reused. =prims.rs=
+and =tamper.rs= are the compat lineage's, declared by =#[path]= — no
+copy — since the FAB/hash/signature/tamper machinery they hold is
+protocol-level, not block-shape-level.
+
+*** The two op skeletons
+
+Reading =signet_flow::file_request= and =Pending::consume= off the
+source, then confirming against the dumps, gives ONE op sequence each,
+reused by every circuit that calls them:
+
+- =file_request_ops= (model.rs): =kernel.self()= (via
+  =cache_self_address=, ALWAYS a fresh read — a circuit that already
+  cached self elsewhere, e.g. =withdraw='s =burn_vault_coin=, pays for
+  a SECOND read; confirmed by counting =Dup 2= occurrences in
+  =withdraw.zkir=, exactly two), =requestNonce= read (cached),
+  =caip2Id= read, =evmChainId= read, =records.member=, the nonce
+  increment, the record insert, the env insert (=Pending= only —
+  =Fired= has no envs field, confirmed against =approve_router.zkir='s
+  shorter stream), the signer's fresh uncached read, the
+  =claimContractCall=.
+- =consume_ops=: the MPC key read, =records.member=, =records.lookup=,
+  =records.remove=, =envs.lookup=, =envs.remove= — confirmed against
+  =claim.zkir= and =complete_swap.zkir=.
+
+*** The differences list, confirmed
+
+1. Block layout: as above; every path is two elements, confirmed by
+   the derive's own =record_path()= assertions in
+   =tests/erc20_vault_pending.rs= and by the dumps.
+2. Records are V2 (=SignBidirectionalEventV2<_, WORDS>=):
+   =format_version= first, =response_kind= last, =params= three zero
+   limbs, NO schema strings — =model::Req::limbs= reproduces
+   =SignBidirectionalEventV2::limbs()='s order field for field, off
+   the real type (=SignBidirectionalEventV2::<Public,
+   WORDS>::atoms()=) rather than a hand-copied atom list. The request
+   id is =request_id_of= (=vault::prims::transient_upgrade=, `hi`
+   forced to 0) over those limbs — unchanged from the compat lineage's
+   construction, confirmed by the dump's =0x00, mod.74= id pattern.
+3. =vaultTokenDomainSeparator= is NOT a hash here — =[hi:
+   VAULT_TOKEN_TAG, lo: erc20]= — confirmed against
+   =initialize.zkir='s absence of any hash before the first
+   =cell_write=, and against =withdraw.zkir='s =persistent_hash= for
+   =tokenType= reading the tag/erc20 pair directly rather than a
+   pre-hashed domain separator. =model::vault_token_domain_sep= /
+   =model::vault_color= split the two steps accordingly; the SECOND
+   hash (=tokenType=, SHA-256) is unchanged from the compat lineage
+   and reuses =prims::fab_sha256=.
+4. =Commit<T>::digest_of=: `hi` is `f >> 248`, genuinely NOT zero —
+   confirmed by decoding =withdraw.zkir='s =div_mod_power_of_two(f,
+   248)= feeding the env insert's commit limbs directly (no
+   =transient_upgrade=-style truncation in between).
+   =model::commit_digest_of= reproduces the RAW =(div, mod)= split
+   rather than calling =transient_upgrade=, which is a different,
+   also-real construction reused unchanged for the request id
+   (finding 2) and the attestation digest (finding 6).
+5. =Settle<Env, Resp>= ticket wire order (requestId, respond, kind,
+   output) — unchanged from the compat lineage's own ticket shape;
+   =model::settle_head_inputs= is a straight port of
+   =vault::model::Settle::head_inputs=.
+6. =consume='s member → lookup → remove (records) → lookup → remove
+   (envs), and the kind/version checks AFTER both removes — confirmed
+   by =claim.zkir='s instruction order; matches
+   =signet_flow::Pending::consume= read for read.
+7. =initialize= writes THROUGH =Signet::initialize= (mpcResponseKey,
+   caip2Id, evmChainId, in that order) after the sealed cells — the
+   dump's cell-write order (vaultEvm, swapRouter, stataUnderlying,
+   stataToken, mpcResponseKey, caip2Id, evmChainId) confirms both the
+   grouping and the order within each group.
+8. =claim='s recipient select / auto-receive branch: an UNCONDITIONAL
+   =kernel.self()= (color calc, via plain =self_address=, since
+   =claim= never caches) THEN a GUARDED =self_address_guarded= for the
+   auto-receive check — two distinct =Dup 2; Idx(cached, [0]); Popeqc=
+   triples, confirmed against =claim.zkir=. =complete_swap='s
+   =change_nonce = [255 − hi, lo]= and its =kernel::cache_self_address=
+   (called once, reused by BOTH =mint_shielded_token_to_key= calls via
+   the plain =self_address= cache-check, so NEITHER mint emits a
+   second read) are confirmed the same way: exactly ONE such triple
+   appears in =complete_swap.zkir= — the other four =Dup{n:2}=
+   occurrences there belong to =ops::mint_shielded='s own conditional
+   add-to-existing-entry branch (=Dup 2; Dup 2; Idx(cached,[Stack]);
+   Add=, unrelated to =kernel.self=), which is why counting the
+   OPCODE alone over-counts and the model instead matches the full
+   three-op read pattern.
+   A GENUINE BUG the dumps caught in the harness itself, not the
+   circuit: every guarded witness the circuit declares
+   (=own_public_key='s fresh key, and the settle-side =witness_sk= a
+   `when(refunding)`/failure branch wraps) is a REAL entry in
+   =private_transcript= that the model's =witnesses()= has to supply —
+   omitting it does not silently pass, it fails simulation with "ran
+   out of private transcript" at the exact instruction the dump
+   names. Two rounds of this: (a) every request circuit's
+   =notify_ops= witnesses =cc_rand= plus the entry-point hash — missed
+   in the first pass, caught by all seven request-side tests failing
+   identically; (b) every settle circuit downstream of a
+   =Commit::open= ALSO witnesses =own_public_key= (unconditionally in
+   eight of them, inside =complete_withdraw='s refund branch in the
+   ninth) — missed in the second pass, caught by all eight
+   settle-side tests failing identically. Both are recorded here
+   because the failure mode (a silent "ran out of private transcript"
+   with a precise instruction number) is exactly the intended
+   feedback loop the milestone's "read the dumped =.zkir=" instruction
+   describes, and it worked on the first real try.
+
+*** Case counts, gates
+
+- Default (=PROPTEST_CASES= unset, 48 cases/property): all eighteen
+  properties (seventeen circuits, plus a =claim_auto_receive= arm that
+  over-samples the =right(self)= branch) green.
+- =PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts
+  --test erc20_vault_pending_spec=: green (see the milestone's
+  acceptance report for the exact run).
+- =cargo build --workspace --all-targets= warning-free;
+  =cargo clippy --workspace --all-targets -- -D warnings= clean after
+  fixing two real lints the harness itself introduced (a redundant
+  =as u8= cast on an already-=u8= constant, and a dead
+  =.min(u64::MAX).max(0) * 0 += expression left over from drafting
+  =complete_swap='s mint amount — clippy's =erasing_op= /
+  =unnecessary_min_or_max= caught both; neither affected any already-
+  green test, since the erased term was always zero).
+
+*** Not done / recorded rather than built
+
+- No adversarial sweep (=tamper::sweep=) is wired up for this lineage
+  yet, though =tests/vault_pending= declares the module by path so one
+  can be added the same way the compat lineage's is. The milestone's
+  four required links do not call for it.
+- The generation strategies are branch-aware but less exhaustively
+  boundary-swept than the compat lineage's seventeen-circuit gen.rs
+  (M11-stage-5 vintage); every guard the spec enumerates is reachable,
+  but a dedicated boundary-value audit (the compat suite's per-field
+  =prop_oneof!= catalogue) was not repeated field for field here.
+- Row-cost measurement is rung C's own
+  (=erc20_vault_pending.rs::the_lending_flows_cost_no_more_than_the_compat_port=
+  et al.) and unaffected by this rung; not re-measured here.
