@@ -310,12 +310,33 @@ def slice (stream : List Fr) (i n : Nat) : R (List Fr) :=
   let s := (stream.drop i).take n
   if s.length = n then pure s else throw "transcript exhausted"
 
-/-- ir_vm.rs:125-180 `fab_decode_to_bytes_atom`, the in-circuit decoder's
-operand → byte rule (§3.2): a `field` atom is one operand's 32 LE bytes;
+/-- A limb must FIT its slot: `k` bytes, nothing above them.
+
+Both readings enforce this and neither truncates. Off-circuit,
+`bytes_from_field_repr` (transient-crypto repr.rs:133-163, reached from
+`Alignment::parse_field_repr`) returns `None` when any byte at or above
+index `k` is non-zero, which `preprocess` turns into "Inputs did not
+match alignment" (ir_vm.rs:493-496). In-circuit,
+`assigned_to_le_bytes(.., Some(k))` RANGE-CHECKS the value to `k` bytes
+(ir_vm.rs:155-160). Rung 4 finding: this file's first reading used
+`natToLE`, which silently truncates — it accepted a preimage both
+readings reject. No corpus record exercises it (they are all canonical),
+so only reading the off-circuit path found it. -/
+private def limbBytes (f : Fr) (k : Nat) : R (List UInt8) :=
+  if f.val ≥ 2 ^ (8 * k) then throw "Inputs did not match alignment"
+  else pure (natToLE f.val k)
+
+/-- ir_vm.rs:125-180 `fab_decode_to_bytes_atom` and its off-circuit twin
+`Alignment::parse_field_repr` + `ValueReprAlignedValue::binary_repr`
+(transient-crypto fab.rs:337-345, 427-433, 513-527), which agree on the
+byte layout (§3.2): a `field` atom is one operand's 32 LE bytes — the
+atom is `normalize`d and read back through `from_uniform_bytes`, so a
+canonical `Fr` round-trips to `as_le_bytes`, `FR_BYTES = 32` of them
+(this CLOSES the width flagged as inferred in zkir-semantics.org §10 I3);
 a `bytes n` atom is `n mod 31` stray bytes taken from the FIRST operand
 then the full 31-byte limbs in REVERSED operand order, with the stray
-bytes appended LAST; `compress` cannot be decoded. Rung 4's differential
-checks this against the off-circuit `parse_field_repr` path. -/
+bytes appended LAST; `compress` cannot be decoded from field elements
+(fab.rs:542-545 returns `None`). -/
 def fabAtom (seg : Segment) (inputs : List Fr) : R (List UInt8 × List Fr) :=
   match seg with
   | .field => match inputs with
@@ -327,10 +348,13 @@ def fabAtom (seg : Segment) (inputs : List Fr) : R (List UInt8 × List Fr) :=
     let chunks := length / frBytesStored
     let expected := chunks + (if stray ≠ 0 then 1 else 0)
     if inputs.length < expected then throw "cannot decode bytes from to little data"
-    else
-      let (strayBytes, rest) :=
-        if stray > 0 then (natToLE (inputs.headD 0).val stray, inputs.drop 1) else ([], inputs)
-      let limbs := (rest.take chunks).reverse.flatMap fun f => natToLE f.val frBytesStored
+    else do
+      let (strayBytes, rest) ←
+        if stray > 0 then do
+          let bs ← limbBytes (inputs.headD 0) stray
+          pure (bs, inputs.drop 1)
+        else pure ([], inputs)
+      let limbs ← (rest.take chunks).reverse.flatMapM fun f => limbBytes f frBytesStored
       pure (limbs ++ strayBytes, rest.drop chunks)
 
 def fabBytes (segs : List Segment) (inputs : List Fr) : R (List UInt8) := do

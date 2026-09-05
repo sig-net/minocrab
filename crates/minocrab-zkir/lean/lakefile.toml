@@ -1,5 +1,5 @@
 name = "minocrab-zkir-lean"
-defaultTargets = ["MinocrabZkir", "zkir-roundtrip", "zkir-dataflow", "zkir-wellformed"]
+defaultTargets = ["MinocrabZkir", "zkir-roundtrip", "zkir-dataflow", "zkir-wellformed", "zkir-run"]
 
 [[lean_lib]]
 name = "MinocrabZkir"
@@ -22,3 +22,13 @@ root = "DataflowDump"
 [[lean_exe]]
 name = "zkir-wellformed"
 root = "Wellformed"
+
+# Rung 4's gate (notes/zkir-rung4.org): evaluate a corpus artifact on a
+# run record's preimage with the CONCRETE intrinsics and print the result
+# block the record's expected block must equal; `--kat` reproduces the
+# primitives' known-answer vectors on their own.
+#   lake exe zkir-run corpus/zkir/.../startSwap.zkir differential/startSwap.record
+#   lake exe zkir-run --kat differential/known-answers.txt
+[[lean_exe]]
+name = "zkir-run"
+root = "ZkirRun"

@@ -97,7 +97,10 @@ jobs:
   # that stops checking is a claim that stopped being one. M27 adds
   # crates/minocrab-zkir/lean/ (the ZKIR v3 syntax + semantics): its
   # rung-1 gate is byte-exact round-trip of every v3 corpus artifact,
-  # run here directly and from cargo test (tests/lean_roundtrip.rs).
+  # its rung-4 gate is `zkir-run` — the interpreter with CONCRETE
+  # intrinsics reproducing the Rust reference's known answers and then
+  # its whole result block on every committed run record. Both run here
+  # directly and from cargo test (tests/lean_roundtrip.rs, lean_run.rs).
   lean:
     runs-on: ubuntu-latest
     steps:
@@ -111,7 +114,13 @@ jobs:
           nix develop -c bash -c
           'crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip corpus/zkir
           && crates/minocrab-zkir/lean/.lake/build/bin/zkir-roundtrip crates/minocrab-zkir/lean/fixtures
-          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-wellformed corpus/zkir'
+          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-wellformed corpus/zkir
+          && crates/minocrab-zkir/lean/.lake/build/bin/zkir-run --kat
+          crates/minocrab-zkir/lean/differential/known-answers.txt'
+      # The run records themselves: one `zkir-run` per record, its output
+      # diffed against the record's expected block. The loop lives in the
+      # Rust test so `cargo test` and CI check the same thing.
+      - run: nix develop -c cargo test -p minocrab-zkir --test lean_run
 
   # The instrument the snapshots cannot replace: byte-comparison of every
   # circuit's serialized ZKIR against the PR's base. Movement is ALLOWED —

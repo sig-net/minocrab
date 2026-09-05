@@ -21,10 +21,17 @@ include = [
     "lean/lake-manifest.json",
     "lean/MinocrabZkir.lean",
     "lean/MinocrabZkir/*.lean",
+    "lean/MinocrabZkir/Intrinsics/*.lean",
     "lean/Roundtrip.lean",
     "lean/DataflowDump.lean",
     "lean/Wellformed.lean",
+    "lean/ZkirRun.lean",
     "lean/fixtures/*.zkir",
+    # M27 rung 4: the differential run records the `zkir-run` gate reads.
+    # The artifacts they name live under corpus/ and are NOT shipped — the
+    # gate skips loudly without a corpus, like the round-trip gates.
+    "lean/differential/*.record",
+    "lean/differential/known-answers.txt",
 ]
 
 [lints]
