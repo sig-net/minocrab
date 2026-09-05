@@ -21,10 +21,10 @@ the Impact op sequence, the read expectations, the communications commitment and
 the guard/skip behaviour — so two circuits satisfying it prove the same
 statement about the same on-chain state transition, whatever their instruction
 streams look like. Where a lineage deliberately leaves that criterion — the
-optimised, Borsh and modern vault forks prove their **own** preimage — the
-anchor becomes a Rust specification executed against the pinned ledger, and the
-substitution is recorded per circuit in a divergence ledger the build asserts in
-both directions. So: compactc artifacts at the bottom, a reference-VM
+`erc20_vault_pending` lineage, the API's own expression of the protocol, proves
+its **own** preimage — the anchor becomes the reference model's op stream
+executed against the pinned ledger, and each of its circuits is pinned pair by
+pair to the compat port's cost. So: compactc artifacts at the bottom, a reference-VM
 cross-check on every accepted run, differential equality where it is claimed,
 spec-and-property anchoring where it is not, and type-level constructions that
 make specific error classes unwritable rather than merely untested.
@@ -89,35 +89,39 @@ make specific error classes unwritable rather than merely untested.
   ([notes/ir-passes.org §8](notes/ir-passes.org)).
 - **Command** — `cargo test --workspace`
 
-### (d) The four-artifact fork chain
+### (d) The two lineages
 
-Four artifacts of the same erc20-vault, in a chain, each link gated:
+Two artifacts of the same erc20-vault since the sig-net protocol refresh
+(M28; the three optimisation forks of the previous nine-circuit vault were
+retired with it — [notes/vault-refresh.org §0](notes/vault-refresh.org) has the
+verdict and the three reasons, each sufficient alone):
 
-| link | criterion | gate |
+| lineage | criterion | gate |
 |---|---|---|
-| compactc ≡ port | PI-equality on a shared preimage | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) |
-| port ≡ opt | byte-identity, or a declared divergence | [erc20_vault_opt_fork.rs](crates/minocrab-contracts/tests/erc20_vault_opt_fork.rs) |
-| opt ≡ borsh | byte-identity, or a declared divergence | [erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs) |
-| borsh ≡ modern | `Twin::Identical` — instruction-identical modulo naming, all nine, since the constant fold; `PiEqual` (stream differs, statement does not) remains the vocabulary a future rewrite must adopt explicitly | [erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs) |
+| compactc ≡ `erc20_vault` (the compat port, 17 circuits) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (57 tests) |
+| `erc20_vault_pending` (the `Pending<Env, Resp>` API, 17 circuits) | proves its own preimage: the reference model's op stream through the pinned ledger; the V2 record and kind-tagged outputs of [spec/borsh-subset.md](spec/borsh-subset.md) | [erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) — each request/settle pair pinned to the port's `(k, rows)` per pair; the record bytes and ids in `serialization_conformance` and [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) |
 
-- **The divergence ledger discipline** — the `vault::artifact` ledgers
-  (`fork_status`, `borsh_fork_status`, `modern_fork_status`, one per link)
-  record per circuit which criterion applies. Each fork test asserts the ledger in **both
-  directions**: an `Identical` entry really is byte-identical *and* still
-  PI-equal to compactc on the reference model's preimage; a `Diverged` entry
-  really does differ. A change that moves a circuit without moving its ledger
-  entry fails the build, so leaving compactc's coverage is always an explicit,
-  reviewable edit ([notes/vault-optimization.org §"Step 4"](notes/vault-optimization.org)).
-- `Twin::SpecAnchored` is asserted **unused** in the modern fork, so a future
-  rewrite that moves a public input has to declare it before it can land.
-- **Command** — `cargo test -p minocrab-contracts --test erc20_vault_opt_fork
-  --test erc20_vault_borsh_fork --test erc20_vault_modern_fork`
+- **What the Pending lineage is not**: PI-equal to compactc. It writes the V2
+  record (a version byte and a kind byte where the deployed record carries two
+  ABI-JSON schema strings), so no compactc artifact proves its statement; the
+  weaker warrant is stated per circuit in [BENCHMARK.md](BENCHMARK.md) and its
+  numbers are to be read as "same operation, re-framed, proved cheaper".
+- **What the leakage inventory adds to both** —
+  [leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)
+  walks the port's ZKIR statically and freezes, per circuit, every declared
+  component's provenance, every witness's guard / checks / reach, every digest's
+  operands and every Impact operand's accounting; its completeness gate refuses a
+  witness-dependent wire reaching the public statement without a declared label,
+  and its corpus-twin gate asserts compactc's artifact has the same surface
+  counts on all seventeen ([notes/zkir-semantics.org §7.2](notes/zkir-semantics.org)).
+- **Command** — `cargo test -p minocrab-contracts --test erc20_vault_differential
+  --test erc20_vault_pending --test leakage_inventory`
 
 ### (e) The spec and property harness
 
-- **Claim** — for all nine vault circuits, on generated inputs, the circuit does
-  what a Rust specification says, and the ledger agrees.
-- **Four independent links per generated case**
+- **Claim** — for all seventeen vault circuits, on generated inputs, the circuit
+  does what a Rust specification says, the ledger agrees, and compactc agrees.
+- **Five independent links per generated case**
   ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)):
   1. acceptance agreement — spec (a total function) and circuit agree both ways;
   2. PI-equality re-anchored to `Op::field_repr` of **our** reference op stream,
@@ -125,17 +129,25 @@ Four artifacts of the same erc20-vault, in a chain, each link gated:
   3. ledger execution — the same op stream runs through the pinned Impact VM
      (`QueryContext::query` / `run_program`, `ResultModeVerify`) against a real
      pre-state, and the `Effects` must be exactly the ones the spec declared;
-  4. reference VM — `IrSource::check` on every accepted run.
-- **Scale, executed** — `PROPTEST_CASES=1000000` across all nine circuits plus
-  the adversarial suite: 9 passed, 0 failed, **9,000,000 cases**, 3,121.83 s
-  wall, exit 0 ([notes/vault-optimization.org §"Full-scale gating run"](notes/vault-optimization.org)).
-  Every property runs against **all four artifacts** since the fork.
-- **Adversarial** — 22 tests in
+  4. reference VM — `IrSource::check` on every accepted run;
+  5. compactc — every accepted case through the comparator against compactc's
+     own artifact.
+- **Scale, executed** — the re-ported vault's elevated run to date is
+  `PROPTEST_CASES=2000` in release: 17 properties, **34,000 cases**, 17.5 s
+  ([notes/vault-refresh.org §1](notes/vault-refresh.org)). The previous
+  nine-circuit vault's full gate ran `PROPTEST_CASES=1000000` — 9,000,000
+  cases, 3,121.83 s, exit 0 ([notes/vault-optimization.org §"Full-scale gating
+  run"](notes/vault-optimization.org)); that number has **not** been re-run on
+  the seventeen and is not claimed for them.
+- **Adversarial** — 19 tests in
   [erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs):
-  PI tamper sweeps, witness malleability (out-of-range key limbs, garbage
-  `recoveryId`, `s = 0`, `r`/`s` above the curve order, a point at infinity),
-  wrong-branch and double-settle, re-mapping injectivity, and six named
-  boundary tests on `completeSwap`'s `amountInMaximum − amountIn`.
+  argument and witness malleability on `completeDeposit` (out-of-range key
+  limbs, garbage `recoveryId`), `s = 0` and `r`/`s` above the curve order on
+  every settle circuit, the identity response key, settling without a pending
+  entry, the forged-membership answer, the four refunds against success-shaped
+  outputs, the non-boolean success byte, Poseidon-commitment injectivity over
+  the generated corpus, and six named boundary tests on `completeSwap`'s
+  `amountInMaximum − amountIn`.
 - **What the sweeps pinned**, as evidence they are not decorative: an identity
   `mpcResponseKey` authenticates any signature and `initialize` does not reject
   one (deployer-gated, one-shot); at `signetRequestNonce == u64::MAX` every
@@ -148,9 +160,10 @@ Four artifacts of the same erc20-vault, in a chain, each link gated:
   ([notes/vault-optimization.org §"Findings the sweeps pinned"](notes/vault-optimization.org)).
 - **Commands** — default (48 cases/property, keeps the workspace under 90 s):
   `cargo test -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial`.
-  Elevated: `PROPTEST_CASES=20000 cargo test --release -p minocrab-contracts
+  Elevated: `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts
   --test erc20_vault_spec --test erc20_vault_adversarial` (also `./bump.sh gates
-  --heavy`). Full gate: the same with `PROPTEST_CASES=1000000`, ~52 min.
+  --heavy`). The settle circuits simulate an in-circuit secp256k1 verification
+  per case, so the count scales the wall clock linearly from the 17.5 s above.
 
 ### (f) Disclosure enforcement
 
@@ -207,9 +220,11 @@ The Borsh layer belongs here as a safety feature in its own right:
 - The subset is **fixed-width**: `borsh::object_length(v) == T::LEN` for all
   `v`, and `T::LEN` equals the deployed FAB alignment's own `bin_len` — so every
   offset is a compile-time constant and there is no value-dependent branching.
-- A Borsh `bool` is `0` or `1` and nothing else, so on that lineage a
-  non-canonical attested byte is **unprovable rather than refunded**
-  ([erc20_vault_borsh_fork.rs](crates/minocrab-contracts/tests/erc20_vault_borsh_fork.rs)).
+- A Borsh `bool` is `0` or `1` and nothing else, so on the Pending lineage a
+  non-canonical attested byte is **unprovable rather than refunded** — the
+  port keeps compactc's 0x02 behaviour for parity, pinned by
+  `a_non_boolean_success_byte_refunds_on_the_port` in
+  [erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs).
 - Dual oracle: `borsh::to_vec(v) == bincode-fixint(v)` for every spec type over
   generated values, closed against the **deployed bytes** themselves — the
   singleton's `Misc` envelope is handed to the pinned compactc artifact, which
@@ -252,15 +267,16 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 
 | failure class | fires | silent |
 |---|---|---|
-| wrong instruction stream, same statement | row snapshot; zkir dump; the four instruction-for-instruction fixtures | the differentials (instruction streams are free under PI-equality) |
-| wrong PI framing / transcript shape | the 22 differential targets; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
+| wrong instruction stream, same statement | row snapshot; zkir dump; the leakage inventory's surface counts | the differentials (instruction streams are free under PI-equality) |
+| wrong PI framing / transcript shape | the 20 differential suites; spec-harness link 2 (PI re-anchored to our op stream) | row snapshot (a reorder costs no rows) |
 | missing guard, assert or range check | the type-level constructions in §2(g); `v3_predicates`; `v3_guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
 | witness-stream drift (a read on the untaken branch) | interface snapshot (`wit` lines, `(guarded)` marked); the differentials, once the private transcript diverges | row snapshot, if the counts happen to match |
 | undeclared disclosure | the generated set-equality test per circuit | everything else — the labels are not in the ZKIR |
+| a secret reaching the public statement under no declared label | [leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs) (completeness gate: witness provenance × label taint over the ZKIR, per Impact operand) | the set-equality tests (they check the label SET, not what the labels cover); the differentials (an honest preimage leaks the same either way) |
 | a circuit added and not listed | [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs) (every `#[circuit]` under `src/` is in `support::circuits()`); a `#[contract]` block derives its set | an `entry()`-built family with no attribute — listed by hand, with a comment saying why |
 | range-constraint gap at a typed seam | `v3_bounded` / `v3_leaves` / `v3_entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
 | upstream drift after a version bump | in diagnosis order: `cargo metadata` → workspace build → corpus compile report → ZKIR round-trip → ABI/Impact baseline → workspace → row snapshot → spec/vectors/TS → elevated property run | — `./bump.sh gates` runs exactly this sequence and prints the taxonomy line for whatever fired |
-| spec divergence between the four artifacts | the fork tests' divergence ledger, asserted in both directions; the spec harness runs every property against all four | a fork test that was never given a ledger entry — which is why a moved circuit with an unmoved entry fails the build |
+| the Pending lineage drifting from the port's statement | the per-pair cost pins in `erc20_vault_pending.rs`; the record-byte and request-id equalities in `serialization_conformance` and `signet_flow.rs`; the interface snapshot | PI-equality — the lineage does not claim it (§2d) |
 | interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit binds neither entry point nor argument types (§5) |
 | generated code out of date (interface crates, spec, TS, snapshots) | `cargo test -p minocrab-interface-gen` (byte-for-byte regeneration); `serialization_conformance`'s three drift tests | — `./bump.sh accept` regenerates all of them in dependency order |
 
@@ -281,7 +297,7 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   rev upstream pins, because all `midnight-*` crates must share one for their
   `Fr` / `ProofPreimage` / `IrSource` types to unify. What makes that safe is
   instrument (a): 806 of compactc's own artifacts round-trip through these
-  bindings, and 22 differential suites agree with its lowering.
+  bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
   the 806 ZKIR circuits (315 contracts) the pinned compactc
   produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
@@ -335,7 +351,23 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   every corpus instruction, and the evaluation semantics of `preprocess` with
   the intrinsics uninterpreted, each gated from `cargo test` and CI;
   [notes/zkir-semantics.org](notes/zkir-semantics.org) is the design of
-  record and its §9 the honest state of each rung), and the numeric/visibility invariants behind
+  record and its §9 the honest state of each rung). **The boundary of that
+  layer, stated plainly:** machine-checked is the GROUND — the syntax, the
+  dataflow, the evaluation reading with hashes and curve operations as
+  uninterpreted functions, the pass theorems over it, and the vault's leakage
+  inventory derived from it (§2d). NOT machine-checked: the executable
+  intrinsics (rung 4: Poseidon, SHA-256, Keccak and the curve arithmetic made
+  concrete and differentially gated against the reference VM — in progress, and
+  its shelve-point is acceptable), any statement about what a commitment
+  HIDES (that is the cryptographic assumption on Poseidon and the hybrids of the
+  unlinkability analysis, which no inventory can discharge), and the running
+  Rust itself. The semantics' AUTHORITY is external and two-linked, exactly as
+  the popeq rule's and the M3 harness's: every corpus artifact round-trips
+  through the Lean syntax byte for byte against compactc's own printer, and the
+  Rust reference the semantics transcribes (`ir_vm.rs` at the pinned blob) is
+  the one every differential and property run agrees with. A transcription
+  error the corpus does not exercise is invisible to both links; that is the
+  honest measure of the ground layer), and the numeric/visibility invariants behind
   the typed leaves (`crates/minocrab-std/lean/` — the `add`/`mul` bound
   asserts proven sound *and minimal*, the subtraction guard proven to make
   field subtraction integer subtraction, the disclose gate proven sound and
@@ -355,16 +387,15 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   bound making a comparison constant. **All three were green on every
   differential the day before.** That is the honest measure of differential
   coverage.
-- **The opt / borsh / modern lineage proves its own preimage.** It is
-  spec-anchored, and that is a **weaker** warrant than PI-equality on a shared
-  preimage. What replaces PI-equality: symbolic-effect equality over a shared
-  term algebra, `run_program` post-state and `Effects` agreement, an
-  injectivity assertion on the re-mapping between differing terms over the
-  generated corpus, the 9,000,000-case sweep, and a burn well-formedness gate
-  driven through the pinned ledger's own `Transaction::well_formed`. It is
-  machinery, not prose — and it is still weaker. It is labelled per circuit in
-  the divergence ledgers and throughout [BENCHMARK.md](BENCHMARK.md). Read
-  opt's numbers as "same operation, re-framed, proved cheaper", never as "same
+- **The Pending lineage proves its own preimage.** It is anchored to the
+  reference model's op stream and the pinned ledger, and that is a **weaker**
+  warrant than PI-equality on a shared preimage: no compactc artifact proves
+  the V2 record's statement. What stands in: the per-pair cost pins against the
+  port, the record-byte and request-id equalities of the Borsh spec suite, the
+  reader/responder round trip in `signet-sim`, and the interface snapshot. The
+  seventeen-property spec harness runs on the port; the lineage's own harness
+  is M35 C. It is labelled per circuit in [BENCHMARK.md](BENCHMARK.md). Read
+  its numbers as "same operation, re-framed, proved cheaper", never as "same
   statement, proved cheaper".
 - **Nothing has run end to end on a live network.** Keygen, prove and verify go
   through Midnight's own `Zkir` with hash-verified SRS parameters, so the proofs
@@ -390,7 +421,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
 - **The circuit list is closed in both directions, but still partly
-  hand-written.** `support::circuits()` (221 entries) feeds both snapshots,
+  hand-written.** `support::circuits()` (209 entries) feeds both snapshots,
   the dump instrument and the adversarial suite. The snapshots guard one
   direction (a listed circuit that moved);
   [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs)
@@ -410,16 +441,15 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   a range constraint implied by an earlier one on the same wire finds **zero**,
   so turning the flag on today would remove nothing
   ([notes/ir-passes.org §11](notes/ir-passes.org)).
-- **The PORT's settle mints rest on a whole-contract argument; the three
-  optimised lineages check.** Five `from_field_unchecked` mint sites per
-  lineage — `claim`, `refund`, `complete_swap`'s two, `refund_surrendered_value`
-  — claim `Uint<64>` on a word locally bounded only to `< 2^128`. On
-  `erc20_vault_opt` / `_borsh` / `_modern` they are `from_field_checked` since
-  the review-fixes branch (one `constrain_bits 64` each); the port keeps the
-  unchecked spelling for compactc parity, so on the port alone the claim
-  holds because the claim holds because every request circuit bounds its amounts
-  before a record enters the map — an invariant of the contract as a whole, not
-  of the site. Each carries a comment saying so, and they are first in line for
+- **The PORT's attested-amount sites rest on a whole-contract argument.**
+  Three `from_field_unchecked` sites in `erc20_vault.rs` — `complete_swap`'s
+  `amountIn`, `complete_supply`'s `shares`, `complete_redeem`'s `assets` — claim
+  `Uint<64>` on a word the attested output bounds only to its Borsh width. The
+  port keeps the unchecked spelling for compactc parity (compactc's
+  `deserialize<…, 8>` makes the same claim), so the claim holds because the
+  MPC's attested schema says `uint64` — an invariant of the protocol as a whole,
+  not of the site. The Pending lineage carries six such sites for the same
+  reason. Each carries a comment saying so, and they are first in line for
   the checked spelling
   ([notes/api-safety-survey.org §B4, §A1](notes/api-safety-survey.org)).
 - **Not covered by the safety survey at all** — the `minocrab-ir`/ZKIR boundary,
@@ -438,9 +468,9 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
 2. `cargo test -p minocrab-zkir` — 806 artifacts round-trip, count asserted. If this is red, stop.
 3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
-4. `cargo test --workspace` — the 22 differentials, the fork gates, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
+4. `cargo test --workspace` — the differentials, the Pending lineage's pair pins, the leakage inventory, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
-6. `PROPTEST_CASES=20000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (~a few minutes). The full gate is `PROPTEST_CASES=1000000`, ~52 minutes, and is the number quoted in §2(e).
+6. `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (34,000 cases, ~20 s; §2(e)). Raise the count for a longer gate; the wall clock is linear in it.
 7. `./corpus/compile.sh` — recompile the corpus with the pinned compiler and check `git status --short corpus/zkir` is empty (3 m 11 s). This is the determinism claim, verified rather than trusted.
 
 Or, in one command with a PASS/FAIL/seconds summary and a taxonomy line per
