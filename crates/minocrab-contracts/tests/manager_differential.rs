@@ -1183,6 +1183,7 @@ fn claim_unshielded_spend(
 /// The `ExecutePayload` argument, with the FAB flattening and the EIP-712
 /// struct-hash preimage derived from one place.
 #[derive(Clone)]
+#[derive(Default)]
 struct MPayload {
     selector: u8,
     auth_mode: u8,
@@ -1202,28 +1203,6 @@ struct MPayload {
     credit_account: [u8; 32],
 }
 
-impl Default for MPayload {
-    fn default() -> MPayload {
-        MPayload {
-            selector: 0,
-            auth_mode: 0,
-            account: [0; 32],
-            owner: [0; 20],
-            account_salt: [0; 32],
-            nonce: 0,
-            valid_until: 0,
-            primary_color: [0; 32],
-            primary_amount: 0,
-            recipient_kind: 0,
-            recipient: [0; 32],
-            to_account: [0; 32],
-            want_nonce: [0; 32],
-            want_color: [0; 32],
-            want_amount: 0,
-            credit_account: [0; 32],
-        }
-    }
-}
 
 impl MPayload {
     /// The 24 argument limbs, in field order.

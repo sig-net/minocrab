@@ -29,7 +29,7 @@ pub enum Part {
     Inputs,
 }
 
-fn slot<'a>(pi: &'a mut ProofPreimage, part: Part) -> &'a mut Vec<Fr> {
+fn slot(pi: &mut ProofPreimage, part: Part) -> &mut Vec<Fr> {
     match part {
         Part::Transcript => &mut pi.public_transcript_inputs,
         Part::Witness => &mut pi.private_transcript,

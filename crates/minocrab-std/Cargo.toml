@@ -25,6 +25,9 @@ include = [
     "lean/MinocrabStdProofs/*.lean",
 ]
 
+[lints]
+workspace = true
+
 [dependencies]
 minocrab.workspace = true
 # The typed ledger block (M9 phase 7): `v3::ledger`'s LedgerMap/LedgerCell/

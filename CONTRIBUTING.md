@@ -72,6 +72,20 @@ taxonomy applies to any firing. Two that deserve their own sentence:
 - **A differential suite** disagreeing with compactc means the port's
   statement changed. That is never routine; see
   [VERIFICATION.md](VERIFICATION.md) for what each suite warrants.
+- **Clippy** (`cargo clippy --workspace --all-targets -- -D warnings`, the
+  `clippy` CI job) is STYLE: fix the finding zero-movement (the dump gate
+  says whether it moved anything), or allow it at the site with a one-line
+  reason. No crate-wide allows. The two lints that fight the tree's
+  deliberate shapes — `type_complexity` (a circuit's `Discloses<(…)>` IS
+  its declaration) and `unusual_byte_groupings` (literals keep their
+  artifact's grouping) — are decided once in `Cargo.toml`
+  `[workspace.lints]`, and every crate opts in with `[lints] workspace =
+  true`.
+- **The interface semver job** (`interface-wire-compat-semver`, PRs only)
+  is WIRE COMPATIBILITY, not style: an interface crate's surface is
+  governed by the callee's deployed artifact, so a reported break means
+  the wire moved. Stop, and read `tests/artifact_agreement.rs` in the
+  crate it names; regenerate nothing until you know why.
 
 ## Divergence ledgers
 

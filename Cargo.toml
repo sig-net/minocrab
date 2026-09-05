@@ -128,6 +128,20 @@ midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-l
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 
+[workspace.lints.rust]
+# minocrab-ir's Kani harnesses are compiled under `cargo kani` only.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.lints.clippy]
+# Two lints fight the tree's deliberate shapes, decided once here (M34 A,
+# CONTRIBUTING.md "What an instrument MEANS when it fires"): a circuit's `Discloses<(A, B, …)>`
+# return type IS its disclosure declaration, one label per published value,
+# and the harnesses' scenario tuples are the same shape; and byte literals
+# copied from an artifact keep the artifact's digit grouping so a reviewer
+# can diff them against it.
+type_complexity = "allow"
+unusual_byte_groupings = "allow"
+
 [profile.dev]
 # DEBUG INFO IS THE TARGET DIRECTORY (dmd, 2026-08-16, at 36 GB). On macOS the
 # dev default is `split-debuginfo = "unpacked"`, which leaves DWARF in a `.o`

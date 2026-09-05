@@ -11,6 +11,9 @@ keywords = ["midnight", "ledger", "impact", "circuit", "zero-knowledge"]
 categories = ["cryptography::cryptocurrencies", "encoding"]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
+[lints]
+workspace = true
+
 [dependencies]
 minocrab.workspace = true
 minocrab-ir = { workspace = true, features = ["unstable"] }

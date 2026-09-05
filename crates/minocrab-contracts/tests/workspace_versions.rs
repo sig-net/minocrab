@@ -85,12 +85,11 @@ fn our_workspace_dependencies_carry_the_workspace_version() {
                     package_version = string_value(trimmed, "version");
                 }
             }
-            "[workspace.dependencies]" => {
-                if trimmed.contains("path = \"crates/") {
+            "[workspace.dependencies]"
+                if trimmed.contains("path = \"crates/") => {
                     let name = entry_name(trimmed).to_string();
                     entries.push((name, string_value(trimmed, "version")));
                 }
-            }
             _ => {}
         }
     }

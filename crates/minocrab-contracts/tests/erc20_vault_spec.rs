@@ -86,6 +86,9 @@ fn corpus_twin(circuit: Circuit) -> &'static IrSource {
     })[circuit.zkir_name()]
 }
 
+// The per-case check takes the case's every part by name; a struct for them
+// would be one more list to keep complete beside the scenario types.
+#[allow(clippy::too_many_arguments)]
 fn check_case(
     circuit: Circuit,
     art: Art,

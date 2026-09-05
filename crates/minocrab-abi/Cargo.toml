@@ -11,6 +11,9 @@ keywords = ["midnight", "abi", "interface", "contract", "zero-knowledge"]
 categories = ["cryptography::cryptocurrencies", "development-tools::testing"]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
+[lints]
+workspace = true
+
 [dependencies]
 minocrab.workspace = true
 minocrab-ledger.workspace = true

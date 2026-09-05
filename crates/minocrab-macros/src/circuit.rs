@@ -182,8 +182,8 @@ pub fn expand_in(
     let call = quote! {
         #entry_fn(#label_arg |__c, __args: #args_ty| #body_fn(__c #(, __args.#idents)*))
     };
-    let declaration_test = discloses_test(&item.sig, name, &bare, &root, owner);
-    let budget_test = max_k_test(attr.max_k.as_ref(), name, &bare, owner);
+    let declaration_test = discloses_test(&item.sig, name, bare, &root, owner);
+    let budget_test = max_k_test(attr.max_k.as_ref(), name, bare, owner);
 
     let entry = quote! {
         #(#attrs)*

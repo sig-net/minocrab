@@ -390,7 +390,7 @@ fn audit_hash(
                 let widths = (stray > 0)
                     .then_some(stray)
                     .into_iter()
-                    .chain(std::iter::repeat(LIMB_BYTES).take(chunks));
+                    .chain(std::iter::repeat_n(LIMB_BYTES, chunks));
                 for (li, width) in widths.enumerate() {
                     let Some(op) = ops.next() else {
                         findings.push(too_few(index, hash, ai, consumed));
@@ -650,10 +650,10 @@ impl Max {
     fn checked_add(self, other: Max) -> Option<Max> {
         let mut limbs = [0u64; 4];
         let mut carry = 0u64;
-        for i in 0..4 {
+        for (i, out) in limbs.iter_mut().enumerate() {
             let (a, c1) = self.0[i].overflowing_add(other.0[i]);
             let (b, c2) = a.overflowing_add(carry);
-            limbs[i] = b;
+            *out = b;
             carry = (c1 as u64) + (c2 as u64);
         }
         (carry == 0).then_some(Max(limbs))
@@ -683,12 +683,12 @@ impl Max {
         }
         let (limb, rem) = ((bits / 64) as usize, bits % 64);
         let mut limbs = [0u64; 4];
-        for i in 0..4 - limb {
+        for (i, out) in limbs.iter_mut().enumerate().take(4 - limb) {
             let mut v = self.0[i + limb] >> rem;
             if rem > 0 && i + limb + 1 < 4 {
                 v |= self.0[i + limb + 1] << (64 - rem);
             }
-            limbs[i] = v;
+            *out = v;
         }
         Max(limbs)
     }

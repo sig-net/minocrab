@@ -237,7 +237,7 @@ pub enum Resolved<R> {
     Dropped { reason: &'static str, detail: String },
 }
 
-fn map_entry<'a>(map: &'a Node, request_id: [u8; 32]) -> Result<Option<Node>, Resolved<()>> {
+fn map_entry(map: &Node, request_id: [u8; 32]) -> Result<Option<Node>, Resolved<()>> {
     let StateValue::Map(entries) = map else {
         return Err(Resolved::Dropped {
             reason: "request-index-not-a-map",

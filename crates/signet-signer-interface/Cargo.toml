@@ -9,6 +9,9 @@ edition.workspace = true
 license.workspace = true
 description = "The Sig Network Signet singleton's cross-contract interface, as an importable MinoCrab crate"
 
+[lints]
+workspace = true
+
 [dependencies]
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }

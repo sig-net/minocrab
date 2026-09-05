@@ -803,7 +803,7 @@ fn verify_attestation_signature<V: Vis3>(
             r: c.from_bytes32(r_typed),
             s: c.from_bytes32(s_typed),
         };
-        secp256k1_ecdsa_verify(c, &digest, &sig, mpc_response_key)
+        secp256k1_ecdsa_verify(c, digest, &sig, mpc_response_key)
     })
 }
 

@@ -553,10 +553,10 @@ impl<V: Vis3> Check<V> {
     /// The guard may be public while the check is private (the usual case: a
     /// public branch condition over a secret comparison); the reverse would
     /// narrow the result's visibility, which is what the [`Meet`] bounds say.
-    pub fn when<G: Vis3>(self, guard: Wire3<FieldT, G>) -> Check<V>
+    pub fn when<G>(self, guard: Wire3<FieldT, G>) -> Check<V>
     where
         V: Meet<G, Out = V>,
-        G: Meet<V, Out = V>,
+        G: Vis3 + Meet<V, Out = V>,
     {
         Check {
             node: Node::When(

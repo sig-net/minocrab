@@ -44,6 +44,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: nix develop -c cargo check --workspace --all-targets
 
+  # Style, at the level the tree decided once (Cargo.toml [workspace.lints]):
+  # a firing is a finding to fix zero-movement or to allow AT THE SITE with a
+  # one-line reason — never a crate-wide allow (M34 A, CONTRIBUTING.md
+  # "What an instrument MEANS").
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+  # WIRE COMPATIBILITY of the interface crates: their surface is governed by
+  # the callee's deployed artifact, so a semver break here is a wire-compat
+  # event, not a style one — stop and read tests/artifact_agreement.rs
+  # (M34 B, notes/interface-crates.org). PRs only: nothing is on crates.io,
+  # so the baseline is the base branch.
+  interface-wire-compat-semver:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: >
+          nix develop -c cargo semver-checks check-release
+          -p signet-signer-interface -p xcall-target-interface
+          --baseline-rev "origin/${{ github.base_ref }}"
+
   # The heavy gates: the frozen (k, rows) and interface tables, --release
   # as the testing docs prescribe.
   snapshots:

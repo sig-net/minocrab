@@ -23,6 +23,9 @@ include = [
     "lean/MinocrabProofs/*.lean",
 ]
 
+[lints]
+workspace = true
+
 [dependencies]
 minocrab-zkir.workspace = true
 midnight-base-crypto.workspace = true
@@ -44,5 +47,3 @@ unstable = []
 
 # The Kani harnesses live under cfg(kani), which only the Kani driver sets
 # (see kani.sh at the repo root); tell rustc's cfg checker it is expected.
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

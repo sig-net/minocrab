@@ -15,6 +15,9 @@ categories = [
 ]
 include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "minocrab-interface-gen"
 path = "src/main.rs"

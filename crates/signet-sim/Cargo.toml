@@ -8,6 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true

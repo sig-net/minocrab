@@ -167,7 +167,7 @@ const fn integer_length(n: u128) -> u32 {
 /// doubled, so the range width is even, "as Plonk requires this to be a
 /// multiple of two" (reduce-to-zkir.ss:655-661).
 const fn bounded_bits(maxval: u128) -> u32 {
-    2 * ((integer_length(maxval + 1) + 1) / 2)
+    2 * integer_length(maxval + 1).div_ceil(2)
 }
 
 /// The FAB alignment width of a `(tunsigned maxval)` slot: `⌈bits/8⌉` bytes

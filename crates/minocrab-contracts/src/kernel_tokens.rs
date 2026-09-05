@@ -44,12 +44,11 @@ pub struct KernelTokens {
 /// The contract's ledger block.
 pub const KT: KernelTokens = KernelTokens::new();
 
-/// THE CONTRACT — every circuit `kernel.compact` exports, as an `impl` of
-/// the state they run against.
-///
-/// `KernelTokens::CIRCUITS` is the derived set: the differential and the
-/// snapshots enumerate it instead of a hand-written list, so a circuit that
-/// exists here cannot be missed by them.
+// THE CONTRACT — every circuit `kernel.compact` exports, as an `impl` of
+// the state they run against (the `#[contract]` block below the argument
+// types). `KernelTokens::CIRCUITS` is the derived set: the differential and
+// the snapshots enumerate it instead of a hand-written list, so a circuit
+// that exists here cannot be missed by them.
 // ---- the SHIELDED compositions ----------------------------------------------
 
 /// `QualifiedShieldedCoinInfo` as an argument — a coin the contract can spend,

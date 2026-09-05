@@ -27,6 +27,9 @@ include = [
     "lean/fixtures/*.zkir",
 ]
 
+[lints]
+workspace = true
+
 [dependencies]
 midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true

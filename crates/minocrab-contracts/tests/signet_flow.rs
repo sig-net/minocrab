@@ -250,7 +250,7 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
         while v.last() == Some(&0) {
             v.pop();
         }
-        alignment.push(AlignmentSegment::Atom(atom.clone()));
+        alignment.push(AlignmentSegment::Atom(*atom));
         value.push(ValueAtom(v));
         at += width;
     }
