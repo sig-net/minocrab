@@ -2096,7 +2096,15 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       shows no settle consuming an unchecked secret); =FixedGas= / =erc20_call= / the hand
       selectors and word calls retired; the README example compiled as
       a test contract and shown verbatim.
-- [ ] E. Tooling audit (§6): =#[circuit]= / =#[contract]= keep the item
+- [X] E. (2026-09-06, 21e1e8d — =#[contract]= already held the property
+      (members pass through =to_token_stream()=); =#[circuit]= did NOT:
+      the body was spliced verbatim but the signature was rebuilt under a
+      synthesized =__NAME_body= — FIXED to re-emit the author's own
+      =Signature= under the author's name (item shadowing inside the
+      zero-arg builder; only the =#[arg]= helper attribute stripped);
+      three expansion tests pin it; dump byte-identical on 214; the
+      author's doc renders on the builder in rustdoc; notes/evm-calls.org
+      §12.) Tooling audit (§6): =#[circuit]= / =#[contract]= keep the item
       textually intact — a test on the expansion.
 Exit criteria: A–D green and byte-identical; the README's cross-chain
 section is compiled code; notes/evm-calls.org as-built per rung.
