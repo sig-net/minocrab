@@ -185,3 +185,23 @@ which is what changed the analysis draft's Gap 2 at the witness level
 two =const=s back inside the =if=, delete the comment) restores the
 draft's stated property at zero cost; dmd to decide whether to raise it.
 Whatever upstream ships, the compat port follows it (PI-equal).
+
+** 3.1 Proved with upstream's own tooling (2026-09-05)
+Branch =complete-withdraw-guarded-witness= in =~/midnight-examples= (a
+fresh clone at the pinned =0d9c166=, one commit, not pushed).
+- compactc 0.33.0-rc.2 WITH key generation on both sources: 32 of the 34
+  keys byte-identical (the other sixteen circuits untouched);
+  =completeWithdraw.verifier= 2,745 bytes on both, =completeWithdraw.prover=
+  117,452,138 vs 117,452,116 bytes — the same k (the prover key is ~2^k
+  sized), 22 bytes of serialized gate layout apart.
+- Upstream's vitest suite (=examples/erc20-vault/contract/tests=, deps
+  from the public registry via corepack/yarn 4, the contract compiled
+  with the pinned compactc exactly as their =compile= script does): 128
+  of 128 pass on the PR source AND on the unmodified source, including
+  "completeWithdraw settle › success settle is permissionless: a STRANGER
+  finalizes (cleanup mints nothing)" and "a caller other than the
+  withdrawer cannot take the refund". Their suite already asserted the
+  permissionless success settle; so did ours (the differential's
+  stranger case on the success branch, the spec harness's =wrong_sk=
+  cases, and M10's Gap 2 pin) — the PR changes the witness inventory,
+  not the behaviour either suite tests.
