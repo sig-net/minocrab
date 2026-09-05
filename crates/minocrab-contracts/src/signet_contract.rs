@@ -50,13 +50,16 @@ label! {
 /// `emit (Misc { name: pad(32, name), payload })` — the serializer holds
 /// name ‖ payload bytes, zero-padded to the 288-byte Misc.
 fn emit_misc(c: &mut Circuit3, s: Serializer<Public>) {
-    let one = c.constant(1u64);
+    // Kept even though guard threading no longer uses it: dropping this
+    // `Copy` would renumber every later identifier, moving the ZKIR
+    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    let _ = c.constant(1u64);
     let serialized = s.finish::<MISC_SIZE>(c);
     let payload = LedgerValue::bytes(
         MISC_SIZE as u32,
         serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
     );
-    emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+    emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
 }
 
 fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {

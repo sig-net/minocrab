@@ -69,7 +69,7 @@ pub use kernel::{
     kernel_claim_unshielded_coin_spend, kernel_claim_zswap_coin_receive,
     kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_inc_unshielded_inputs,
     kernel_inc_unshielded_outputs, kernel_mint_shielded, kernel_mint_unshielded, kernel_self,
-    kernel_self_guarded, BalanceCmp,
+    BalanceCmp,
 };
 pub use ops::{
     cell_write, cell_write_at, cell_write_coin, cell_write_coin_at, counter_increment,
@@ -87,14 +87,14 @@ pub use ops::{
     set_reset, set_reset_at,
 };
 pub use reads::{
-    cell_read, cell_read_at, cell_read_embedded, cell_read_embedded_at, cell_read_guarded,
-    cell_read_guarded_at, counter_less_than, counter_less_than_at, counter_read, counter_read_at,
-    counter_read_guarded, counter_read_guarded_at, emit, historic_merkle_tree_check_root,
+    cell_read, cell_read_at, cell_read_embedded, cell_read_embedded_at,
+    counter_less_than, counter_less_than_at, counter_read, counter_read_at,
+    emit, historic_merkle_tree_check_root,
     historic_merkle_tree_check_root_at, list_head, list_head_at, list_is_empty, list_is_empty_at,
     list_length, list_length_at, map_is_empty, map_is_empty_at, map_lookup, map_lookup_at,
-    map_lookup_guarded, map_lookup_guarded_at, map_member, map_member_at, map_member_guarded,
-    map_member_guarded_at, map_size, map_size_at, merkle_tree_check_root, merkle_tree_check_root_at,
-    merkle_tree_is_full, merkle_tree_is_full_at, mint_read_with, popeq, set_is_empty,
+    map_member, map_member_at,
+    map_size, map_size_at, merkle_tree_check_root, merkle_tree_check_root_at,
+    merkle_tree_is_full, merkle_tree_is_full_at, mint_read, popeq, set_is_empty,
     set_is_empty_at, set_size, set_size_at,
 };
 

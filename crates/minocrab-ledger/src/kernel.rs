@@ -2,9 +2,9 @@
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_vm::ops::{Key, Op};
-use minocrab::v3::{Circuit3, FieldT, Operand, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::v3::ImpactElem;
-use minocrab::{Fr, Public, Visibility};
+use minocrab::{Fr, Public};
 
 use crate::impact::*;
 use crate::reads::*;
@@ -45,14 +45,12 @@ pub enum BalanceCmp {
 /// never held is `0` rather than a failure. Note the balance is the one at
 /// the START of execution — the effect accumulator's entries do not feed back
 /// into it, which is the caveat Compact's own stdlib comment carries.
-pub fn kernel_balance<V: Visibility + minocrab::OnChainGuard>(
+pub fn kernel_balance(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     token_type: &LedgerValue,
     cmp: BalanceCmp,
     amount: Option<&LedgerValue>,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let result_atom = if cmp == BalanceCmp::Value {
         U128_ATOM
     } else {
@@ -92,7 +90,7 @@ pub fn kernel_balance<V: Visibility + minocrab::OnChainGuard>(
         ops.push(ImpactOp::constant(&Op::Lt));
     }
     ops.push(popeq(true, &value));
-    emit(c, guard, &ops);
+    emit(c, &ops);
     wires[0]
 }
 
@@ -107,13 +105,11 @@ pub fn kernel_balance<V: Visibility + minocrab::OnChainGuard>(
 ///
 /// The `dup 3` rather than `dup 2` in the greater-than form is the pushed `t`
 /// sitting on the stack already.
-pub fn kernel_block_time<V: Visibility + minocrab::OnChainGuard>(
+pub fn kernel_block_time(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     time: &LedgerValue,
     greater: bool,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     let block_time = ImpactOp::constant(&Op::Idx {
         cached: true,
@@ -137,40 +133,21 @@ pub fn kernel_block_time<V: Visibility + minocrab::OnChainGuard>(
             popeq(true, &value),
         ]
     };
-    emit(c, guard, &ops);
+    emit(c, &ops);
     wires[0]
 }
 
 /// `kernel.self()` (midnight-ledger.ss:256-260): `dup 2` to reach the
 /// context array, `idxc [0]` (cached, path not remembered), `popeqc` →
 /// the contract's own address as `Bytes<32>` `[hi, lo]` wires.
-pub fn kernel_self<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-) -> [Wire3<FieldT, Public>; 2] {
-    let guard = guard.into();
+pub fn kernel_self(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
     let (wires, value) = mint_read(c, vec![AlignmentAtom::Bytes { length: 32 }]);
     let idx_context = ImpactOp::constant(&Op::Idx {
         cached: true,
         push_path: false,
         path: vec![Key::Value(field_key(0))].into(),
     });
-    emit(c, guard, &[dup(2), idx_context, popeq(true, &value)]);
-    [wires[0], wires[1]]
-}
-
-/// Guarded [`kernel_self`].
-pub fn kernel_self_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-) -> [Wire3<FieldT, Public>; 2] {
-    let (wires, value) = mint_read_with(c, Some(guard), vec![AlignmentAtom::Bytes { length: 32 }]);
-    let idx_context = ImpactOp::constant(&Op::Idx {
-        cached: true,
-        push_path: false,
-        path: vec![Key::Value(field_key(0))].into(),
-    });
-    emit(c, guard, &[dup(2), idx_context, popeq(true, &value)]);
+    emit(c, &[dup(2), idx_context, popeq(true, &value)]);
     [wires[0], wires[1]]
 }
 

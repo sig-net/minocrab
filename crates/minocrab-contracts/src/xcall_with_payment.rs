@@ -90,10 +90,12 @@ impl XcallWithPayment {
         let nonce = coin.nonce.disclose_as::<Nonce>(c);
         let color = coin.color.disclose_as::<Color>(c);
         let value = coin.value.disclose_as::<Value>(c).field();
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
         TARGET_CONTRACT.notify(
             c,
-            one,
             ShieldedCoinInfo3 {
                 nonce,
                 color,
@@ -111,8 +113,11 @@ impl XcallWithPayment {
         request_id: B32<Private>,
     ) -> Discloses<(RequestId, XcallEntryPointHash, XcallCommitment)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
-        let one = c.constant(1u64);
-        TARGET_CONTRACT.confirm_request(c, one, request_id);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        TARGET_CONTRACT.confirm_request(c, request_id);
         Discloses::of(())
     }
 
@@ -122,9 +127,12 @@ impl XcallWithPayment {
     #[circuit]
     pub fn notify(c: &mut Circuit3, coin: CoinArg) -> Discloses<(CoinNonce, CoinColor, CoinValue)> {
         let coin = disclose_coin(c, coin);
-        let one = c.constant(1u64);
-        receive_shielded(c, one, &coin);
-        write_coin_to_self(c, one, TREASURY, &coin);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        receive_shielded(c, &coin);
+        write_coin_to_self(c, TREASURY, &coin);
         Discloses::of(())
     }
 
@@ -139,14 +147,17 @@ impl XcallWithPayment {
     ) -> Discloses<(RequestId, CoinNonce, CoinColor, CoinValue)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
         let coin = disclose_coin(c, coin);
-        let one = c.constant(1u64);
-        receive_shielded(c, one, &coin);
-        write_coin_to_self(c, one, TREASURY, &coin);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        receive_shielded(c, &coin);
+        write_coin_to_self(c, TREASURY, &coin);
         let elem = LedgerValue::bytes(
             32,
             vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
         );
-        emit(c, one, &set_insert(PAID_REQUESTS, &elem));
+        emit(c, &set_insert(PAID_REQUESTS, &elem));
         Discloses::of(())
     }
 
@@ -158,12 +169,15 @@ impl XcallWithPayment {
         request_id: B32<Private>,
     ) -> Discloses<(RequestId,)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
         let elem = LedgerValue::bytes(
             32,
             vec![ImpactElem::Wire(request_id.hi), ImpactElem::Wire(request_id.lo)],
         );
-        emit(c, one, &set_insert(REQUESTS, &elem));
+        emit(c, &set_insert(REQUESTS, &elem));
         Discloses::of(())
     }
 }

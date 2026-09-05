@@ -12,7 +12,7 @@
 //! the expansion MEANS.
 
 use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
-use minocrab::{Public, Visibility};
+use minocrab::Public;
 use minocrab_contracts::interfaces::{PaymentTarget, Token};
 use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::{SignBidirectionalEventNotification, SignetSigner};
@@ -42,14 +42,13 @@ impl HandToken {
         }
     }
 
-    fn deposit<V: Visibility + Copy + minocrab::OnChainGuard>(
+    fn deposit(
         self,
         c: &mut Circuit3,
-        guard: Wire3<FieldT, V>,
         amount: Uint<128, Public>,
         caller: ContractAddress<Public>,
     ) -> B32<Public> {
-        call(c, guard, self.callee, Self::DEPOSIT, (amount, caller))
+        call(c, self.callee, Self::DEPOSIT, (amount, caller))
     }
 }
 
@@ -67,22 +66,20 @@ impl HandSigner {
         }
     }
 
-    fn pin<V: Visibility + Copy + minocrab::OnChainGuard>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> HandSigner {
+    fn pin(self, c: &mut Circuit3) -> HandSigner {
         HandSigner {
-            callee: self.callee.pin(c, guard),
+            callee: self.callee.pin(c),
         }
     }
 
-    fn sign_bidirectional<V: Visibility + Copy + minocrab::OnChainGuard>(
+    fn sign_bidirectional(
         self,
         c: &mut Circuit3,
-        guard: Wire3<FieldT, V>,
         request_id: B32<Public>,
         notification: SignBidirectionalEventNotification<Public>,
     ) {
         call(
             c,
-            guard,
             self.callee,
             Self::SIGN_BIDIRECTIONAL,
             (request_id, notification),
@@ -104,13 +101,8 @@ impl HandXcallTarget {
         }
     }
 
-    fn deposit_big<V: Visibility + Copy + minocrab::OnChainGuard>(
-        self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, V>,
-        data: BytesN<Public, 256>,
-    ) {
-        call(c, guard, self.callee, Self::DEPOSIT_BIG, (data,))
+    fn deposit_big(self, c: &mut Circuit3, data: BytesN<Public, 256>) {
+        call(c, self.callee, Self::DEPOSIT_BIG, (data,))
     }
 }
 
@@ -128,13 +120,8 @@ impl HandPaymentTarget {
         }
     }
 
-    fn notify<V: Visibility + Copy + minocrab::OnChainGuard>(
-        self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, V>,
-        coin: ShieldedCoinInfo3<Public>,
-    ) {
-        call(c, guard, self.callee, Self::NOTIFY, (coin,))
+    fn notify(self, c: &mut Circuit3, coin: ShieldedCoinInfo3<Public>) {
+        call(c, self.callee, Self::NOTIFY, (coin,))
     }
 }
 
@@ -142,13 +129,12 @@ impl HandPaymentTarget {
 
 /// A RESULT-carrying call: `token.deposit(amount, me) -> Bytes<32>`, whose
 /// two result limbs must pick up `[Bits(8), Bits(248)]` from the type.
-fn returning_call(build: impl FnOnce(&mut Circuit3, Wire3<FieldT, Public>) -> B32<Public>) -> Compiled3 {
+fn returning_call(build: impl FnOnce(&mut Circuit3) -> B32<Public>) -> Compiled3 {
     let mut c = Circuit3::new();
     let amount = c.arg::<FieldT>("amount");
     c.assert_bits(amount, 128);
     c.disclose(amount, "amount");
-    let one = c.constant(1u64);
-    let hash = build(&mut c, one);
+    let hash = build(&mut c);
     c.output(hash.hi, "event hash (hi)");
     c.output(hash.lo, "event hash (lo)");
     c.finish(true)
@@ -156,15 +142,15 @@ fn returning_call(build: impl FnOnce(&mut Circuit3, Wire3<FieldT, Public>) -> B3
 
 #[test]
 fn a_returning_call_lowers_like_the_hand_written_handle() {
-    let attributed = returning_call(|c, one| {
-        let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
+    let attributed = returning_call(|c| {
+        let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c));
         let amount = Uint::from_field_unchecked(pull_amount(c));
-        Token::at_field(0).deposit(c, one, amount, me)
+        Token::at_field(0).deposit(c, amount, me)
     });
-    let hand = returning_call(|c, one| {
-        let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
+    let hand = returning_call(|c| {
+        let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c));
         let amount = Uint::from_field_unchecked(pull_amount(c));
-        HandToken::at_field(0).deposit(c, one, amount, me)
+        HandToken::at_field(0).deposit(c, amount, me)
     });
     assert_eq!(zkir(&hand), zkir(&attributed));
 }
@@ -177,20 +163,19 @@ fn pull_amount(c: &mut Circuit3) -> Wire3<FieldT, Public> {
 
 /// A unit-returning call with a STRUCT argument, and the `pin` shape: the
 /// erc20-vault's `notify_signet`, in miniature.
-fn notify_call(build: impl FnOnce(&mut Circuit3, Wire3<FieldT, Public>)) -> Compiled3 {
+fn notify_call(build: impl FnOnce(&mut Circuit3)) -> Compiled3 {
     let mut c = Circuit3::new();
     let id = B32 {
         hi: c.arg::<FieldT>("requestId_hi"),
         lo: c.arg::<FieldT>("requestId_lo"),
     };
     id.constrain_input(&mut c);
-    let one = c.constant(1u64);
-    build(&mut c, one);
+    build(&mut c);
     c.finish(true)
 }
 
-fn notification(c: &mut Circuit3, one: Wire3<FieldT, Public>) -> (B32<Public>, SignBidirectionalEventNotification<Public>) {
-    let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c, one));
+fn notification(c: &mut Circuit3) -> (B32<Public>, SignBidirectionalEventNotification<Public>) {
+    let me = ContractAddress::from_limbs(minocrab_ledger::kernel_self(c));
     let id = B32::pad(c, "request-id");
     (
         id,
@@ -200,15 +185,15 @@ fn notification(c: &mut Circuit3, one: Wire3<FieldT, Public>) -> (B32<Public>, S
 
 #[test]
 fn a_pinned_struct_argument_call_lowers_like_the_hand_written_handle() {
-    let attributed = notify_call(|c, one| {
-        let signer = SignetSigner::at_field(1).pin(c, one);
-        let (id, note) = notification(c, one);
-        signer.sign_bidirectional(c, one, signet_signer_interface::RequestId(id), note);
+    let attributed = notify_call(|c| {
+        let signer = SignetSigner::at_field(1).pin(c);
+        let (id, note) = notification(c);
+        signer.sign_bidirectional(c, signet_signer_interface::RequestId(id), note);
     });
-    let hand = notify_call(|c, one| {
-        let signer = HandSigner::at_field(1).pin(c, one);
-        let (id, note) = notification(c, one);
-        signer.sign_bidirectional(c, one, id, note);
+    let hand = notify_call(|c| {
+        let signer = HandSigner::at_field(1).pin(c);
+        let (id, note) = notification(c);
+        signer.sign_bidirectional(c, id, note);
     });
     assert_eq!(zkir(&hand), zkir(&attributed));
 }
@@ -222,11 +207,10 @@ fn multi_limb_arguments_lower_like_the_hand_written_handles() {
         let data = BytesN::<_, 256>::arg(&mut c, "data");
         data.constrain_input(&mut c);
         let data: BytesN<Public, 256> = data.map_limbs(|_, w| c.disclose(w, "data"));
-        let one = c.constant(1u64);
         if hand {
-            HandXcallTarget::at_field(0).deposit_big(&mut c, one, data);
+            HandXcallTarget::at_field(0).deposit_big(&mut c, data);
         } else {
-            XcallTarget::at_field(0).deposit_big(&mut c, one, data);
+            XcallTarget::at_field(0).deposit_big(&mut c, data);
         }
         c.finish(true)
     };
@@ -234,7 +218,6 @@ fn multi_limb_arguments_lower_like_the_hand_written_handles() {
 
     let coin = |hand: bool| {
         let mut c = Circuit3::new();
-        let one = c.constant(1u64);
         let value = c.constant(9u64);
         let coin = ShieldedCoinInfo3 {
             nonce: minocrab_std::v3::CoinNonce(B32::pad(&mut c, "nonce")),
@@ -242,9 +225,9 @@ fn multi_limb_arguments_lower_like_the_hand_written_handles() {
             value,
         };
         if hand {
-            HandPaymentTarget::at_field(0).notify(&mut c, one, coin);
+            HandPaymentTarget::at_field(0).notify(&mut c, coin);
         } else {
-            PaymentTarget::at_field(0).notify(&mut c, one, coin);
+            PaymentTarget::at_field(0).notify(&mut c, coin);
         }
         c.finish(true)
     };
@@ -293,7 +276,6 @@ fn the_ported_circuits_still_call_through_the_interfaces() {
 fn at_and_at_field_differ_by_the_cell_read() {
     let build = |pinned: bool| {
         let mut c = Circuit3::new();
-        let one = c.constant(1u64);
         let target = if pinned {
             let addr = ContractAddress::from_limbs([c.constant(1u64), c.constant(2u64)]);
             XcallTarget::at(addr)
@@ -302,7 +284,7 @@ fn at_and_at_field_differ_by_the_cell_read() {
         };
         let recipient = B32::pad(&mut c, "recipient");
         let amount = Uint::constant(&mut c, 5);
-        target.deposit(&mut c, one, recipient, amount);
+        target.deposit(&mut c, recipient, amount);
         c.finish(true)
     };
     assert_ne!(zkir(&build(true)), zkir(&build(false)));

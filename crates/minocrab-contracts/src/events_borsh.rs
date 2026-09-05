@@ -92,18 +92,13 @@ pub(crate) fn event_name_literal(c: &mut Circuit3, name: &str) -> B32<Public> {
 /// The shared workload: `callCount.increment(1); lastAmount = a;
 /// balances.insert(r, a)` — identical to [`crate::events`]'s, which is the
 /// point: this stage touches serialization and nothing else.
-fn workload(
-    c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
-    r: &B32<Public>,
-    a: Wire3<FieldT, Public>,
-) {
+fn workload(c: &mut Circuit3, r: &B32<Public>, a: Wire3<FieldT, Public>) {
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
     let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r.hi), ImpactElem::Wire(r.lo)]);
     let mut ops = counter_increment(CALL_COUNT, 1);
     ops.extend(cell_write(LAST_AMOUNT, &amount_val));
     ops.extend(map_insert(BALANCES, &recipient_val, &amount_val));
-    emit(c, one, &ops);
+    emit(c, &ops);
 }
 
 /// `(recipient: Bytes<32>, amount: Uint<128>)` — the argument list every
@@ -125,16 +120,19 @@ fn base_with_emits(emits: usize) -> Compiled3 {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
         let recipient = args.recipient;
         let amount = args.amount;
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
         let a = amount.disclose_as::<Amount>(c).field();
         let r = recipient.disclose_as::<Recipient>(c);
 
         // const sequence = callCount as Uint<64> — read before the increment,
         // only when an emit needs it.
-        let sequence = (emits > 0).then(|| counter_read(c, one, CALL_COUNT));
+        let sequence = (emits > 0).then(|| counter_read(c, CALL_COUNT));
 
-        workload(c, one, &r, a);
+        workload(c, &r, a);
 
         for i in 0..emits {
             c.region("emit Misc", |c| {
@@ -161,7 +159,7 @@ fn base_with_emits(emits: usize) -> Compiled3 {
                     MISC_SIZE as u32,
                     serialized.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
                 );
-                emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &payload));
+                emit(c, &emit_event(MISC_VERSION, MISC_TAG, &payload));
             });
         }
 

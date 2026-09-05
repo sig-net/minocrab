@@ -547,7 +547,7 @@ fn or_default_emits_nothing() {
     let named = zkir(|c| {
         let g = c.arg::<FieldT>("g");
         let g = c.disclose(g, "g");
-        let _ = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g).or_default();
+        let _ = c.when(g, |c| c.witness::<FieldT>()).or_default();
     });
     assert_eq!(bare, named);
 }
@@ -567,7 +567,7 @@ fn or_is_the_hand_written_select() {
         let g = c.arg::<FieldT>("g");
         let g = c.disclose(g, "g");
         let alt = c.arg::<FieldT>("alt");
-        let read = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g);
+        let read = c.when(g, |c| c.witness::<FieldT>()).guarded();
         let _ = read.or(c, alt);
     });
     assert_eq!(by_hand, wrapped);
@@ -587,7 +587,7 @@ fn assert_read_is_one_assert_on_the_guard() {
     let wrapped = zkir(|c| {
         let g = c.arg::<FieldT>("g");
         let g = c.disclose(g, "g");
-        let _ = minocrab::v3::Guarded::new(c.witness_guarded::<FieldT, _>(g), g).assert_read(c);
+        let _ = c.when(g, |c| c.witness::<FieldT>()).assert_read();
     });
     assert_eq!(by_hand, wrapped);
 }
@@ -938,16 +938,20 @@ fn a_witness_returned_from_a_private_scope_is_the_guarded_witness() {
 /// instructions [`Guarded`] emits for the same decisions.
 #[test]
 fn or_and_assert_read_are_the_guarded_forms() {
-    use minocrab::v3::Guarded;
     let by_guarded = zkir(|c| {
         let g = c.arg::<FieldT>("g");
         let g = c.disclose(g, "g");
         let f = c.arg::<FieldT>("f");
         let f = c.disclose(f, "f");
+        // `Guarded::new` is crate-private (only the scope may mint one), so
+        // the reference side wraps the kept primitive's already-read value
+        // through a no-op scope — `c.when(g, |_c| w)` pushes and pops `g`
+        // around a body that emits nothing, so this is `Guarded::new(w, g)`
+        // byte for byte.
         let w = c.public_transcript_input_guarded::<FieldT, _>(g);
-        let chosen = Guarded::new(w, g).or(c, f);
+        let chosen = c.when(g, |_c| w).guarded().or(c, f);
         let w2 = c.public_transcript_input_guarded::<FieldT, _>(g);
-        let read = Guarded::new(w2, g).assert_read(c);
+        let read = c.when(g, |_c| w2).guarded().assert_read(c);
         c.assert_eq(chosen, read);
     });
     let by_scope = zkir(|c| {

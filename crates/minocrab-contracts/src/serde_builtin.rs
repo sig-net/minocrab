@@ -61,7 +61,7 @@ impl SerdeBuiltin {
         }
         c.assert(all); // "serialize/deserialize roundtrip mismatch"
 
-        emit(c, one, &counter_increment(CHECKS, 1));
+        emit(c, &counter_increment(CHECKS, 1));
         Discloses::of(())
     }
 }

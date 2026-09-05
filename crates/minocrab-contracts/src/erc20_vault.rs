@@ -56,7 +56,7 @@ use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    contract, eq, is_true, label, not, own_public_key, own_public_key_guarded, Bytes, BytesN,
+    contract, eq, is_true, label, not, own_public_key, Bytes, BytesN,
     Check, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr, Maybe, Secp256k1Point,
     TokenDomainSeparator, Uint, B32,
@@ -474,34 +474,32 @@ fn insert_request<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: u
 /// request map's compiled ledger path, read off the handle.
 fn notify_signet<K, V>(
     c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
     request_id: &signet::RequestId<Public>,
     map: &LedgerMap<K, V>,
 ) {
     c.region("xcall: notify signet", |c| {
         // compactc evaluates a call's RECEIVER before its argument
         // expressions, so the sealed-cell read is pinned FIRST.
-        let signer = SignetSigner::at_field_path(VAULT.signet_signer.field_path().as_slice())
-            .pin(c, one);
+        let signer =
+            SignetSigner::at_field_path(VAULT.signet_signer.field_path().as_slice()).pin(c);
         let me = kernel::self_address(c);
         let path = map.field_path();
         let mut bytes = [0u8; 4];
         bytes[..path.as_slice().len()].copy_from_slice(path.as_slice());
         let notification = construct_notification_v1::<Public>(c, &me.bytes(), path.depth(), bytes);
-        signer.sign_bidirectional(c, one, *request_id, notification);
+        signer.sign_bidirectional(c, *request_id, notification);
     });
 }
 
 /// The request-only tail: freshness, record, notify.
 fn record_and_notify<const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize>(
     c: &mut Circuit3,
-    one: Wire3<FieldT, Public>,
     request: &signet::SignBidirectionalEvent<Private, WORDS, LEN_OUT, LEN_RESPOND>,
     map: &LedgerMap<signet::RequestId<Public>, signet::EventRecord<WORDS, LEN_OUT, LEN_RESPOND>>,
 ) -> signet::RequestId<Public> {
     let request_id = check_fresh_request(c, request, map);
     insert_request(c, request, map, &request_id);
-    notify_signet(c, one, &request_id, map);
+    notify_signet(c, &request_id, map);
     request_id
 }
 
@@ -541,7 +539,7 @@ fn burn_surrendered_coin(c: &mut Circuit3, one: Wire3<FieldT, Public>, coin: Shi
         color: coin.color.disclose_as::<SurrenderedCoinColor>(c),
         value: coin.value.field().disclose_as::<SurrenderedCoinValue>(c),
     };
-    common::receive_shielded(c, one, &coin);
+    common::receive_shielded(c, &coin);
     common::burn_coin(c, one, &coin);
 }
 
@@ -771,7 +769,10 @@ impl Vault {
         evm_nonce: Uint<64>,
         key_version: Uint<8>,
     ) -> Discloses<(RequestId, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
         assert_initialised(c);
 
         // approve(stataToken, 2^128−1): the spender is the wrapper.
@@ -796,7 +797,7 @@ impl Vault {
             VAULT_RESPONSE_SCHEMA,
             VAULT_RESPONSE_SCHEMA,
         );
-        record_and_notify(c, one, &request, &VAULT.sign_bidirectional_event_map);
+        record_and_notify(c, &request, &VAULT.sign_bidirectional_event_map);
         Discloses::of(())
     }
 
@@ -811,7 +812,10 @@ impl Vault {
         evm_nonce: Uint<64>,
         key_version: Uint<8>,
     ) -> Discloses<(ApprovedErc20, RequestId, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
         c.region("guards", |c| {
             assert_initialised(c);
             c.assert(erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
@@ -838,7 +842,7 @@ impl Vault {
             VAULT_RESPONSE_SCHEMA,
             VAULT_RESPONSE_SCHEMA,
         );
-        record_and_notify(c, one, &request, &VAULT.sign_bidirectional_event_map);
+        record_and_notify(c, &request, &VAULT.sign_bidirectional_event_map);
         Discloses::of(())
     }
 
@@ -868,7 +872,10 @@ impl Vault {
         XcallEntryPointHash,
         XcallCommitment,
     )> {
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
         c.region("guards", |c| {
             assert_initialised(c);
             c.assert(deposit_request.erc20_address.ne(0u64).message("ERC20 address cannot be zero"));
@@ -921,7 +928,7 @@ impl Vault {
         };
         VAULT.deposit_settle_views.insert(c, &request_id, &view);
 
-        notify_signet(c, one, &request_id, &VAULT.deposit_event_map);
+        notify_signet(c, &request_id, &VAULT.deposit_event_map);
         Discloses::of(())
     }
 
@@ -991,7 +998,8 @@ impl Vault {
             let rec_is_some = recipient.is_some.field().disclose_as::<ClaimRecipientTag>(c);
             let rec_is_left = recipient.value.is_left.field().disclose_as::<ClaimRecipientSide>(c);
             let not_some = c.not(rec_is_some);
-            let own_pk = own_public_key_guarded(c, not_some)
+            let own_pk = c
+                .when(not_some, own_public_key)
                 .or_default()
                 .disclose_as::<ClaimRecipientOwnKey>(c);
             let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
@@ -1012,7 +1020,7 @@ impl Vault {
         //   disclose(mintNonce), claimRecipient)
         let domain_sep = vault_token_domain_separator(c, view.erc20.field());
         let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-        common::mint_shielded_token(c, one, &domain_sep, view.amount, &mint_nonce, &recipient);
+        common::mint_shielded_token(c, &domain_sep, view.amount, &mint_nonce, &recipient);
         Discloses::of(())
     }
 
@@ -1100,7 +1108,7 @@ impl Vault {
         };
         VAULT.withdraw_settle_views.insert(c, &request_id, &view);
 
-        notify_signet(c, one, &request_id, &VAULT.sign_bidirectional_event_map);
+        notify_signet(c, &request_id, &VAULT.sign_bidirectional_event_map);
         Discloses::of(())
     }
 
@@ -1298,7 +1306,7 @@ impl Vault {
         };
         VAULT.swap_settle_views.insert(c, &request_id, &view);
 
-        notify_signet(c, one, &request_id, &VAULT.swap_event_map);
+        notify_signet(c, &request_id, &VAULT.swap_event_map);
         Discloses::of(())
     }
 
@@ -1462,7 +1470,7 @@ impl Vault {
         };
         VAULT.supply_settle_views.insert(c, &request_id, &view);
 
-        notify_signet(c, one, &request_id, &VAULT.supply_event_map);
+        notify_signet(c, &request_id, &VAULT.supply_event_map);
         Discloses::of(())
     }
 
@@ -1626,7 +1634,7 @@ impl Vault {
         };
         VAULT.redeem_settle_views.insert(c, &request_id, &view);
 
-        notify_signet(c, one, &request_id, &VAULT.redeem_event_map);
+        notify_signet(c, &request_id, &VAULT.redeem_event_map);
         Discloses::of(())
     }
 

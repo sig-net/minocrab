@@ -61,11 +61,14 @@ impl TestCaller {
         response_key: Secp256k1Point,
     ) -> Discloses<(MpcResponseKey,)> {
         let response_key = response_key.point();
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
         // assert(initialised == 0, "Already initialised: …")
         c.region("initialised gate", |c| {
-            common::assert_counter_zero(c, one, INITIALISED);
+            common::assert_counter_zero(c, INITIALISED);
         });
 
         // assert(deployerCommitment(deployerSecretKey()) == deployer, "Not the deployer")
@@ -75,7 +78,7 @@ impl TestCaller {
             let pad = B32::pad(c, DEPLOYER_PAD);
             let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
             let digest = upgrade_from_transient(c, f);
-            let stored = cell_read(c, one, DEPLOYER, vec![AlignmentAtom::Bytes { length: 32 }]);
+            let stored = cell_read(c, DEPLOYER, vec![AlignmentAtom::Bytes { length: 32 }]);
             let eq_hi = c.test_eq(digest.hi, stored[0]);
             let eq_lo = c.test_eq(digest.lo, stored[1]);
             let both = c.mul(eq_hi, eq_lo);
@@ -83,7 +86,7 @@ impl TestCaller {
         });
 
         // initialised.increment(1)
-        emit(c, one, &counter_increment(INITIALISED, 1));
+        emit(c, &counter_increment(INITIALISED, 1));
 
         // mpcResponseKey = disclose(responseKey)
         c.region("pin response key", |c| {
@@ -93,7 +96,7 @@ impl TestCaller {
                 common::secp256k1_point_atoms(),
                 limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
             );
-            emit(c, one, &cell_write(MPC_RESPONSE_KEY, &value));
+            emit(c, &cell_write(MPC_RESPONSE_KEY, &value));
         });
         Discloses::of(())
     }

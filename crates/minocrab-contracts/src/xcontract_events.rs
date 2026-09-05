@@ -95,18 +95,20 @@ impl XcontractEvents {
         amount: Uint<128>,
     ) -> Discloses<(Amount, XcallEntryPointHash, XcallCommitment, XcallResult), B32<Public>> {
         let a = amount.disclose_as::<Amount>(c).field();
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
-        emit(c, one, &counter_increment(VAULT_CALL_COUNT, 1));
+        emit(c, &counter_increment(VAULT_CALL_COUNT, 1));
         let me = kernel::self_address(c);
         // eventHash = token.deposit(a, me) — the Bytes<32> return type gives
         // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
         // `token` cell is read inside the call, as compactc reads it.
         let event_hash: B32<Public> =
-            Token::at_field(TOKEN).deposit(c, one, Uint::from_field_unchecked(a), me.address());
+            Token::at_field(TOKEN).deposit(c, Uint::from_field_unchecked(a), me.address());
         emit(
             c,
-            one,
             &set_insert(VAULT_DEPOSITS, &b32_ledger_value(&event_hash)),
         );
         Discloses::of(event_hash)
@@ -124,13 +126,16 @@ impl XcontractEvents {
         let caller = caller.bytes();
         let a = amount.disclose_as::<Amount>(c).field();
         let cal = caller.disclose_as::<Caller>(c);
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
         // const sequence = depositCount as Uint<64> — read before the increment.
-        let sequence = counter_read(c, one, DEPOSIT_COUNT);
-        emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
+        let sequence = counter_read(c, DEPOSIT_COUNT);
+        emit(c, &counter_increment(DEPOSIT_COUNT, 1));
         let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
-        emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
+        emit(c, &cell_write(LAST_AMOUNT, &amount_val));
 
         // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
         let mut s = Serializer::<Public>::new();
@@ -147,7 +152,6 @@ impl XcontractEvents {
 
         emit(
             c,
-            one,
             &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
         );
 
@@ -162,7 +166,7 @@ impl XcontractEvents {
             MISC_SIZE as u32,
             misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
         );
-        emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        emit(c, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
 
         Discloses::of(event_hash)
     }

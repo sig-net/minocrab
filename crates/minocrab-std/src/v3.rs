@@ -65,7 +65,7 @@ pub use ledger::{
     assert_distinct_kinds, leaf_hash, repr_limbs, CoinArm, FieldPath, KeyPath, KeyedPath, LedgerAdt,
     LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList, LedgerMap,
     LedgerMerkleTree, LedgerPath, LedgerRepr, LedgerSet, LedgerSlot, LedgerWidth,
-    MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING, STRAIGHT_LINE,
+    MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING,
 };
 
 /// Assertion predicates: `c.assert(less_than(0u64, amount))` — deferred,
@@ -2269,21 +2269,6 @@ pub fn own_public_key(c: &mut Circuit3) -> ZswapCoinPublicKey<Private> {
     };
     pk.constrain_input(c);
     ZswapCoinPublicKey(pk)
-}
-
-/// [`own_public_key`] inside a conditional: the witnesses carry the branch
-/// guard (false ⇒ default, private transcript not consumed) while the bit
-/// constraints stay unguarded (claim.zkir:436-439).
-pub fn own_public_key_guarded<V: Vis3>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-) -> Guarded<ZswapCoinPublicKey<Private>, V> {
-    let pk = B32 {
-        hi: c.witness_guarded::<FieldT, V>(guard),
-        lo: c.witness_guarded::<FieldT, V>(guard),
-    };
-    pk.constrain_input(c);
-    Guarded::new(ZswapCoinPublicKey(pk), guard)
 }
 
 /// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE
