@@ -1,10 +1,13 @@
-//! `passes::dedup_range_constraints`, pinned instruction by instruction.
+//! `passes::dedup_range_constraints` and `passes::drop_true_asserts`, pinned
+//! instruction by instruction.
 //!
-//! The pass is the opt profile's one member (notes/ir-passes.org §1, §11), so
-//! what it does and — more importantly — what it REFUSES to do is stated here
-//! rather than left to the circuits that use it: a range constraint removed
-//! where it was not implied is a missing range check, which is invisible to
-//! every differential on an honest preimage.
+//! The first is the opt profile's one member (notes/ir-passes.org §1, §11),
+//! the second is always on (§12); for both, what they do and — more
+//! importantly — what they REFUSE to do is stated here rather than left to
+//! the circuits that use them. A range constraint removed where it was not
+//! implied is a missing range check, and an `assert` removed where it could
+//! fail is a missing check outright: both are invisible to every differential
+//! on an honest preimage.
 
 use minocrab_ir::v3::{passes::dedup_range_constraints, Builder3, IrType};
 use minocrab_zkir::v3::{Identifier, Instruction, Operand};
@@ -197,7 +200,7 @@ fn the_registry_resolves_the_builtins_and_rejects_the_unknown() {
     assert!(by_name("no_such_pass").is_none());
     assert_eq!(
         builtin_names(),
-        &["fold_immediate_copies", "dedup_range_constraints"]
+        &["fold_immediate_copies", "drop_true_asserts", "dedup_range_constraints"]
     );
 }
 
@@ -226,7 +229,7 @@ use minocrab_ir::v3::passes::{
 /// failure, not a stale claim.
 #[test]
 fn the_builtin_proofs_declare_every_claimed_theorem() {
-    for proof in [&FOLD_PROOF, &DEDUP_PROOF] {
+    for proof in [&FOLD_PROOF, &DEDUP_PROOF, &DROP_TRUE_ASSERTS_PROOF] {
         assert_eq!(
             proof.missing_theorems(),
             Vec::<&str>::new(),
@@ -295,5 +298,120 @@ fn a_drifted_proof_claim_is_surfaced_as_a_warning() {
             .any(|w| w.contains("no_such_theorem") && w.contains("UNVERIFIED")),
         "drift must surface in the report: {:?}",
         reports[0].warnings,
+    );
+}
+
+// ---- `drop_true_asserts` (M37) ------------------------------------------------
+//
+// notes/ir-passes.org §12, notes/evm-calls.org §3.2. The rule is one line;
+// what it must NOT do is why it gets a section of its own.
+
+use minocrab_ir::v3::passes::{drop_true_asserts, DropTrueAsserts, DROP_TRUE_ASSERTS_PROOF};
+
+fn assert_imm(value: u64) -> Instruction {
+    Instruction::Assert { cond: Operand::Immediate(minocrab_ir::Fr::from(value)) }
+}
+
+fn copy_imm(value: u64, output: &str) -> Instruction {
+    Instruction::Copy {
+        val: Operand::Immediate(minocrab_ir::Fr::from(value)),
+        output: Identifier(output.to_string()),
+    }
+}
+
+/// The rule itself: `assert 1` passes on every preimage, so it goes.
+#[test]
+fn an_assert_on_the_immediate_one_is_deleted() {
+    let out = drop_true_asserts(vec![
+        bits("%a", 64),
+        assert_imm(1),
+        assert_("%p"),
+        assert_imm(1),
+    ]);
+    assert_eq!(out, vec![bits("%a", 64), assert_("%p")]);
+}
+
+/// THE DIRECTION THAT MATTERS. An `assert` on any other immediate is an
+/// always-FAILING circuit — 0 rejects with "Failed direct assertion", 2 and 3
+/// with "Expected boolean" — and deleting one would turn a circuit the
+/// verifier REJECTS into one it ACCEPTS. Every one of them stays.
+#[test]
+fn an_assert_on_any_other_immediate_survives() {
+    let stream = vec![assert_imm(0), assert_imm(2), assert_imm(3), assert_imm(1)];
+    assert_eq!(
+        drop_true_asserts(stream.clone()),
+        stream[..3].to_vec(),
+        "only the immediate 1 may be removed",
+    );
+}
+
+/// No dataflow: a WIRE that happens to hold 1 is not this pass's business.
+/// Only [`fold_immediate_copies`] may turn such a name into an immediate, and
+/// then only where it can prove the copy is a rename.
+#[test]
+fn an_assert_on_a_wire_is_left_alone() {
+    let stream = vec![copy_imm(1, "%k"), assert_("%k")];
+    assert_eq!(drop_true_asserts(stream.clone()), stream);
+}
+
+/// THE ORDER TEST, and the shape the rule exists for: `assert(constant(1))`
+/// is `copy %k = 1; assert %k`, which only the copy fold turns into
+/// `assert 1`. Run alone the drop sees nothing (the test above);
+/// `Builder3::finish` runs the fold first, so the pair costs no instruction
+/// at all.
+#[test]
+fn assert_of_a_named_one_folds_then_drops_to_nothing() {
+    let mut b = Builder3::new();
+    let one = b.copy(minocrab_ir::Fr::from(1u64));
+    b.assert(one);
+    assert_eq!(b.finish(false).instructions.to_vec(), Vec::<Instruction>::new());
+}
+
+/// A named constant that is NOT 1 keeps its assert through both passes — the
+/// always-failing circuit stays always-failing.
+#[test]
+fn assert_of_a_named_zero_survives_finish() {
+    let mut b = Builder3::new();
+    let zero = b.copy(minocrab_ir::Fr::from(0u64));
+    b.assert(zero);
+    assert_eq!(b.finish(false).instructions.to_vec(), vec![assert_imm(0)]);
+}
+
+#[test]
+fn the_drop_wrapper_matches_the_free_function_and_reports() {
+    let stream = vec![assert_imm(1), assert_("%p")];
+    let (out, report) = DropTrueAsserts.run(stream.clone());
+    assert_eq!(out, drop_true_asserts(stream));
+    assert_eq!(report.pass, "drop_true_asserts");
+    assert_eq!((report.before, report.after), (2, 1));
+    assert!(report.warnings.iter().any(|w| w.contains("dropped 1 instruction")));
+    assert!(report.warnings.iter().any(|w| w.contains("always")));
+
+    // Nothing to drop → nothing to warn about.
+    let (_, quiet) = DropTrueAsserts.run(vec![assert_("%p")]);
+    assert!(quiet.warnings.is_empty(), "{:?}", quiet.warnings);
+}
+
+/// The proof travels with the pass, so `run_pipeline_verified` accepts it —
+/// in `finish`'s own order, on `finish`'s own shape.
+#[test]
+fn the_drop_is_a_verified_pass_in_the_finish_order() {
+    assert_eq!(DROP_TRUE_ASSERTS_PROOF.missing_theorems(), Vec::<&str>::new());
+    let verified: Vec<Box<dyn VerifiedPass>> = vec![
+        Box::new(FoldImmediateCopies),
+        Box::new(DropTrueAsserts),
+        Box::new(DedupRangeConstraints),
+    ];
+    let stream = vec![
+        copy_imm(1, "%k"),
+        assert_("%k"),
+        bits("%a", 64),
+        bits("%a", 64),
+    ];
+    let (out, reports) = run_pipeline_verified(&verified, stream);
+    assert_eq!(out, vec![bits("%a", 64)]);
+    assert!(
+        !reports.iter().flat_map(|r| r.warnings.iter()).any(|w| w.contains("UNVERIFIED")),
+        "no proof drift expected: {reports:?}",
     );
 }

@@ -57,6 +57,7 @@ impl<V> AssocMap<V> {
 }
 
 use minocrab_zkir::v3::{Identifier, Instruction, IrSource, Operand};
+use minocrab_zkir::Fr;
 
 /// Fold every `Copy` of an immediate into its consumers and drop it.
 ///
@@ -119,6 +120,65 @@ pub fn fold_immediate_copies(instructions: Vec<Instruction>) -> Vec<Instruction>
         out.push(instruction);
     }
     out
+}
+
+/// Delete every `Assert` whose condition is the IMMEDIATE 1 — the check that
+/// cannot fail, so it should not be shipped.
+///
+/// # Why it exists, and why it is a pass rather than an API branch
+///
+/// notes/evm-calls.org §3.2. The typed EVM-call API asserts an outcome
+/// predicate in `complete`; for a call whose predicate is the constant `true`
+/// (`OutcomeRule = Always`) that assert must cost nothing, and dmd's decision
+/// (2026-09-05) was to get the zero from a GENERAL fold rather than a
+/// `CAN_FAIL` const branching the API. The effect layer already treats an
+/// immediate-1 GUARD as no guard (`effects.rs`, `effect_guard`); this is the
+/// one residue that survived it, and every constant-true assert in the tree
+/// gets the same treatment for free.
+///
+/// # Run it AFTER [`fold_immediate_copies`], which is what creates its shape
+///
+/// A caller writes `c.assert(c.constant(1u64))`, which emits `copy %k = 1`
+/// and `assert %k`. Only once the copy fold has inlined the immediate is the
+/// instruction `assert 1`, so this rule sees nothing on the un-folded stream.
+/// [`Builder3::finish`](crate::v3::Builder3::finish) runs them in that order.
+///
+/// # THE ONE THING IT MUST NOT DO, and does not
+///
+/// An `Assert` on an immediate that is NOT 1 is an ALWAYS-FAILING circuit and
+/// is left exactly as it is. Under the ZKIR semantics `assert` resolves its
+/// operand as a boolean: 0 rejects with "Failed direct assertion", anything
+/// else rejects with "Expected boolean" (`ir_vm.rs`,
+/// `resolve_operand_bool`). Deleting one would turn a circuit that the
+/// verifier REJECTS into one it ACCEPTS — the unsound direction, and the only
+/// direction that matters here. This pass moves in the other one: it removes
+/// a check that already held on every preimage, so the accepted set is
+/// unchanged (`MinocrabProofs.AssertIr.dropTrueAsserts_preserves_run`).
+///
+/// # Instruction indices shift, exactly as the copy fold already shifts them
+///
+/// `AssertMessage.instruction` and `Region`'s `[start, end)` are recorded at
+/// BUILD time (`minocrab::v3`), so any pass that removes an instruction moves
+/// the positions after it. Pre-existing since the copy fold (notes/
+/// ir-passes.org §8, restated in §11); this rule inherits it and does not
+/// widen it. The one thing it could have added — a message stranded on a
+/// DELETED assert — is not a new failure mode either: the deleted assert is
+/// the one that can never fail, so its message could never have been printed.
+pub fn drop_true_asserts(instructions: Vec<Instruction>) -> Vec<Instruction> {
+    instructions
+        .into_iter()
+        .filter(|instruction| !is_true_assert(instruction))
+        .collect()
+}
+
+/// `assert` on the immediate 1, and nothing else — not a variable that
+/// happens to hold 1 (this pass does no dataflow), not any other immediate
+/// (see the pass's docs: those are always-failing circuits and stay).
+fn is_true_assert(instruction: &Instruction) -> bool {
+    matches!(
+        instruction,
+        Instruction::Assert { cond: Operand::Immediate(x) } if *x == Fr::from(1u64),
+    )
 }
 
 /// Drop every range constraint an earlier, equally tight or tighter one on
@@ -220,6 +280,16 @@ pub fn dedup_range_constraints(instructions: Vec<Instruction>) -> Vec<Instructio
 /// public-input effect and no semantic content. Everything else — every
 /// instruction, every operand, every order — is still compared exactly, and a
 /// constant that either side NAMES for an output slot is still named on both.
+///
+/// THE COPY FOLD ONLY, deliberately: [`drop_true_asserts`] also runs in
+/// `Builder3::finish`, and is NOT part of this normalisation. It deletes an
+/// instruction rather than renaming one, and no compactc artifact we hold
+/// contains an `assert` on an immediate (measured 2026-09-06: all 332 asserts
+/// in the 211 workspace dumps, and all 251 in the 209 v3 `.zkir` files under
+/// `corpus/` and `crates/`, name a WIRE).
+/// Adding it here would only ever hide a divergence
+/// — a compactc artifact that DID carry one is something we want a
+/// differential to say out loud, not something to normalise away.
 pub fn folded(ir: &IrSource) -> IrSource {
     IrSource {
         instructions: std::sync::Arc::new(fold_immediate_copies(ir.instructions.to_vec())),
@@ -531,6 +601,33 @@ impl Pass for FoldImmediateCopies {
     }
 }
 
+/// [`drop_true_asserts`] as a [`Pass`]. It removes only instructions it can
+/// prove pass on every preimage — an `assert` on the immediate 1 — so the
+/// instruction-drop warning it trips is expected and benign. It never touches
+/// an assert on any OTHER immediate: those reject unconditionally, and the
+/// warning says so, because that is the one direction a reader should check.
+pub struct DropTrueAsserts;
+
+impl Pass for DropTrueAsserts {
+    fn name(&self) -> &'static str {
+        "drop_true_asserts"
+    }
+    fn transform(&self, ir: Vec<Instruction>) -> (Vec<Instruction>, Vec<String>) {
+        let before = ir.len();
+        let out = drop_true_asserts(ir);
+        let warnings = if out.len() < before {
+            vec!["dropped only `assert` on the IMMEDIATE 1, which passes on \
+                  every preimage; an assert on any other immediate always \
+                  FAILS and is deliberately kept, so no rejected circuit \
+                  becomes an accepted one"
+                .to_string()]
+        } else {
+            Vec::new()
+        };
+        (out, warnings)
+    }
+}
+
 /// [`dedup_range_constraints`] as a [`Pass`]. It drops a range constraint only
 /// where a tighter-or-equal bound was ALREADY proven, so the drop is sound on
 /// any stream whose leaves are constrained at entry — the warning names the
@@ -585,6 +682,7 @@ pub fn run_pipeline(
 pub fn by_name(name: &str) -> Option<Box<dyn Pass>> {
     match name {
         "fold_immediate_copies" => Some(Box::new(FoldImmediateCopies)),
+        "drop_true_asserts" => Some(Box::new(DropTrueAsserts)),
         "dedup_range_constraints" => Some(Box::new(DedupRangeConstraints)),
         _ => None,
     }
@@ -592,7 +690,7 @@ pub fn by_name(name: &str) -> Option<Box<dyn Pass>> {
 
 /// The names [`by_name`] accepts — for help text and discovery.
 pub fn builtin_names() -> &'static [&'static str] {
-    &["fold_immediate_copies", "dedup_range_constraints"]
+    &["fold_immediate_copies", "drop_true_asserts", "dedup_range_constraints"]
 }
 
 // ============================================================================
@@ -759,6 +857,29 @@ pub static DEDUP_PROOF: ProofRef = lean_proof! {
     ],
 };
 
+/// The Lean warrant for [`DropTrueAsserts`], and it is the STRONGEST of the
+/// three: where the other two can only preserve an abstraction of meaning (a
+/// fold that renames wires, a dedup that removes constraints), this rule
+/// preserves `run` ITSELF. `dropTrueAsserts_preserves_run` is an equality of
+/// `MinocrabZkir.Eval.run` — memory, `pis`, `piSkips`, `outputs`, and
+/// accept-vs-reject with its message — for every model, every carrier
+/// assignment and every preimage. Beside it: the output is a subsequence
+/// (`dropTrueAsserts_sublist`), everything that is not a true assert survives
+/// with multiplicity (`dropTrueAsserts_passthrough`), an assert on any OTHER
+/// immediate — the always-FAILING circuit — is kept
+/// (`dropTrueAsserts_keeps_failing_asserts`), and the rule is idempotent
+/// (`dropTrueAsserts_idem`).
+pub static DROP_TRUE_ASSERTS_PROOF: ProofRef = lean_proof! {
+    file: "../../lean/MinocrabProofs/AssertIr.lean",
+    theorems: [
+        "dropTrueAsserts_sublist",
+        "dropTrueAsserts_passthrough",
+        "dropTrueAsserts_keeps_failing_asserts",
+        "dropTrueAsserts_idem",
+        "dropTrueAsserts_preserves_run",
+    ],
+};
+
 impl VerifiedPass for FoldImmediateCopies {
     fn proof(&self) -> &'static ProofRef {
         &FOLD_PROOF
@@ -768,6 +889,12 @@ impl VerifiedPass for FoldImmediateCopies {
 impl VerifiedPass for DedupRangeConstraints {
     fn proof(&self) -> &'static ProofRef {
         &DEDUP_PROOF
+    }
+}
+
+impl VerifiedPass for DropTrueAsserts {
+    fn proof(&self) -> &'static ProofRef {
+        &DROP_TRUE_ASSERTS_PROOF
     }
 }
 

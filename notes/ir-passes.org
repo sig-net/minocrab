@@ -869,3 +869,149 @@ argues for it yet — the measurement above says it would move zero
 instructions there — so the trigger is a gadget in that lineage adopting
 =Serializer::constrained= or the constrained readers, and the gate is the row
 snapshot plus that lineage's divergence ledger, not this note.
+
+* 12. THE ALWAYS-TRUE ASSERT, as built (2026-09-06)
+
+=minocrab_ir::v3::passes::drop_true_asserts=, run by =Builder3::finish= on
+every circuit: an =Assert= whose operand is the IMMEDIATE 1 is deleted,
+because it passes on every preimage. Nothing else is touched.
+
+The case for it is §0's criterion rather than rows. notes/evm-calls.org §3.2
+puts an outcome predicate behind =EvmCall::Outcome=, and for
+=OutcomeRule = Always= that predicate is the constant =true=: =complete=
+asserts it, the author cannot skip the check, and the assert must cost
+nothing. dmd's call (2026-09-05) was to get that zero from a GENERAL fold
+rather than a =CAN_FAIL= const branching the API — /"I'm inclined to just use
+the fold, because it's a fairly small number of rows either way"/ — so the
+API stays one shape and every constant-true assert in the tree gets the same
+treatment for free. The effect layer already treats an immediate-1 GUARD as
+no guard (=effects.rs=, =effect_guard=); this is the one residue that
+survived it.
+
+** FOLD FIRST, THEN DROP, THEN (optionally) DEDUP
+
+=finish= now runs three passes in that order, and the new one's position is
+forced by the same kind of argument as §11's:
+
+- =c.assert(c.constant(1u64))= emits =copy %k = 1; assert %k=. Only the copy
+  fold turns that into =assert 1=, which is the shape this rule deletes.
+  Run BEFORE the fold it would see nothing at all. =assert_of_a_named_one_
+  folds_then_drops_to_nothing= pins the pair: through =finish= the two
+  instructions become ZERO.
+- Against the dedup the order is free in both directions — the dedup only
+  ever removes range constraints, which this rule never looks at, and this
+  rule only ever removes asserts, which the dedup never looks at. It is
+  placed between them because that is the order =finish= reads in.
+
+ALWAYS ON, like the fold and unlike the dedup. It can be: the deletion is an
+equality of the evaluation semantics, not a divergence from compactc that
+needs a warrant (below).
+
+** WHAT IT REFUSES TO DO, and this is the whole safety argument
+
+An =Assert= on an immediate that is NOT 1 is an ALWAYS-FAILING circuit, and
+it is left exactly as it is. Under the ZKIR semantics =assert= resolves its
+operand as a boolean (=ir_vm.rs=, =resolve_operand_bool=): 0 rejects with
+"Failed direct assertion", anything else with "Expected boolean". Deleting
+one would turn a circuit the verifier REJECTS into one it ACCEPTS — the
+unsound direction, and the only direction that matters here. The pass moves
+in the other one: it removes a check that already held on every preimage, so
+the accepted set is unchanged.
+
+It also does no dataflow. A WIRE that happens to hold 1 is not this pass's
+business; only =fold_immediate_copies= may turn such a name into an
+immediate, and then only where it can prove the copy is a rename.
+
+** THE LEAN THEOREM, and it is the STRONGEST of the three
+
+=crates/minocrab-ir/lean/MinocrabProofs/AssertIr.lean=, cited from
+=DROP_TRUE_ASSERTS_PROOF= via =lean_proof!= exactly as the other two are, so
+=run_pipeline_verified= accepts the pass and =missing_theorems= catches a
+rename. =lake build= green in both lean packages.
+
+Where =FoldIr= and =DedupIr= can only preserve an ABSTRACTION of meaning —
+=observe= for the fold (which renames wires), =streamBound= for the dedup
+(which removes constraints) — this rule preserves =run= ITSELF:
+
+#+begin_src lean
+theorem dropTrueAsserts_preserves_run (M : Model C) (prog : Program) (π : Preimage) :
+    Eval.run M (dropped prog) π = Eval.run M prog π
+#+end_src
+
+an equality of =MinocrabZkir.Eval.run= — memory, =pis=, =piSkips=, =outputs=,
+and accept-vs-reject WITH its message — for every model, every carrier
+assignment and every preimage. It rests on one step lemma
+(=step_of_isTrueAssert=: the deleted instruction steps to =pure st=, because
+=resolve= sends =.imm v= to =Fr.ofInt v= and =resolveBool= sends 1 to =true=)
+lifted through the =foldlM= over the instruction list. That is why the pass
+can be on for every shipped circuit without a §1-style warrant: there is no
+divergence to warrant, only an instruction that did nothing.
+
+Four theorems stand beside it, mirroring the other two files:
+=dropTrueAsserts_sublist= (the output is a subsequence — nothing added,
+reordered or rewritten), =dropTrueAsserts_passthrough= (everything that is not
+a true assert survives with multiplicity and in order),
+=dropTrueAsserts_keeps_failing_asserts= (the unsound direction closed a second
+time, syntactically: an assert on any OTHER immediate is kept with
+multiplicity), and =dropTrueAsserts_idem=.
+
+The trigger is stated as =Fr.ofInt v = 1= rather than =v = 1=: the Rust
+operand holds an already-reduced =Fr= where the Lean syntax holds the file's
+signed literal, so the field reading is the faithful transcription.
+
+** RUNG 3, EXECUTABLE: =MinocrabZkir/Smoke.lean=
+
+Four =#guard=s beside the theorem, on the hand-traced program that file
+already carries: prefixing =assert (imm 1)= leaves =pis=, the skip list and
+the verdict identical to the run without it, while =imm 0=, =imm 2= and
+=imm -1= each REJECT. The theorem is the general claim; these are the
+witnesses that the two immediates really do fall on opposite sides.
+
+** ZERO MOVEMENT, MEASURED — the rule is DORMANT today
+
+Both dumps (=MINOCRAB_ZKIR_DUMP=, all 211 workspace circuits) with and
+without the pass wired into =finish=: *=diff -r= EMPTY*. =row_snapshot= under
+=--release= is unchanged, and so is every differential.
+
+That is not luck, it is the same measurement said forward: scanning every v3
+=.zkir= we hold — all 332 asserts in the 211 workspace dumps, and all 251 in
+the 209 v3 artifacts under =corpus/= and =crates/= — finds *ZERO* whose
+=cond= is an immediate. Every one names a wire. So the rule removes nothing
+we ship today and is dormant until the typed EVM-call API's constant-true
+outcome rule emits its first one.
+
+** =folded= DOES NOT GET IT, deliberately
+
+=passes::folded= is the normaliser the instruction-for-instruction
+differentials run over compactc's artifact AND ours (§8). It stays the COPY
+FOLD ONLY. The rule deletes an instruction rather than renaming one, no
+compactc artifact we hold carries its shape (measured above), and adding it
+there could only ever hide a divergence: a compactc artifact that DID emit
+=assert 1= is something we want a differential to say out loud, not something
+to normalise away. The differentials' criterion therefore stays exactly what
+§8 made it — "identical instruction for instruction, MODULO the naming of
+constants" — and is not widened by this pass.
+
+** THE INDEX CAVEAT, inherited and not widened
+
+=AssertMessage.instruction= and =Region='s =[start, end)= are recorded at
+BUILD time (=minocrab::v3=), so any pass that removes an instruction shifts
+the positions after it. Pre-existing since §8 and restated in §11; this rule
+inherits it and does not make it worse. The one thing it could have added — a
+message stranded on a DELETED assert — is not a new failure mode either: the
+deleted assert is the one that can never fail, so its message could never
+have been printed.
+
+** The pass ledger, updated
+
+| pass | vs compactc | gate |
+|------+-------------+------|
+| =fold_immediate_copies= | diverges by inlining (§8) | always on, both sides normalised |
+| =drop_true_asserts= | neutral (no artifact has the shape) | always on, =run= preserved in Lean |
+| =dedup_range_constraints= | prospective (§11) | opt-in, M10 warrant |
+
+=builtin_names()= is now the three, in =finish='s order, and
+=DropTrueAsserts= implements =VerifiedPass=. Tests:
+=crates/minocrab-ir/tests/v3_passes.rs=, the =drop_true_asserts= section —
+the rule, the three refusals, the order through =finish=, the report's
+warnings, and the verified pipeline in =finish='s own order.

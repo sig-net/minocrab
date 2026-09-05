@@ -852,7 +852,8 @@ impl Builder3 {
 
     /// Finish into a v3 [`IrSource`].
     ///
-    /// FOLD FIRST, THEN DEDUP, and the order is not arbitrary. The fold
+    /// FOLD FIRST, THEN DROP TRUE ASSERTS, THEN DEDUP, and the order is not
+    /// arbitrary. The fold
     /// substitutes immediates into operand positions, so a constraint on a
     /// named constant becomes a constraint on an IMMEDIATE — which the dedup
     /// pass deliberately leaves alone, having no wire to key on. Running the
@@ -864,8 +865,20 @@ impl Builder3 {
     /// The reverse dependency does not exist: the dedup pass only ever
     /// DELETES constraints, which bind no names and produce no values, so it
     /// cannot invalidate anything the fold established.
+    ///
+    /// [`passes::drop_true_asserts`] sits between them, and its position is
+    /// forced by the same argument as the dedup's: `c.assert(c.constant(1))`
+    /// is `copy %k = 1; assert %k`, and only the fold turns that into
+    /// `assert 1`, which is the shape the rule deletes. Before the fold it
+    /// would see nothing. It is ALWAYS ON, like the fold and unlike the
+    /// dedup: it removes a check that holds on every preimage, so `run` is
+    /// preserved exactly (`MinocrabProofs.AssertIr.dropTrueAsserts_preserves_run`),
+    /// and no shipped circuit contains its shape today — it is dormant until
+    /// the typed EVM-call API's constant-true outcome rule emits one
+    /// (notes/evm-calls.org §3.2).
     pub fn finish(self, communications_commitment: bool) -> IrSource {
         let instructions = passes::fold_immediate_copies(self.instructions);
+        let instructions = passes::drop_true_asserts(instructions);
         let instructions = if self.dedup_constraints {
             passes::dedup_range_constraints(instructions)
         } else {
