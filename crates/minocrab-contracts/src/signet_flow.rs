@@ -1,110 +1,62 @@
-//! The Signet round trip as a typed future: `Pending<Env, Resp>`.
+//! THE SIGNET ROUND TRIP'S SHARED MACHINERY — the block's configuration,
+//! the record a request files, and the attested output a settle verifies.
 //!
 //! Every Sig Network operation a Midnight contract makes is one future split
-//! across two transactions. A REQUEST circuit files a signing record, and
+//! across two transactions. A REQUEST circuit files a signing record and
 //! cross-calls the Signet singleton so the MPC comes to read it; a SETTLE
 //! circuit, in a later transaction, verifies the MPC's attestation over the
 //! typed response and consumes the record. The ledger map entry IS the
-//! suspended continuation; the attestation is the value the future
-//! resolves with. (notes/signet-async.org is the design of record — M35.)
+//! suspended continuation; the attestation is the value the future resolves
+//! with. (notes/signet-async.org is the design of record — M35.)
 //!
-//! This module owns the suspension so a contract does not:
+//! # What lives here, and why
 //!
-//! - [`Pending<Env, Resp>`] is ONE ledger slot (two consecutive fields: the
-//!   MPC-facing record map and the caller's environment map) whose type
-//!   names the response it settles under. [`Pending::request`] is the only
-//!   constructor of a request id; [`Pending::settle`] is the only
-//!   constructor of a typed response. Both do every step, in one order.
-//! - [`Env`](LedgerRepr) is the continuation state, EXPLICIT and PUBLIC by
-//!   construction: `#[derive(LedgerRepr)]` has no impl at `Private`, so a
-//!   secret cannot be captured across the suspension by accident (what
-//!   Rust's `async` would silently do). What must survive privately is a
-//!   commitment, opened on the settle side with a fresh witness.
-//! - [`Response::KIND`] is the response-kind byte, written once on the type.
-//!   A `Settle<Env, Resp>` ticket only fits the `Pending<Env, Resp>` slot
-//!   it names, so pairing a withdrawal environment with a claim response
-//!   is a type error; two slots of one block claiming one kind is E0080
-//!   (`assert_distinct_kinds`, from `#[derive(Ledger)]`).
-//! - The notification the MPC follows to the record is DERIVED from the
-//!   slot's ledger path, never spelled by hand.
-//! - The sender, chain id, caip2 id, nonce, record format version and MPC
-//!   key all come from context ([`Signet`], the block's one shared
-//!   configuration slot), so a request always binds the calling contract
-//!   and chain, and an attestation for contract A cannot settle at B.
+//! M35 put a `Pending<Env, Resp>` slot here, keyed by a hand-written
+//! `Response` type per kind. M37 rung D replaced it with
+//! [`crate::evm_flow::Pending<Call, Env, WORDS>`], which is keyed by the CALL
+//! ([`crate::evm::EvmCall`]) and derives the kind byte, the response type,
+//! the ABI words, the selector, the gas envelope and the signing path from
+//! it. What is left in this module is what the typed slot is BUILT ON, and
+//! it is here rather than there because it is the WIRE — the MPC's side of
+//! the protocol, which no contract-facing API gets to reshape:
 //!
-//! TYPES CONSTRAIN THE AUTHOR, ASSERTS CONSTRAIN THE PROVER: nothing here
-//! removes an in-circuit check on untrusted input. The ticket's kind byte,
-//! signature, record membership, record kind and record version are all
-//! asserted inside [`Pending::settle`]; what the types add is that a
-//! circuit cannot forget one of them or pair them wrongly.
+//! - [`Signet`] — the block's one configuration slot (signer address, MPC
+//!   response key, request nonce, caip2 id, EVM chain id). Five ledger
+//!   fields a contract declares once; `#[derive(Ledger)]` threads its offset
+//!   into every `Pending` and `Fired` slot, which is why a typed request
+//!   takes no `&SELF.signet`.
+//! - [`file_request`] — the filing every request does, whatever the slot:
+//!   read the context, assemble the record, hash its id, assert freshness,
+//!   bump the nonce, store it, store the environment beside it, notify the
+//!   singleton with the record map's own path. `evm_flow`'s three request
+//!   methods are this function plus a transaction.
+//! - [`EvmTx`] and [`SignRequest`] — the transaction shape the record holds
+//!   and the request that files it. `evm::build_tx` builds the first from a
+//!   call type; nothing outside this crate writes either by hand.
+//! - [`Attested`] — `serializedOutput` on the wire: the kind byte then the
+//!   attested value. The signed preimage is over exactly its limbs.
+//! - [`Outcome`] — what a settle hands back.
+//! - The three disclosure labels and the [`Requested`] / [`Settled`] label
+//!   sets a request and a settle publish.
 //!
-//! What stays in the circuit, deliberately: the initialization gate, the
-//! authorization with a FRESH witness (the depositor gate re-witnesses the
-//! secret key rather than capturing it — it must, since the settle half is
-//! proven by another transaction), and the business guards.
+//! RETIRED IN M37 RUNG D, with the vault that used them: `Pending`, `Fired`,
+//! the `Settle` ticket, the `Response` and `FailureResponse` traits, and
+//! `Commit<T>` (whose domain was a `&str` at both ends —
+//! [`crate::evm_flow::Commit<T, Tag>`] takes it as a type, so a `to` and an
+//! `open` that disagree no longer compiles).
+//!
+//! TYPES CONSTRAIN THE AUTHOR, ASSERTS CONSTRAIN THE PROVER: nothing in
+//! either module removes an in-circuit check on untrusted input.
 //!
 //! NO TIMEOUT, by decision (dmd, 2026-09-05): a request with no response
-//! stays pending; refund happens only on an ATTESTED failure
-//! ([`Pending::settle_failed`]).
+//! stays pending; a refund happens only on an ATTESTED non-success
+//! ([`crate::evm_flow::Pending::refund`]).
 //!
 //! # What does not compile
 //!
-//! A ticket declared against one slot handed to another (E0308 — the
-//! phantom `Env` and the `Resp` both have to match):
-//!
-//! ```compile_fail
-//! use minocrab::v3::Circuit3;
-//! use minocrab::Public;
-//! use minocrab_contracts::signet_flow::{Pending, Response, Settle, Signet};
-//! use minocrab_std::v3::borsh::CircuitBorsh;
-//! use minocrab_std::v3::{Bool, Ledger, LedgerRepr, Uint};
-//!
-//! #[derive(LedgerRepr)] struct DepositEnv { amount: Uint<64, Public> }
-//! #[derive(LedgerRepr)] struct WithdrawEnv { amount: Uint<64, Public> }
-//! #[derive(CircuitBorsh)] struct ClaimResponse { success: Bool }
-//! impl Response for ClaimResponse { const KIND: u8 = 0; }
-//! #[derive(CircuitBorsh)] struct WithdrawResponse { success: Bool }
-//! impl Response for WithdrawResponse { const KIND: u8 = 1; }
-//!
-//! #[derive(Ledger)]
-//! struct Block {
-//!     signet: Signet,
-//!     deposits: Pending<DepositEnv, ClaimResponse>,
-//!     withdrawals: Pending<WithdrawEnv, WithdrawResponse>,
-//! }
-//! const BLOCK: Block = Block::new();
-//!
-//! fn settle(c: &mut Circuit3, ticket: Settle<WithdrawEnv, WithdrawResponse>) {
-//!     BLOCK.deposits.settle(c, &BLOCK.signet, ticket);
-//! }
-//! ```
-//!
-//! Two slots of one block settling under the same kind (E0080, from the
-//! derive's `assert_distinct_kinds`):
-//!
-//! ```compile_fail
-//! use minocrab::Public;
-//! use minocrab_contracts::signet_flow::{Pending, Response, Signet};
-//! use minocrab_std::v3::borsh::CircuitBorsh;
-//! use minocrab_std::v3::{Bool, Ledger, LedgerRepr, Uint};
-//!
-//! #[derive(LedgerRepr)] struct Env { amount: Uint<64, Public> }
-//! #[derive(CircuitBorsh)] struct A { success: Bool }
-//! impl Response for A { const KIND: u8 = 0; }
-//! #[derive(CircuitBorsh)] struct B { success: Bool }
-//! impl Response for B { const KIND: u8 = 0; }
-//!
-//! #[derive(Ledger)]
-//! struct Block {
-//!     signet: Signet,
-//!     first: Pending<Env, A>,
-//!     second: Pending<Env, B>,
-//! }
-//! const BLOCK: Block = Block::new();
-//! const _: usize = BLOCK.first.record_path().depth() as usize;
-//! ```
-//!
-//! An environment with a private field (no `LedgerRepr` at `Private`):
+//! An environment with a private field (`#[derive(LedgerRepr)]` has no impl
+//! at `Private`, so a secret cannot be captured across the suspension by
+//! accident — what Rust's own `async` would silently do):
 //!
 //! ```compile_fail
 //! use minocrab::{Private, Public};
@@ -114,18 +66,15 @@
 //! struct Env { amount: Uint<64, Public>, secret: B32<Private> }
 //! ```
 //!
-//! A response type that is not a Borsh record (no `Response` without
-//! `CircuitBorsh`, so no canonical decode can be skipped):
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles:
 //!
-//! ```compile_fail
-//! use minocrab_contracts::signet_flow::Response;
-//! use minocrab_std::v3::{Bool, CircuitArg};
-//!
-//! #[derive(CircuitArg)] struct Loose { success: Bool }
-//! impl Response for Loose { const KIND: u8 = 0; }
 //! ```
-
-use core::marker::PhantomData;
+//! use minocrab::Public;
+//! use minocrab_std::v3::{LedgerRepr, Uint, B32};
+//!
+//! #[derive(LedgerRepr)]
+//! struct Env { amount: Uint<64, Public>, secret: B32<Public> }
+//! ```
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
@@ -133,44 +82,24 @@ use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
 use minocrab_std::v3::borsh::{BorshReader, CircuitBorsh, FieldSpec, LayoutPath, Limbs};
 use minocrab_std::v3::Serializer;
 use minocrab_std::v3::{
-    eq, is_true, kernel, label, not, ArgPath, CircuitAbi, CircuitArg, Disclose, FieldPath,
-    LedgerCell, LedgerCounter, LedgerField, LedgerMap, LedgerRepr, LedgerWidth, Prim,
-    Secp256k1Point, Uint, B32,
+    is_true, kernel, label, not, ArgPath, CircuitAbi, CircuitArg, Disclose, LedgerCell,
+    LedgerCounter, LedgerField, LedgerMap, LedgerRepr, LedgerWidth, Prim, Secp256k1Point, Uint,
 };
 use signet_signer_interface::notification::construct_notification_v1;
-use signet_signer_interface::{RequestId, Signature, SignetSigner};
+use signet_signer_interface::{RequestId, SignetSigner};
 
 use crate::common::{Caip2Id, SigningPath};
 use crate::signet::{
-    self, EventRecordV2, EvmCalldata, EvmType2TxParams, Secp256k1SigLimbs, RECORD_FORMAT_VERSION,
+    self, EventRecordV2, EvmCalldata, EvmType2TxParams,
 };
 
 // ---- the response types ------------------------------------------------------
 
-/// An attested output the MPC signs back: a Borsh record whose KIND byte
-/// (byte 0 of every attested output, and the last byte of every request
-/// record) is this type's.
-///
-/// The kind is an associated const, not a field: it is written once, on the
-/// type, and a `Pending<_, Resp>` slot settles under `Resp::KIND` and nothing
-/// else. The `CircuitBorsh` bound is what makes a `Bool` field 0/1 by
-/// construction (the `0x02` hazard the vault harness found closes here, one
-/// level below any circuit).
-pub trait Response: CircuitArg + CircuitBorsh<Private> {
-    /// The response-kind byte.
-    const KIND: u8;
-}
-
-/// The MPC's "never executed" output: a response every pending request can
-/// receive, whatever it asked for. Marked so [`Pending::settle_failed`] can
-/// take it without the slot claiming its kind (`KINDS` lists success kinds
-/// only, so a shared failure kind does not trip the uniqueness assert).
-pub trait FailureResponse: Response {}
-
 /// `serializedOutput` on the wire: the kind byte then the response body.
 ///
 /// What the MPC signs is `keccak256(requestId ‖ borsh(Attested))`, and
-/// [`Pending::settle`] asserts `kind == R::KIND` before verifying — so an
+/// [`crate::evm_flow::Pending::complete`] asserts `kind == Call::KIND`
+/// before verifying — so an
 /// attestation issued for another settle circuit fails the kind check, and
 /// one with a forged kind fails the signature.
 pub struct Attested<R> {
@@ -234,62 +163,6 @@ impl<R: CircuitBorsh<Private>> CircuitBorsh<Private> for Attested<R> {
     fn push_layout(path: &LayoutPath, offset: &mut usize, out: &mut Vec<FieldSpec>) {
         <Uint<8>>::push_layout(&path.field("kind"), offset, out);
         R::push_layout(&path.field("output"), offset, out);
-    }
-}
-
-// ---- the ticket -----------------------------------------------------------------
-
-/// The settle circuit's argument block: `(requestId, respond, serializedOutput)`
-/// in that WIRE ORDER, one `CircuitArg`, named for the slot it fits.
-///
-/// `Env` is phantom — the ticket carries no environment; the slot does — and
-/// it is there so `VAULT.deposits.settle(c, &signet, ticket)` only accepts
-/// the ticket type declared against `deposits`. Pairing another slot's
-/// ticket does not compile.
-pub struct Settle<Env, Resp> {
-    pub request_id: RequestId<Private>,
-    /// The MPC's signature in `verifyRespondBidirectionalEvent`'s
-    /// CIRCUIT-INPUT form: `bigR.x` and `s` LITTLE-endian (the singleton's
-    /// event carries them big-endian; the reversal is off-chain —
-    /// `signet_sim::Signature::circuit_input`). A wrong order fails to
-    /// prove, never falsely accepts. `bigR.y` and `recoveryId` are part of
-    /// the wire shape and read by nothing, as in the Compact original.
-    pub respond: Signature<Private>,
-    pub serialized_output: Attested<Resp>,
-    _env: PhantomData<fn() -> Env>,
-}
-
-impl<Env, Resp: CircuitAbi> CircuitAbi for Settle<Env, Resp> {
-    const SLOTS: usize =
-        <RequestId<Private>>::SLOTS + <Signature<Private>>::SLOTS + <Attested<Resp>>::SLOTS;
-
-    fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
-        <RequestId<Private>>::push_atoms(atoms);
-        <Signature<Private>>::push_atoms(atoms);
-        <Attested<Resp>>::push_atoms(atoms);
-    }
-
-    fn push_prims(prims: &mut Vec<Prim>) {
-        <RequestId<Private>>::push_prims(prims);
-        <Signature<Private>>::push_prims(prims);
-        <Attested<Resp>>::push_prims(prims);
-    }
-}
-
-impl<Env, Resp: CircuitArg> CircuitArg for Settle<Env, Resp> {
-    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
-        Settle {
-            request_id: <RequestId<Private>>::declare(c, &path.field("requestId")),
-            respond: <Signature<Private>>::declare(c, &path.field("respond")),
-            serialized_output: <Attested<Resp>>::declare(c, &path.field("serializedOutput")),
-            _env: PhantomData,
-        }
-    }
-
-    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
-        self.request_id.push_slots(slots);
-        self.respond.push_slots(slots);
-        self.serialized_output.push_slots(slots);
     }
 }
 
@@ -405,58 +278,6 @@ pub type Requested = (
 /// Everything [`Pending::settle`] discloses.
 pub type Settled = (RequestIdSettled,);
 
-// ---- the slot ------------------------------------------------------------------------
-
-/// A suspended Sig Network operation: the ledger slot a request files into
-/// and a settle consumes from. See the module docs.
-///
-/// Two consecutive ledger fields: the record map the MPC walks to (its
-/// format is the MPC's, frozen — `EventRecordV2`) and the environment map
-/// holding the caller's own typed continuation state, both keyed by the
-/// request id. `WORDS` is the calldata capacity of the record, as in
-/// `EvmType2TxParams`.
-pub struct Pending<Env, Resp, const WORDS: usize = 2> {
-    records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
-    envs: LedgerMap<RequestId<Public>, Env>,
-    _resp: PhantomData<fn() -> Resp>,
-}
-
-impl<Env, Resp, const WORDS: usize> Pending<Env, Resp, WORDS> {
-    /// The slot's two fields from flat index `start` of a block of `total`
-    /// fields (what `#[derive(Ledger)]` calls).
-    pub const fn at_block(total: usize, start: usize) -> Self {
-        Pending {
-            records: LedgerMap::at_block(total, start),
-            envs: LedgerMap::at_block(total, start + 1),
-            _resp: PhantomData,
-        }
-    }
-
-    /// [`Self::at_block`], ignoring the block's `Signet` offset.
-    ///
-    /// RUNG D DELETES THIS. `#[derive(Ledger)]` threads the block's Signet
-    /// start into every field whose type is spelled `Pending` (M37 rung B),
-    /// because `evm_flow::Pending` reads its configuration from the block
-    /// instead of taking `&VAULT.signet` per call. THIS lineage still takes
-    /// it as an argument, so the third parameter is dropped on the floor —
-    /// the method exists only so the vault's existing block keeps compiling
-    /// through the derive change, and it goes when rung D migrates the vault
-    /// off this type.
-    pub const fn at_block_with_signet(total: usize, start: usize, _signet_start: usize) -> Self {
-        Self::at_block(total, start)
-    }
-
-    /// The record map's ledger path: the notification's `depth ‖ path`.
-    pub const fn record_path(&self) -> FieldPath {
-        self.records.field_path()
-    }
-}
-
-impl<Env, Resp: Response, const WORDS: usize> LedgerWidth for Pending<Env, Resp, WORDS> {
-    const WIDTH: usize = 2;
-    const KINDS: &'static [u8] = &[Resp::KIND];
-}
-
 /// What a settle hands back: the consumed entry, typed.
 pub struct Outcome<Env, R, const WORDS: usize> {
     /// The request id, disclosed.
@@ -538,262 +359,4 @@ pub(crate) fn file_request<const WORDS: usize>(
         signer.sign_bidirectional(c, request_id, notification);
     });
     request_id
-}
-
-/// A request that is NEVER settled — Sig Network's fire-and-forget shape
-/// (the vault's `approveRouter`): one ledger field, the record map, and
-/// [`Fired::request`] as its only operation. No settle method exists, so
-/// "no circuit settles this kind" is a fact about the type rather than a
-/// convention; the kind is still claimed in `KINDS`, so no settling slot
-/// of the block can share it.
-pub struct Fired<Resp, const WORDS: usize = 2> {
-    records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
-    _resp: PhantomData<fn() -> Resp>,
-}
-
-impl<Resp, const WORDS: usize> Fired<Resp, WORDS> {
-    /// The slot's field at flat index `index` of a block of `total` fields.
-    pub const fn at_block(total: usize, index: usize) -> Self {
-        Fired {
-            records: LedgerMap::at_block(total, index),
-            _resp: PhantomData,
-        }
-    }
-
-    /// The record map's ledger path: the notification's `depth ‖ path`.
-    pub const fn record_path(&self) -> FieldPath {
-        self.records.field_path()
-    }
-}
-
-impl<Resp: Response, const WORDS: usize> LedgerWidth for Fired<Resp, WORDS> {
-    const KINDS: &'static [u8] = &[Resp::KIND];
-}
-
-impl<Resp: Response, const WORDS: usize> Fired<Resp, WORDS> {
-    /// File a request and notify the MPC; nothing is kept for a settle.
-    /// Discloses [`Requested`].
-    pub fn request(
-        &self,
-        c: &mut Circuit3,
-        signet: &Signet,
-        req: SignRequest<WORDS>,
-    ) -> RequestId<Public> {
-        file_request(c, signet, &self.records, req, Resp::KIND, |_, _| {})
-    }
-}
-
-impl<Env: LedgerRepr, Resp: Response, const WORDS: usize> Pending<Env, Resp, WORDS> {
-    /// File a request and notify the MPC. Returns the disclosed request id.
-    ///
-    /// In order: the sender (`kernel.self`), nonce, caip2 id and chain id
-    /// are read; the record is assembled with this slot's kind; its id is
-    /// the keccak of the whole record (what the MPC recomputes); freshness
-    /// is asserted; the nonce is incremented; the record is stored, then
-    /// the environment `env` builds from the disclosed id is stored beside
-    /// it; the singleton is called with a notification carrying THIS
-    /// slot's ledger path. Discloses [`Requested`], plus whatever `env`
-    /// discloses (a [`Commit`]'s label, typically).
-    pub fn request(
-        &self,
-        c: &mut Circuit3,
-        signet: &Signet,
-        req: SignRequest<WORDS>,
-        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
-    ) -> RequestId<Public> {
-        file_request(c, signet, &self.records, req, Resp::KIND, |c, request_id| {
-            // The environment is built AFTER the id exists, so a
-            // [`Commit`] in it can bind to this request and no other.
-            let env = env(c, request_id);
-            self.envs.insert(c, &request_id, &env);
-        })
-    }
-
-    /// Settle under this slot's response: verify the attestation, consume
-    /// the entry, hand back the typed environment and output.
-    ///
-    /// In order: the id is disclosed; `kind == Resp::KIND`; the signature
-    /// over `keccak256(id ‖ borsh(kind ‖ output))` verifies under the MPC
-    /// key; the entry exists; record and environment are read and removed;
-    /// the record's own kind and format version are this slot's. Discloses
-    /// [`Settled`].
-    pub fn settle(
-        &self,
-        c: &mut Circuit3,
-        signet: &Signet,
-        ticket: Settle<Env, Resp>,
-    ) -> Outcome<Env, Resp, WORDS> {
-        self.consume(c, signet, ticket)
-    }
-
-    /// Settle under the MPC's failure response ("never executed"): the same
-    /// verification and consumption, against a ticket whose output is the
-    /// failure kind. The record still has to be THIS slot's (its kind byte
-    /// is `Resp::KIND`), so a failure attested for one flow cannot refund
-    /// another.
-    pub fn settle_failed<F: FailureResponse>(
-        &self,
-        c: &mut Circuit3,
-        signet: &Signet,
-        ticket: Settle<Env, F>,
-    ) -> Outcome<Env, F, WORDS> {
-        self.consume(c, signet, ticket)
-    }
-
-    fn consume<R: Response>(
-        &self,
-        c: &mut Circuit3,
-        signet: &Signet,
-        ticket: Settle<Env, R>,
-    ) -> Outcome<Env, R, WORDS> {
-        let request_id = ticket.request_id.disclose_as::<RequestIdSettled>(c);
-        let attested = ticket.serialized_output;
-
-        c.region("signet flow: attestation", |c| {
-            c.assert(
-                eq(attested.kind.field(), u64::from(R::KIND)).message("Wrong response kind"),
-            );
-            let key = signet.mpc_response_key.read(c);
-            let valid = signet::verify_respond_bidirectional_event_borsh(
-                c,
-                &request_id.private(),
-                &attested,
-                &Secp256k1SigLimbs {
-                    big_r_x: ticket.respond.big_r.x,
-                    s: ticket.respond.s,
-                },
-                key.point().private(),
-            );
-            c.assert(valid);
-        });
-
-        let (record, env) = c.region("signet flow: consume", |c| {
-            let found = self.records.member(c, &request_id);
-            c.assert(is_true(found).message("Request not found"));
-            let record = self.records.lookup(c, &request_id);
-            self.records.remove(c, &request_id);
-            let env = self.envs.lookup(c, &request_id);
-            self.envs.remove(c, &request_id);
-            // The record binds: it was filed by THIS slot, in this format.
-            let kind_ok = c.test_eq(record.response_kind(), u64::from(Resp::KIND));
-            c.assert(kind_ok);
-            let version_ok = c.test_eq(record.format_version(), u64::from(RECORD_FORMAT_VERSION));
-            c.assert(version_ok);
-            (record, env)
-        });
-
-        Outcome {
-            request_id,
-            env,
-            output: attested.output,
-            record,
-        }
-    }
-}
-
-// ---- what survives privately ------------------------------------------------------------
-
-/// A commitment to a private value, stored in an environment and OPENED on
-/// the settle side with a fresh witness — the one way a secret crosses the
-/// suspension.
-///
-/// `transientHash([pad(32, domain), value, requestId])`: Poseidon over the
-/// domain pad, the value's slots and the request id, split into a
-/// `Bytes<32>` exactly as the vault's refund commitments are. Binding the
-/// REQUEST ID in is what keeps two requests by one withdrawer unlinkable
-/// (the same secret commits to different values), which is why the
-/// environment builder receives the id.
-///
-/// `domain` is a caller-chosen literal, deliberately: a domain derived from
-/// a type name would move under a compiler change and strand every open
-/// request. Two flows in one contract should use two literals.
-///
-/// Poseidon is curve-stable-EXEMPT, which is harmless here for the reason
-/// `erc20_vault_modern::withdraw_refund_commitment` records: the commitment
-/// is contract-internal and lives from one transaction to the next inside
-/// one deployment.
-pub struct Commit<T> {
-    digest: B32<Public>,
-    _t: PhantomData<fn() -> T>,
-}
-
-impl<T> Clone for Commit<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for Commit<T> {}
-
-impl<T: CircuitArg> Commit<T> {
-    fn digest_of(
-        c: &mut Circuit3,
-        domain: &str,
-        value: &T,
-        request_id: RequestId<Public>,
-    ) -> B32<Private> {
-        c.region("signet flow: commitment", |c| {
-            let pad = B32::pad(c, domain);
-            let mut inputs = vec![pad.hi.private(), pad.lo.private()];
-            value.push_slots(&mut inputs);
-            let id = request_id.bytes();
-            inputs.push(id.hi.private());
-            inputs.push(id.lo.private());
-            let f = c.transient_hash(&inputs);
-            let (hi, lo) = c.div_mod_power_of_two(f, 248);
-            B32 { hi, lo }
-        })
-    }
-
-    /// Commit to `value` for this request, disclosing the digest under `L`
-    /// (it is stored, so it is public — the label names it in the
-    /// disclosure inventory).
-    pub fn to<L: minocrab::v3::DisclosureLabel>(
-        c: &mut Circuit3,
-        domain: &str,
-        value: &T,
-        request_id: RequestId<Public>,
-    ) -> Self {
-        let digest = Self::digest_of(c, domain, value, request_id).disclose_as::<L>(c);
-        Commit {
-            digest,
-            _t: PhantomData,
-        }
-    }
-
-    /// Assert that `value` (a FRESH witness on the settle side) is what
-    /// this commitment was made to, for this request. The authorization
-    /// gate of a settle circuit, as one call.
-    pub fn open(
-        &self,
-        c: &mut Circuit3,
-        domain: &str,
-        value: &T,
-        request_id: RequestId<Public>,
-        message: &'static str,
-    ) {
-        let recomputed = Self::digest_of(c, domain, value, request_id);
-        let stored = self.digest.private();
-        c.assert(
-            eq(recomputed.hi, stored.hi)
-                .and(eq(recomputed.lo, stored.lo))
-                .message(message),
-        );
-    }
-}
-
-impl<T> LedgerRepr for Commit<T> {
-    fn atoms() -> Vec<minocrab::AlignmentAtom> {
-        <B32<Public> as LedgerRepr>::atoms()
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        LedgerRepr::push_limbs(&self.digest, c, limbs)
-    }
-
-    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        Commit {
-            digest: B32::from_limbs(limbs),
-            _t: PhantomData,
-        }
-    }
 }
