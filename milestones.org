@@ -1180,10 +1180,15 @@ NOT DONE — the vault re-port, which is this milestone's body:
       caller, every non-vault differential, the Pending lineage, the flow
       and simulator suites, both snapshots (regenerated), the taint
       baseline (regenerated), closure, clippy — is green. The branch is a
-      refresh branch for the same reason =vault-refresh= was. The =_opt= / =_borsh= / =_modern= forks: decide
-      whether they survive at all now that upstream adopted their
-      avenues; the =Pending= lineage is the API's expression of the new
-      protocol and is green.
+      refresh branch for the same reason =vault-refresh= was.
+      - [X] The =_opt= / =_borsh= / =_modern= forks: RETIRED (2026-09-05,
+            branch =m28-vault=, notes/vault-refresh.org §0) — their
+            compactc anchor left with the rename, upstream adopted their
+            avenues, and the =Pending= lineage carries what remains
+            (the kind constants and V2 aliases moved there; the harness's
+            =Art= survives as a concretization selector for the
+            conformance suite, =ARTS = [Compat]=). Bench back to two
+            sides; README's side-by-side now shows =erc20_vault_pending=.
 - [ ] B. =disclosure_report.rs= (a pinned keccak-era preimage for the
       old =deposit=) and =tests/vault= (the spec harness) re-pinned to
       the new protocol with A.

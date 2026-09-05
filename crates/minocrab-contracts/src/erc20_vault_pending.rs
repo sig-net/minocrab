@@ -1,7 +1,9 @@
-//! The erc20-vault on [`crate::signet_flow`] — M35 rung C: the same
-//! contract as [`crate::erc20_vault_modern`], with every Sig Network
-//! suspension owned by a [`Pending`] slot instead of spelled out per
-//! circuit.
+//! The erc20-vault on [`crate::signet_flow`] — M35 rung C: the vault with
+//! every Sig Network suspension owned by a [`Pending`] slot instead of
+//! spelled out per circuit. (It was written as the twin of the
+//! `erc20_vault_modern` fork; that fork and its two parents were retired
+//! in M28 — notes/vault-refresh.org §0 — and this lineage is the one place
+//! their constructions live on.)
 //!
 //! WHAT THIS LINEAGE IS. A NEW DEPLOYMENT LAYOUT, not a byte-twin: its
 //! ledger block declares seventeen fields (so compactc-style segmentation
@@ -58,15 +60,59 @@ use crate::erc20_vault::{
     APPROVE_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR, REFUND_PAD, SWAP_WORDS, TRANSFER_SELECTOR,
     VAULT_WORDS,
 };
-use crate::erc20_vault_borsh::{
-    RESPONSE_KIND_APPROVE, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_SWAP,
-    RESPONSE_KIND_WITHDRAW, VAULT_TOKEN_TAG,
-};
 use crate::signet;
 use crate::signet_flow::{
     Commit, EvmTx, FailureResponse, Fired, Pending, Requested, Response, Settle, Settled,
     SignRequest, Signet,
 };
+
+// ---- the wire: constants inherited from the retired borsh fork ---------------------
+
+/// The vault's two Borsh-format (V2) event instantiations: the versioned,
+/// kind-tagged record the `Pending` slots write (`signet::SignBidirectionalEventV2`).
+pub type VaultEventV2<V> = signet::SignBidirectionalEventV2<V, VAULT_WORDS>;
+/// See [`VaultEventV2`].
+pub type SwapEventV2<V> = signet::SignBidirectionalEventV2<V, SWAP_WORDS>;
+
+/// Byte 31 of `vault_token_domain_separator`'s encoding: the kind tag of
+/// "the vault token of an EVM ERC-20". The separator is the injective
+/// encoding `[hi: TAG, lo: erc20]` rather than a hash (M10 rung iii): a
+/// pre-token only has to be distinct per ERC-20 and the ledger hashes it
+/// again in `tokenType`.
+pub const VAULT_TOKEN_TAG: u8 = 0x01;
+
+/// The number of response kinds — `Tag<RESPONSE_KINDS>` is one Borsh byte.
+pub const RESPONSE_KINDS: u32 = 5;
+
+/// Response kinds, at BYTE 0 of every attested output AND in the last byte of
+/// every V2 request record (M11 stages 5 and 7; the format is specified in
+/// spec/borsh-subset.md and notes/borsh-format.org).
+///
+/// The discriminant is what makes cross-circuit attestation replay
+/// STRUCTURALLY impossible: the kind is inside the signed preimage, so two
+/// settle circuits' digests differ for the same request id and outcome, and
+/// each circuit asserts its own kind ([`Response::KIND`]).
+///
+/// | kind | name | recorded by | settled by | ABI types | response |
+/// |------|------|-------------|------------|-----------|----------|
+/// | 0 | CLAIM | `deposit` | `claim` | `[bool success]` | [`ClaimResponse`] |
+/// | 1 | WITHDRAW | `withdraw` | `completeWithdraw` | `[bool success]` | [`WithdrawResponse`] |
+/// | 2 | SWAP | `swap` | `completeSwap` | `[uint256 amountIn]` | [`SwapResponse`] |
+/// | 3 | FAILURE | — | `refund_*` | — (never executed) | [`Failure`] |
+/// | 4 | APPROVE | `approveRouter` | — | `[bool success]` | [`ApproveResponse`] |
+///
+/// FAILURE is response-only (an outcome, not a request) and APPROVE is
+/// request-only (fire-and-forget); giving the approve request its own kind
+/// is what makes an approve RESPONSE a kind no settle circuit accepts.
+pub const RESPONSE_KIND_CLAIM: u32 = 0;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_SWAP: u32 = 2;
+/// See [`RESPONSE_KIND_CLAIM`].
+pub const RESPONSE_KIND_FAILURE: u32 = 3;
+/// The REQUEST-ONLY kind — see [`RESPONSE_KIND_CLAIM`]'s table.
+pub const RESPONSE_KIND_APPROVE: u32 = 4;
 
 // ---- the wire: response types --------------------------------------------------------
 

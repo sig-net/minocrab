@@ -35,7 +35,7 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
+use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 use minocrab_zkir::v3::IrValue;
 use sha2::Digest;
 
@@ -442,7 +442,7 @@ impl DepositScenario {
             self.art,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_borsh::RESPONSE_KIND_CLAIM,
+            erc20_vault_pending::RESPONSE_KIND_CLAIM,
         ));
         limbs
     }
@@ -793,7 +793,7 @@ impl ClaimScenario {
             mint_nonce,
             recipient: ClaimRecipient::Key(key),
             serialized_output: 1,
-            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_CLAIM),
+            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_CLAIM),
             claimant_sk: None,
             key_seed: 0xf00d_face,
             nonce_seed: 0x0dd_b17,
@@ -1283,12 +1283,12 @@ impl ApproveScenario {
             caip2_lo,
         ]);
         // APPROVE — the one REQUEST-ONLY kind: no settle circuit accepts it
-        // (`erc20_vault_borsh::RESPONSE_KIND_APPROVE`).
+        // (`erc20_vault_pending::RESPONSE_KIND_APPROVE`).
         limbs.extend(record_tail(
             self.art,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_borsh::RESPONSE_KIND_APPROVE,
+            erc20_vault_pending::RESPONSE_KIND_APPROVE,
         ));
         limbs
     }
@@ -1635,7 +1635,7 @@ impl WithdrawScenario {
             self.art,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
             erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+            erc20_vault_pending::RESPONSE_KIND_WITHDRAW,
         ));
         limbs
     }
@@ -2014,7 +2014,7 @@ impl CompleteWithdrawScenario {
             w: WithdrawScenario::new(),
             pending: true,
             outcome,
-            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_WITHDRAW),
+            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_WITHDRAW),
             mint_nonce,
             own_pk,
             key_seed: 0xf00d_face,
@@ -2472,7 +2472,7 @@ impl SwapScenario {
             self.art,
             erc20_vault::SWAP_OUTPUT_SCHEMA,
             erc20_vault::SWAP_RESPOND_SCHEMA,
-            erc20_vault_borsh::RESPONSE_KIND_SWAP,
+            erc20_vault_pending::RESPONSE_KIND_SWAP,
         ));
         limbs
     }
@@ -2854,7 +2854,7 @@ impl CompleteSwapScenario {
             s: SwapScenario::new(),
             pending: true,
             amount_in: 88_888,
-            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_SWAP),
+            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
             mint_nonce,
             own_pk,
             key_seed: 0xf00d_face,
@@ -3240,7 +3240,7 @@ impl RefundScenario {
             key_seed: 0xf00d_face,
             nonce_seed: 0x0dd_b17,
             serialized_output: erc20_vault::MPC_FAILURE_OUTPUT,
-            response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
+            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_FAILURE),
             initialized: 1,
             claimant_sk: None,
             also_other_marker: false,

@@ -12,7 +12,7 @@
 
 use minocrab::Public;
 use minocrab_contracts::signet::{SignBidirectionalEvent, SignBidirectionalEventV2};
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
+use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 
 use crate::serialization::spec_types;
 use crate::serialization::spec_types::{
@@ -210,12 +210,12 @@ pub const SWAP_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 7, 38, 37>
 
 /// The FAB atoms of the stage-7 2-word record, from the SHIPPING definition.
 pub fn vault_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
-    erc20_vault_borsh::VaultEventV2::<Public>::atoms()
+    erc20_vault_pending::VaultEventV2::<Public>::atoms()
 }
 
 /// The FAB atoms of the stage-7 7-word swap record.
 pub fn swap_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
-    erc20_vault_borsh::SwapEventV2::<Public>::atoms()
+    erc20_vault_pending::SwapEventV2::<Public>::atoms()
 }
 
 /// The stage-7 records' limb counts (31 and 41, where the deployed pair is 33
@@ -248,18 +248,18 @@ fn vault_v2(e: VaultEvent, response_kind: u32) -> VaultEventV2 {
 
 /// `deposit`'s stage-7 record — response kind CLAIM.
 pub fn deposit_event_v2(d: &DepositScenario) -> VaultEventV2 {
-    vault_v2(deposit_event(d), erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+    vault_v2(deposit_event(d), erc20_vault_pending::RESPONSE_KIND_CLAIM)
 }
 
 /// `approveRouter`'s stage-7 record — response kind APPROVE, the one kind no
 /// settle circuit accepts.
 pub fn approve_event_v2(a: &ApproveScenario) -> VaultEventV2 {
-    vault_v2(approve_event(a), erc20_vault_borsh::RESPONSE_KIND_APPROVE)
+    vault_v2(approve_event(a), erc20_vault_pending::RESPONSE_KIND_APPROVE)
 }
 
 /// `withdraw`'s stage-7 record — response kind WITHDRAW.
 pub fn withdraw_event_v2(w: &WithdrawScenario) -> VaultEventV2 {
-    vault_v2(withdraw_event(w), erc20_vault_borsh::RESPONSE_KIND_WITHDRAW)
+    vault_v2(withdraw_event(w), erc20_vault_pending::RESPONSE_KIND_WITHDRAW)
 }
 
 /// `swap`'s stage-7 record — response kind SWAP.
@@ -277,6 +277,6 @@ pub fn swap_event_v2(s: &SwapScenario) -> SwapEventV2 {
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
         caip2_id: e.caip2_id,
-        response_kind: kind(erc20_vault_borsh::RESPONSE_KIND_SWAP),
+        response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
     }
 }

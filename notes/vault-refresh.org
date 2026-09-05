@@ -1,0 +1,63 @@
+#+title: M28 — the vault re-ported to the Poseidon protocol (sig-net refresh)
+
+What upstream shipped and what the Signet module / test caller / signet-sim
+did about it is in milestones.org M28 (rewritten 2026-09-05) and
+notes/benchmark.org §2026-09-05. This note is the vault re-port itself:
+the decisions, the as-built record per rung, and what the harness now is.
+
+* 0. The fork verdict (2026-09-05): =_opt=, =_borsh=, =_modern= RETIRED
+M28 A asked: "decide whether they survive at all now that upstream adopted
+their avenues". They do not, and the reasons are each sufficient alone:
+
+1. THEIR ANCHOR IS GONE. All three were forks OF the compat port, keyed to
+   the nine-circuit vault (=initialize=, =deposit=, =claim=, =approveRouter=,
+   =withdraw=, =completeWithdraw=, =refund=, =swap=, =completeSwap=) and
+   asserted against it by the fork ledgers (=erc20_vault_opt_fork.rs=,
+   =erc20_vault_borsh_fork.rs=, =erc20_vault_modern_fork.rs=: "byte-identical
+   to the parent or a declared divergence"). The corpus at =0d9c1660= has
+   no such artifacts: seventeen circuits under new names, a 21-field
+   ledger, per-flow refunds. Re-porting the compat lineage necessarily
+   re-shapes =VAULT= and the record types the forks import, so keeping
+   them would have meant re-porting FOUR vaults, three of them to a layout
+   no deployment has.
+2. UPSTREAM ADOPTED THEIR AVENUES. The =_opt= fork's Poseidon refund
+   commitment (rung 5(v)) and the identity commitment's move away from the
+   two-block SHA are now the protocol (=refundCommitment= and
+   =userCommitment= are =upgradeFromTransient(transientHash(…))= in the
+   source); the split of =refund= into per-flow circuits is upstream's
+   too. The remaining opt avenues (one =kernel.self= read, the encoded
+   domain separator, the single-claimed-spend burn, the derived change
+   nonce) live on in =erc20_vault_pending=, and so does the whole =_borsh=
+   wire format (=Response::KIND=, the V2 record, =CircuitBorsh= outputs).
+3. THE PENDING LINEAGE IS THE API'S EXPRESSION of the new protocol and is
+   green (M35 C; notes/benchmark.org §2026-09-05: request circuits at
+   0.14-0.35× of compactc's rows, settles at 0.86-0.88×). The =_modern=
+   showcase that README pointed at is superseded by it.
+
+What was kept, and where it went:
+- =RESPONSE_KIND_*=, =RESPONSE_KINDS=, =VAULT_TOKEN_TAG=, =VaultEventV2= /
+  =SwapEventV2= → =erc20_vault_pending= (the format's carrier). The
+  serialization-conformance suite (=spec/borsh-subset.md='s executable
+  half) and =tests/serialization/records.rs= import them from there.
+- The harness's =Art= enum keeps its four variants as CONCRETIZATION
+  selectors (the discretionary hash constructions and the V2 record shape
+  in =tests/vault/prims.rs= / =model.rs=), because the conformance suite
+  generates V2 records through =with_art(Art::Borsh)=. =ARTS= — the
+  artifacts a case is RUN against — is =[Art::Compat]=. =Circuit::build=
+  panics for the retired variants by name.
+- The bench has two sides again (=minocrab=, =compactc=); =Preimages::PerSide=
+  stays for the next side that cannot share a statement.
+- =tests/erc20_vault_pending.rs='s cost rule now compares against the
+  modern lineage's LAST frozen rows (row_snapshot at abb4cfb) rather than
+  building it.
+- Deleted outright: the three sources (5,219 lines), the three fork gates,
+  =erc20_vault_opt_burn_wellformed.rs= (the single-claimed-spend burn's
+  ledger proof — its subject, =common::burn_spend=, is still used by the
+  Pending lineage; the proof is in git at abb4cfb and its argument in
+  =burn_spend='s doc comment), =borsh_map_aliasing.rs= (a lint over two
+  deleted files).
+- README's side-by-side now shows =erc20_vault_pending::deposit=.
+
+Not lost: the M10 measured ladder (notes/vault-optimization.org), the M11
+format decisions (notes/borsh-format.org) and BENCHMARK.md's four-sided
+run are history and stay as written; BENCHMARK.md is re-run under M28 C.

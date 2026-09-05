@@ -313,7 +313,7 @@ fn settled_deposit() -> impl Strategy<Value = DepositScenario> {
 fn response_kind(own: u32) -> impl Strategy<Value = u8> {
     prop_oneof![
         6 => Just(kind(own)),
-        2 => (0u32..minocrab_contracts::erc20_vault_borsh::RESPONSE_KINDS).prop_map(kind),
+        2 => (0u32..minocrab_contracts::erc20_vault_pending::RESPONSE_KINDS).prop_map(kind),
         1 => any::<u8>(),
     ]
 }
@@ -331,7 +331,7 @@ pub fn claim() -> impl Strategy<Value = ClaimScenario> {
         any::<bool>(),
         b32(),
         initialized(),
-        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_CLAIM),
+        response_kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_CLAIM),
     )
         .prop_map(
             |(d, mint_nonce, shape, found, output, wrong_sk, other, init, rkind)| {
@@ -393,7 +393,7 @@ pub fn complete_withdraw() -> impl Strategy<Value = CompleteWithdrawScenario> {
         any::<bool>(),
         any::<bool>(),
         initialized(),
-        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_WITHDRAW),
+        response_kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_WITHDRAW),
     )
         .prop_map(|(w, mint_nonce, own_pk, outcome, pending, wrong_sk, init, rkind)| {
             let mut c = CompleteWithdrawScenario::new(outcome);
@@ -450,7 +450,7 @@ pub fn complete_swap() -> impl Strategy<Value = CompleteSwapScenario> {
         any::<bool>(),
         initialized(),
         any::<u64>(),
-        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_SWAP),
+        response_kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_SWAP),
     )
         .prop_map(
             |(s, mint_nonce, own_pk, band, pending, wrong_sk, init, rand, rkind)| {
@@ -505,7 +505,7 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
         // own business: the draw is only consulted when the 5-byte output is
         // not the sentinel, and there it is forced off the failure kind, so
         // ONE generated case says the same thing to all three artifacts.
-        response_kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE),
+        response_kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_FAILURE),
     )
         .prop_map(
             |(w, sw, is_withdrawal, mint_nonce, own_pk, wrong_sk, both, init, output, not_failure)| {
@@ -521,14 +521,14 @@ pub fn refund() -> impl Strategy<Value = RefundScenario> {
                 r.serialized_output = output;
                 r.response_kind = if output == minocrab_contracts::erc20_vault::MPC_FAILURE_OUTPUT
                 {
-                    kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE)
+                    kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_FAILURE)
                 } else if not_failure
-                    == kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_FAILURE)
+                    == kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_FAILURE)
                 {
                     // The shared strategy's modal draw IS the failure kind, and
                     // `any::<u8>()` can land on it too; nudge both off, so "not
                     // the failure response" stays true in both encodings.
-                    kind(minocrab_contracts::erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+                    kind(minocrab_contracts::erc20_vault_pending::RESPONSE_KIND_CLAIM)
                 } else {
                     not_failure
                 };

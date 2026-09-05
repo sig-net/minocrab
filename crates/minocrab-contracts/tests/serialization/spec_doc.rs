@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use borsh::schema::BorshSchemaContainer;
 use borsh::{BorshSchema, BorshSerialize};
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
+use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 use serde::Serialize;
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
@@ -69,7 +69,7 @@ pub fn generated_regions() -> Vec<(&'static str, &'static str, String)> {
 ///
 /// The prose fields are markdown, because the table is what they are for.
 struct KindRow {
-    /// `erc20_vault_borsh::RESPONSE_KIND_*` — the byte at offset 0 of the
+    /// `erc20_vault_pending::RESPONSE_KIND_*` — the byte at offset 0 of the
     /// attested output, and the last byte of the stage-7 record.
     number: u32,
     name: &'static str,
@@ -99,7 +99,7 @@ struct KindRow {
 fn kind_rows() -> Vec<KindRow> {
     let rows = vec![
         KindRow {
-            number: erc20_vault_borsh::RESPONSE_KIND_CLAIM,
+            number: erc20_vault_pending::RESPONSE_KIND_CLAIM,
             name: "CLAIM",
             requested_by: "`deposit`",
             settles: "`claim`",
@@ -108,7 +108,7 @@ fn kind_rows() -> Vec<KindRow> {
             len: VaultResponse::LEN,
         },
         KindRow {
-            number: erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+            number: erc20_vault_pending::RESPONSE_KIND_WITHDRAW,
             name: "WITHDRAW",
             requested_by: "`withdraw`",
             settles: "`completeWithdraw`",
@@ -117,7 +117,7 @@ fn kind_rows() -> Vec<KindRow> {
             len: VaultResponse::LEN,
         },
         KindRow {
-            number: erc20_vault_borsh::RESPONSE_KIND_SWAP,
+            number: erc20_vault_pending::RESPONSE_KIND_SWAP,
             name: "SWAP",
             requested_by: "`swap`",
             settles: "`completeSwap`",
@@ -126,7 +126,7 @@ fn kind_rows() -> Vec<KindRow> {
             len: SwapResponse::LEN,
         },
         KindRow {
-            number: erc20_vault_borsh::RESPONSE_KIND_FAILURE,
+            number: erc20_vault_pending::RESPONSE_KIND_FAILURE,
             name: "FAILURE",
             requested_by: "—",
             settles: "`refund`",
@@ -135,7 +135,7 @@ fn kind_rows() -> Vec<KindRow> {
             len: FailureResponse::LEN,
         },
         KindRow {
-            number: erc20_vault_borsh::RESPONSE_KIND_APPROVE,
+            number: erc20_vault_pending::RESPONSE_KIND_APPROVE,
             name: "APPROVE",
             requested_by: "`approveRouter`",
             settles: "—",
@@ -146,11 +146,11 @@ fn kind_rows() -> Vec<KindRow> {
     ];
     assert_eq!(
         rows.len(),
-        erc20_vault_borsh::RESPONSE_KINDS as usize,
+        erc20_vault_pending::RESPONSE_KINDS as usize,
         "§5's kind table has {} rows and the contract declares RESPONSE_KINDS = {}. The table \
          IS the MPC's lookup — add the row beside the constant",
         rows.len(),
-        erc20_vault_borsh::RESPONSE_KINDS
+        erc20_vault_pending::RESPONSE_KINDS
     );
     for (i, row) in rows.iter().enumerate() {
         assert_eq!(
@@ -475,7 +475,7 @@ pub fn vault_event_v2() -> VaultEventV2 {
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
         caip2_id: e.caip2_id,
-        response_kind: erc20_vault_borsh::RESPONSE_KIND_CLAIM as u8,
+        response_kind: erc20_vault_pending::RESPONSE_KIND_CLAIM as u8,
     }
 }
 
@@ -494,7 +494,7 @@ pub fn swap_event_v2() -> SwapEventV2 {
         tx_param_type: e.tx_param_type,
         tx_params: e.tx_params,
         caip2_id: e.caip2_id,
-        response_kind: erc20_vault_borsh::RESPONSE_KIND_SWAP as u8,
+        response_kind: erc20_vault_pending::RESPONSE_KIND_SWAP as u8,
     }
 }
 
@@ -585,19 +585,19 @@ fn records() -> String {
 fn attested_outputs() -> String {
     let request_id = request_id_of(&vault_event_v2());
     let claim = VaultResponse {
-        kind: erc20_vault_borsh::RESPONSE_KIND_CLAIM as u8,
+        kind: erc20_vault_pending::RESPONSE_KIND_CLAIM as u8,
         success: true,
     };
     let withdraw = VaultResponse {
-        kind: erc20_vault_borsh::RESPONSE_KIND_WITHDRAW as u8,
+        kind: erc20_vault_pending::RESPONSE_KIND_WITHDRAW as u8,
         success: false,
     };
     let swap = SwapResponse {
-        kind: erc20_vault_borsh::RESPONSE_KIND_SWAP as u8,
+        kind: erc20_vault_pending::RESPONSE_KIND_SWAP as u8,
         amount_in: 1_234_567_890,
     };
     let failure = FailureResponse {
-        kind: erc20_vault_borsh::RESPONSE_KIND_FAILURE as u8,
+        kind: erc20_vault_pending::RESPONSE_KIND_FAILURE as u8,
     };
     let vectors = vec![
         vector("VaultResponse (kind 0, CLAIM, success)", &claim),

@@ -43,7 +43,7 @@ use midnight_base_crypto::hash::HashOutput;
 use midnight_onchain_state::state::StateValue;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault as v;
-use minocrab_contracts::erc20_vault_borsh;
+use minocrab_contracts::erc20_vault_pending;
 
 use super::exec::{self, Executed, PreState};
 use super::model::*;
@@ -101,7 +101,7 @@ pub enum GuardId {
     // --- M11 stage 5, Art::Borsh only ---------------------------------
     /// The attested output's kind byte is not this circuit's kind — an
     /// attestation issued for another settle circuit, or for none.
-    /// `erc20_vault_borsh::assert_kind`. Under `Art::Borsh`, `refund`'s
+    /// `erc20_vault_pending::assert_kind`. Under `Art::Borsh`, `refund`'s
     /// "not the MPC failure output" IS this guard.
     WrongResponseKind,
     /// The attested `success` byte is not a Borsh `bool`. The deployed
@@ -666,7 +666,7 @@ pub fn spec_claim(s: &ClaimScenario) -> Outcome {
     // M11 stage 5 (Art::Borsh): the response carries its kind, and an
     // attestation for another settle circuit does not settle a claim.
     if s.art().is_borsh_format()
-        && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_CLAIM)
+        && s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_CLAIM)
     {
         return Outcome::Reject(GuardId::WrongResponseKind);
     }
@@ -741,7 +741,7 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     // checks precede the pending-marker gate because both are argument
     // constraints, which a circuit emits before it reads any state.
     if s.art().is_borsh_format() {
-        if s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_WITHDRAW) {
+        if s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_WITHDRAW) {
             return Outcome::Reject(GuardId::WrongResponseKind);
         }
         if s.outcome > 1 {
@@ -800,7 +800,7 @@ pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
     // M11 stage 5 (Art::Borsh): the attested amountIn is a Borsh `u64` in
     // both worlds (stage 0 proved the deployed 8 bytes already are one); what
     // is added is the kind byte in front of it.
-    if s.art().is_borsh_format() && s.response_kind != kind(erc20_vault_borsh::RESPONSE_KIND_SWAP) {
+    if s.art().is_borsh_format() && s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_SWAP) {
         return Outcome::Reject(GuardId::WrongResponseKind);
     }
     if !s.pending {
@@ -899,7 +899,7 @@ pub fn spec_refund(s: &RefundScenario) -> Outcome {
     // response type.
     let is_failure_response = match s.art() {
         Art::Compat | Art::Opt => s.serialized_output == v::MPC_FAILURE_OUTPUT,
-        Art::Borsh | Art::Modern => s.response_kind == kind(erc20_vault_borsh::RESPONSE_KIND_FAILURE),
+        Art::Borsh | Art::Modern => s.response_kind == kind(erc20_vault_pending::RESPONSE_KIND_FAILURE),
     };
     if !is_failure_response {
         return Outcome::Reject(match s.art() {

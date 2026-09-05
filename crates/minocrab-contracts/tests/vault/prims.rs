@@ -47,7 +47,7 @@ use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcir
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
-use minocrab_contracts::{erc20_vault, erc20_vault_opt};
+use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 use sha2::{Digest, Sha256};
 
@@ -137,7 +137,7 @@ pub fn user_commitment(art: Art, sk: &[u8; 32]) -> [u8; 32] {
 ///   bytes are the stored `Bytes<32>` value, and `b32_slots` splits it into
 ///   the `[hi, lo]` slot pair the circuit's `div_mod(f, 248)` produces.
 ///   Poseidon is safe here because the commitment is internal and
-///   short-lived — see `erc20_vault_opt::withdraw_refund_commitment` for the
+///   short-lived — see `erc20_vault_pending::withdraw_refund_commitment` for the
 ///   durability argument. The `Map<_, Field>` value-typing of §"Q5" is
 ///   deferred, so the value stays `Bytes<32>`.
 pub fn refund_commitment(art: Art, sk: &[u8; 32], request_id: &[u8; 32]) -> [u8; 32] {
@@ -170,7 +170,7 @@ pub fn change_nonce(art: Art, mint_nonce: &[u8; 32]) -> [u8; 32] {
         }
         // Rung (ii), avenue 5: the mint nonce with its top byte
         // complemented. Injective, fixed-point-free and total — the
-        // uniqueness argument is in `erc20_vault_opt::change_nonce`.
+        // uniqueness argument is in `erc20_vault_pending::change_nonce`.
         Art::Opt | Art::Borsh | Art::Modern => {
             let mut out = *mint_nonce;
             out[31] = 255 - out[31];
@@ -256,11 +256,11 @@ pub fn vault_domain_sep(art: Art, erc20: &[u8; 20]) -> [u8; 32] {
         // Rung (iii), avenue 2: the injective encoding
         // `0x01 ‖ zeros ‖ erc20`, i.e. the slot pair [hi = 0x01, lo =
         // erc20]. Layout and safety argument in
-        // `erc20_vault_opt::vault_token_domain_separator`.
+        // `erc20_vault_pending::vault_token_domain_separator`.
         Art::Opt | Art::Borsh | Art::Modern => {
             let mut out = [0u8; 32];
             out[..20].copy_from_slice(erc20);
-            out[31] = erc20_vault_opt::VAULT_TOKEN_TAG;
+            out[31] = erc20_vault_pending::VAULT_TOKEN_TAG;
             out
         }
     }

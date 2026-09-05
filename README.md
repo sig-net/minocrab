@@ -48,7 +48,7 @@ export circuit deposit(
 }
 ```
 
-The same circuit, abridged from `crates/minocrab-contracts/src/erc20_vault_modern.rs`:
+The same circuit, abridged from `crates/minocrab-contracts/src/erc20_vault_pending.rs` (the vault on the typed Sig Network API; the instruction-for-instruction port of the Compact source is `erc20_vault.rs`):
 
 ```rust
 /// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`
@@ -67,32 +67,28 @@ pub fn deposit(
     max_priority_fee_per_gas: Uint<128>,
     key_version: Uint<8>,
     deposit_request: DepositRequest,
-) -> Discloses<(
-    DepositorCommitment,
-    RequestId,
-    RequestRecord,
-    XcallEntryPointHash,
-    XcallCommitment,
-)> {
+) -> Discloses<(DepositorCommitment, DepositedErc20, DepositedAmount, Requested)> {
     // assert(amount > 0) — the width is the argument type's, not typed here
     c.assert(deposit_request.amount.gt(0u64));
 
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
-    let caller = common::commitment_packed_tag(c, &sk).disclose_as::<DepositorCommitment>(c);
+    let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
 
     // a Bytes<20> cell: the FAB atoms come from the slot's type
     let vault_evm = VAULT.vault_evm_address.read(c);
-    // ... compose calldata, tx params, request ...
+    // ... compose the transfer(vaultEvmAddress, amount) transaction ...
 
-    // requestId, freshness check, map insert, and the call to the signer
-    record_and_notify(c, &request, &VAULT.sign_bidirectional_event_map, [0, 0, 0, 0]);
+    // requestId, freshness check, record + environment insert, the call to
+    // the signer — one `Pending` slot owns the whole suspension
+    VAULT.deposits.request(c, &VAULT.signet, SignRequest { key_version, path: caller.into(), tx },
+        |_, _| DepositEnv { depositor: caller, erc20, amount });
     Discloses::of(())
 }
 ```
 
 - The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
-- This is identical to the Compact contract (same typed schema, same PI vector on the ports' own preimage) at identical rows and identical `k` ([erc20_vault_modern_fork.rs](crates/minocrab-contracts/tests/erc20_vault_modern_fork.rs))
+- The direct port of the same contract is PI-equal to compactc's own artifact on every circuit — same typed schema, same PI vector on a shared preimage ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the `Pending` lineage above proves the same statements against the reference model and the pinned ledger ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs))
 
 ## Feature by feature
 

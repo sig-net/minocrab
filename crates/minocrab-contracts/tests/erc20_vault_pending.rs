@@ -2,13 +2,32 @@
 //! modern lineage circuit by circuit.
 //!
 //! The cost rule of the milestone: the `Pending` calls do what the modern
-//! circuits do by hand, so a circuit costing MORE here is a bug in the API,
+//! circuits did by hand, so a circuit costing MORE here is a bug in the API,
 //! not a price of it. Where a circuit here does strictly less work (no
 //! calldata re-parse, no second map for the refund marker) it may cost
 //! less, and the table below records the measured pair for the note.
+//!
+//! The modern lineage was RETIRED in M28 (notes/vault-refresh.org §0); its
+//! side of the comparison is the `(k, rows)` the row snapshot last froze for
+//! it (commit abb4cfb, 2026-09-05), kept here as the baseline the rule was
+//! stated against.
 
-use minocrab_contracts::{erc20_vault_modern as modern, erc20_vault_pending as pending};
+use minocrab_contracts::erc20_vault_pending as pending;
 use minocrab_sim::v3::cost;
+
+/// `erc20_vault_modern`'s last measured `(k, rows)`, from
+/// `tests/row_snapshot.rs` at abb4cfb.
+mod modern {
+    pub const INITIALIZE: (u8, usize) = (13, 2412);
+    pub const DEPOSIT: (u8, usize) = (13, 3424);
+    pub const CLAIM: (u8, usize) = (16, 37740);
+    pub const APPROVE_ROUTER: (u8, usize) = (11, 1126);
+    pub const WITHDRAW: (u8, usize) = (14, 11502);
+    pub const COMPLETE_WITHDRAW: (u8, usize) = (16, 35847);
+    pub const REFUND: (u8, usize) = (16, 36480);
+    pub const SWAP: (u8, usize) = (14, 12326);
+    pub const COMPLETE_SWAP: (u8, usize) = (16, 45961);
+}
 
 /// Sixteen fields, segmented: `[0]`, then `[1, i − 1]`.
 #[test]
@@ -35,24 +54,24 @@ fn the_block_is_segmented_past_fifteen_fields() {
 fn no_pair_costs_more_than_the_modern_lineage() {
     let m = |ir: &minocrab_zkir::v3::IrSource| cost(ir);
     let p_init = m(&pending::initialize().ir);
-    let m_init = m(&modern::initialize().ir);
+    let m_init = modern::INITIALIZE;
     let p_dep = m(&pending::deposit().ir);
-    let m_dep = m(&modern::deposit().ir);
+    let m_dep = modern::DEPOSIT;
     let p_claim = m(&pending::claim().ir);
-    let m_claim = m(&modern::claim().ir);
+    let m_claim = modern::CLAIM;
     let p_wd = m(&pending::withdraw().ir);
-    let m_wd = m(&modern::withdraw().ir);
+    let m_wd = modern::WITHDRAW;
     let p_cwd = m(&pending::complete_withdraw().ir);
-    let m_cwd = m(&modern::complete_withdraw().ir);
+    let m_cwd = modern::COMPLETE_WITHDRAW;
     let p_swap = m(&pending::swap().ir);
-    let m_swap = m(&modern::swap().ir);
+    let m_swap = modern::SWAP;
     let p_cswap = m(&pending::complete_swap().ir);
-    let m_cswap = m(&modern::complete_swap().ir);
+    let m_cswap = modern::COMPLETE_SWAP;
     let p_appr = m(&pending::approve_router().ir);
-    let m_appr = m(&modern::approve_router().ir);
+    let m_appr = modern::APPROVE_ROUTER;
     let p_rwd = m(&pending::refund_withdrawal().ir);
     let p_rsw = m(&pending::refund_swap().ir);
-    let m_ref = m(&modern::refund().ir);
+    let m_ref = modern::REFUND;
 
     let rows: Vec<(&str, (u8, usize), (u8, usize))> = vec![
         ("initialize", p_init, m_init),

@@ -4,23 +4,17 @@
 //!
 //! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
 //! data: a name, where its circuits come from ([`Artifacts`]) and where its
-//! `ProofPreimage`s come from ([`Preimages`]). Three are declared:
+//! `ProofPreimage`s come from ([`Preimages`]). Two are declared:
 //! - `minocrab` — the direct ports, built in-process from `minocrab-contracts`;
-//! - `compactc` — the corpus `.zkir` goldens;
-//! - `opt` — the M10 optimized contract (`minocrab_contracts::erc20_vault_opt`,
-//!   M10 §Sequencing step 4). It exists for the nine vault circuits only;
-//!   the Signet singleton is a deployed compactc artifact and is not ours to
-//!   optimize, so those three targets stay two-sided and the `opt` side
-//!   simply drops out of them.
+//! - `compactc` — the corpus `.zkir` goldens.
 //!
 //! `minocrab` and `compactc` prove the SAME preimage per circuit: the
 //! differential tests establish PI-equality on these preimages and (with
 //! `MINOCRAB_DUMP_PREIMAGES`) dump them for this harness, so those numbers
-//! price the identical statement. The optimized side CANNOT share that
-//! preimage — a different commitment scheme is a different statement — so it
-//! reads its own preimage dump (`preimages/opt/`) and its comparability
-//! rests on the harness's symbolic-effect equality instead. Sides carry
-//! their preimage source for exactly this reason.
+//! price the identical statement. (The M10/M11 `opt` and `borsh` sides,
+//! which proved their own preimages, were retired with their forks in M28 —
+//! notes/vault-refresh.org §0; `Preimages::PerSide` is kept for the next
+//! side that cannot share a statement.)
 //!
 //! Run via `./bench.sh` (dumps preimages, then runs this binary in release
 //! mode). Modes:
@@ -42,7 +36,7 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use midnight_base_crypto::data_provider::{FetchMode, MidnightDataProvider, OutputMode};
 use midnight_transient_crypto::proofs::{ParamsProverProvider, ProofPreimage, Zkir};
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh, erc20_vault_opt, signet_contract};
+use minocrab_contracts::{erc20_vault, signet_contract};
 use minocrab_zkir::v3::IrSource;
 use serde::{Deserialize, Serialize};
 
@@ -53,15 +47,6 @@ struct Target {
     corpus: &'static str,
     /// The MinoCrab direct port.
     ours: fn() -> minocrab::v3::Compiled3,
-    /// The M10 optimized artifact, where one exists — the nine vault
-    /// circuits. `None` for the Signet singleton, which is a deployed
-    /// compactc artifact rather than something M10 rewrites.
-    opt: Option<fn() -> minocrab::v3::Compiled3>,
-    /// The M11 borsh artifact — the optimized vault on the stage-7 wire
-    /// format. Benched since the record change crossed swap k16→k15
-    /// (superseding stage 4's not-benched decision, which predated the
-    /// crossing); `None` outside the nine vault circuits.
-    borsh: Option<fn() -> minocrab::v3::Compiled3>,
 }
 
 /// Where a side's circuits come from.
@@ -71,10 +56,6 @@ enum Artifacts {
     Port,
     /// compactc's `.zkir` goldens in `corpus/`.
     Corpus,
-    /// Built in-process from the M10 optimized contract.
-    Optimized,
-    /// Built in-process from the M11 borsh contract.
-    Borsh,
 }
 
 /// Where a side's [`ProofPreimage`]s come from.
@@ -84,11 +65,12 @@ enum Preimages {
     /// port are PI-equal on these, so both sides price the identical
     /// statement.
     Shared,
-    /// A per-side subdirectory. The optimized artifact cannot share the
-    /// port's preimage — it proves its *own* statement for the same logical
-    /// operation, so its numbers are comparable only under the
-    /// symbolic-effect equality the M10 harness establishes (the
-    /// methodology caveat in notes/vault-optimization.org §Sequencing).
+    /// A per-side subdirectory, for a side that cannot share the port's
+    /// preimage because it proves its *own* statement for the same logical
+    /// operation (the retired `opt` side was one; the methodology caveat is
+    /// notes/vault-optimization.org §Sequencing). No declared side uses it
+    /// today.
+    #[allow(dead_code)]
     PerSide(&'static str),
 }
 
@@ -111,16 +93,6 @@ fn sides() -> Vec<Side> {
             name: "compactc",
             artifacts: Artifacts::Corpus,
             preimages: Preimages::Shared,
-        },
-        Side {
-            name: "opt",
-            artifacts: Artifacts::Optimized,
-            preimages: Preimages::PerSide("opt"),
-        },
-        Side {
-            name: "borsh",
-            artifacts: Artifacts::Borsh,
-            preimages: Preimages::PerSide("borsh"),
         },
     ]
 }
@@ -154,8 +126,6 @@ impl Side {
                         .with_context(|| format!("corpus artifact {}", target.corpus)),
                 )
             }
-            Artifacts::Optimized => target.opt.map(|build| Ok(build().ir)),
-            Artifacts::Borsh => target.borsh.map(|build| Ok(build().ir)),
         }
     }
 
@@ -165,8 +135,6 @@ impl Side {
         match self.artifacts {
             Artifacts::Port => Some((target.ours)()),
             Artifacts::Corpus => None,
-            Artifacts::Optimized => target.opt.map(|build| build()),
-            Artifacts::Borsh => target.borsh.map(|build| build()),
         }
     }
 
@@ -186,15 +154,10 @@ const SIGNET: &str =
 fn targets() -> Vec<Target> {
     macro_rules! t {
         ($dir:expr, $name:literal, $f:expr) => {
-            t!($dir, $name, $f, None, None)
-        };
-        ($dir:expr, $name:literal, $f:expr, $opt:expr, $borsh:expr) => {
             Target {
                 name: $name,
                 corpus: constcat($dir, $name),
                 ours: $f,
-                opt: $opt,
-                borsh: $borsh,
             }
         };
     }
@@ -202,15 +165,15 @@ fn targets() -> Vec<Target> {
         Box::leak(format!("{dir}/{name}.zkir").into_boxed_str())
     }
     vec![
-        t!(VAULT, "initialize", || erc20_vault::initialize(), Some(erc20_vault_opt::initialize), Some(erc20_vault_borsh::initialize)),
-        t!(VAULT, "deposit", || erc20_vault::deposit(), Some(erc20_vault_opt::deposit), Some(erc20_vault_borsh::deposit)),
-        t!(VAULT, "claim", || erc20_vault::claim(), Some(erc20_vault_opt::claim), Some(erc20_vault_borsh::claim)),
-        t!(VAULT, "approveRouter", || erc20_vault::approve_router(), Some(erc20_vault_opt::approve_router), Some(erc20_vault_borsh::approve_router)),
-        t!(VAULT, "withdraw", || erc20_vault::withdraw(), Some(erc20_vault_opt::withdraw), Some(erc20_vault_borsh::withdraw)),
-        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw(), Some(erc20_vault_opt::complete_withdraw), Some(erc20_vault_borsh::complete_withdraw)),
-        t!(VAULT, "refund", || erc20_vault::refund(), Some(erc20_vault_opt::refund), Some(erc20_vault_borsh::refund)),
-        t!(VAULT, "swap", || erc20_vault::swap(), Some(erc20_vault_opt::swap), Some(erc20_vault_borsh::swap)),
-        t!(VAULT, "completeSwap", || erc20_vault::complete_swap(), Some(erc20_vault_opt::complete_swap), Some(erc20_vault_borsh::complete_swap)),
+        t!(VAULT, "initialize", || erc20_vault::initialize()),
+        t!(VAULT, "deposit", || erc20_vault::deposit()),
+        t!(VAULT, "claim", || erc20_vault::claim()),
+        t!(VAULT, "approveRouter", || erc20_vault::approve_router()),
+        t!(VAULT, "withdraw", || erc20_vault::withdraw()),
+        t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw()),
+        t!(VAULT, "refund", || erc20_vault::refund()),
+        t!(VAULT, "swap", || erc20_vault::swap()),
+        t!(VAULT, "completeSwap", || erc20_vault::complete_swap()),
         t!(SIGNET, "signBidirectional", || signet_contract::sign_bidirectional()),
         t!(SIGNET, "respond", || signet_contract::respond()),
         t!(SIGNET, "respondBidirectional", || signet_contract::respond_bidirectional()),
@@ -454,9 +417,8 @@ fn orchestrate() -> Result<()> {
     Ok(())
 }
 
-/// Every (circuit, side) pair the run covers — sides without an artifact
-/// for a circuit drop out, so the vault targets are four-sided and the
-/// Signet singleton's stay two-sided.
+/// Every (circuit, side) pair the run covers — a side without an artifact
+/// for a circuit drops out rather than failing the run.
 fn cells() -> Vec<(Target, Side)> {
     let mut out = Vec::new();
     for target in targets() {
@@ -467,8 +429,6 @@ fn cells() -> Vec<(Target, Side)> {
                         name: target.name,
                         corpus: target.corpus,
                         ours: target.ours,
-                        opt: target.opt,
-                        borsh: target.borsh,
                     },
                     side,
                 ));
@@ -520,8 +480,6 @@ fn list_cells() -> Result<()> {
         let artifact = match side.artifacts {
             Artifacts::Port => "minocrab-contracts (port)".to_string(),
             Artifacts::Corpus => tail(std::path::Path::new(target.corpus)),
-            Artifacts::Optimized => "minocrab-contracts (opt)".to_string(),
-            Artifacts::Borsh => "minocrab-contracts (borsh)".to_string(),
         };
         let preimage = side.preimage_path(target.name);
         let present = if preimage.exists() { "" } else { "  [missing]" };
@@ -640,27 +598,15 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
 
-    /// The optimized and borsh sides cover the nine vault circuits and
-    /// nothing else, and a side with no artifact for a target drops out of
-    /// the run rather than failing it.
+    /// Every side has an artifact for every target, so the matrix is the
+    /// full product; asking a side for a target it lacks is an error, not a
+    /// panic.
     #[test]
-    fn the_optimized_side_covers_the_vault_targets_only() {
-        let vault_targets = targets().iter().filter(|t| t.opt.is_some()).count();
-        assert_eq!(vault_targets, 9, "the vault has nine circuits");
-        assert_eq!(
-            targets().iter().filter(|t| t.borsh.is_some()).count(),
-            vault_targets,
-            "the borsh side mirrors the optimized side's coverage"
-        );
-        assert_eq!(cells().len(), targets().len() * 2 + vault_targets * 2);
-
-        let opt = side("opt").expect("the side is declared");
-        let vault = targets().into_iter().find(|t| t.name == "claim").unwrap();
-        assert!(load_ir(&vault, &opt).is_ok());
-        // …and asking a target it has no artifact for is an error, not a panic.
+    fn every_target_is_two_sided() {
+        assert_eq!(targets().len(), 12, "nine vault circuits and the singleton's three");
+        assert_eq!(cells().len(), targets().len() * 2);
         let signet = targets().into_iter().find(|t| t.name == "respond").unwrap();
-        assert!(opt.ir(&signet).is_none());
-        assert!(load_ir(&signet, &opt).is_err());
+        assert!(load_ir(&signet, &side("compactc").unwrap()).is_ok());
     }
 
     #[test]
@@ -670,15 +616,11 @@ mod tests {
         assert!(side("compactc").is_ok());
     }
 
-    /// The two statement-identical sides read the shared preimage dump; the
-    /// optimized side reads its own, because it cannot share one.
+    /// The two statement-identical sides read the shared preimage dump.
     #[test]
-    fn preimages_are_shared_except_for_the_optimized_side() {
+    fn preimages_are_shared() {
         let shared = side("minocrab").unwrap().preimage_path("claim");
         assert_eq!(shared, side("compactc").unwrap().preimage_path("claim"));
-        let own = side("opt").unwrap().preimage_path("claim");
-        assert_ne!(own, shared);
-        assert_eq!(own.parent().unwrap().file_name().unwrap(), "opt");
     }
 
     /// Both toolchain-independent sides yield an IR for every target, and
@@ -696,12 +638,6 @@ mod tests {
             }
             assert!(side("minocrab").unwrap().profiled(&target).is_some());
             assert!(side("compactc").unwrap().profiled(&target).is_none());
-            // Profiles need the eDSL's region annotations, which the
-            // optimized side has and the parsed corpus `.zkir` does not.
-            assert_eq!(
-                side("opt").unwrap().profiled(&target).is_some(),
-                target.opt.is_some()
-            );
         }
     }
 }

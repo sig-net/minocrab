@@ -32,7 +32,7 @@ use std::collections::HashMap;
 
 use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
-use minocrab_contracts::{erc20_vault, erc20_vault_borsh};
+use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 use minocrab_sim::v3::simulate;
 use minocrab_zkir::v3::IrSource;
 use proptest::prelude::*;
@@ -99,22 +99,6 @@ fn tamper_sweeps_the_remaining_circuits() {
         &corpus_zkir_named("swap"),
         &sw.preimage(),
     );
-
-    // The optimized side, against its own reference model: soundness only.
-    let s = Scenario::new().with_art(Art::Opt);
-    let pi = s.preimage(0);
-    tamper::sweep(&Circuit::Initialize.ir(Art::Opt), None, &pi, Part::Transcript);
-    tamper::sweep(&Circuit::Initialize.ir(Art::Opt), None, &pi, Part::Witness);
-
-    let a = ApproveScenario::new().with_art(Art::Opt);
-    let pi = a.preimage();
-    tamper::sweep(&Circuit::ApproveRouter.ir(Art::Opt), None, &pi, Part::Transcript);
-    tamper::sweep(&Circuit::ApproveRouter.ir(Art::Opt), None, &pi, Part::Witness);
-
-    let sw = SwapScenario::new().with_art(Art::Opt);
-    let pi = sw.preimage();
-    tamper::sweep(&Circuit::Swap.ir(Art::Opt), None, &pi, Part::Transcript);
-    tamper::sweep(&Circuit::Swap.ir(Art::Opt), None, &pi, Part::Witness);
 }
 
 /// Perturbing ANY argument must reject — including the three slots the
@@ -495,14 +479,14 @@ fn refund_rejects_success_shaped_outputs() {
     for art in ARTS {
         let ours = Circuit::Refund.ir(art);
         for (output, response_kind) in [
-            ([0u8, 0, 0, 0, 1], erc20_vault_borsh::RESPONSE_KIND_CLAIM),
+            ([0u8, 0, 0, 0, 1], erc20_vault_pending::RESPONSE_KIND_CLAIM),
             (
                 [0xde, 0xad, 0xbe, 0xef, 0x00],
-                erc20_vault_borsh::RESPONSE_KIND_WITHDRAW,
+                erc20_vault_pending::RESPONSE_KIND_WITHDRAW,
             ),
             (
                 [0xde, 0xad, 0xbe, 0xee, 0x01],
-                erc20_vault_borsh::RESPONSE_KIND_SWAP,
+                erc20_vault_pending::RESPONSE_KIND_SWAP,
             ),
             ([0u8; 5], 255),
         ] {
@@ -646,7 +630,7 @@ proptest! {
         prop_assert!(sep[20..31].iter().all(|&x| x == 0), "bytes 20..30 are zero");
         prop_assert_eq!(
             sep[31],
-            minocrab_contracts::erc20_vault_opt::VAULT_TOKEN_TAG,
+            minocrab_contracts::erc20_vault_pending::VAULT_TOKEN_TAG,
             "byte 31 is the kind tag"
         );
         // Injective, both directions.
@@ -797,86 +781,6 @@ fn complete_swap_change_at_the_uint64_ceiling() {
 
 /// CROSS-CIRCUIT ATTESTATION REPLAY IS STRUCTURALLY IMPOSSIBLE.
 ///
-/// Before the kind byte, `claim` and `completeWithdraw` signed the same
-/// digest shape — `keccak256(requestId ‖ successByte)` — so one MPC
-/// signature was a valid signature for both circuits, and only which map held
-/// the id kept them apart. The kind is inside the signed preimage now, so an
-/// attestation issued for another settle circuit does not verify here at all:
-/// the equality against this circuit's own kind fails first, and even without
-/// it the digest would be a different one.
-///
-/// Asserted the honest way — the SAME scenario with the right kind is
-/// accepted, so it is the kind that rejected the others and not some unrelated
-/// guard.
-#[test]
-fn an_attestation_for_another_settle_circuit_does_not_settle() {
-    use erc20_vault_borsh::{
-        RESPONSE_KINDS, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_SWAP,
-        RESPONSE_KIND_WITHDRAW,
-    };
-    let art = Art::Borsh;
-    // (circuit, its own kind, a preimage builder that takes the kind byte)
-    let cases: Vec<(Circuit, u32, Box<dyn Fn(u8) -> _>)> = vec![
-        (
-            Circuit::Claim,
-            RESPONSE_KIND_CLAIM,
-            Box::new(move |k: u8| {
-                let mut c = ClaimScenario::new().with_art(art);
-                c.response_kind = k;
-                c.preimage()
-            }),
-        ),
-        (
-            Circuit::CompleteWithdraw,
-            RESPONSE_KIND_WITHDRAW,
-            Box::new(move |k: u8| {
-                let mut c = CompleteWithdrawScenario::new(1).with_art(art);
-                c.response_kind = k;
-                c.preimage()
-            }),
-        ),
-        (
-            Circuit::CompleteSwap,
-            RESPONSE_KIND_SWAP,
-            Box::new(move |k: u8| {
-                let mut c = CompleteSwapScenario::new().with_art(art);
-                c.response_kind = k;
-                c.preimage()
-            }),
-        ),
-        (
-            Circuit::Refund,
-            RESPONSE_KIND_FAILURE,
-            Box::new(move |k: u8| {
-                let mut r =
-                    RefundScenario::new(RefundRoute::Withdrawal(WithdrawScenario::new()))
-                        .with_art(art);
-                r.response_kind = k;
-                r.preimage()
-            }),
-        ),
-    ];
-    for (circuit, own, build) in cases {
-        let ours = circuit.ir(art);
-        let own_byte = u8::try_from(own).expect("a kind is one byte");
-        simulate(&ours, &build(own_byte)).unwrap_or_else(|e| {
-            panic!(
-                "{}: the borsh artifact rejects its OWN kind {own}: {e}",
-                circuit.zkir_name()
-            )
-        });
-        // Every other declared kind, and a byte that is no kind at all.
-        for other in (0..RESPONSE_KINDS).filter(|k| *k != own).chain([255]) {
-            let byte = u8::try_from(other).expect("a kind is one byte");
-            assert!(
-                simulate(&ours, &build(byte)).is_err(),
-                "{}: settles on an attestation issued for kind {other}",
-                circuit.zkir_name()
-            );
-        }
-    }
-}
-
 /// THE DELIBERATE DIVERGENCE (deviation D6), pinned in both directions.
 ///
 /// The deployed `completeWithdraw` reads its attested output as `byte == 1`,

@@ -10,8 +10,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::v3::Compiled3;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
-    adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
-    erc20_vault_modern, erc20_vault_opt, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
+    adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
     serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
     xcontract_events_borsh,
@@ -249,48 +248,6 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault::refund", || erc20_vault::refund()),
         c!("erc20_vault::swap", || erc20_vault::swap()),
         c!("erc20_vault::complete_swap", || erc20_vault::complete_swap()),
-        // erc20-vault, OPTIMIZED (M10 step 4): the same nine circuits from the
-        // forked artifact. At the forking commit every row and every interface
-        // line below is identical to the port's; later M10 rungs move the rows
-        // of this block ONLY — a moved port row means an optimization leaked
-        // into the compatibility reference.
-        c!("erc20_vault_opt::initialize", || erc20_vault_opt::initialize()),
-        c!("erc20_vault_opt::deposit", || erc20_vault_opt::deposit()),
-        c!("erc20_vault_opt::claim", || erc20_vault_opt::claim()),
-        c!("erc20_vault_opt::approve_router", || erc20_vault_opt::approve_router()),
-        c!("erc20_vault_opt::withdraw", || erc20_vault_opt::withdraw()),
-        c!("erc20_vault_opt::complete_withdraw", || erc20_vault_opt::complete_withdraw()),
-        c!("erc20_vault_opt::refund", || erc20_vault_opt::refund()),
-        c!("erc20_vault_opt::swap", || erc20_vault_opt::swap()),
-        c!("erc20_vault_opt::complete_swap", || erc20_vault_opt::complete_swap()),
-        // erc20-vault, BORSH (M11 stage 4): the same nine circuits again, forked
-        // from the OPTIMIZED artifact. At the forking commit every row and every
-        // interface line below is identical to the opt block's; M11's format
-        // changes move the rows of this block ONLY.
-        c!("erc20_vault_borsh::initialize", || erc20_vault_borsh::initialize()),
-        c!("erc20_vault_borsh::deposit", || erc20_vault_borsh::deposit()),
-        c!("erc20_vault_borsh::claim", || erc20_vault_borsh::claim()),
-        c!("erc20_vault_borsh::approve_router", || erc20_vault_borsh::approve_router()),
-        c!("erc20_vault_borsh::withdraw", || erc20_vault_borsh::withdraw()),
-        c!("erc20_vault_borsh::complete_withdraw", || erc20_vault_borsh::complete_withdraw()),
-        c!("erc20_vault_borsh::refund", || erc20_vault_borsh::refund()),
-        c!("erc20_vault_borsh::swap", || erc20_vault_borsh::swap()),
-        c!("erc20_vault_borsh::complete_swap", || erc20_vault_borsh::complete_swap()),
-        // erc20-vault, THE SHOWCASE TWIN (M9 phase 8): the same nine circuits
-        // once more, rewritten through the whole M9 API from the BORSH fork.
-        // These rows are the phase's deliverable and are EXPECTED to differ
-        // from the borsh block's — by construction, since the modern spelling
-        // drops the `Copy`s that named the Impact guards. What may not move is
-        // the (k, rows) of the three blocks above.
-        c!("erc20_vault_modern::initialize", || erc20_vault_modern::initialize()),
-        c!("erc20_vault_modern::deposit", || erc20_vault_modern::deposit()),
-        c!("erc20_vault_modern::claim", || erc20_vault_modern::claim()),
-        c!("erc20_vault_modern::approve_router", || erc20_vault_modern::approve_router()),
-        c!("erc20_vault_modern::withdraw", || erc20_vault_modern::withdraw()),
-        c!("erc20_vault_modern::complete_withdraw", || erc20_vault_modern::complete_withdraw()),
-        c!("erc20_vault_modern::refund", || erc20_vault_modern::refund()),
-        c!("erc20_vault_modern::swap", || erc20_vault_modern::swap()),
-        c!("erc20_vault_modern::complete_swap", || erc20_vault_modern::complete_swap()),
         // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
         c!("erc20_vault_pending::initialize", || erc20_vault_pending::initialize()),
         c!("erc20_vault_pending::deposit", || erc20_vault_pending::deposit()),
