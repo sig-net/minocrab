@@ -110,7 +110,8 @@ seventeen spec functions with CONCRETE effects (no =Term=/=Art=).
 =tests/erc20_vault_spec.rs=: five links per generated case — acceptance,
 reference VM, compactc's artifact through the comparator, PI/transcript
 length closure, and the ledger's own =Effects= (17 properties, green at
-the default 48 cases). =tests/erc20_vault_adversarial.rs=: the families
+the default 48 cases and at =PROPTEST_CASES=2000= in release: 34,000
+cases, 17.5 s). =tests/erc20_vault_adversarial.rs=: the families
 that survive the format change — argument/witness malleability on
 =completeDeposit=, =s = 0= and =n=/low-s on every settle circuit, the
 identity response key (still accepted by compactc's =initialise=, so by

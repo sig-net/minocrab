@@ -1207,7 +1207,15 @@ NOT DONE — the vault re-port, which is this milestone's body:
       (dmd 2026-09-05: "optimise and re-benchmark the vault code" — the
       compactc side now uses Poseidon too, so the headline comparison
       changes materially).
-- [ ] D. M27's V-list re-frozen against the 17-circuit vault.
+- [X] D. M27's V-list re-frozen against the 17-circuit vault
+      (2026-09-05, notes/zkir-semantics.org §7.1): one artifact,
+      seventeen circuits, the draft's C1-C10 re-mapped; V5's Gap 2
+      changes materially (=completeWithdraw= witnesses the secret
+      unconditionally, asserts it on the refund branch only) and its
+      approveRouter pre-check is settled (the three witnesses are the
+      xcall's cc-rand + ep limbs); V7 answered by construction (no
+      settle reads the record back); V3/V4 restated for Poseidon; V8
+      flags the transientHash limb-bound check.
 Exit criteria: the 17 circuits ported PI-equal (compat) and the API
 lineage green; every suite on the branch green; BENCHMARK.md re-run on
 the new protocol; corpus pins on main.

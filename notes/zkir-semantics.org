@@ -427,6 +427,80 @@ gate (rung 2) is what makes it more than a snapshot. A one-page
 rendering of the frozen table in the draft's own τ-symbols is the
 hand-back to its authors.
 
+** 7.1 RE-FROZEN against the seventeen-circuit vault (2026-09-05, M28 D)
+The corpus moved to signet-midnight-examples =0d9c1660= and the compat
+port followed (notes/vault-refresh.org). ONE artifact now — the =Art=
+grid is gone with the forks (§0 of that note) — and seventeen circuits.
+Circuit names, draft → ours, revised: C1 =initialise=; C2
+=approveRouter= (+ =approveStata=, same shape, the wrapper's allowance);
+C3 =startDeposit=; C4 =completeDeposit=; C5 =startWithdraw=; C6
+=refundSurrenderedValue= is GONE as a unit — its body is inline in C7's
+refund branch and in =refundWithdraw=; C7 =completeWithdraw=; C8
+=refund= split per flow: =refundWithdraw= / =refundSwap= (+
+=refundSupply= / =refundRedeem=); C9 =startSwap=; C10 =completeSwap=;
+NEW, outside the draft: =startSupply= / =completeSupply= and
+=startRedeem= / =completeRedeem= (Aave via the ERC-4626 wrapper).
+
+What the protocol move does to each claim (the table above stands
+otherwise; the rung column is unchanged):
+- V1: seventeen inventories, not nine × four.
+- V2: =refundComm= is =upgradeFromTransient(transientHash("vault:refund:"
+  ‖ userSk ‖ reqId))= — ONE field limb (the =hi= limb is the constant 0
+  the upgrade emits), pushed in the flow's SETTLE VIEW rather than a
+  dedicated map. NEW for deposit: =startDeposit= pushes =userComm(userSk)=
+  TWICE — as the record's =path= and as the view's =commitment= (same
+  value, two components); the inventory should list both.
+- V3: the =0x7661756c74= literal (pre-check, re-run on the new
+  artifacts): 2 occurrences in each of =approveStata=, =approveRouter=,
+  =startWithdraw=, =startSwap=, =startSupply=, =startRedeem= — six
+  circuits sign from the vault path — and 0 elsewhere. =startDeposit=
+  alone writes =userComm=, now =transientHash([0, "vault:user:", sk])=
+  upgraded (the =0x7661756c743a757365723a= immediate: 1 occurrence in
+  =initialise=, =startDeposit=, =completeDeposit=; 0 elsewhere).
+- V4: =reqId = upgradeFromTransient(transientHash(record))=, not keccak;
+  the counter's popeqc wire is a direct input of that =transient_hash=
+  (startDeposit.zkir:156, =%requestNonce.157=) and the increment is
+  =idxp [0,3]; addi 1; insc 2=. Same shape of claim, one instruction
+  instead of a keccak chain.
+- V5: GAP 2 CHANGES MATERIALLY and the draft's authors should hear it:
+  =completeWithdraw= now witnesses =callerSecretKey()= UNCONDITIONALLY
+  (the commitment is hoisted out of the =if=; private_inputs 4, of which
+  2 guarded — the =ownPublicKey= pair under ¬ok — see the table below),
+  and asserts it only on the refund branch. So "=w = ⊥= when ok = 1" is
+  FALSE at the witness level and TRUE at the constraint level: the
+  success branch consumes a secret it does not check, which is still
+  "anyone may settle" in effect (the differential's success-case sweep
+  is transcript-only for exactly this reason). The pre-check flag on
+  =approveRouter='s three =private_input=s is SETTLED: they are
+  =cc-rand=, =ep-mod=, =ep-div= — the cross-contract call's commitment
+  randomness and the callee's entry-point hash limbs, present in every
+  request circuit (+3 on top of the secret's 2) — the draft's "aux",
+  not a correction. Witness counts per circuit (private_inputs /
+  guarded): initialise 2/0; approveStata, approveRouter 3/0;
+  startDeposit, startWithdraw, startSwap, startSupply, startRedeem 5/0;
+  completeDeposit 4/2 (the =ownPublicKey= pair guarded by ¬is_some);
+  completeWithdraw 4/2; every other settle 4/0.
+- V6: =completeSwap='s two mint pushes take their amounts from the settle
+  VIEW (=amountOut=, =amountInMaximum=) and the attested output; the
+  record's calldata is no longer read by any settle circuit.
+- V7: ANSWERED by construction: no settle circuit reads the record back.
+  =completeDeposit='s pis carry the view's four limbs (commitment,
+  erc20, amount) and the map member/remove keys — never the 33 record
+  limbs. The "req appears a second time" of the draft's C4 does not
+  occur in this protocol.
+- V8: the packing under =transientHash= is FIELD-limb packing: injective
+  iff every limb is range-bounded below =p=. The taint lint's rule
+  covers =persistent_hash='s byte atoms; whether it bounds
+  =transient_hash= limbs the same way is a check to make when the
+  inventory is built (flagged; the model's constructions are all
+  bounded by their argument types or ledger atoms).
+- V9: unchanged.
+
+DELIVERABLE SHAPE, revised: the inventory iterates
+=vault::artifact::Circuit::ALL= (seventeen) against the ONE compat
+artifact; the frozen table has seventeen rows; the hand-back to the
+draft's authors adds the four lending circuits and the two V5 facts.
+
 * 8. The Lean package: where, what, gates
 
 WHERE: a third lake package at =crates/minocrab-zkir/lean/=
