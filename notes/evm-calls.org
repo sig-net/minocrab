@@ -137,6 +137,39 @@ circuit.
   signature and lookup are shared and the outcome is a kind disjunction.
   =Requested= / =Settled= labels are the slot's.
 
+** 3.1 HAZARD — what the MPC's failure output actually means, and USDT
+mpc's execution watcher (chain-signatures/chain-ethereum/src/
+execution_watcher.rs, =execution_confirmed_event=): a MINED receipt with
+=status = success= has its return data decoded into the request's output
+schema and attested; a reverted receipt, OR a terminal decode failure,
+resolves the request as =ExecutionOutcome::Failed= — the fixed failure
+output. So "never executed" (as this note and the vault harness say) is
+too narrow: the failure kind means "reverted, never mined, or output
+undecodable". Three cases for an ERC-20 =transfer=:
+1. reverted → =Failed= → refund. Covered.
+2. mined, returned =false= → attested executed with =ok = false= → the
+   spurious-completion hole; =Succeeded= asserting =is_success= closes it.
+3. mined, returned NOTHING (USDT, BNB and other non-conforming tokens omit
+   the =bool=) → decoding a =bool= from empty return data is a terminal
+   extraction failure → attested =Failed= for a transfer that MOVED the
+   tokens → a SPURIOUS REFUND on our side: the owner is refunded and the
+   recipient keeps the tokens. Neither ticket type can see this from the
+   attestation alone. This is the more dangerous direction.
+CONSEQUENCE: success is a property of the CALL TYPE, not of the return
+value's presence. Options, in order: (i) per-token declaration — the
+callee's registration says whether it returns =Bool= or =()= (a
+=Contract<Erc20>= vs =Contract<Erc20NoReturn>= marker, chosen when the
+address is configured, so =Erc20Transfer= is instantiated per callee
+kind); (ii) success from the =Transfer= event or a balance delta, which
+the MPC would have to extract (a protocol change on sig-net's side).
+Until (i) or (ii) lands, a treasury needs a token allow-list — the vault
+has one in effect through its configured ERC-20 addresses — and the note
+says so where the API is documented. Rough mainnet base rates (from
+memory, not measured): reverts are a few percent of all transactions and
+10%+ under congestion; DEX swaps fail far more often than transfers;
+returned-=false= tokens are rare and mostly old; no-return tokens include
+the largest stablecoin.
+
 * 4. =Owned<Env>= — "only the original caller"
 =Owned<E> { owner: Commit<SecretKey, RefundTag>, inner: E }=; =request=
 witnesses the secret, commits it bound to the request id and stores it;
