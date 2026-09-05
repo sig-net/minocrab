@@ -198,13 +198,13 @@ const x = cond ? a : b;
 let x = c.when_value(cond, |c| a).otherwise(b);
 ```
 
-**Guarded read** — a guarded-off read yields the type's default and skips the transcript (upstream VM semantics). `Guarded<T>` makes you say which you meant: `.or_default()` costs nothing, `.or(c, alt)` is the hand-written select, `.assert_read(c)` is one assert.
+**Guarded read** — a guarded-off read yields the type's default and skips the transcript (upstream VM semantics). The scope hands the read back and makes you say which you meant: `.or_default()` costs nothing, `.or(alt)` is the hand-written select, `.assert_read()` is one assert. There is no per-operation guard parameter: `when` is the one spelling of a conditional.
 
 ```compact
 if (cond) { const record = eventMap.lookup(requestId); /* ... */ }
 ```
 ```rust
-let record = VAULT.event_map.lookup_guarded(c, cond, &request_id).or_default();
+let record = c.when(cond, |c| VAULT.event_map.lookup(c, &request_id)).or_default();
 ```
 
 **Bounded integer** — compares at compactc's own width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type, and `narrow` additionally emits a range check at the narrowing seam — an extra guard beyond what the platform requires, stated at ~BITS/4 rows.

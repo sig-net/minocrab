@@ -1717,7 +1717,7 @@ nothing here changes an artifact.
       tests and corpus readers together, one commit per crate, so a
       reviewer sees each deletion whole. What a v3 gate still needs is
       kept and SAID to be kept, in one place.
-- [-] B. (2026-09-05: warning-free build+doc DONE; pure-history narration rewritten in the five densest files, provenance tags kept; the one-spelling audit NOT done — §B) De-cruft the rest: dead forms, stale re-exports, history
+- [X] B. (2026-09-05: warning-free build+doc DONE; pure-history narration rewritten in the five densest files, provenance tags kept; the one-spelling audit DONE for conditionals — 6e1ee5d `when`/`when_private` return the read, 8bbd89f removes every `_under`/`_guarded` method (51 ledger.rs + 17 kernel.rs + own_public_key_guarded + Check::when), the raw ledger layer's guard parameter (41 signatures) and 9 raw `_guarded` reads, `Guarded::new` crate-private; dump byte-identical on 209 circuits; notes/edsl-trim.org §B "the removal" is the complete list. The `Wire3`/`Operand`/`impl Into` operand-spelling half of the audit remains dmd's judgement call.) De-cruft the rest: dead forms, stale re-exports, history
       narration in docs reduced to the rule plus a pointer to the
       note that holds the history; one spelling per idea (the
       =Wire3=/=Operand=/=impl Into= forms audited for a single
