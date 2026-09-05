@@ -11,7 +11,7 @@ use minocrab::v3::Compiled3;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
     adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_borsh,
-    erc20_vault_modern, erc20_vault_opt, events, events_borsh, hashing, manager, mint_tokens,
+    erc20_vault_modern, erc20_vault_opt, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
     serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
     xcontract_events_borsh,
@@ -291,6 +291,17 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault_modern::refund", || erc20_vault_modern::refund()),
         c!("erc20_vault_modern::swap", || erc20_vault_modern::swap()),
         c!("erc20_vault_modern::complete_swap", || erc20_vault_modern::complete_swap()),
+        // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
+        c!("erc20_vault_pending::initialize", || erc20_vault_pending::initialize()),
+        c!("erc20_vault_pending::deposit", || erc20_vault_pending::deposit()),
+        c!("erc20_vault_pending::claim", || erc20_vault_pending::claim()),
+        c!("erc20_vault_pending::approve_router", || erc20_vault_pending::approve_router()),
+        c!("erc20_vault_pending::withdraw", || erc20_vault_pending::withdraw()),
+        c!("erc20_vault_pending::complete_withdraw", || erc20_vault_pending::complete_withdraw()),
+        c!("erc20_vault_pending::refund_withdrawal", || erc20_vault_pending::refund_withdrawal()),
+        c!("erc20_vault_pending::swap", || erc20_vault_pending::swap()),
+        c!("erc20_vault_pending::complete_swap", || erc20_vault_pending::complete_swap()),
+        c!("erc20_vault_pending::refund_swap", || erc20_vault_pending::refund_swap()),
         c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
         c!("signet_contract::respond", || signet_contract::respond()),
         c!("signet_contract::respond_bidirectional", || {

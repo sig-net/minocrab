@@ -741,6 +741,10 @@ pub fn complete_swap(
         .env
         .amount_in_maximum
         .sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
+    // CHECKED: the difference is re-bounded to 64 bits where it enters the
+    // coin commitment (one `constrain_bits 64`), as the modern lineage does
+    // — the taint lint's warrant for the 16-byte value atom.
+    let change = Uint::<64, Public>::from_field_checked(c, change.field());
     let ds_in = vault_token_domain_separator(c, outcome.env.token_in.field());
     let change_nonce = change_nonce(c, &mint_nonce);
     common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
