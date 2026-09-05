@@ -1429,6 +1429,18 @@ in  b: Scalar<BLS12-381>
 ",
     ),
     (
+        "bounded_ledger::bl_write",
+        "\
+in  x: Scalar<BLS12-381>
+",
+    ),
+    (
+        "bounded_ledger::bl_read",
+        "\
+out cell: Scalar<BLS12-381>
+",
+    ),
+    (
         "opaque::op_arg",
         "\
 in  x: Scalar<BLS12-381>

@@ -1,9 +1,9 @@
 {
   "source": "corpus/zkir/signet-midnight-integration/packages/signet-contract/src/signet-contract",
-  "compiler-version": "0.33.0",
-  "language-version": "0.25.0",
-  "runtime-version": "0.18.0-rc.1",
-  "contract-info-sha256": "eba48362ad7739ef7b1e596cdc8eb110e0f534cb36358b2de8bd22f1528a7032",
+  "compiler-version": "0.34.0",
+  "language-version": "0.26.0",
+  "runtime-version": "0.19.0",
+  "contract-info-sha256": "b30f60ef1322adb4498fc7b1d6f4e803fec2bea0bec70fb1d1215f5c128d33d1",
   "circuits": {
     "respond": {
       "proof": true,

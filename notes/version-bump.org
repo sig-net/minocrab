@@ -1052,3 +1052,71 @@ M8's honest remainder is answerable now, and the answer is on the
 narrow side of what the taxonomy braced for: a corpus diff produced by a
 different compiler HAS been read, and it was 630 metadata files, twelve
 ABI type nodes, one gained source, and not a single moved instruction.
+
+** Step 5, as executed — the decision list, closed
+All six decision-list items above were executed, one commit each except
+where a fixture and its differential belonged together:
+
+1. ACCEPTED both interface pins (=signet-signer-interface=,
+   =xcall-target-interface=): re-copied =contract-info.json= from the
+   recompiled corpus, ran =regenerate_pin_and_schema=, regenerated both
+   generated crates' =src/lib.rs=. Reviewed diff was exactly the three
+   version fields and the two =contract_info_sha256= per =pin.json=,
+   plus the same version string in each =lib.rs= doc comment — every
+   =zkir_sha256=/=inputs=/=constraints= list and =interface-schema.txt=
+   unchanged, as predicted.
+2. FIXED =minocrab-abi='s type model: =Secp256k1Point=/=JubjubPoint= are
+   now first-class =CompactType= variants alongside the older
+   =Alias=-of-=Opaque= spelling, which stays recognised for older
+   artifacts. =opaque_differential::the_vaults_own_initialize_now_flattens=
+   is green.
+3. DECIDED the =Uint<0..1>= alignment: moved =uint_atom_bytes(0)= from 0
+   to 1, per family E's answer (b). Added the instrument the reading
+   said was missing — =tests/fixtures/bounded_ledger/= (a =Uint<0..1>=
+   LEDGER cell, written and read, hand-compiled under 0.34.0) and
+   =tests/bounded_ledger_differential.rs=, which compares our lowering's
+   actual instruction stream against that artifact rather than
+   recomputing the byte with our own formula. Verified both ways: with
+   the old value restored, =identical_instruction_streams= and
+   =the_write_is_call_compatible= fail on the alignment operand (=0x00=
+   ours vs =0x01= compactc's 0.34.0 artifact); with the fix, both pass.
+   The zkir dump of all 209 pre-existing circuits is byte-identical
+   before/after — confirmed by diff, not assumed; no shipped circuit
+   reaches this width. Needed one small stdlib addition to build the
+   fixture's read circuit: =CircuitOut= for =BoundedUint<BOUND, Public>=
+   (nothing returned a bounded value from a circuit before). Registering
+   the two new circuits in =support::circuits()= legitimately ADDS two
+   rows to =row_snapshot= and =interface_snapshot= — a new entry, not a
+   moved one; no existing row in either snapshot changed.
+4. RECOMPILED the seven hand-compiled fixtures under 0.34.0. Every
+   =.zkir= is byte-identical (zero of them appear in the diff); only the
+   version-string fields moved, except =opaque='s =contract-info.json=,
+   which also moves the same point-type reshape item 2 fixed, at its
+   four sites (=opPoint=/=opJubjub='s arguments, =response_key=/
+   =jubjub_key= ledger fields). All seven differentials still pass.
+5. Recorded above (item 5 was upstream's own diagnostic regression, not
+   ours to fix — left for dmd's review in notes/compact-findings.org
+   finding 9).
+6. MADE the symlink relative: =corpus/compile.sh='s symlink loop now
+   computes a =../=-relative target (one level per path component of
+   =.compact-path/<pkg>=) instead of an absolute =$(pwd)=-rooted one, so
+   the tracked symlink resolves in any checkout. Re-ran
+   =compile.sh signet-midnight-integration= from THIS worktree as a dry
+   run: 6/6 OK, matching the committed report, and the symlink now
+   reads =../../src/signet-midnight-integration/packages/signet-midnight=
+   and resolves inside the worktree's own =corpus/src=. (That dry run
+   also surfaced a second, unrelated diff-that-is-not-the-bump: two
+   =contract-manifest.json='s =index.js.map= hash moved because
+   compactc embeds the compiling checkout's absolute path in the
+   sourcemap — reverted, not part of this fix, and worth its own hazard
+   entry another day.)
+
+Gates after all six, on the closed tree: =./bump.sh gates= all green
+(dependency resolution, workspace builds, corpus compile report, ZKIR
+round-trip, ABI+Impact baseline, workspace, row snapshot, TypeScript
+vectors); =cargo test --workspace= 106/106 targets green; =cargo clippy
+--workspace --all-targets -- -D warnings= clean; the 209-circuit zkir
+dump diff is empty (the two =bounded_ledger= circuits appear only as
+additions); =TRUST.md= regenerated for =abi.rs= (579 -> 607 lines) and
+=entry.rs= (853 -> 864 lines) moving with the new code the instrument
+and the stdlib addition added.

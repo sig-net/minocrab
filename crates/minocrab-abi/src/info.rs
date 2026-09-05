@@ -141,6 +141,14 @@ pub enum CompactType {
     Secp256k1Base,
     /// `Secp256k1Scalar` — one native `Scalar<Secp256k1>` slot, atoms `b24, b8`.
     Secp256k1Scalar,
+    /// `Point<Secp256k1>`, compactc 0.34.0's FIRST-CLASS spelling
+    /// (CHANGELOG 0.33.118). Older artifacts still spell this
+    /// `Alias { name: "Secp256k1Point", Opaque { tsType: "Secp256k1Point" } }`,
+    /// which [`CompactType::curve_point`] also recognises.
+    Secp256k1Point,
+    /// `Point<Jubjub>`, compactc 0.34.0's first-class spelling. See
+    /// [`CompactType::Secp256k1Point`].
+    JubjubPoint,
     Contract { name: String, circuits: Vec<DeclaredCircuit> },
 }
 
@@ -224,6 +232,12 @@ fn parse_type(text: &str) -> Result<CompactType, serde_json::Error> {
         "JubjubScalar" => CompactType::JubjubScalar,
         "Secp256k1Base" => CompactType::Secp256k1Base,
         "Secp256k1Scalar" => CompactType::Secp256k1Scalar,
+        // compactc 0.34.0 (CHANGELOG 0.33.118): the two curve POINT types
+        // stopped being spelled `Alias { name, Opaque { tsType: name } }`
+        // and became first-class `type-name`s of their own, same as the
+        // scalar/base types just above. See `CompactType::curve_point`.
+        "Secp256k1Point" => CompactType::Secp256k1Point,
+        "JubjubPoint" => CompactType::JubjubPoint,
         "Contract" => CompactType::Contract {
             name: field(&fields, "name")?,
             circuits: field(&fields, "circuits")?,
@@ -369,18 +383,31 @@ impl CompactType {
 
     /// The curve POINT type this spelling denotes, if it is one.
     ///
-    /// compactc publishes `Secp256k1Point` and `JubjubPoint` as
-    /// `Alias { name, type: Opaque { tsType: name } }` — the ts-type is how the
-    /// runtime names the value, and the alias name is the Compact type. Both
-    /// halves are required to match, and the name must be one of the two: an
-    /// `Opaque<"Secp256k1Point">` under a DIFFERENT alias, or a bare one, is a
-    /// user-declared opaque that happens to share a string and must stay one.
+    /// Two spellings denote the same thing, and both must answer the same
+    /// [`CurvePoint`]:
     ///
-    /// Only the two POINT types get this treatment, because only they are
-    /// spelled `Opaque`. `JubjubScalar` and the secp256k1 base/scalar types
-    /// publish under their own `type-name` (verified against a compiled
-    /// fixture), so they are ordinary variants.
+    /// - compactc <= 0.33.x publishes `Secp256k1Point` and `JubjubPoint` as
+    ///   `Alias { name, type: Opaque { tsType: name } }` — the ts-type is how
+    ///   the runtime names the value, and the alias name is the Compact
+    ///   type. Both halves are required to match, and the name must be one
+    ///   of the two: an `Opaque<"Secp256k1Point">` under a DIFFERENT alias,
+    ///   or a bare one, is a user-declared opaque that happens to share a
+    ///   string and must stay one.
+    /// - compactc >= 0.34.0 (CHANGELOG 0.33.118) publishes them as
+    ///   first-class `type-name`s, [`CompactType::Secp256k1Point`] /
+    ///   [`CompactType::JubjubPoint`], with no alias wrapper to check.
+    ///
+    /// Only the two POINT types get either treatment, because only they
+    /// were ever spelled `Opaque`. `JubjubScalar` and the secp256k1
+    /// base/scalar types publish under their own `type-name` on both
+    /// compilers (verified against a compiled fixture), so they are
+    /// ordinary variants.
     pub fn curve_point(&self) -> Option<CurvePoint> {
+        match self {
+            CompactType::Secp256k1Point => return Some(CurvePoint::Secp256k1),
+            CompactType::JubjubPoint => return Some(CurvePoint::Jubjub),
+            _ => {}
+        }
         let CompactType::Alias { name, ty } = self else {
             return None;
         };
@@ -468,6 +495,15 @@ impl CompactType {
             CompactType::Secp256k1Scalar => {
                 return Err(TypeError::NoLeaf { compact_type: "Secp256k1Scalar" })
             }
+            // Unreachable: `curve_point()` above already returns `Some` for
+            // both of these variants directly (no `Alias`/`Opaque` peeling
+            // needed for the first-class spelling), so this function never
+            // reaches its own match arm for them. Listed anyway so the
+            // match stays exhaustive against the enum rather than a
+            // wildcard hiding a real gap if a variant is ever added here.
+            CompactType::Secp256k1Point | CompactType::JubjubPoint => unreachable!(
+                "curve_point() intercepts the first-class spelling before this match"
+            ),
             CompactType::Contract { name, .. } => {
                 return Err(TypeError::ContractValue { name: name.clone() })
             }
@@ -647,6 +683,35 @@ mod tests {
             flat.atoms,
             vec![AlignmentAtom::Field, AlignmentAtom::Field]
         );
+    }
+
+    /// compactc >= 0.34.0's FIRST-CLASS spelling for the same two types
+    /// (CHANGELOG 0.33.118) — no `Alias` wrapper, no `Opaque` underneath,
+    /// just `"type-name": "Secp256k1Point"` / `"JubjubPoint"`. Must produce
+    /// the SAME `CurvePoint` and the same flattening as the older
+    /// `Alias`-of-`Opaque` spelling above, since both name the same Compact
+    /// type — only compactc's own JSON framing of it moved.
+    #[test]
+    fn the_first_class_curve_point_spelling_matches_the_alias_spelling() {
+        let secp = parse(r#"{"type-name":"Secp256k1Point"}"#);
+        assert_eq!(secp.curve_point(), Some(CurvePoint::Secp256k1));
+        let flat = secp.flatten().unwrap();
+        assert_eq!(flat.prims, vec![Prim::Point]);
+        assert_eq!(flat.atoms, CurvePoint::Secp256k1.atoms());
+        assert_eq!(flat.atoms.len(), 5);
+
+        let jubjub = parse(r#"{"type-name":"JubjubPoint"}"#);
+        assert_eq!(jubjub.curve_point(), Some(CurvePoint::Jubjub));
+        let flat = jubjub.flatten().unwrap();
+        assert_eq!(flat.prims, vec![Prim::Point]);
+        assert_eq!(flat.atoms, vec![AlignmentAtom::Field, AlignmentAtom::Field]);
+
+        // Byte for byte the same flattening as the old alias spelling.
+        let secp_alias = parse(
+            r#"{"type-name":"Alias","name":"Secp256k1Point",
+                 "type":{"type-name":"Opaque","tsType":"Secp256k1Point"}}"#,
+        );
+        assert_eq!(secp.flatten().unwrap(), secp_alias.flatten().unwrap());
     }
 
     /// BOTH halves of the curve spelling must match, or it is a user's opaque

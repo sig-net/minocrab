@@ -15,7 +15,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::v3::Compiled3;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
-    adts, attest, bounded, coins, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
+    adts, attest, bounded, bounded_ledger, coins, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
     serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
     xcontract_events_borsh,
@@ -357,6 +357,11 @@ pub fn circuits() -> Vec<Circuit> {
     // artifact carries a non-power-of-two bound
     // (tests/bounded_differential.rs has the scan).
     listed.extend(of("bounded", &bounded::Bounded::CIRCUITS));
+    // `bounded_ledger.compact` (M31): a `Uint<0..1>` in LEDGER position —
+    // compactc issue #588 gives it a one-byte alignment there, where
+    // `bounded`'s own `b1` (an ARGUMENT position probe) sees no change
+    // (tests/bounded_ledger_differential.rs has the reading).
+    listed.extend(of("bounded_ledger", &bounded_ledger::BoundedLedger::CIRCUITS));
     // `opaque.compact` (M15): Compact's `Opaque<'ts-type'>` in every
     // position it can occupy, plus the two CURVE POINT types, which
     // compactc's ABI also spells `Opaque`. Ours rather than the corpus's

@@ -8,7 +8,7 @@
 //!
 //! Source artifact:
 //! `corpus/zkir/signet-midnight-integration/packages/signet-contract/src/signet-contract`
-//! (compiler 0.33.0, language 0.25.0, runtime 0.18.0-rc.1), pinned by
+//! (compiler 0.34.0, language 0.26.0, runtime 0.19.0), pinned by
 //! `artifact/pin.json` and checked by `tests/artifact_agreement.rs`.
 //!
 //! DECLARATION ORDER IS THE WIRE CONTRACT. A circuit's parameters and a

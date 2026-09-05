@@ -183,13 +183,14 @@ fn from_field_checked_matches_unchecked_plus_constrain_input() {
 /// notes/bounded-integers.org §2, asserted through the leaf's own surfaces.
 #[test]
 fn the_three_widths_are_three_numbers() {
-    // The FAB atom: `⌈bitlen(maxval)/8⌉` bytes, so ZERO for `Uint<0..1>`
-    // and THREE for `Uint<0..70000>` — neither of which is a Borsh width.
+    // The FAB atom: `⌈bitlen(maxval)/8⌉` bytes, so ONE (not zero — compactc
+    // issue #588, `uint_atom_bytes`'s doc comment) for `Uint<0..1>` and
+    // THREE for `Uint<0..70000>` — neither of which is a Borsh width.
     let atom = |atoms: Vec<AlignmentAtom>| match atoms[..] {
         [AlignmentAtom::Bytes { length }] => length,
         _ => panic!("a bounded uint is one bytes atom"),
     };
-    assert_eq!(atom(BoundedUint::<1, Private>::atoms()), 0);
+    assert_eq!(atom(BoundedUint::<1, Private>::atoms()), 1);
     assert_eq!(atom(BoundedUint::<10, Private>::atoms()), 1);
     assert_eq!(atom(BoundedUint::<300, Private>::atoms()), 2);
     assert_eq!(atom(BoundedUint::<70_000, Private>::atoms()), 3);
