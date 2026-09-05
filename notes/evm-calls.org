@@ -137,38 +137,32 @@ circuit.
   signature and lookup are shared and the outcome is a kind disjunction.
   =Requested= / =Settled= labels are the slot's.
 
-** 3.2 The outcome rule as a TYPE (dmd, 2026-09-05: "filter → map … zero
-cost if it's definitely true … can Rust force one of two functions?")
-Rust cannot demand "one of these two methods" (mutual defaults compile and
-recurse); it can demand ONE NAMED TYPE from a sealed set, each bringing its
-methods. So =EvmCall= gains =type Outcome: OutcomeRule<Self::Return>=:
-#+begin_src rust
-pub trait OutcomeRule<R: AbiType>: sealed::Sealed {
-    type Success;               // what `complete` hands the author
-    type Failure;               // what `refund` hands the author for executed-but-failed
-    fn split(c, output: R::Wire<Public>) -> Split<Self::Success, Self::Failure>;   // the predicate + both projections
-}
-pub struct Always;                 // executed ⇒ succeeded; Success = the value, Failure = Never; predicate = constant true (folded away)
-pub struct ByFlag;                 // impl only for R = Bool; Success = (), Failure = (); predicate = the flag
-pub struct ByPredicate<P>;         // a predicate over the value; Success = the value
-#+end_src
-- =complete= calls =split= and asserts the success side; the author cannot
-  skip the check. =refund= adds =!success= as the second disjunct.
-- A rule that does not fit the return is a type error (=ByFlag= is not
-  implemented for =U64=). The no-return token is =Return = Unit, Outcome =
-  Always= on its own call type, chosen at callee registration (§3.1).
-- =Success = ()= for =ByFlag=: the filter-map — a transfer's =complete=
-  receives nothing readable, so nothing can be misread.
-ZERO COST for =Always= — DECIDED (dmd, 2026-09-05: "I'm inclined to just
-use the fold, because it's a fairly small number of rows either way"): by
-FOLDING, not by a =CAN_FAIL= branch in the API. =when= on a constant-true
-guard already costs nothing (the effect layer treats an immediate-1 guard
-as none); the one residue, =assert(imm 1)=, gets a fold rule beside
-=fold_immediate_copies= with its Lean theorem. So =OutcomeRule= has no
-=CAN_FAIL= const: =Always::split= returns the constant-true predicate,
-=complete= asserts it, the fold removes the assert, and the dump shows
-nothing emitted. General hygiene that benefits every constant-true assert
-in the tree.
+** 3.2 The outcome rule as a FUNCTION (dmd, 2026-09-06: "I don't really
+like the outcome flag, I want a function that takes the successful
+response and runs a predicate on it")
+The marker-type design (=OutcomeRule= with =Always= / =ByFlag= /
+=ByPredicate=) carried two ideas — the predicate and a payload shaping —
+and the second was not asked for. Workshopped four function forms:
+- D1 one defaulted =succeeded= on =EvmCall=, default "executed is
+  success": least boilerplate, but a =Bool=-returning call whose author
+  forgets the override silently treats =false= as success — the hole
+  reopens.
+- D2 the same method, no default: nothing forgotten; one boilerplate
+  line (=always=) on every trivial call.
+- D3 the default derived from the RETURN TYPE (=AbiType::success=:
+  =Bool= → =is_true=, numeric and =Unit= → =always=), =EvmCall::
+  succeeded= defaults to it and may override with a domain predicate
+  (=shares.gt(0)=): the safe rule is what the wire type says, so a
+  =Bool= cannot be silently treated as success even when nothing is
+  written; the no-return token is =Return = Unit=. RECOMMENDED and
+  built provisionally.
+- D4 filter + map (=type Success= + =map=): payload shaping on top;
+  deferred until a call needs a real projection.
+Common to all: the predicate is a =Check= (composes, carries a message,
+costs nothing until asserted); =complete= asserts it, =refund= asserts
+=kind == FAILURE || !succeeded=; the trivial rule is free by the
+=assert(imm 1)= fold (=passes::drop_true_asserts=, 3c17586, run-equality
+proven in =AssertIr.lean=). D3 → D2 is deleting the default: dmd's call.
 
 ** 3.1 HAZARD — what the MPC's failure output actually means, and USDT
 mpc's execution watcher (chain-signatures/chain-ethereum/src/
