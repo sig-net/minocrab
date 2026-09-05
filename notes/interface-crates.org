@@ -721,6 +721,30 @@ callee that breaks its ABI must not force a version bump on an unrelated
 one. The handle type inside is named for the contract
 (=SignetSigner=, =XcallTarget=), which is what a call site reads.
 
+** The semver instrument, as built (M34 B, 2026-09-05)
+=cargo semver-checks= (0.50.0, from the flake devshell — a tool, not
+packaging) runs on the two interface crates against the base branch:
+the =interface-wire-compat-semver= CI job (PRs only; nothing is on
+crates.io, so =--baseline-rev origin/<base>=). Two facts it took to
+make it run:
+- The tool builds each crate from a SCRATCH project, which does not
+  carry the workspace's =[patch.crates-io]=, so
+  =midnight-transient-crypto= resolved twice and =midnight-onchain-state=
+  failed to compile inside the tool. The same three patches now live in
+  =.cargo/config.toml= as well (config-level patches follow any cargo
+  invocation under the tree), with a comment saying the two blocks must
+  stay identical and when both go.
+- PROVEN TO FIRE: renaming =SignetSigner::respond= to =respond_renamed=
+  reports "semver requires new major version: 2 major checks failed" —
+  =inherent_method_missing= (=SignetSigner::respond=) and
+  =inherent_associated_pub_const_missing= (=SignetSigner::RESPOND=, the
+  entry-point constant). Both name the file and line in the baseline.
+  Against main unchanged: 196 checks, 196 pass, "no semver update
+  required", on both crates.
+What a firing MEANS is in CONTRIBUTING.md ("What an instrument MEANS"):
+wire compatibility, not style — read =tests/artifact_agreement.rs= in
+the crate it names before regenerating anything.
+
 * As built — stage 6 (2026-08-15)
 The callee side. row_snapshot and interface_snapshot bit-identical, all
 differential suites green (including =signet_contract='s differential and

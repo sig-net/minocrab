@@ -89,6 +89,10 @@
           packages = [
             rustToolchain
             pkgs.cargo-nextest
+            # M34 B: the interface crates' wire-compatibility instrument
+            # (`cargo semver-checks`, the `interface-wire-compat-semver` CI
+            # job). A tool, not packaging — the nix-light-touch rule.
+            pkgs.cargo-semver-checks
             compactc
             # M11 stage 10: the published TypeScript decoder in spec/ts/ and
             # its vector-driven tests. BINARIES ONLY, as ever — node runs the

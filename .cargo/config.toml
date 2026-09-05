@@ -1,0 +1,9 @@
+# The SAME patches as Cargo.toml's [patch.crates-io], at config level so
+# that a cargo invocation which builds one of our crates from a scratch
+# project — cargo-semver-checks does exactly that for the interface crates
+# (M34 B) — resolves midnight-transient-crypto once, not twice. Keep the
+# two blocks identical; drop both when midnight-zswap drops zkir_v2.
+[patch.crates-io]
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }

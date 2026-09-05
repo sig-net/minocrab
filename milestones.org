@@ -1428,7 +1428,7 @@ the generated region has a currency test.
 * M34 — CI closure: clippy and semver checks on the interface crates (dmd, 2026-09-04)
 Two small gaps in the gate ladder the external review and M23 both
 noted and nothing scheduled.
-- [ ] A. Clippy in CI: =cargo clippy --workspace --all-targets --
+- [X] A. (2026-09-05, e651c01: 0 findings under -D warnings; two lints decided once in [workspace.lints]; the clippy CI job) Clippy in CI: =cargo clippy --workspace --all-targets --
       -D warnings= as a ci.yml job. First re-measure the review's
       "3 clippy warnings" remark (never re-measured, triage §"Process
       findings"); fix each finding zero-movement (dump gate), or
@@ -1437,7 +1437,7 @@ noted and nothing scheduled.
       (=too_many_arguments= on circuit entry points, say) get one
       workspace-level decision in Cargo.toml's =[workspace.lints]=,
       recorded in CONTRIBUTING.md.
-- [ ] B. =cargo-semver-checks= on =signet-signer-interface= and
+- [X] B. (2026-09-05: tool from the flake; config-level patches needed and recorded; proven to fire on a method rename — notes/interface-crates.org) =cargo-semver-checks= on =signet-signer-interface= and
       =xcall-target-interface= (issue #6): the binary from the flake
       devshell (a tool, not packaging — the nix-light-touch rule), run
       on PRs with =--baseline-rev= the base branch, since nothing is on
@@ -1446,7 +1446,7 @@ noted and nothing scheduled.
       wire-compat event; the job says so in its name. Prove it fires:
       one PR-shaped run against a branch that renames a circuit method,
       recorded in notes/interface-crates.org.
-- [ ] C. Close issue #6 with the workflow link; CONTRIBUTING.md's
+- [-] C. (2026-09-05: CONTRIBUTING rows DONE; closing issue #6 needs the push — for dmd) Close issue #6 with the workflow link; CONTRIBUTING.md's
       instrument list gains both rows, pointing at what a firing MEANS
       (clippy: style, fix or allow with reason; semver: wire-compat,
       stop and read the artifact-agreement test).
