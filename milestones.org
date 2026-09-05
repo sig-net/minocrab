@@ -2120,6 +2120,14 @@ calls them, and by what the fixed-width ABI layer can express.
 - [ ] F. Docs: one table in README (interface → calls → static/dynamic)
       and the per-interface =compile_fail= gates (wrong callee, wrong
       arity, a dynamic call on a static-only slot).
-Exit criteria: A–D green, zero movement on shipped circuits, every
+- [ ] G. (dmd, 2026-09-06: "put that in our vault contract and our
+      examples") The vault's Pending lineage and the README's treasury
+      example call the LIBRARY's interfaces — =erc20::Transfer= /
+      =erc20::Approve=, =erc4626::Deposit= / =Redeem=, =uniswap_v3::
+      ExactOutputSingle= on =Contract<Erc20>= / =Contract<Erc4626>= /
+      =Contract<UniswapV3Router>= — no contract-local call types remain;
+      README's cross-chain section and the side-by-side show the library
+      spelling; zero movement on the vault's request circuits.
+Exit criteria: A–D and G green, zero movement on shipped circuits, every
 selector alloy-pinned; E and F as far as a consumer needs.
 
