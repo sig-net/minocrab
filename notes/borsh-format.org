@@ -1625,3 +1625,19 @@ cannot assume node.
   The vectors' keccak fields are checked in Rust.
 - No generated MPC-side (Go/Python) decoder. Same generator would do it; no
   consumer has asked, and the spec's offsets are what a Go implementer needs.
+
+* The lending records (2026-09-05, after M28)
+The deployed vault's =startSupply= / =startRedeem= write the record shape
+at two more instantiations: =SignBidirectionalEvent<2, 36, 35>= (an
+ERC-4626 =deposit(assets, receiver)= to the stata token; 407 bytes = the
+vault record + 2 + 1 of schema) and =<3, 36, 35>= (=redeem(shares,
+receiver, owner)=, 439). Spec types =SupplyEvent= / =RedeemEvent=, V2
+=RedeemEventV2= (370); a V2 supply record IS =VaultEventV2= at kind 5
+(the schema strings were the only difference), so it has a vector and
+no type. Proof shape unchanged: model FAB limbs under the shipping
+alignment → bytes == borsh(spec type) == bincode-fixint, two properties
+each for deployed and V2; =LEN= == the alignment's =bin_len=. §9, the
+vectors (records.json: 8 records), the TS codecs and the frozen layout
+table (63 new rows) regenerated; node suite 52/52. The vector header and
+the =keccak256= field's doc were still calling keccak the request id —
+fixed to "checksum" (Poseidon since M28).
