@@ -33,10 +33,10 @@ suite warrants; this says where the suites stop.
 | `minocrab-ir/src/v3/passes.rs` | 1094 | Lean (crates/minocrab-ir/lean, the pass theorems, M25/M27); v3_passes; the zkir dump + row snapshot (every pass is zero-movement on the shipped artifacts) | a pass that changes a circuit's statement while preserving its rows |
 | `minocrab-ir/src/v3/taint.rs` | 1229 | Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; the MARKING RULES' warrants are cited in-file per rule and are READING | a limb marked bounded that is not — a false negative in the one lint that sees what honest inputs cannot |
 | `minocrab/src/lib.rs` | 192 | compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself (192 lines) | a Meet impl that lets private meet public as public |
-| `minocrab/src/v3.rs` | 1731 | every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: **READING** against reduce-to-zkir.ss | a guard dropped on one effect inside `when`; a public input minted in the wrong order |
+| `minocrab/src/v3.rs` | 1772 | every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: **READING** against reduce-to-zkir.ss | a guard dropped on one effect inside `when`; a public input minted in the wrong order |
 | `minocrab/src/v3/abi.rs` | 579 | v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot | an argument type constrained to the wrong width |
 | `minocrab/src/v3/disclose.rs` | 563 | the generated set-equality test on every circuit; disclosure_report; v3_disclose | a disclosure recorded under a label the signature does not name |
-| `minocrab/src/v3/effects.rs` | 261 | v3_guard_scope; every differential with a branch | an effect escaping its guard |
+| `minocrab/src/v3/effects.rs` | 284 | v3_guard_scope; every differential with a branch | an effect escaping its guard |
 | `minocrab-ledger/src/lib.rs` | 103 | **READING** | nothing beyond the crate doc and mod/pub-use plumbing (103 lines) |
 | `minocrab-ledger/src/impact.rs` | 348 | differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (315 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): **READING** against midnight-ledger.ss vm-code | an Impact op encoded so the ledger applies a different state change than the circuit claims |
 | `minocrab-ledger/src/ops.rs` | 916 | differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (315 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): **READING** against midnight-ledger.ss vm-code | an Impact op encoded so the ledger applies a different state change than the circuit claims |
@@ -68,7 +68,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-25449 lines in the seven crates; 10612 of them in files whose warrant is READING in whole or in part (the rows in bold).
+25513 lines in the seven crates; 10653 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget
