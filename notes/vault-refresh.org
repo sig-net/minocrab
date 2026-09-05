@@ -61,3 +61,86 @@ What was kept, and where it went:
 Not lost: the M10 measured ladder (notes/vault-optimization.org), the M11
 format decisions (notes/borsh-format.org) and BENCHMARK.md's four-sided
 run are history and stay as written; BENCHMARK.md is re-run under M28 C.
+
+* 1. The re-port, as built (2026-09-05, branch =m28-vault=)
+** What the compat lineage is now
+=crates/minocrab-contracts/src/erc20_vault.rs=: the seventeen circuits of
+signet-midnight-examples =0d9c1660=, instruction order following the
+Compact source, every one PI-equal to compactc's artifact
+(=tests/erc20_vault_differential.rs=: 57 tests — per circuit a
+matches-corpus run, the guard failures both artifacts must reject, and
+the tamper sweep with zero acceptance disagreements).
+
+The block is 21 fields and compactc SEGMENTS it (six at =[0, i]=, fifteen
+at =[1, i − 6]=). =#[derive(Ledger)]= computes the same paths — this is
+the first compactc-anchored proof of the segmentation code (the Pending
+lineage exercised it, but had no twin). Five settle views are
+=#[derive(LedgerRepr)]= structs in maps; the request record types are
+one =EventRecord= instantiation per calldata shape (2/7/2/3 words).
+
+What changed in the port relative to the nine-circuit vault, and what it
+cost nothing: the notification's depth and path bytes are read off the
+map handle (=LedgerMap::field_path()=), so no circuit spells =[1, 3, 0,
+0]=; the request assembly, freshness check, record insert and notify are
+four shared functions; the =evmChainId= read is made by the caller at the
+struct literal's position (compactc reads it BEFORE a =to= that is a cell
+— the one ordering the first differential run caught, in =approveStata=).
+
+** Two upstream facts the port had to follow exactly
+- =completeWithdraw= now witnesses the caller's secret UNCONDITIONALLY
+  (the commitment is hoisted out of the =if=), and asserts it only on the
+  refund branch. On the success branch the witness is read by nothing in
+  either artifact, so the differential's success-case sweep is transcript-
+  only (a perturbed secret is accepted by both; that is upstream's
+  "anyone may settle a succeeded withdrawal", not a gap of ours).
+- =startRedeem= reads =vaultEvmAddress= TWICE (once per calldata word the
+  source names it in); compactc does not CSE ledger reads.
+
+** The harness (=tests/vault/=)
+Rewritten around ONE concretization. =ops.rs= holds the segmented op
+shapes (transcribed from the artifacts; the oracle the eDSL's ledger
+methods are checked against, so not built from them). =model.rs=: an
+=Env= (the cells every circuit may read + the call context), a =Req=
+(record limbs → Poseidon id → aligned value), seventeen scenarios; popeq
+outputs are DERIVED from the op stream (=ops::outputs_of=), so a scenario
+cannot list an output its ops never read. =exec.rs= builds the segmented
+state tree and resolves a flat field index through it. =spec.rs=: the
+seventeen spec functions with CONCRETE effects (no =Term=/=Art=).
+=gen.rs=: branch-aware strategies for all seventeen.
+=tests/erc20_vault_spec.rs=: five links per generated case — acceptance,
+reference VM, compactc's artifact through the comparator, PI/transcript
+length closure, and the ledger's own =Effects= (17 properties, green at
+the default 48 cases). =tests/erc20_vault_adversarial.rs=: the families
+that survive the format change — argument/witness malleability on
+=completeDeposit=, =s = 0= and =n=/low-s on every settle circuit, the
+identity response key (still accepted by compactc's =initialise=, so by
+ours), wrong-flow settles, the forged-membership/ledger case, the four
+refunds against success-shaped outputs, the 0x02 hazard (kept by
+upstream), Poseidon injectivity on the generated corpus, completeSwap's
+underflow boundary (19 tests).
+
+** What the Borsh spec suite lost and kept
+=serialization_conformance= still proves the record BYTES (deployed and
+V2) and the attestation-preimage bytes are canonical Borsh. The
+=keccak256(borsh(record)) == request id= equalities are GONE: the id is
+Poseidon over the field-aligned limbs since =fff3421c=, not a function of
+the bytes. =spec/borsh-subset.md= §5/§6 carry a dated "superseded hash
+rule" note; the vectors' =keccak256= field is now documented as a
+checksum. A proper revision of the spec's hash sections is an open item
+(below). The borsh-fork-only property (V2 attestation preimages through
+the fork's model) went with the fork; the V2 output encoding is covered
+by the Pending lineage's =CircuitBorsh= tests.
+
+** Instruments touched
+Interface and row snapshots regenerated (seventeen compat rows); taint
+baseline regenerated; TRUST.md regenerated; =disclosure_report= re-pinned
+to =startDeposit= (7 disclosures: identity commitment, id, record, the
+settle view's token and amount, the xcall pair); =support::circuits()=
+lists the seventeen; the bench's target table remapped to the new names
+(C's first half — the run itself is C).
+
+** Open (carried in milestones.org M28)
+- C: BENCHMARK.md re-run (=nix develop -c ./bench.sh=).
+- D: M27's V-list against the 17-circuit vault.
+- The Borsh spec's hash sections: rewrite §5/§6 around the Poseidon rule
+  or split "layout" from "identity" — a spec decision, flagged for dmd.

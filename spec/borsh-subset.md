@@ -179,11 +179,19 @@ own kind is what makes that *structural* rather than incidental.
 attestationDigest = keccak256(borsh(AttestationPreimage { request_id: [u8; 32], output: T }))
 ```
 
+> **Superseded hash rule (2026-09-05, signet-midnight-integration `fff3421c`).**
+> The protocol moved in-circuit hashing to Poseidon: the digest is now
+> `upgradeFromTransient(transientHash([requestId, serializedOutput]))` over the
+> preimage's *field-aligned limbs* (one field element per FAB limb), and
+> `bigR.x` / `s` enter the circuit **little-endian** ("circuit-input form").
+> The PREIMAGE LAYOUT below is unchanged and still what this document
+> specifies; the hash over it is no longer a function of the Borsh bytes alone.
+> See `notes/vault-refresh.org`.
+
 Since a Borsh struct is the concatenation of its fields, that is simply the
 request id's 32 bytes followed by `borsh(output)`. Preimage widths: **34**
 bytes for claim/withdraw, **41** for swap, **33** for refund. The signature over
-that digest is unchanged from today: secp256k1 ECDSA under `mpcResponseKey`,
-with `bigR.x` and `s` big-endian on the wire.
+that digest is secp256k1 ECDSA under `mpcResponseKey`.
 
 `amount_in` is little-endian, as Borsh's `u64` always is — which is
 byte-for-byte what the deployed 8-byte output already was.
@@ -205,10 +213,17 @@ The vault stores a request record per pending request, and
 requestId = keccak256(borsh(record))
 ```
 
-This is not a new rule: it is what the deployed contract already computes,
-proven byte-for-byte against the deployed encoding. The MPC recomputes it and
-drops any request whose id does not match, so an implementation that gets one
-offset wrong fails closed rather than signing the wrong transaction.
+> **Superseded hash rule (2026-09-05, `fff3421c`).** The deployed contract now
+> computes `requestId = upgradeFromTransient(transientHash(record))` — Poseidon
+> over the record's field-aligned limbs in slot order, which the MPC's
+> `compact-hashing` crate recomputes from the stored cell. The record LAYOUT
+> below is unchanged; its Borsh bytes no longer determine the id. The vault
+> model's `request_id_of` is the reference, pinned to compactc's artifacts by
+> the differential suite.
+
+The MPC recomputes the id and drops any request whose id does not match, so
+an implementation that gets one offset wrong fails closed rather than signing
+the wrong transaction.
 
 There are TWO record formats, and this document specifies both.
 
@@ -574,7 +589,7 @@ regeneration.
 | file | contents |
 |---|---|
 | `leaves.json` | one vector per leaf type, including `Flagged<u32>` set and unset (same width) |
-| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values; their `keccak256` IS the request id |
+| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values (their `keccak256` was the request id before the Poseidon move, §6) |
 | `attested-outputs.json` | the kind-tagged responses of §5 and their signed digest preimages |
 | `attested-outputs-deployed.json` | what the deployed contract accepts TODAY, for reference |
 | `misc-payloads.json` | the singleton's logged payloads, with the 288-byte envelope |
@@ -593,8 +608,8 @@ Each vector carries:
 - `hex` — **the authoritative bytes**, the canonical Borsh encoding;
 - `sha256` — SHA-256 of those bytes (Midnight's `persistentHash` of this
   preimage);
-- `keccak256` — Keccak-256 of those bytes: the **request id** for a record, the
-  **signed digest** for an `AttestationPreimage`, and a checksum otherwise;
+- `keccak256` — Keccak-256 of those bytes: a checksum (it was the request id
+  and the signed digest before the Poseidon move, §5/§6);
 - `fields` — the value field by field, in declaration order, each with its
   `offset`, `width`, own `hex` and (for scalars) its decoded `number`. The
   fields tile the value exactly, which is itself a committed test.

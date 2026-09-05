@@ -1167,20 +1167,21 @@ DONE 2026-09-05 (=sig-refresh=):
       (§2026-09-05): every request circuit 0.14-0.35× of compactc's,
       every settle 0.86-0.88×.
 NOT DONE — the vault re-port, which is this milestone's body:
-- [ ] A. The compat lineage (=erc20_vault=) re-ported against the 17
-      new artifacts: renames, the 19-field chunked block, the lending
-      flows, Poseidon commitments, the new =abiWordToUint128= shape.
-      Until then these suites are RED on this branch (enumerated
-      2026-09-05 with =--no-fail-fast=; goldens renamed, the shared signet
-      functions moved, the pinned keccak-era preimages stale):
-      =erc20_vault_differential= (25), =erc20_vault_adversarial= (12),
-      =erc20_vault_spec= (9), =erc20_vault_borsh_fork= (1),
-      =erc20_vault_opt_fork= (1), =erc20_vault_opt_burn_wellformed= (1),
-      =disclosure_report= (1). Everything else — the singleton, the test
-      caller, every non-vault differential, the Pending lineage, the flow
-      and simulator suites, both snapshots (regenerated), the taint
-      baseline (regenerated), closure, clippy — is green. The branch is a
-      refresh branch for the same reason =vault-refresh= was.
+- [X] A. The compat lineage (=erc20_vault=) re-ported against the 17
+      new artifacts (2026-09-05, branch =m28-vault=, notes/vault-refresh.org
+      §1): the 21-field SEGMENTED block (six at =[0,i]=, fifteen at
+      =[1,i−6]= — the derive's paths proven against compactc for the
+      first time), five =#[derive(LedgerRepr)]= settle views, the lending
+      flows, Poseidon commitments everywhere, per-flow refunds. All 17
+      PI-equal to compactc's artifacts: =erc20_vault_differential= 57
+      tests (matches-corpus + guard agreement + tamper sweeps, zero
+      disagreements). Rows, compat vs compactc: =initialise= 891 = 891;
+      =startDeposit= 1,834 vs 11,406; =startWithdraw= 23,109 vs 32,751;
+      =startSwap= 23,955 vs 43,592; settles 35.6-45.4k vs 40.3-52.5k
+      (row_snapshot). Two upstream facts followed exactly:
+      =completeWithdraw= witnesses the secret unconditionally (asserted on
+      the refund branch only — the success-case sweep is transcript-only);
+      =startRedeem= reads =vaultEvmAddress= twice.
       - [X] The =_opt= / =_borsh= / =_modern= forks: RETIRED (2026-09-05,
             branch =m28-vault=, notes/vault-refresh.org §0) — their
             compactc anchor left with the rename, upstream adopted their
@@ -1189,13 +1190,23 @@ NOT DONE — the vault re-port, which is this milestone's body:
             =Art= survives as a concretization selector for the
             conformance suite, =ARTS = [Compat]=). Bench back to two
             sides; README's side-by-side now shows =erc20_vault_pending=.
-- [ ] B. =disclosure_report.rs= (a pinned keccak-era preimage for the
-      old =deposit=) and =tests/vault= (the spec harness) re-pinned to
-      the new protocol with A.
+- [X] B. =tests/vault= rewritten around one concretization (=ops.rs=
+      segmented op shapes, =model.rs= Env/Req/17 scenarios with DERIVED
+      popeq outputs, =exec.rs= segmented state, =spec.rs= concrete
+      effects, =gen.rs=): =erc20_vault_spec= 17 properties × five links
+      (acceptance, reference VM, compactc comparator, PI closure, ledger
+      Effects) green; =erc20_vault_adversarial= 19 tests;
+      =disclosure_report= re-pinned to =startDeposit= (7 disclosures);
+      =serialization_conformance= keeps the byte claims and DROPS the
+      =keccak256(borsh(record)) == id= equalities (the id is Poseidon over
+      field limbs now) — spec/borsh-subset.md §5/§6 carry a dated
+      "superseded hash rule" note. OPEN for dmd: rewrite the Borsh spec's
+      hash sections properly (layout vs identity), see the note §1.
 - [ ] C. The bench's target table (=minocrab-bench=) remapped to the new
-      names; BENCHMARK.md re-run (dmd 2026-09-05: "optimise and
-      re-benchmark the vault code" — the compactc side now uses
-      Poseidon too, so the headline comparison changes materially).
+      names (DONE with A: 17 + 3 targets, two sides); BENCHMARK.md re-run
+      (dmd 2026-09-05: "optimise and re-benchmark the vault code" — the
+      compactc side now uses Poseidon too, so the headline comparison
+      changes materially).
 - [ ] D. M27's V-list re-frozen against the 17-circuit vault.
 Exit criteria: the 17 circuits ported PI-equal (compat) and the API
 lineage green; every suite on the branch green; BENCHMARK.md re-run on

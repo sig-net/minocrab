@@ -802,7 +802,7 @@ fn deposit_shielded_matches_corpus() {
     // The value the receive claim commits to.
     // NOTE: coin_commitment_of takes a u64 value; deposit values here stay
     // under 2^64 so the shared helper applies.
-    let cm = coin_commitment_of(&nonce_slots, &colour1(), value as u64, false, &me);
+    let cm = coin_commitment_of(&nonce_slots, &colour1(), u128::from(value as u64), false, &me);
 
     // FIRST CREDIT of this colour: pools.member false, insertCoin of the
     // deposited coin itself.
@@ -863,20 +863,20 @@ fn deposit_shielded_merge_matches_corpus() {
     let key = shielded_key(&acct1(), &colour1());
 
     let deposit_cm =
-        coin_commitment_of(&b32_slots(&coin_nonce), &colour1(), value as u64, false, &me);
+        coin_commitment_of(&b32_slots(&coin_nonce), &colour1(), u128::from(value as u64), false, &me);
 
     // mergeCoinImmediate(pooled, coin): self read, both nullifiers, the
     // merged coin's spend+receive claims.
     let nul_pooled = coin_nullifier_of(
         &b32_slots(&pooled_nonce),
         &colour1(),
-        pooled_value as u64,
+        u128::from(pooled_value as u64),
         &me,
     );
-    let nul_coin = coin_nullifier_of(&b32_slots(&coin_nonce), &colour1(), value as u64, &me);
+    let nul_coin = coin_nullifier_of(&b32_slots(&coin_nonce), &colour1(), u128::from(value as u64), &me);
     let merged_nonce = evolved_nonce(&pooled_nonce);
     let merged_value = pooled_value + value;
-    let merged_cm = coin_commitment_of(&merged_nonce, &colour1(), merged_value as u64, false, &me);
+    let merged_cm = coin_commitment_of(&merged_nonce, &colour1(), u128::from(merged_value as u64), false, &me);
 
     let mut ops = member(manager::ACCOUNTS, bytesn_value(32, &acct1()), true);
     ops.extend(receive_shielded(&me, &deposit_cm));
@@ -1708,15 +1708,15 @@ fn execute_native_withdraw_shielded_matches_corpus() {
     let nul = coin_nullifier_of(
         &b32_slots(&pooled_nonce),
         &colour1(),
-        pooled_value as u64,
+        u128::from(pooled_value as u64),
         &me,
     );
     let out_nonce = evolved_nonce(&pooled_nonce);
-    let out_cm = coin_commitment_of(&out_nonce, &colour1(), val as u64, true, &user_pk);
+    let out_cm = coin_commitment_of(&out_nonce, &colour1(), u128::from(val as u64), true, &user_pk);
     let change_value = pooled_value - val;
     let change_nonce = evolved_nonce_change(&pooled_nonce);
     let change_cm =
-        coin_commitment_of(&change_nonce, &colour1(), change_value as u64, false, &me);
+        coin_commitment_of(&change_nonce, &colour1(), u128::from(change_value as u64), false, &me);
 
     let mut ops = kernel_self(&me);
     ops.extend(cell_read(
@@ -1900,15 +1900,15 @@ fn execute_native_open_swap_matches_corpus() {
     let nul = coin_nullifier_of(
         &b32_slots(&pooled_nonce),
         &colour1(),
-        pooled_value as u64,
+        u128::from(pooled_value as u64),
         &me,
     );
     let change_value = pooled_value - give;
     let change_nonce = evolve_nonce_indexed(2, &pooled_nonce);
     let change_cm =
-        coin_commitment_of(&change_nonce, &colour1(), change_value as u64, false, &me);
+        coin_commitment_of(&change_nonce, &colour1(), u128::from(change_value as u64), false, &me);
     // The want leg: receive the wanted coin into custody.
-    let want_cm = coin_commitment_of(&b32_slots(&want_nonce), &want_colour, want as u64, false, &me);
+    let want_cm = coin_commitment_of(&b32_slots(&want_nonce), &want_colour, u128::from(want as u64), false, &me);
 
     let mut ops = kernel_self(&me);
     ops.extend(cell_read(
@@ -2112,12 +2112,12 @@ fn execute_native_named_swap_exact_spend_matches_corpus() {
     let nul = coin_nullifier_of(
         &b32_slots(&pooled_nonce),
         &colour1(),
-        pooled_value as u64,
+        u128::from(pooled_value as u64),
         &me,
     );
     let out_nonce = evolved_nonce(&pooled_nonce);
-    let out_cm = coin_commitment_of(&out_nonce, &colour1(), give as u64, true, &taker_pk);
-    let want_cm = coin_commitment_of(&b32_slots(&want_nonce), &want_colour, want as u64, false, &me);
+    let out_cm = coin_commitment_of(&out_nonce, &colour1(), u128::from(give as u64), true, &taker_pk);
+    let want_cm = coin_commitment_of(&b32_slots(&want_nonce), &want_colour, u128::from(want as u64), false, &me);
 
     let mut ops = kernel_self(&me);
     ops.extend(cell_read(

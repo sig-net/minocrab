@@ -1,6 +1,6 @@
-//! M6 baseline benchmark harness: the erc20-vault contract and its Signet
-//! singleton dependency, proved under each toolchain at the same pinned
-//! versions.
+//! M6 baseline benchmark harness: the erc20-vault contract (seventeen
+//! circuits since M28) and its Signet singleton dependency, proved under
+//! each toolchain at the same pinned versions.
 //!
 //! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
 //! data: a name, where its circuits come from ([`Artifacts`]) and where its
@@ -165,15 +165,23 @@ fn targets() -> Vec<Target> {
         Box::leak(format!("{dir}/{name}.zkir").into_boxed_str())
     }
     vec![
-        t!(VAULT, "initialize", || erc20_vault::initialize()),
-        t!(VAULT, "deposit", || erc20_vault::deposit()),
-        t!(VAULT, "claim", || erc20_vault::claim()),
+        t!(VAULT, "initialise", || erc20_vault::initialise()),
+        t!(VAULT, "approveStata", || erc20_vault::approve_stata()),
         t!(VAULT, "approveRouter", || erc20_vault::approve_router()),
-        t!(VAULT, "withdraw", || erc20_vault::withdraw()),
+        t!(VAULT, "startDeposit", || erc20_vault::start_deposit()),
+        t!(VAULT, "completeDeposit", || erc20_vault::complete_deposit()),
+        t!(VAULT, "startWithdraw", || erc20_vault::start_withdraw()),
         t!(VAULT, "completeWithdraw", || erc20_vault::complete_withdraw()),
-        t!(VAULT, "refund", || erc20_vault::refund()),
-        t!(VAULT, "swap", || erc20_vault::swap()),
+        t!(VAULT, "refundWithdraw", || erc20_vault::refund_withdraw()),
+        t!(VAULT, "startSwap", || erc20_vault::start_swap()),
         t!(VAULT, "completeSwap", || erc20_vault::complete_swap()),
+        t!(VAULT, "refundSwap", || erc20_vault::refund_swap()),
+        t!(VAULT, "startSupply", || erc20_vault::start_supply()),
+        t!(VAULT, "completeSupply", || erc20_vault::complete_supply()),
+        t!(VAULT, "refundSupply", || erc20_vault::refund_supply()),
+        t!(VAULT, "startRedeem", || erc20_vault::start_redeem()),
+        t!(VAULT, "completeRedeem", || erc20_vault::complete_redeem()),
+        t!(VAULT, "refundRedeem", || erc20_vault::refund_redeem()),
         t!(SIGNET, "signBidirectional", || signet_contract::sign_bidirectional()),
         t!(SIGNET, "respond", || signet_contract::respond()),
         t!(SIGNET, "respondBidirectional", || signet_contract::respond_bidirectional()),
@@ -603,7 +611,7 @@ mod tests {
     /// panic.
     #[test]
     fn every_target_is_two_sided() {
-        assert_eq!(targets().len(), 12, "nine vault circuits and the singleton's three");
+        assert_eq!(targets().len(), 20, "seventeen vault circuits and the singleton's three");
         assert_eq!(cells().len(), targets().len() * 2);
         let signet = targets().into_iter().find(|t| t.name == "respond").unwrap();
         assert!(load_ir(&signet, &side("compactc").unwrap()).is_ok());
@@ -619,8 +627,8 @@ mod tests {
     /// The two statement-identical sides read the shared preimage dump.
     #[test]
     fn preimages_are_shared() {
-        let shared = side("minocrab").unwrap().preimage_path("claim");
-        assert_eq!(shared, side("compactc").unwrap().preimage_path("claim"));
+        let shared = side("minocrab").unwrap().preimage_path("completeDeposit");
+        assert_eq!(shared, side("compactc").unwrap().preimage_path("completeDeposit"));
     }
 
     /// Both toolchain-independent sides yield an IR for every target, and

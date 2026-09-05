@@ -23,21 +23,18 @@ mod vault;
 
 use vault::model::*;
 
-/// The golden: `deposit`'s disclosure report, line by line
+/// The golden: `startDeposit`'s disclosure report, line by line
 /// (`label | kind | values`).
 ///
-/// Regenerate with `--ignored --nocapture print_deposit_disclosure_report`.
-const DEPOSIT_REPORT: &str = "\
-depositor identity commitment | disclosed | 48, 933f9decb46ed5d6c7212439ff6e5b571aa483377c9f40c0c53f3635def37f
+/// Regenerate with `--ignored --nocapture print_start_deposit_disclosure_report`.
+const START_DEPOSIT_REPORT: &str = "\
+depositor identity commitment | disclosed | -, 1a6f81ba97ed069ae2e8228f8262a7c6639207a0284600ccc6c6cefb75faa3
 impact public input | statement | 01
-request id | disclosed | 7e, 7734d026c964562ec7c5037fcd18d57a8b2f9ed10edec78d2ca1e0cd96fc0f
-request record | disclosed | 31, 7661756c742d61646472, 04, 01, 48, 933f9decb46ed5d6c7212439ff6e5b571aa483377c9f40c0c53f3635def37f, \
--, -, -, -, -, -, a736aa, 07, 00ca9a3b, 00ac23fc06, e8fd, 65726332302d746f6b656e2d636f6e7472616374, -, 01, a9059cbb, 02, 74, \
-0000000000000000000000007661756c742d65766d2d616464722d32306279, 40, \
-000000000000000000000000000000000000000000000000000000000001e2, -, -, 6569703135353a3131313535313131, 227d5d, \
-5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c, 227d5d, \
-5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c
-xcall communications commitment | disclosed | 24a606d7ade6a0bd3947ca2bc5116752f91763f058c7496ac8e01785fdb36a13
+request id | disclosed | -, 7d3772434413379766fae88e0f67c8339dfc6c27b021afc5bdb9e6bf129527
+request record | disclosed | 31, 7661756c742d61646472, 04, 01, -, 1a6f81ba97ed069ae2e8228f8262a7c6639207a0284600ccc6c6cefb75faa3, -, -, -, -, -, -, a736aa, 07, 00ca9a3b, 00ac23fc06, e8fd, 65726332302d746f6b656e2d636f6e7472616374, -, 01, a9059cbb, 02, 74, 0000000000000000000000007661756c742d65766d2d616464722d32306279, 40, 000000000000000000000000000000000000000000000000000000000001e2, -, -, 6569703135353a3131313535313131, 227d5d, 5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c, 227d5d, 5b7b226e616d65223a2273756363657373222c2274797065223a22626f6f6c
+the deposited ERC20 | disclosed | 65726332302d746f6b656e2d636f6e7472616374
+the deposited amount | disclosed | 40e201
+xcall communications commitment | disclosed | e14745ddce19580a721a4fb11ffd11174a2c8644ca13a3ebbf07bdbe3887ba4d
 xcall entry-point hash | disclosed | f3, 8f2c97ee5f46d2d83348ccfdb2b2b1fec86db22198200fd0601b8647ec443e";
 
 fn report_lines(compiled: &Compiled3, pi: &ProofPreimage) -> Vec<String> {
@@ -49,11 +46,11 @@ fn report_lines(compiled: &Compiled3, pi: &ProofPreimage) -> Vec<String> {
         .collect()
 }
 
-/// Every disclosure `deposit` makes, with this run's values.
+/// Every disclosure `startDeposit` makes, with this run's values.
 #[test]
-fn the_deposit_disclosure_report_is_valued() {
-    let compiled = erc20_vault::deposit();
-    let pi = DepositScenario::new().preimage();
+fn the_start_deposit_disclosure_report_is_valued() {
+    let compiled = erc20_vault::start_deposit();
+    let pi = StartDepositScenario::new().preimage();
     let lines = report_lines(&compiled, &pi);
 
     // Nothing resolves to `<not computed>`: every record points at a value
@@ -66,13 +63,13 @@ fn the_deposit_disclosure_report_is_valued() {
 
     // One record per LOGICAL value, however many wires it has: the identity
     // commitment and the request id report two limbs each on one line, the
-    // request record its thirty-odd, and the cross-contract call's two
-    // disclosures are the ledger layer's own (declared by the CALLER — see
-    // `deposit`'s signature).
+    // request record its thirty-odd, the settle view's token and amount one
+    // each, and the cross-contract call's two disclosures are the ledger
+    // layer's own (declared by the CALLER — see `start_deposit`'s signature).
     let disclosed: Vec<&String> = lines.iter().filter(|l| l.contains("| disclosed |")).collect();
-    assert_eq!(disclosed.len(), 5, "{}", lines.join("\n"));
+    assert_eq!(disclosed.len(), 7, "{}", lines.join("\n"));
 
-    let golden: Vec<String> = DEPOSIT_REPORT.lines().map(str::to_string).collect();
+    let golden: Vec<String> = START_DEPOSIT_REPORT.lines().map(str::to_string).collect();
     let summary = summarize(&lines);
     assert_eq!(summary, golden, "\nBUILT:\n{}\n", summary.join("\n"));
 }
@@ -97,9 +94,9 @@ fn summarize(lines: &[String]) -> Vec<String> {
 
 #[test]
 #[ignore]
-fn print_deposit_disclosure_report() {
-    let compiled = erc20_vault::deposit();
-    let pi = DepositScenario::new().preimage();
+fn print_start_deposit_disclosure_report() {
+    let compiled = erc20_vault::start_deposit();
+    let pi = StartDepositScenario::new().preimage();
     for line in summarize(&report_lines(&compiled, &pi)) {
         println!("{line}");
     }

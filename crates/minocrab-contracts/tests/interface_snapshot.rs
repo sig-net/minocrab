@@ -44,10 +44,12 @@ use support::{circuits, diff, rewrite_generated_region, test_source};
 const SNAPSHOT: &[(&str, &str)] = &[
     // GENERATED BEGIN — rewritten by `regenerate_interface_snapshot`
     (
-        "erc20_vault::initialize",
+        "erc20_vault::initialise",
         "\
 in  vaultEvm: Scalar<BLS12-381>
 in  swapRouter: Scalar<BLS12-381>
+in  stataUnderlyingAddr: Scalar<BLS12-381>
+in  stataTokenAddr: Scalar<BLS12-381>
 in  chainId: Scalar<BLS12-381>
 in  chainCaip2Id_hi: Scalar<BLS12-381>
 in  chainCaip2Id_lo: Scalar<BLS12-381>
@@ -57,7 +59,28 @@ wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::deposit",
+        "erc20_vault::approve_stata",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::approve_router",
+        "\
+in  erc20Address: Scalar<BLS12-381>
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_deposit",
         "\
 in  evmNonce: Scalar<BLS12-381>
 in  gasLimit: Scalar<BLS12-381>
@@ -74,7 +97,7 @@ wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::claim",
+        "erc20_vault::complete_deposit",
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
@@ -101,18 +124,7 @@ wit Scalar<BLS12-381> (guarded)
 ",
     ),
     (
-        "erc20_vault::approve_router",
-        "\
-in  erc20Address: Scalar<BLS12-381>
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::withdraw",
+        "erc20_vault::start_withdraw",
         "\
 in  evmNonce: Scalar<BLS12-381>
 in  keyVersion: Scalar<BLS12-381>
@@ -146,14 +158,14 @@ in  respond_recoveryId: Scalar<BLS12-381>
 in  serializedOutput: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
 wit Scalar<BLS12-381> (guarded)
 wit Scalar<BLS12-381> (guarded)
 ",
     ),
     (
-        "erc20_vault::refund",
+        "erc20_vault::refund_withdraw",
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
@@ -167,18 +179,14 @@ in  respond_recoveryId: Scalar<BLS12-381>
 in  serializedOutput: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::swap",
+        "erc20_vault::start_swap",
         "\
 in  evmNonce: Scalar<BLS12-381>
 in  keyVersion: Scalar<BLS12-381>
@@ -201,6 +209,149 @@ wit Scalar<BLS12-381>
     ),
     (
         "erc20_vault::complete_swap",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+in  changeNonce_hi: Scalar<BLS12-381>
+in  changeNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::refund_swap",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_supply",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_supply",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::refund_supply",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_redeem",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  shares: Scalar<BLS12-381>
+in  coin_nonce_hi: Scalar<BLS12-381>
+in  coin_nonce_lo: Scalar<BLS12-381>
+in  coin_color_hi: Scalar<BLS12-381>
+in  coin_color_lo: Scalar<BLS12-381>
+in  coin_value: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_redeem",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  respond_bigR_x_hi: Scalar<BLS12-381>
+in  respond_bigR_x_lo: Scalar<BLS12-381>
+in  respond_bigR_y_hi: Scalar<BLS12-381>
+in  respond_bigR_y_lo: Scalar<BLS12-381>
+in  respond_s_hi: Scalar<BLS12-381>
+in  respond_s_lo: Scalar<BLS12-381>
+in  respond_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+in  mintNonce_hi: Scalar<BLS12-381>
+in  mintNonce_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::refund_redeem",
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>

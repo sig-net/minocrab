@@ -1,187 +1,476 @@
 //! The erc20-vault REFERENCE MODEL: per-circuit scenarios that carry a
 //! concrete pre-state plus the arguments and witnesses of one call, and
-//! emit the Impact op stream, the popeq results and the `ProofPreimage`
-//! that stream implies.
+//! emit the Impact op stream and the `ProofPreimage` that stream implies.
 //!
 //! One model, three consumers: the differential suite (PI-equality against
 //! compactc's artifacts), the property harness (spec agreement at scale),
-//! and the adversarial sweeps. Moved verbatim out of
-//! `erc20_vault_differential.rs` in M10 step 1 — the builders were already
-//! the reference model, they were just private to one test binary.
+//! and the adversarial sweeps.
 //!
-//! Since M10 step 4 every scenario also carries the [`Art`] it models:
-//! `Art::Compat` reproduces the direct ports, `Art::Opt` the optimized fork
-//! and `Art::Borsh` the M11 fork OF that fork (which inherits every M10
-//! rung, so it shares the optimized op stream — the artifact-dependent
-//! branches here ask `art == Art::Compat`, never `== Art::Opt`).
-//! `with_art` rebuilds a generated scenario for another artifact, so ONE
-//! generated case gates all three. Everything artifact-dependent — the
-//! discretionary hash constructions, and from rung (i) the op stream
-//! itself — is selected from `self.art`; a scenario that ignored it would
-//! show up immediately as a PI mismatch against its own circuit.
+//! Shape (M28): an [`Env`] is the ledger state every circuit may read plus
+//! the call context; a [`Req`] is a Signet request as the record holds it,
+//! with its Poseidon id; each scenario is `Env` + arguments + the flags
+//! that pick a branch (`request_exists`, `pending`, the attested output).
+//! The op stream is built from `ops::*` in the circuit's read order — the
+//! order compactc's artifact reads in, which the differential pins — and
+//! the popeq results are DERIVED from that stream (`ops::outputs_of`), so a
+//! scenario cannot list an output its ops never read.
 
 use std::borrow::Cow;
 
-use midnight_base_crypto::fab::{
-    Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
-};
-use midnight_base_crypto::repr::BinaryHashRepr;
+use midnight_base_crypto::fab::AlignedValue;
 use midnight_curves::k256;
-use midnight_onchain_state::state::StateValue;
-use midnight_onchain_vm::ops::{Key, Op};
-use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
-use minocrab_contracts::{erc20_vault, erc20_vault_pending};
+use minocrab_contracts::erc20_vault as v;
 use minocrab_zkir::v3::IrValue;
-use sha2::Digest;
 
+use super::exec::PreState;
+use super::ops;
 use super::prims::*;
 
-/// A response-kind constant as the wire carries it.
-///
-/// The circuit declares kinds as `u32` (the const-generic parameter of
-/// `Tag<K>` and the constants beside it); a Borsh fieldless-enum discriminant
-/// is ONE byte, which is what the model puts in the digest preimage and in
-/// the argument slot.
-pub fn kind(k: u32) -> u8 {
-    u8::try_from(k).expect("a Borsh tag is one byte")
+// ---- the ledger fields, by declaration index ----------------------------------------
+
+pub const SIGN_BIDIRECTIONAL_EVENT_MAP: u8 = 0;
+pub const SIGNET_SIGNER: u8 = 1;
+pub const MPC_RESPONSE_KEY: u8 = 2;
+pub const SIGNET_REQUEST_NONCE: u8 = 3;
+pub const INITIALISED: u8 = 4;
+pub const VAULT_EVM_ADDRESS: u8 = 5;
+pub const EVM_CHAIN_ID: u8 = 6;
+pub const CAIP2_ID: u8 = 7;
+pub const DEPLOYER: u8 = 8;
+pub const DEPOSIT_EVENT_MAP: u8 = 9;
+pub const DEPOSIT_SETTLE_VIEWS: u8 = 10;
+pub const WITHDRAW_SETTLE_VIEWS: u8 = 11;
+pub const UNISWAP_ROUTER: u8 = 12;
+pub const SWAP_EVENT_MAP: u8 = 13;
+pub const SWAP_SETTLE_VIEWS: u8 = 14;
+pub const STATA_UNDERLYING: u8 = 15;
+pub const STATA_TOKEN: u8 = 16;
+pub const SUPPLY_EVENT_MAP: u8 = 17;
+pub const SUPPLY_SETTLE_VIEWS: u8 = 18;
+pub const REDEEM_EVENT_MAP: u8 = 19;
+pub const REDEEM_SETTLE_VIEWS: u8 = 20;
+
+/// The circuit's own `kernel.self()`.
+pub const SELF_ADDR: [u8; 32] = {
+    let mut a = [0u8; 32];
+    let s = b"vault-addr";
+    let mut i = 0;
+    while i < s.len() {
+        a[i] = s[i];
+        i += 1;
+    }
+    a[31] = 0x31;
+    a
+};
+
+/// A `[u8; 32]` from a short tag and a distinguishing top byte.
+pub fn tagged32(tag: &[u8], top: u8) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[..tag.len()].copy_from_slice(tag);
+    out[31] = top;
+    out
 }
 
-/// The record's LEADING limbs: M11 stage 7's format-version byte, or nothing.
-///
-/// The deployed record starts at `sender`; the stage-7 record puts
-/// `formatVersion = 0x80` in front of it, so a decoder reads the version
-/// before anything else (`signet::RECORD_FORMAT_VERSION`).
-pub fn record_head(art: Art) -> Vec<Fr> {
-    if art.is_borsh_format() {
-        vec![Fr::from(u64::from(
-            minocrab_contracts::signet::RECORD_FORMAT_VERSION,
-        ))]
-    } else {
-        vec![]
-    }
-}
+// ---- the environment -------------------------------------------------------------------
 
-/// The record's TRAILING limbs: M11 stage 7's 1-byte response kind, or the
-/// two in-band ABI-JSON schema strings the deployed record carries (two limbs
-/// each — a `Bytes<34>`/`Bytes<38>`/`Bytes<37>` is `[hi = byte 31.., lo =
-/// bytes 0..31]`).
-pub fn record_tail(
-    art: Art,
-    out_schema: &[u8],
-    respond_schema: &[u8],
-    response_kind: u32,
-) -> Vec<Fr> {
-    if art.is_borsh_format() {
-        return vec![Fr::from(u64::from(kind(response_kind)))];
-    }
-    let (out_hi, out_lo) = schema_slots(out_schema);
-    let (re_hi, re_lo) = schema_slots(respond_schema);
-    vec![out_hi, out_lo, re_hi, re_lo]
-}
-
-/// The record's FAB alignment for `words` calldata words: the deployed atom
-/// list, or M11 stage 7's — a `bytes<1>` version in front, and ONE `bytes<1>`
-/// kind where the two schema atoms were.
-pub fn record_alignment(art: Art, words: usize, out_len: u32, respond_len: u32) -> Alignment {
-    let mut a: Vec<u32> = Vec::new();
-    if art.is_borsh_format() {
-        a.push(1); // formatVersion
-    }
-    a.extend([
-        32u32, 8, 1, 32, 1, 1, 64, 1, // header
-        8, 8, 16, 16, 8, 20, 16, // envelope
-        1, 4, 2, // Maybe tag + calldata head
-    ]);
-    a.extend(std::iter::repeat_n(32u32, words)); // words
-    a.push(1); // accessListEntryCount
-    a.push(32); // caip2Id
-    if art.is_borsh_format() {
-        a.push(1); // responseKind
-    } else {
-        a.push(out_len);
-        a.push(respond_len);
-    }
-    Alignment(a.into_iter().map(atom).collect())
-}
-
-/// The concrete initialize() call every test shares.
+/// The ledger cells every circuit may read, plus the call context: the
+/// contract's own address, the singleton's, the MPC key's secret seed and
+/// the signer's entry-point hash.
 #[derive(Clone, Debug)]
-pub struct Scenario {
-    pub art: Art,
-    /// The secret the CALLER witnesses.
-    pub sk: [u8; 32],
-    /// The secret whose commitment is STORED in the `deployer` field. Equal
-    /// to `sk` when the deployer gate should pass. Stored as the secret
-    /// rather than as the digest so the scenario survives `with_art`: the
-    /// commitment construction is discretionary, the deployer's identity is
-    /// not.
+pub struct Env {
+    pub initialised: u64,
+    pub request_nonce: u64,
+    pub vault_evm: [u8; 20],
+    pub chain_id: u64,
+    pub caip2: [u8; 32],
+    pub router: [u8; 20],
+    pub stata_underlying: [u8; 20],
+    pub stata_token: [u8; 20],
+    /// The secret whose commitment the `deployer` cell holds.
     pub deployer_sk: [u8; 32],
+    pub self_addr: [u8; 32],
+    pub signer_addr: [u8; 32],
+    /// The MPC response key's secret scalar seed.
+    pub key_seed: u64,
+    /// The singleton's `signBidirectional` entry-point hash.
+    pub ep: [u8; 32],
+}
+
+impl Default for Env {
+    fn default() -> Env {
+        Env::new()
+    }
+}
+
+impl Env {
+    pub fn new() -> Env {
+        let mut caip2 = [0u8; 32];
+        caip2[..15].copy_from_slice(b"eip155:11155111");
+        Env {
+            initialised: 1,
+            request_nonce: 4,
+            vault_evm: *b"vault-evm-addr-20byt",
+            chain_id: 11_155_111,
+            caip2,
+            router: *b"uniswap-router-20byt",
+            stata_underlying: *b"stata-underlying-usd",
+            stata_token: *b"stata-token-wrapper!",
+            deployer_sk: tagged32(b"deployer", 0x11),
+            self_addr: SELF_ADDR,
+            signer_addr: tagged32(b"signet-addr", 0x32),
+            key_seed: 0xf00d_face,
+            // DERIVED from the singleton's circuit name (M12 stage 1).
+            ep: minocrab_ledger::ep_hash("signBidirectional"),
+        }
+    }
+
+    /// The MPC response key.
+    pub fn mpc_key(&self) -> IrValue {
+        let generator = IrValue::Secp256k1Point(k256::K256::generator());
+        ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap()
+    }
+
+    /// The key as the `mpcResponseKey` cell holds it (5 FAB limbs).
+    pub fn mpc_key_av(&self) -> AlignedValue {
+        point_av(&self.mpc_key())
+    }
+
+    /// The `deployer` cell.
+    pub fn deployer(&self) -> [u8; 32] {
+        user_commitment(&self.deployer_sk)
+    }
+
+    /// The ledger with every cell set and every map empty.
+    pub fn pre_state(&self) -> PreState {
+        PreState {
+            signet_signer: self.signer_addr,
+            mpc_response_key: Some(self.mpc_key_av()),
+            request_nonce: self.request_nonce,
+            initialised: self.initialised,
+            vault_evm: self.vault_evm,
+            chain_id: self.chain_id,
+            caip2: self.caip2,
+            deployer: self.deployer(),
+            uniswap_router: self.router,
+            stata_underlying: self.stata_underlying,
+            stata_token: self.stata_token,
+            ..Default::default()
+        }
+    }
+
+    // -- the reads every circuit shares --
+
+    pub fn read_initialised(&self) -> Vec<VmOp> {
+        ops::read(INITIALISED, true, bytesn_value(8, &self.initialised.to_le_bytes()))
+    }
+    pub fn read_mpc_key(&self) -> Vec<VmOp> {
+        ops::read(MPC_RESPONSE_KEY, false, self.mpc_key_av())
+    }
+    pub fn read_chain_id(&self) -> Vec<VmOp> {
+        ops::read(EVM_CHAIN_ID, false, bytesn_value(8, &self.chain_id.to_le_bytes()))
+    }
+    pub fn read_b20(&self, field: u8, value: &[u8; 20]) -> Vec<VmOp> {
+        ops::read(field, false, bytesn_value(20, value))
+    }
+    pub fn kernel_self(&self) -> Vec<VmOp> {
+        ops::kernel_self(&self.self_addr)
+    }
+
+    /// The three reads `constructSignBidirectionalEvent` makes:
+    /// `signetRequestNonce`, `kernel.self()`, `caip2Id`.
+    pub fn assemble_request_reads(&self) -> Vec<VmOp> {
+        let mut o = ops::read(SIGNET_REQUEST_NONCE, true, bytesn_value(8, &self.request_nonce.to_le_bytes()));
+        o.extend(self.kernel_self());
+        o.extend(ops::read(CAIP2_ID, false, bytesn_value(32, &self.caip2)));
+        o
+    }
+
+    /// The V1 notification payload: selfAddr ‖ depth ‖ path[4] ‖ zeros, as
+    /// the `Bytes<128>` limbs in slot order.
+    pub fn notification_payload_limbs(&self, map_field: u8) -> Vec<Fr> {
+        let (seg, off) = ops::segment_of(map_field);
+        let mut bytes = [0u8; 128];
+        bytes[..32].copy_from_slice(&self.self_addr);
+        bytes[32] = 2; // depth: every path is two elements
+        bytes[33] = seg;
+        bytes[34] = off;
+        let mut limbs: Vec<Fr> = bytes
+            .chunks(31)
+            .map(|chunk| Fr::from_le_bytes(chunk).unwrap())
+            .collect();
+        limbs.reverse();
+        limbs
+    }
+
+    /// The cross-contract-call args: requestId + notification (version,
+    /// payload).
+    pub fn call_args(&self, map_field: u8, request_id: &[u8; 32]) -> Vec<Fr> {
+        let (rid_hi, rid_lo) = b32_slots(request_id);
+        let mut args = vec![rid_hi, rid_lo, Fr::from(1u64)];
+        args.extend(self.notification_payload_limbs(map_field));
+        args
+    }
+
+    /// `signetSigner.signBidirectional(requestId, notification)`: the
+    /// signer read, `kernel.self()`, the claimed call.
+    pub fn notify_ops(&self, map_field: u8, request_id: &[u8; 32], cc_rand: Fr) -> Vec<VmOp> {
+        let mut o = ops::read(SIGNET_SIGNER, false, bytesn_value(32, &self.signer_addr));
+        o.extend(self.kernel_self());
+        let comm = transient_commit(&self.call_args(map_field, request_id)[..], cc_rand);
+        o.extend(ops::claim_contract_call(&self.signer_addr, &self.ep, comm));
+        o
+    }
+
+    /// The cross-contract call's witnesses: `cc-rand`, then the entry-point
+    /// hash's two limbs.
+    pub fn call_witnesses(&self, cc_rand: Fr) -> Vec<Fr> {
+        let (ep_hi, ep_lo) = b32_slots(&self.ep);
+        vec![cc_rand, ep_hi, ep_lo]
+    }
+
+    /// `receiveShielded(coin); sendImmediateShielded(coin, burn, value)` —
+    /// the custody claim, the nullifier, the evolved-nonce output.
+    pub fn burn_ops(&self, coin_nonce: &[u8; 32], color: &[u8; 32], value: u128) -> Vec<VmOp> {
+        let nonce_slots = b32_slots(coin_nonce);
+        let cm_receive = coin_commitment_of(&nonce_slots, color, value, false, &self.self_addr);
+        let nullifier = coin_nullifier_of(&nonce_slots, color, value, &self.self_addr);
+        let cm_burn = coin_commitment_of(&evolved_nonce(coin_nonce), color, value, true, &[0u8; 32]);
+        let mut o = self.kernel_self();
+        o.extend(ops::claim(1, &cm_receive));
+        o.extend(self.kernel_self());
+        o.extend(ops::claim(0, &nullifier));
+        o.extend(ops::claim(2, &cm_burn));
+        o
+    }
+
+    /// `mintShieldedToken(vaultTokenDomainSeparator(erc20), amount, nonce,
+    /// left(pk))`: `kernel.self()`, the mint, the spend claim.
+    pub fn mint_to_key_ops(&self, erc20: &[u8; 20], amount: u64, nonce: &[u8; 32], pk: &[u8; 32]) -> Vec<VmOp> {
+        let color = vault_color(erc20, &self.self_addr);
+        let cm = coin_commitment_of(&b32_slots(nonce), &color, u128::from(amount), true, pk);
+        let mut o = self.kernel_self();
+        o.extend(ops::mint_and_spend(&vault_domain_sep(erc20), amount, &cm));
+        o
+    }
+}
+
+/// A `Secp256k1Point` as its cell value.
+pub fn point_av(point: &IrValue) -> AlignedValue {
+    aligned_atoms(&v::secp256k1_point_atoms(), &natives(point))
+}
+
+fn aligned_atoms(atoms: &[minocrab::AlignmentAtom], limbs: &[Fr]) -> AlignedValue {
+    use midnight_base_crypto::fab::{Alignment, AlignmentSegment};
+    use midnight_transient_crypto::fab::AlignmentExt;
+    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
+        .parse_field_repr(limbs)
+        .expect("limbs match the alignment")
+}
+
+/// The `ProofPreimage` a call implies: arguments, witnesses, the op stream's
+/// `field_repr`, and the popeq results the stream reads.
+pub fn preimage_of(inputs: Vec<Fr>, witnesses: Vec<Fr>, ops: &[VmOp], rand: Fr) -> ProofPreimage {
+    let comm = transient_commit(&inputs[..], rand);
+    ProofPreimage {
+        public_transcript_inputs: ops::transcript_of(ops),
+        public_transcript_outputs: ops::outputs_of(ops),
+        inputs,
+        private_transcript: witnesses,
+        binding_input: 0.into(),
+        communications_commitment: Some((comm, rand)),
+        key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
+    }
+}
+
+// ---- a Signet request --------------------------------------------------------------------
+
+/// The EVM transaction a request asks the MPC to sign.
+#[derive(Clone, Debug)]
+pub struct Tx {
+    pub nonce: u64,
+    pub priority_fee: u128,
+    pub max_fee: u128,
+    pub gas: u64,
+    pub to: [u8; 20],
+    pub selector: [u8; 4],
+    pub words: Vec<[u8; 32]>,
+}
+
+impl Tx {
+    /// A vault-signed call under the contract-FIXED gas envelope.
+    pub fn fixed(nonce: u64, gas: u64, to: [u8; 20], selector: [u8; 4], words: Vec<[u8; 32]>) -> Tx {
+        Tx {
+            nonce,
+            priority_fee: u128::from(v::FIXED_PRIORITY_FEE),
+            max_fee: u128::from(v::FIXED_MAX_FEE),
+            gas,
+            to,
+            selector,
+            words,
+        }
+    }
+}
+
+/// A `SignBidirectionalEvent` as the record holds it.
+#[derive(Clone, Debug)]
+pub struct Req {
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub tx: Tx,
+    pub out_schema: &'static [u8],
+    pub respond_schema: &'static [u8],
+}
+
+impl Req {
+    /// The record's FAB limbs in slot order — the request id's Poseidon
+    /// input and, parsed against [`Req::widths`], the map-insert value.
+    pub fn limbs(&self, env: &Env) -> Vec<Fr> {
+        let (self_hi, self_lo) = b32_slots(&env.self_addr);
+        let (path_hi, path_lo) = b32_slots(&self.path);
+        let (caip2_hi, caip2_lo) = b32_slots(&env.caip2);
+        let mut limbs = vec![
+            self_hi,
+            self_lo,
+            Fr::from(env.request_nonce),
+            Fr::from(u64::from(self.key_version)),
+            path_hi,
+            path_lo,
+            Fr::from(0u64), // algo: ecdsa
+            Fr::from(0u64), // dest: unused
+            Fr::from(0u64), // params: pad(64, "") — 3 limbs
+            Fr::from(0u64),
+            Fr::from(0u64),
+            Fr::from(0u64), // txParamType: evmType2
+            Fr::from(env.chain_id),
+            Fr::from(self.tx.nonce),
+            u128_limb(self.tx.priority_fee),
+            u128_limb(self.tx.max_fee),
+            Fr::from(self.tx.gas),
+            b20(&self.tx.to),
+            Fr::from(0u64), // value
+            Fr::from(1u64), // calldata.is_some
+            Fr::from_le_bytes(&self.tx.selector).unwrap(),
+            Fr::from(self.tx.words.len() as u64), // noWords
+        ];
+        for w in &self.tx.words {
+            let (hi, lo) = b32_slots(w);
+            limbs.extend([hi, lo]);
+        }
+        limbs.push(Fr::from(0u64)); // accessListEntryCount
+        limbs.extend([caip2_hi, caip2_lo]);
+        let (o_hi, o_lo) = schema_slots(self.out_schema);
+        let (r_hi, r_lo) = schema_slots(self.respond_schema);
+        limbs.extend([o_hi, o_lo, r_hi, r_lo]);
+        limbs
+    }
+
+    /// The record's FAB atom widths.
+    pub fn widths(&self) -> Vec<u32> {
+        let mut a = vec![32, 8, 1, 32, 1, 1, 64, 1, 8, 8, 16, 16, 8, 20, 16, 1, 4, 2];
+        a.extend(std::iter::repeat_n(32u32, self.tx.words.len()));
+        a.push(1);
+        a.push(32);
+        a.push(self.out_schema.len() as u32);
+        a.push(self.respond_schema.len() as u32);
+        a
+    }
+
+    /// The record as an AlignedValue (the map-insert's pushed cell).
+    pub fn av(&self, env: &Env) -> AlignedValue {
+        aligned(&self.widths(), &self.limbs(env))
+    }
+
+    /// `calculateRequestId(request)`.
+    pub fn request_id(&self, env: &Env) -> [u8; 32] {
+        request_id_of(&self.limbs(env))
+    }
+}
+
+/// The record-then-notify tail every request circuit ends with: the
+/// freshness check, the burn (when a coin is surrendered), the nonce
+/// increment, the record insert, the settle-view insert, the notification.
+#[allow(clippy::too_many_arguments)]
+fn request_tail(
+    env: &Env,
+    map_field: u8,
+    req: &Req,
+    request_exists: bool,
+    burn: Option<Vec<VmOp>>,
+    view: Option<(u8, AlignedValue)>,
+    cc_rand: Fr,
+) -> Vec<VmOp> {
+    let rid = req.request_id(env);
+    let mut o = ops::member(map_field, &rid, request_exists);
+    if let Some(burn) = burn {
+        o.extend(burn);
+    }
+    o.extend(ops::counter_inc(SIGNET_REQUEST_NONCE));
+    o.extend(ops::insert(map_field, &rid, req.av(env)));
+    if let Some((field, av)) = view {
+        o.extend(ops::insert(field, &rid, av));
+    }
+    o.extend(env.notify_ops(map_field, &rid, cc_rand));
+    o
+}
+
+fn max_allowance_word() -> [u8; 32] {
+    abi_num_word(u128::MAX)
+}
+
+fn unbounded_to_u64(v: u128) -> u64 {
+    u64::try_from(v).unwrap_or(u64::MAX)
+}
+
+// ==== initialise ===========================================================================
+
+/// The concrete `initialise()` call: the deployer's secret, the seven
+/// configuration values, and the pre-state's `initialised` counter (in
+/// `env`).
+#[derive(Clone, Debug)]
+pub struct InitialiseScenario {
+    pub env: Env,
+    /// The secret the CALLER witnesses; `env.deployer_sk` is whose
+    /// commitment is stored.
+    pub sk: [u8; 32],
     pub vault_evm: [u8; 20],
     pub swap_router: [u8; 20],
+    pub stata_underlying: [u8; 20],
+    pub stata_token: [u8; 20],
     pub chain_id: u64,
     pub caip2: [u8; 32],
     pub point: IrValue,
 }
 
-impl Scenario {
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> Scenario {
-        self.art = art;
-        self
-    }
-
-    /// The commitment the `deployer` field holds.
-    pub fn commitment(&self) -> [u8; 32] {
-        user_commitment(self.art, &self.deployer_sk)
-    }
-
-    pub fn new() -> Scenario {
-        let sk = {
-            let mut b = [0u8; 32];
-            b[..8].copy_from_slice(b"deployer");
-            b[31] = 0x11;
-            b
+impl InitialiseScenario {
+    pub fn new() -> InitialiseScenario {
+        let env = Env {
+            initialised: 0,
+            ..Env::new()
         };
-        let mut caip2 = [0u8; 32];
-        caip2[..15].copy_from_slice(b"eip155:11155111");
-        let d = scalar(0xf00d_faceu64);
-        let point =
-            ec_mul_offcircuit(&IrValue::Secp256k1Point(k256::K256::generator()), &d).unwrap();
-        Scenario {
-            art: Art::Compat,
-            sk,
-            deployer_sk: sk,
-            vault_evm: *b"vault-evm-addr-20byt",
-            swap_router: *b"uniswap-router-20byt",
-            chain_id: 11155111,
-            caip2,
-            point,
+        InitialiseScenario {
+            sk: env.deployer_sk,
+            vault_evm: env.vault_evm,
+            swap_router: env.router,
+            stata_underlying: env.stata_underlying,
+            stata_token: env.stata_token,
+            chain_id: env.chain_id,
+            caip2: env.caip2,
+            point: env.mpc_key(),
+            env,
         }
     }
 
-    pub fn point_av(&self) -> AlignedValue {
-        let alignment = Alignment(
-            erc20_vault::secp256k1_point_atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        alignment
-            .parse_field_repr(&natives(&self.point))
-            .expect("point limbs match the alignment")
-    }
-
-    /// Circuit arguments in source order, FAB-flattened.
     pub fn inputs(&self) -> Vec<Fr> {
         let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
         let mut inputs = vec![
-            Fr::from_le_bytes(&self.vault_evm).unwrap(),
-            Fr::from_le_bytes(&self.swap_router).unwrap(),
+            b20(&self.vault_evm),
+            b20(&self.swap_router),
+            b20(&self.stata_underlying),
+            b20(&self.stata_token),
             Fr::from(self.chain_id),
             caip2_hi,
             caip2_lo,
@@ -195,168 +484,208 @@ impl Scenario {
         vec![hi, lo]
     }
 
-    /// The reference Impact program on a pre-state where
-    /// `initialized == count` and `deployer == commitment`.
-    pub fn ops(&self, count: u64) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let write = |field: u8, value: AlignedValue| {
-            vec![
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(1, &[field])),
-                },
-                Op::Push {
-                    storage: true,
-                    value: cell(value),
-                },
-                Op::Ins {
-                    cached: false,
-                    n: 1,
-                },
-            ]
-        };
-        let mut ops = vec![
-            // initialized == 0
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(8, &count.to_le_bytes()),
-            },
-            // userCommitment(callerSecretKey()) == deployer
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::DEPLOYER)].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: bytesn_value(32, &self.commitment()),
-            },
-            // initialized.increment(1)
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Addi { immediate: 1 },
-            Op::Ins { cached: true, n: 1 },
-        ];
-        ops.extend(write(
-            erc20_vault::VAULT_EVM_ADDRESS,
-            bytesn_value(20, &self.vault_evm),
-        ));
-        ops.extend(write(
-            erc20_vault::UNISWAP_ROUTER,
-            bytesn_value(20, &self.swap_router),
-        ));
-        ops.extend(write(
-            erc20_vault::EVM_CHAIN_ID,
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-        ));
-        ops.extend(write(erc20_vault::CAIP2_ID, bytesn_value(32, &self.caip2)));
-        ops.extend(write(erc20_vault::MPC_RESPONSE_KEY, self.point_av()));
-        ops
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(ops::read(DEPLOYER, false, bytesn_value(32, &self.env.deployer())));
+        o.extend(ops::counter_inc(INITIALISED));
+        o.extend(ops::cell_write(VAULT_EVM_ADDRESS, bytesn_value(20, &self.vault_evm)));
+        o.extend(ops::cell_write(UNISWAP_ROUTER, bytesn_value(20, &self.swap_router)));
+        o.extend(ops::cell_write(STATA_UNDERLYING, bytesn_value(20, &self.stata_underlying)));
+        o.extend(ops::cell_write(STATA_TOKEN, bytesn_value(20, &self.stata_token)));
+        o.extend(ops::cell_write(EVM_CHAIN_ID, bytesn_value(8, &self.chain_id.to_le_bytes())));
+        o.extend(ops::cell_write(CAIP2_ID, bytesn_value(32, &self.caip2)));
+        o.extend(ops::cell_write(MPC_RESPONSE_KEY, point_av(&self.point)));
+        o
     }
 
-    /// The popeq results in read order, value-only.
-    pub fn outputs(&self, count: u64) -> Vec<Fr> {
-        let mut out = Vec::new();
-        for av in [
-            bytesn_value(8, &count.to_le_bytes()),
-            bytesn_value(32, &self.commitment()),
-        ] {
-            ValueReprAlignedValue(av).field_repr(&mut out);
-        }
-        out
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xe20u64))
     }
 
-    pub fn preimage(&self, count: u64) -> ProofPreimage {
-        let inputs = self.inputs();
-        let mut transcript = Vec::new();
-        for op in self.ops(count) {
-            op.field_repr(&mut transcript);
-        }
-        let rand = Fr::from(0xe20u64);
-        let comm = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: self.witnesses(),
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: self.outputs(count),
-            binding_input: 0.into(),
-            communications_commitment: Some((comm, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
+    /// `initialised == count`, `deployer == commitment`; the configuration
+    /// cells unset (they are what this call writes).
+    pub fn pre_state(&self) -> PreState {
+        PreState {
+            initialised: self.env.initialised,
+            deployer: self.env.deployer(),
+            ..Default::default()
         }
     }
 }
 
-// --- deposit -----------------------------------------------------------------
+// ==== the allowances =======================================================================
 
-/// A concrete deposit() call: arguments plus the ledger state the reads
-/// return (initialized, vaultEvmAddress, evmChainId, signetRequestNonce,
-/// kernel.self, caip2Id, signetSigner).
+/// `approveStata(evmNonce, keyVersion)`.
 #[derive(Clone, Debug)]
-pub struct DepositScenario {
-    pub art: Art,
-    pub sk: [u8; 32],
+pub struct ApproveStataScenario {
+    pub env: Env,
     pub evm_nonce: u64,
-    pub gas_limit: u64,
-    pub max_fee_per_gas: u64,
-    pub max_priority_fee_per_gas: u64,
     pub key_version: u8,
-    pub erc20: [u8; 20],
-    /// `Uint<128>` in Compact: widened here so generation can reach the
-    /// `> u64::MAX` band the `"Amount exceeds Uint<64> max"` guard rejects.
-    pub amount: u128,
-    // Ledger state.
-    pub initialized: u64,
-    /// Does `signBidirectionalEventMap` already hold this request id?
-    /// Drives both the `member` popeq and the pre-state map.
     pub request_exists: bool,
-    pub vault_evm: [u8; 20],
-    pub chain_id: u64,
-    pub request_nonce: u64,
-    pub self_addr: [u8; 32],
-    pub caip2: [u8; 32],
-    pub signer_addr: [u8; 32],
-    pub ep: [u8; 32],
     pub cc_rand: Fr,
 }
 
-impl DepositScenario {
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> DepositScenario {
-        self.art = art;
-        self
+impl ApproveStataScenario {
+    pub fn new() -> ApproveStataScenario {
+        ApproveStataScenario {
+            env: Env::new(),
+            evm_nonce: 3,
+            key_version: 1,
+            request_exists: false,
+            cc_rand: Fr::from(0x57a7au64),
+        }
     }
 
-    pub fn new() -> DepositScenario {
-        let sk = {
-            let mut b = [0u8; 32];
-            b[..9].copy_from_slice(b"depositor");
-            b[31] = 0x21;
-            b
-        };
-        let mut caip2 = [0u8; 32];
-        caip2[..15].copy_from_slice(b"eip155:11155111");
-        let mut self_addr = [0u8; 32];
-        self_addr[..10].copy_from_slice(b"vault-addr");
-        self_addr[31] = 0x31;
-        let mut signer_addr = [0u8; 32];
-        signer_addr[..11].copy_from_slice(b"signet-addr");
-        signer_addr[31] = 0x32;
-        // DERIVED from the Signet singleton's circuit name (M12 stage 1);
-        // the ep limbs are witnesses, so this is a preimage-only change.
-        let ep = minocrab_ledger::ep_hash("signBidirectional");
-        DepositScenario {
-            art: Art::Compat,
-            sk,
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::ERC20_CALL_GAS,
+                self.env.stata_underlying,
+                v::APPROVE_SELECTOR,
+                vec![abi_addr_word(&self.env.stata_token), max_allowance_word()],
+            ),
+            out_schema: v::VAULT_RESPONSE_SCHEMA,
+            respond_schema: v::VAULT_RESPONSE_SCHEMA,
+        }
+    }
+
+    pub fn request_id(&self) -> [u8; 32] {
+        self.req().request_id(&self.env)
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        vec![Fr::from(self.evm_nonce), Fr::from(u64::from(self.key_version))]
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.env.call_witnesses(self.cc_rand)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_b20(STATA_TOKEN, &self.env.stata_token));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.read_b20(STATA_UNDERLYING, &self.env.stata_underlying));
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(&self.env, SIGN_BIDIRECTIONAL_EVENT_MAP, &self.req(), self.request_exists, None, None, self.cc_rand));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xa5_7a7au64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.sign_event_map = vec![(self.request_id(), self.req().av(&self.env))];
+        }
+        pre
+    }
+}
+
+/// `approveRouter(erc20Address, evmNonce, keyVersion)`.
+#[derive(Clone, Debug)]
+pub struct ApproveRouterScenario {
+    pub env: Env,
+    pub erc20: [u8; 20],
+    pub evm_nonce: u64,
+    pub key_version: u8,
+    pub request_exists: bool,
+    pub cc_rand: Fr,
+}
+
+impl ApproveRouterScenario {
+    pub fn new() -> ApproveRouterScenario {
+        ApproveRouterScenario {
+            env: Env::new(),
+            erc20: *b"erc20-token-contract",
+            evm_nonce: 9,
+            key_version: 1,
+            request_exists: false,
+            cc_rand: Fr::from(0xa11_0eu64),
+        }
+    }
+
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::ERC20_CALL_GAS,
+                self.erc20,
+                v::APPROVE_SELECTOR,
+                vec![abi_addr_word(&self.env.router), max_allowance_word()],
+            ),
+            out_schema: v::VAULT_RESPONSE_SCHEMA,
+            respond_schema: v::VAULT_RESPONSE_SCHEMA,
+        }
+    }
+
+    pub fn request_id(&self) -> [u8; 32] {
+        self.req().request_id(&self.env)
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        vec![b20(&self.erc20), Fr::from(self.evm_nonce), Fr::from(u64::from(self.key_version))]
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.env.call_witnesses(self.cc_rand)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_b20(UNISWAP_ROUTER, &self.env.router));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(&self.env, SIGN_BIDIRECTIONAL_EVENT_MAP, &self.req(), self.request_exists, None, None, self.cc_rand));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xa9_9a0u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.sign_event_map = vec![(self.request_id(), self.req().av(&self.env))];
+        }
+        pre
+    }
+}
+
+// ==== deposit ==============================================================================
+
+/// `startDeposit(evmNonce, gasLimit, maxFeePerGas, maxPriorityFeePerGas,
+/// keyVersion, depositRequest)`.
+#[derive(Clone, Debug)]
+pub struct StartDepositScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
+    pub evm_nonce: u64,
+    pub gas_limit: u64,
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
+    pub key_version: u8,
+    pub erc20: [u8; 20],
+    /// `Uint<128>` in Compact: widened so generation can reach the band
+    /// the `"Amount exceeds Uint<64> max"` guard rejects.
+    pub amount: u128,
+    pub request_exists: bool,
+    pub cc_rand: Fr,
+}
+
+impl StartDepositScenario {
+    pub fn new() -> StartDepositScenario {
+        StartDepositScenario {
+            env: Env::new(),
+            sk: tagged32(b"depositor", 0x21),
             evm_nonce: 7,
             gas_limit: 65_000,
             max_fee_per_gas: 30_000_000_000,
@@ -364,566 +693,158 @@ impl DepositScenario {
             key_version: 1,
             erc20: *b"erc20-token-contract",
             amount: 123_456,
-            initialized: 1,
             request_exists: false,
-            vault_evm: *b"vault-evm-addr-20byt",
-            chain_id: 11_155_111,
-            request_nonce: 4,
-            self_addr,
-            caip2,
-            signer_addr,
-            ep,
             cc_rand: Fr::from(0xdeb_051_7u64),
         }
     }
 
-    /// `evmAddressAbiWord(vaultEvmAddress)`: 12 zero bytes + the address.
-    pub fn word0(&self) -> [u8; 32] {
-        let mut w = [0u8; 32];
-        w[12..].copy_from_slice(&self.vault_evm);
-        w
+    /// The depositor's identity commitment — the request's signing path.
+    pub fn commitment(&self) -> [u8; 32] {
+        user_commitment(&self.sk)
     }
 
-    /// `numericAbiWord(amount)`: 16 zero bytes + the amount big-endian.
-    pub fn word1(&self) -> [u8; 32] {
-        let mut w = [0u8; 32];
-        w[16..].copy_from_slice(&self.amount.to_be_bytes());
-        w
-    }
-
-    /// The deposited amount as the `Uint<64>` a claim mints. Only
-    /// meaningful once the deposit guards passed (`amount <= u64::MAX`).
     pub fn amount_u64(&self) -> u64 {
-        u64::try_from(self.amount).unwrap_or(u64::MAX)
+        unbounded_to_u64(self.amount)
     }
 
-    /// The record's 33 FAB limbs in slot order (the circuit's keccak input
-    /// and, parsed against the 24-atom alignment, the map-insert value).
-    pub fn event_limbs(&self) -> Vec<Fr> {
-        let (self_hi, self_lo) = b32_slots(&self.self_addr);
-        let path = user_commitment(self.art, &self.sk);
-        let (path_hi, path_lo) = b32_slots(&path);
-        let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
-        let (w0_hi, w0_lo) = b32_slots(&self.word0());
-        let (w1_hi, w1_lo) = b32_slots(&self.word1());
-        let mut limbs = record_head(self.art);
-        limbs.extend([
-            self_hi,
-            self_lo,
-            Fr::from(self.request_nonce),
-            Fr::from(u64::from(self.key_version)),
-            path_hi,
-            path_lo,
-            Fr::from(0u64), // algo: ecdsa
-            Fr::from(0u64), // dest: unused
-            Fr::from(0u64), // params: pad(64, "") — 3 limbs
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64), // txParamType: evmType2
-            Fr::from(self.chain_id),
-            Fr::from(self.evm_nonce),
-            Fr::from(self.max_priority_fee_per_gas),
-            Fr::from(self.max_fee_per_gas),
-            Fr::from(self.gas_limit),
-            Fr::from_le_bytes(&self.erc20).unwrap(), // to
-            Fr::from(0u64),                          // value
-            Fr::from(1u64),                          // calldata.is_some
-            Fr::from_le_bytes(&erc20_vault::TRANSFER_SELECTOR).unwrap(),
-            Fr::from(2u64), // noWords
-            w0_hi,
-            w0_lo,
-            w1_hi,
-            w1_lo,
-            Fr::from(0u64), // accessListEntryCount
-            caip2_hi,
-            caip2_lo,
-        ]);
-        limbs.extend(record_tail(
-            self.art,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_pending::RESPONSE_KIND_CLAIM,
-        ));
-        limbs
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: self.commitment(),
+            tx: Tx {
+                nonce: self.evm_nonce,
+                priority_fee: self.max_priority_fee_per_gas,
+                max_fee: self.max_fee_per_gas,
+                gas: self.gas_limit,
+                to: self.erc20,
+                selector: v::TRANSFER_SELECTOR,
+                words: vec![abi_addr_word(&self.env.vault_evm), abi_num_word(self.amount)],
+            },
+            out_schema: v::VAULT_RESPONSE_SCHEMA,
+            respond_schema: v::VAULT_RESPONSE_SCHEMA,
+        }
     }
 
-    /// The record's FAB alignment: 24 atoms deployed, 24 at stage 7 (a
-    /// version atom in, two schema atoms out, a kind atom in).
-    pub fn event_alignment(art: Art) -> Alignment {
-        record_alignment(
-            art,
-            erc20_vault::VAULT_WORDS,
-            erc20_vault::VAULT_SCHEMA_LEN as u32,
-            erc20_vault::VAULT_SCHEMA_LEN as u32,
-        )
-    }
-
-    /// The record as an AlignedValue (the map-insert's pushed cell).
-    pub fn event_av(&self) -> AlignedValue {
-        Self::event_alignment(self.art)
-            .parse_field_repr(&self.event_limbs())
-            .expect("event limbs match the alignment")
-    }
-
-    /// `calculateRequestId(request)`: keccak256 of the record's value-only
-    /// FAB binary.
     pub fn request_id(&self) -> [u8; 32] {
-        let mut repr = Vec::new();
-        ValueReprAlignedValue(self.event_av()).binary_repr(&mut repr);
-        sha3::Keccak256::digest(&repr).into()
+        self.req().request_id(&self.env)
     }
 
-    /// The V1 notification payload: selfAddr ‖ depth=1 ‖ path [0,0,0,0] ‖
-    /// zeros, as the 5 `Bytes<128>` limbs in slot order.
-    pub fn notification_payload_limbs(&self) -> Vec<Fr> {
-        let mut bytes = [0u8; 128];
-        bytes[..32].copy_from_slice(&self.self_addr);
-        bytes[32] = 1;
-        // path [0, 0, 0, 0] — already zero.
-        let mut limbs: Vec<Fr> = bytes
-            .chunks(31)
-            .map(|chunk| Fr::from_le_bytes(chunk).unwrap())
-            .collect();
-        limbs.reverse();
-        limbs
-    }
-
-    /// The cross-contract-call args: requestId + notification (version,
-    /// payload).
-    pub fn call_args(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.request_id());
-        let mut args = vec![rid_hi, rid_lo, Fr::from(1u64)];
-        args.extend(self.notification_payload_limbs());
-        args
+    /// The `DepositSettleView` the request pins.
+    pub fn view_av(&self) -> AlignedValue {
+        let (c_hi, c_lo) = b32_slots(&self.commitment());
+        aligned(&[32, 20, 8], &[c_hi, c_lo, b20(&self.erc20), Fr::from(self.amount_u64())])
     }
 
     pub fn inputs(&self) -> Vec<Fr> {
         vec![
             Fr::from(self.evm_nonce),
             Fr::from(self.gas_limit),
-            Fr::from(self.max_fee_per_gas),
-            Fr::from(self.max_priority_fee_per_gas),
+            u128_limb(self.max_fee_per_gas),
+            u128_limb(self.max_priority_fee_per_gas),
             Fr::from(u64::from(self.key_version)),
-            Fr::from_le_bytes(&self.erc20).unwrap(),
-            Fr::from_le_bytes(&self.amount.to_le_bytes()).unwrap(),
+            b20(&self.erc20),
+            u128_limb(self.amount),
         ]
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
         let (sk_hi, sk_lo) = b32_slots(&self.sk);
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        vec![sk_hi, sk_lo, self.cc_rand, ep_hi, ep_lo]
+        let mut w = vec![sk_hi, sk_lo];
+        w.extend(self.env.call_witnesses(self.cc_rand));
+        w
     }
 
-    /// The reference Impact program, in the circuit's read/write order.
     pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let read = |field: u8, cached: bool, result: AlignedValue| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Popeq { cached, result },
-            ]
-        };
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let request_id = self.request_id();
-
-        let mut ops = Vec::new();
-        // assert(initialized >= 1) — Counter.read, popeqc.
-        ops.extend(read(
-            erc20_vault::INITIALIZED,
-            true,
-            bytesn_value(8, &self.initialized.to_le_bytes()),
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_b20(VAULT_EVM_ADDRESS, &self.env.vault_evm));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(
+            &self.env,
+            DEPOSIT_EVENT_MAP,
+            &self.req(),
+            self.request_exists,
+            None,
+            Some((DEPOSIT_SETTLE_VIEWS, self.view_av())),
+            self.cc_rand,
         ));
-        // vaultEvmAddress (calldata word 0) — Cell.read, uncached.
-        ops.extend(read(
-            erc20_vault::VAULT_EVM_ADDRESS,
-            false,
-            bytesn_value(20, &self.vault_evm),
-        ));
-        // evmChainId — Cell.read, uncached.
-        ops.extend(read(
-            erc20_vault::EVM_CHAIN_ID,
-            false,
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-        ));
-        // signetRequestNonce as Uint<64> — Counter.read, popeqc.
-        ops.extend(read(
-            erc20_vault::SIGNET_REQUEST_NONCE,
-            true,
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ));
-        // kernel.self() — the event's sender.
-        ops.extend(kernel_self_ops(&self.self_addr));
-        // caip2Id — Cell.read, uncached.
-        ops.extend(read(
-            erc20_vault::CAIP2_ID,
-            false,
-            bytesn_value(32, &self.caip2),
-        ));
-        // assert(!signBidirectionalEventMap.member(requestId))
-        ops.extend([
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.request_exists)]),
-            },
-        ]);
-        // signetRequestNonce.increment(1)
-        ops.extend([
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGNET_REQUEST_NONCE)].into(),
-            },
-            Op::Addi { immediate: 1 },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        // signBidirectionalEventMap.insert(requestId, disclose(request))
-        ops.extend([
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(self.event_av()),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        // signetSigner — Cell.read, uncached (the callee address).
-        ops.extend(read(
-            erc20_vault::SIGNET_SIGNER,
-            false,
-            bytesn_value(32, &self.signer_addr),
-        ));
-        // kernel.self() again — the notification's callerAddress. The
-        // optimized artifact threads this circuit's first read instead
-        // (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        // kernel.claimContractCall(signer, ep, comm)
-        let comm = transient_commit(&self.call_args()[..], self.cc_rand);
-        let mut comm_bytes = comm.as_le_bytes();
-        while comm_bytes.last() == Some(&0) {
-            comm_bytes.pop();
-        }
-        let addr_ep_comm = AlignedValue::new(
-            Value(vec![
-                ValueAtom(self.signer_addr.to_vec()).normalize(),
-                ValueAtom(self.ep.to_vec()).normalize(),
-                ValueAtom(comm_bytes).normalize(),
-            ]),
-            Alignment(vec![
-                atom(32),
-                atom(32),
-                AlignmentSegment::Atom(AlignmentAtom::Field),
-            ]),
-        )
-        .unwrap();
-        ops.extend([
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(3)].into(),
-            },
-            Op::Dup { n: 0 },
-            Op::Size,
-            Op::Push {
-                storage: false,
-                value: cell(addr_ep_comm),
-            },
-            Op::Concat {
-                cached: true,
-                n: 160,
-            },
-            Op::Push {
-                storage: false,
-                value: StateValue::Null,
-            },
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-        ]);
-        ops
-    }
-
-    /// The popeq results in read order, value-only.
-    pub fn outputs(&self) -> Vec<Fr> {
-        let mut avs = vec![
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-            bytesn_value(20, &self.vault_evm),
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.caip2),
-            bytesn_value(1, &[u8::from(self.request_exists)]),
-            bytesn_value(32, &self.signer_addr),
-        ];
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        let mut out = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut out);
-        }
-        out
+        o
     }
 
     pub fn preimage(&self) -> ProofPreimage {
-        let inputs = self.inputs();
-        let mut transcript = Vec::new();
-        for op in self.ops() {
-            op.field_repr(&mut transcript);
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xde9_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.deposit_event_map = vec![(self.request_id(), self.req().av(&self.env))];
         }
-        let rand = Fr::from(0xde9_0517u64);
-        let comm = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: self.witnesses(),
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: self.outputs(),
-            binding_input: 0.into(),
-            communications_commitment: Some((comm, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
+        pre
     }
 }
 
-/// Who the minted coin goes to.
+/// Who a claim's minted coin goes to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ClaimRecipient {
     /// `some(left(pk))` — a wallet key; the auto-receive branch is off.
     Key([u8; 32]),
     /// `some(right(addr))` — a contract; auto-receive fires iff addr ==
-    /// the vault itself.
+    /// self.
     Contract([u8; 32]),
-    /// `none` — mint to `left(ownPublicKey())`; branch off.
+    /// `none` — `left(ownPublicKey())`, witnessed.
     None([u8; 32]),
 }
 
-/// A concrete claim() call settling the deposit recorded by
-/// `DepositScenario` (same sk, same stored event record).
+/// The part every settle circuit shares: whether the map still holds the
+/// request, the mint nonce, the caller's own key, whose secret is
+/// presented, and the signature nonce seed.
 #[derive(Clone, Debug)]
-pub struct ClaimScenario {
-    pub d: DepositScenario,
-    /// Does `signBidirectionalEventMap` still hold the request? (The
-    /// double-claim gate.)
-    pub found: bool,
+pub struct Settle {
+    /// The map member answer the circuit reads (the double-settle gate).
+    pub pending: bool,
     pub mint_nonce: [u8; 32],
-    pub recipient: ClaimRecipient,
-    /// The attested EVM result byte. `deserialize<VaultResponse, 1>` reads
-    /// it as `byte == 1`, so only `0x01` is a success. Under `Art::Borsh` it
-    /// is the `success` field of a Borsh `VaultResponse`, where anything
-    /// outside {0, 1} is REJECTED rather than read as `false`.
-    pub serialized_output: u8,
-    /// The response KIND byte at offset 0 of the attested output — M11 stage
-    /// 5, `Art::Borsh` only. The default is this circuit's own kind; a
-    /// different one is an attestation issued for another settle circuit, and
-    /// must not settle here.
-    pub response_kind: u8,
-    /// The secret the CALLER witnesses. `None` = the depositor's own (the
-    /// gate passes); `Some(other)` drives the "Not the depositor" guard.
+    /// `ownPublicKey()` as witnessed (the mint recipient of every
+    /// caller-only settle).
+    pub own_pk: [u8; 32],
+    /// The secret the CALLER witnesses. `None` = the requester's own (the
+    /// gate passes); `Some(other)` drives the "Not the …" guard.
     pub claimant_sk: Option<[u8; 32]>,
-    /// MPC response key's secret scalar seed + signature nonce seed.
-    pub key_seed: u64,
     pub nonce_seed: u64,
 }
 
-impl ClaimScenario {
-    /// The artifact this settle models — the deposit it settles owns it,
-    /// so the record and the commitment can never disagree.
-    pub fn art(&self) -> Art {
-        self.d.art
-    }
-
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> ClaimScenario {
-        self.d.art = art;
-        self
-    }
-
-    pub fn new() -> ClaimScenario {
-        let mut mint_nonce = [0u8; 32];
-        mint_nonce[..11].copy_from_slice(b"mint-nonce!");
-        mint_nonce[31] = 0x41;
-        let mut key = [0u8; 32];
-        key[..8].copy_from_slice(b"claim-pk");
-        key[31] = 0x42;
-        ClaimScenario {
-            d: DepositScenario::new(),
-            found: true,
-            mint_nonce,
-            recipient: ClaimRecipient::Key(key),
-            serialized_output: 1,
-            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_CLAIM),
+impl Settle {
+    pub fn new() -> Settle {
+        Settle {
+            pending: true,
+            mint_nonce: tagged32(b"mint-nonce!", 0x41),
+            own_pk: tagged32(b"own-pk", 0x43),
             claimant_sk: None,
-            key_seed: 0xf00d_face,
             nonce_seed: 0x0dd_b17,
         }
     }
 
-    /// The MPC response key.
-    pub fn mpc_key(&self) -> IrValue {
-        let generator = IrValue::Secp256k1Point(k256::K256::generator());
-        ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap()
+    /// The secret key the caller presents.
+    pub fn sk(&self, requester: &[u8; 32]) -> [u8; 32] {
+        self.claimant_sk.unwrap_or(*requester)
     }
 
-    pub fn mpc_key_av(&self) -> AlignedValue {
-        let alignment = Alignment(
-            erc20_vault::secp256k1_point_atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        alignment
-            .parse_field_repr(&natives(&self.mpc_key()))
-            .expect("point limbs match the alignment")
-    }
-
-    /// The attested output's BYTES — what the digest preimage carries after
-    /// the request id.
-    ///
-    /// Compat/Opt: the deployed `Bytes<1>`, one packed success byte. Borsh
-    /// (M11 stage 5): `borsh(VaultResponse { kind, success })` — the kind byte
-    /// then the bool byte, which is that struct's canonical Borsh encoding.
-    pub fn attested_output_bytes(&self) -> Vec<u8> {
-        match self.art() {
-            Art::Compat | Art::Opt => vec![self.serialized_output],
-            Art::Borsh | Art::Modern => vec![self.response_kind, self.serialized_output],
-        }
-    }
-
-    /// The attested output's ARGUMENT SLOTS, in declaration order — one per
-    /// declared field.
-    pub fn attested_output_slots(&self) -> Vec<Fr> {
-        self.attested_output_bytes()
-            .into_iter()
-            .map(|b| Fr::from(u64::from(b)))
-            .collect()
-    }
-
-    /// attestationDigest = keccak256(requestId ‖ attested output bytes).
-    pub fn attestation_digest(&self) -> [u8; 32] {
-        let mut bytes = self.d.request_id().to_vec();
-        bytes.extend(self.attested_output_bytes());
-        sha3::Keccak256::digest(&bytes).into()
-    }
-
-    /// The attestation signature's (bigR.x, s), big-endian as stored.
-    pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
-        let (mut r_le, mut s_le, _) = sign(
-            &self.attestation_digest(),
-            &scalar(self.key_seed),
-            &scalar(self.nonce_seed),
-        );
-        r_le.reverse();
-        s_le.reverse();
+    /// The attestation's `(bigR.x, s)`, little-endian — the circuit-input
+    /// form.
+    pub fn signature(&self, env: &Env, request_id: &[u8; 32], output_limbs: &[Fr]) -> ([u8; 32], [u8; 32]) {
+        let digest = attestation_digest(request_id, output_limbs);
+        let (r_le, s_le, _) = sign(&digest, &scalar(env.key_seed), &scalar(self.nonce_seed));
         (r_le, s_le)
     }
 
-    /// The mint recipient as coinCommitment sees it: (is_left, data).
-    pub fn recipient_data(&self) -> (bool, [u8; 32]) {
-        match self.recipient {
-            ClaimRecipient::Key(pk) => (true, pk),
-            ClaimRecipient::Contract(addr) => (false, addr),
-            ClaimRecipient::None(own_pk) => (true, own_pk),
-        }
-    }
-
-    /// tokenType(vaultTokenDomainSeparator(erc20), self).
-    pub fn color(&self) -> [u8; 32] {
-        vault_color(self.art(), &self.d.erc20, &self.d.self_addr)
-    }
-
-    pub fn domain_sep(&self) -> [u8; 32] {
-        vault_domain_sep(self.art(), &self.d.erc20)
-    }
-
-    /// coinCommitment({mintNonce, color, amount}, recipient).
-    pub fn coin_commitment(&self) -> [u8; 32] {
-        let prefix = Fr::from_le_bytes(b"midnight:zswap-cc[v1]").unwrap();
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let (c_hi, c_lo) = b32_slots(&self.color());
-        let (is_left, data) = self.recipient_data();
-        let (r_hi, r_lo) = b32_slots(&data);
-        fab_sha256(
-            vec![atom(21), atom(32), atom(32), atom(16), atom(1), atom(32)],
-            &[
-                prefix,
-                n_hi,
-                n_lo,
-                c_hi,
-                c_lo,
-                Fr::from(self.d.amount_u64()),
-                Fr::from(u64::from(is_left)),
-                r_hi,
-                r_lo,
-            ],
-        )
-    }
-
-    /// Does the branch's guarded kernel.self read fire? (Its guard is
-    /// only `!is_left`.)
-    pub fn self_read_fires(&self) -> bool {
-        matches!(self.recipient, ClaimRecipient::Contract(_))
-    }
-
-    /// Does the auto-receive claim fire? (`!is_left && right == self`.)
-    pub fn auto_receive(&self) -> bool {
-        matches!(self.recipient, ClaimRecipient::Contract(addr) if addr == self.d.self_addr)
-    }
-
-    pub fn inputs(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.d.request_id());
-        let (rx, sx) = self.signature_be();
+    /// The settle circuits' leading argument slots: `requestId`,
+    /// `respondBidirectionalEvent` (bigR.x, bigR.y, s, recoveryId),
+    /// `serializedOutput`.
+    pub fn head_inputs(&self, env: &Env, request_id: &[u8; 32], output_limbs: &[Fr]) -> Vec<Fr> {
+        let (rid_hi, rid_lo) = b32_slots(request_id);
+        let (rx, sx) = self.signature(env, request_id, output_limbs);
         let (rx_hi, rx_lo) = b32_slots(&rx);
         let (s_hi, s_lo) = b32_slots(&sx);
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let (is_some, is_left, left, right) = match self.recipient {
-            ClaimRecipient::Key(pk) => (1u64, 1u64, pk, [0u8; 32]),
-            ClaimRecipient::Contract(addr) => (1, 0, [0u8; 32], addr),
-            ClaimRecipient::None(_) => (0, 0, [0u8; 32], [0u8; 32]),
-        };
-        let (l_hi, l_lo) = b32_slots(&left);
-        let (r_hi, r_lo) = b32_slots(&right);
         let mut inputs = vec![
             rid_hi,
             rid_lo,
@@ -935,27 +856,100 @@ impl ClaimScenario {
             s_lo,
             Fr::from(0u64), // recoveryId (unused)
         ];
-        inputs.extend(self.attested_output_slots()); // serializedOutput
-        inputs.extend([
-            n_hi,
-            n_lo,
-            Fr::from(is_some),
-            Fr::from(is_left),
-            l_hi,
-            l_lo,
-            r_hi,
-            r_lo,
-        ]);
+        inputs.extend_from_slice(output_limbs);
         inputs
     }
 
-    /// The secret key the caller presents.
-    pub fn claimant_sk(&self) -> [u8; 32] {
-        self.claimant_sk.unwrap_or(self.d.sk)
+    pub fn nonce_slots(&self) -> [Fr; 2] {
+        let (hi, lo) = b32_slots(&self.mint_nonce);
+        [hi, lo]
+    }
+
+    /// `[sk, ownPublicKey()]` — the witnesses of a caller-only settle.
+    pub fn witnesses_with_own_pk(&self, requester: &[u8; 32]) -> Vec<Fr> {
+        let (sk_hi, sk_lo) = b32_slots(&self.sk(requester));
+        let (pk_hi, pk_lo) = b32_slots(&self.own_pk);
+        vec![sk_hi, sk_lo, pk_hi, pk_lo]
+    }
+}
+
+/// The MPC's failure output, as the `Bytes<5>` argument's one limb.
+pub fn failure_output_limb(output: &[u8; 5]) -> Fr {
+    Fr::from_le_bytes(output).expect("5 bytes fit")
+}
+
+/// `completeDeposit(requestId, respond, serializedOutput: Bytes<1>,
+/// mintNonce, recipient)`.
+#[derive(Clone, Debug)]
+pub struct CompleteDepositScenario {
+    pub d: StartDepositScenario,
+    pub settle: Settle,
+    pub recipient: ClaimRecipient,
+    /// The attested EVM result byte: `deserialize<VaultResponse, 1>` reads
+    /// it as `byte == 1`, so only `0x01` is a success.
+    pub serialized_output: u8,
+}
+
+impl CompleteDepositScenario {
+    pub fn new() -> CompleteDepositScenario {
+        CompleteDepositScenario {
+            d: StartDepositScenario::new(),
+            settle: Settle::new(),
+            recipient: ClaimRecipient::Key(tagged32(b"claim-pk", 0x42)),
+            serialized_output: 1,
+        }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.d.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![Fr::from(u64::from(self.serialized_output))]
+    }
+
+    /// The mint recipient as coinCommitment sees it: (is_left, data).
+    pub fn recipient_data(&self) -> (bool, [u8; 32]) {
+        match self.recipient {
+            ClaimRecipient::Key(pk) => (true, pk),
+            ClaimRecipient::Contract(addr) => (false, addr),
+            ClaimRecipient::None(own_pk) => (true, own_pk),
+        }
+    }
+
+    pub fn coin_commitment(&self) -> [u8; 32] {
+        let color = vault_color(&self.d.erc20, &self.env().self_addr);
+        let (is_left, data) = self.recipient_data();
+        coin_commitment_of(&b32_slots(&self.settle.mint_nonce), &color, u128::from(self.d.amount_u64()), is_left, &data)
+    }
+
+    /// Does the branch's guarded kernel.self read fire? (Its guard is
+    /// only `!is_left`.)
+    pub fn self_read_fires(&self) -> bool {
+        matches!(self.recipient, ClaimRecipient::Contract(_))
+    }
+
+    /// Does the auto-receive claim fire? (`!is_left && right == self`.)
+    pub fn auto_receive(&self) -> bool {
+        matches!(self.recipient, ClaimRecipient::Contract(addr) if addr == self.env().self_addr)
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.d.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        let (is_some, is_left, left, right) = match self.recipient {
+            ClaimRecipient::Key(pk) => (1u64, 1u64, pk, [0u8; 32]),
+            ClaimRecipient::Contract(addr) => (1, 0, [0u8; 32], addr),
+            ClaimRecipient::None(_) => (0, 0, [0u8; 32], [0u8; 32]),
+        };
+        let (l_hi, l_lo) = b32_slots(&left);
+        let (r_hi, r_lo) = b32_slots(&right);
+        inputs.extend([Fr::from(is_some), Fr::from(is_left), l_hi, l_lo, r_hi, r_lo]);
+        inputs
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
-        let (sk_hi, sk_lo) = b32_slots(&self.claimant_sk());
+        let (sk_hi, sk_lo) = b32_slots(&self.settle.sk(&self.d.sk));
         let mut w = vec![sk_hi, sk_lo];
         if let ClaimRecipient::None(own_pk) = self.recipient {
             let (pk_hi, pk_lo) = b32_slots(&own_pk);
@@ -964,2824 +958,1173 @@ impl ClaimScenario {
         w
     }
 
-    /// The reference Impact program (`member_result` = what the map
-    /// member test reads back).
-    pub fn ops(&self, member_result: u8) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let request_id = self.d.request_id();
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.d.request_id();
         let cm = self.coin_commitment();
-
-        let mut ops = vec![
-            // assert(initialized >= 1)
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(8, &self.d.initialized.to_le_bytes()),
-            },
-            // mpcResponseKey — Cell.read, uncached.
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::MPC_RESPONSE_KEY)].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.mpc_key_av(),
-            },
-            // member
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[member_result]),
-            },
-            // lookup
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.d.event_av(),
-            },
-            // remove
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Rem { cached: false },
-            Op::Ins { cached: true, n: 1 },
-            // mintShieldedToken: kernel.self()
-            Op::Dup { n: 2 },
-            Op::Idx {
-                cached: true,
-                push_path: false,
-                path: vec![field_key(0)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(32, &self.d.self_addr),
-            },
-        ];
-        // kernel.mintShielded(domainSep, amount)
-        let domain_sep = self.domain_sep();
-        ops.extend([
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(4)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &domain_sep)),
-            },
-            Op::Dup { n: 1 },
-            Op::Dup { n: 1 },
-            Op::Member,
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(8, &self.d.amount_u64().to_le_bytes())),
-            },
-            Op::Swap { n: 0 },
-            Op::Neg,
-            Op::Branch { skip: 4 },
-            Op::Dup { n: 2 },
-            Op::Dup { n: 2 },
-            Op::Idx {
-                cached: true,
-                push_path: false,
-                path: vec![Key::Stack].into(),
-            },
-            Op::Add,
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-            // kernel.claimZswapCoinSpend(cm)
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(2)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &cm)),
-            },
-            Op::Push {
-                storage: false,
-                value: StateValue::Null,
-            },
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-        ]);
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(DEPOSIT_EVENT_MAP, &rid, self.settle.pending));
+        o.extend(ops::remove(DEPOSIT_EVENT_MAP, &rid));
+        o.extend(ops::lookup(DEPOSIT_SETTLE_VIEWS, &rid, self.d.view_av()));
+        o.extend(ops::remove(DEPOSIT_SETTLE_VIEWS, &rid));
+        // mintShieldedToken: kernel.self(), the mint, the spend claim.
+        o.extend(env.kernel_self());
+        o.extend(ops::mint_and_spend(&vault_domain_sep(&self.d.erc20), self.d.amount_u64(), &cm));
         if self.self_read_fires() {
-            // The branch's guarded kernel.self read.
-            ops.extend([
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, &self.d.self_addr),
-                },
-            ]);
+            o.extend(env.kernel_self());
         }
         if self.auto_receive() {
-            // The guarded receive claim.
-            ops.extend([
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(1)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &cm)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]);
+            o.extend(ops::claim(1, &cm));
         }
-        ops
-    }
-
-    /// The popeq results in read order, value-only.
-    pub fn outputs(&self, member_result: u8) -> Vec<Fr> {
-        let mut avs = vec![
-            bytesn_value(8, &self.d.initialized.to_le_bytes()),
-            self.mpc_key_av(),
-            bytesn_value(1, &[member_result]),
-            self.d.event_av(),
-            bytesn_value(32, &self.d.self_addr),
-        ];
-        if self.self_read_fires() {
-            avs.push(bytesn_value(32, &self.d.self_addr));
-        }
-        let mut out = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut out);
-        }
-        out
+        o
     }
 
     pub fn preimage(&self) -> ProofPreimage {
-        self.preimage_with_member(1)
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xc1a_1au64))
     }
 
-    pub fn preimage_with_member(&self, member_result: u8) -> ProofPreimage {
-        let inputs = self.inputs();
-        let mut transcript = Vec::new();
-        for op in self.ops(member_result) {
-            op.field_repr(&mut transcript);
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.d.request_id();
+        if self.settle.pending {
+            pre.deposit_event_map = vec![(rid, self.d.req().av(self.env()))];
         }
-        let rand = Fr::from(0xc1a_13u64);
-        let comm = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: self.witnesses(),
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: self.outputs(member_result),
-            binding_input: 0.into(),
-            communications_commitment: Some((comm, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
+        pre.deposit_settle_views = vec![(rid, self.d.view_av())];
+        pre
     }
 }
 
-// --- approveRouter -----------------------------------------------------------
+// ==== withdraw =============================================================================
 
-/// A concrete approveRouter() call: the vault-account approve request.
+/// `startWithdraw(evmNonce, keyVersion, withdrawRequest, coin)`.
 #[derive(Clone, Debug)]
-pub struct ApproveScenario {
-    pub art: Art,
-    pub erc20: [u8; 20],
-    pub evm_nonce: u64,
-    pub key_version: u8,
-    pub initialized: u64,
-    /// Does `signBidirectionalEventMap` already hold this request id?
-    pub request_exists: bool,
-    pub router: [u8; 20],
-    pub chain_id: u64,
-    pub request_nonce: u64,
-    pub self_addr: [u8; 32],
-    pub caip2: [u8; 32],
-    pub signer_addr: [u8; 32],
-    pub ep: [u8; 32],
-    pub cc_rand: Fr,
-}
-
-impl ApproveScenario {
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> ApproveScenario {
-        self.art = art;
-        self
-    }
-
-    pub fn new() -> ApproveScenario {
-        let d = DepositScenario::new();
-        ApproveScenario {
-            art: Art::Compat,
-            erc20: d.erc20,
-            evm_nonce: 9,
-            key_version: 1,
-            initialized: 1,
-            request_exists: false,
-            router: *b"uniswap-router-20byt",
-            chain_id: d.chain_id,
-            request_nonce: 5,
-            self_addr: d.self_addr,
-            caip2: d.caip2,
-            signer_addr: d.signer_addr,
-            ep: d.ep,
-            cc_rand: Fr::from(0xa9905eu64),
-        }
-    }
-
-    pub fn word0(&self) -> [u8; 32] {
-        let mut w = [0u8; 32];
-        w[12..].copy_from_slice(&self.router);
-        w
-    }
-
-    pub fn word1(&self) -> [u8; 32] {
-        let mut w = [0u8; 32];
-        w[16..].copy_from_slice(&[0xff; 16]); // 2^128 − 1, big-endian
-        w
-    }
-
-    pub fn event_limbs(&self) -> Vec<Fr> {
-        let (self_hi, self_lo) = b32_slots(&self.self_addr);
-        let (path_hi, path_lo) = b32_slots(&pad32(erc20_vault::VAULT_PATH));
-        let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
-        let (w0_hi, w0_lo) = b32_slots(&self.word0());
-        let (w1_hi, w1_lo) = b32_slots(&self.word1());
-        let mut limbs = record_head(self.art);
-        limbs.extend([
-            self_hi,
-            self_lo,
-            Fr::from(self.request_nonce),
-            Fr::from(u64::from(self.key_version)),
-            path_hi,
-            path_lo,
-            Fr::from(0u64), // algo
-            Fr::from(0u64), // dest
-            Fr::from(0u64), // params ×3
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64), // txParamType
-            Fr::from(self.chain_id),
-            Fr::from(self.evm_nonce),
-            Fr::from(1_000_000_000u64),  // maxPriorityFeePerGas (fixed)
-            Fr::from(30_000_000_000u64), // maxFeePerGas (fixed)
-            Fr::from(100_000u64),        // gasLimit (fixed)
-            Fr::from_le_bytes(&self.erc20).unwrap(), // to
-            Fr::from(0u64),              // value
-            Fr::from(1u64),              // calldata.is_some
-            Fr::from_le_bytes(&erc20_vault::APPROVE_SELECTOR).unwrap(),
-            Fr::from(2u64), // noWords
-            w0_hi,
-            w0_lo,
-            w1_hi,
-            w1_lo,
-            Fr::from(0u64), // accessListEntryCount
-            caip2_hi,
-            caip2_lo,
-        ]);
-        // APPROVE — the one REQUEST-ONLY kind: no settle circuit accepts it
-        // (`erc20_vault_pending::RESPONSE_KIND_APPROVE`).
-        limbs.extend(record_tail(
-            self.art,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_pending::RESPONSE_KIND_APPROVE,
-        ));
-        limbs
-    }
-
-    pub fn event_av(&self) -> AlignedValue {
-        DepositScenario::event_alignment(self.art)
-            .parse_field_repr(&self.event_limbs())
-            .expect("event limbs match the alignment")
-    }
-
-    pub fn request_id(&self) -> [u8; 32] {
-        let mut repr = Vec::new();
-        ValueReprAlignedValue(self.event_av()).binary_repr(&mut repr);
-        sha3::Keccak256::digest(&repr).into()
-    }
-
-    pub fn call_args(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.request_id());
-        let mut bytes = [0u8; 128];
-        bytes[..32].copy_from_slice(&self.self_addr);
-        bytes[32] = 1;
-        let mut limbs: Vec<Fr> = bytes
-            .chunks(31)
-            .map(|chunk| Fr::from_le_bytes(chunk).unwrap())
-            .collect();
-        limbs.reverse();
-        let mut args = vec![rid_hi, rid_lo, Fr::from(1u64)];
-        args.extend(limbs);
-        args
-    }
-
-    /// The reference Impact program, in the circuit's read/write order.
-    pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let read = |field: u8, cached: bool, result: AlignedValue| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Popeq { cached, result },
-            ]
-        };
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let request_id = self.request_id();
-
-        let mut ops = Vec::new();
-        ops.extend(read(
-            erc20_vault::INITIALIZED,
-            true,
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-        ));
-        ops.extend(read(
-            erc20_vault::UNISWAP_ROUTER,
-            false,
-            bytesn_value(20, &self.router),
-        ));
-        ops.extend(read(
-            erc20_vault::EVM_CHAIN_ID,
-            false,
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-        ));
-        ops.extend(read(
-            erc20_vault::SIGNET_REQUEST_NONCE,
-            true,
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ));
-        ops.extend(kernel_self_ops(&self.self_addr));
-        ops.extend(read(
-            erc20_vault::CAIP2_ID,
-            false,
-            bytesn_value(32, &self.caip2),
-        ));
-        ops.extend([
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.request_exists)]),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGNET_REQUEST_NONCE)].into(),
-            },
-            Op::Addi { immediate: 1 },
-            Op::Ins { cached: true, n: 1 },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(self.event_av()),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        ops.extend(read(
-            erc20_vault::SIGNET_SIGNER,
-            false,
-            bytesn_value(32, &self.signer_addr),
-        ));
-        // The notification's callerAddress — threaded from this circuit's
-        // first read in the optimized artifact (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        let comm = transient_commit(&self.call_args()[..], self.cc_rand);
-        let mut comm_bytes = comm.as_le_bytes();
-        while comm_bytes.last() == Some(&0) {
-            comm_bytes.pop();
-        }
-        let addr_ep_comm = AlignedValue::new(
-            Value(vec![
-                ValueAtom(self.signer_addr.to_vec()).normalize(),
-                ValueAtom(self.ep.to_vec()).normalize(),
-                ValueAtom(comm_bytes).normalize(),
-            ]),
-            Alignment(vec![
-                atom(32),
-                atom(32),
-                AlignmentSegment::Atom(AlignmentAtom::Field),
-            ]),
-        )
-        .unwrap();
-        ops.extend([
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(3)].into(),
-            },
-            Op::Dup { n: 0 },
-            Op::Size,
-            Op::Push {
-                storage: false,
-                value: cell(addr_ep_comm),
-            },
-            Op::Concat {
-                cached: true,
-                n: 160,
-            },
-            Op::Push {
-                storage: false,
-                value: StateValue::Null,
-            },
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-        ]);
-        ops
-    }
-
-    /// The `ProofPreimage` this call implies: arguments, witnesses, the op
-    /// stream's `field_repr`, and the popeq results in read order.
-    pub fn preimage(&self) -> ProofPreimage {
-        let ops = self.ops();
-
-        let inputs = vec![
-            Fr::from_le_bytes(&self.erc20).unwrap(),
-            Fr::from(self.evm_nonce),
-            Fr::from(u64::from(self.key_version)),
-        ];
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
-        }
-        let mut avs = vec![
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-            bytesn_value(20, &self.router),
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(32, &self.caip2),
-            bytesn_value(1, &[u8::from(self.request_exists)]),
-            bytesn_value(32, &self.signer_addr),
-        ];
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        let rand = Fr::from(0xa11_0eu64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: vec![self.cc_rand, ep_hi, ep_lo],
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
-    }
-}
-
-// --- withdraw ----------------------------------------------------------------
-
-/// A concrete withdraw() call.
-#[derive(Clone, Debug)]
-pub struct WithdrawScenario {
-    pub art: Art,
+pub struct StartWithdrawScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
     pub evm_nonce: u64,
     pub key_version: u8,
     pub erc20: [u8; 20],
-    /// `Uint<128>` in Compact — see [`DepositScenario::amount`].
     pub amount: u128,
     pub dest: [u8; 20],
     pub coin_nonce: [u8; 32],
-    pub sk: [u8; 32],
-    pub initialized: u64,
-    pub chain_id: u64,
-    pub request_nonce: u64,
-    pub self_addr: [u8; 32],
-    pub caip2: [u8; 32],
-    pub signer_addr: [u8; 32],
-    pub ep: [u8; 32],
-    pub cc_rand: Fr,
-    /// Does `signBidirectionalEventMap` already hold this request id?
+    /// The surrendered coin's colour — the vault token's by default; a
+    /// scenario may present another.
+    pub coin_color: Option<[u8; 32]>,
+    /// The surrendered coin's value — `amount` by default.
+    pub coin_value: Option<u128>,
     pub request_exists: bool,
+    pub cc_rand: Fr,
 }
 
-impl WithdrawScenario {
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> WithdrawScenario {
-        self.art = art;
-        self
-    }
-
-    pub fn new() -> WithdrawScenario {
-        let d = DepositScenario::new();
-        let mut coin_nonce = [0u8; 32];
-        coin_nonce[..10].copy_from_slice(b"coin-nonce");
-        coin_nonce[31] = 0x51;
-        WithdrawScenario {
-            art: Art::Compat,
+impl StartWithdrawScenario {
+    pub fn new() -> StartWithdrawScenario {
+        StartWithdrawScenario {
+            env: Env::new(),
+            sk: tagged32(b"withdrawer", 0x22),
             evm_nonce: 11,
             key_version: 1,
-            erc20: d.erc20,
-            amount: 55_555,
-            dest: *b"dest-evm-addr-20byte",
-            coin_nonce,
-            sk: d.sk,
-            initialized: 1,
-            chain_id: d.chain_id,
-            request_nonce: 6,
-            self_addr: d.self_addr,
-            caip2: d.caip2,
-            signer_addr: d.signer_addr,
-            ep: d.ep,
-            cc_rand: Fr::from(0x71d_47u64),
+            erc20: *b"erc20-token-contract",
+            amount: 98_765,
+            dest: *b"dest-evm-address-20b",
+            coin_nonce: tagged32(b"coin-nonce", 0x44),
+            coin_color: None,
+            coin_value: None,
             request_exists: false,
+            cc_rand: Fr::from(0x0d0_0ffu64),
         }
     }
 
-    /// The surrendered amount as the `Uint<64>` a refund re-mints. Only
-    /// meaningful once the withdraw guards passed.
     pub fn amount_u64(&self) -> u64 {
-        u64::try_from(self.amount).unwrap_or(u64::MAX)
+        unbounded_to_u64(self.amount)
     }
 
-    pub fn color(&self) -> [u8; 32] {
-        vault_color(self.art, &self.erc20, &self.self_addr)
+    /// The vault token's colour for this ERC20.
+    pub fn vault_color(&self) -> [u8; 32] {
+        vault_color(&self.erc20, &self.env.self_addr)
     }
 
-    pub fn event_limbs(&self) -> Vec<Fr> {
-        let (self_hi, self_lo) = b32_slots(&self.self_addr);
-        let (path_hi, path_lo) = b32_slots(&pad32(erc20_vault::VAULT_PATH));
-        let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
-        let mut w0 = [0u8; 32];
-        w0[12..].copy_from_slice(&self.dest);
-        let mut w1 = [0u8; 32];
-        w1[16..].copy_from_slice(&self.amount.to_be_bytes());
-        let (w0_hi, w0_lo) = b32_slots(&w0);
-        let (w1_hi, w1_lo) = b32_slots(&w1);
-        let mut limbs = record_head(self.art);
-        limbs.extend([
-            self_hi,
-            self_lo,
-            Fr::from(self.request_nonce),
-            Fr::from(u64::from(self.key_version)),
-            path_hi,
-            path_lo,
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(self.chain_id),
-            Fr::from(self.evm_nonce),
-            Fr::from(1_000_000_000u64),
-            Fr::from(30_000_000_000u64),
-            Fr::from(100_000u64),
-            Fr::from_le_bytes(&self.erc20).unwrap(),
-            Fr::from(0u64),
-            Fr::from(1u64),
-            Fr::from_le_bytes(&erc20_vault::TRANSFER_SELECTOR).unwrap(),
-            Fr::from(2u64),
-            w0_hi,
-            w0_lo,
-            w1_hi,
-            w1_lo,
-            Fr::from(0u64),
-            caip2_hi,
-            caip2_lo,
-        ]);
-        limbs.extend(record_tail(
-            self.art,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault::VAULT_RESPONSE_SCHEMA,
-            erc20_vault_pending::RESPONSE_KIND_WITHDRAW,
-        ));
-        limbs
+    pub fn coin_color(&self) -> [u8; 32] {
+        self.coin_color.unwrap_or_else(|| self.vault_color())
     }
 
-    pub fn event_av(&self) -> AlignedValue {
-        DepositScenario::event_alignment(self.art)
-            .parse_field_repr(&self.event_limbs())
-            .expect("event limbs match the alignment")
+    pub fn coin_value(&self) -> u128 {
+        self.coin_value.unwrap_or(self.amount)
+    }
+
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::ERC20_CALL_GAS,
+                self.erc20,
+                v::TRANSFER_SELECTOR,
+                vec![abi_addr_word(&self.dest), abi_num_word(self.amount)],
+            ),
+            out_schema: v::VAULT_RESPONSE_SCHEMA,
+            respond_schema: v::VAULT_RESPONSE_SCHEMA,
+        }
     }
 
     pub fn request_id(&self) -> [u8; 32] {
-        let mut repr = Vec::new();
-        ValueReprAlignedValue(self.event_av()).binary_repr(&mut repr);
-        sha3::Keccak256::digest(&repr).into()
+        self.req().request_id(&self.env)
     }
 
-    /// withdrawRefundCommitment(sk, requestId).
     pub fn refund_commitment(&self) -> [u8; 32] {
-        refund_commitment(self.art, &self.sk, &self.request_id())
+        refund_commitment(&self.sk, &self.request_id())
     }
 
-    pub fn call_args(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.request_id());
-        let mut bytes = [0u8; 128];
-        bytes[..32].copy_from_slice(&self.self_addr);
-        bytes[32] = 1;
-        let mut limbs: Vec<Fr> = bytes
-            .chunks(31)
-            .map(|chunk| Fr::from_le_bytes(chunk).unwrap())
-            .collect();
-        limbs.reverse();
-        let mut args = vec![rid_hi, rid_lo, Fr::from(1u64)];
-        args.extend(limbs);
-        args
+    /// The `WithdrawSettleView` the request pins.
+    pub fn view_av(&self) -> AlignedValue {
+        let (c_hi, c_lo) = b32_slots(&self.refund_commitment());
+        aligned(&[32, 20, 8], &[c_hi, c_lo, b20(&self.erc20), Fr::from(self.amount_u64())])
     }
 
-    /// The reference Impact program, in the circuit's read/write order.
-    pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let read = |field: u8, cached: bool, result: AlignedValue| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Popeq { cached, result },
-            ]
-        };
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let claim = |effect: u8, note: [u8; 32]| {
-            vec![
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(effect)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &note)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]
-        };
-
-        let request_id = self.request_id();
-        let color = self.color();
-        let nonce_slots = b32_slots(&self.coin_nonce);
-        let cm_receive =
-            coin_commitment_of(&nonce_slots, &color, self.amount_u64(), false, &self.self_addr);
-        let nullifier = coin_nullifier_of(&nonce_slots, &color, self.amount_u64(), &self.self_addr);
-        let cm_burn = coin_commitment_of(
-            &evolved_nonce(&self.coin_nonce),
-            &color,
-            self.amount_u64(),
-            true,
-            &[0u8; 32],
-        );
-
-        let mut ops = Vec::new();
-        ops.extend(read(
-            erc20_vault::INITIALIZED,
-            true,
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-        ));
-        // tokenType's kernel.self()
-        ops.extend(kernel_self_ops(&self.self_addr));
-        ops.extend(read(
-            erc20_vault::EVM_CHAIN_ID,
-            false,
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-        ));
-        ops.extend(read(
-            erc20_vault::SIGNET_REQUEST_NONCE,
-            true,
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ));
-        // The event's sender — threaded from the colour derivation's read
-        // in the optimized artifact (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        ops.extend(read(
-            erc20_vault::CAIP2_ID,
-            false,
-            bytesn_value(32, &self.caip2),
-        ));
-        // member
-        ops.extend([
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.request_exists)]),
-            },
-        ]);
-        // The burn. The compat port receives the surrendered coin into
-        // custody (receiveShielded) then spends it to the burn address
-        // (sendImmediateShielded: nullifier + evolved-nonce output). The
-        // optimized artifact (rung vi, avenue 6) claims a SINGLE shielded
-        // spend of the burn-output commitment: the user funds the burn Output
-        // directly, so there is no receive claim and no nullifier — only the
-        // evolved-nonce output commitment survives, byte-identical.
-        if self.art == Art::Compat {
-            // receiveShielded (its recipient is the same address again)
-            ops.extend(kernel_self_ops(&self.self_addr));
-            ops.extend(claim(1, cm_receive));
-            // burn: sendImmediateShielded — nullifier then output
-            ops.extend(kernel_self_ops(&self.self_addr));
-            ops.extend(claim(0, nullifier));
-        }
-        ops.extend(claim(2, cm_burn));
-        // increment + event insert
-        ops.extend([
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGNET_REQUEST_NONCE)].into(),
-            },
-            Op::Addi { immediate: 1 },
-            Op::Ins { cached: true, n: 1 },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(self.event_av()),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-            // refundCommitment.insert
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(bytesn_value(32, &self.refund_commitment())),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        // notify
-        ops.extend(read(
-            erc20_vault::SIGNET_SIGNER,
-            false,
-            bytesn_value(32, &self.signer_addr),
-        ));
-        // The notification's callerAddress — threaded from this circuit's
-        // first read in the optimized artifact (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        let comm = transient_commit(&self.call_args()[..], self.cc_rand);
-        let mut comm_bytes = comm.as_le_bytes();
-        while comm_bytes.last() == Some(&0) {
-            comm_bytes.pop();
-        }
-        let addr_ep_comm = AlignedValue::new(
-            Value(vec![
-                ValueAtom(self.signer_addr.to_vec()).normalize(),
-                ValueAtom(self.ep.to_vec()).normalize(),
-                ValueAtom(comm_bytes).normalize(),
-            ]),
-            Alignment(vec![
-                atom(32),
-                atom(32),
-                AlignmentSegment::Atom(AlignmentAtom::Field),
-            ]),
-        )
-        .unwrap();
-        ops.extend([
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(3)].into(),
-            },
-            Op::Dup { n: 0 },
-            Op::Size,
-            Op::Push {
-                storage: false,
-                value: cell(addr_ep_comm),
-            },
-            Op::Concat {
-                cached: true,
-                n: 160,
-            },
-            Op::Push {
-                storage: false,
-                value: StateValue::Null,
-            },
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-        ]);
-        ops
-    }
-
-    /// The `ProofPreimage` this call implies: arguments, witnesses, the op
-    /// stream's `field_repr`, and the popeq results in read order.
-    pub fn preimage(&self) -> ProofPreimage {
-        let ops = self.ops();
-
-        let nonce_slots = b32_slots(&self.coin_nonce);
-        let color = self.color();
-        let (n_hi, n_lo) = nonce_slots;
-        let (c_hi, c_lo) = b32_slots(&color);
-        let inputs = vec![
-            Fr::from(self.evm_nonce),
-            Fr::from(u64::from(self.key_version)),
-            Fr::from_le_bytes(&self.erc20).unwrap(),
-            Fr::from_le_bytes(&self.amount.to_le_bytes()).unwrap(),
-            Fr::from_le_bytes(&self.dest).unwrap(),
-            n_hi,
-            n_lo,
-            c_hi,
-            c_lo,
-            Fr::from_le_bytes(&self.amount.to_le_bytes()).unwrap(), // coin.value == amount
-        ];
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
-        }
-        let mut avs = vec![
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ];
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        avs.push(bytesn_value(32, &self.caip2));
-        avs.push(bytesn_value(1, &[u8::from(self.request_exists)]));
-        if self.art == Art::Compat {
-            // receiveShielded's and the burn's re-reads.
-            avs.push(bytesn_value(32, &self.self_addr));
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        avs.push(bytesn_value(32, &self.signer_addr));
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
-        let (sk_hi, sk_lo) = b32_slots(&self.sk);
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        let rand = Fr::from(0x71d_4a1u64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: vec![sk_hi, sk_lo, self.cc_rand, ep_hi, ep_lo],
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
-    }
-}
-
-// --- completeWithdraw --------------------------------------------------------
-
-/// A concrete completeWithdraw() call settling WithdrawScenario's pending
-/// withdrawal.
-#[derive(Clone, Debug)]
-pub struct CompleteWithdrawScenario {
-    pub w: WithdrawScenario,
-    /// Does `refundCommitment` hold the id? (The pending-withdrawal
-    /// marker, and the double-settle gate.)
-    pub pending: bool,
-    /// The attested EVM outcome byte (0x01 success / 0x00 refund). Under
-    /// `Art::Borsh` it is a Borsh `bool`, so a byte outside {0, 1} is
-    /// REJECTED where the port and the optimized fork refund-route on it.
-    pub outcome: u8,
-    /// The response KIND byte — M11 stage 5, `Art::Borsh` only. Defaults to
-    /// `RESPONSE_KIND_WITHDRAW`.
-    pub response_kind: u8,
-    pub mint_nonce: [u8; 32],
-    pub own_pk: [u8; 32],
-    pub key_seed: u64,
-    pub nonce_seed: u64,
-    /// The secret the CALLER witnesses on the refund branch; `None` = the
-    /// withdrawer's own.
-    pub claimant_sk: Option<[u8; 32]>,
-}
-
-impl CompleteWithdrawScenario {
-    /// The artifact this settle models (owned by the withdrawal it settles).
-    pub fn art(&self) -> Art {
-        self.w.art
-    }
-
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> CompleteWithdrawScenario {
-        self.w.art = art;
-        self
-    }
-
-    pub fn new(outcome: u8) -> CompleteWithdrawScenario {
-        let mut mint_nonce = [0u8; 32];
-        mint_nonce[..12].copy_from_slice(b"refund-nonce");
-        mint_nonce[31] = 0x61;
-        let mut own_pk = [0u8; 32];
-        own_pk[..9].copy_from_slice(b"refund-pk");
-        own_pk[31] = 0x62;
-        CompleteWithdrawScenario {
-            w: WithdrawScenario::new(),
-            pending: true,
-            outcome,
-            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_WITHDRAW),
-            mint_nonce,
-            own_pk,
-            key_seed: 0xf00d_face,
-            nonce_seed: 0x0dd_b17,
-            claimant_sk: None,
-        }
-    }
-
-    /// The secret key the caller presents.
-    pub fn claimant_sk(&self) -> [u8; 32] {
-        self.claimant_sk.unwrap_or(self.w.sk)
-    }
-
-    /// Does the guarded refund branch fire?
-    ///
-    /// The Compact source is `deserialize<VaultResponse, 1>(o).success`,
-    /// which for a packed `Boolean` is `o == 1` — NOT a canonicity-checked
-    /// decode. So every attested byte other than `0x01` refunds, including
-    /// non-canonical ones. (Contrast `abiWordToBool`, Signet.compact:461-463,
-    /// which DOES assert canonicity.) The differential suite only ever
-    /// exercised {0x00, 0x01}, where `== 0` and `!= 1` coincide, which is why
-    /// this read wrong for so long; the property harness caught it on its
-    /// first run. See notes/vault-optimization.org §"As built — step 1".
-    pub fn refunding(&self) -> bool {
-        self.outcome != 1
-    }
-
-    pub fn mpc_key_av(&self) -> AlignedValue {
-        let generator = IrValue::Secp256k1Point(k256::K256::generator());
-        let key = ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap();
-        let alignment = Alignment(
-            erc20_vault::secp256k1_point_atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        alignment
-            .parse_field_repr(&natives(&key))
-            .expect("point limbs match the alignment")
-    }
-
-    /// The attested output's BYTES — see
-    /// [`ClaimScenario::attested_output_bytes`]; `completeWithdraw` carries
-    /// the same `VaultResponse` shape under kind 1.
-    pub fn attested_output_bytes(&self) -> Vec<u8> {
-        match self.art() {
-            Art::Compat | Art::Opt => vec![self.outcome],
-            Art::Borsh | Art::Modern => vec![self.response_kind, self.outcome],
-        }
-    }
-
-    /// The attested output's ARGUMENT SLOTS, in declaration order.
-    pub fn attested_output_slots(&self) -> Vec<Fr> {
-        self.attested_output_bytes()
-            .into_iter()
-            .map(|b| Fr::from(u64::from(b)))
-            .collect()
-    }
-
-    pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
-        let mut bytes = self.w.request_id().to_vec();
-        bytes.extend(self.attested_output_bytes());
-        let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
-        let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
-        r_le.reverse();
-        s_le.reverse();
-        (r_le, s_le)
+    pub fn coin_inputs(&self) -> Vec<Fr> {
+        let (n_hi, n_lo) = b32_slots(&self.coin_nonce);
+        let (c_hi, c_lo) = b32_slots(&self.coin_color());
+        vec![n_hi, n_lo, c_hi, c_lo, u128_limb(self.coin_value())]
     }
 
     pub fn inputs(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.w.request_id());
-        let (rx, sx) = self.signature_be();
-        let (rx_hi, rx_lo) = b32_slots(&rx);
-        let (s_hi, s_lo) = b32_slots(&sx);
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
         let mut inputs = vec![
-            rid_hi,
-            rid_lo,
-            rx_hi,
-            rx_lo,
-            Fr::from(0u64),
-            Fr::from(0u64),
-            s_hi,
-            s_lo,
-            Fr::from(0u64),
+            Fr::from(self.evm_nonce),
+            Fr::from(u64::from(self.key_version)),
+            b20(&self.erc20),
+            u128_limb(self.amount),
+            b20(&self.dest),
         ];
-        inputs.extend(self.attested_output_slots());
-        inputs.extend([n_hi, n_lo]);
+        inputs.extend(self.coin_inputs());
         inputs
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
-        if !self.refunding() {
-            return vec![];
-        }
-        let (sk_hi, sk_lo) = b32_slots(&self.claimant_sk());
-        let (pk_hi, pk_lo) = b32_slots(&self.own_pk);
-        vec![sk_hi, sk_lo, pk_hi, pk_lo]
+        let (sk_hi, sk_lo) = b32_slots(&self.sk);
+        let mut w = vec![sk_hi, sk_lo];
+        w.extend(self.env.call_witnesses(self.cc_rand));
+        w
     }
 
-    /// The reference Impact program, in the circuit's read/write order.
     pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let request_id = self.w.request_id();
-
-        let mut ops = vec![
-            // assert(initialized >= 1)
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(8, &self.w.initialized.to_le_bytes()),
-            },
-            // mpcResponseKey
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::MPC_RESPONSE_KEY)].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.mpc_key_av(),
-            },
-            // refundCommitment.member(requestId)
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.pending)]),
-            },
-            // signBidirectionalEventMap.lookup + remove
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.w.event_av(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Rem { cached: false },
-            Op::Ins { cached: true, n: 1 },
-        ];
-        if self.refunding() {
-            // refundCommitment.lookup (guarded branch)
-            ops.extend([
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(erc20_vault::REFUND_COMMITMENT)].into(),
-                },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-                },
-                Op::Popeq {
-                    cached: false,
-                    result: bytesn_value(32, &self.w.refund_commitment()),
-                },
-                // mint's kernel.self
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, &self.w.self_addr),
-                },
-            ]);
-            // kernel.mintShielded + claimZswapCoinSpend
-            let domain_sep = vault_domain_sep(self.art(), &self.w.erc20);
-            let color = vault_color(self.art(), &self.w.erc20, &self.w.self_addr);
-            let cm = coin_commitment_of(
-                &b32_slots(&self.mint_nonce),
-                &color,
-                self.w.amount_u64(),
-                true,
-                &self.own_pk,
-            );
-            ops.extend([
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(4)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &domain_sep)),
-                },
-                Op::Dup { n: 1 },
-                Op::Dup { n: 1 },
-                Op::Member,
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(8, &self.w.amount_u64().to_le_bytes())),
-                },
-                Op::Swap { n: 0 },
-                Op::Neg,
-                Op::Branch { skip: 4 },
-                Op::Dup { n: 2 },
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![Key::Stack].into(),
-                },
-                Op::Add,
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(2)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &cm)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]);
-        }
-        // refundCommitment.remove(requestId) — unguarded tail.
-        ops.extend([
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Rem { cached: false },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        ops
+        let mut o = self.env.read_initialised();
+        // tokenType's kernel.self()
+        o.extend(self.env.kernel_self());
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(
+            &self.env,
+            SIGN_BIDIRECTIONAL_EVENT_MAP,
+            &self.req(),
+            self.request_exists,
+            Some(self.env.burn_ops(&self.coin_nonce, &self.coin_color(), self.coin_value())),
+            Some((WITHDRAW_SETTLE_VIEWS, self.view_av())),
+            self.cc_rand,
+        ));
+        o
     }
 
-    /// The `ProofPreimage` this call implies: arguments, witnesses, the op
-    /// stream's `field_repr`, and the popeq results in read order.
     pub fn preimage(&self) -> ProofPreimage {
-        let ops = self.ops();
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x41d_0517u64))
+    }
 
-        let inputs = self.inputs();
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.sign_event_map = vec![(self.request_id(), self.req().av(&self.env))];
         }
-        let mut avs = vec![
-            bytesn_value(8, &self.w.initialized.to_le_bytes()),
-            self.mpc_key_av(),
-            bytesn_value(1, &[u8::from(self.pending)]),
-            self.w.event_av(),
-        ];
-        if self.refunding() {
-            avs.push(bytesn_value(32, &self.w.refund_commitment()));
-            avs.push(bytesn_value(32, &self.w.self_addr));
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
-        let rand = Fr::from(0xc0417u64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: self.witnesses(),
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
+        pre
     }
 }
 
-// --- swap --------------------------------------------------------------------
-
-/// A concrete swap() call.
+/// `completeWithdraw(requestId, respond, serializedOutput: Bytes<1>,
+/// mintNonce)`.
 #[derive(Clone, Debug)]
-pub struct SwapScenario {
-    pub art: Art,
+pub struct CompleteWithdrawScenario {
+    pub w: StartWithdrawScenario,
+    pub settle: Settle,
+    /// The attested EVM result byte; anything but `0x01` is a failed
+    /// transfer and routes to the withdrawer-only re-mint.
+    pub outcome: u8,
+}
+
+impl CompleteWithdrawScenario {
+    pub fn new(outcome: u8) -> CompleteWithdrawScenario {
+        CompleteWithdrawScenario {
+            w: StartWithdrawScenario::new(),
+            settle: Settle::new(),
+            outcome,
+        }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.w.env
+    }
+
+    pub fn refunding(&self) -> bool {
+        self.outcome != 1
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![Fr::from(u64::from(self.outcome))]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.w.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    /// The secret is witnessed UNCONDITIONALLY (the commitment is hoisted
+    /// out of the `if`); `ownPublicKey()` only on the refund branch.
+    pub fn witnesses(&self) -> Vec<Fr> {
+        let (sk_hi, sk_lo) = b32_slots(&self.settle.sk(&self.w.sk));
+        let mut w = vec![sk_hi, sk_lo];
+        if self.refunding() {
+            let (pk_hi, pk_lo) = b32_slots(&self.settle.own_pk);
+            w.extend([pk_hi, pk_lo]);
+        }
+        w
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.w.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(WITHDRAW_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(WITHDRAW_SETTLE_VIEWS, &rid, self.w.view_av()));
+        o.extend(ops::remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &rid));
+        if self.refunding() {
+            o.extend(env.mint_to_key_ops(&self.w.erc20, self.w.amount_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        }
+        o.extend(ops::remove(WITHDRAW_SETTLE_VIEWS, &rid));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xc0_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.w.request_id();
+        pre.sign_event_map = vec![(rid, self.w.req().av(self.env()))];
+        if self.settle.pending {
+            pre.withdraw_settle_views = vec![(rid, self.w.view_av())];
+        }
+        pre
+    }
+}
+
+/// `refundWithdraw(requestId, respond, serializedOutput: Bytes<5>,
+/// mintNonce)`.
+#[derive(Clone, Debug)]
+pub struct RefundWithdrawScenario {
+    pub w: StartWithdrawScenario,
+    pub settle: Settle,
+    /// The attested output; only `MPC_FAILURE_OUTPUT` refunds.
+    pub serialized_output: [u8; 5],
+}
+
+impl RefundWithdrawScenario {
+    pub fn new() -> RefundWithdrawScenario {
+        RefundWithdrawScenario {
+            w: StartWithdrawScenario::new(),
+            settle: Settle::new(),
+            serialized_output: v::MPC_FAILURE_OUTPUT,
+        }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.w.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![failure_output_limb(&self.serialized_output)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.w.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.w.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.w.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(WITHDRAW_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(WITHDRAW_SETTLE_VIEWS, &rid, self.w.view_av()));
+        o.extend(ops::remove(SIGN_BIDIRECTIONAL_EVENT_MAP, &rid));
+        o.extend(ops::remove(WITHDRAW_SETTLE_VIEWS, &rid));
+        o.extend(env.mint_to_key_ops(&self.w.erc20, self.w.amount_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x4ef_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.w.request_id();
+        pre.sign_event_map = vec![(rid, self.w.req().av(self.env()))];
+        if self.settle.pending {
+            pre.withdraw_settle_views = vec![(rid, self.w.view_av())];
+        }
+        pre
+    }
+}
+
+// ==== swap =================================================================================
+
+/// `startSwap(evmNonce, keyVersion, swapRequest, coin)`.
+#[derive(Clone, Debug)]
+pub struct StartSwapScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
     pub evm_nonce: u64,
     pub key_version: u8,
     pub token_in: [u8; 20],
     pub token_out: [u8; 20],
     pub fee: u32,
-    /// `Uint<128>` in Compact — see [`DepositScenario::amount`].
     pub amount_out: u128,
-    /// `Uint<128>` in Compact — see [`DepositScenario::amount`].
     pub amount_in_max: u128,
     pub coin_nonce: [u8; 32],
-    pub sk: [u8; 32],
-    pub initialized: u64,
-    pub vault_evm: [u8; 20],
-    pub chain_id: u64,
-    pub router: [u8; 20],
-    pub request_nonce: u64,
-    pub self_addr: [u8; 32],
-    pub caip2: [u8; 32],
-    pub signer_addr: [u8; 32],
-    pub ep: [u8; 32],
-    pub cc_rand: Fr,
-    /// Does `swapEventMap` already hold this request id?
+    pub coin_color: Option<[u8; 32]>,
+    pub coin_value: Option<u128>,
     pub request_exists: bool,
+    pub cc_rand: Fr,
 }
 
-impl SwapScenario {
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> SwapScenario {
-        self.art = art;
-        self
-    }
-
-    pub fn new() -> SwapScenario {
-        let d = DepositScenario::new();
-        let mut coin_nonce = [0u8; 32];
-        coin_nonce[..10].copy_from_slice(b"swap-nonce");
-        coin_nonce[31] = 0x71;
-        SwapScenario {
-            art: Art::Compat,
+impl StartSwapScenario {
+    pub fn new() -> StartSwapScenario {
+        StartSwapScenario {
+            env: Env::new(),
+            sk: tagged32(b"swapper", 0x23),
             evm_nonce: 13,
             key_version: 1,
-            token_in: d.erc20,
-            token_out: *b"erc20-token-outward!",
+            token_in: *b"token-in-contract-20",
+            token_out: *b"token-out-contract20",
             fee: 3000,
-            amount_out: 77_777,
-            amount_in_max: 99_999,
-            coin_nonce,
-            sk: d.sk,
-            initialized: 1,
-            vault_evm: d.vault_evm,
-            chain_id: d.chain_id,
-            router: *b"uniswap-router-20byt",
-            request_nonce: 7,
-            self_addr: d.self_addr,
-            caip2: d.caip2,
-            signer_addr: d.signer_addr,
-            ep: d.ep,
-            cc_rand: Fr::from(0x54a9u64),
+            amount_out: 50_000,
+            amount_in_max: 60_000,
+            coin_nonce: tagged32(b"swap-coin-nonce", 0x45),
+            coin_color: None,
+            coin_value: None,
             request_exists: false,
+            cc_rand: Fr::from(0x5aa_9u64),
         }
     }
 
-    /// `amountOut` as the `Uint<64>` completeSwap mints. Only meaningful
-    /// once the swap guards passed.
     pub fn amount_out_u64(&self) -> u64 {
-        u64::try_from(self.amount_out).unwrap_or(u64::MAX)
+        unbounded_to_u64(self.amount_out)
     }
 
-    /// `amountInMaximum` as the `Uint<64>` a refund re-mints.
     pub fn amount_in_max_u64(&self) -> u64 {
-        u64::try_from(self.amount_in_max).unwrap_or(u64::MAX)
+        unbounded_to_u64(self.amount_in_max)
     }
 
-    /// The 7-word record's FAB alignment: 29 atoms deployed, 29 at stage 7.
-    pub fn event_alignment7(art: Art) -> Alignment {
-        record_alignment(
-            art,
-            erc20_vault::SWAP_WORDS,
-            erc20_vault::SWAP_OUTPUT_LEN as u32,
-            erc20_vault::SWAP_RESPOND_LEN as u32,
-        )
+    pub fn vault_color(&self) -> [u8; 32] {
+        vault_color(&self.token_in, &self.env.self_addr)
     }
 
-    pub fn event_limbs(&self) -> Vec<Fr> {
-        let (self_hi, self_lo) = b32_slots(&self.self_addr);
-        let (path_hi, path_lo) = b32_slots(&pad32(erc20_vault::VAULT_PATH));
-        let (caip2_hi, caip2_lo) = b32_slots(&self.caip2);
-        let words = [
-            abi_addr_word(&self.token_in),
-            abi_addr_word(&self.token_out),
-            abi_num_word(u128::from(self.fee)),
-            abi_addr_word(&self.vault_evm),
-            abi_num_word(self.amount_out),
-            abi_num_word(self.amount_in_max),
-            [0u8; 32],
-        ];
-        let mut limbs = record_head(self.art);
-        limbs.extend([
-            self_hi,
-            self_lo,
-            Fr::from(self.request_nonce),
-            Fr::from(u64::from(self.key_version)),
-            path_hi,
-            path_lo,
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(0u64),
-            Fr::from(self.chain_id),
-            Fr::from(self.evm_nonce),
-            Fr::from(1_000_000_000u64),
-            Fr::from(30_000_000_000u64),
-            Fr::from(700_000u64),
-            Fr::from_le_bytes(&self.router).unwrap(),
-            Fr::from(0u64),
-            Fr::from(1u64),
-            Fr::from_le_bytes(&erc20_vault::EXACT_OUTPUT_SINGLE_SELECTOR).unwrap(),
-            Fr::from(7u64),
-        ]);
-        for w in &words {
-            let (hi, lo) = b32_slots(w);
-            limbs.push(hi);
-            limbs.push(lo);
+    pub fn coin_color(&self) -> [u8; 32] {
+        self.coin_color.unwrap_or_else(|| self.vault_color())
+    }
+
+    pub fn coin_value(&self) -> u128 {
+        self.coin_value.unwrap_or(self.amount_in_max)
+    }
+
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::SWAP_GAS,
+                self.env.router,
+                v::EXACT_OUTPUT_SINGLE_SELECTOR,
+                vec![
+                    abi_addr_word(&self.token_in),
+                    abi_addr_word(&self.token_out),
+                    abi_num_word(u128::from(self.fee)),
+                    abi_addr_word(&self.env.vault_evm),
+                    abi_num_word(self.amount_out),
+                    abi_num_word(self.amount_in_max),
+                    [0u8; 32],
+                ],
+            ),
+            out_schema: v::SWAP_OUTPUT_SCHEMA,
+            respond_schema: v::SWAP_RESPOND_SCHEMA,
         }
-        limbs.extend([
-            Fr::from(0u64), // accessListEntryCount
-            caip2_hi,
-            caip2_lo,
-        ]);
-        limbs.extend(record_tail(
-            self.art,
-            erc20_vault::SWAP_OUTPUT_SCHEMA,
-            erc20_vault::SWAP_RESPOND_SCHEMA,
-            erc20_vault_pending::RESPONSE_KIND_SWAP,
-        ));
-        limbs
-    }
-
-    pub fn event_av(&self) -> AlignedValue {
-        Self::event_alignment7(self.art)
-            .parse_field_repr(&self.event_limbs())
-            .expect("event limbs match the alignment")
     }
 
     pub fn request_id(&self) -> [u8; 32] {
-        let mut repr = Vec::new();
-        ValueReprAlignedValue(self.event_av()).binary_repr(&mut repr);
-        sha3::Keccak256::digest(&repr).into()
+        self.req().request_id(&self.env)
     }
 
     pub fn refund_commitment(&self) -> [u8; 32] {
-        refund_commitment(self.art, &self.sk, &self.request_id())
+        refund_commitment(&self.sk, &self.request_id())
     }
 
-    pub fn call_args(&self) -> Vec<Fr> {
-        let (rid_hi, rid_lo) = b32_slots(&self.request_id());
-        let mut bytes = [0u8; 128];
-        bytes[..32].copy_from_slice(&self.self_addr);
-        bytes[32] = 1;
-        bytes[33] = 11; // requestsPath [11, 0, 0, 0]
-        let mut limbs: Vec<Fr> = bytes
-            .chunks(31)
-            .map(|chunk| Fr::from_le_bytes(chunk).unwrap())
-            .collect();
-        limbs.reverse();
-        let mut args = vec![rid_hi, rid_lo, Fr::from(1u64)];
-        args.extend(limbs);
-        args
-    }
-
-    /// The reference Impact program, in the circuit's read/write order.
-    pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let read = |field: u8, cached: bool, result: AlignedValue| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Popeq { cached, result },
-            ]
-        };
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let claim = |effect: u8, note: [u8; 32]| {
-            vec![
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(effect)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &note)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]
-        };
-
-        let request_id = self.request_id();
-        let color = vault_color(self.art, &self.token_in, &self.self_addr);
-        let nonce_slots = b32_slots(&self.coin_nonce);
-        let cm_receive = coin_commitment_of(
-            &nonce_slots,
-            &color,
-            self.amount_in_max_u64(),
-            false,
-            &self.self_addr,
-        );
-        let nullifier =
-            coin_nullifier_of(&nonce_slots, &color, self.amount_in_max_u64(), &self.self_addr);
-        let cm_burn = coin_commitment_of(
-            &evolved_nonce(&self.coin_nonce),
-            &color,
-            self.amount_in_max_u64(),
-            true,
-            &[0u8; 32],
-        );
-
-        let mut ops = Vec::new();
-        ops.extend(read(
-            erc20_vault::INITIALIZED,
-            true,
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-        ));
-        ops.extend(kernel_self_ops(&self.self_addr));
-        ops.extend(read(
-            erc20_vault::VAULT_EVM_ADDRESS,
-            false,
-            bytesn_value(20, &self.vault_evm),
-        ));
-        ops.extend(read(
-            erc20_vault::EVM_CHAIN_ID,
-            false,
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-        ));
-        ops.extend(read(
-            erc20_vault::UNISWAP_ROUTER,
-            false,
-            bytesn_value(20, &self.router),
-        ));
-        ops.extend(read(
-            erc20_vault::SIGNET_REQUEST_NONCE,
-            true,
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ));
-        // The event's sender — threaded from the colour derivation's read
-        // in the optimized artifact (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        ops.extend(read(
-            erc20_vault::CAIP2_ID,
-            false,
-            bytesn_value(32, &self.caip2),
-        ));
-        ops.extend([
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SWAP_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.request_exists)]),
-            },
-        ]);
-        // The burn — as in withdraw. Compat: receiveShielded (custody) then
-        // sendImmediateShielded (nullifier + evolved-nonce output). Opt (rung
-        // vi, avenue 6): a SINGLE claimed shielded spend of the burn-output
-        // commitment, no receive claim and no nullifier.
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-            ops.extend(claim(1, cm_receive));
-            ops.extend(kernel_self_ops(&self.self_addr));
-            ops.extend(claim(0, nullifier));
-        }
-        ops.extend(claim(2, cm_burn));
-        ops.extend([
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SIGNET_REQUEST_NONCE)].into(),
-            },
-            Op::Addi { immediate: 1 },
-            Op::Ins { cached: true, n: 1 },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SWAP_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(self.event_av()),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SWAP_REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Push {
-                storage: true,
-                value: cell(bytesn_value(32, &self.refund_commitment())),
-            },
-            Op::Ins {
-                cached: false,
-                n: 1,
-            },
-            Op::Ins { cached: true, n: 1 },
-        ]);
-        ops.extend(read(
-            erc20_vault::SIGNET_SIGNER,
-            false,
-            bytesn_value(32, &self.signer_addr),
-        ));
-        // The notification's callerAddress — threaded from this circuit's
-        // first read in the optimized artifact (rung i, avenue 7).
-        if self.art == Art::Compat {
-            ops.extend(kernel_self_ops(&self.self_addr));
-        }
-        let comm = transient_commit(&self.call_args()[..], self.cc_rand);
-        let mut comm_bytes = comm.as_le_bytes();
-        while comm_bytes.last() == Some(&0) {
-            comm_bytes.pop();
-        }
-        let addr_ep_comm = AlignedValue::new(
-            Value(vec![
-                ValueAtom(self.signer_addr.to_vec()).normalize(),
-                ValueAtom(self.ep.to_vec()).normalize(),
-                ValueAtom(comm_bytes).normalize(),
-            ]),
-            Alignment(vec![
-                atom(32),
-                atom(32),
-                AlignmentSegment::Atom(AlignmentAtom::Field),
-            ]),
+    /// The `SwapSettleView` the request pins.
+    pub fn view_av(&self) -> AlignedValue {
+        let (c_hi, c_lo) = b32_slots(&self.refund_commitment());
+        aligned(
+            &[32, 20, 20, 8, 8],
+            &[
+                c_hi,
+                c_lo,
+                b20(&self.token_in),
+                b20(&self.token_out),
+                Fr::from(self.amount_out_u64()),
+                Fr::from(self.amount_in_max_u64()),
+            ],
         )
-        .unwrap();
-        ops.extend([
-            Op::Swap { n: 0 },
-            Op::Idx {
-                cached: true,
-                push_path: true,
-                path: vec![field_key(3)].into(),
-            },
-            Op::Dup { n: 0 },
-            Op::Size,
-            Op::Push {
-                storage: false,
-                value: cell(addr_ep_comm),
-            },
-            Op::Concat {
-                cached: true,
-                n: 160,
-            },
-            Op::Push {
-                storage: false,
-                value: StateValue::Null,
-            },
-            Op::Ins { cached: true, n: 2 },
-            Op::Swap { n: 0 },
-        ]);
-        ops
     }
 
-    /// The `ProofPreimage` this call implies: arguments, witnesses, the op
-    /// stream's `field_repr`, and the popeq results in read order.
-    pub fn preimage(&self) -> ProofPreimage {
-        let ops = self.ops();
+    pub fn coin_inputs(&self) -> Vec<Fr> {
+        let (n_hi, n_lo) = b32_slots(&self.coin_nonce);
+        let (c_hi, c_lo) = b32_slots(&self.coin_color());
+        vec![n_hi, n_lo, c_hi, c_lo, u128_limb(self.coin_value())]
+    }
 
-        let color = vault_color(self.art, &self.token_in, &self.self_addr);
-        let nonce_slots = b32_slots(&self.coin_nonce);
-        let (c_hi, c_lo) = b32_slots(&color);
-        let inputs = vec![
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = vec![
             Fr::from(self.evm_nonce),
             Fr::from(u64::from(self.key_version)),
-            Fr::from_le_bytes(&self.token_in).unwrap(),
-            Fr::from_le_bytes(&self.token_out).unwrap(),
+            b20(&self.token_in),
+            b20(&self.token_out),
             Fr::from(u64::from(self.fee)),
-            Fr::from_le_bytes(&self.amount_out.to_le_bytes()).unwrap(),
-            Fr::from_le_bytes(&self.amount_in_max.to_le_bytes()).unwrap(),
-            nonce_slots.0,
-            nonce_slots.1,
-            c_hi,
-            c_lo,
-            Fr::from_le_bytes(&self.amount_in_max.to_le_bytes()).unwrap(),
+            u128_limb(self.amount_out),
+            u128_limb(self.amount_in_max),
         ];
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
-        }
-        let mut avs = vec![
-            bytesn_value(8, &self.initialized.to_le_bytes()),
-            bytesn_value(32, &self.self_addr),
-            bytesn_value(20, &self.vault_evm),
-            bytesn_value(8, &self.chain_id.to_le_bytes()),
-            bytesn_value(20, &self.router),
-            bytesn_value(8, &self.request_nonce.to_le_bytes()),
-        ];
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        avs.push(bytesn_value(32, &self.caip2));
-        avs.push(bytesn_value(1, &[u8::from(self.request_exists)]));
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        avs.push(bytesn_value(32, &self.signer_addr));
-        if self.art == Art::Compat {
-            avs.push(bytesn_value(32, &self.self_addr));
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
+        inputs.extend(self.coin_inputs());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
         let (sk_hi, sk_lo) = b32_slots(&self.sk);
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        let rand = Fr::from(0x54a9_1u64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: vec![sk_hi, sk_lo, self.cc_rand, ep_hi, ep_lo],
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
+        let mut w = vec![sk_hi, sk_lo];
+        w.extend(self.env.call_witnesses(self.cc_rand));
+        w
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.kernel_self());
+        o.extend(self.env.read_b20(VAULT_EVM_ADDRESS, &self.env.vault_evm));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.read_b20(UNISWAP_ROUTER, &self.env.router));
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(
+            &self.env,
+            SWAP_EVENT_MAP,
+            &self.req(),
+            self.request_exists,
+            Some(self.env.burn_ops(&self.coin_nonce, &self.coin_color(), self.coin_value())),
+            Some((SWAP_SETTLE_VIEWS, self.view_av())),
+            self.cc_rand,
+        ));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x5a_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.swap_event_map = vec![(self.request_id(), self.req().av(&self.env))];
         }
+        pre
     }
 }
 
-// --- completeSwap ------------------------------------------------------------
-
-/// A concrete completeSwap() call settling SwapScenario's pending swap.
+/// `completeSwap(requestId, respond, serializedOutput: Bytes<8>,
+/// mintNonce, changeNonce)`.
 #[derive(Clone, Debug)]
 pub struct CompleteSwapScenario {
-    pub s: SwapScenario,
-    /// Does `swapRefundCommitment` hold the id? (The pending-swap marker.)
-    pub pending: bool,
-    /// The attested amountIn actually spent (≤ amountInMaximum).
+    pub s: StartSwapScenario,
+    pub settle: Settle,
+    /// The attested `amountIn` the swap spent (packed to 8 bytes).
     pub amount_in: u64,
-    /// The response KIND byte — M11 stage 5, `Art::Borsh` only. Defaults to
-    /// `RESPONSE_KIND_SWAP`.
-    pub response_kind: u8,
-    pub mint_nonce: [u8; 32],
-    pub own_pk: [u8; 32],
-    pub key_seed: u64,
-    pub nonce_seed: u64,
-    /// The secret the CALLER witnesses; `None` = the swapper's own.
-    pub claimant_sk: Option<[u8; 32]>,
+    pub change_nonce: [u8; 32],
 }
 
 impl CompleteSwapScenario {
-    /// The artifact this settle models (owned by the swap it settles).
-    pub fn art(&self) -> Art {
-        self.s.art
-    }
-
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> CompleteSwapScenario {
-        self.s.art = art;
-        self
-    }
-
     pub fn new() -> CompleteSwapScenario {
-        let mut mint_nonce = [0u8; 32];
-        mint_nonce[..10].copy_from_slice(b"swap-mint!");
-        mint_nonce[31] = 0x81;
-        let mut own_pk = [0u8; 32];
-        own_pk[..7].copy_from_slice(b"swap-pk");
-        own_pk[31] = 0x82;
         CompleteSwapScenario {
-            s: SwapScenario::new(),
-            pending: true,
-            amount_in: 88_888,
-            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
-            mint_nonce,
-            own_pk,
-            key_seed: 0xf00d_face,
-            nonce_seed: 0x0dd_b17,
-            claimant_sk: None,
+            s: StartSwapScenario::new(),
+            settle: Settle::new(),
+            amount_in: 55_000,
+            change_nonce: tagged32(b"change-nonce", 0x46),
         }
     }
 
-    /// The secret key the caller presents.
-    pub fn claimant_sk(&self) -> [u8; 32] {
-        self.claimant_sk.unwrap_or(self.s.sk)
+    pub fn env(&self) -> &Env {
+        &self.s.env
     }
 
-    pub fn mpc_key_av(&self) -> AlignedValue {
-        let generator = IrValue::Secp256k1Point(k256::K256::generator());
-        let key = ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap();
-        let alignment = Alignment(
-            erc20_vault::secp256k1_point_atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        alignment
-            .parse_field_repr(&natives(&key))
-            .expect("point limbs match the alignment")
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![Fr::from(self.amount_in)]
     }
 
-    /// The attested output's BYTES: the deployed 8-byte little-endian
-    /// `amountIn` (which stage 0 proved is already a canonical Borsh `u64`),
-    /// with the kind byte in front under `Art::Borsh` —
-    /// `borsh(SwapResponse { kind, amount_in })`.
-    pub fn attested_output_bytes(&self) -> Vec<u8> {
-        let mut bytes = match self.art() {
-            Art::Compat | Art::Opt => vec![],
-            Art::Borsh | Art::Modern => vec![self.response_kind],
-        };
-        bytes.extend(self.amount_in.to_le_bytes());
-        bytes
+    /// `amountInMaximum − amountIn`, when it does not underflow.
+    pub fn change(&self) -> Option<u64> {
+        self.s.amount_in_max_u64().checked_sub(self.amount_in)
     }
 
-    /// The attested output's ARGUMENT SLOTS: `amountIn` is ONE slot (a
-    /// `Uint<64>`), not eight bytes, so this is not the byte list.
-    pub fn attested_output_slots(&self) -> Vec<Fr> {
-        let mut slots = match self.art() {
-            Art::Compat | Art::Opt => vec![],
-            Art::Borsh | Art::Modern => vec![Fr::from(u64::from(self.response_kind))],
-        };
-        slots.push(Fr::from(self.amount_in));
-        slots
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        let (c_hi, c_lo) = b32_slots(&self.change_nonce);
+        inputs.extend([c_hi, c_lo]);
+        inputs
     }
 
-    pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
-        let mut bytes = self.s.request_id().to_vec();
-        bytes.extend(self.attested_output_bytes());
-        let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
-        let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
-        r_le.reverse();
-        s_le.reverse();
-        (r_le, s_le)
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
     }
 
-    /// The change coin's nonce, as this artifact derives it.
-    pub fn change_nonce(&self) -> [u8; 32] {
-        change_nonce(self.art(), &self.mint_nonce)
-    }
-
-    /// The reference Impact program, in the circuit's read/write order.
     pub fn ops(&self) -> Vec<VmOp> {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let request_id = self.s.request_id();
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let mint = |domain_sep: [u8; 32], amount: u64, cm: [u8; 32]| {
-            vec![
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(4)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &domain_sep)),
-                },
-                Op::Dup { n: 1 },
-                Op::Dup { n: 1 },
-                Op::Member,
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(8, &amount.to_le_bytes())),
-                },
-                Op::Swap { n: 0 },
-                Op::Neg,
-                Op::Branch { skip: 4 },
-                Op::Dup { n: 2 },
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![Key::Stack].into(),
-                },
-                Op::Add,
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(2)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &cm)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]
-        };
-
-        let color_out = vault_color(self.art(), &self.s.token_out, &self.s.self_addr);
-        let color_in = vault_color(self.art(), &self.s.token_in, &self.s.self_addr);
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(SWAP_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(SWAP_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(SWAP_EVENT_MAP, &rid));
+        o.extend(ops::remove(SWAP_SETTLE_VIEWS, &rid));
+        o.extend(env.mint_to_key_ops(&self.s.token_out, self.s.amount_out_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        // The change coin (the wrapping difference when it underflows —
+        // the circuit rejects before this is read).
         let change = self.s.amount_in_max_u64().wrapping_sub(self.amount_in);
-        let cm_out = coin_commitment_of(
-            &b32_slots(&self.mint_nonce),
-            &color_out,
-            self.s.amount_out_u64(),
-            true,
-            &self.own_pk,
-        );
-        let cm_change = coin_commitment_of(
-            &b32_slots(&self.change_nonce()),
-            &color_in,
-            change,
-            true,
-            &self.own_pk,
-        );
-
-        let mut ops = vec![
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(8, &self.s.initialized.to_le_bytes()),
-            },
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::MPC_RESPONSE_KEY)].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.mpc_key_av(),
-            },
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SWAP_REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Member,
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(1, &[u8::from(self.pending)]),
-            },
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SWAP_EVENT_MAP)].into(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.s.event_av(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SWAP_EVENT_MAP)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Rem { cached: false },
-            Op::Ins { cached: true, n: 1 },
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::SWAP_REFUND_COMMITMENT)].into(),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: bytesn_value(32, &self.s.refund_commitment()),
-            },
-            Op::Idx {
-                cached: false,
-                push_path: true,
-                path: vec![field_key(erc20_vault::SWAP_REFUND_COMMITMENT)].into(),
-            },
-            Op::Push {
-                storage: false,
-                value: cell(bytesn_value(32, &request_id)),
-            },
-            Op::Rem { cached: false },
-            Op::Ins { cached: true, n: 1 },
-        ];
-        ops.extend(kernel_self_ops(&self.s.self_addr));
-        ops.extend(mint(
-            vault_domain_sep(self.art(), &self.s.token_out),
-            self.s.amount_out_u64(),
-            cm_out,
-        ));
-        // The change mint's own kernel.self read — one read serves both
-        // mints in the optimized artifact (rung i, avenue 7).
-        if self.art() == Art::Compat {
-            ops.extend(kernel_self_ops(&self.s.self_addr));
-        }
-        ops.extend(mint(vault_domain_sep(self.art(), &self.s.token_in), change, cm_change));
-        ops
+        o.extend(env.mint_to_key_ops(&self.s.token_in, change, &self.change_nonce, &self.settle.own_pk));
+        o
     }
 
-    /// The `ProofPreimage` this call implies: arguments, witnesses, the op
-    /// stream's `field_repr`, and the popeq results in read order.
     pub fn preimage(&self) -> ProofPreimage {
-        let ops = self.ops();
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xc5a_0517u64))
+    }
 
-        let request_id = self.s.request_id();
-        let (rid_hi, rid_lo) = b32_slots(&request_id);
-        let (rx, sx) = self.signature_be();
-        let (rx_hi, rx_lo) = b32_slots(&rx);
-        let (s_hi, s_lo) = b32_slots(&sx);
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
-        let mut inputs = vec![
-            rid_hi,
-            rid_lo,
-            rx_hi,
-            rx_lo,
-            Fr::from(0u64),
-            Fr::from(0u64),
-            s_hi,
-            s_lo,
-            Fr::from(0u64),
-        ];
-        inputs.extend(self.attested_output_slots());
-        inputs.extend([n_hi, n_lo]);
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        pre.swap_event_map = vec![(rid, self.s.req().av(self.env()))];
+        if self.settle.pending {
+            pre.swap_settle_views = vec![(rid, self.s.view_av())];
         }
-        let mut avs = vec![
-            bytesn_value(8, &self.s.initialized.to_le_bytes()),
-            self.mpc_key_av(),
-            bytesn_value(1, &[u8::from(self.pending)]),
-            self.s.event_av(),
-            bytesn_value(32, &self.s.refund_commitment()),
-            bytesn_value(32, &self.s.self_addr),
-        ];
-        if self.art() == Art::Compat {
-            avs.push(bytesn_value(32, &self.s.self_addr));
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
-        let (sk_hi, sk_lo) = b32_slots(&self.claimant_sk());
-        let (pk_hi, pk_lo) = b32_slots(&self.own_pk);
-        let rand = Fr::from(0xc054a9u64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: vec![sk_hi, sk_lo, pk_hi, pk_lo],
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
+        pre
     }
 }
 
-// --- refund ------------------------------------------------------------------
-
-/// Which pending request the refund settles.
+/// `refundSwap(requestId, respond, serializedOutput: Bytes<5>, mintNonce)`.
 #[derive(Clone, Debug)]
-pub enum RefundRoute {
-    Withdrawal(WithdrawScenario),
-    Swap(SwapScenario),
-}
-
-/// A concrete refund() call (the MPC attested the fixed failure output).
-#[derive(Clone, Debug)]
-pub struct RefundScenario {
-    pub route: RefundRoute,
-    pub mint_nonce: [u8; 32],
-    pub own_pk: [u8; 32],
-    pub key_seed: u64,
-    pub nonce_seed: u64,
-    /// The attested 5-byte output. Only the protocol's fixed failure
-    /// sentinel refunds. `Art::Compat`/`Art::Opt` only — the Borsh artifact
-    /// replaced the sentinel with the response kind.
+pub struct RefundSwapScenario {
+    pub s: StartSwapScenario,
+    pub settle: Settle,
     pub serialized_output: [u8; 5],
-    /// The response KIND byte — M11 stage 5, `Art::Borsh` only, where it is
-    /// the WHOLE attested output. Defaults to `RESPONSE_KIND_FAILURE`; the
-    /// generator moves the two in lockstep, so one generated case says "a
-    /// failure response" or "not a failure response" to all three artifacts.
-    pub response_kind: u8,
-    /// `initialized` at call time.
-    pub initialized: u64,
-    /// The secret the CALLER witnesses; `None` = the withdrawer's/swapper's
-    /// own.
-    pub claimant_sk: Option<[u8; 32]>,
-    /// Cross-route trap: also place the id in the OTHER route's pending
-    /// marker. refund routes on `refundCommitment.member` ALONE, so this
-    /// must not change the outcome.
-    pub also_other_marker: bool,
 }
 
-impl RefundScenario {
-    /// The artifact this settle models (owned by the request it refunds).
-    pub fn art(&self) -> Art {
-        match &self.route {
-            RefundRoute::Withdrawal(w) => w.art,
-            RefundRoute::Swap(s) => s.art,
+impl RefundSwapScenario {
+    pub fn new() -> RefundSwapScenario {
+        RefundSwapScenario {
+            s: StartSwapScenario::new(),
+            settle: Settle::new(),
+            serialized_output: v::MPC_FAILURE_OUTPUT,
         }
     }
 
-    /// The same call against the other artifact.
-    pub fn with_art(mut self, art: Art) -> RefundScenario {
-        match &mut self.route {
-            RefundRoute::Withdrawal(w) => w.art = art,
-            RefundRoute::Swap(s) => s.art = art,
+    pub fn env(&self) -> &Env {
+        &self.s.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![failure_output_limb(&self.serialized_output)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(SWAP_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(SWAP_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(SWAP_EVENT_MAP, &rid));
+        o.extend(ops::remove(SWAP_SETTLE_VIEWS, &rid));
+        o.extend(env.mint_to_key_ops(&self.s.token_in, self.s.amount_in_max_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x4e5a_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        pre.swap_event_map = vec![(rid, self.s.req().av(self.env()))];
+        if self.settle.pending {
+            pre.swap_settle_views = vec![(rid, self.s.view_av())];
         }
-        self
+        pre
     }
+}
 
-    pub fn new(route: RefundRoute) -> RefundScenario {
-        let mut mint_nonce = [0u8; 32];
-        mint_nonce[..11].copy_from_slice(b"never-nonce");
-        mint_nonce[31] = 0x91;
-        let mut own_pk = [0u8; 32];
-        own_pk[..8].copy_from_slice(b"never-pk");
-        own_pk[31] = 0x92;
-        RefundScenario {
-            route,
-            mint_nonce,
-            own_pk,
-            key_seed: 0xf00d_face,
-            nonce_seed: 0x0dd_b17,
-            serialized_output: erc20_vault::MPC_FAILURE_OUTPUT,
-            response_kind: kind(erc20_vault_pending::RESPONSE_KIND_FAILURE),
-            initialized: 1,
-            claimant_sk: None,
-            also_other_marker: false,
+// ==== supply (Aave, via the stataUSDC wrapper) =============================================
+
+/// `startSupply(evmNonce, keyVersion, amount, coin)`.
+#[derive(Clone, Debug)]
+pub struct StartSupplyScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
+    pub evm_nonce: u64,
+    pub key_version: u8,
+    pub amount: u128,
+    pub coin_nonce: [u8; 32],
+    pub coin_color: Option<[u8; 32]>,
+    pub coin_value: Option<u128>,
+    pub request_exists: bool,
+    pub cc_rand: Fr,
+}
+
+impl StartSupplyScenario {
+    pub fn new() -> StartSupplyScenario {
+        StartSupplyScenario {
+            env: Env::new(),
+            sk: tagged32(b"supplier", 0x24),
+            evm_nonce: 17,
+            key_version: 1,
+            amount: 250_000,
+            coin_nonce: tagged32(b"supply-coin-nonce", 0x47),
+            coin_color: None,
+            coin_value: None,
+            request_exists: false,
+            cc_rand: Fr::from(0x5099_17u64),
         }
     }
 
-    /// The secret key the caller presents.
-    pub fn claimant_sk(&self) -> [u8; 32] {
-        self.claimant_sk.unwrap_or(self.sk())
+    pub fn amount_u64(&self) -> u64 {
+        unbounded_to_u64(self.amount)
     }
 
-    /// The vault's own address in this scenario's route.
-    pub fn self_addr(&self) -> [u8; 32] {
-        match &self.route {
-            RefundRoute::Withdrawal(w) => w.self_addr,
-            RefundRoute::Swap(s) => s.self_addr,
+    /// The vault token's colour for the underlying.
+    pub fn vault_color(&self) -> [u8; 32] {
+        vault_color(&self.env.stata_underlying, &self.env.self_addr)
+    }
+
+    pub fn coin_color(&self) -> [u8; 32] {
+        self.coin_color.unwrap_or_else(|| self.vault_color())
+    }
+
+    pub fn coin_value(&self) -> u128 {
+        self.coin_value.unwrap_or(self.amount)
+    }
+
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::LENDING_GAS,
+                self.env.stata_token,
+                v::DEPOSIT_SELECTOR,
+                vec![abi_num_word(self.amount), abi_addr_word(&self.env.vault_evm)],
+            ),
+            out_schema: v::SUPPLY_OUTPUT_SCHEMA,
+            respond_schema: v::SUPPLY_RESPOND_SCHEMA,
         }
     }
 
     pub fn request_id(&self) -> [u8; 32] {
-        match &self.route {
-            RefundRoute::Withdrawal(w) => w.request_id(),
-            RefundRoute::Swap(s) => s.request_id(),
-        }
+        self.req().request_id(&self.env)
     }
 
-    pub fn sk(&self) -> [u8; 32] {
-        match &self.route {
-            RefundRoute::Withdrawal(w) => w.sk,
-            RefundRoute::Swap(s) => s.sk,
-        }
+    pub fn refund_commitment(&self) -> [u8; 32] {
+        refund_commitment(&self.sk, &self.request_id())
     }
 
-    pub fn mpc_key_av(&self) -> AlignedValue {
-        let generator = IrValue::Secp256k1Point(k256::K256::generator());
-        let key = ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap();
-        let alignment = Alignment(
-            erc20_vault::secp256k1_point_atoms()
-                .into_iter()
-                .map(AlignmentSegment::Atom)
-                .collect(),
-        );
-        alignment
-            .parse_field_repr(&natives(&key))
-            .expect("point limbs match the alignment")
+    /// The `SupplySettleView` the request pins.
+    pub fn view_av(&self) -> AlignedValue {
+        let (c_hi, c_lo) = b32_slots(&self.refund_commitment());
+        aligned(&[32, 8], &[c_hi, c_lo, Fr::from(self.amount_u64())])
     }
 
-    /// The attested output's BYTES: the deployed 5-byte `0xdeadbeef01`
-    /// sentinel, or — under `Art::Borsh` — the single kind byte that replaced
-    /// it, `borsh(FailureResponse { kind })`.
-    pub fn attested_output_bytes(&self) -> Vec<u8> {
-        match self.art() {
-            Art::Compat | Art::Opt => self.serialized_output.to_vec(),
-            Art::Borsh | Art::Modern => vec![self.response_kind],
-        }
+    pub fn coin_inputs(&self) -> Vec<Fr> {
+        let (n_hi, n_lo) = b32_slots(&self.coin_nonce);
+        let (c_hi, c_lo) = b32_slots(&self.coin_color());
+        vec![n_hi, n_lo, c_hi, c_lo, u128_limb(self.coin_value())]
     }
 
-    /// The attested output's ARGUMENT SLOTS: one either way — five packed
-    /// little-endian bytes, or the kind byte.
-    pub fn attested_output_slots(&self) -> Vec<Fr> {
-        match self.art() {
-            Art::Compat | Art::Opt => {
-                vec![Fr::from_le_bytes(&self.serialized_output).unwrap()]
-            }
-            Art::Borsh | Art::Modern => vec![Fr::from(u64::from(self.response_kind))],
-        }
-    }
-
-    pub fn signature_be(&self) -> ([u8; 32], [u8; 32]) {
-        let mut bytes = self.request_id().to_vec();
-        bytes.extend(self.attested_output_bytes());
-        let digest: [u8; 32] = sha3::Keccak256::digest(&bytes).into();
-        let (mut r_le, mut s_le, _) = sign(&digest, &scalar(self.key_seed), &scalar(self.nonce_seed));
-        r_le.reverse();
-        s_le.reverse();
-        (r_le, s_le)
-    }
-
-    /// The reference Impact program, plus the popeq results in read order
-    /// (refund's two routes interleave the two, so they are built once).
-    pub fn ops_and_reads(&self) -> (Vec<VmOp>, Vec<AlignedValue>) {
-        let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
-        let request_id = self.request_id();
-        let kernel_self_ops = |result: &[u8; 32]| {
-            vec![
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![field_key(0)].into(),
-                },
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(32, result),
-                },
-            ]
-        };
-        let mint = |domain_sep: [u8; 32], amount: u64, cm: [u8; 32]| {
-            vec![
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(4)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &domain_sep)),
-                },
-                Op::Dup { n: 1 },
-                Op::Dup { n: 1 },
-                Op::Member,
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(8, &amount.to_le_bytes())),
-                },
-                Op::Swap { n: 0 },
-                Op::Neg,
-                Op::Branch { skip: 4 },
-                Op::Dup { n: 2 },
-                Op::Dup { n: 2 },
-                Op::Idx {
-                    cached: true,
-                    push_path: false,
-                    path: vec![Key::Stack].into(),
-                },
-                Op::Add,
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-                Op::Swap { n: 0 },
-                Op::Idx {
-                    cached: true,
-                    push_path: true,
-                    path: vec![field_key(2)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &cm)),
-                },
-                Op::Push {
-                    storage: false,
-                    value: StateValue::Null,
-                },
-                Op::Ins { cached: true, n: 2 },
-                Op::Swap { n: 0 },
-            ]
-        };
-        let remove = |field: u8| {
-            vec![
-                Op::Idx {
-                    cached: false,
-                    push_path: true,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &request_id)),
-                },
-                Op::Rem { cached: false },
-                Op::Ins { cached: true, n: 1 },
-            ]
-        };
-        let lookup = |field: u8, result: AlignedValue| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![Key::Value(bytesn_value(32, &request_id))].into(),
-                },
-                Op::Popeq {
-                    cached: false,
-                    result,
-                },
-            ]
-        };
-        let member = |field: u8, result: u8| {
-            vec![
-                Op::Dup { n: 0 },
-                Op::Idx {
-                    cached: false,
-                    push_path: false,
-                    path: vec![field_key(field)].into(),
-                },
-                Op::Push {
-                    storage: false,
-                    value: cell(bytesn_value(32, &request_id)),
-                },
-                Op::Member,
-                Op::Popeq {
-                    cached: true,
-                    result: bytesn_value(1, &[result]),
-                },
-            ]
-        };
-
-        let initialized: u64 = self.initialized;
-        let mut ops = vec![
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::INITIALIZED)].into(),
-            },
-            Op::Popeq {
-                cached: true,
-                result: bytesn_value(8, &initialized.to_le_bytes()),
-            },
-            Op::Dup { n: 0 },
-            Op::Idx {
-                cached: false,
-                push_path: false,
-                path: vec![field_key(erc20_vault::MPC_RESPONSE_KEY)].into(),
-            },
-            Op::Popeq {
-                cached: false,
-                result: self.mpc_key_av(),
-            },
-        ];
-        let mut avs = vec![
-            bytesn_value(8, &initialized.to_le_bytes()),
-            self.mpc_key_av(),
-        ];
-        // The optimized artifact reads kernel.self ONCE, unguarded, right
-        // after the routing member test, and both branches' mints use it
-        // (rung i, avenue 7). The port instead reads it inside whichever
-        // branch runs, so its read lands later — and in a different place
-        // per route. Either way the transcript carries exactly one answer.
-        // (`!= Compat` rather than `== Opt`: the M11 Borsh artifact is a fork
-        // OF the optimized one and inherits every M10 rung, so the op stream
-        // it expects is the optimized one — as it is everywhere else in this
-        // file, which asks `art == Art::Compat`.)
-        let shared_self = self.art() != Art::Compat;
-        match &self.route {
-            RefundRoute::Withdrawal(w) => {
-                ops.extend(member(erc20_vault::REFUND_COMMITMENT, 1));
-                avs.push(bytesn_value(1, &[1]));
-                if shared_self {
-                    ops.extend(kernel_self_ops(&w.self_addr));
-                    avs.push(bytesn_value(32, &w.self_addr));
-                }
-                ops.extend(lookup(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP, w.event_av()));
-                avs.push(w.event_av());
-                ops.extend(remove(erc20_vault::SIGN_BIDIRECTIONAL_EVENT_MAP));
-                ops.extend(lookup(
-                    erc20_vault::REFUND_COMMITMENT,
-                    bytesn_value(32, &w.refund_commitment()),
-                ));
-                avs.push(bytesn_value(32, &w.refund_commitment()));
-                if !shared_self {
-                    ops.extend(kernel_self_ops(&w.self_addr));
-                    avs.push(bytesn_value(32, &w.self_addr));
-                }
-                let color = vault_color(self.art(), &w.erc20, &w.self_addr);
-                let cm = coin_commitment_of(
-                    &b32_slots(&self.mint_nonce),
-                    &color,
-                    w.amount_u64(),
-                    true,
-                    &self.own_pk,
-                );
-                let mint_ops =
-                    mint(vault_domain_sep(self.art(), &w.erc20), w.amount_u64(), cm);
-                let remove_ops = remove(erc20_vault::REFUND_COMMITMENT);
-                if self.art() != Art::Compat {
-                    // Rung 5(iv), avenue 4: the merged re-mint runs after BOTH
-                    // routes' guarded commitment-map removes, so on the
-                    // withdrawal route the refundCommitment remove precedes the
-                    // single mint. The port keeps compactc's order (mint, then
-                    // remove).
-                    ops.extend(remove_ops);
-                    ops.extend(mint_ops);
-                } else {
-                    ops.extend(mint_ops);
-                    ops.extend(remove_ops);
-                }
-            }
-            RefundRoute::Swap(s) => {
-                ops.extend(member(erc20_vault::REFUND_COMMITMENT, 0));
-                avs.push(bytesn_value(1, &[0]));
-                if shared_self {
-                    ops.extend(kernel_self_ops(&s.self_addr));
-                    avs.push(bytesn_value(32, &s.self_addr));
-                }
-                ops.extend(member(erc20_vault::SWAP_REFUND_COMMITMENT, 1));
-                avs.push(bytesn_value(1, &[1]));
-                ops.extend(lookup(erc20_vault::SWAP_EVENT_MAP, s.event_av()));
-                avs.push(s.event_av());
-                ops.extend(remove(erc20_vault::SWAP_EVENT_MAP));
-                ops.extend(lookup(
-                    erc20_vault::SWAP_REFUND_COMMITMENT,
-                    bytesn_value(32, &s.refund_commitment()),
-                ));
-                avs.push(bytesn_value(32, &s.refund_commitment()));
-                ops.extend(remove(erc20_vault::SWAP_REFUND_COMMITMENT));
-                if !shared_self {
-                    ops.extend(kernel_self_ops(&s.self_addr));
-                    avs.push(bytesn_value(32, &s.self_addr));
-                }
-                let color = vault_color(self.art(), &s.token_in, &s.self_addr);
-                let cm = coin_commitment_of(
-                    &b32_slots(&self.mint_nonce),
-                    &color,
-                    s.amount_in_max_u64(),
-                    true,
-                    &self.own_pk,
-                );
-                ops.extend(mint(
-                    vault_domain_sep(self.art(), &s.token_in),
-                    s.amount_in_max_u64(),
-                    cm,
-                ));
-            }
-        }
-        (ops, avs)
-    }
-
-    /// The reference Impact program, in the circuit's read/write order.
-    pub fn ops(&self) -> Vec<VmOp> {
-        self.ops_and_reads().0
-    }
-
-    /// The `ProofPreimage` this call implies.
-    pub fn preimage(&self) -> ProofPreimage {
-        let (ops, avs) = self.ops_and_reads();
-        let request_id = self.request_id();
-        let (rid_hi, rid_lo) = b32_slots(&request_id);
-        let (rx, sx) = self.signature_be();
-        let (rx_hi, rx_lo) = b32_slots(&rx);
-        let (s_hi, s_lo) = b32_slots(&sx);
-        let (n_hi, n_lo) = b32_slots(&self.mint_nonce);
+    pub fn inputs(&self) -> Vec<Fr> {
         let mut inputs = vec![
-            rid_hi,
-            rid_lo,
-            rx_hi,
-            rx_lo,
-            Fr::from(0u64),
-            Fr::from(0u64),
-            s_hi,
-            s_lo,
-            Fr::from(0u64),
+            Fr::from(self.evm_nonce),
+            Fr::from(u64::from(self.key_version)),
+            u128_limb(self.amount),
         ];
-        inputs.extend(self.attested_output_slots());
-        inputs.extend([n_hi, n_lo]);
-        let mut transcript = Vec::new();
-        for op in ops {
-            op.field_repr(&mut transcript);
-        }
-        let mut outputs = Vec::new();
-        for av in avs {
-            ValueReprAlignedValue(av).field_repr(&mut outputs);
-        }
-        let (sk_hi, sk_lo) = b32_slots(&self.claimant_sk());
-        let (pk_hi, pk_lo) = b32_slots(&self.own_pk);
-        let rand = Fr::from(0xde5_e77_1eu64);
-        let comm_c = transient_commit(&inputs[..], rand);
-        ProofPreimage {
-            inputs,
-            private_transcript: vec![sk_hi, sk_lo, pk_hi, pk_lo],
-            public_transcript_inputs: transcript,
-            public_transcript_outputs: outputs,
-            binding_input: 0.into(),
-            communications_commitment: Some((comm_c, rand)),
-            key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-        }
+        inputs.extend(self.coin_inputs());
+        inputs
     }
-}
 
-// --- pre-states ---------------------------------------------------------------
-//
-// Each scenario knows what its circuit's reads must return; a `PreState` is
-// simply that knowledge laid out as the 13-field ledger tree. It is not
-// redundant with the `Popeq` results in `ops()`: the executor runs in VERIFY
-// mode, so `ResultModeVerify::process_read` compares every popeq result
-// against what the real state holds and errors `ReadMismatch` if the two
-// ever drift apart. Building both is what makes that check bite.
-
-use super::exec::PreState;
-
-impl Scenario {
-    /// `initialized == count`, `deployer == commitment`.
-    pub fn pre_state(&self, count: u64) -> PreState {
-        PreState {
-            initialized: count,
-            deployer: self.commitment(),
-            ..Default::default()
-        }
+    pub fn witnesses(&self) -> Vec<Fr> {
+        let (sk_hi, sk_lo) = b32_slots(&self.sk);
+        let mut w = vec![sk_hi, sk_lo];
+        w.extend(self.env.call_witnesses(self.cc_rand));
+        w
     }
-}
 
-impl DepositScenario {
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_b20(STATA_UNDERLYING, &self.env.stata_underlying));
+        o.extend(self.env.kernel_self());
+        o.extend(self.env.read_b20(VAULT_EVM_ADDRESS, &self.env.vault_evm));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.read_b20(STATA_TOKEN, &self.env.stata_token));
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(
+            &self.env,
+            SUPPLY_EVENT_MAP,
+            &self.req(),
+            self.request_exists,
+            Some(self.env.burn_ops(&self.coin_nonce, &self.coin_color(), self.coin_value())),
+            Some((SUPPLY_SETTLE_VIEWS, self.view_av())),
+            self.cc_rand,
+        ));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x50_0517u64))
+    }
+
     pub fn pre_state(&self) -> PreState {
-        PreState {
-            sign_event_map: if self.request_exists {
-                vec![(self.request_id(), self.event_av())]
-            } else {
-                vec![]
-            },
-            signet_signer: self.signer_addr,
-            request_nonce: self.request_nonce,
-            initialized: self.initialized,
-            vault_evm: self.vault_evm,
-            chain_id: self.chain_id,
-            caip2: self.caip2,
-            ..Default::default()
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.supply_event_map = vec![(self.request_id(), self.req().av(&self.env))];
         }
+        pre
     }
 }
 
-impl ClaimScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            sign_event_map: if self.found {
-                vec![(self.d.request_id(), self.d.event_av())]
-            } else {
-                vec![]
-            },
-            mpc_response_key: Some(self.mpc_key_av()),
-            initialized: self.d.initialized,
-            ..Default::default()
+/// `completeSupply(requestId, respond, serializedOutput: Bytes<8>,
+/// mintNonce)`.
+#[derive(Clone, Debug)]
+pub struct CompleteSupplyScenario {
+    pub s: StartSupplyScenario,
+    pub settle: Settle,
+    /// The attested shares minted by the wrapper.
+    pub shares: u64,
+}
+
+impl CompleteSupplyScenario {
+    pub fn new() -> CompleteSupplyScenario {
+        CompleteSupplyScenario {
+            s: StartSupplyScenario::new(),
+            settle: Settle::new(),
+            shares: 249_000,
         }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.s.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![Fr::from(self.shares)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(SUPPLY_EVENT_MAP, &rid, self.settle.pending));
+        o.extend(ops::remove(SUPPLY_EVENT_MAP, &rid));
+        o.extend(ops::lookup(SUPPLY_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(SUPPLY_SETTLE_VIEWS, &rid));
+        o.extend(env.read_b20(STATA_TOKEN, &env.stata_token));
+        o.extend(env.mint_to_key_ops(&env.stata_token, self.shares, &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xc50_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        if self.settle.pending {
+            pre.supply_event_map = vec![(rid, self.s.req().av(self.env()))];
+        }
+        pre.supply_settle_views = vec![(rid, self.s.view_av())];
+        pre
     }
 }
 
-impl ApproveScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            sign_event_map: if self.request_exists {
-                vec![(self.request_id(), self.event_av())]
-            } else {
-                vec![]
-            },
-            signet_signer: self.signer_addr,
-            request_nonce: self.request_nonce,
-            initialized: self.initialized,
-            chain_id: self.chain_id,
-            caip2: self.caip2,
-            uniswap_router: self.router,
-            ..Default::default()
+/// `refundSupply(requestId, respond, serializedOutput: Bytes<5>, mintNonce)`.
+#[derive(Clone, Debug)]
+pub struct RefundSupplyScenario {
+    pub s: StartSupplyScenario,
+    pub settle: Settle,
+    pub serialized_output: [u8; 5],
+}
+
+impl RefundSupplyScenario {
+    pub fn new() -> RefundSupplyScenario {
+        RefundSupplyScenario {
+            s: StartSupplyScenario::new(),
+            settle: Settle::new(),
+            serialized_output: v::MPC_FAILURE_OUTPUT,
         }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.s.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![failure_output_limb(&self.serialized_output)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(SUPPLY_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(SUPPLY_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(SUPPLY_EVENT_MAP, &rid));
+        o.extend(ops::remove(SUPPLY_SETTLE_VIEWS, &rid));
+        o.extend(env.read_b20(STATA_UNDERLYING, &env.stata_underlying));
+        o.extend(env.mint_to_key_ops(&env.stata_underlying, self.s.amount_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x4e50_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        pre.supply_event_map = vec![(rid, self.s.req().av(self.env()))];
+        if self.settle.pending {
+            pre.supply_settle_views = vec![(rid, self.s.view_av())];
+        }
+        pre
     }
 }
 
-impl WithdrawScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            sign_event_map: if self.request_exists {
-                vec![(self.request_id(), self.event_av())]
-            } else {
-                vec![]
-            },
-            signet_signer: self.signer_addr,
-            request_nonce: self.request_nonce,
-            initialized: self.initialized,
-            chain_id: self.chain_id,
-            caip2: self.caip2,
-            ..Default::default()
+// ==== redeem (Aave, via the stataUSDC wrapper) =============================================
+
+/// `startRedeem(evmNonce, keyVersion, shares, coin)`.
+#[derive(Clone, Debug)]
+pub struct StartRedeemScenario {
+    pub env: Env,
+    pub sk: [u8; 32],
+    pub evm_nonce: u64,
+    pub key_version: u8,
+    pub shares: u128,
+    pub coin_nonce: [u8; 32],
+    pub coin_color: Option<[u8; 32]>,
+    pub coin_value: Option<u128>,
+    pub request_exists: bool,
+    pub cc_rand: Fr,
+}
+
+impl StartRedeemScenario {
+    pub fn new() -> StartRedeemScenario {
+        StartRedeemScenario {
+            env: Env::new(),
+            sk: tagged32(b"redeemer", 0x25),
+            evm_nonce: 19,
+            key_version: 1,
+            shares: 240_000,
+            coin_nonce: tagged32(b"redeem-coin-nonce", 0x48),
+            coin_color: None,
+            coin_value: None,
+            request_exists: false,
+            cc_rand: Fr::from(0x4ed_0517u64),
         }
+    }
+
+    pub fn shares_u64(&self) -> u64 {
+        unbounded_to_u64(self.shares)
+    }
+
+    /// The vault token's colour for the wrapper.
+    pub fn vault_color(&self) -> [u8; 32] {
+        vault_color(&self.env.stata_token, &self.env.self_addr)
+    }
+
+    pub fn coin_color(&self) -> [u8; 32] {
+        self.coin_color.unwrap_or_else(|| self.vault_color())
+    }
+
+    pub fn coin_value(&self) -> u128 {
+        self.coin_value.unwrap_or(self.shares)
+    }
+
+    pub fn req(&self) -> Req {
+        Req {
+            key_version: self.key_version,
+            path: pad32(v::VAULT_PATH),
+            tx: Tx::fixed(
+                self.evm_nonce,
+                v::LENDING_GAS,
+                self.env.stata_token,
+                v::REDEEM_SELECTOR,
+                vec![
+                    abi_num_word(self.shares),
+                    abi_addr_word(&self.env.vault_evm),
+                    abi_addr_word(&self.env.vault_evm),
+                ],
+            ),
+            out_schema: v::REDEEM_OUTPUT_SCHEMA,
+            respond_schema: v::REDEEM_RESPOND_SCHEMA,
+        }
+    }
+
+    pub fn request_id(&self) -> [u8; 32] {
+        self.req().request_id(&self.env)
+    }
+
+    pub fn refund_commitment(&self) -> [u8; 32] {
+        refund_commitment(&self.sk, &self.request_id())
+    }
+
+    /// The `RedeemSettleView` the request pins.
+    pub fn view_av(&self) -> AlignedValue {
+        let (c_hi, c_lo) = b32_slots(&self.refund_commitment());
+        aligned(&[32, 8], &[c_hi, c_lo, Fr::from(self.shares_u64())])
+    }
+
+    pub fn coin_inputs(&self) -> Vec<Fr> {
+        let (n_hi, n_lo) = b32_slots(&self.coin_nonce);
+        let (c_hi, c_lo) = b32_slots(&self.coin_color());
+        vec![n_hi, n_lo, c_hi, c_lo, u128_limb(self.coin_value())]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = vec![
+            Fr::from(self.evm_nonce),
+            Fr::from(u64::from(self.key_version)),
+            u128_limb(self.shares),
+        ];
+        inputs.extend(self.coin_inputs());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        let (sk_hi, sk_lo) = b32_slots(&self.sk);
+        let mut w = vec![sk_hi, sk_lo];
+        w.extend(self.env.call_witnesses(self.cc_rand));
+        w
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let mut o = self.env.read_initialised();
+        o.extend(self.env.read_b20(STATA_TOKEN, &self.env.stata_token));
+        o.extend(self.env.kernel_self());
+        // redeem(shares, vault, vault): the cell is read once per word.
+        o.extend(self.env.read_b20(VAULT_EVM_ADDRESS, &self.env.vault_evm));
+        o.extend(self.env.read_b20(VAULT_EVM_ADDRESS, &self.env.vault_evm));
+        o.extend(self.env.read_chain_id());
+        o.extend(self.env.read_b20(STATA_TOKEN, &self.env.stata_token));
+        o.extend(self.env.assemble_request_reads());
+        o.extend(request_tail(
+            &self.env,
+            REDEEM_EVENT_MAP,
+            &self.req(),
+            self.request_exists,
+            Some(self.env.burn_ops(&self.coin_nonce, &self.coin_color(), self.coin_value())),
+            Some((REDEEM_SETTLE_VIEWS, self.view_av())),
+            self.cc_rand,
+        ));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x4ede_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env.pre_state();
+        if self.request_exists {
+            pre.redeem_event_map = vec![(self.request_id(), self.req().av(&self.env))];
+        }
+        pre
     }
 }
 
-impl CompleteWithdrawScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            sign_event_map: vec![(self.w.request_id(), self.w.event_av())],
-            mpc_response_key: Some(self.mpc_key_av()),
-            initialized: self.w.initialized,
-            refund_commitment: if self.pending {
-                vec![(self.w.request_id(), self.w.refund_commitment())]
-            } else {
-                vec![]
-            },
-            ..Default::default()
+/// `completeRedeem(requestId, respond, serializedOutput: Bytes<8>,
+/// mintNonce)`.
+#[derive(Clone, Debug)]
+pub struct CompleteRedeemScenario {
+    pub s: StartRedeemScenario,
+    pub settle: Settle,
+    /// The attested assets the wrapper paid out.
+    pub assets: u64,
+}
+
+impl CompleteRedeemScenario {
+    pub fn new() -> CompleteRedeemScenario {
+        CompleteRedeemScenario {
+            s: StartRedeemScenario::new(),
+            settle: Settle::new(),
+            assets: 241_500,
         }
+    }
+
+    pub fn env(&self) -> &Env {
+        &self.s.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![Fr::from(self.assets)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(REDEEM_EVENT_MAP, &rid, self.settle.pending));
+        o.extend(ops::remove(REDEEM_EVENT_MAP, &rid));
+        o.extend(ops::lookup(REDEEM_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(REDEEM_SETTLE_VIEWS, &rid));
+        o.extend(env.read_b20(STATA_UNDERLYING, &env.stata_underlying));
+        o.extend(env.mint_to_key_ops(&env.stata_underlying, self.assets, &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0xc4ed_0517u64))
+    }
+
+    pub fn pre_state(&self) -> PreState {
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        if self.settle.pending {
+            pre.redeem_event_map = vec![(rid, self.s.req().av(self.env()))];
+        }
+        pre.redeem_settle_views = vec![(rid, self.s.view_av())];
+        pre
     }
 }
 
-impl SwapScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            signet_signer: self.signer_addr,
-            request_nonce: self.request_nonce,
-            initialized: self.initialized,
-            vault_evm: self.vault_evm,
-            chain_id: self.chain_id,
-            caip2: self.caip2,
-            uniswap_router: self.router,
-            swap_event_map: if self.request_exists {
-                vec![(self.request_id(), self.event_av())]
-            } else {
-                vec![]
-            },
-            ..Default::default()
-        }
-    }
+/// `refundRedeem(requestId, respond, serializedOutput: Bytes<5>, mintNonce)`.
+#[derive(Clone, Debug)]
+pub struct RefundRedeemScenario {
+    pub s: StartRedeemScenario,
+    pub settle: Settle,
+    pub serialized_output: [u8; 5],
 }
 
-impl CompleteSwapScenario {
-    pub fn pre_state(&self) -> PreState {
-        PreState {
-            mpc_response_key: Some(self.mpc_key_av()),
-            initialized: self.s.initialized,
-            swap_event_map: vec![(self.s.request_id(), self.s.event_av())],
-            swap_refund_commitment: if self.pending {
-                vec![(self.s.request_id(), self.s.refund_commitment())]
-            } else {
-                vec![]
-            },
-            ..Default::default()
+impl RefundRedeemScenario {
+    pub fn new() -> RefundRedeemScenario {
+        RefundRedeemScenario {
+            s: StartRedeemScenario::new(),
+            settle: Settle::new(),
+            serialized_output: v::MPC_FAILURE_OUTPUT,
         }
     }
-}
 
-impl RefundScenario {
+    pub fn env(&self) -> &Env {
+        &self.s.env
+    }
+
+    pub fn output_limbs(&self) -> Vec<Fr> {
+        vec![failure_output_limb(&self.serialized_output)]
+    }
+
+    pub fn inputs(&self) -> Vec<Fr> {
+        let mut inputs = self.settle.head_inputs(self.env(), &self.s.request_id(), &self.output_limbs());
+        inputs.extend(self.settle.nonce_slots());
+        inputs
+    }
+
+    pub fn witnesses(&self) -> Vec<Fr> {
+        self.settle.witnesses_with_own_pk(&self.s.sk)
+    }
+
+    pub fn ops(&self) -> Vec<VmOp> {
+        let env = self.env();
+        let rid = self.s.request_id();
+        let mut o = env.read_initialised();
+        o.extend(env.read_mpc_key());
+        o.extend(ops::member(REDEEM_SETTLE_VIEWS, &rid, self.settle.pending));
+        o.extend(ops::lookup(REDEEM_SETTLE_VIEWS, &rid, self.s.view_av()));
+        o.extend(ops::remove(REDEEM_EVENT_MAP, &rid));
+        o.extend(ops::remove(REDEEM_SETTLE_VIEWS, &rid));
+        o.extend(env.read_b20(STATA_TOKEN, &env.stata_token));
+        o.extend(env.mint_to_key_ops(&env.stata_token, self.s.shares_u64(), &self.settle.mint_nonce, &self.settle.own_pk));
+        o
+    }
+
+    pub fn preimage(&self) -> ProofPreimage {
+        preimage_of(self.inputs(), self.witnesses(), &self.ops(), Fr::from(0x4e4ed_0517u64))
+    }
+
     pub fn pre_state(&self) -> PreState {
-        let mut pre = PreState {
-            mpc_response_key: Some(self.mpc_key_av()),
-            initialized: self.initialized,
-            ..Default::default()
-        };
-        match &self.route {
-            RefundRoute::Withdrawal(w) => {
-                pre.sign_event_map = vec![(w.request_id(), w.event_av())];
-                pre.refund_commitment = vec![(w.request_id(), w.refund_commitment())];
-                if self.also_other_marker {
-                    // Cross-route trap: the same id ALSO carries a
-                    // pending-swap marker. refund routes on
-                    // refundCommitment.member alone, so this is inert.
-                    pre.swap_refund_commitment =
-                        vec![(w.request_id(), w.refund_commitment())];
-                }
-            }
-            RefundRoute::Swap(s) => {
-                pre.swap_event_map = vec![(s.request_id(), s.event_av())];
-                pre.swap_refund_commitment = vec![(s.request_id(), s.refund_commitment())];
-            }
+        let mut pre = self.env().pre_state();
+        let rid = self.s.request_id();
+        pre.redeem_event_map = vec![(rid, self.s.req().av(self.env()))];
+        if self.settle.pending {
+            pre.redeem_settle_views = vec![(rid, self.s.view_av())];
         }
         pre
     }

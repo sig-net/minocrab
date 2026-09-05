@@ -1,49 +1,19 @@
-//! The erc20-vault SPEC: nine total functions, one per circuit, from
-//! (pre-state, arguments, witnesses) to an [`Outcome`].
+//! The erc20-vault SPEC: each circuit as a total function from a scenario to
+//! an [`Outcome`] — which guard rejects, or which ledger effects are
+//! declared — in ordinary Rust, independent of the circuits and of the op
+//! streams the model emits.
 //!
-//! Written from `corpus/src/signet-midnight-examples/examples/erc20-vault/
-//! contract/src/erc20-vault.compact` and the `Signet.compact` helpers it
-//! calls — the Compact source is the authority, not the port and not the
-//! notes. Where the two disagreed the disagreements are recorded in
-//! notes/vault-optimization.org §"As built — step 1".
+//! [`check_effects`] closes the loop the other way: the declared effects
+//! are compared against what Midnight's own VM computed when it ran the
+//! model's op stream (`exec::run`), field by field and claim by claim.
 //!
-//! # Why the effects are symbolic
-//!
-//! An [`Effect`] names a state change; a [`Term`] names a VALUE by what it
-//! *is* (`UserCommit`, `DomainSep`, `RefundCommit`, `RequestId`,
-//! `TokenType`, `CoinCm`) rather than by how this artifact hashes it. The
-//! compat port concretises `UserCommit` as SHA-256 over a 64-byte preimage
-//! ([`Term::concretize`], which delegates to [`super::prims`]); an
-//! optimized artifact that swaps it for Poseidon supplies a different
-//! concretization and reuses THIS spec unchanged. The set of
-//! concretization choices IS the deviation log
-//! (notes/vault-optimization.org §"Specs").
-//!
-//! # What the spec does and does not decide
-//!
-//! It decides: which guards hold, which branch runs, which fields change,
-//! which coins are minted/spent/received, and with which amounts. It does
-//! NOT re-derive the protocol-pinned encodings (the 33/43-limb request
-//! record, the FAB binary the request id hashes) — those come from the
-//! shared concretization in [`super::model`]/[`super::prims`], and are
-//! independently pinned by the differential suite's PI-equality against
-//! compactc's artifacts. Chain of trust, not circular reasoning: the
-//! record layout is anchored one link up.
-//!
-//! # The attestation guard
-//!
-//! `verifyRespondBidirectionalEvent` is a real guard, but the scenarios
-//! construct valid signatures by construction, so under generation it is
-//! always satisfied. Its failure mode is exercised where it belongs — the
-//! adversarial sweeps, which corrupt `r`/`s`/the digest directly.
+//! Since M28 there is ONE concretization (every commitment Poseidon, as the
+//! source has it), so effects carry concrete bytes rather than symbolic
+//! terms; the injectivity of the constructions is swept separately in the
+//! adversarial suite.
 
 use midnight_base_crypto::fab::AlignedValue;
-use midnight_coin_structure::coin::{Commitment as CoinCommitment, Nullifier};
-use midnight_base_crypto::hash::HashOutput;
-use midnight_onchain_state::state::StateValue;
 use minocrab::Fr;
-use minocrab_contracts::erc20_vault as v;
-use minocrab_contracts::erc20_vault_pending;
 
 use super::exec::{self, Executed, PreState};
 use super::model::*;
@@ -58,18 +28,20 @@ use super::prims::*;
 /// not by matching against the circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuardId {
-    // initialize
-    AlreadyInitialized,
+    // initialise
+    AlreadyInitialised,
     NotTheDeployer,
     ChainIdMustBePositive,
     RouterCannotBeZero,
+    StataUnderlyingCannotBeZero,
+    StataTokenCannotBeZero,
     // request circuits
-    NotInitialized,
+    NotInitialised,
     Erc20AddressCannotBeZero,
     AmountMustBePositive,
     AmountExceedsUint64Max,
     GasLimitMustBePositive,
-    /// `Signet.compact:149` — inside `constructSignBidirectionalEvent`.
+    /// `Signet.compact` — inside `constructSignBidirectionalEvent`.
     KeyVersionMustBeGe1,
     RequestAlreadyExists,
     CoinIsNotTheVaultToken,
@@ -80,174 +52,39 @@ pub enum GuardId {
     AmountInMaximumMustBePositive,
     AmountOutExceedsUint64Max,
     AmountInMaximumExceedsUint64Max,
+    SharesMustBePositive,
+    SharesExceedUint64Max,
     // settle circuits
     Erc20TransferReturnedFalse,
-    InvalidAttestationSignature,
-    RequestNotFound,
+    DepositNotFound,
     NotTheDepositor,
-    RequestHasNoCalldata,
-    /// `Signet.compact:438` — inside `abiWordToUint128`.
-    AbiWordExceedsUint128,
     WithdrawalNotFound,
     NotTheWithdrawer,
     NotTheMpcFailureOutput,
     SwapNotFound,
     NotTheSwapper,
+    ChangeNonceMustDiffer,
     /// completeSwap's `amountInMaximum - amountIn`: Compact's unsigned
-    /// subtraction asserts no underflow, and the port spells that out as
-    /// an explicit `!(amountInMaximum < amountIn)` (erc20_vault.rs:1323).
-    /// The most dangerous arithmetic in the contract.
+    /// subtraction asserts no underflow. The most dangerous arithmetic in
+    /// the contract.
     ChangeUnderflow,
-    // --- M11 stage 5, Art::Borsh only ---------------------------------
-    /// The attested output's kind byte is not this circuit's kind — an
-    /// attestation issued for another settle circuit, or for none.
-    /// `erc20_vault_pending::assert_kind`. Under `Art::Borsh`, `refund`'s
-    /// "not the MPC failure output" IS this guard.
-    WrongResponseKind,
-    /// The attested `success` byte is not a Borsh `bool`. The deployed
-    /// contract has no such guard: it reads the byte as `== 1`, so `0x02`
-    /// routes `completeWithdraw` to the REFUND branch (the M10 harness
-    /// finding). Borsh's `bool` is 0 or 1 and nothing else, so under
-    /// `Art::Borsh` the same attestation is unprovable. THE DELIBERATE
-    /// DIVERGENCE: the artifacts genuinely disagree on this input, and this
-    /// guard is where the harness pins the disagreement.
-    NonBooleanSuccess,
-}
-
-/// A value the contract derives, named by WHAT it is.
-///
-/// The variants that are hash constructions (`UserCommit`, `RefundCommit`,
-/// `DomainSep`, `ChangeNonce`) are exactly the M10 deviation surface; the
-/// rest (`RequestId`, `TokenType`, `CoinCm`, `CoinNul`, `EvolvedNonce`) are
-/// protocol-pinned and must concretise identically in every artifact.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Term {
-    /// A value the contract does not derive (an argument, a stored byte
-    /// string, a literal).
-    Const([u8; 32]),
-    /// `userCommitment(sk)` — DISCRETIONARY.
-    UserCommit { sk: [u8; 32] },
-    /// `withdrawRefundCommitment(sk, requestId)` — DISCRETIONARY.
-    RefundCommit {
-        sk: [u8; 32],
-        request_id: Box<Term>,
-    },
-    /// `vaultTokenDomainSeparator(erc20)` — DISCRETIONARY.
-    DomainSep { erc20: [u8; 20] },
-    /// `persistentHash([mintNonce, pad("change")])` — DISCRETIONARY.
-    ChangeNonce { mint_nonce: Box<Term> },
-    /// `calculateRequestId(record)` — PINNED (keccak over the record's
-    /// FAB binary; the MPC decodes the record from raw ledger state).
-    RequestId { record: AlignedValue },
-    /// `tokenType(domainSep, addr)` — PINNED (the ledger derives the
-    /// colour itself, coin-structure/src/contract.rs:58-68).
-    TokenType { sep: Box<Term>, addr: [u8; 32] },
-    /// `coinCommitment(coin, recipient)` — PINNED (zswap's preimage).
-    CoinCm {
-        nonce: Box<Term>,
-        color: Box<Term>,
-        value: u64,
-        is_left: bool,
-        data: [u8; 32],
-    },
-    /// `coinNullifier(coin, contractAddress)` — PINNED.
-    CoinNul {
-        nonce: Box<Term>,
-        color: Box<Term>,
-        value: u64,
-        addr: [u8; 32],
-    },
-    /// The kernel's nonce evolution before a spend — PINNED.
-    EvolvedNonce { nonce: Box<Term> },
-}
-
-impl Term {
-    pub fn c(bytes: [u8; 32]) -> Term {
-        Term::Const(bytes)
-    }
-
-    /// CONCRETIZE: realise the term as the 32 bytes `art`'s circuits
-    /// actually compute. THE artifact-swap point — the discretionary
-    /// variants delegate to [`super::prims`], whose `Art::Opt` arms are the
-    /// deviation log; the pinned ones ignore `art` by construction.
-    pub fn concretize(&self, art: Art) -> [u8; 32] {
-        match self {
-            Term::Const(b) => *b,
-            Term::UserCommit { sk } => user_commitment(art, sk),
-            Term::RefundCommit { sk, request_id } => {
-                refund_commitment(art, sk, &request_id.concretize(art))
-            }
-            Term::DomainSep { erc20 } => vault_domain_sep(art, erc20),
-            Term::ChangeNonce { mint_nonce } => change_nonce(art, &mint_nonce.concretize(art)),
-            Term::RequestId { record } => {
-                use midnight_base_crypto::repr::BinaryHashRepr;
-                use midnight_transient_crypto::fab::ValueReprAlignedValue;
-                use sha2::Digest;
-                let mut repr = Vec::new();
-                ValueReprAlignedValue(record.clone()).binary_repr(&mut repr);
-                sha3::Keccak256::digest(&repr).into()
-            }
-            Term::TokenType { sep, addr } => {
-                let (d_hi, d_lo) = b32_slots(&sep.concretize(art));
-                let (t_hi, t_lo) = b32_slots(&pad32("midnight:derive_token"));
-                let (s_hi, s_lo) = b32_slots(addr);
-                fab_sha256(
-                    vec![atom(32), atom(32), atom(32)],
-                    &[t_hi, t_lo, d_hi, d_lo, s_hi, s_lo],
-                )
-            }
-            Term::CoinCm {
-                nonce,
-                color,
-                value,
-                is_left,
-                data,
-            } => coin_commitment_of(
-                &b32_slots(&nonce.concretize(art)),
-                &color.concretize(art),
-                *value,
-                *is_left,
-                data,
-            ),
-            Term::CoinNul {
-                nonce,
-                color,
-                value,
-                addr,
-            } => coin_nullifier_of(
-                &b32_slots(&nonce.concretize(art)),
-                &color.concretize(art),
-                *value,
-                addr,
-            ),
-            Term::EvolvedNonce { nonce } => {
-                let (_hi, lo) = evolved_nonce(&nonce.concretize(art));
-                let mut out = [0u8; 32];
-                out[..31].copy_from_slice(&lo.as_le_bytes()[..31]);
-                out
-            }
-        }
-    }
-}
-
-/// A map value: either a derived term or a protocol-pinned record.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Val {
-    Term(Term),
-    Record(AlignedValue),
+    SupplyNotFound,
+    NotTheSupplier,
+    RedeemNotFound,
+    NotTheRedeemer,
 }
 
 /// One declared state change or ledger claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     CounterInc { field: u8, by: u64 },
-    MapInsert { field: u8, key: Term, value: Val },
-    MapRemove { field: u8, key: Term },
+    MapInsert { field: u8, key: [u8; 32], value: AlignedValue },
+    MapRemove { field: u8, key: [u8; 32] },
     CellWrite { field: u8, value: AlignedValue },
-    MintShielded { domain_sep: Term, value: u64 },
-    ClaimSpend(Term),
-    ClaimReceive(Term),
-    ClaimNullifier(Term),
+    MintShielded { domain_sep: [u8; 32], value: u64 },
+    ClaimSpend([u8; 32]),
+    ClaimReceive([u8; 32]),
+    ClaimNullifier([u8; 32]),
     ClaimContractCall { addr: [u8; 32], ep: [u8; 32], comm: Fr },
 }
 
@@ -255,18 +92,12 @@ pub enum Effect {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Reject(GuardId),
-    Accept {
-        effects: Vec<Effect>,
-        /// The values the circuit `disclose()`s. Carried by hand until M9
-        /// phase 6's disclosure declarations can machine-check them
-        /// (notes/vault-optimization.org §Sequencing).
-        disclosures: Vec<&'static str>,
-    },
+    Accept(Vec<Effect>),
 }
 
 impl Outcome {
     pub fn accepts(&self) -> bool {
-        matches!(self, Outcome::Accept { .. })
+        matches!(self, Outcome::Accept(_))
     }
     pub fn guard(&self) -> Option<GuardId> {
         match self {
@@ -276,38 +107,83 @@ impl Outcome {
     }
     pub fn effects(&self) -> &[Effect] {
         match self {
-            Outcome::Accept { effects, .. } => effects,
+            Outcome::Accept(effects) => effects,
             _ => &[],
         }
     }
 }
 
-/// `accept` with no disclosures declared yet.
-fn accept(effects: Vec<Effect>) -> Outcome {
-    Outcome::Accept {
-        effects,
-        disclosures: Vec::new(),
-    }
-}
-
-fn accept_d(effects: Vec<Effect>, disclosures: Vec<&'static str>) -> Outcome {
-    Outcome::Accept {
-        effects,
-        disclosures,
-    }
-}
-
 const U64_MAX_U128: u128 = u64::MAX as u128;
 
-// --- the nine circuits --------------------------------------------------------
+// ---- shared pieces ------------------------------------------------------------
 
-/// `initialize(vaultEvm, swapRouter, chainId, chainCaip2Id, responseKey)`
-/// with `initialized == count` (erc20-vault.compact:216-233).
-pub fn spec_initialize(s: &Scenario, count: u64) -> Outcome {
-    if count != 0 {
-        return Outcome::Reject(GuardId::AlreadyInitialized);
+/// The effects every request circuit declares: the nonce increment, the
+/// record, the settle view, the notification call.
+fn request_effects(env: &Env, map: u8, req: &Req, view: Option<(u8, AlignedValue)>, cc_rand: Fr) -> Vec<Effect> {
+    let rid = req.request_id(env);
+    let mut effects = vec![
+        Effect::CounterInc {
+            field: SIGNET_REQUEST_NONCE,
+            by: 1,
+        },
+        Effect::MapInsert {
+            field: map,
+            key: rid,
+            value: req.av(env),
+        },
+    ];
+    if let Some((field, value)) = view {
+        effects.push(Effect::MapInsert { field, key: rid, value });
     }
-    if user_commitment(s.art, &s.sk) != s.commitment() {
+    effects.push(Effect::ClaimContractCall {
+        addr: env.signer_addr,
+        ep: env.ep,
+        comm: midnight_transient_crypto::hash::transient_commit(&env.call_args(map, &rid)[..], cc_rand),
+    });
+    effects
+}
+
+/// The three claims a surrendered coin's burn makes.
+fn burn_effects(env: &Env, coin_nonce: &[u8; 32], color: &[u8; 32], value: u128) -> Vec<Effect> {
+    let nonce = b32_slots(coin_nonce);
+    vec![
+        Effect::ClaimReceive(coin_commitment_of(&nonce, color, value, false, &env.self_addr)),
+        Effect::ClaimNullifier(coin_nullifier_of(&nonce, color, value, &env.self_addr)),
+        Effect::ClaimSpend(coin_commitment_of(&evolved_nonce(coin_nonce), color, value, true, &[0u8; 32])),
+    ]
+}
+
+/// A mint of `amount` of the vault token for `erc20` to `left(pk)`.
+fn mint_effects(env: &Env, erc20: &[u8; 20], amount: u64, nonce: &[u8; 32], pk: &[u8; 32]) -> Vec<Effect> {
+    let color = vault_color(erc20, &env.self_addr);
+    vec![
+        Effect::MintShielded {
+            domain_sep: vault_domain_sep(erc20),
+            value: amount,
+        },
+        Effect::ClaimSpend(coin_commitment_of(&b32_slots(nonce), &color, u128::from(amount), true, pk)),
+    ]
+}
+
+/// The guards a surrendered coin passes: the vault token's colour, and the
+/// exact value.
+fn coin_guards(coin_color: [u8; 32], vault_color: [u8; 32], coin_value: u128, amount: u128) -> Option<GuardId> {
+    if coin_color != vault_color {
+        return Some(GuardId::CoinIsNotTheVaultToken);
+    }
+    if coin_value != amount {
+        return Some(GuardId::CoinValueMustEqualAmount);
+    }
+    None
+}
+
+// ---- the seventeen circuits ----------------------------------------------------
+
+pub fn spec_initialise(s: &InitialiseScenario) -> Outcome {
+    if s.env.initialised != 0 {
+        return Outcome::Reject(GuardId::AlreadyInitialised);
+    }
+    if user_commitment(&s.sk) != s.env.deployer() {
         return Outcome::Reject(GuardId::NotTheDeployer);
     }
     if s.chain_id == 0 {
@@ -316,47 +192,80 @@ pub fn spec_initialize(s: &Scenario, count: u64) -> Outcome {
     if s.swap_router == [0u8; 20] {
         return Outcome::Reject(GuardId::RouterCannotBeZero);
     }
-    accept_d(
-        vec![
-            Effect::CounterInc {
-                field: v::INITIALIZED,
-                by: 1,
-            },
-            Effect::CellWrite {
-                field: v::VAULT_EVM_ADDRESS,
-                value: bytesn_value(20, &s.vault_evm),
-            },
-            Effect::CellWrite {
-                field: v::UNISWAP_ROUTER,
-                value: bytesn_value(20, &s.swap_router),
-            },
-            Effect::CellWrite {
-                field: v::EVM_CHAIN_ID,
-                value: bytesn_value(8, &s.chain_id.to_le_bytes()),
-            },
-            Effect::CellWrite {
-                field: v::CAIP2_ID,
-                value: bytesn_value(32, &s.caip2),
-            },
-            Effect::CellWrite {
-                field: v::MPC_RESPONSE_KEY,
-                value: s.point_av(),
-            },
-        ],
-        vec![
-            "vaultEvmAddress",
-            "uniswapRouter",
-            "evmChainId",
-            "caip2Id",
-            "mpcResponseKey",
-        ],
-    )
+    if s.stata_underlying == [0u8; 20] {
+        return Outcome::Reject(GuardId::StataUnderlyingCannotBeZero);
+    }
+    if s.stata_token == [0u8; 20] {
+        return Outcome::Reject(GuardId::StataTokenCannotBeZero);
+    }
+    Outcome::Accept(vec![
+        Effect::CounterInc {
+            field: INITIALISED,
+            by: 1,
+        },
+        Effect::CellWrite {
+            field: VAULT_EVM_ADDRESS,
+            value: bytesn_value(20, &s.vault_evm),
+        },
+        Effect::CellWrite {
+            field: UNISWAP_ROUTER,
+            value: bytesn_value(20, &s.swap_router),
+        },
+        Effect::CellWrite {
+            field: STATA_UNDERLYING,
+            value: bytesn_value(20, &s.stata_underlying),
+        },
+        Effect::CellWrite {
+            field: STATA_TOKEN,
+            value: bytesn_value(20, &s.stata_token),
+        },
+        Effect::CellWrite {
+            field: EVM_CHAIN_ID,
+            value: bytesn_value(8, &s.chain_id.to_le_bytes()),
+        },
+        Effect::CellWrite {
+            field: CAIP2_ID,
+            value: bytesn_value(32, &s.caip2),
+        },
+        Effect::CellWrite {
+            field: MPC_RESPONSE_KEY,
+            value: point_av(&s.point),
+        },
+    ])
 }
 
-/// `deposit(...)` (erc20-vault.compact:251-334).
-pub fn spec_deposit(s: &DepositScenario) -> Outcome {
-    if s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_approve_stata(s: &ApproveStataScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if s.key_version == 0 {
+        return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
+    }
+    if s.request_exists {
+        return Outcome::Reject(GuardId::RequestAlreadyExists);
+    }
+    Outcome::Accept(request_effects(&s.env, SIGN_BIDIRECTIONAL_EVENT_MAP, &s.req(), None, s.cc_rand))
+}
+
+pub fn spec_approve_router(s: &ApproveRouterScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if s.erc20 == [0u8; 20] {
+        return Outcome::Reject(GuardId::Erc20AddressCannotBeZero);
+    }
+    if s.key_version == 0 {
+        return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
+    }
+    if s.request_exists {
+        return Outcome::Reject(GuardId::RequestAlreadyExists);
+    }
+    Outcome::Accept(request_effects(&s.env, SIGN_BIDIRECTIONAL_EVENT_MAP, &s.req(), None, s.cc_rand))
+}
+
+pub fn spec_start_deposit(s: &StartDepositScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
     if s.erc20 == [0u8; 20] {
         return Outcome::Reject(GuardId::Erc20AddressCannotBeZero);
@@ -376,79 +285,57 @@ pub fn spec_deposit(s: &DepositScenario) -> Outcome {
     if s.request_exists {
         return Outcome::Reject(GuardId::RequestAlreadyExists);
     }
-    let rid = Term::RequestId {
-        record: s.event_av(),
-    };
-    accept_d(
-        vec![
-            Effect::CounterInc {
-                field: v::SIGNET_REQUEST_NONCE,
-                by: 1,
-            },
-            Effect::MapInsert {
-                field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-                key: rid,
-                value: Val::Record(s.event_av()),
-            },
-            Effect::ClaimContractCall {
-                addr: s.signer_addr,
-                ep: s.ep,
-                comm: midnight_transient_crypto::hash::transient_commit(
-                    &s.call_args()[..],
-                    s.cc_rand,
-                ),
-            },
-        ],
-        vec!["depositor identity commitment", "request id", "request record"],
-    )
+    Outcome::Accept(request_effects(
+        &s.env,
+        DEPOSIT_EVENT_MAP,
+        &s.req(),
+        Some((DEPOSIT_SETTLE_VIEWS, s.view_av())),
+        s.cc_rand,
+    ))
 }
 
-/// `approveRouter(erc20Address, evmNonce, keyVersion)`
-/// (erc20-vault.compact:696-762).
-pub fn spec_approve_router(s: &ApproveScenario) -> Outcome {
-    if s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_complete_deposit(s: &CompleteDepositScenario) -> Outcome {
+    let env = s.env();
+    if env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
-    if s.erc20 == [0u8; 20] {
-        return Outcome::Reject(GuardId::Erc20AddressCannotBeZero);
+    // deserialize<VaultResponse, 1>(output).success is `byte == 1`.
+    if s.serialized_output != 1 {
+        return Outcome::Reject(GuardId::Erc20TransferReturnedFalse);
     }
-    if s.key_version == 0 {
-        return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::DepositNotFound);
     }
-    if s.request_exists {
-        return Outcome::Reject(GuardId::RequestAlreadyExists);
+    if user_commitment(&s.settle.sk(&s.d.sk)) != s.d.commitment() {
+        return Outcome::Reject(GuardId::NotTheDepositor);
     }
-    accept_d(
-        vec![
-            Effect::CounterInc {
-                field: v::SIGNET_REQUEST_NONCE,
-                by: 1,
-            },
-            Effect::MapInsert {
-                field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-                key: Term::RequestId {
-                    record: s.event_av(),
-                },
-                value: Val::Record(s.event_av()),
-            },
-            Effect::ClaimContractCall {
-                addr: s.signer_addr,
-                ep: s.ep,
-                comm: midnight_transient_crypto::hash::transient_commit(
-                    &s.call_args()[..],
-                    s.cc_rand,
-                ),
-            },
-        ],
-        vec!["approved ERC20", "request id", "request record"],
-    )
+    let rid = s.d.request_id();
+    let cm = s.coin_commitment();
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: DEPOSIT_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: DEPOSIT_SETTLE_VIEWS,
+            key: rid,
+        },
+        Effect::MintShielded {
+            domain_sep: vault_domain_sep(&s.d.erc20),
+            value: s.d.amount_u64(),
+        },
+        Effect::ClaimSpend(cm),
+    ];
+    // The stdlib's auto-receive: minting to a contract that IS this one.
+    if s.auto_receive() {
+        effects.push(Effect::ClaimReceive(cm));
+    }
+    Outcome::Accept(effects)
 }
 
-/// `withdraw(evmNonce, keyVersion, withdrawRequest, coin)`
-/// (erc20-vault.compact:420-517).
-pub fn spec_withdraw(s: &WithdrawScenario) -> Outcome {
-    if s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_start_withdraw(s: &StartWithdrawScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
     if s.erc20 == [0u8; 20] {
         return Outcome::Reject(GuardId::Erc20AddressCannotBeZero);
@@ -459,101 +346,98 @@ pub fn spec_withdraw(s: &WithdrawScenario) -> Outcome {
     if s.amount > U64_MAX_U128 {
         return Outcome::Reject(GuardId::AmountExceedsUint64Max);
     }
-    // The coin's colour and value are model invariants (it is built as the
-    // vault token for `erc20` of exactly `amount`); the two guards below
-    // are exercised by the adversarial suite's input mutations.
+    if let Some(g) = coin_guards(s.coin_color(), s.vault_color(), s.coin_value(), s.amount) {
+        return Outcome::Reject(g);
+    }
     if s.key_version == 0 {
         return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
     }
     if s.request_exists {
         return Outcome::Reject(GuardId::RequestAlreadyExists);
     }
-    let value = s.amount_u64();
-    let color = Term::TokenType {
-        sep: Box::new(Term::DomainSep { erc20: s.erc20 }),
-        addr: s.self_addr,
-    };
-    let nonce = Term::c(s.coin_nonce);
-    let rid = Term::RequestId {
-        record: s.event_av(),
-    };
-    // The burn. The compat port takes custody (receiveShielded) then spends
-    // (sendImmediateShielded: nullifier + evolved-nonce output). The optimized
-    // artifact (rung vi, avenue 6) claims a SINGLE shielded spend of the
-    // burn-output commitment and NOTHING else — the receive and nullifier are
-    // gone (the user funds the burn Output directly). check_effects asserts
-    // this multiset EXACTLY, so on the opt side the empty receive/nullifier
-    // sets are obligation (1) and the constrained-colour/value burn commitment
-    // is obligation (2), both enforced per generated case.
-    let mut effects = Vec::new();
-    if s.art == Art::Compat {
-        effects.push(Effect::ClaimReceive(Term::CoinCm {
-            nonce: Box::new(nonce.clone()),
-            color: Box::new(color.clone()),
-            value,
-            is_left: false,
-            data: s.self_addr,
-        }));
-        effects.push(Effect::ClaimNullifier(Term::CoinNul {
-            nonce: Box::new(nonce.clone()),
-            color: Box::new(color.clone()),
-            value,
-            addr: s.self_addr,
-        }));
-    }
-    effects.push(Effect::ClaimSpend(Term::CoinCm {
-        nonce: Box::new(Term::EvolvedNonce {
-            nonce: Box::new(nonce),
-        }),
-        color: Box::new(color),
-        value,
-        is_left: true,
-        data: [0u8; 32],
-    }));
-    effects.extend([
-        Effect::CounterInc {
-            field: v::SIGNET_REQUEST_NONCE,
-            by: 1,
-        },
-        Effect::MapInsert {
-            field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-            key: rid.clone(),
-            value: Val::Record(s.event_av()),
-        },
-        Effect::MapInsert {
-            field: v::REFUND_COMMITMENT,
-            key: rid.clone(),
-            value: Val::Term(Term::RefundCommit {
-                sk: s.sk,
-                request_id: Box::new(rid),
-            }),
-        },
-        Effect::ClaimContractCall {
-            addr: s.signer_addr,
-            ep: s.ep,
-            comm: midnight_transient_crypto::hash::transient_commit(
-                &s.call_args()[..],
-                s.cc_rand,
-            ),
-        },
-    ]);
-    accept_d(
-        effects,
-        vec![
-            "the withdrawn ERC20",
-            "surrendered coin",
-            "request id",
-            "request record",
-            "withdrawer refund commitment",
-        ],
-    )
+    let mut effects = burn_effects(&s.env, &s.coin_nonce, &s.coin_color(), s.coin_value());
+    effects.extend(request_effects(
+        &s.env,
+        SIGN_BIDIRECTIONAL_EVENT_MAP,
+        &s.req(),
+        Some((WITHDRAW_SETTLE_VIEWS, s.view_av())),
+        s.cc_rand,
+    ));
+    Outcome::Accept(effects)
 }
 
-/// `swap(evmNonce, keyVersion, swapRequest, coin)`
-/// (erc20-vault.compact:787-886).
-pub fn spec_swap(s: &SwapScenario) -> Outcome {
-    if s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+/// NOTE the branch condition: `deserialize<VaultResponse, 1>(o).success`
+/// is `o == 1`, NOT a canonicity-checked decode, so ANY attested byte other
+/// than `0x01` routes to the refund path (the M10 harness finding, kept by
+/// upstream).
+pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
+    let env = s.env();
+    if env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::WithdrawalNotFound);
+    }
+    let rid = s.w.request_id();
+    let refunding = s.refunding();
+    if refunding && refund_commitment(&s.settle.sk(&s.w.sk), &rid) != s.w.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheWithdrawer);
+    }
+    let mut effects = vec![Effect::MapRemove {
+        field: SIGN_BIDIRECTIONAL_EVENT_MAP,
+        key: rid,
+    }];
+    if refunding {
+        effects.extend(mint_effects(env, &s.w.erc20, s.w.amount_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    }
+    effects.push(Effect::MapRemove {
+        field: WITHDRAW_SETTLE_VIEWS,
+        key: rid,
+    });
+    Outcome::Accept(effects)
+}
+
+/// The failure gate shared by the four refund circuits: initialised, then
+/// the attested output must be the fixed 5-byte failure sentinel.
+fn failure_gate(env: &Env, output: &[u8; 5]) -> Option<GuardId> {
+    if env.initialised < 1 {
+        return Some(GuardId::NotInitialised);
+    }
+    if *output != minocrab_contracts::erc20_vault::MPC_FAILURE_OUTPUT {
+        return Some(GuardId::NotTheMpcFailureOutput);
+    }
+    None
+}
+
+pub fn spec_refund_withdraw(s: &RefundWithdrawScenario) -> Outcome {
+    let env = s.env();
+    if let Some(g) = failure_gate(env, &s.serialized_output) {
+        return Outcome::Reject(g);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::WithdrawalNotFound);
+    }
+    let rid = s.w.request_id();
+    if refund_commitment(&s.settle.sk(&s.w.sk), &rid) != s.w.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheWithdrawer);
+    }
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: SIGN_BIDIRECTIONAL_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: WITHDRAW_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &s.w.erc20, s.w.amount_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
+}
+
+pub fn spec_start_swap(s: &StartSwapScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
     if s.token_in == [0u8; 20] {
         return Outcome::Reject(GuardId::TokenInCannotBeZero);
@@ -573,460 +457,265 @@ pub fn spec_swap(s: &SwapScenario) -> Outcome {
     if s.amount_in_max > U64_MAX_U128 {
         return Outcome::Reject(GuardId::AmountInMaximumExceedsUint64Max);
     }
+    if let Some(g) = coin_guards(s.coin_color(), s.vault_color(), s.coin_value(), s.amount_in_max) {
+        return Outcome::Reject(g);
+    }
     if s.key_version == 0 {
         return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
     }
     if s.request_exists {
         return Outcome::Reject(GuardId::RequestAlreadyExists);
     }
-    let value = s.amount_in_max_u64();
-    let color = Term::TokenType {
-        sep: Box::new(Term::DomainSep { erc20: s.token_in }),
-        addr: s.self_addr,
-    };
-    let nonce = Term::c(s.coin_nonce);
-    let rid = Term::RequestId {
-        record: s.event_av(),
-    };
-    // The burn — as in withdraw. Compat: receive + nullifier + evolved-nonce
-    // output spend. Opt (rung vi, avenue 6): a SINGLE claimed shielded spend
-    // of the burn-output commitment, obligations (1) and (2) enforced by
-    // check_effects' exact-multiset comparison.
-    let mut effects = Vec::new();
-    if s.art == Art::Compat {
-        effects.push(Effect::ClaimReceive(Term::CoinCm {
-            nonce: Box::new(nonce.clone()),
-            color: Box::new(color.clone()),
-            value,
-            is_left: false,
-            data: s.self_addr,
-        }));
-        effects.push(Effect::ClaimNullifier(Term::CoinNul {
-            nonce: Box::new(nonce.clone()),
-            color: Box::new(color.clone()),
-            value,
-            addr: s.self_addr,
-        }));
-    }
-    effects.push(Effect::ClaimSpend(Term::CoinCm {
-        nonce: Box::new(Term::EvolvedNonce {
-            nonce: Box::new(nonce),
-        }),
-        color: Box::new(color),
-        value,
-        is_left: true,
-        data: [0u8; 32],
-    }));
-    effects.extend([
-        Effect::CounterInc {
-            field: v::SIGNET_REQUEST_NONCE,
-            by: 1,
-        },
-        Effect::MapInsert {
-            field: v::SWAP_EVENT_MAP,
-            key: rid.clone(),
-            value: Val::Record(s.event_av()),
-        },
-        Effect::MapInsert {
-            field: v::SWAP_REFUND_COMMITMENT,
-            key: rid.clone(),
-            value: Val::Term(Term::RefundCommit {
-                sk: s.sk,
-                request_id: Box::new(rid),
-            }),
-        },
-        Effect::ClaimContractCall {
-            addr: s.signer_addr,
-            ep: s.ep,
-            comm: midnight_transient_crypto::hash::transient_commit(
-                &s.call_args()[..],
-                s.cc_rand,
-            ),
-        },
-    ]);
-    accept_d(
-        effects,
-        vec![
-            "the sold ERC20",
-            "the bought ERC20",
-            "surrendered coin",
-            "request id",
-            "request record",
-            "swapper refund commitment",
-        ],
-    )
+    let mut effects = burn_effects(&s.env, &s.coin_nonce, &s.coin_color(), s.coin_value());
+    effects.extend(request_effects(
+        &s.env,
+        SWAP_EVENT_MAP,
+        &s.req(),
+        Some((SWAP_SETTLE_VIEWS, s.view_av())),
+        s.cc_rand,
+    ));
+    Outcome::Accept(effects)
 }
 
-/// `claim(requestId, respondBidirectionalEvent, serializedOutput,
-/// mintNonce, recipient)` (erc20-vault.compact:344-397).
-pub fn spec_claim(s: &ClaimScenario) -> Outcome {
-    if s.d.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
+    let env = s.env();
+    if env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
-    // M11 stage 5 (Art::Borsh): the response carries its kind, and an
-    // attestation for another settle circuit does not settle a claim.
-    if s.art().is_borsh_format()
-        && s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_CLAIM)
-    {
-        return Outcome::Reject(GuardId::WrongResponseKind);
+    if s.change_nonce == s.settle.mint_nonce {
+        return Outcome::Reject(GuardId::ChangeNonceMustDiffer);
     }
-    // deserialize<VaultResponse, 1>(output).success is `byte == 1`.
-    //
-    // NO DIVERGENCE HERE, unlike completeWithdraw: `claim` asserts success,
-    // so every artifact rejects every byte but `0x01` — the port because the
-    // `== 1` test fails, the borsh artifact because `assert_boolean` rejects
-    // 0x02 first and `assert(success)` rejects 0x00. Same predicate, two
-    // reasons.
-    if s.serialized_output != 1 {
-        return Outcome::Reject(GuardId::Erc20TransferReturnedFalse);
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::SwapNotFound);
     }
-    if !s.found {
-        return Outcome::Reject(GuardId::RequestNotFound);
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheSwapper);
     }
-    if user_commitment(s.art(), &s.claimant_sk()) != user_commitment(s.art(), &s.d.sk) {
-        return Outcome::Reject(GuardId::NotTheDepositor);
-    }
-    let amount = s.d.amount_u64();
-    let (is_left, data) = s.recipient_data();
-    let color = Term::TokenType {
-        sep: Box::new(Term::DomainSep { erc20: s.d.erc20 }),
-        addr: s.d.self_addr,
-    };
-    let cm = Term::CoinCm {
-        nonce: Box::new(Term::c(s.mint_nonce)),
-        color: Box::new(color),
-        value: amount,
-        is_left,
-        data,
+    let Some(change) = s.change() else {
+        return Outcome::Reject(GuardId::ChangeUnderflow);
     };
     let mut effects = vec![
         Effect::MapRemove {
-            field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-            key: Term::RequestId {
-                record: s.d.event_av(),
-            },
+            field: SWAP_EVENT_MAP,
+            key: rid,
         },
-        Effect::MintShielded {
-            domain_sep: Term::DomainSep { erc20: s.d.erc20 },
-            value: amount,
+        Effect::MapRemove {
+            field: SWAP_SETTLE_VIEWS,
+            key: rid,
         },
-        Effect::ClaimSpend(cm.clone()),
     ];
-    // The stdlib's auto-receive: minting to a contract that IS this one.
-    if s.auto_receive() {
-        effects.push(Effect::ClaimReceive(cm));
-    }
-    accept_d(
-        effects,
-        vec!["request id", "claim recipient", "claim mint nonce"],
-    )
+    effects.extend(mint_effects(env, &s.s.token_out, s.s.amount_out_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    effects.extend(mint_effects(env, &s.s.token_in, change, &s.change_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
 }
 
-/// `completeWithdraw(requestId, respondBidirectionalEvent,
-/// serializedOutput, mintNonce)` (erc20-vault.compact:560-605).
-///
-/// NOTE the branch condition: `deserialize<VaultResponse, 1>(o).success`
-/// is `o == 1`, NOT a canonicity-checked decode, so ANY attested byte
-/// other than `0x01` routes to the refund path. See the disagreement note
-/// in notes/vault-optimization.org §"As built — step 1".
-pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
-    if s.w.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_refund_swap(s: &RefundSwapScenario) -> Outcome {
+    let env = s.env();
+    if let Some(g) = failure_gate(env, &s.serialized_output) {
+        return Outcome::Reject(g);
     }
-    // M11 stage 5 (Art::Borsh), and THE ONE DELIBERATE SEMANTIC DIVERGENCE OF
-    // THE MILESTONE: the kind byte separates this settle from `claim`'s, and
-    // the success byte is a Borsh `bool`, so `0x02` is unprovable here while
-    // the port and the optimized fork read it as "not 1" and REFUND — re-
-    // minting the surrendered value on a withdrawal that succeeded. Both
-    // checks precede the pending-marker gate because both are argument
-    // constraints, which a circuit emits before it reads any state.
-    if s.art().is_borsh_format() {
-        if s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_WITHDRAW) {
-            return Outcome::Reject(GuardId::WrongResponseKind);
-        }
-        if s.outcome > 1 {
-            return Outcome::Reject(GuardId::NonBooleanSuccess);
-        }
-    }
-    if !s.pending {
-        return Outcome::Reject(GuardId::WithdrawalNotFound);
-    }
-    let refunding = s.outcome != 1;
-    let presented = Term::RefundCommit {
-        sk: s.claimant_sk(),
-        request_id: Box::new(Term::c(s.w.request_id())),
-    }
-    .concretize(s.art());
-    if refunding && presented != s.w.refund_commitment() {
-        return Outcome::Reject(GuardId::NotTheWithdrawer);
-    }
-    let mut effects = vec![Effect::MapRemove {
-        field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-        key: Term::c(s.w.request_id()),
-    }];
-    if refunding {
-        let amount = s.w.amount_u64();
-        effects.push(Effect::MintShielded {
-            domain_sep: Term::DomainSep { erc20: s.w.erc20 },
-            value: amount,
-        });
-        effects.push(Effect::ClaimSpend(Term::CoinCm {
-            nonce: Box::new(Term::c(s.mint_nonce)),
-            color: Box::new(Term::TokenType {
-                sep: Box::new(Term::DomainSep { erc20: s.w.erc20 }),
-                addr: s.w.self_addr,
-            }),
-            value: amount,
-            is_left: true,
-            data: s.own_pk,
-        }));
-    }
-    effects.push(Effect::MapRemove {
-        field: v::REFUND_COMMITMENT,
-        key: Term::c(s.w.request_id()),
-    });
-    accept_d(
-        effects,
-        vec!["request id", "withdrawal EVM outcome", "refund mint nonce"],
-    )
-}
-
-/// `completeSwap(requestId, respondBidirectionalEvent, serializedOutput,
-/// mintNonce)` (erc20-vault.compact:895-951).
-pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
-    if s.s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
-    }
-    // M11 stage 5 (Art::Borsh): the attested amountIn is a Borsh `u64` in
-    // both worlds (stage 0 proved the deployed 8 bytes already are one); what
-    // is added is the kind byte in front of it.
-    if s.art().is_borsh_format() && s.response_kind != kind(erc20_vault_pending::RESPONSE_KIND_SWAP) {
-        return Outcome::Reject(GuardId::WrongResponseKind);
-    }
-    if !s.pending {
+    if !s.settle.pending {
         return Outcome::Reject(GuardId::SwapNotFound);
     }
-    let presented = Term::RefundCommit {
-        sk: s.claimant_sk(),
-        request_id: Box::new(Term::c(s.s.request_id())),
-    }
-    .concretize(s.art());
-    if presented != s.s.refund_commitment() {
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
         return Outcome::Reject(GuardId::NotTheSwapper);
     }
-    // THE dangerous arithmetic: `change = amountInMaximum - amountIn` over
-    // Uint<128>. Compact's unsigned `-` asserts no underflow; the port
-    // spells it as `!(amountInMaximum < amountIn)`. The attested amountIn
-    // is a uint64 the MPC repacked, and amountInMaximum was bounded to
-    // uint64 at request time, so the whole comparison lives in u64 — but
-    // an attestation over amountIn > amountInMaximum is entirely
-    // constructible by a misbehaving MPC, and MUST reject rather than
-    // wrap into a ~2^128 change mint.
-    let amount_in_max = s.s.amount_in_max_u64();
-    if s.amount_in > amount_in_max {
-        return Outcome::Reject(GuardId::ChangeUnderflow);
-    }
-    let change = amount_in_max - s.amount_in;
-    let amount_out = s.s.amount_out_u64();
-    accept_d(
-        vec![
-            Effect::MapRemove {
-                field: v::SWAP_EVENT_MAP,
-                key: Term::c(s.s.request_id()),
-            },
-            Effect::MapRemove {
-                field: v::SWAP_REFUND_COMMITMENT,
-                key: Term::c(s.s.request_id()),
-            },
-            Effect::MintShielded {
-                domain_sep: Term::DomainSep {
-                    erc20: s.s.token_out,
-                },
-                value: amount_out,
-            },
-            Effect::ClaimSpend(Term::CoinCm {
-                nonce: Box::new(Term::c(s.mint_nonce)),
-                color: Box::new(Term::TokenType {
-                    sep: Box::new(Term::DomainSep {
-                        erc20: s.s.token_out,
-                    }),
-                    addr: s.s.self_addr,
-                }),
-                value: amount_out,
-                is_left: true,
-                data: s.own_pk,
-            }),
-            Effect::MintShielded {
-                domain_sep: Term::DomainSep {
-                    erc20: s.s.token_in,
-                },
-                value: change,
-            },
-            Effect::ClaimSpend(Term::CoinCm {
-                nonce: Box::new(Term::ChangeNonce {
-                    mint_nonce: Box::new(Term::c(s.mint_nonce)),
-                }),
-                color: Box::new(Term::TokenType {
-                    sep: Box::new(Term::DomainSep {
-                        erc20: s.s.token_in,
-                    }),
-                    addr: s.s.self_addr,
-                }),
-                value: change,
-                is_left: true,
-                data: s.own_pk,
-            }),
-        ],
-        vec![
-            "request id",
-            "attested amountIn spent",
-            "swap mint nonce",
-            "swap recipient",
-        ],
-    )
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: SWAP_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: SWAP_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &s.s.token_in, s.s.amount_in_max_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
 }
 
-/// `refund(requestId, respondBidirectionalEvent, serializedOutput,
-/// mintNonce)` (erc20-vault.compact:617-678) — routes on which pending
-/// marker holds the id.
-pub fn spec_refund(s: &RefundScenario) -> Outcome {
-    if s.initialized < 1 {
-        return Outcome::Reject(GuardId::NotInitialized);
+pub fn spec_start_supply(s: &StartSupplyScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
     }
-    // "The MPC attested that the transaction never executed" — the deployed
-    // 5-byte `0xdeadbeef01` sentinel, or (M11 stage 5) the failure KIND,
-    // which says the same thing in the same byte position as every other
-    // response type.
-    let is_failure_response = match s.art() {
-        Art::Compat | Art::Opt => s.serialized_output == v::MPC_FAILURE_OUTPUT,
-        Art::Borsh | Art::Modern => s.response_kind == kind(erc20_vault_pending::RESPONSE_KIND_FAILURE),
-    };
-    if !is_failure_response {
-        return Outcome::Reject(match s.art() {
-            Art::Compat | Art::Opt => GuardId::NotTheMpcFailureOutput,
-            Art::Borsh | Art::Modern => GuardId::WrongResponseKind,
-        });
+    if s.amount == 0 {
+        return Outcome::Reject(GuardId::AmountMustBePositive);
     }
-    let rid = s.request_id();
-    let want = Term::RefundCommit {
-        sk: s.claimant_sk(),
-        request_id: Box::new(Term::c(rid)),
+    if s.amount > U64_MAX_U128 {
+        return Outcome::Reject(GuardId::AmountExceedsUint64Max);
     }
-    .concretize(s.art());
-    match &s.route {
-        RefundRoute::Withdrawal(w) => {
-            if want != w.refund_commitment() {
-                return Outcome::Reject(GuardId::NotTheWithdrawer);
-            }
-            let amount = w.amount_u64();
-            accept_d(
-                vec![
-                    Effect::MapRemove {
-                        field: v::SIGN_BIDIRECTIONAL_EVENT_MAP,
-                        key: Term::c(rid),
-                    },
-                    Effect::MintShielded {
-                        domain_sep: Term::DomainSep { erc20: w.erc20 },
-                        value: amount,
-                    },
-                    Effect::ClaimSpend(Term::CoinCm {
-                        nonce: Box::new(Term::c(s.mint_nonce)),
-                        color: Box::new(Term::TokenType {
-                            sep: Box::new(Term::DomainSep { erc20: w.erc20 }),
-                            addr: w.self_addr,
-                        }),
-                        value: amount,
-                        is_left: true,
-                        data: s.own_pk,
-                    }),
-                    Effect::MapRemove {
-                        field: v::REFUND_COMMITMENT,
-                        key: Term::c(rid),
-                    },
-                ],
-                vec!["request id", "refund mint nonce"],
-            )
-        }
-        RefundRoute::Swap(sw) => {
-            if want != sw.refund_commitment() {
-                return Outcome::Reject(GuardId::NotTheSwapper);
-            }
-            let amount = sw.amount_in_max_u64();
-            accept_d(
-                vec![
-                    Effect::MapRemove {
-                        field: v::SWAP_EVENT_MAP,
-                        key: Term::c(rid),
-                    },
-                    Effect::MapRemove {
-                        field: v::SWAP_REFUND_COMMITMENT,
-                        key: Term::c(rid),
-                    },
-                    Effect::MintShielded {
-                        domain_sep: Term::DomainSep { erc20: sw.token_in },
-                        value: amount,
-                    },
-                    Effect::ClaimSpend(Term::CoinCm {
-                        nonce: Box::new(Term::c(s.mint_nonce)),
-                        color: Box::new(Term::TokenType {
-                            sep: Box::new(Term::DomainSep { erc20: sw.token_in }),
-                            addr: sw.self_addr,
-                        }),
-                        value: amount,
-                        is_left: true,
-                        data: s.own_pk,
-                    }),
-                ],
-                vec!["request id", "refund mint nonce"],
-            )
-        }
+    if let Some(g) = coin_guards(s.coin_color(), s.vault_color(), s.coin_value(), s.amount) {
+        return Outcome::Reject(g);
     }
+    if s.key_version == 0 {
+        return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
+    }
+    if s.request_exists {
+        return Outcome::Reject(GuardId::RequestAlreadyExists);
+    }
+    let mut effects = burn_effects(&s.env, &s.coin_nonce, &s.coin_color(), s.coin_value());
+    effects.extend(request_effects(
+        &s.env,
+        SUPPLY_EVENT_MAP,
+        &s.req(),
+        Some((SUPPLY_SETTLE_VIEWS, s.view_av())),
+        s.cc_rand,
+    ));
+    Outcome::Accept(effects)
 }
 
-// --- checking a spec against what the reference VM produced -------------------
-
-fn cell_bytes(state: &StateValue, field: usize) -> Option<Vec<u8>> {
-    let StateValue::Array(arr) = state else {
-        return None;
-    };
-    let StateValue::Cell(av) = arr.get(field)? else {
-        return None;
-    };
-    Some(av.value.0.first()?.0.clone())
+pub fn spec_complete_supply(s: &CompleteSupplyScenario) -> Outcome {
+    let env = s.env();
+    if env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::SupplyNotFound);
+    }
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheSupplier);
+    }
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: SUPPLY_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: SUPPLY_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &env.stata_token, s.shares, &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
 }
 
-fn map_get(state: &StateValue, field: usize, key: &[u8; 32]) -> Option<AlignedValue> {
-    use std::ops::Deref;
-    let StateValue::Array(arr) = state else {
-        return None;
-    };
-    let StateValue::Map(m) = arr.get(field)? else {
-        return None;
-    };
-    let entry = m.get(&bytesn_value(32, key))?;
-    let StateValue::Cell(av) = entry.deref() else {
-        return None;
-    };
-    Some(av.deref().clone())
+pub fn spec_refund_supply(s: &RefundSupplyScenario) -> Outcome {
+    let env = s.env();
+    if let Some(g) = failure_gate(env, &s.serialized_output) {
+        return Outcome::Reject(g);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::SupplyNotFound);
+    }
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheSupplier);
+    }
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: SUPPLY_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: SUPPLY_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &env.stata_underlying, s.s.amount_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
 }
+
+pub fn spec_start_redeem(s: &StartRedeemScenario) -> Outcome {
+    if s.env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if s.shares == 0 {
+        return Outcome::Reject(GuardId::SharesMustBePositive);
+    }
+    if s.shares > U64_MAX_U128 {
+        return Outcome::Reject(GuardId::SharesExceedUint64Max);
+    }
+    if let Some(g) = coin_guards(s.coin_color(), s.vault_color(), s.coin_value(), s.shares) {
+        return Outcome::Reject(g);
+    }
+    if s.key_version == 0 {
+        return Outcome::Reject(GuardId::KeyVersionMustBeGe1);
+    }
+    if s.request_exists {
+        return Outcome::Reject(GuardId::RequestAlreadyExists);
+    }
+    let mut effects = burn_effects(&s.env, &s.coin_nonce, &s.coin_color(), s.coin_value());
+    effects.extend(request_effects(
+        &s.env,
+        REDEEM_EVENT_MAP,
+        &s.req(),
+        Some((REDEEM_SETTLE_VIEWS, s.view_av())),
+        s.cc_rand,
+    ));
+    Outcome::Accept(effects)
+}
+
+pub fn spec_complete_redeem(s: &CompleteRedeemScenario) -> Outcome {
+    let env = s.env();
+    if env.initialised < 1 {
+        return Outcome::Reject(GuardId::NotInitialised);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::RedeemNotFound);
+    }
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheRedeemer);
+    }
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: REDEEM_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: REDEEM_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &env.stata_underlying, s.assets, &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
+}
+
+pub fn spec_refund_redeem(s: &RefundRedeemScenario) -> Outcome {
+    let env = s.env();
+    if let Some(g) = failure_gate(env, &s.serialized_output) {
+        return Outcome::Reject(g);
+    }
+    if !s.settle.pending {
+        return Outcome::Reject(GuardId::RedeemNotFound);
+    }
+    let rid = s.s.request_id();
+    if refund_commitment(&s.settle.sk(&s.s.sk), &rid) != s.s.refund_commitment() {
+        return Outcome::Reject(GuardId::NotTheRedeemer);
+    }
+    let mut effects = vec![
+        Effect::MapRemove {
+            field: REDEEM_EVENT_MAP,
+            key: rid,
+        },
+        Effect::MapRemove {
+            field: REDEEM_SETTLE_VIEWS,
+            key: rid,
+        },
+    ];
+    effects.extend(mint_effects(env, &env.stata_token, s.s.shares_u64(), &s.settle.mint_nonce, &s.settle.own_pk));
+    Outcome::Accept(effects)
+}
+
+// ---- checking a spec against what the reference VM produced -------------------
 
 fn pre_counter(pre: &PreState, field: u8) -> u64 {
     match field {
-        v::SIGNET_REQUEST_NONCE => pre.request_nonce,
-        v::INITIALIZED => pre.initialized,
-        _ => panic!("field {field} is not a counter"),
+        SIGNET_REQUEST_NONCE => pre.request_nonce,
+        INITIALISED => pre.initialised,
+        other => panic!("field {other} is not a counter"),
     }
 }
 
-/// Assert that `effects` — the spec's declaration — is EXACTLY what the
-/// reference VM produced: the same post-state changes, and the same ledger
-/// `Effects` (equality, not containment, so an undeclared claim fails).
-pub fn check_effects(
-    art: Art,
-    effects: &[Effect],
-    pre: &PreState,
-    ex: &Executed,
-) -> Result<(), String> {
+/// Every declared effect holds of the executed run, and the run declares
+/// nothing beyond them: counters advanced by exactly `by`, inserted keys
+/// present with the declared value, removed keys absent, cells holding the
+/// declared bytes, and the four kernel claim sets plus the mint totals equal
+/// as SETS to the declared ones.
+pub fn check_effects(effects: &[Effect], pre: &PreState, ex: &Executed) -> Result<(), String> {
     use std::collections::{BTreeMap, BTreeSet};
     let mut want_nul: BTreeSet<[u8; 32]> = BTreeSet::new();
     let mut want_recv: BTreeSet<[u8; 32]> = BTreeSet::new();
@@ -1039,31 +728,26 @@ pub fn check_effects(
         match e {
             Effect::CounterInc { field, by } => {
                 let want = pre_counter(pre, *field) + by;
-                let got = exec::counter(&ex.post, usize::from(*field))
+                let got = exec::counter(&ex.post, *field)
                     .ok_or_else(|| format!("field {field} is not a counter cell after the run"))?;
                 if got != want {
                     return Err(format!("counter {field}: want {want}, got {got}"));
                 }
             }
             Effect::MapInsert { field, key, value } => {
-                let k = key.concretize(art);
-                let got = map_get(&ex.post, usize::from(*field), &k)
+                let got = exec::map_get(&ex.post, *field, key)
                     .ok_or_else(|| format!("map {field} lacks the inserted key"))?;
-                let want = match value {
-                    Val::Record(av) => av.clone(),
-                    Val::Term(t) => bytesn_value(32, &t.concretize(art)),
-                };
-                if got != want {
+                if &got != value {
                     return Err(format!("map {field}: inserted value differs"));
                 }
             }
             Effect::MapRemove { field, key } => {
-                if exec::map_member(&ex.post, usize::from(*field), &key.concretize(art)) {
+                if exec::map_member(&ex.post, *field, key) {
                     return Err(format!("map {field}: key survived the removal"));
                 }
             }
             Effect::CellWrite { field, value } => {
-                let got = cell_bytes(&ex.post, usize::from(*field))
+                let got = exec::cell_bytes(&ex.post, *field)
                     .ok_or_else(|| format!("field {field} is not a cell after the run"))?;
                 let want = value.value.0.first().map(|a| a.0.clone()).unwrap_or_default();
                 if got != want {
@@ -1071,16 +755,16 @@ pub fn check_effects(
                 }
             }
             Effect::MintShielded { domain_sep, value } => {
-                *want_mint.entry(domain_sep.concretize(art)).or_insert(0) += value;
+                *want_mint.entry(*domain_sep).or_insert(0) += value;
             }
-            Effect::ClaimSpend(t) => {
-                want_spend.insert(t.concretize(art));
+            Effect::ClaimSpend(cm) => {
+                want_spend.insert(*cm);
             }
-            Effect::ClaimReceive(t) => {
-                want_recv.insert(t.concretize(art));
+            Effect::ClaimReceive(cm) => {
+                want_recv.insert(*cm);
             }
-            Effect::ClaimNullifier(t) => {
-                want_nul.insert(t.concretize(art));
+            Effect::ClaimNullifier(n) => {
+                want_nul.insert(*n);
             }
             Effect::ClaimContractCall { addr, ep, comm } => {
                 want_calls.insert((call_seq, *addr, *ep, *comm));
@@ -1089,30 +773,10 @@ pub fn check_effects(
         }
     }
 
-    let got_nul: BTreeSet<[u8; 32]> = ex
-        .effects
-        .claimed_nullifiers
-        .iter()
-        .map(|n| n.0 .0)
-        .collect();
-    let got_recv: BTreeSet<[u8; 32]> = ex
-        .effects
-        .claimed_shielded_receives
-        .iter()
-        .map(|c| c.0 .0)
-        .collect();
-    let got_spend: BTreeSet<[u8; 32]> = ex
-        .effects
-        .claimed_shielded_spends
-        .iter()
-        .map(|c| c.0 .0)
-        .collect();
-    let got_mint: BTreeMap<[u8; 32], u64> = ex
-        .effects
-        .shielded_mints
-        .iter()
-        .map(|kv| (kv.0 .0, *kv.1))
-        .collect();
+    let got_nul: BTreeSet<[u8; 32]> = ex.effects.claimed_nullifiers.iter().map(|n| n.0 .0).collect();
+    let got_recv: BTreeSet<[u8; 32]> = ex.effects.claimed_shielded_receives.iter().map(|c| c.0 .0).collect();
+    let got_spend: BTreeSet<[u8; 32]> = ex.effects.claimed_shielded_spends.iter().map(|c| c.0 .0).collect();
+    let got_mint: BTreeMap<[u8; 32], u64> = ex.effects.shielded_mints.iter().map(|kv| (kv.0 .0, *kv.1)).collect();
     let got_calls: BTreeSet<(u64, [u8; 32], [u8; 32], Fr)> = ex
         .effects
         .claimed_contract_calls
@@ -1147,15 +811,4 @@ pub fn check_effects(
         return Err("unexpected unshielded effects".into());
     }
     Ok(())
-}
-
-/// Marker used by [`CoinCommitment`]/[`Nullifier`] round-tripping in the
-/// adversarial injectivity sweep: both artifacts' concretizations are
-/// SHA-256/keccak at this rung, so injectivity of the term → bytes map is
-/// hash-injectivity on the generated corpus.
-pub fn coin_types_are_hash_outputs() -> (CoinCommitment, Nullifier) {
-    (
-        CoinCommitment(HashOutput([0u8; 32])),
-        Nullifier(HashOutput([0u8; 32])),
-    )
 }

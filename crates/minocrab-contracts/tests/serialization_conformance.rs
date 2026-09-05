@@ -20,9 +20,12 @@
 //!    `T::LEN` equals the deployed FAB alignment's own `bin_len`. No
 //!    value-dependent branching, so every offset is a compile-time constant.
 //! c. THE HEADLINE — byte-equality against the deployed protocol's actual
-//!    bytes: the two request records (and so the request IDs), the four
-//!    attestation digest preimages, and the singleton's three Misc payloads,
-//!    the last checked by handing the bytes to the CORPUS ARTIFACT itself.
+//!    bytes: the request records, the attestation digest preimages, and the
+//!    singleton's three Misc payloads, the last checked by handing the bytes
+//!    to the CORPUS ARTIFACT itself. (Since the protocol move — M28 — the
+//!    request id and the signed digest are Poseidon over the FIELD-ALIGNED
+//!    limbs, not a hash of these bytes; the byte claims stand, the hash
+//!    claims live in the vault model.)
 //! d. SCHEMA DRIFT — the Borsh schema walked into a frozen `(path, kind,
 //!    offset, width)` table, the seed of stage 8's published offset tables.
 //!
@@ -39,14 +42,12 @@ use minocrab_sim::v3::simulate;
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
 use serde::Serialize;
-use sha3::{Digest, Keccak256};
 
 use serialization::deployed;
 use serialization::oracle::{bincode_fixint_bytes, borsh_bytes, layout_rows, schema_len, Row};
 use serialization::records;
 use serialization::spec_types;
 use serialization::spec_types::*;
-use vault::artifact::Art;
 use vault::gen;
 use vault::prims::b32_slots;
 
@@ -482,31 +483,40 @@ fn schema_widths_match_the_lens() {
 
 // ---- (c) THE HEADLINE: the deployed bytes ------------------------------------
 
+/// A V2 (M11 stage 7) record's limbs from the deployed record's: the
+/// format-version byte in front, the two schema strings (four limbs) traded
+/// for the response kind at the end. The middle is untouched — which is the
+/// point of building it this way rather than restating it.
+fn v2_limbs(deployed: &[Fr], kind: u8) -> Vec<Fr> {
+    let mut limbs = vec![Fr::from(u64::from(spec_types::RECORD_FORMAT_VERSION))];
+    limbs.extend_from_slice(&deployed[..deployed.len() - 4]);
+    limbs.push(Fr::from(u64::from(kind)));
+    limbs
+}
+
 proptest! {
     #![proptest_config(gen::config())]
 
-    /// The 2-word request record — `deposit`, `approveRouter` and
-    /// `withdraw` all write this shape.
+    /// The 2-word request record — `startDeposit`, `approveRouter` and
+    /// `startWithdraw` all write this shape.
     ///
-    /// LEFT: the bytes the deployed circuit hashes. `calculateRequestId`
-    /// hands `keccak256` the record's FAB limbs under
-    /// `erc20_vault::VaultEvent::atoms()`; the chip packs them, which
-    /// off-circuit is `parse_field_repr` + `binary_repr` — the reference
-    /// model's `request_id()`, the one M10's differential suite pins to
-    /// compactc's artifact.
+    /// LEFT: the bytes the deployed record holds. The reference model's
+    /// limbs under `erc20_vault::VaultEvent::atoms()`, packed by the FAB
+    /// rule (`parse_field_repr` + `binary_repr`) — the record M28's
+    /// differential suite pins to compactc's artifact.
     ///
     /// RIGHT: `borsh::to_vec` of the spec type at the same field values.
     #[test]
     fn vault_record_bytes_are_canonical_borsh(
-        deposit in gen::deposit(),
-        approve in gen::approve(),
-        withdraw in gen::withdraw(),
+        deposit in gen::start_deposit(),
+        approve in gen::approve_router(),
+        withdraw in gen::start_withdraw(),
     ) {
         let atoms = records::vault_record_atoms();
         for (name, limbs, spec) in [
-            ("deposit", deposit.event_limbs(), records::deposit_event(&deposit)),
-            ("approveRouter", approve.event_limbs(), records::approve_event(&approve)),
-            ("withdraw", withdraw.event_limbs(), records::withdraw_event(&withdraw)),
+            ("startDeposit", deposit.req().limbs(&deposit.env), records::deposit_event(&deposit)),
+            ("approveRouter", approve.req().limbs(&approve.env), records::approve_event(&approve)),
+            ("startWithdraw", withdraw.req().limbs(&withdraw.env), records::withdraw_event(&withdraw)),
         ] {
             prop_assert_eq!(limbs.len(), records::VAULT_RECORD_LIMBS);
             let on_chain = deployed::fab_bytes(&atoms, &limbs);
@@ -514,58 +524,55 @@ proptest! {
             prop_assert_eq!(&on_chain, &spec_bytes, "{}: record bytes differ", name);
             prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone(), "{}", name);
         }
-        // …and therefore the request id the vault stores IS
-        // keccak256(borsh(record)).
-        let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&records::deposit_event(&deposit))).into();
-        prop_assert_eq!(digest, deposit.request_id());
-        let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&records::withdraw_event(&withdraw))).into();
-        prop_assert_eq!(digest, withdraw.request_id());
-        let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&records::approve_event(&approve))).into();
-        prop_assert_eq!(digest, approve.request_id());
     }
 
-    /// The 7-word swap record — the 571-byte one stage 7 wants to shrink.
+    /// The 7-word swap record.
     #[test]
-    fn swap_record_bytes_are_canonical_borsh(swap in gen::swap()) {
-        let limbs = swap.event_limbs();
+    fn swap_record_bytes_are_canonical_borsh(swap in gen::start_swap()) {
+        let limbs = swap.req().limbs(&swap.env);
         prop_assert_eq!(limbs.len(), records::SWAP_RECORD_LIMBS);
         let on_chain = deployed::fab_bytes(&records::swap_record_atoms(), &limbs);
         let spec = records::swap_event(&swap);
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
         prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
-        let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&spec)).into();
-        prop_assert_eq!(digest, swap.request_id());
     }
 
-    /// M11 STAGE 7: the record the BORSH artifacts write.
+    /// M11 STAGE 7: the record the V2 format writes (the `Pending`
+    /// lineage's records).
     ///
-    /// The deployed properties above are untouched and still pin what is on
-    /// the wire today; this is the same statement about the new format, with
-    /// the same two independent sides. LEFT: the bytes the borsh circuit
-    /// hashes — the reference model's stage-7 limbs under
-    /// `erc20_vault_borsh::VaultEventV2::atoms()`, which is the alignment
-    /// `calculateRequestId` hands to keccak256. RIGHT: `borsh::to_vec` of the
-    /// spec twin. Closed with `keccak256(borsh(record)) == request_id`, so the
-    /// request id the borsh vault stores IS keccak256 of the record's
-    /// canonical Borsh encoding — the property the MPC recomputes and drops
-    /// the request on.
+    /// The deployed properties above are untouched; this is the same
+    /// statement about the V2 format, with the same two independent sides.
+    /// LEFT: the V2 limbs under `VaultEventV2::atoms()` — the deployed
+    /// record's limbs with the version byte in front and the kind where the
+    /// schema strings were ([`v2_limbs`]). RIGHT: `borsh::to_vec` of the
+    /// spec twin.
     #[test]
     fn stage7_record_bytes_are_canonical_borsh(
-        deposit in gen::deposit(),
-        approve in gen::approve(),
-        withdraw in gen::withdraw(),
-        swap in gen::swap(),
+        deposit in gen::start_deposit(),
+        approve in gen::approve_router(),
+        withdraw in gen::start_withdraw(),
+        swap in gen::start_swap(),
     ) {
-        let deposit = deposit.with_art(Art::Borsh);
-        let approve = approve.with_art(Art::Borsh);
-        let withdraw = withdraw.with_art(Art::Borsh);
-        let swap = swap.with_art(Art::Borsh);
-
+        use minocrab_contracts::erc20_vault_pending::{
+            RESPONSE_KIND_APPROVE, RESPONSE_KIND_CLAIM, RESPONSE_KIND_SWAP, RESPONSE_KIND_WITHDRAW,
+        };
         let atoms = records::vault_record_v2_atoms();
         for (name, limbs, spec) in [
-            ("deposit", deposit.event_limbs(), records::deposit_event_v2(&deposit)),
-            ("approveRouter", approve.event_limbs(), records::approve_event_v2(&approve)),
-            ("withdraw", withdraw.event_limbs(), records::withdraw_event_v2(&withdraw)),
+            (
+                "startDeposit",
+                v2_limbs(&deposit.req().limbs(&deposit.env), records::kind(RESPONSE_KIND_CLAIM)),
+                records::deposit_event_v2(&deposit),
+            ),
+            (
+                "approveRouter",
+                v2_limbs(&approve.req().limbs(&approve.env), records::kind(RESPONSE_KIND_APPROVE)),
+                records::approve_event_v2(&approve),
+            ),
+            (
+                "startWithdraw",
+                v2_limbs(&withdraw.req().limbs(&withdraw.env), records::kind(RESPONSE_KIND_WITHDRAW)),
+                records::withdraw_event_v2(&withdraw),
+            ),
         ] {
             prop_assert_eq!(limbs.len(), records::VAULT_RECORD_V2_LIMBS);
             let on_chain = deployed::fab_bytes(&atoms, &limbs);
@@ -576,54 +583,36 @@ proptest! {
             // The version byte is the first byte, before anything else.
             prop_assert_eq!(on_chain[0], spec_types::RECORD_FORMAT_VERSION);
         }
-        prop_assert_eq!(
-            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::deposit_event_v2(&deposit)))),
-            deposit.request_id()
-        );
-        prop_assert_eq!(
-            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::approve_event_v2(&approve)))),
-            approve.request_id()
-        );
-        prop_assert_eq!(
-            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&records::withdraw_event_v2(&withdraw)))),
-            withdraw.request_id()
-        );
 
-        let limbs = swap.event_limbs();
+        let limbs = v2_limbs(&swap.req().limbs(&swap.env), records::kind(RESPONSE_KIND_SWAP));
         prop_assert_eq!(limbs.len(), records::SWAP_RECORD_V2_LIMBS);
         let on_chain = deployed::fab_bytes(&records::swap_record_v2_atoms(), &limbs);
         let spec = records::swap_event_v2(&swap);
         prop_assert_eq!(on_chain.len(), SwapEventV2::LEN);
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
         prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
-        prop_assert_eq!(
-            <[u8; 32]>::from(Keccak256::digest(borsh_bytes(&spec))),
-            swap.request_id()
-        );
     }
 
-    /// The attestation digest preimages of all four settle circuits.
+    /// The attestation digest preimages of the settle circuits, one per
+    /// output width.
     ///
     /// LEFT: `calculateSignetAttestationDigest`'s own alignment,
     /// `[Bytes<32>, Bytes<LEN_OUTPUT>]`, over the request id's slot pair
-    /// and the output's limbs.
+    /// and the output's limbs — the BYTES; the digest itself is Poseidon
+    /// over those limbs since the protocol move, checked in the vault
+    /// model against compactc's artifacts.
     #[test]
     fn attestation_preimages_are_canonical_borsh(
-        claim in gen::claim(),
+        claim in gen::complete_deposit(),
         complete_withdraw in gen::complete_withdraw(),
-        refund in gen::refund(),
+        refund in gen::refund_withdraw(),
         complete_swap in gen::complete_swap(),
     ) {
-        // claim: Bytes<1>
+        // completeDeposit: Bytes<1>
         let rid = claim.d.request_id();
         let spec = AttestationPreimage { request_id: rid, output: ClaimOutput { success: claim.serialized_output } };
-        let on_chain = deployed::attestation_preimage_bytes(
-            &rid, 1, &[Fr::from(u64::from(claim.serialized_output))],
-        );
+        let on_chain = deployed::attestation_preimage_bytes(&rid, 1, &claim.output_limbs());
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
-        // …and the digest the MPC signed is keccak256 of exactly that.
-        let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&spec)).into();
-        prop_assert_eq!(digest, claim.attestation_digest());
 
         // completeWithdraw: Bytes<1>
         let rid = complete_withdraw.w.request_id();
@@ -631,19 +620,16 @@ proptest! {
             request_id: rid,
             output: CompleteWithdrawOutput { success: complete_withdraw.outcome },
         };
-        let on_chain = deployed::attestation_preimage_bytes(
-            &rid, 1, &[Fr::from(u64::from(complete_withdraw.outcome))],
-        );
+        let on_chain = deployed::attestation_preimage_bytes(&rid, 1, &complete_withdraw.output_limbs());
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
 
-        // refund: Bytes<5>
-        let rid = refund.request_id();
+        // refundWithdraw: Bytes<5>
+        let rid = refund.w.request_id();
         let spec = AttestationPreimage {
             request_id: rid,
             output: RefundOutput { failure: refund.serialized_output },
         };
-        let limb = Fr::from_le_bytes(&refund.serialized_output).expect("5 bytes fit");
-        let on_chain = deployed::attestation_preimage_bytes(&rid, 5, &[limb]);
+        let on_chain = deployed::attestation_preimage_bytes(&rid, 5, &refund.output_limbs());
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
 
         // completeSwap: Bytes<8>, already a Borsh u64.
@@ -652,91 +638,8 @@ proptest! {
             request_id: rid,
             output: CompleteSwapOutput { amount_in: complete_swap.amount_in },
         };
-        let on_chain = deployed::attestation_preimage_bytes(
-            &rid, 8, &[Fr::from(complete_swap.amount_in)],
-        );
+        let on_chain = deployed::attestation_preimage_bytes(&rid, 8, &complete_swap.output_limbs());
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
-    }
-
-    /// M11 STAGE 5: the BORSH artifact's attestation digest preimages.
-    ///
-    /// Nothing deployed to compare against — this is the format the MPC will
-    /// implement — so the pin is the other way round: LEFT is what the
-    /// reference model hands the signer for `Art::Borsh`, and RIGHT is
-    /// `borsh::to_vec` of the spec twin. That matters because the borsh
-    /// circuits verify an ECDSA signature over `keccak256(LEFT)` and reject
-    /// unless their OWN keccak preimage — built by `CircuitBorsh::push_limbs`
-    /// out of the declared fields — reproduces it exactly. So this equality
-    /// plus the spec harness's acceptance agreement says the circuits hash
-    /// canonical Borsh of the declared types, at every generated case.
-    #[test]
-    fn borsh_attestation_preimages_are_canonical_borsh(
-        claim in gen::claim(),
-        complete_withdraw in gen::complete_withdraw(),
-        refund in gen::refund(),
-        complete_swap in gen::complete_swap(),
-    ) {
-        let claim = claim.with_art(Art::Borsh);
-        let complete_withdraw = complete_withdraw.with_art(Art::Borsh);
-        let refund = refund.with_art(Art::Borsh);
-        let complete_swap = complete_swap.with_art(Art::Borsh);
-
-        // claim / completeWithdraw: {kind: u8, success: bool}. A generated
-        // success byte above 1 has NO canonical Borsh value — that is the
-        // 0x02 hazard, and the borsh circuit rejects it — so the equality is
-        // stated where the type exists.
-        if claim.serialized_output <= 1 {
-            let rid = claim.d.request_id();
-            let spec = AttestationPreimage {
-                request_id: rid,
-                output: VaultResponse {
-                    kind: claim.response_kind,
-                    success: claim.serialized_output == 1,
-                },
-            };
-            let mut model = rid.to_vec();
-            model.extend(claim.attested_output_bytes());
-            prop_assert_eq!(&model, &borsh_bytes(&spec));
-            // …and the digest the MPC signs is keccak256 of exactly that.
-            let digest: [u8; 32] = Keccak256::digest(borsh_bytes(&spec)).into();
-            prop_assert_eq!(digest, claim.attestation_digest());
-        }
-        if complete_withdraw.outcome <= 1 {
-            let rid = complete_withdraw.w.request_id();
-            let spec = AttestationPreimage {
-                request_id: rid,
-                output: VaultResponse {
-                    kind: complete_withdraw.response_kind,
-                    success: complete_withdraw.outcome == 1,
-                },
-            };
-            let mut model = rid.to_vec();
-            model.extend(complete_withdraw.attested_output_bytes());
-            prop_assert_eq!(&model, &borsh_bytes(&spec));
-        }
-
-        // refund: {kind: u8} — one byte, whatever the kind.
-        let rid = refund.request_id();
-        let spec = AttestationPreimage {
-            request_id: rid,
-            output: FailureResponse { kind: refund.response_kind },
-        };
-        let mut model = rid.to_vec();
-        model.extend(refund.attested_output_bytes());
-        prop_assert_eq!(&model, &borsh_bytes(&spec));
-
-        // completeSwap: {kind: u8, amount_in: u64}.
-        let rid = complete_swap.s.request_id();
-        let spec = AttestationPreimage {
-            request_id: rid,
-            output: SwapResponse {
-                kind: complete_swap.response_kind,
-                amount_in: complete_swap.amount_in,
-            },
-        };
-        let mut model = rid.to_vec();
-        model.extend(complete_swap.attested_output_bytes());
-        prop_assert_eq!(&model, &borsh_bytes(&spec));
     }
 }
 

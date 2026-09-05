@@ -33,24 +33,28 @@ use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::{Array, HashMap};
 
+use super::ops::{segment_of, FIELDS};
 use super::prims::{bytesn_value, cell, VmOp};
 
+/// A map field's entries: request id → stored value.
+pub type Entries = Vec<([u8; 32], AlignedValue)>;
+
 /// The vault's ledger state, one field per Compact declaration. Field
-/// indices are [`minocrab_contracts::erc20_vault`]'s constants; the array
-/// order here IS that numbering, so a mis-numbered circuit read fails at
-/// `Popeq` rather than silently reading a neighbour.
+/// indices are the declaration order (`erc20_vault`'s module doc); the
+/// array order here IS that numbering, so a mis-numbered circuit read fails
+/// at `Popeq` rather than silently reading a neighbour.
 #[derive(Clone, Debug, Default)]
 pub struct PreState {
     /// field 0 — `signBidirectionalEventMap: requestId -> record`.
-    pub sign_event_map: Vec<([u8; 32], AlignedValue)>,
+    pub sign_event_map: Entries,
     /// field 1 — `signetSigner`.
     pub signet_signer: [u8; 32],
     /// field 2 — `mpcResponseKey` (a `Secp256k1Point`, 5 FAB limbs).
     pub mpc_response_key: Option<AlignedValue>,
     /// field 3 — `signetRequestNonce: Counter`.
     pub request_nonce: u64,
-    /// field 4 — `initialized: Counter`.
-    pub initialized: u64,
+    /// field 4 — `initialised: Counter`.
+    pub initialised: u64,
     /// field 5 — `vaultEvmAddress`.
     pub vault_evm: [u8; 20],
     /// field 6 — `evmChainId`.
@@ -59,63 +63,88 @@ pub struct PreState {
     pub caip2: [u8; 32],
     /// field 8 — `deployer`.
     pub deployer: [u8; 32],
-    /// field 9 — `refundCommitment: requestId -> commitment`.
-    pub refund_commitment: Vec<([u8; 32], [u8; 32])>,
-    /// field 10 — `uniswapRouter`.
+    /// field 9 — `depositEventMap`.
+    pub deposit_event_map: Entries,
+    /// field 10 — `depositSettleViews`.
+    pub deposit_settle_views: Entries,
+    /// field 11 — `withdrawSettleViews`.
+    pub withdraw_settle_views: Entries,
+    /// field 12 — `uniswapRouter`.
     pub uniswap_router: [u8; 20],
-    /// field 11 — `swapEventMap: requestId -> record`.
-    pub swap_event_map: Vec<([u8; 32], AlignedValue)>,
-    /// field 12 — `swapRefundCommitment: requestId -> commitment`.
-    pub swap_refund_commitment: Vec<([u8; 32], [u8; 32])>,
+    /// field 13 — `swapEventMap`.
+    pub swap_event_map: Entries,
+    /// field 14 — `swapSettleViews`.
+    pub swap_settle_views: Entries,
+    /// field 15 — `stataUnderlying`.
+    pub stata_underlying: [u8; 20],
+    /// field 16 — `stataToken`.
+    pub stata_token: [u8; 20],
+    /// field 17 — `supplyEventMap`.
+    pub supply_event_map: Entries,
+    /// field 18 — `supplySettleViews`.
+    pub supply_settle_views: Entries,
+    /// field 19 — `redeemEventMap`.
+    pub redeem_event_map: Entries,
+    /// field 20 — `redeemSettleViews`.
+    pub redeem_settle_views: Entries,
 }
 
-fn map_of(entries: impl IntoIterator<Item = (AlignedValue, StateValue<InMemoryDB>)>) -> StateValue {
+fn map_of(entries: &Entries) -> StateValue {
     let mut m: HashMap<AlignedValue, StateValue<InMemoryDB>, InMemoryDB> = HashMap::new();
     for (k, v) in entries {
-        m = m.insert(k, v);
+        m = m.insert(bytesn_value(32, k), cell(v.clone()));
     }
     StateValue::Map(m)
 }
 
 impl PreState {
-    /// The 13-field state tree the circuits index into.
-    pub fn state(&self) -> StateValue {
-        let key = |k: &[u8; 32]| bytesn_value(32, k);
-        let fields: Vec<StateValue> = vec![
-            map_of(
-                self.sign_event_map
-                    .iter()
-                    .map(|(k, v)| (key(k), cell(v.clone()))),
-            ),
+    /// The 21 fields in declaration order, before segmentation.
+    fn fields(&self) -> Vec<StateValue> {
+        vec![
+            map_of(&self.sign_event_map),
             cell(bytesn_value(32, &self.signet_signer)),
             match &self.mpc_response_key {
                 Some(av) => cell(av.clone()),
                 None => StateValue::Null,
             },
             cell(bytesn_value(8, &self.request_nonce.to_le_bytes())),
-            cell(bytesn_value(8, &self.initialized.to_le_bytes())),
+            cell(bytesn_value(8, &self.initialised.to_le_bytes())),
             cell(bytesn_value(20, &self.vault_evm)),
             cell(bytesn_value(8, &self.chain_id.to_le_bytes())),
             cell(bytesn_value(32, &self.caip2)),
             cell(bytesn_value(32, &self.deployer)),
-            map_of(
-                self.refund_commitment
-                    .iter()
-                    .map(|(k, v)| (key(k), cell(bytesn_value(32, v)))),
-            ),
+            map_of(&self.deposit_event_map),
+            map_of(&self.deposit_settle_views),
+            map_of(&self.withdraw_settle_views),
             cell(bytesn_value(20, &self.uniswap_router)),
-            map_of(
-                self.swap_event_map
-                    .iter()
-                    .map(|(k, v)| (key(k), cell(v.clone()))),
-            ),
-            map_of(
-                self.swap_refund_commitment
-                    .iter()
-                    .map(|(k, v)| (key(k), cell(bytesn_value(32, v)))),
-            ),
-        ];
-        StateValue::Array(Array::from(fields))
+            map_of(&self.swap_event_map),
+            map_of(&self.swap_settle_views),
+            cell(bytesn_value(20, &self.stata_underlying)),
+            cell(bytesn_value(20, &self.stata_token)),
+            map_of(&self.supply_event_map),
+            map_of(&self.supply_settle_views),
+            map_of(&self.redeem_event_map),
+            map_of(&self.redeem_settle_views),
+        ]
+    }
+
+    /// The SEGMENTED state tree the circuits index into: an array of two
+    /// arrays, six fields then fifteen (`ops::segment_of`).
+    pub fn state(&self) -> StateValue {
+        let fields = self.fields();
+        assert_eq!(fields.len(), usize::from(FIELDS));
+        let mut segments: Vec<Vec<StateValue>> = vec![Vec::new(), Vec::new()];
+        for (i, f) in fields.into_iter().enumerate() {
+            let (seg, off) = segment_of(i as u8);
+            assert_eq!(usize::from(off), segments[usize::from(seg)].len());
+            segments[usize::from(seg)].push(f);
+        }
+        StateValue::Array(Array::from(
+            segments
+                .into_iter()
+                .map(|s| StateValue::Array(Array::from(s)))
+                .collect::<Vec<_>>(),
+        ))
     }
 }
 
@@ -161,12 +190,8 @@ pub fn run(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<Execute
 /// `Noop`s (`MalformedTransaction::NotNormalized`). A reference op stream
 /// that is compared to a circuit's must therefore be normalised the same
 /// way, or the comparison is against a program the ledger would never
-/// accept.
-///
-/// The vault's nine circuits emit no `Noop` at all — a single contract call
-/// with no inactive sibling segments — so this is a guard against
-/// regression rather than a live concern, and it is cheap enough to run on
-/// every case.
+/// accept. The vault's circuits emit no `Noop` at all, so this is a guard
+/// against regression.
 pub fn assert_normalized(ops: &[VmOp]) -> Result<(), String> {
     for (i, w) in ops.windows(2).enumerate() {
         if matches!((&w[0], &w[1]), (Op::Noop { .. }, Op::Noop { .. })) {
@@ -179,69 +204,49 @@ pub fn assert_normalized(ops: &[VmOp]) -> Result<(), String> {
     Ok(())
 }
 
-/// [`normalize`]'s inverse test: merge adjacent `Noop`s exactly as
-/// `prove.rs:291-327` does, so a model that ever grows inactive segments
-/// can be brought into the shape `verify.rs` accepts.
-pub fn normalize(ops: &[VmOp]) -> Vec<VmOp> {
-    let mut out: Vec<VmOp> = Vec::with_capacity(ops.len());
-    let mut n: u32 = 0;
-    for op in ops {
-        match op {
-            Op::Noop { n: n2 } => n += n2,
-            other => {
-                if n != 0 {
-                    out.push(Op::Noop { n });
-                    n = 0;
-                }
-                out.push(other.clone());
-            }
-        }
-    }
-    if n != 0 {
-        out.push(Op::Noop { n });
-    }
-    out
-}
-
-/// Read a `Bytes<32>` cell out of a post-state map field, or `None` when
-/// the key is absent. Used by the spec assertions.
-pub fn map_get_b32(state: &StateValue, field: usize, key: &[u8; 32]) -> Option<[u8; 32]> {
-    let StateValue::Array(arr) = state else {
+/// The slot of field `field` in a segmented state tree.
+pub fn slot(state: &StateValue, field: u8) -> Option<StateValue> {
+    let (seg, off) = segment_of(field);
+    let StateValue::Array(segments) = state else {
         return None;
     };
-    let StateValue::Map(m) = arr.get(field)? else {
+    let StateValue::Array(fields) = segments.get(usize::from(seg))? else {
+        return None;
+    };
+    fields.get(usize::from(off)).cloned()
+}
+
+/// Read a map field's entry as an `AlignedValue`, or `None` when absent.
+pub fn map_get(state: &StateValue, field: u8, key: &[u8; 32]) -> Option<AlignedValue> {
+    let StateValue::Map(ref m) = slot(state, field)? else {
         return None;
     };
     let entry = m.get(&bytesn_value(32, key))?;
     let StateValue::Cell(av) = entry.deref() else {
         return None;
     };
-    let bytes = av.value.0.first()?.0.clone();
-    let mut out = [0u8; 32];
-    out[..bytes.len()].copy_from_slice(&bytes);
-    Some(out)
+    Some((**av).clone())
 }
 
 /// Is `key` present in the map at `field` of `state`?
-pub fn map_member(state: &StateValue, field: usize, key: &[u8; 32]) -> bool {
-    let StateValue::Array(arr) = state else {
-        return false;
-    };
-    match arr.get(field) {
-        Some(StateValue::Map(m)) => m.get(&bytesn_value(32, key)).is_some(),
+pub fn map_member(state: &StateValue, field: u8, key: &[u8; 32]) -> bool {
+    match slot(state, field) {
+        Some(StateValue::Map(ref m)) => m.get(&bytesn_value(32, key)).is_some(),
         _ => false,
     }
 }
 
+/// A cell field's first atom, as bytes.
+pub fn cell_bytes(state: &StateValue, field: u8) -> Option<Vec<u8>> {
+    let StateValue::Cell(ref av) = slot(state, field)? else {
+        return None;
+    };
+    av.value.0.first().map(|a| a.0.clone())
+}
+
 /// Read a counter field (a `Bytes<8>` cell) out of a state tree.
-pub fn counter(state: &StateValue, field: usize) -> Option<u64> {
-    let StateValue::Array(arr) = state else {
-        return None;
-    };
-    let StateValue::Cell(av) = arr.get(field)? else {
-        return None;
-    };
-    let bytes = av.value.0.first()?.0.clone();
+pub fn counter(state: &StateValue, field: u8) -> Option<u64> {
+    let bytes = cell_bytes(state, field)?;
     let mut le = [0u8; 8];
     le[..bytes.len().min(8)].copy_from_slice(&bytes[..bytes.len().min(8)]);
     Some(u64::from_le_bytes(le))

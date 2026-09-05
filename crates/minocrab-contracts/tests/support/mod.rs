@@ -239,15 +239,25 @@ pub fn circuits() -> Vec<Circuit> {
         };
     }
     let mut listed: Vec<Circuit> = vec![
-        c!("erc20_vault::initialize", || erc20_vault::initialize()),
-        c!("erc20_vault::deposit", || erc20_vault::deposit()),
-        c!("erc20_vault::claim", || erc20_vault::claim()),
+        // erc20-vault, the compat port of the seventeen-circuit vault
+        // (signet-midnight-examples 0d9c1660, M28): PI-equal to compactc.
+        c!("erc20_vault::initialise", || erc20_vault::initialise()),
+        c!("erc20_vault::approve_stata", || erc20_vault::approve_stata()),
         c!("erc20_vault::approve_router", || erc20_vault::approve_router()),
-        c!("erc20_vault::withdraw", || erc20_vault::withdraw()),
+        c!("erc20_vault::start_deposit", || erc20_vault::start_deposit()),
+        c!("erc20_vault::complete_deposit", || erc20_vault::complete_deposit()),
+        c!("erc20_vault::start_withdraw", || erc20_vault::start_withdraw()),
         c!("erc20_vault::complete_withdraw", || erc20_vault::complete_withdraw()),
-        c!("erc20_vault::refund", || erc20_vault::refund()),
-        c!("erc20_vault::swap", || erc20_vault::swap()),
+        c!("erc20_vault::refund_withdraw", || erc20_vault::refund_withdraw()),
+        c!("erc20_vault::start_swap", || erc20_vault::start_swap()),
         c!("erc20_vault::complete_swap", || erc20_vault::complete_swap()),
+        c!("erc20_vault::refund_swap", || erc20_vault::refund_swap()),
+        c!("erc20_vault::start_supply", || erc20_vault::start_supply()),
+        c!("erc20_vault::complete_supply", || erc20_vault::complete_supply()),
+        c!("erc20_vault::refund_supply", || erc20_vault::refund_supply()),
+        c!("erc20_vault::start_redeem", || erc20_vault::start_redeem()),
+        c!("erc20_vault::complete_redeem", || erc20_vault::complete_redeem()),
+        c!("erc20_vault::refund_redeem", || erc20_vault::refund_redeem()),
         // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
         c!("erc20_vault_pending::initialize", || erc20_vault_pending::initialize()),
         c!("erc20_vault_pending::deposit", || erc20_vault_pending::deposit()),

@@ -1,11 +1,11 @@
 //! Shapes shared across the sig-net contracts.
 
-use minocrab::v3::{Circuit3, FieldT, Operand, Secp256k1PointT, Wire3};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Private, Public, Visibility};
+use minocrab::v3::{Circuit3, FieldT, Operand, Wire3};
+use minocrab::{AlignmentAtom, Private, Public, Visibility};
 use minocrab_ledger::{
-    cell_read, cell_write_coin, counter_read, dup, emit, idx_field, kernel_claim_zswap_coin_receive,
-    kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_mint_shielded,
-    popeq, ImpactElem, LedgerValue,
+    cell_write_coin, counter_read, emit, kernel_claim_zswap_coin_receive,
+    kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_mint_shielded, ImpactElem,
+    LedgerValue,
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::kernel::SelfAddress;
@@ -17,16 +17,15 @@ use minocrab_std::v3::{
 
 b32_newtype! {
     /// The witnessed vault secret key (`witness …SecretKey(): Bytes<32>`) —
-    /// what [`commitment_padded_tag`] and [`commitment_packed_tag`] derive
-    /// an identity from, and the first preimage limb of every refund
-    /// commitment. Constructed only by [`witness_sk`], so nothing but a
+    /// what [`commitment_transient`] derives an identity from, and the first
+    /// preimage limb of every refund commitment. Constructed only by [`witness_sk`], so nothing but a
     /// witnessed secret key can reach those derivations: any other private
     /// `B32` in scope (a nonce, a colour, a request id) no longer
     /// type-checks there, which is newtype-survey hazard A2 closed.
     SecretKey,
     /// An identity commitment — the MPC's key-derivation PATH, i.e. the
     /// value that decides which EVM account is derived. Produced only by
-    /// [`commitment_padded_tag`] and [`commitment_packed_tag`]; the stored
+    /// [`commitment_transient`]; the stored
     /// deployer and every depositor/caller comparison carry this type, so
     /// no other 32-byte value (a nonce, a colour, a request id, a refund
     /// commitment) can be compared against or written as one —
@@ -34,13 +33,13 @@ b32_newtype! {
     /// have "silently restranded every derived account"
     /// (notes/vault-vocabulary.org §0).
     UserCommitment,
-    /// A refund commitment — `withdrawRefundCommitment(sk, requestId)`,
-    /// covering both the withdraw and swap variants (same derivation; the
-    /// two `LedgerMap`s distinguish which route holds one). Produced only
-    /// by the forks' `withdraw_refund_commitment`, stored and looked up as
-    /// this type, so a [`UserCommitment`] (or any other 32-byte value) can
-    /// no longer satisfy a withdrawer/swapper/claimant gate —
-    /// newtype-survey hazard A4.
+    /// A refund commitment — `refundCommitment(sk, requestId)`, one
+    /// derivation for the withdraw, swap, supply and redeem flows (the
+    /// settle-view maps distinguish which flow holds one). Produced only by
+    /// `erc20_vault::refund_commitment` and the `Pending` lineage's
+    /// `Commit::to`, stored and looked up as this type, so a
+    /// [`UserCommitment`] (or any other 32-byte value) can no longer satisfy
+    /// a withdrawer/swapper gate — newtype-survey hazard A4.
     RefundCommitment,
     /// The MPC's SIGNING PATH — slot 5 of the sign-bidirectional event
     /// record, the value the MPC derives its signing key from. Genuinely
@@ -87,74 +86,6 @@ pub fn secp256k1_point_atoms() -> Vec<AlignmentAtom> {
     Secp256k1Point::<Public>::atoms()
 }
 
-/// The identity commitment both contracts derive:
-/// `persistentHash<Vector<2, Bytes<32>>>([pad(32, prefix), sk])` — the tag
-/// occupying a full 32-byte limb, so the preimage is 64 bytes and SHA-256
-/// splits it into two blocks.
-///
-/// A DIFFERENT VALUE FROM [`commitment_packed_tag`], not a slower spelling of
-/// it: the packed form hashes the tag's significant bytes alone, which is a
-/// different byte string and therefore a different digest. The digest is the
-/// MPC's key-derivation PATH, so the two forms derive different EVM accounts
-/// and an artifact must use one of them everywhere. `_padded_tag` is the
-/// compat form — what compactc's own vault emits, and what the deployed MPC
-/// config expects.
-///
-/// The suffix names the PREIMAGE rather than the cost on purpose: M18's
-/// design pass read the old name `commitment_short` as a cheaper spelling and
-/// filed it for unification, which would have silently restranded every
-/// derived account (notes/vault-vocabulary.org §0).
-pub fn commitment_padded_tag(
-    c: &mut Circuit3,
-    prefix: &str,
-    sk: &SecretKey<Private>,
-) -> UserCommitment<Private> {
-    let sk = sk.bytes();
-    c.region("identity commitment", |c| {
-        let pad = B32::pad(c, prefix);
-        let alignment = Alignment(vec![
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        ]);
-        let digest = c.persistent_hash(
-            alignment,
-            &[
-                pad.hi.private().erase(),
-                pad.lo.private().erase(),
-                sk.hi.erase(),
-                sk.lo.erase(),
-            ],
-        );
-        UserCommitment(B32::from_typed(c, digest))
-    })
-}
-
-/// The PACKED-TAG identity commitment (M10 rung 5(i-userCommit), avenue 1):
-/// `persistentHash<[Bytes<11>, Bytes<32>]>(["vault:user:", sk])`.
-///
-/// A DIFFERENT VALUE FROM [`commitment_padded_tag`] — see that function for
-/// why the two can never be unified. Everything below is why the optimized
-/// vault chooses this one.
-///
-/// The port hashes `[pad(32, "vault:user:"), sk]` — 64 message bytes, which
-/// SHA-256 splits into TWO blocks (ceil((64+9)/64) = 2). Dropping the zero
-/// padding of the domain tag to its 11 significant bytes gives 43 message
-/// bytes (ceil((43+9)/64) = 1 block): −1,880 rows per use, at three uses
-/// (initialize's deployer gate, deposit's request path, claim's recipient
-/// re-derivation), which MUST all agree since they compare the same value.
-///
-/// The domain tag string is UNCHANGED ("vault:user:"), so the meaning is
-/// identical; only the second SHA block of zero padding is gone. This stays
-/// SHA-256 deliberately: the commitment is the MPC's key-derivation PATH
-/// (Signet.compact:78-85), so a curve-independent hash is required — a
-/// Poseidon variant would strand funds at the old derived EVM account
-/// (notes/vault-optimization.org §"Q4"). The optimized vault's identity
-/// commitments differ from the port's, which is correct: it is a separate
-/// deployment whose MPC config carries this one-block layout.
-///
-/// | byte(s) | 0..10          | 11..42 |
-/// |---------|----------------|--------|
-/// | content | "vault:user:"  | sk[32] |
 /// `userCommitment(sk) = upgradeFromTransient(transientHash([pad(32,
 /// "vault:user:"), sk]))` — the vault's identity commitment since
 /// signet-midnight-examples `0d9c1660` (the protocol move to Poseidon;
@@ -168,46 +99,6 @@ pub fn commitment_transient(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCo
         let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
         UserCommitment(minocrab_std::v3::hash::upgrade_from_transient(c, f))
     })
-}
-
-pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCommitment<Private> {
-    let sk = sk.bytes();
-    c.region("identity commitment", |c| {
-        let tag = c.constant(
-            minocrab::Fr::from_le_bytes(super::erc20_vault::USER_PAD.as_bytes())
-                .expect("the 11-byte domain tag fits one field limb"),
-        );
-        let alignment = Alignment(vec![
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 11 }),
-            AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }),
-        ]);
-        let digest = c.persistent_hash(
-            alignment,
-            &[tag.private().erase(), sk.hi.erase(), sk.lo.erase()],
-        );
-        UserCommitment(B32::from_typed(c, digest))
-    })
-}
-
-/// [`assert_deployer`] against the SHORT identity commitment
-/// ([`commitment_packed_tag`]) — the optimized initialize's deployer gate.
-pub fn assert_deployer_packed<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    deployer_field: u8,
-) {
-    let sk = witness_sk(c);
-    let digest = commitment_packed_tag(c, &sk).bytes();
-    let stored = cell_read(
-        c,
-        guard,
-        deployer_field,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let eq_hi = c.test_eq(digest.hi, stored[0]);
-    let eq_lo = c.test_eq(digest.lo, stored[1]);
-    let both = c.mul(eq_hi, eq_lo);
-    c.assert(both);
 }
 
 /// Witness a secret key (`witness …SecretKey(): Bytes<32>`), input-constrained.
@@ -299,28 +190,6 @@ pub fn write_coin_to_self(
         );
         emit(c, guard, &cell_write_coin(field, &b32_value(&cm), &coin_val));
     });
-}
-
-/// `Cell<Secp256k1Point>.read()` of a top-level field: the gate is a
-/// single typed `public_input`, whose `encode` limbs the uncached popeq
-/// embeds (claim.zkir:29-33 — the mpcResponseKey read).
-pub fn cell_read_point<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    index: u8,
-) -> Wire3<Secp256k1PointT, Public> {
-    let point = c.public_transcript_input::<Secp256k1PointT>();
-    let limbs = c.encode(point);
-    let value = LedgerValue::new(
-        secp256k1_point_atoms(),
-        limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
-    );
-    emit(
-        c,
-        guard,
-        &[dup(0), idx_field(index), popeq(false, &value)],
-    );
-    point
 }
 
 /// The stdlib's full `mintShieldedToken(domain_sep, value, nonce,
@@ -497,38 +366,6 @@ pub fn burn_spend(
     });
 }
 
-/// In-branch assert: `assert(select(guard, cond, 1))` — the condition only
-/// binds when the branch is taken (completeWithdraw.zkir:300-304).
-pub fn assert_if<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    cond: Wire3<FieldT, V>,
-) {
-    assert_if_message(c, guard, cond, None);
-}
-
-/// [`assert_if`] with Compact's second `assert` argument (metadata — no
-/// instruction; the simulator names the check when it fails).
-pub fn assert_if_with<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    cond: Wire3<FieldT, V>,
-    message: &str,
-) {
-    assert_if_message(c, guard, cond, Some(message));
-}
-
-fn assert_if_message<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    cond: Wire3<FieldT, V>,
-    message: Option<&str>,
-) {
-    let one = V::from_public(c.constant(1u64));
-    let gated = c.cond_select(guard, cond, one);
-    c.assert_with(gated, message);
-}
-
 /// `mintShieldedToken(domain_sep, value, nonce, left(pk))` straight-line —
 /// the shared body of the static-`left(pk)` mints: compactc folds the
 /// recipient selects and the auto-receive branch.
@@ -585,24 +422,3 @@ pub fn assert_counter_zero<V: Visibility + Copy + minocrab::OnChainGuard>(
     c.assert(unset);
 }
 
-/// The deployer gate: `assert(commitment(prefix, <witnessed sk>) ==
-/// <Bytes<32> cell at deployer_field>)`.
-pub fn assert_deployer<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    prefix: &str,
-    deployer_field: u8,
-) {
-    let sk = witness_sk(c);
-    let digest = commitment_padded_tag(c, prefix, &sk).bytes();
-    let stored = cell_read(
-        c,
-        guard,
-        deployer_field,
-        vec![AlignmentAtom::Bytes { length: 32 }],
-    );
-    let eq_hi = c.test_eq(digest.hi, stored[0]);
-    let eq_lo = c.test_eq(digest.lo, stored[1]);
-    let both = c.mul(eq_hi, eq_lo);
-    c.assert(both);
-}
