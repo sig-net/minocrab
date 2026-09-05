@@ -16,10 +16,10 @@
 //!     struct __deposit_Args { evm_nonce: Uint<64>, deposit_request: DepositRequest }
 //!     impl CircuitArg for __deposit_Args { .. }     // the derive's own codegen
 //!     impl CircuitArgs for __deposit_Args { .. }
-//!     fn __deposit_body(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
+//!     pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, deposit_request: DepositRequest) {
 //!         // body, verbatim
 //!     }
-//!     entry(|__c, __args: __deposit_Args| __deposit_body(__c, __args.evm_nonce, __args.deposit_request))
+//!     entry(|__c, __args: __deposit_Args| deposit(__c, __args.evm_nonce, __args.deposit_request))
 //! }
 //! ```
 //!
@@ -28,6 +28,27 @@
 //! namespace. The body is moved, not rewritten — a real function with the
 //! parameters the author wrote, so `return`, `?`-free control flow, spans and
 //! type errors all behave as if the attribute were not there.
+//!
+//! THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+//! author's item is emitted as parsed; the macro adds siblings only. The
+//! nested function above is the author's `fn` verbatim — the same
+//! `Signature` (same parameter patterns and types, same return type) and the
+//! same `Block`, all cloned rather than rebuilt from string fragments, so
+//! every token keeps the span it had in the source (the one exception is the
+//! macro's own `#[arg(..)]` helper attribute on a parameter, consumed here
+//! because rustc rejects an attribute it does not recognise). It is declared
+//! under the AUTHOR'S OWN NAME, not a synthesised one: a `fn` declared
+//! inside a block shadows an outer item of the same name for the rest of
+//! that block, so the call inside `entry(..)` resolves to this nested
+//! definition while every other caller in the crate still sees the outer,
+//! zero-argument builder — the public API is unchanged. Everything ELSE the
+//! macro emits (the `__deposit_Args` struct, its trait impls, the `entry`
+//! call, the disclosure/budget tests) is a genuine SIBLING: a new item the
+//! author did not write, none of which reuses or mutates the author's
+//! tokens. The consequence is that rust-analyzer's goto-definition, hover,
+//! rename and inlay hints work inside a circuit's body exactly as they would
+//! without the attribute, because the tokens rust-analyzer is looking at ARE
+//! the ones in the source file, at the same spans.
 //!
 //! THINNESS RULE: the generated scaffolding contains no `Circuit3` call at
 //! all — it declares a struct, calls `entry`/`entry_out`, and passes `c`
@@ -133,26 +154,31 @@ pub fn expand_in(
     let bare = name.to_string();
     let bare = bare.strip_prefix("r#").unwrap_or(&bare);
     let args_ty = format_ident!("__{bare}_Args", span = name.span());
-    let body_fn = format_ident!("__{bare}_body", span = name.span());
 
     let arg_impls = impl_arg_traits(&args_ty, &syn::Generics::default(), &fields);
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
 
-    // The body function's parameters are the author's own, minus the `#[arg]`
-    // attributes this macro consumed (rustc rejects unknown ones).
-    let body_inputs: Vec<FnArg> = sig
-        .inputs
-        .iter()
-        .cloned()
-        .map(|mut input| {
-            if let FnArg::Typed(pat) = &mut input {
-                pat.attrs.retain(|a| !a.path().is_ident("arg"));
-            }
-            input
-        })
-        .collect();
-    let body_output = &sig.output;
+    // The inner function is the author's own `Signature`, cloned whole: same
+    // name, same parameter patterns and types, same return type, same spans
+    // — minus the `#[arg]` attributes this macro consumed off the parameters
+    // (rustc rejects an unrecognised attribute on a plain `fn`'s parameter;
+    // this is the one unavoidable deviation from verbatim, and it removes
+    // bookkeeping the macro itself added, not anything the author wrote for
+    // the circuit's logic). Reusing `#name` rather than a synthetic
+    // identifier is deliberate and safe: a `fn` declared inside a block
+    // shadows an outer item of the same name for the rest of that block, so
+    // the nested definition below and the call in `#call` both resolve to
+    // IT, while every OTHER caller in the crate still sees the outer
+    // zero-argument builder — the public API is unchanged. (Verified:
+    // `pub fn f() -> u32 { fn f(x: u32) -> u32 { x + 1 } f(41) }` compiles
+    // and `f()` from outside still calls the outer, zero-argument one.)
+    let mut inner_sig = sig.clone();
+    for input in inner_sig.inputs.iter_mut() {
+        if let FnArg::Typed(pat) = input {
+            pat.attrs.retain(|a| !a.path().is_ident("arg"));
+        }
+    }
 
     let root = quote!(::minocrab_std::v3);
     // `entry(closure)` and `entry_out(label, closure)` differ only in the
@@ -180,7 +206,7 @@ pub fn expand_in(
         }
     };
     let call = quote! {
-        #entry_fn(#label_arg |__c, __args: #args_ty| #body_fn(__c #(, __args.#idents)*))
+        #entry_fn(#label_arg |__c, __args: #args_ty| #name(__c #(, __args.#idents)*))
     };
     let declaration_test = discloses_test(&item.sig, name, bare, &root, owner);
     let budget_test = max_k_test(attr.max_k.as_ref(), name, bare, owner);
@@ -195,8 +221,12 @@ pub fn expand_in(
 
             #arg_impls
 
+            // The author's function, verbatim — same tokens, same spans as
+            // written (see the comment on `inner_sig` above). It shadows
+            // the outer `#name` for the rest of this block only.
             #[allow(clippy::too_many_arguments)]
-            fn #body_fn(#(#body_inputs),*) #body_output #block
+            #(#attrs)*
+            #vis #inner_sig #block
 
             #call
         }
@@ -511,6 +541,7 @@ fn discloses_value(ty: &Type) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::ToTokens;
 
     fn attr(tokens: TokenStream) -> CircuitAttr {
         syn::parse2(tokens).expect("attribute parses")
@@ -549,7 +580,9 @@ mod tests {
             "{expanded}"
         );
         assert!(expanded.contains("entry (| __c , __args : __deposit_Args |"), "{expanded}");
-        assert!(expanded.contains("__deposit_body (__c , __args . evm_nonce)"), "{expanded}");
+        // The call inside `entry(..)` names the author's OWN function — the
+        // shadowing nested `fn deposit`, not a synthesised name.
+        assert!(expanded.contains("deposit (__c , __args . evm_nonce)"), "{expanded}");
     }
 
     #[test]
@@ -798,5 +831,66 @@ mod tests {
             .expect("only output is supported")
             .to_string();
         assert!(err.contains("unsupported #[circuit] argument"), "{err}");
+    }
+
+    /// THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+    /// author's function is emitted as parsed — the same `Signature` tokens
+    /// (bar the macro's own `#[arg(..)]` helper attribute, which rustc would
+    /// reject on a plain `fn`'s parameter) and the identical `Block`, never
+    /// rebuilt from string fragments — and everything else the macro emits
+    /// is a sibling item the author did not write. Pinned here by comparing
+    /// `TokenStream` strings, the same way `parameter_names_become_the_
+    /// argument_labels` above pins the label rewrite.
+    #[test]
+    fn the_authors_signature_and_body_are_emitted_verbatim() {
+        let item: ItemFn = syn::parse_quote! {
+            /// Sends an amount to a token contract.
+            pub fn send(
+                c: &mut Circuit3,
+                #[arg(name = "token")] token: Contract<Erc20>,
+                to: EvmAddress,
+                amount: Uint<64>,
+            ) -> Discloses<(SentAmount,)> {
+                let amount = amount.disclose_as::<SentAmount>(c);
+                TREASURY.transfers.request(c, token, (to, amount), Amount(amount));
+                Discloses::of(())
+            }
+        };
+
+        // What "verbatim" means here: the author's signature, with only the
+        // `#[arg]` helper attribute removed from the one parameter that
+        // carries it — the sole, documented deviation — and the author's
+        // body `Block`, untouched.
+        let mut expected_sig = item.sig.clone();
+        for input in expected_sig.inputs.iter_mut() {
+            if let FnArg::Typed(pat) = input {
+                pat.attrs.retain(|a| !a.path().is_ident("arg"));
+            }
+        }
+        let expected_sig = expected_sig.into_token_stream().to_string();
+        let expected_block = item.block.to_token_stream().to_string();
+
+        let expanded = expand(attr(quote!()), item).expect("expands").to_string();
+
+        assert!(
+            expanded.contains(&expected_sig),
+            "the author's signature (minus #[arg]) is not present verbatim:\n\
+             expected: {expected_sig}\ngot: {expanded}"
+        );
+        assert!(
+            expanded.contains(&expected_block),
+            "the author's body is not present verbatim:\n\
+             expected: {expected_block}\ngot: {expanded}"
+        );
+        // The doc comment travels with the author's item (and, separately,
+        // with the outer builder — see the module doc).
+        assert!(
+            expanded.contains("Sends an amount to a token contract"),
+            "{expanded}"
+        );
+        // No synthesised name stands in for the author's function: the only
+        // additions are siblings (the args struct, its trait impls, the
+        // `entry` call, the disclosure test).
+        assert!(!expanded.contains("_body"), "a synthesised name leaked in:\n{expanded}");
     }
 }

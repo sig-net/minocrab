@@ -15,6 +15,22 @@
 //! against the standing compile-errors-over-panics rule) or a second calling
 //! convention beside the `&mut Circuit3` every gadget in `minocrab-ledger`,
 //! `minocrab_std::v3::kernel` and `common` already takes.
+//!
+//! THE TOOLING PROPERTY (M37 rung E, notes/evm-calls.org §6/§12): the
+//! author's items are emitted as parsed; the macro adds siblings only. Every
+//! `impl` member that is NOT a `#[circuit]` (a plain method, a `const`, an
+//! associated type) is pushed through unchanged — `member.to_token_stream()`
+//! re-serialises the parsed `ImplItem`, so its tokens and spans are exactly
+//! the ones in the source, in the same declaration-order slot in the
+//! rebuilt `impl` block. A `#[circuit]` method is handed to
+//! [`crate::circuit::expand_in`], which carries the same property (see that
+//! module's doc): the author's method is emitted under its own name with
+//! its own signature and body verbatim, and the compiled-builder function,
+//! the `CIRCUITS` const and the generated tests are the only new siblings.
+//! What IS rebuilt is the `impl SelfType { .. }` shell itself (a fresh
+//! `impl` token from `quote!`, not the original `ItemImpl` reused wholesale)
+//! — but every member's content passes through untouched, so rust-analyzer
+//! sees the same methods, in the same order, at the same spans.
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
@@ -119,4 +135,95 @@ pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
 
         #(#tests)*
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::ToTokens;
+    use syn::ItemImpl;
+
+    use super::*;
+
+    fn expansion(item: ItemImpl) -> String {
+        expand(item).expect("expands").to_string()
+    }
+
+    /// THE TOOLING PROPERTY (notes/evm-calls.org §6/§12), for a plain
+    /// (non-`#[circuit]`) member: it passes through `#[contract]`
+    /// untouched, at the same declaration-order position — the same tokens
+    /// `to_token_stream` would produce for the member as parsed, not a
+    /// reconstruction.
+    #[test]
+    fn a_plain_method_passes_through_verbatim() {
+        let item: ItemImpl = syn::parse_quote! {
+            impl Vault {
+                /// A helper the contract's circuits share.
+                fn helper(x: u32) -> u32 { x + 1 }
+
+                #[circuit]
+                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {}
+            }
+        };
+        let syn::ImplItem::Fn(helper) = &item.items[0] else {
+            panic!("first member is the plain method");
+        };
+        let expected_helper = helper.to_token_stream().to_string();
+
+        let expanded = expansion(item);
+        assert!(
+            expanded.contains(&expected_helper),
+            "the plain method is not present verbatim:\nexpected: {expected_helper}\ngot: {expanded}"
+        );
+    }
+
+    /// The same verbatim property [`crate::circuit`] pins for a free
+    /// function holds for a `#[circuit]` method inside a `#[contract]`
+    /// block: same name, same signature (bar the consumed `#[arg]`), same
+    /// body, and the additions (`CIRCUITS`, the compiled-builder fn, the
+    /// generated test) are siblings.
+    #[test]
+    fn a_circuit_methods_signature_and_body_are_emitted_verbatim() {
+        let item: ItemImpl = syn::parse_quote! {
+            impl Vault {
+                #[circuit]
+                pub fn deposit(c: &mut Circuit3, amount: Uint<64>) {
+                    let doubled = amount;
+                    TREASURY.note(c, doubled);
+                }
+            }
+        };
+        let syn::ImplItem::Fn(method) = &item.items[0] else {
+            panic!("only member is the circuit method");
+        };
+        let expected_sig = method.sig.to_token_stream().to_string();
+        let expected_block = method.block.to_token_stream().to_string();
+
+        let expanded = expansion(item);
+        assert!(
+            expanded.contains(&expected_sig),
+            "the method's signature is not present verbatim:\n{expanded}"
+        );
+        assert!(
+            expanded.contains(&expected_block),
+            "the method's body is not present verbatim:\n{expanded}"
+        );
+        assert!(!expanded.contains("_body"), "a synthesised name leaked in:\n{expanded}");
+        // The sibling: the derived circuit set names the method by its own,
+        // unrewritten identifier.
+        assert!(expanded.contains("CIRCUITS"), "{expanded}");
+        assert!(expanded.contains("(\"deposit\" , Self :: deposit)"), "{expanded}");
+    }
+
+    #[test]
+    fn a_trait_impl_is_rejected() {
+        let err = expand(syn::parse_quote! {
+            impl SomeTrait for Vault {
+                #[circuit]
+                fn deposit(c: &mut Circuit3) {}
+            }
+        })
+        .expect_err("only an inherent impl describes a contract's own circuits")
+        .to_string();
+        assert!(err.contains("#[interface]"), "{err}");
+    }
 }

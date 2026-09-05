@@ -56,19 +56,19 @@ suite warrants; this says where the suites stop.
 | `minocrab-std/src/v3/disclose.rs` | 212 | v3_disclose; the generated set-equality tests | a leaf disclosed under fewer wires than it has |
 | `minocrab-std/src/v3/hash.rs` | 195 | hashing_differential; every differential that hashes | a preimage aligned differently from compactc's |
 | `minocrab-macros/src/lib.rs` | 325 | **READING** | nothing beyond wrappers (the expansions are the modules below) |
-| `minocrab-macros/src/circuit.rs` | 802 | v3_circuit (the expansion lowers to ZKIR byte-identical to the hand-written twin); the generated per-circuit tests run on every circuit. The GENERATED TESTS' own bodies: **READING** | an expansion that declares an argument the twin would not, or a generated test that passes vacuously |
+| `minocrab-macros/src/circuit.rs` | 896 | v3_circuit (the expansion lowers to ZKIR byte-identical to the hand-written twin); the generated per-circuit tests run on every circuit. The GENERATED TESTS' own bodies: **READING** | an expansion that declares an argument the twin would not, or a generated test that passes vacuously |
 | `minocrab-macros/src/circuit_arg.rs` | 530 | v3_derive (twin); every derived struct's slots in interface_snapshot | a field's slots declared out of order |
 | `minocrab-macros/src/circuit_borsh.rs` | 495 | v3_borsh_derive (twin) + the generated schema cross-check | a Borsh field encoded at the wrong width |
 | `minocrab-macros/src/interface.rs` | 620 | interface_macro (twin, byte-identical ZKIR); contract_matches_its_interface | a call handle passing limbs in an order the callee does not expect |
 | `minocrab-macros/src/ledger.rs` | 401 | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
 | `minocrab-macros/src/ledger_repr.rs` | 152 | v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots | an environment's limbs split at the wrong boundaries on read-back |
-| `minocrab-macros/src/contract.rs` | 122 | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
+| `minocrab-macros/src/contract.rs` | 229 | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
 | `minocrab-sim/src/lib.rs` | 129 | **READING** | nothing beyond the Profile types (129 lines) |
 | `minocrab-sim/src/v3.rs` | 1169 | cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — spec-harness link 4 and every differential; v3_end_to_end. It is never trusted alone | a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job) |
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-24883 lines in the seven crates; 10473 of them in files whose warrant is READING in whole or in part (the rows in bold).
+25084 lines in the seven crates; 10567 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget
