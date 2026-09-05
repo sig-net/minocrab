@@ -60,7 +60,7 @@
     {
       "name": "signet-midnight-integration",
       "url": "https://github.com/sig-net/midnight-integration",
-      "rev": "1ee4a7f32bd2cf1f940341c701f88be8c3dadbdf",
+      "rev": "fff3421c610e508ad8cf01049bb88b153f170935",
       "license": "UNLICENSED (sig-net internal)",
       "paths": [],
       "flags": [
@@ -70,7 +70,7 @@
     {
       "name": "signet-midnight-examples",
       "url": "https://github.com/sig-net/midnight-examples",
-      "rev": "2c929a1be5ad7c19e52726ff296ebd61c4a1d964",
+      "rev": "0d9c16601d2f6712cad57cf5c240ec9a201d9932",
       "license": "UNLICENSED (sig-net internal)",
       "paths": [],
       "flags": [

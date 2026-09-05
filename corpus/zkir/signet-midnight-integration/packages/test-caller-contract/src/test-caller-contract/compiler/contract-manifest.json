@@ -20,46 +20,46 @@
     },
     "index.js": {
       "type": "file",
-      "size": 176215,
-      "hash": "7ab94007ab47fe5084e11a68f66f2bf23228fbdad6414baa32b38f359359801d"
+      "size": 175379,
+      "hash": "28d9887a51d770fd2a9b5971dee7fb35fa46ca01ac7fb5878b359a6df6ccc6e8"
     },
     "index.js.map": {
       "type": "file",
-      "size": 7952,
-      "hash": "5bd731559b5273e23656a574ac25a43f42a0a1a5e9cb6f71f8c2eaeea642389c"
+      "size": 7577,
+      "hash": "95950b2c4249acff8687535d98f6457d28b7e0fb76c1a8706adf44a5975d7258"
     }
   },
   "zkir": {
     "type": "directory",
     "initialise.zkir": {
       "type": "file",
-      "size": 2677,
-      "hash": "1e61fc53177276d2ab47b0e29a2a9e8ee124beabdba8a96d1e1cc0206dcc48bb"
+      "size": 2599,
+      "hash": "3660a9ff791513b9e582c0b908ee4f7b7710a439428914c2e8c999992abaa2c3"
     },
     "submitCheckAndDoubleRequest.zkir": {
       "type": "file",
-      "size": 15962,
-      "hash": "420b67e6ace5b9fb2669269702fb91c49857331c73701aab88c7de953b26757a"
+      "size": 14600,
+      "hash": "1a2a50d4fc651dafd7e53bf019edcf58e696981a36f162e3d89bd578a33770a7"
     },
     "submitIsEvenRequest.zkir": {
       "type": "file",
-      "size": 15658,
-      "hash": "0e42098e4e9c494ff325c91d0ec48273584eb61ab9c08658790ebec55e9caa7c"
+      "size": 14296,
+      "hash": "a4d5224d2c0aa7b1f2b17145cc8b59906e717c8e864e117d525f29537fc83cd0"
     },
     "submitSignatureRequest.zkir": {
       "type": "file",
-      "size": 15419,
-      "hash": "cb426bc3223d02612b9df78404fa04e8f7c05172943dbc1b93fb541bbcd11aba"
+      "size": 14061,
+      "hash": "70df0da928536eab883982f849fc4c8bfeba2d1e70932e578dcd71b7042ee6a7"
     },
     "verifyCheckAndDoubleResponse.zkir": {
       "type": "file",
-      "size": 25654,
-      "hash": "28f19ffff0abd6b00d53661202f1f635c3f9bf4c97cdbdca2241eabc7654e4f4"
+      "size": 12275,
+      "hash": "67d641265c7bc18777bfd993f59660f68e87a8486735115505c834ff45f40c9d"
     },
     "verifyResponse.zkir": {
       "type": "file",
-      "size": 25821,
-      "hash": "20365dfe2272d687bc72ed32a4b922ea9ccc38d4fda9b48832e042d3d8dbecf4"
+      "size": 12443,
+      "hash": "22f4822f222c2a572dba8f8b7b596798b0f030a001ddf78be3f3ddb9418250fa"
     }
   }
 }

@@ -20,13 +20,13 @@
     },
     "index.js": {
       "type": "file",
-      "size": 49240,
-      "hash": "e9bcc5ec3065280e3f46c6812cb3af19c925f44001181efa08152bd9fdeed8cf"
+      "size": 38978,
+      "hash": "544a2341208fd2ccf0adf3d9b8c541fa81a61003b2fb8370aa541c35ec6bad81"
     },
     "index.js.map": {
       "type": "file",
-      "size": 4747,
-      "hash": "1b87d0a0989e50ed7c3a426ea8376632512be6a227580befa0e5ccc08b143b74"
+      "size": 4452,
+      "hash": "17dfcb8cff4d1795dd88bd18791873fd2449ff818a5f813d39a27cdc1742bcf2"
     }
   }
 }

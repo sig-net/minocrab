@@ -20,21 +20,21 @@
     },
     "index.js": {
       "type": "file",
-      "size": 113552,
-      "hash": "aca2e6b9647fa3f9e7ab1cd128c4a6c3475ed9f0324e04d52bd63a7429679493"
+      "size": 113782,
+      "hash": "2ac966b9848f90e73b4f4d5f60a88d98c35460ae7a75e052f02f0a8b511e9490"
     },
     "index.js.map": {
       "type": "file",
-      "size": 3340,
-      "hash": "ae9dc2e2f911fb49b47f026b829896fb6fe0027e7e51753548c7a968faabf0b6"
+      "size": 3369,
+      "hash": "8e2899349cf6f6da2fd37e14fbd7e0734c6a6062a3802353d54f28fe16f6e2ee"
     }
   },
   "zkir": {
     "type": "directory",
     "submitSignatureRequest.zkir": {
       "type": "file",
-      "size": 6680,
-      "hash": "84956cf85977af5c2a57586e5cf1d89b8d05b60ea8f66460a91d5cc6a5782a05"
+      "size": 5319,
+      "hash": "e482f2d0fa418287727fc146912fc9cb2df11066b310b9046fe7276968924d25"
     }
   }
 }
