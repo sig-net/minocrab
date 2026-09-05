@@ -1614,7 +1614,7 @@ Decisions of record (dmd, 2026-09-05):
       path derived from the slot AND pinned by an artifact-agreement
       test against the compiled contract-info's field path (a wrong
       path is a silent "record not found" on the MPC).
-- [-] C. (2026-09-05: circuits DONE, cost gate restated PER PAIR from measurement — §9 table; lending extension DONE 2026-09-05 — notes/signet-async.org "Rung C, lending extension"; spec-harness extension NOT done) The vault re-expressed: all four request/settle pairs on
+- [X] C. (2026-09-05: circuits DONE, cost gate restated PER PAIR from measurement — §9 table; lending extension DONE — notes/signet-async.org "Rung C, lending extension"; spec harness DONE, f8fe44c — tests/vault_pending/ + tests/erc20_vault_pending_spec.rs, 18 properties × four links (no compactc comparator, by construction), green at PROPTEST_CASES=2000; two harness bugs the .zkir dumps caught are in the note) The vault re-expressed: all four request/settle pairs on
       =Pending= (deposit/claim, withdraw/completeWithdraw,
       swap/completeSwap, approveRouter/refund), as a new lineage the
       spec harness runs like =Art::Opt= — the shared spec stays the

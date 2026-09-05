@@ -99,7 +99,7 @@ verdict and the three reasons, each sufficient alone):
 | lineage | criterion | gate |
 |---|---|---|
 | compactc ≡ `erc20_vault` (the compat port, 17 circuits) | PI-equality on a shared preimage, every circuit, every branch | [erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs) (57 tests) |
-| `erc20_vault_pending` (the `Pending<Env, Resp>` API, 17 circuits) | proves its own preimage: the reference model's op stream through the pinned ledger; the V2 record and kind-tagged outputs of [spec/borsh-subset.md](spec/borsh-subset.md) | [erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) — each request/settle pair pinned to the port's `(k, rows)` per pair; the record bytes and ids in `serialization_conformance` and [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) |
+| `erc20_vault_pending` (the `Pending<Env, Resp>` API, 17 circuits) | proves its own preimage: the reference model's op stream through the pinned ledger; the V2 record and kind-tagged outputs of [spec/borsh-subset.md](spec/borsh-subset.md) | [erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs) (18 properties, four links); [erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) — each request/settle pair pinned to the port's `(k, rows)`; the record bytes and ids in `serialization_conformance` and [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) |
 
 - **What the Pending lineage is not**: PI-equal to compactc. It writes the V2
   record (a version byte and a kind byte where the deployed record carries two
@@ -393,8 +393,11 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   the V2 record's statement. What stands in: the per-pair cost pins against the
   port, the record-byte and request-id equalities of the Borsh spec suite, the
   reader/responder round trip in `signet-sim`, and the interface snapshot. The
-  seventeen-property spec harness runs on the port; the lineage's own harness
-  is M35 C. It is labelled per circuit in [BENCHMARK.md](BENCHMARK.md). Read
+  port's seventeen-property harness has a twin on this lineage
+  ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs):
+  18 properties, four links — acceptance, reference VM, PI re-anchored to the
+  model's op stream, ledger `Effects` — and no compactc link, by construction).
+  It is labelled per circuit in [BENCHMARK.md](BENCHMARK.md). Read
   its numbers as "same operation, re-framed, proved cheaper", never as "same
   statement, proved cheaper".
 - **Nothing has run end to end on a live network.** Keygen, prove and verify go
