@@ -504,6 +504,90 @@ DELIVERABLE SHAPE, revised: the inventory iterates
 artifact; the frozen table has seventeen rows; the hand-back to the
 draft's authors adds the four lending circuits and the two V5 facts.
 
+** 7.2 The inventory, AS BUILT (2026-09-05): tests/leakage_inventory.rs
+The vault prong's deliverable exists: =crates/minocrab-contracts/tests/
+leakage_inventory.rs= walks each of the seventeen circuits' ZKIR (ours,
+=Circuit::build().ir=) STATICALLY — no preimage, no run — and freezes
+one line per fact between GENERATED markers (1,300 lines; regenerate
+with =--ignored regenerate_leakage_inventory=, review the diff).
+
+The walk is the rung-2 dataflow rule (=passes::operands= /
+=defined_identifiers=, gate-equal with Lean's =Instr.operands=) run
+forward twice: PROVENANCE (each wire's transitive sources: a circuit
+input by name, the k-th =private_input= as =wk=, the k-th
+=public_input= as =pik=; immediates contribute nothing) and LABEL
+TAINT (each wire's declared =Disclosed= labels in its ancestry, seeded
+at the wires =Compiled3::disclosures= names and propagated along DATA
+operands only — =cond_select='s bit is excluded, so an outcome flag's
+label cannot "cover" the secret in the arm it selects; that exclusion
+was added after the first run showed exactly that accidental cover on
+=completeWithdraw=). Per circuit the frozen lines are: the header
+(inputs by name, witnesses/guarded, public_inputs/guarded, impact
+ops/guarded and operand-wire count, digests by kind, outputs); the
+literal counts; the CORPUS TWIN's header on compactc's artifact; one
+=component= line per declared disclosure with its provenance; one
+=witness= line per =private_input= (guard, labels reached, impact ops
+reached, the checks it reaches and what ELSE those checks depend on);
+one =digest= line per hash (operand provenance, labels on its output);
+one =impact= line per Impact op (immediate / public-derived / labelled
+/ unlabelled-witness-dependent operand counts); the outputs; and the
+=unlabelled witness-dependent public components= line.
+
+Three gates: the table is frozen; =no_unlabelled_witness_dependent_
+public_component= (COMPLETENESS as a hard assert); and =the_corpus_
+twin_has_the_same_surface= — witness/guard, impact/guard/wire, digest
+and literal counts equal on compactc's artifact for every circuit. All
+three green on the seventeen; clippy clean.
+
+What the seventeen say, against the V-list (§7, §7.1):
+- V1 COMPLETENESS: every witness-dependent wire that reaches an
+  =impact= carries a declared label in its data ancestry, in all
+  seventeen. The public statement IS the labelled components plus
+  immediates plus public-derived wires.
+- V2 / DEPENDENCY: in every request circuit the secret =w0,w1= reaches
+  the statement through labelled components only — =depositor identity
+  commitment= (+ request id, record) in =startDeposit=; =<flow>
+  refund commitment= in =startWithdraw= / =startSwap= / =startSupply= /
+  =startRedeem= (their τ_mark row). The coin-layer components
+  (surrendered nonce/color/value, the change/mint nonces) are
+  CIRCUIT INPUTS (=in:%coin_*=), not witnesses — the separation the
+  draft colours blue falls out of provenance without a rule.
+- V3 keyPath CONSTANCY: ="vault"= ×2 in =approveStata=,
+  =approveRouter=, =startWithdraw=, =startSwap=, =startSupply=,
+  =startRedeem=; ×0 in =startDeposit=, which alone carries
+  ="vault:user:"= (×1, also in =initialise= and =completeDeposit=);
+  ="vault:refund:"= ×1 in the four refund-commitment request circuits
+  and in every settle that opens one. Same counts on the corpus twin.
+- V5 WITNESS INVENTORIES: request circuits 5 witnesses (=w0,w1= the
+  secret, =w2= the xcall commitment randomness — "unchecked", by
+  design —, =w3,w4= the callee entry-point limbs), =approve*= 3 (no
+  secret); settles 4: =w0,w1= the secret, =w2,w3= =ownPublicKey=
+  (GUARDED in =completeDeposit= under ¬is_some and in
+  =completeWithdraw= under ¬ok; unguarded elsewhere). In EVERY settle
+  the secret "reaches impact: none" — it is asserted, never
+  published — and its one =assert= depends on =in:%requestId= and the
+  stored commitment (=pi3,pi4=); in =completeWithdraw= ALSO on
+  =in:%serializedOutput.9=: that is "asserted only on the refund
+  branch" read off the artifact (Gap 2, mechanically: the secret is
+  consumed unconditionally and checked under the outcome). In
+  =completeDeposit= the assert depends on =pi1,pi2= (the stored user
+  commitment): the claim gate.
+- V7: no settle component derives from a record read — every settle
+  =component= is a circuit input or the =ownPublicKey= witness.
+- V9 / CORPUS: the leakage SURFACE (counts above) is identical on
+  compactc's artifact for all seventeen — the inventory describes the
+  deployed contract, not only our port.
+
+NOT in the instrument (stated so the gate is read right): reqId
+ONE-TIME USE is a ledger state-machine claim over the op stream, pinned
+by the reference model's =counter_inc= op and the differential (the
+artifact alone cannot say the counter strictly increments); INJECTIVE
+PACKING is the taint lint + M10 (cited, not rebuilt); the label taint
+OVER-approximates (a hash of a secret "depends on" it — the claim the
+inventory wants), never under. The hand-back to the draft's authors
+(their §4 tables replaced by the frozen lines, plus the four lending
+circuits and the two V5 facts) is dmd's to send.
+
 * 8. The Lean package: where, what, gates
 
 WHERE: a third lake package at =crates/minocrab-zkir/lean/=

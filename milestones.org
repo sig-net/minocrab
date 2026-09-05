@@ -1852,7 +1852,14 @@ substantially. Weekend-sized chunks exist at every boundary.
       pipeline already produces them) — PI streams equal, accept/
       reject equal. The variance rung; shelve-point before it is
       explicitly fine.
-- [ ] THE VAULT PRONG — the leakage inventory, machine-checked
+- [-] (2026-09-05: BUILT — tests/leakage_inventory.rs, a static
+      dataflow walk over the ONE compat artifact, frozen (1,300 lines,
+      17 circuits), three gates green: table frozen, no unlabelled
+      witness-dependent public component, corpus twin same surface.
+      V1/V2/V3/V5/V7/V9 read off the artifact — notes/zkir-semantics.org
+      §7.2. OPEN: the hand-back to the draft's authors (dmd); reqId
+      one-time use stays the model's claim, packing stays the lint's.)
+      THE VAULT PRONG — the leakage inventory, machine-checked
       against the artifacts of all four vault forks (port as the
       differential anchor; borsh lineage as deployed-shape). From the
       analysis draft's §4/§4.12 tables, the claims to discharge per
@@ -1896,9 +1903,10 @@ substantially. Weekend-sized chunks exist at every boundary.
       failure naming the moved component. Deliverable doubles as the
       drift-proof replacement for the draft's hand-maintained tables,
       handed back to its authors.
-- [ ] OPEN INCONSISTENCIES I1-I4 (notes/zkir-semantics.org §10) each
+- [-] OPEN INCONSISTENCIES I1-I4 (notes/zkir-semantics.org §10) each
       closed or discharged: I1 witness classification in V5's
-      inventory, I2 in the writeup (+ upstream note), I3 at rung 4, I4
+      inventory (DONE 2026-09-05: the =witness= lines of
+      tests/leakage_inventory.rs), I2 in the writeup (+ upstream note), I3 at rung 4, I4
       confirmed mechanically. None affects the vault (checked
       2026-08-30 against all four forks' artifacts).
 - [ ] THE HONEST-BOUNDARY WRITEUP, published where the claims are:
