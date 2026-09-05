@@ -374,7 +374,7 @@ impl LedgerKey {
     }
 }
 
-/// The ONE new encoder of stage B1: `idx` over a whole path.
+/// The encoder of `idx` over a whole path.
 ///
 /// `[0x50 | hi | (path.len() − 1)]` then each element's encoding, which is
 /// `assemble1`'s `idx` case (reduce-to-zkir.ss:586-601) and upstream's
@@ -602,7 +602,7 @@ fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6
 /// The four coin arms' `qualify_coin` reaches, as compactc writes them —
 /// each counting the arm's own pushes, the result slot, the `2·len(f)` path
 /// items the leading `idx` left, and the effects. At `len(f) = 1` they are
-/// 3, 4, 5 and 7, which is what M22 stage A pinned.
+/// 3, 4, 5 and 7 (pinned by the tests below).
 ///
 /// compactc notes at midnight-ledger.ss:576-577 that a long `f` overflows the
 /// `dup` nibble; [`dup`] asserts what compactc only comments.
@@ -779,8 +779,8 @@ pub fn map_insert_default_at(
 }
 
 /// `map.insertDefault(key)` where the VALUE TYPE IS AN ADT — a different
-/// instruction from [`map_insert_default`], and the one place stage B1 found
-/// the crate would have been wrong rather than merely unable.
+/// instruction from [`map_insert_default`] (notes/coin-arms-nested-adts.org
+/// records how this one was found).
 ///
 /// compactc's `insert`/`insertDefault` push `(state-value 'ADT value
 /// value_type)`, and `assemble-operand-acc`'s `VMstate-value-ADT` case
@@ -2280,7 +2280,7 @@ fn kernel_effect_add(slot: u8, key: &LedgerValue, amount: &LedgerValue) -> Vec<I
 }
 
 /// `kernel.mintShielded(domain_sep, amount)` — `kernel_effect_add` at
-/// effects\[4\]. This was the shape's only caller until M17 found it was five.
+/// effects\[4\], one of the five callers of that shape.
 pub fn kernel_mint_shielded(domain_sep: &LedgerValue, amount: &LedgerValue) -> Vec<ImpactOp> {
     kernel_effect_add(4, domain_sep, amount)
 }

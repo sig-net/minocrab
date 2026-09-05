@@ -37,3 +37,43 @@ stays is said where it stays.
 
 ** Duplicated forms, stale re-exports, history narration (rung B) —
 to be listed after A lands, against the trimmed tree.
+
+* A. As built (2026-09-05, branch m36-trim, four commits)
+| commit | what went | what stayed, and where it is said |
+|--------+-----------+-----------------------------------|
+| A1 std | the seven v2 root modules (~1,140 lines) + 3 tests | =v3= only; crate docs restated |
+| A2 sim | the v2 interpreter (~560 lines) + 2 tests + the =midnight-zkir= dep | =Profile= / =RegionCost= (stable tier; their =Option= fields now say they are kept for API stability) |
+| A3 eDSL | =Circuit=, =Wire=, =Compiled=, the v2 =Builder=/=Val= | =Visibility=, =Public=, =Private=, =Meet=, =OnChainGuard=, =Disclosure=, =DisclosureKind=, =Region=, the FAB re-exports; the crate docs' two doctests restated over =Circuit3= |
+| A4 zkir | =read_any=/=AnyIr=, the v2 read/write pair, the v2 mock-compile test + fixture, the =midnight-zkir= dependency from every crate | =Fr=, =Error=, the v3 pair; NEW =major_version= (a version peek) so the corpus walk skips v2 files by name; the round trip asserts both counts (84 v3, 722 v2 skipped); bump.sh stage label + version-bump.org §3 updated |
+Zero movement: workspace tests green after each commit (the release
+row snapshot ran on M35's tree; no circuit changed here).
+THE ONE THING THAT COULD NOT GO: the =[patch.crates-io]= block for
+=transient-crypto-old=. Nothing of ours needs it, but =midnight-zswap=
+(coins, via the contracts crate) still depends on =midnight-zkir= v2
+transitively, and cargo refuses to resolve without the patch. The
+comment on the block now says exactly that, and when to drop it.
+
+* B. As built (2026-09-05)
+- B1: =cargo build --workspace --all-targets= and =cargo doc --no-deps=
+  over the seven eDSL crates are WARNING-FREE (private-item doc links
+  → plain code; unstable-gated links → plain code; three unused
+  imports; the CLI's rustdoc collision with the lib crate).
+- B2, the history-narration pass: 145 milestone/rung/phase/stage
+  mentions in the eDSL sources → 115. What was rewritten: the PURE
+  HISTORY ("landed at M15 … M16 completed it", "the one new encoder of
+  stage B1", "four milestones running have added one…") in the five
+  densest files, as the rule plus a pointer. What was LEFT, on purpose:
+  provenance tags that name a recorded decision ("M23 R3 ruling, dmd
+  2026-08-28", "M24 tier boundary", "M25, notes/lean-port.org §4") —
+  those are how a reviewer finds the reasoning, and the notes are the
+  record. A fuller sweep is dmd's call; the count per crate is in the
+  commit.
+- NOT done: the "one spelling per idea" audit of =Wire3=/=Operand=/=impl
+  Into= forms — a judgement pass over the whole API surface; recorded.
+
+* C. Status (2026-09-05)
+- READMEs: every eDSL crate's README is 27-37 lines already (one
+  screen); the bindings and builder READMEs were re-pointed at v3.
+- =cargo doc --no-deps= warning-free: DONE (B1).
+- M33's inventory "updated to the trimmed tree": M33 has not run yet;
+  it starts from this tree.

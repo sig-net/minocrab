@@ -100,12 +100,11 @@ pub trait LedgerRepr: Sized {
 
     /// This value's limbs, in slot order.
     ///
-    /// Takes `c` (M9 phase 8, candidate 2): a value whose limbs are COMPUTED
-    /// rather than stored — a `Secp256k1Point`, whose five limbs come out of
-    /// an `encode` INSTRUCTION — cannot hand them over without emitting, and
-    /// before this it had to stay a [`LedgerField`] with the ops spelled out
-    /// at the call site. THE PRICE, recorded because it was worth stating: a
-    /// repr may now emit, so "building a `LedgerValue` is free" is no longer
+    /// Takes `c`: a value whose limbs are COMPUTED rather than stored — a
+    /// `Secp256k1Point`, whose five limbs come out of an `encode`
+    /// INSTRUCTION — cannot hand them over without emitting. THE PRICE,
+    /// recorded because it was worth stating: a repr may emit, so "building
+    /// a `LedgerValue` is free" is no longer
     /// true by construction. What replaces it is narrower and still checkable:
     /// a repr emits exactly the instructions the call site would have emitted
     /// itself, immediately before the op, which is what
@@ -215,7 +214,7 @@ ledger_repr_via_abi! {
 }
 
 /// `export ledger k: Secp256k1Point` — the one stored type whose limbs are
-/// COMPUTED, in both directions (M9 phase 8, candidate 2).
+/// COMPUTED, in both directions.
 ///
 /// A point occupies one slot whose wire is not a field element, and its five
 /// FAB limbs (x as b24+b8, y as b24+b8, the infinity field —
@@ -841,7 +840,7 @@ pub trait LedgerAdt: LedgerSlot {
 /// Impact instructions; a write emits the op's instructions.
 ///
 /// THREE FORMS, because an Impact operation carries a guard and there are
-/// three things that guard can be (M9 phase 8, candidate 1):
+/// three things that guard can be:
 ///
 /// | form | guard | when |
 /// |------|-------|------|
@@ -1284,14 +1283,11 @@ pub const STRAIGHT_LINE: u64 = 1;
 /// Every method here delegates to the `Map` one, and that is a fact about the
 /// vm-code rather than a shortcut: compactc's `Set` and `Map` declarations
 /// give `member`, `remove`, `size`, `isEmpty` and `resetToDefault` character
-/// for character the same instruction sequences, and the M16 fixture's
+/// for character the same instruction sequences, and the corpus fixture's
 /// `setRemove` / `setSize` / `setIsEmpty` / `setReset` are byte-identical to
 /// `map_remove` / `map_size` / `map_is_empty` / `map_reset`
 /// (notes/ledger-adts.org §1). Only [`insert`](LedgerSet::insert) differs, and
 /// only in what it stores: a `Null` where a map stores a value.
-///
-/// Landed at M15 with `insert` and `member` (M15's fixture stores an
-/// [`Opaque`] in a `Set`); M16 completed it rather than adding a second `Set`.
 pub struct LedgerSet<T, P = FieldPath> {
     path: P,
     _t: PhantomData<fn() -> T>,
@@ -2366,11 +2362,8 @@ impl<P: LedgerPath> LedgerCounter<P> {
     }
 
     /// `n.resetToDefault()` — `push key; pushs (cell 0u64); ins 1`, the
-    /// fourth of the nine whole-field-replace ops.
-    ///
-    /// Landed at M22 stage B2: the builder is B1's `counter_reset`, which a
-    /// nested `Map<K, Counter>` needed and which the typed layer had no
-    /// method for at any depth.
+    /// fourth of the nine whole-field-replace ops; a nested `Map<K, Counter>`
+    /// is what needs it.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
         self.reset_to_default_under(c, STRAIGHT_LINE)
     }

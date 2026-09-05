@@ -1028,10 +1028,9 @@ impl<V: Vis3> B32<V> {
 ///   `CircuitArg::constrain` is a provided body over `push_prims`/
 ///   `push_slots`, so delegation gives the identical constraint sequence.
 ///
-/// The precedent is [`ContractAddress`] below, which is hand-written in
-/// exactly this shape and landed zero-movement in M23 A32; this macro is
-/// that impl set, once, in the idiom `select_via_field!` and
-/// `ledger_repr_via_abi!` already use in this crate.
+/// The precedent is [`ContractAddress`] below, hand-written in exactly this
+/// shape; this macro is that impl set, once, in the idiom `select_via_field!`
+/// and `ledger_repr_via_abi!` already use in this crate.
 ///
 /// Exported (`minocrab_std::v3::b32_newtype`) because generated interface
 /// crates invoke it: `minocrab-interface-gen` emits it for any Compact
@@ -1351,9 +1350,8 @@ b32_newtype! {
 ///
 /// The one type in the stdlib whose ABI is `Prim::Field`: an UNCONSTRAINED
 /// native slot (the fixture's `mtCheckRoot` takes `%r.0` with no
-/// `constrain_bits`, and pushes it under a `field` atom). `Prim::Field` has
-/// existed in the ABI table since M12 and, like `Prim::Opaque` before M15, has
-/// never been reachable from a typed leaf; this is what reaches it.
+/// `constrain_bits`, and pushes it under a `field` atom). `Prim::Field` is in
+/// the ABI table and this is the one typed leaf that reaches it.
 ///
 /// Deliberately a NAMED type rather than a bare `Field` leaf. A digest is the
 /// only unconstrained-field value a contract has a reason to accept from
@@ -2290,8 +2288,8 @@ pub fn own_public_key_guarded<V: Vis3>(
 
 /// A `bytes<n>` (n ≤ 31) literal as a single constant limb — always an INLINE
 /// hash operand, since compactc puts a constant preimage element straight into
-/// the instruction (M16's `AnyWire3::immediate`), so there is no
-/// wire-producing twin.
+/// the instruction (`AnyWire3::immediate`), so there is no wire-producing
+/// twin.
 fn short_literal_imm(bytes: &[u8]) -> Fr {
     assert!(bytes.len() <= 31);
     Fr::from_le_bytes(bytes).expect("≤31 bytes fit")

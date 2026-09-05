@@ -9,8 +9,9 @@
 //!
 //! And the constraint no pass may break: our primary correctness warrant is
 //! DIFFERENTIAL EQUALITY with compactc, instruction for instruction, for the
-//! M14-M17 fixtures. A pass that converges on compactc is free; one that
-//! diverges costs us that test and needs M10's warrant instead.
+//! corpus fixtures. A pass that converges on compactc is free; one that
+//! diverges costs us that test and needs the spec harness's warrant instead
+//! (notes/vault-optimization.org §"Binding circuit ≡ spec").
 
 // ASSOCIATION LISTS rather than std maps THROUGHOUT the passes, by design
 // (M23 R4): std's HashMap seeds SipHash from `RandomState`, which a model
@@ -59,13 +60,12 @@ use minocrab_zkir::v3::{Identifier, Instruction, IrSource, Operand};
 
 /// Fold every `Copy` of an immediate into its consumers and drop it.
 ///
-/// This is what makes the named-immediate special cases unnecessary. Four
-/// milestones running have added one — M9 phase 7's operand positions, M9
-/// phase 8's inlined Impact guard, M16's `AnyWire3::immediate`, M17's
-/// `UnshieldedToken` and `token_type` — each to stop a constant being NAMED
-/// where compactc inlines it. None of them bought a row; all of them bought
-/// differential fidelity, and a caller had to know which spelling to reach for.
-/// With the fold, `c.constant(x)` and an inline `x` lower to the same stream.
+/// This is what makes the named-immediate special cases unnecessary: every
+/// place compactc inlines a constant where the eDSL would NAME one (operand
+/// positions, the inlined Impact guard, `AnyWire3::immediate`, the token
+/// helpers) was a spelling a caller had to know to reach for, bought for
+/// differential fidelity and never for a row. With the fold, `c.constant(x)`
+/// and an inline `x` lower to the same stream.
 ///
 /// # The one exception, and it is compactc's
 ///
