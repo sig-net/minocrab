@@ -851,28 +851,22 @@ pub fn verify_respond_bidirectional_event_borsh<V: Vis3, T: CircuitBorsh<V>>(
 
 /// `evmAddressAbiWord(addr)` — 12 zero bytes then the 20 display-order
 /// address bytes. `addr` is the `Bytes<20>` single limb.
+///
+/// MOVED to [`crate::evm::address_word`] (M37 rung A): the body now lives
+/// beside the [`crate::evm::AbiType`] layer that spells it
+/// [`crate::evm::Address`], and this stays as the untyped-limb spelling the
+/// deployed vault forks call. Byte-for-byte the same instructions —
+/// `tests/evm_abi.rs` asserts the two serialize to identical ZKIR.
 pub fn evm_address_abi_word<V: Vis3>(c: &mut Circuit3, addr: Wire3<FieldT, V>) -> B32<V> {
-    c.region("abi words", |c| {
-        // The word is addr·2^96 (a 12-byte shift), so split the 160-bit
-        // limb at bit 152: hi byte = addr >> 152, lo = the rest shifted.
-        let (hi, low152) = c.div_mod_power_of_two(addr, 152);
-        let shift96 = V::from_public(pow2_const(c, 12));
-        let lo = c.mul(low152, shift96);
-        B32 { hi, lo }
-    })
+    crate::evm::address_word(c, addr)
 }
 
 /// `numericAbiWord(value)` — the `Uint<128>` as a 32-byte big-endian
 /// integer: 16 zero bytes then the value's 16 LE bytes reversed.
+///
+/// MOVED to [`crate::evm::numeric_word`] — see [`evm_address_abi_word`].
 pub fn numeric_abi_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V> {
-    c.region("abi words", |c| {
-        // value's 16 LE bytes sit at string positions 0..15 of
-        // `B32 { lo: value, hi: 0 }`; the native reversal moves them,
-        // reversed, to positions 16..31 — exactly the BE ABI rendering.
-        let zero = V::from_public(c.constant(0u64));
-        let padded = B32 { hi: zero, lo: value };
-        reverse_bytes32(c, &padded)
-    })
+    crate::evm::numeric_word(c, value)
 }
 
 /// `abiWordToUint128(word)` — asserts the leading 16 bytes are zero and
