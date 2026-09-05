@@ -2052,7 +2052,10 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       into each slot, =Contract<Abi>= callee newtype, =Succeeded<Call>= /
       =Failed<Call>= tickets (§3: =complete= asserts success, =refund=
       takes never-executed OR executed-false — closes the spurious
-      completion dmd asked about), =complete= / =refund=.
+      completion dmd asked about), =complete= / =refund=; the outcome
+      rule as a sealed associated type (§3.2: =Always= / =ByFlag= /
+      =ByPredicate=; =CAN_FAIL= decides at build time what is emitted)
+      plus the =assert(imm 1)= fold with its Lean theorem.
 - [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.

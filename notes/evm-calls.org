@@ -137,6 +137,38 @@ circuit.
   signature and lookup are shared and the outcome is a kind disjunction.
   =Requested= / =Settled= labels are the slot's.
 
+** 3.2 The outcome rule as a TYPE (dmd, 2026-09-05: "filter → map … zero
+cost if it's definitely true … can Rust force one of two functions?")
+Rust cannot demand "one of these two methods" (mutual defaults compile and
+recurse); it can demand ONE NAMED TYPE from a sealed set, each bringing its
+methods. So =EvmCall= gains =type Outcome: OutcomeRule<Self::Return>=:
+#+begin_src rust
+pub trait OutcomeRule<R: AbiType>: sealed::Sealed {
+    type Success;               // what `complete` hands the author
+    type Failure;               // what `refund` hands the author for executed-but-failed
+    const CAN_FAIL: bool;
+    fn split(c, output: R::Wire<Public>) -> Split<Self::Success, Self::Failure>;
+}
+pub struct Always;                 // executed ⇒ succeeded; Success = the value, Failure = Never, CAN_FAIL = false
+pub struct ByFlag;                 // impl only for R = Bool; Success = (), Failure = (), CAN_FAIL = true
+pub struct ByPredicate<P>;         // a predicate over the value; Success = the value
+#+end_src
+- =complete= calls =split= and asserts the success side; the author cannot
+  skip the check. =refund= adds =!success= as the second disjunct.
+- A rule that does not fit the return is a type error (=ByFlag= is not
+  implemented for =U64=). The no-return token is =Return = Unit, Outcome =
+  Always= on its own call type, chosen at callee registration (§3.1).
+- =Success = ()= for =ByFlag=: the filter-map — a transfer's =complete=
+  receives nothing readable, so nothing can be misread.
+ZERO COST for =Always=, two ways, both to be done: by construction
+(=CAN_FAIL= is a build-time Rust branch: no assert, no disjunct emitted —
+the guarantee the API states, the dump shows) and by FOLDING (dmd's
+alternative): =when= on a constant-true guard already costs nothing (the
+effect layer treats an immediate-1 guard as none), and the one residue,
+=assert(imm 1)=, gets a fold rule beside =fold_immediate_copies= with its
+Lean theorem — general hygiene, benefits every constant-true assert, and
+makes the =CAN_FAIL= branches belt-and-braces rather than load-bearing.
+
 ** 3.1 HAZARD — what the MPC's failure output actually means, and USDT
 mpc's execution watcher (chain-signatures/chain-ethereum/src/
 execution_watcher.rs, =execution_confirmed_event=): a MINED receipt with
