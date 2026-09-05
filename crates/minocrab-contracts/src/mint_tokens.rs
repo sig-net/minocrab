@@ -71,7 +71,7 @@ fn mint_shielded_token(
         ],
     );
     let amount = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(1u64))]);
-    emit(c, one, &kernel_mint_shielded(&ds_val, &amount));
+    emit(c, &kernel_mint_shielded(&ds_val, &amount));
 
     // cm = coinCommitment({nonce, color, value: 1}, left(recipient))
     let coin = ShieldedCoinInfo3 {
@@ -88,7 +88,7 @@ fn mint_shielded_token(
 
     // kernel.claimZswapCoinSpend(cm)
     let cm_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(cm.hi), ImpactElem::Wire(cm.lo)]);
-    emit(c, one, &kernel_claim_zswap_coin_spend(&cm_val));
+    emit(c, &kernel_claim_zswap_coin_spend(&cm_val));
 }
 
 /// `mint-tokens` — the shielded-mint circuits.
@@ -137,7 +137,7 @@ impl MintTokens {
                 ImpactElem::Wire(very_public.bytes().lo),
             ],
         );
-        emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
+        emit(c, &cell_write(VERY_PUBLIC_VALUE, &value));
 
         let nonce = mint_nonce.disclose_as::<MintNonce>(c);
         mint_shielded_token(c, one, &nonce, &mint_recipient);

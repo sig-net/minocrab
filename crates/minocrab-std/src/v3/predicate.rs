@@ -31,8 +31,11 @@
 //! (`less_than`/`le`/`greater_than`/`ge`/`eq`/`ne`), the combinators
 //! [`not`]/[`Check::and`]/[`Check::or`], an optional message
 //! ([`Check::message`], Compact's second `assert` argument), the boolean leaf
-//! [`is_true`], the in-branch form [`Check::when`], and [`Check::eval`] for a
-//! circuit that wants the boolean wire. NO deferred
+//! [`is_true`], and [`Check::eval`] for a
+//! circuit that wants the boolean wire. The in-branch form is
+//! [`Circuit3::when`](minocrab::v3::Circuit3::when): `c.when(g, |c|
+//! c.assert(p))` rather than a `Check` method (notes/edsl-trim.org §B). NO
+//! deferred
 //! ARITHMETIC and no expression templates: `a + b` returning a descriptor
 //! would hide emission inside an operator, which is the no-hidden-cost rule
 //! this whole layer is built on. And no macros — these are ordinary functions
@@ -88,8 +91,6 @@ enum Node<V: Vis3> {
     Not(Box<Node<V>>),
     And(Box<Node<V>>, Box<Node<V>>),
     Or(Box<Node<V>>, Box<Node<V>>),
-    /// [`Check::when`]: `select(guard, inner, 1)`.
-    When(Box<Node<V>>, Operand<FieldT, V>),
 }
 
 /// One side of a comparison: a typed leaf (which carries the WIDTH), a raw
@@ -486,8 +487,9 @@ fn check_literal_fits(literal: Option<Fr>, bits: u32) {
 /// Costs ZERO: the lowering is the wire itself, so `c.assert(is_true(b))` and
 /// `c.assert(b)` are the same instruction stream. What it buys is that the
 /// rest of the surface applies to such a value: `.message(..)`, `.and`/`.or`,
-/// [`not`], and `.when(guard)` — before this, those sites had to drop out of
-/// the predicate vocabulary into `c.assert_with(cond, Some(msg))`.
+/// [`not`], and the [`Circuit3::when`](minocrab::v3::Circuit3::when) scope —
+/// before this, those sites had to drop out of the predicate vocabulary into
+/// `c.assert_with(cond, Some(msg))`.
 pub fn is_true<V: Vis3>(b: Bool<V>) -> Check<V> {
     Check {
         node: Node::Leaf(b.field()),
@@ -536,35 +538,6 @@ impl<V: Vis3> Check<V> {
     /// escape hatch; `c.assert(p)` is the normal path.
     pub fn eval(self, c: &mut Circuit3) -> Bool<V> {
         Bool::from_field_unchecked(lower(c, self.node))
-    }
-}
-
-impl<V: Vis3> Check<V> {
-    /// The IN-BRANCH form (M9 phase 8, candidate 6): this check binds only
-    /// where `guard` holds.
-    ///
-    /// `c.assert(p.when(g))` lowers to `assert(select(g, p, 1))` — the
-    /// condition is replaced by the vacuous `1` on the branch that is not
-    /// taken (completeWithdraw.zkir:300-304). That is exactly what
-    /// `assert_if` emits by hand, minus its named `1`: the immediate is
-    /// inline, so the lowering is one `cond_select` and one `assert` with no
-    /// `Copy` in front (zero rows either way).
-    ///
-    /// The guard may be public while the check is private (the usual case: a
-    /// public branch condition over a secret comparison); the reverse would
-    /// narrow the result's visibility, which is what the [`Meet`] bounds say.
-    pub fn when<G>(self, guard: Wire3<FieldT, G>) -> Check<V>
-    where
-        V: Meet<G, Out = V>,
-        G: Vis3 + Meet<V, Out = V>,
-    {
-        Check {
-            node: Node::When(
-                Box::new(self.node),
-                Operand::from(guard).meet::<V>(),
-            ),
-            message: self.message,
-        }
     }
 }
 
@@ -652,10 +625,6 @@ fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {
             let right = c.not(right);
             let both = c.mul(left, right);
             c.not(both)
-        }
-        Node::When(inner, guard) => {
-            let cond = lower(c, *inner);
-            c.cond_select(guard, cond, 1u64)
         }
     }
 }

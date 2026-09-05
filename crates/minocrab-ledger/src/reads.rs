@@ -1,11 +1,10 @@
-//! The reads: `cell_read*`, `counter_read*`, `mint_read_with`, `popeq`,
-//! `emit`.
+//! The reads: `cell_read*`, `counter_read*`, `mint_read`, `popeq`, `emit`.
 
 use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_vm::ops::Op;
-use minocrab::v3::{Circuit3, FieldT, Operand, Wire3};
+use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::v3::ImpactElem;
-use minocrab::{Fr, Public, Visibility};
+use minocrab::{Fr, Public};
 
 use crate::impact::*;
 use crate::ops::*;
@@ -20,19 +19,16 @@ pub fn popeq(cached: bool, result: &LedgerValue) -> ImpactOp {
     ImpactOp(elems)
 }
 
-/// Emit `ops` as Impact instructions (one per op) under `guard`.
+/// Emit `ops` as Impact instructions (one per op).
 ///
-/// The guard is an OPERAND (M9 phase 8): a branch condition's wire, or the
-/// native `1u64` for a straight-line operation, which inlines as an
-/// immediate rather than naming a `Copy` — see [`Circuit3::impact_mixed`].
-pub fn emit<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    ops: &[ImpactOp],
-) {
-    let guard = guard.into();
+/// The guard is AMBIENT (notes/edsl-trim.org §B): [`Circuit3::impact_mixed`]
+/// resolves whatever scope the call sits in — the native `1u64` for
+/// straight-line code, which inlines as an immediate rather than naming a
+/// `Copy`, or a branch condition's wire inside [`Circuit3::when`]. There is
+/// no explicit guard parameter here to thread.
+pub fn emit(c: &mut Circuit3, ops: &[ImpactOp]) {
     for op in ops {
-        c.impact_mixed(guard, &op.0);
+        c.impact_mixed(1u64, &op.0);
     }
 }
 
@@ -47,28 +43,20 @@ pub fn emit<V: Visibility + minocrab::OnChainGuard>(
 // line refs per function).
 
 /// Mint one `public_input` gate per FAB limb of `atoms`; returns the wires
-/// plus the same wires packaged for a `popeq[c]` embed. `guard` is the
-/// branch condition for reads inside a conditional (compactc puts the SAME
-/// guard on the gates and the op's impact instructions — completeWithdraw
-/// .zkir:292-297); `None` for straight-line reads (guard printed as null).
-pub fn mint_read_with<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Option<Wire3<FieldT, V>>,
-    atoms: Vec<AlignmentAtom>,
-) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
+/// plus the same wires packaged for a `popeq[c]` embed.
+///
+/// [`Circuit3::public_transcript_input`] resolves the AMBIENT scope
+/// (notes/edsl-trim.org §B): unguarded in straight-line code, or under
+/// whatever [`Circuit3::when`] the call sits inside — compactc puts the SAME
+/// guard on the gates and the op's impact instructions
+/// (completeWithdraw.zkir:292-297).
+pub fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
     let limbs: usize = atoms.iter().map(atom_limbs).sum();
     let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
-        .map(|_| match guard {
-            Some(g) => c.public_transcript_input_guarded::<FieldT, V>(g),
-            None => c.public_transcript_input::<FieldT>(),
-        })
+        .map(|_| c.public_transcript_input::<FieldT>())
         .collect();
     let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
     (wires, value)
-}
-
-pub(crate) fn mint_read(c: &mut Circuit3, atoms: Vec<AlignmentAtom>) -> (Vec<Wire3<FieldT, Public>>, LedgerValue) {
-    mint_read_with::<Public>(c, None, atoms)
 }
 
 pub(crate) const U64_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 8 };
@@ -78,25 +66,22 @@ pub(crate) const BOOL_ATOM: AlignmentAtom = AlignmentAtom::Bytes { length: 1 };
 /// (midnight-ledger.ss:547-551): `dup 0; idx [field]; popeq` — both the idx
 /// and the popeq uncached (`f-cached` = #f). `atoms` is the cell type's FAB
 /// alignment; returns one wire per limb, in slot order.
-pub fn cell_read<V: Visibility + minocrab::OnChainGuard>(
+pub fn cell_read(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    cell_read_at(c, guard, &field_path(index), atoms)
+    cell_read_at(c, &field_path(index), atoms)
 }
 
 /// [`cell_read`] on a general path.
-pub fn cell_read_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn cell_read_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, atoms);
-    cell_read_embedded_at(c, guard, path, &value);
+    cell_read_embedded_at(c, path, &value);
     wires
 }
 
@@ -105,30 +90,19 @@ pub fn cell_read_at<V: Visibility + minocrab::OnChainGuard>(
 /// The read shape — `dup 0; idx [field]; popeq` with the witnessed value
 /// embedded in the `popeq` — is the same whatever minted the value; what
 /// differs is HOW the value was witnessed. A `Bytes<32>` cell mints one
-/// native gate per limb ([`mint_read_with`], which is what [`cell_read`]
+/// native gate per limb ([`mint_read`], which is what [`cell_read`]
 /// does). A `Secp256k1Point` cell mints ONE TYPED gate and derives its five
 /// limbs with an `encode` instruction (claim.zkir:29-33), so the limbs are
 /// computed rather than read and the caller has to build the value itself.
 /// Both end here.
-pub fn cell_read_embedded<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-    value: &LedgerValue,
-) {
-    cell_read_embedded_at(c, guard, &field_path(index), value)
+pub fn cell_read_embedded(c: &mut Circuit3, index: u8, value: &LedgerValue) {
+    cell_read_embedded_at(c, &field_path(index), value)
 }
 
 /// [`cell_read_embedded`] on a general path.
-pub fn cell_read_embedded_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-    value: &LedgerValue,
-) {
+pub fn cell_read_embedded_at(c: &mut Circuit3, path: &[LedgerKey], value: &LedgerValue) {
     emit(
         c,
-        guard,
         &[dup(0), idx_path(false, false, path), popeq(false, value)],
     );
 }
@@ -136,25 +110,15 @@ pub fn cell_read_embedded_at<V: Visibility + minocrab::OnChainGuard>(
 /// `Counter.read()` on field `index` (midnight-ledger.ss:590-594):
 /// `dup 0; idx [field]; popeqc` — the popeq is cached even on the first
 /// access (unlike Cell.read). Returns the u64 counter value.
-pub fn counter_read<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    counter_read_at(c, guard, &field_path(index))
+pub fn counter_read(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    counter_read_at(c, &field_path(index))
 }
 
 /// [`counter_read`] on a general path.
-pub fn counter_read_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
+pub fn counter_read_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
         c,
-        guard,
         &[dup(0), idx_path(false, false, path), popeq(true, &value)],
     );
     wires[0]
@@ -162,27 +126,23 @@ pub fn counter_read_at<V: Visibility + minocrab::OnChainGuard>(
 
 /// `Counter.lessThan(threshold)` (midnight-ledger.ss:595-600):
 /// `dup 0; idx [field]; push threshold (u64 cell); lt; popeqc` → Boolean.
-pub fn counter_less_than<V: Visibility + minocrab::OnChainGuard>(
+pub fn counter_less_than(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     threshold: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    counter_less_than_at(c, guard, &field_path(index), threshold)
+    counter_less_than_at(c, &field_path(index), threshold)
 }
 
 /// [`counter_less_than`] on a general path.
-pub fn counter_less_than_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn counter_less_than_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     threshold: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -196,27 +156,19 @@ pub fn counter_less_than_at<V: Visibility + minocrab::OnChainGuard>(
 
 /// `Map.member(key)` on field `index` (midnight-ledger.ss:649-655):
 /// `dup 0; idx [field]; push key; member; popeqc` → Boolean.
-pub fn map_member<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-    key: &LedgerValue,
-) -> Wire3<FieldT, Public> {
-    map_member_at(c, guard, &field_path(index), key)
+pub fn map_member(c: &mut Circuit3, index: u8, key: &LedgerValue) -> Wire3<FieldT, Public> {
+    map_member_at(c, &field_path(index), key)
 }
 
 /// [`map_member`] on a general path.
-pub fn map_member_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn map_member_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     key: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -232,14 +184,13 @@ pub fn map_member_at<V: Visibility + minocrab::OnChainGuard>(
 /// (midnight-ledger.ss:741-747): `dup 0; idx [field]; idx {key}; popeq` —
 /// the key descent and the popeq both uncached. `value_atoms` is the value
 /// type's FAB alignment.
-pub fn map_lookup<V: Visibility + minocrab::OnChainGuard>(
+pub fn map_lookup(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    map_lookup_at(c, guard, &field_path(index), key, value_atoms)
+    map_lookup_at(c, &field_path(index), key, value_atoms)
 }
 
 /// [`map_lookup`] on a general path.
@@ -249,18 +200,15 @@ pub fn map_lookup<V: Visibility + minocrab::OnChainGuard>(
 /// midnight-ledger.ss:745-746). A leaf lookup does not append its key to
 /// `f`; only an INTERMEDIATE `lookup` — the one whose result is another ADT —
 /// does, and that one emits nothing at all.
-pub fn map_lookup_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn map_lookup_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     key: &LedgerValue,
     value_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, value_atoms);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -273,25 +221,15 @@ pub fn map_lookup_at<V: Visibility + minocrab::OnChainGuard>(
 
 /// `Map.size()` on field `index` (midnight-ledger.ss:728-733):
 /// `dup 0; idx [field]; size; popeqc` → Uint64.
-pub fn map_size<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    map_size_at(c, guard, &field_path(index))
+pub fn map_size(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    map_size_at(c, &field_path(index))
 }
 
 /// [`map_size`] on a general path.
-pub fn map_size_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
+pub fn map_size_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -304,26 +242,16 @@ pub fn map_size_at<V: Visibility + minocrab::OnChainGuard>(
 
 /// `Map.isEmpty()` on field `index` (midnight-ledger.ss:720-727):
 /// `dup 0; idx [field]; size; push 0 (u64 cell); eq; popeqc` → Boolean.
-pub fn map_is_empty<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    map_is_empty_at(c, guard, &field_path(index))
+pub fn map_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    map_is_empty_at(c, &field_path(index))
 }
 
 /// [`map_is_empty`] on a general path.
-pub fn map_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
+pub fn map_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
     let zero = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(0u64))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -338,64 +266,38 @@ pub fn map_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
 
 /// `set.size()` / `set.isEmpty()` — the `Map` streams, exactly
 /// ([`set_remove`] carries the argument).
-pub fn set_size<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    map_size(c, guard, index)
+pub fn set_size(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    map_size(c, index)
 }
 
 /// [`set_size`] on a general path.
-pub fn set_size_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    map_size_at(c, guard, path)
+pub fn set_size_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+    map_size_at(c, path)
 }
 
 /// See [`set_size`].
-pub fn set_is_empty<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    map_is_empty(c, guard, index)
+pub fn set_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    map_is_empty(c, index)
 }
 
 /// [`set_is_empty`] on a general path.
-pub fn set_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    map_is_empty_at(c, guard, path)
+pub fn set_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
+    map_is_empty_at(c, path)
 }
 
 // --- List reads --------------------------------------------------------------
 
 /// `list.length()` on field `index`: `dup 0; idx [field]; idx [2]; popeqc`
 /// → Uint64. The length is a stored cell, not a computed `size`.
-pub fn list_length<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    list_length_at(c, guard, &field_path(index))
+pub fn list_length(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    list_length_at(c, &field_path(index))
 }
 
 /// [`list_length`] on a general path.
-pub fn list_length_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
+pub fn list_length_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![U64_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -414,25 +316,15 @@ pub fn list_length_at<V: Visibility + minocrab::OnChainGuard>(
 /// reads as "the tail is null", which is what an empty list's tail is. See
 /// notes/ledger-adts.org §1, which also disposes of the upstream comment
 /// claiming `1` encodes a cell.
-pub fn list_is_empty<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    list_is_empty_at(c, guard, &field_path(index))
+pub fn list_is_empty(c: &mut Circuit3, index: u8) -> Wire3<FieldT, Public> {
+    list_is_empty_at(c, &field_path(index))
 }
 
 /// [`list_is_empty`] on a general path.
-pub fn list_is_empty_at<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
+pub fn list_is_empty_at(c: &mut Circuit3, path: &[LedgerKey]) -> Wire3<FieldT, Public> {
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -465,30 +357,26 @@ const TYPE_NULL: u8 = 1;
 ///            pop; push (cell [0u8, default T])
 /// popeqc <Maybe<T>>
 /// ```
-pub fn list_head<V: Visibility + minocrab::OnChainGuard>(
+pub fn list_head(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     elem_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    list_head_at(c, guard, &field_path(index), elem_atoms)
+    list_head_at(c, &field_path(index), elem_atoms)
 }
 
 /// [`list_head`] on a general path.
-pub fn list_head_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn list_head_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     elem_atoms: Vec<AlignmentAtom>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    let guard = guard.into();
     let mut maybe_atoms = vec![BOOL_ATOM];
     maybe_atoms.extend(elem_atoms.iter().copied());
     let none = default_value(maybe_atoms.clone());
     let (wires, value) = mint_read(c, maybe_atoms);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -538,28 +426,20 @@ pub(crate) fn max_sizeof(atoms: &[AlignmentAtom]) -> u32 {
 /// `mt.isFull()` / `hmt.isFull()` on field `index`: `dup 0; idx [field];
 /// idx [1]; push 2^depth (u64 cell); lt; neg; popeqc` → Boolean, i.e.
 /// `!(next < 2^depth)`.
-pub fn merkle_tree_is_full<V: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
-    index: u8,
-    depth: u8,
-) -> Wire3<FieldT, Public> {
-    merkle_tree_is_full_at(c, guard, &field_path(index), depth)
+pub fn merkle_tree_is_full(c: &mut Circuit3, index: u8, depth: u8) -> Wire3<FieldT, Public> {
+    merkle_tree_is_full_at(c, &field_path(index), depth)
 }
 
 /// [`merkle_tree_is_full`] on a general path.
-pub fn merkle_tree_is_full_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn merkle_tree_is_full_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     depth: u8,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let capacity = LedgerValue::bytes(8, vec![ImpactElem::Imm(Fr::from(1u64 << depth))]);
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -576,27 +456,23 @@ pub fn merkle_tree_is_full_at<V: Visibility + minocrab::OnChainGuard>(
 /// `mt.checkRoot(rt)` on field `index`: `dup 0; idx [field]; idx [0]; root;
 /// push rt (field cell); eq; popeqc` → Boolean. `root` is the CURRENT root,
 /// so this is an equality — the historic twin is [`historic_merkle_tree_check_root`].
-pub fn merkle_tree_check_root<V: Visibility + minocrab::OnChainGuard>(
+pub fn merkle_tree_check_root(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    merkle_tree_check_root_at(c, guard, &field_path(index), root)
+    merkle_tree_check_root_at(c, &field_path(index), root)
 }
 
 /// [`merkle_tree_check_root`] on a general path.
-pub fn merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn merkle_tree_check_root_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -614,27 +490,23 @@ pub fn merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard>(
 /// push rt; member; popeqc` → Boolean. A `member` on the HISTORY map, not an
 /// `eq` on the current root — which is the whole difference between the two
 /// tree ADTs at read time.
-pub fn historic_merkle_tree_check_root<V: Visibility + minocrab::OnChainGuard>(
+pub fn historic_merkle_tree_check_root(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     index: u8,
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    historic_merkle_tree_check_root_at(c, guard, &field_path(index), root)
+    historic_merkle_tree_check_root_at(c, &field_path(index), root)
 }
 
 /// [`historic_merkle_tree_check_root`] on a general path.
-pub fn historic_merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard>(
+pub fn historic_merkle_tree_check_root_at(
     c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, V>>,
     path: &[LedgerKey],
     root: &LedgerValue,
 ) -> Wire3<FieldT, Public> {
-    let guard = guard.into();
     let (wires, value) = mint_read(c, vec![BOOL_ATOM]);
     emit(
         c,
-        guard,
         &[
             dup(0),
             idx_path(false, false, path),
@@ -645,131 +517,4 @@ pub fn historic_merkle_tree_check_root_at<V: Visibility + minocrab::OnChainGuard
         ],
     );
     wires[0]
-}
-
-// --- guarded reads ----------------------------------------------------------
-//
-// A read inside a conditional carries the branch condition as the guard on
-// BOTH its public_input gates and its impact instructions
-// (completeWithdraw.zkir:292-297 — refundCommitment.lookup under the
-// !succeeded branch). A guarded-off read yields the value type's default
-// and does not consume the transcript (ir_vm.rs:348-366); asserts inside
-// the branch are the caller's job (`assert(select(guard, cond, 1))`).
-// Shapes are identical to the unguarded variants above; the first fetch of
-// a field is still the uncached idx even when it happens inside a branch
-// (completeWithdraw reads field 9 first at :295, `0x50` under the guard).
-
-/// Guarded [`cell_read`].
-pub fn cell_read_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    index: u8,
-    atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
-    cell_read_guarded_at(c, guard, &field_path(index), atoms)
-}
-
-/// [`cell_read_guarded`] on a general path.
-pub fn cell_read_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    path: &[LedgerKey],
-    atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
-    let (wires, value) = mint_read_with(c, Some(guard), atoms);
-    emit(
-        c,
-        guard,
-        &[dup(0), idx_path(false, false, path), popeq(false, &value)],
-    );
-    wires
-}
-
-/// Guarded [`counter_read`].
-pub fn counter_read_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    index: u8,
-) -> Wire3<FieldT, Public> {
-    counter_read_guarded_at(c, guard, &field_path(index))
-}
-
-/// [`counter_read_guarded`] on a general path.
-pub fn counter_read_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    path: &[LedgerKey],
-) -> Wire3<FieldT, Public> {
-    let (wires, value) = mint_read_with(c, Some(guard), vec![U64_ATOM]);
-    emit(
-        c,
-        guard,
-        &[dup(0), idx_path(false, false, path), popeq(true, &value)],
-    );
-    wires[0]
-}
-
-/// Guarded [`map_member`].
-pub fn map_member_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    index: u8,
-    key: &LedgerValue,
-) -> Wire3<FieldT, Public> {
-    map_member_guarded_at(c, guard, &field_path(index), key)
-}
-
-/// [`map_member_guarded`] on a general path.
-pub fn map_member_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    path: &[LedgerKey],
-    key: &LedgerValue,
-) -> Wire3<FieldT, Public> {
-    let (wires, value) = mint_read_with(c, Some(guard), vec![BOOL_ATOM]);
-    emit(
-        c,
-        guard,
-        &[
-            dup(0),
-            idx_path(false, false, path),
-            push_cell(false, key),
-            ImpactOp::constant(&Op::Member),
-            popeq(true, &value),
-        ],
-    );
-    wires[0]
-}
-
-/// Guarded [`map_lookup`].
-pub fn map_lookup_guarded<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    index: u8,
-    key: &LedgerValue,
-    value_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
-    map_lookup_guarded_at(c, guard, &field_path(index), key, value_atoms)
-}
-
-/// [`map_lookup_guarded`] on a general path.
-pub fn map_lookup_guarded_at<V: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
-    path: &[LedgerKey],
-    key: &LedgerValue,
-    value_atoms: Vec<AlignmentAtom>,
-) -> Vec<Wire3<FieldT, Public>> {
-    let (wires, value) = mint_read_with(c, Some(guard), value_atoms);
-    emit(
-        c,
-        guard,
-        &[
-            dup(0),
-            idx_path(false, false, path),
-            idx_key(key),
-            popeq(false, &value),
-        ],
-    );
-    wires
 }

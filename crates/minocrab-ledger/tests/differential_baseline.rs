@@ -87,8 +87,7 @@ fn noop_matches_corpus() {
     );
 
     let mut c = Circuit3::new();
-    let one = c.constant(1u64);
-    emit(&mut c, one, &counter_increment(0, 1));
+    emit(&mut c, &counter_increment(0, 1));
     let ours = c.finish(true).ir;
 
     let real_ops = [
@@ -124,14 +123,13 @@ fn base_matches_corpus() {
     let a = c.disclose(amt, "amount");
     let r0 = c.disclose(rec_hi, "recipient hi");
     let r1 = c.disclose(rec_lo, "recipient lo");
-    let one = c.constant(1u64);
 
     let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
     let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r0), ImpactElem::Wire(r1)]);
     let mut ops = counter_increment(0, 1);
     ops.extend(cell_write(1, &amount_val));
     ops.extend(map_insert(2, &recipient_val, &amount_val));
-    emit(&mut c, one, &ops);
+    emit(&mut c, &ops);
     let ours = c.finish(true).ir;
 
     // The reference transcript from real Impact-VM ops.

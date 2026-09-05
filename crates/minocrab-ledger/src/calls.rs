@@ -5,7 +5,7 @@ use midnight_base_crypto::fab::AlignmentAtom;
 use midnight_onchain_state::state::EntryPointBuf;
 use minocrab::v3::{CallArgs, CallResult, Circuit3, Disclose, FieldT, Prim, Wire3};
 use minocrab::v3::{ImpactElem, LimbConstraint};
-use minocrab::{Fr, Public, Visibility};
+use minocrab::{Fr, Public};
 
 use crate::impact::*;
 use crate::kernel::*;
@@ -49,14 +49,13 @@ minocrab::label! {
 /// Returns the callee's result wires. They are disclosed: the claim binds
 /// them publicly (under cc-rand hiding) via `comm`, and Compact treats
 /// them as public downstream.
-pub fn contract_call<V: Visibility + Copy + minocrab::OnChainGuard>(
+pub fn contract_call(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
     addr: [Wire3<FieldT, Public>; 2],
     args: &[Wire3<FieldT, Public>],
     results: &[LimbConstraint],
 ) -> Vec<Wire3<FieldT, Public>> {
-    contract_call_with(c, guard, addr, args, results, None)
+    contract_call_with(c, addr, args, results, None)
 }
 
 /// Marker: this circuit BINDS every cross-contract call's entry point
@@ -79,33 +78,33 @@ pub fn bind_entry_points(c: &mut Circuit3) {
 
 /// [`contract_call`] with the entry point BOUND: `bind` carries the hash's
 /// two limbs the witnessed ones must equal.
-fn contract_call_with<V: Visibility + Copy + minocrab::OnChainGuard>(
+fn contract_call_with(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
     addr: [Wire3<FieldT, Public>; 2],
     args: &[Wire3<FieldT, Public>],
     results: &[LimbConstraint],
     bind: Option<[Fr; 2]>,
 ) -> Vec<Wire3<FieldT, Public>> {
-    // Every witness of the call is read UNDER THE CALL'S GUARD, as the op
-    // that claims it is emitted under it: a call inside a branch consumes
-    // the prover's cc-rand, entry-point limbs and results only where the
-    // branch runs, or the private transcript shifts for everything after
-    // it (the external review's §4.3; the same class the choke point closed
-    // for the scope-based reads). Straight-line callers pass a constant
-    // true, which lowers to compactc's own `guard: null`.
+    // Every witness of the call is read under the AMBIENT scope, as the op
+    // that claims it is emitted under it (`c.witness()` resolves whatever
+    // `Circuit3::when` the call sits inside — notes/edsl-trim.org §B): a call
+    // inside a branch consumes the prover's cc-rand, entry-point limbs and
+    // results only where the branch runs, or the private transcript shifts
+    // for everything after it (the external review's §4.3; the same class
+    // the choke point closed for the scope-based reads). Straight-line
+    // callers are unguarded, which lowers to compactc's own `guard: null`.
     let results: Vec<_> = results
         .iter()
         .map(|&constraint| {
-            let w = c.witness_guarded::<FieldT, V>(guard);
+            let w = c.witness::<FieldT>();
             constraint.emit(c, w);
             w
         })
         .collect();
-    let cc_rand = c.witness_guarded::<FieldT, V>(guard);
-    let ep_hi = c.witness_guarded::<FieldT, V>(guard);
+    let cc_rand = c.witness::<FieldT>();
+    let ep_hi = c.witness::<FieldT>();
     c.assert_bits(ep_hi, 8);
-    let ep_lo = c.witness_guarded::<FieldT, V>(guard);
+    let ep_lo = c.witness::<FieldT>();
     c.assert_bits(ep_lo, 248);
     if let Some([hi, lo]) = bind {
         // The hardened mode: the prover's entry point IS the declared one.
@@ -135,7 +134,7 @@ fn contract_call_with<V: Visibility + Copy + minocrab::OnChainGuard>(
             ImpactElem::Wire(comm),
         ],
     );
-    emit(c, guard, &kernel_claim_contract_call(&addr_ep_comm));
+    emit(c, &kernel_claim_contract_call(&addr_ep_comm));
 
     results.disclose_as::<XcallResult>(c)
 }
@@ -181,19 +180,15 @@ impl Callee {
     /// arguments emit nothing (every other call site in the corpus),
     /// `Field` resolved inside [`call`] gives the same stream and is the
     /// simpler spelling.
-    pub fn pin<V: Visibility + Copy + minocrab::OnChainGuard>(self, c: &mut Circuit3, guard: Wire3<FieldT, V>) -> Callee {
-        Callee::Pinned(self.address(c, guard))
+    pub fn pin(self, c: &mut Circuit3) -> Callee {
+        Callee::Pinned(self.address(c))
     }
 
     /// The address limbs — for [`Callee::Field`], the fresh uncached read.
-    fn address<V: Visibility + Copy + minocrab::OnChainGuard>(
-        self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, V>,
-    ) -> [Wire3<FieldT, Public>; 2] {
+    fn address(self, c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
         match self {
             Callee::Field(index) => {
-                let limbs = cell_read(c, guard, index, vec![AlignmentAtom::Bytes { length: 32 }]);
+                let limbs = cell_read(c, index, vec![AlignmentAtom::Bytes { length: 32 }]);
                 [limbs[0], limbs[1]]
             }
             Callee::FieldPath(elems, len) => {
@@ -201,7 +196,7 @@ impl Callee {
                     .iter()
                     .map(|&i| LedgerKey::Field(i))
                     .collect();
-                let limbs = cell_read_at(c, guard, &path, vec![AlignmentAtom::Bytes { length: 32 }]);
+                let limbs = cell_read_at(c, &path, vec![AlignmentAtom::Bytes { length: 32 }]);
                 [limbs[0], limbs[1]]
             }
             Callee::Pinned(limbs) => limbs,
@@ -228,9 +223,8 @@ impl Callee {
 /// `(address, entry_point, comm)` match against the callee's own
 /// transaction. Naming it here types the developer's call and tells the
 /// transaction builder which circuit to run; it is not a proof obligation.
-pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy + minocrab::OnChainGuard>(
+pub fn call<A: CallArgs, R: CallResult>(
     c: &mut Circuit3,
-    guard: Wire3<FieldT, V>,
     callee: Callee,
     entry_point: EntryPoint,
     args: A,
@@ -242,13 +236,13 @@ pub fn call<A: CallArgs, R: CallResult, V: Visibility + Copy + minocrab::OnChain
         .ext_get::<BindEntryPoints>()
         .is_some()
         .then(|| entry_point.limbs());
-    let addr = callee.address(c, guard);
+    let addr = callee.address(c);
     let arg_slots = args.call_slots();
     let constraints: Vec<LimbConstraint> = R::prims()
         .into_iter()
         .map(Prim::constraint)
         .collect();
-    let results = contract_call_with(c, guard, addr, &arg_slots, &constraints, bind);
+    let results = contract_call_with(c, addr, &arg_slots, &constraints, bind);
     debug_assert_eq!(results.len(), R::SLOTS, "contract_call returned {} slots", results.len());
     R::from_call_slots(&results)
 }

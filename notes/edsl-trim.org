@@ -228,3 +228,313 @@ contract code. This is a public-API removal on minocrab-std, which §B's
 "public signatures on the stable tier do not change" did not
 anticipate; dmd asked for it explicitly.
 
+* B, the removal (2026-09-05)
+
+Every `_under` / `_guarded` method and the raw ledger layer's explicit
+`guard` parameter are gone. The scope (`Circuit3::when` /
+`Circuit3::when_private`) is the one spelling of a conditional outside the
+four core primitives it lowers to. Zero movement: the 209-circuit ZKIR dump
+is byte-identical before and after (`diff -r` empty — gate output below).
+
+** THE COMPLETE LIST OF REMOVED PUBLIC ITEMS, by crate and file
+
+*** minocrab-std/src/v3/ledger.rs (51 items)
+
+`pub const STRAIGHT_LINE: u64` — replaced by nothing; a straight-line call
+is now just the plain method with no ambient scope.
+
+`LedgerMap<K, V, P>`: `member_under`, `member_guarded` → `member` (plain, or
+`c.when(g, |c| map.member(c, k))` under a scope); `remove_under` →
+`remove`; `lookup_under`, `lookup_guarded` → `lookup`; `insert_under` →
+`insert`; `insert_default_under` → `insert_default`; `insert_coin_under` →
+`insert_coin`; `size_under` → `size`; `is_empty_under` → `is_empty`;
+`reset_to_default_under` → `reset_to_default`.
+
+`LedgerSet<T, P>`: `insert_under` → `insert`; `member_under` → `member`;
+`remove_under` → `remove`; `insert_coin_under` → `insert_coin`;
+`size_under` → `size`; `is_empty_under` → `is_empty`;
+`reset_to_default_under` → `reset_to_default`.
+
+`LedgerList<T, P>`: `pop_front_under` → `pop_front`; `length_under` →
+`length`; `is_empty_under` → `is_empty`; `reset_to_default_under` →
+`reset_to_default`; `push_front_under` → `push_front`; `head_under` →
+`head`; `push_front_coin_under` → `push_front_coin`.
+
+`LedgerMerkleTree<DEPTH, T, P>`: `is_full_under` → `is_full`;
+`check_root_under` → `check_root`; `insert_hash_under` → `insert_hash`;
+`insert_hash_index_under` → `insert_hash_index`; `reset_to_default_under`
+→ `reset_to_default`; `insert_under` → `insert`; `insert_index_under` →
+`insert_index`; `insert_index_default_under` → `insert_index_default`.
+
+`LedgerHistoricMerkleTree<DEPTH, T, P>`: `is_full_under` → `is_full`;
+`check_root_under` → `check_root`; `insert_hash_under` → `insert_hash`;
+`insert_hash_index_under` → `insert_hash_index`; `reset_history_under` →
+`reset_history`; `reset_to_default_under` → `reset_to_default`;
+`insert_under` → `insert`; `insert_index_under` → `insert_index`;
+`insert_index_default_under` → `insert_index_default`.
+
+`LedgerCell<T>`: `read_under`, `read_guarded` → `read`; `write_under` →
+`write`.
+
+`LedgerCounter<P>`: `read_under`, `read_guarded` → `read`;
+`reset_to_default_under` → `reset_to_default`; `increment_under` →
+`increment`; `less_than_under` → `less_than`.
+
+`LedgerRepr::witness_read` lost its `guard: Option<Wire3<..>>` parameter
+(now ambient-only); its two overrides (`Secp256k1Point`, `JubjubPoint`)
+follow.
+
+*** minocrab-std/src/v3/kernel.rs (16 items + the module's own STRAIGHT_LINE)
+
+`const STRAIGHT_LINE: u64` — same as above, replaced by nothing.
+
+`self_address_under`, `self_address_guarded` → `self_address` (plain), or
+`c.when(g, |c| self_address(c))` under a scope. `mint_shielded_under` →
+`mint_shielded`. `mint_unshielded_under` → `mint_unshielded`.
+`inc_unshielded_inputs_under` → `inc_unshielded_inputs`.
+`inc_unshielded_outputs_under` → `inc_unshielded_outputs`.
+`claim_unshielded_coin_spend_under` → `claim_unshielded_coin_spend`.
+`balance_under` → `balance`. `balance_less_than_under` →
+`balance_less_than`. `balance_greater_than_under` →
+`balance_greater_than`. `block_time_less_than_under` →
+`block_time_less_than`. `block_time_greater_than_under` →
+`block_time_greater_than`. `claim_zswap_nullifier_under` →
+`claim_zswap_nullifier`. `claim_zswap_coin_spend_under` →
+`claim_zswap_coin_spend`. `claim_zswap_coin_receive_under` →
+`claim_zswap_coin_receive`.
+
+Two internal call sites (`is_self`'s `kernel.self()` read, `send_unshielded`
+/ `mint_unshielded_token`'s auto-receive `incUnshieldedInputs`,
+`send_shielded`'s auto-receive `claimZswapCoinReceive`) do NOT use the
+scope: they nest an explicit, data-dependent guard under whatever ambient
+scope the caller (`manager.compact`'s `execute`, reached through
+`custody_dispatch`) is already inside, and the scope conjoins once on entry
+where the deleted `_guarded` primitives conjoined once PER EFFECT — fewer
+rows, so not zero-movement. Two new private helpers
+(`guarded_kernel_self`, `emit_guarded`) reproduce the deleted primitives'
+exact op sequence through the KEPT core primitives
+(`Circuit3::public_transcript_input_guarded`, `Circuit3::impact_mixed`),
+so the row count is unchanged regardless of nesting. Documented at both
+call sites and at `guarded_kernel_self`'s definition.
+
+*** minocrab-std/src/v3.rs (1 item)
+
+`own_public_key_guarded` → `own_public_key` (plain), or `c.when(g, |c|
+own_public_key(c))` under a scope.
+
+*** minocrab-std/src/v3/predicate.rs (1 item + the private `Node::When` variant)
+
+`Check::when(guard)` → gone; `c.assert(p.when(g))` becomes `c.when(g, |c|
+c.assert(p))`. `Node::When` and its `lower` arm removed with it (nothing
+else built one).
+
+*** minocrab-ledger/src/reads.rs (33 signatures changed, 8 items deleted, 1 renamed)
+
+Deleted outright: `cell_read_guarded`, `cell_read_guarded_at`,
+`counter_read_guarded`, `counter_read_guarded_at`, `map_member_guarded`,
+`map_member_guarded_at`, `map_lookup_guarded`, `map_lookup_guarded_at`.
+
+Renamed (guard param dropped, `Option<Wire3<..>>` collapsed to
+ambient-only): `mint_read_with` → folded into `mint_read` (now `pub`, was
+`pub(crate)`).
+
+Guard parameter (`guard: impl Into<Operand<FieldT, V>>`) removed, name and
+behavior otherwise unchanged: `emit`, `cell_read`, `cell_read_at`,
+`cell_read_embedded`, `cell_read_embedded_at`, `counter_read`,
+`counter_read_at`, `counter_less_than`, `counter_less_than_at`,
+`map_member`, `map_member_at`, `map_lookup`, `map_lookup_at`, `map_size`,
+`map_size_at`, `map_is_empty`, `map_is_empty_at`, `set_size`,
+`set_size_at`, `set_is_empty`, `set_is_empty_at`, `list_length`,
+`list_length_at`, `list_is_empty`, `list_is_empty_at`, `list_head`,
+`list_head_at`, `merkle_tree_is_full`, `merkle_tree_is_full_at`,
+`merkle_tree_check_root`, `merkle_tree_check_root_at`,
+`historic_merkle_tree_check_root`, `historic_merkle_tree_check_root_at`
+(32 functions, plus `emit` = 33).
+
+*** minocrab-ledger/src/kernel.rs (1 item deleted, 3 signatures changed)
+
+Deleted outright: `kernel_self_guarded`.
+
+Guard parameter removed: `kernel_balance`, `kernel_block_time`,
+`kernel_self`.
+
+*** minocrab-ledger/src/calls.rs (5 signatures changed)
+
+Guard parameter removed (`guard: Wire3<FieldT, V>`, not an `Operand` — these
+took the wire directly): `contract_call`, `contract_call_with` (private),
+`call`, `Callee::pin`, `Callee::address` (private). `contract_call_with`'s
+witness reads are now `c.witness()` (ambient) instead of
+`witness_guarded(guard)`.
+
+*** minocrab/src/v3.rs (1 item narrowed, 4 kept and documented)
+
+`Guarded::new` — `pub` → `pub(crate)`; only `Circuit3::when` /
+`Circuit3::when_private` (via `Branches::guarded`) may mint one now.
+
+KEPT, unchanged signatures, one doc sentence added to each pointing
+contract code at `Circuit3::when` / `when_private`: `Circuit3::impact`,
+`Circuit3::impact_mixed`, `Circuit3::witness_guarded`,
+`Circuit3::public_transcript_input_guarded`. These are the primitives the
+scope lowers to and the twins the byte-identity tests (and the two
+`guarded_kernel_self` / `emit_guarded` reconstructions above) compare
+against.
+
+*** minocrab-macros (the `#[interface]` expansion — not in dmd's original
+list, found necessary: the generated cross-contract call handles threaded
+a guard parameter too)
+
+`#[interface]`-generated methods and `pin` lose their `guard:
+Wire3<FieldT, __V>` parameter and its `__V: OnChainGuard + Copy` generic
+(`crates/minocrab-macros/src/interface.rs`, `crates/minocrab-macros/src/
+lib.rs` doc). A guarded cross-contract call is now `c.when(g, |c|
+callee.circuit(c, args))`.
+
+** CALL SITES FIXED
+
+- `crates/minocrab-contracts/src/common.rs`: `self_recipient`,
+  `receive_shielded`, `claim_receive`, `write_coin_to_self`,
+  `mint_shielded_token`, `assert_counter_zero` lose their `guard`
+  parameter (all call sites passed `STRAIGHT_LINE`/`one`); the auto-receive
+  branch in `mint_shielded_token` becomes `c.when(receive, |c| ..)`
+  (verified straight-line-only callers, so this one IS the scope).
+- `crates/minocrab-contracts/src/manager.rs`: `map.lookup_guarded` /
+  `member_guarded` (3 call sites) → `c.when(g, |c| map.lookup(c, k))` for
+  the two TOP-LEVEL callers (`account_record`, `pool_value`); `balance_at`
+  (called both top-level and NESTED inside `custody_dispatch`) gets a
+  hand-rolled `guarded_map_lookup_field` for the same reason as
+  `guarded_kernel_self` above — its explicit `member` guard has to conjoin
+  per-effect against whatever ambient scope is already active, which
+  `c.when` does not reproduce when there IS an outer scope.
+- `crates/minocrab-contracts/src/{erc20_vault,erc20_vault_pending}.rs`:
+  `own_public_key_guarded` → `c.when(not_some, own_public_key)`;
+  `notify_signet` / `record_and_notify` (erc20_vault.rs only) lose their
+  `guard` parameter (always `one`).
+- `crates/minocrab-contracts/src/nested.rs`: every `STRAIGHT_LINE` call
+  site (mechanical — the file is DELIBERATELY raw, per its own module doc)
+  loses the guard argument.
+- `crates/minocrab-contracts/src/{xcall,xcall_with_payment,
+  xcontract_events,xcontract_events_borsh,hashing,events,events_borsh,
+  test_caller,attest,signet_contract,serde_builtin,mint_tokens}.rs`:
+  mechanical guard-argument removal from `emit` / raw read calls and
+  `#[interface]`-generated method calls. Where the `one` wire had no
+  further use it is kept as `let _ = c.constant(1u64);` (never removed —
+  see the zero-movement note below); where it was also a VALUE (an
+  `is_left` tag, a coin amount) the binding and its non-guard uses are
+  untouched.
+- `crates/minocrab-ledger/tests/{contract_call_guard.rs,
+  differential_baseline.rs}`: rewritten to the guard-free signatures; the
+  "explicit guard equals the scope" comparison in
+  `contract_call_guard.rs` is now a direct assertion on the scoped build's
+  properties (guard count, `"guard":null"` absence) rather than a
+  byte-comparison against an "explicit" spelling that no longer exists at
+  this layer.
+- `crates/minocrab-std/tests/{v3_ledger.rs,v3_predicates.rs,
+  v3_guard_scope.rs}`: `_under`/`_guarded`/`Check::when` twins rewritten to
+  the scope; the three `Guarded::new(..)` construction sites in
+  `v3_guard_scope.rs` (now crate-private) reconstruct a `Guarded` via
+  `c.when(g, |c| already_read_value).guarded()` — a no-op body wrapped in
+  the scope, which is `Guarded::new` byte for byte since the body emits
+  nothing new.
+- `crates/minocrab-contracts/tests/interface_macro.rs`: the "hand-written
+  twin" structs (`HandToken`, `HandSigner`, `HandXcallTarget`,
+  `HandPaymentTarget`) lose their `guard` parameter and generic to keep
+  mirroring the macro's expansion.
+
+** THE ZERO-MOVEMENT SURPRISE, recorded for the design record
+
+The scope conjoins ambient-and-explicit ONCE, on scope entry
+(`Circuit3::push_guard`). The deleted `_guarded` primitives conjoined it
+ONCE PER EFFECT (`Circuit3::effect_guard`, called fresh by every read and
+every Impact op). The two are byte-identical ONLY when there is no outer
+ambient scope at the call site (the straight-line case the design doc's
+byte-identity claim was built on) — nest an explicit `_guarded` call inside
+another `c.when` and replacing it with a new inner `c.when` removes the
+redundant per-effect selects, which is a real row reduction, not a
+refactor. Found by the zero-movement gate itself: `manager__execute.zkir`
+and `manager__deposit_shielded.zkir` first came back with fewer
+`cond_select`s after the naive `c.when` conversion. Fixed by reproducing
+the deleted primitives' exact instruction sequence through the KEPT core
+primitives at the three call sites that nest (`guarded_kernel_self`,
+`emit_guarded` in `minocrab-std/src/v3/kernel.rs`;
+`guarded_map_lookup_field` in `minocrab-contracts/src/manager.rs`) instead
+of routing them through the scope. Every OTHER `_guarded`-to-scope
+conversion in this removal is called straight-line only (verified: the
+205-circuit... — see gate output — dump stayed byte-identical), so this
+is the only place it bites in the current corpus.
+
+The same "wire numbering" trap: `c.constant(1u64)` compiles to zero rows
+regardless of whether it is read afterward (`minocrab_ir::v3::passes::
+fold_immediate_copies` drops every named-immediate `Copy` that is not a
+circuit output), but the IDENTIFIER counter that names later wires
+(`Builder3::fresh`) increments when the `Copy` is EMITTED, before the fold
+runs — so deleting a now-guard-only `let one = c.constant(1u64);` silently
+renumbers every wire after it in the dump, even though the row count does
+not change. Every such declaration this removal made guard-unnecessary is
+kept in place (`let _ = c.constant(1u64);`, one-line comment) rather than
+deleted, across `attest.rs`, `erc20_vault.rs` (×3), `events.rs`,
+`events_borsh.rs`, `hashing.rs` (×2), `manager.rs` (×2),
+`signet_contract.rs`, `signet_flow.rs`, `test_caller.rs`, `xcall.rs`
+(×6), `xcall_with_payment.rs` (×5), `xcontract_events.rs` (×2),
+`xcontract_events_borsh.rs` — 27 sites total, one per circuit the initial
+(wrong) deletion moved.
+
+** GATES
+
+`diff -r <before> <after>` of the 209-circuit ZKIR dump: EMPTY.
+
+`cargo test --release -p minocrab-contracts --test row_snapshot --test
+interface_snapshot`: unchanged, not regenerated —
+=======================================================================
+running 3 tests
+test regenerate_interface_snapshot ... ignored, regeneration helper, not a check
+test diff_shows_reorders_renames_and_insertions ... ok
+test every_circuit_matches_its_frozen_interface ... ok
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+
+running 3 tests
+test regenerate_row_snapshot ... ignored, regeneration helper, not a check
+test the_instruction_diff_keeps_only_the_movement_and_caps_it ... ok
+test every_circuit_matches_its_frozen_cost ... ok
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out
+=======================================================================
+
+`cargo test -p minocrab-contracts --test circuit_closure`:
+running 1 test
+test every_circuit_attribute_is_listed ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+`cargo test --workspace`: green, 81 test binaries, all passing after
+`MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base`
+regenerated TRUST.md (line counts moved in the eDSL crates — smaller, the
+`_under`/`_guarded` methods and the raw guard threading are gone). TRUST.md
+committed regenerated.
+
+`cargo clippy --workspace --all-targets -- -D warnings`: clean (fixed
+three `redundant_closure` lints the removal's `c.when(g, |c| f(c))` spots
+introduced where `f` alone satisfies the closure bound: `common.rs`'s
+`self2`, `erc20_vault.rs` and `erc20_vault_pending.rs`'s `own_pk`).
+
+`cargo doc --workspace --no-deps`: 7 warnings, ALL PRE-EXISTING and
+unrelated (verified with `git stash` against the unmodified worktree:
+identical 7 warnings, same files and lines) — broken intra-doc links
+(`Serializer`, `persistent_vec8`, `map_reset`, `limbs_of`, `call_emit`)
+and private-item links (`respond_like`, `call_n_times`) in
+`minocrab-contracts`, none of them touching guard/conditional spellings.
+Left alone: out of this removal's scope, and fixing them would mix an
+unrelated doc cleanup into this commit's diff.
+
+** WHAT COULD NOT BE REMOVED, and why
+
+Nothing on dmd's list survived. The four core-crate primitives
+(`Circuit3::impact`, `impact_mixed`, `witness_guarded`,
+`public_transcript_input_guarded`) are KEPT BY DESIGN — they are what the
+scope lowers to, not a second spelling contract code should reach for
+(now documented as such at each). Three private helpers earn their keep
+for the same reason at nested call sites where the scope's once-on-entry
+conjoining would move rows: `guarded_kernel_self` and `emit_guarded`
+(`minocrab-std/src/v3/kernel.rs`), `guarded_map_lookup_field`
+(`minocrab-contracts/src/manager.rs`). All three are private, undocumented
+outside this crate's internals, and exist ONLY because their one caller
+each nests under another scope — everywhere else in the corpus the plain
+method under `c.when` is the whole story.
+

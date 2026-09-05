@@ -37,22 +37,22 @@
 use std::marker::PhantomData;
 
 use minocrab::v3::{
-    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, Guarded, JubjubPointT, Operand,
+    AnyWire3, CallArg, CallResult, Circuit3, CircuitAbi, FieldT, JubjubPointT,
     Secp256k1PointT, Wire3,
 };
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public, Visibility};
+use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Fr, Public};
 use minocrab_ledger::{
     atom_limbs, cell_read_embedded_at, cell_write_at, counter_increment_at, counter_less_than_at,
-    counter_read_at, counter_read_guarded_at, counter_reset_at, emit, empty_counter, empty_historic_merkle_tree_value,
+    counter_read_at, counter_reset_at, emit, empty_counter, empty_historic_merkle_tree_value,
     empty_list, empty_map, empty_merkle_tree_value, historic_merkle_tree_check_root_at,
     historic_merkle_tree_insert_at, historic_merkle_tree_insert_index_at,
     historic_merkle_tree_reset_at, historic_merkle_tree_reset_history_at, list_head_at,
     list_is_empty_at, list_length_at, list_pop_front_at, list_push_front_at,
     list_push_front_coin_at, list_reset_at, map_insert_adt_default_at, map_insert_at,
     map_insert_coin_at, map_insert_default_at, map_is_empty_at, map_lookup_at,
-    map_lookup_guarded_at, map_member_at, map_member_guarded_at, map_remove_at, map_reset_at,
+    map_member_at, map_remove_at, map_reset_at,
     map_size_at, merkle_tree_check_root_at, merkle_tree_insert_at, merkle_tree_insert_index_at,
-    merkle_tree_is_full_at, merkle_tree_reset_at, mint_read_with, set_insert_at,
+    merkle_tree_is_full_at, merkle_tree_reset_at, mint_read, set_insert_at,
     set_insert_coin_at, set_is_empty_at, set_remove_at, set_reset_at, set_size_at, ImpactElem,
     ImpactOp, LedgerKey, LedgerValue,
 };
@@ -138,11 +138,12 @@ pub trait LedgerRepr: Sized {
     /// FAB-aligned record does. The one type that overrides it is
     /// [`Secp256k1Point`]: a point cell mints ONE TYPED gate and DERIVES its
     /// five limbs with `encode`, so its read is not a limb read at all.
-    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
-        c: &mut Circuit3,
-        guard: Option<Wire3<FieldT, V>>,
-    ) -> (Self, LedgerValue) {
-        let (wires, value) = mint_read_with(c, guard, Self::atoms());
+    ///
+    /// Guarded automatically: [`Circuit3::public_transcript_input`] resolves
+    /// the ambient scope, so a read inside [`Circuit3::when`] needs no
+    /// separate spelling here.
+    fn witness_read(c: &mut Circuit3) -> (Self, LedgerValue) {
+        let (wires, value) = mint_read(c, Self::atoms());
         (Self::from_limbs(wires), value)
     }
 }
@@ -248,14 +249,8 @@ impl LedgerRepr for Secp256k1Point<Public> {
         )
     }
 
-    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
-        c: &mut Circuit3,
-        guard: Option<Wire3<FieldT, V>>,
-    ) -> (Self, LedgerValue) {
-        let point = match guard {
-            Some(g) => c.public_transcript_input_guarded::<Secp256k1PointT, V>(g),
-            None => c.public_transcript_input::<Secp256k1PointT>(),
-        };
+    fn witness_read(c: &mut Circuit3) -> (Self, LedgerValue) {
+        let point = c.public_transcript_input::<Secp256k1PointT>();
         let point = Secp256k1Point::from_point(point);
         let mut limbs = Vec::new();
         point.push_limbs(c, &mut limbs);
@@ -294,14 +289,8 @@ impl LedgerRepr for JubjubPoint<Public> {
         )
     }
 
-    fn witness_read<V: Visibility + Copy + minocrab::OnChainGuard>(
-        c: &mut Circuit3,
-        guard: Option<Wire3<FieldT, V>>,
-    ) -> (Self, LedgerValue) {
-        let point = match guard {
-            Some(g) => c.public_transcript_input_guarded::<JubjubPointT, V>(g),
-            None => c.public_transcript_input::<JubjubPointT>(),
-        };
+    fn witness_read(c: &mut Circuit3) -> (Self, LedgerValue) {
+        let point = c.public_transcript_input::<JubjubPointT>();
         let point = JubjubPoint::from_point(point);
         let mut limbs = Vec::new();
         point.push_limbs(c, &mut limbs);
@@ -839,23 +828,15 @@ pub trait LedgerAdt: LedgerSlot {
 /// `public_input` gate per FAB limb of what it reads and then emits the op's
 /// Impact instructions; a write emits the op's instructions.
 ///
-/// THREE FORMS, because an Impact operation carries a guard and there are
-/// three things that guard can be:
-///
-/// | form | guard | when |
-/// |------|-------|------|
-/// | `member(c, &k)` | the immediate `1` | straight-line code |
-/// | `member_under(c, g, &k)` | the wire `g` | an EFFECT under a branch condition |
-/// | `member_guarded(c, g, &k)` | the wire `g`, on the gates too | a READ inside a branch |
-///
-/// The plain name is the straight-line one because that is what Compact
-/// itself writes (`map.member(key)` — Compact has no guard argument at all),
-/// and a straight-line circuit no longer threads a `one` wire through every
-/// call site and every helper signature. It costs zero rows and REMOVES an
-/// instruction (the `Copy` that named the `1`), and it is therefore no longer
-/// byte-identical to compactc's stream, whose guard operand is that named
-/// wire — which is why the three direct-port forks use `_under` throughout
-/// and only the showcase twin uses the plain names.
+/// ONE FORM: `member(c, &k)` and every other method here is written exactly
+/// as Compact writes it (`map.member(key)` — Compact has no guard argument at
+/// all) and picks up whatever guard is AMBIENT: the immediate `1` in
+/// straight-line code, or a branch condition's wire when the call sits inside
+/// [`Circuit3::when`] / [`Circuit3::when_private`] — the one spelling of a
+/// conditional (notes/edsl-trim.org §B). There is no separate `_under` /
+/// `_guarded` twin to reach for: `c.when(g, |c| MAP.member(c, &k))` is both
+/// what a guarded effect and a guarded read are, and the scope is what
+/// resolves the guard, not the call.
 pub struct LedgerMap<K, V, P = FieldPath> {
     path: P,
     _kv: PhantomData<fn() -> (K, V)>,
@@ -1036,48 +1017,14 @@ impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
 impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.member(key)` — `dup 0; idx [field]; push key; member; popeqc`.
     pub fn member(&self, c: &mut Circuit3, key: &K) -> Bool<Public> {
-        self.member_under(c, STRAIGHT_LINE, key)
-    }
-
-    /// [`LedgerMap::member`] under a branch condition.
-    pub fn member_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-    ) -> Bool<Public> {
         let key = key.ledger_value(c);
-        Bool::from_field_unchecked(map_member_at(c, guard, &self.ledger_path(), &key))
-    }
-
-    /// [`LedgerMap::member`] inside a conditional branch.
-    pub fn member_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, G>,
-        key: &K,
-    ) -> Guarded<Bool<Public>, G> {
-        let key = key.ledger_value(c);
-        Guarded::new(
-            Bool::from_field_unchecked(map_member_guarded_at(c, guard, &self.ledger_path(), &key)),
-            guard,
-        )
+        Bool::from_field_unchecked(map_member_at(c, &self.ledger_path(), &key))
     }
 
     /// `map.remove(key)` — `idxp [field]; push key; rem; insc 1`.
     pub fn remove(&self, c: &mut Circuit3, key: &K) {
-        self.remove_under(c, STRAIGHT_LINE, key)
-    }
-
-    /// [`LedgerMap::remove`] under a branch condition.
-    pub fn remove_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-    ) {
         let key = key.ledger_value(c);
-        emit(c, guard, &map_remove_at(&self.ledger_path(), &key));
+        emit(c, &map_remove_at(&self.ledger_path(), &key));
     }
 }
 
@@ -1091,55 +1038,16 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     /// [`at_key`](LedgerMap::at_key), whose value type is an ADT — folds into
     /// the path and emits nothing at all.
     pub fn lookup(&self, c: &mut Circuit3, key: &K) -> V {
-        self.lookup_under(c, STRAIGHT_LINE, key)
-    }
-
-    /// [`LedgerMap::lookup`] under a branch condition.
-    pub fn lookup_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-    ) -> V {
         let key = key.ledger_value(c);
-        V::from_limbs(map_lookup_at(c, guard, &self.ledger_path(), &key, V::atoms()))
-    }
-
-    /// [`LedgerMap::lookup`] inside a conditional branch.
-    pub fn lookup_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, G>,
-        key: &K,
-    ) -> Guarded<V, G> {
-        let key = key.ledger_value(c);
-        let value = V::from_limbs(map_lookup_guarded_at(
-            c,
-            guard,
-            &self.ledger_path(),
-            &key,
-            V::atoms(),
-        ));
-        Guarded::new(value, guard)
+        V::from_limbs(map_lookup_at(c, &self.ledger_path(), &key, V::atoms()))
     }
 
     /// `map.insert(key, value)` — `idxp [field]; push key; pushs value;
     /// ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, key: &K, value: &V) {
-        self.insert_under(c, STRAIGHT_LINE, key, value)
-    }
-
-    /// [`LedgerMap::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-        value: &V,
-    ) {
         let key = key.ledger_value(c);
         let value = value.ledger_value(c);
-        emit(c, guard, &map_insert_at(&self.ledger_path(), &key, &value));
+        emit(c, &map_insert_at(&self.ledger_path(), &key, &value));
     }
 }
 
@@ -1155,18 +1063,8 @@ impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
     /// the blank tree — when the value type is an ADT
     /// (notes/coin-arms-nested-adts.org, stage B1 correction (iii)).
     pub fn insert_default(&self, c: &mut Circuit3, key: &K) {
-        self.insert_default_under(c, STRAIGHT_LINE, key)
-    }
-
-    /// [`LedgerMap::insert_default`] under a branch condition.
-    pub fn insert_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-    ) {
         let key = key.ledger_value(c);
-        emit(c, guard, &V::insert_default_ops(&self.ledger_path(), &key));
+        emit(c, &V::insert_default_ops(&self.ledger_path(), &key));
     }
 }
 
@@ -1199,21 +1097,9 @@ impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
         coin: &ShieldedCoinInfo3<Public>,
         recipient: &CoinRecipient<Public>,
     ) {
-        self.insert_coin_under(c, STRAIGHT_LINE, key, coin, recipient)
-    }
-
-    /// [`LedgerMap::insert_coin`] under a branch condition.
-    pub fn insert_coin_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        key: &K,
-        coin: &ShieldedCoinInfo3<Public>,
-        recipient: &CoinRecipient<Public>,
-    ) {
         let key = key.ledger_value(c);
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &map_insert_coin_at(&self.ledger_path(), &key, &cm, &coin));
+        emit(c, &map_insert_coin_at(&self.ledger_path(), &key, &cm, &coin));
     }
 }
 
@@ -1221,30 +1107,12 @@ impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
 impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.size()` — `dup 0; idx [field]; size; popeqc`.
     pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
-        self.size_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMap::size`] under a branch condition.
-    pub fn size_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(map_size_at(c, guard, &self.ledger_path()))
+        Uint::from_field_unchecked(map_size_at(c, &self.ledger_path()))
     }
 
     /// `map.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
     pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_empty_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMap::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(map_is_empty_at(c, guard, &self.ledger_path()))
+        Bool::from_field_unchecked(map_is_empty_at(c, &self.ledger_path()))
     }
 
     /// `map.resetToDefault()` — `push key; pushs (empty map); ins 1`. Needs
@@ -1255,27 +1123,9 @@ impl<K, V, P: LedgerPath> LedgerMap<K, V, P> {
     /// that compactc suppresses away at depth 1 both come back
     /// (`suppress-null` / `suppress-zero`, vm.ss:192-194).
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMap::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &map_reset_at(&self.ledger_path()));
+        emit(c, &map_reset_at(&self.ledger_path()));
     }
 }
-
-/// The guard of a STRAIGHT-LINE Impact operation: the immediate `1`, inlined
-/// into the instruction rather than named by a `Copy` (see [`LedgerMap`]).
-///
-/// It is also what makes an op inside [`Circuit3::when`] pick the scope up —
-/// `Circuit3::resolve_guard` lets the immediate `1` YIELD to the ambient
-/// guard. So a helper that emits below the typed layer passes this and needs
-/// no guard parameter of its own; naming a guard is what `when` replaced.
-pub const STRAIGHT_LINE: u64 = 1;
 
 /// `export ledger s: Set<T>` — a `Map` with `Null` values, which is what
 /// Compact's `Set` IS.
@@ -1348,18 +1198,8 @@ impl<T, P> LedgerAdt for LedgerSet<T, P> {
 impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     /// `set.insert(elem)` — `idxp [field]; push elem; pushs null; ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, elem: &T) {
-        self.insert_under(c, STRAIGHT_LINE, elem)
-    }
-
-    /// [`LedgerSet::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        elem: &T,
-    ) {
         let elem = elem.ledger_value(c);
-        emit(c, guard.into(), &set_insert_at(&self.ledger_path(), &elem));
+        emit(c, &set_insert_at(&self.ledger_path(), &elem));
     }
 
     /// `set.member(elem)` — `dup 0; idx [field]; push elem; member; popeqc`.
@@ -1367,34 +1207,14 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     /// The same op a map's `member` is, which is why it delegates to
     /// `map_member` rather than to a `set_member` that would be its duplicate.
     pub fn member(&self, c: &mut Circuit3, elem: &T) -> Bool<Public> {
-        self.member_under(c, STRAIGHT_LINE, elem)
-    }
-
-    /// [`LedgerSet::member`] under a branch condition.
-    pub fn member_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        elem: &T,
-    ) -> Bool<Public> {
         let elem = elem.ledger_value(c);
-        Bool::from_field_unchecked(map_member_at(c, guard, &self.ledger_path(), &elem))
+        Bool::from_field_unchecked(map_member_at(c, &self.ledger_path(), &elem))
     }
 
     /// `set.remove(elem)` — `idxp [field]; push elem; rem; insc 1`.
     pub fn remove(&self, c: &mut Circuit3, elem: &T) {
-        self.remove_under(c, STRAIGHT_LINE, elem)
-    }
-
-    /// [`LedgerSet::remove`] under a branch condition.
-    pub fn remove_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        elem: &T,
-    ) {
         let elem = elem.ledger_value(c);
-        emit(c, guard, &set_remove_at(&self.ledger_path(), &elem));
+        emit(c, &set_remove_at(&self.ledger_path(), &elem));
     }
 }
 
@@ -1417,63 +1237,25 @@ impl<T: CoinArm> LedgerSet<T> {
         coin: &ShieldedCoinInfo3<Public>,
         recipient: &CoinRecipient<Public>,
     ) {
-        self.insert_coin_under(c, STRAIGHT_LINE, coin, recipient)
-    }
-
-    /// [`LedgerSet::insert_coin`] under a branch condition.
-    pub fn insert_coin_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        coin: &ShieldedCoinInfo3<Public>,
-        recipient: &CoinRecipient<Public>,
-    ) {
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &set_insert_coin_at(&self.ledger_path(), &cm, &coin));
+        emit(c, &set_insert_coin_at(&self.ledger_path(), &cm, &coin));
     }
 }
 
 impl<T, P: LedgerPath> LedgerSet<T, P> {
     /// `set.size()` — `dup 0; idx [field]; size; popeqc`.
     pub fn size(&self, c: &mut Circuit3) -> Uint<64, Public> {
-        self.size_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerSet::size`] under a branch condition.
-    pub fn size_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(set_size_at(c, guard, &self.ledger_path()))
+        Uint::from_field_unchecked(set_size_at(c, &self.ledger_path()))
     }
 
     /// `set.isEmpty()` — `dup 0; idx [field]; size; push 0; eq; popeqc`.
     pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_empty_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerSet::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(set_is_empty_at(c, guard, &self.ledger_path()))
+        Bool::from_field_unchecked(set_is_empty_at(c, &self.ledger_path()))
     }
 
     /// `set.resetToDefault()` — `push key; pushs (empty map); ins 1`.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerSet::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &set_reset_at(&self.ledger_path()));
+        emit(c, &set_reset_at(&self.ledger_path()));
     }
 }
 
@@ -1546,60 +1328,24 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     /// `list.popFront()` — `idxp [field]; idx [1]; insc 1`. Needs no bound on
     /// `T`: the list becomes its own tail, and nothing is read or written.
     pub fn pop_front(&self, c: &mut Circuit3) {
-        self.pop_front_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerList::pop_front`] under a branch condition.
-    pub fn pop_front_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &list_pop_front_at(&self.ledger_path()));
+        emit(c, &list_pop_front_at(&self.ledger_path()));
     }
 
     /// `list.length()` — `dup 0; idx [field]; idx [2]; popeqc`. A stored
     /// count, not a computed `size`.
     pub fn length(&self, c: &mut Circuit3) -> Uint<64, Public> {
-        self.length_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerList::length`] under a branch condition.
-    pub fn length_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(list_length_at(c, guard, &self.ledger_path()))
+        Uint::from_field_unchecked(list_length_at(c, &self.ledger_path()))
     }
 
     /// `list.isEmpty()` — `dup 0; idx [field]; idx [1]; type; push 1; eq;
     /// popeqc`, i.e. "the tail is null".
     pub fn is_empty(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_empty_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerList::is_empty`] under a branch condition.
-    pub fn is_empty_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(list_is_empty_at(c, guard, &self.ledger_path()))
+        Bool::from_field_unchecked(list_is_empty_at(c, &self.ledger_path()))
     }
 
     /// `list.resetToDefault()` — `push key; pushs [null, null, 0]; ins 1`.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerList::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &list_reset_at(&self.ledger_path()));
+        emit(c, &list_reset_at(&self.ledger_path()));
     }
 }
 
@@ -1610,32 +1356,13 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
     /// The one M16 operation with corpus provenance: it is
     /// `test-caller-contract`'s `requestLog.pushFront(requestId)`.
     pub fn push_front(&self, c: &mut Circuit3, value: &T) {
-        self.push_front_under(c, STRAIGHT_LINE, value)
-    }
-
-    /// [`LedgerList::push_front`] under a branch condition.
-    pub fn push_front_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        value: &T,
-    ) {
         let value = value.ledger_value(c);
-        emit(c, guard, &list_push_front_at(&self.ledger_path(), &value));
+        emit(c, &list_push_front_at(&self.ledger_path(), &value));
     }
 
     /// `list.head()` — the first element, or `None` on the empty list.
     pub fn head(&self, c: &mut Circuit3) -> Maybe<T, Public> {
-        self.head_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerList::head`] under a branch condition.
-    pub fn head_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Maybe<T, Public> {
-        let mut limbs = list_head_at(c, guard, &self.ledger_path(), T::atoms());
+        let mut limbs = list_head_at(c, &self.ledger_path(), T::atoms());
         let value = T::from_limbs(limbs.split_off(1));
         Maybe {
             is_some: Bool::from_field_unchecked(limbs[0]),
@@ -1670,19 +1397,8 @@ impl<T: CoinArm> LedgerList<T> {
         coin: &ShieldedCoinInfo3<Public>,
         recipient: &CoinRecipient<Public>,
     ) {
-        self.push_front_coin_under(c, STRAIGHT_LINE, coin, recipient)
-    }
-
-    /// [`LedgerList::push_front_coin`] under a branch condition.
-    pub fn push_front_coin_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        coin: &ShieldedCoinInfo3<Public>,
-        recipient: &CoinRecipient<Public>,
-    ) {
         let (cm, coin) = coin_operands(c, coin, recipient);
-        emit(c, guard, &list_push_front_coin_at(&self.ledger_path(), &cm, &coin));
+        emit(c, &list_push_front_coin_at(&self.ledger_path(), &cm, &coin));
     }
 }
 
@@ -1787,49 +1503,20 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
 
     /// `t.isFull()` — `!(next < 2^DEPTH)`.
     pub fn is_full(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_full_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMerkleTree::is_full`] under a branch condition.
-    pub fn is_full_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(merkle_tree_is_full_at(c, guard, &self.ledger_path(), DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full_at(c, &self.ledger_path(), DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is the tree's CURRENT root.
     pub fn check_root(&self, c: &mut Circuit3, root: MerkleTreeDigest<Public>) -> Bool<Public> {
-        self.check_root_under(c, STRAIGHT_LINE, root)
-    }
-
-    /// [`LedgerMerkleTree::check_root`] under a branch condition.
-    pub fn check_root_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        root: MerkleTreeDigest<Public>,
-    ) -> Bool<Public> {
         let root = root.ledger_value(c);
-        Bool::from_field_unchecked(merkle_tree_check_root_at(c, guard, &self.ledger_path(), &root))
+        Bool::from_field_unchecked(merkle_tree_check_root_at(c, &self.ledger_path(), &root))
     }
 
     /// `t.insertHash(hash)` — insert a leaf whose digest is already known, at
     /// the first free index.
     pub fn insert_hash(&self, c: &mut Circuit3, hash: &B32<Public>) {
-        self.insert_hash_under(c, STRAIGHT_LINE, hash)
-    }
-
-    /// [`LedgerMerkleTree::insert_hash`] under a branch condition.
-    pub fn insert_hash_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        hash: &B32<Public>,
-    ) {
         let leaf = hash.ledger_value(c);
-        emit(c, guard, &merkle_tree_insert_at(&self.ledger_path(), &leaf));
+        emit(c, &merkle_tree_insert_at(&self.ledger_path(), &leaf));
     }
 
     /// `t.insertHashIndex(hash, at)` — insert a known digest at a specific
@@ -1840,38 +1527,17 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
         hash: &B32<Public>,
         at: Uint<64, Public>,
     ) {
-        self.insert_hash_index_under(c, STRAIGHT_LINE, hash, at)
-    }
-
-    /// [`LedgerMerkleTree::insert_hash_index`] under a branch condition.
-    pub fn insert_hash_index_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        hash: &B32<Public>,
-        at: Uint<64, Public>,
-    ) {
         let leaf = hash.ledger_value(c);
         let at = at.ledger_value(c);
         emit(
             c,
-            guard,
             &merkle_tree_insert_index_at(&self.ledger_path(), &leaf, &at),
         );
     }
 
     /// `t.resetToDefault()` — the blank tree of this depth, and index 0.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerMerkleTree::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &merkle_tree_reset_at(&self.ledger_path(), DEPTH));
+        emit(c, &merkle_tree_reset_at(&self.ledger_path(), DEPTH));
     }
 }
 
@@ -1879,52 +1545,21 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P
     /// `t.insert(item)` — hash the item into a leaf and insert it at the
     /// first free index.
     pub fn insert(&self, c: &mut Circuit3, item: &T) {
-        self.insert_under(c, STRAIGHT_LINE, item)
-    }
-
-    /// [`LedgerMerkleTree::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        item: &T,
-    ) {
         let hash = leaf_hash(c, item);
-        self.insert_hash_under(c, guard, &hash);
+        self.insert_hash(c, &hash);
     }
 
     /// `t.insertIndex(item, at)` — hash the item and insert it at `at`.
     pub fn insert_index(&self, c: &mut Circuit3, item: &T, at: Uint<64, Public>) {
-        self.insert_index_under(c, STRAIGHT_LINE, item, at)
-    }
-
-    /// [`LedgerMerkleTree::insert_index`] under a branch condition.
-    pub fn insert_index_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        item: &T,
-        at: Uint<64, Public>,
-    ) {
         let hash = leaf_hash(c, item);
-        self.insert_hash_index_under(c, guard, &hash, at);
+        self.insert_hash_index(c, &hash, at);
     }
 
     /// `t.insertIndexDefault(at)` — insert `T`'s DEFAULT value at `at`,
     /// which is Compact's way of emulating a removal.
     pub fn insert_index_default(&self, c: &mut Circuit3, at: Uint<64, Public>) {
-        self.insert_index_default_under(c, STRAIGHT_LINE, at)
-    }
-
-    /// [`LedgerMerkleTree::insert_index_default`] under a branch condition.
-    pub fn insert_index_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        at: Uint<64, Public>,
-    ) {
         let hash = default_leaf_hash::<T>(c);
-        self.insert_hash_index_under(c, guard, &hash, at);
+        self.insert_hash_index(c, &hash, at);
     }
 }
 
@@ -2000,51 +1635,22 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     /// `t.isFull()` — the same stream [`LedgerMerkleTree::is_full`] emits;
     /// the history does not affect capacity.
     pub fn is_full(&self, c: &mut Circuit3) -> Bool<Public> {
-        self.is_full_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerHistoricMerkleTree::is_full`] under a branch condition.
-    pub fn is_full_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Bool<Public> {
-        Bool::from_field_unchecked(merkle_tree_is_full_at(c, guard, &self.ledger_path(), DEPTH))
+        Bool::from_field_unchecked(merkle_tree_is_full_at(c, &self.ledger_path(), DEPTH))
     }
 
     /// `t.checkRoot(rt)` — whether `rt` is one of the tree's PAST roots.
     pub fn check_root(&self, c: &mut Circuit3, root: MerkleTreeDigest<Public>) -> Bool<Public> {
-        self.check_root_under(c, STRAIGHT_LINE, root)
-    }
-
-    /// [`LedgerHistoricMerkleTree::check_root`] under a branch condition.
-    pub fn check_root_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        root: MerkleTreeDigest<Public>,
-    ) -> Bool<Public> {
         let root = root.ledger_value(c);
         Bool::from_field_unchecked(historic_merkle_tree_check_root_at(
-            c, guard, &self.ledger_path(), &root,
+            c, &self.ledger_path(), &root,
         ))
     }
 
     /// `t.insertHash(hash)` — insert a known digest at the first free index,
     /// and append the resulting root to the history.
     pub fn insert_hash(&self, c: &mut Circuit3, hash: &B32<Public>) {
-        self.insert_hash_under(c, STRAIGHT_LINE, hash)
-    }
-
-    /// [`LedgerHistoricMerkleTree::insert_hash`] under a branch condition.
-    pub fn insert_hash_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        hash: &B32<Public>,
-    ) {
         let leaf = hash.ledger_value(c);
-        emit(c, guard, &historic_merkle_tree_insert_at(&self.ledger_path(), &leaf));
+        emit(c, &historic_merkle_tree_insert_at(&self.ledger_path(), &leaf));
     }
 
     /// `t.insertHashIndex(hash, at)`.
@@ -2054,107 +1660,43 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
         hash: &B32<Public>,
         at: Uint<64, Public>,
     ) {
-        self.insert_hash_index_under(c, STRAIGHT_LINE, hash, at)
-    }
-
-    /// [`LedgerHistoricMerkleTree::insert_hash_index`] under a branch
-    /// condition.
-    pub fn insert_hash_index_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        hash: &B32<Public>,
-        at: Uint<64, Public>,
-    ) {
         let leaf = hash.ledger_value(c);
         let at = at.ledger_value(c);
         emit(
             c,
-            guard,
             &historic_merkle_tree_insert_index_at(&self.ledger_path(), &leaf, &at),
         );
     }
 
     /// `t.resetHistory()` — forget every past root but the current one.
     pub fn reset_history(&self, c: &mut Circuit3) {
-        self.reset_history_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerHistoricMerkleTree::reset_history`] under a branch condition.
-    pub fn reset_history_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &historic_merkle_tree_reset_history_at(&self.ledger_path()));
+        emit(c, &historic_merkle_tree_reset_history_at(&self.ledger_path()));
     }
 
     /// `t.resetToDefault()` — the blank tree of this depth, index 0, and a
     /// history holding just the blank tree's root.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerHistoricMerkleTree::reset_to_default`] under a branch
-    /// condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &historic_merkle_tree_reset_at(&self.ledger_path(), DEPTH));
+        emit(c, &historic_merkle_tree_reset_at(&self.ledger_path(), DEPTH));
     }
 }
 
 impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)`.
     pub fn insert(&self, c: &mut Circuit3, item: &T) {
-        self.insert_under(c, STRAIGHT_LINE, item)
-    }
-
-    /// [`LedgerHistoricMerkleTree::insert`] under a branch condition.
-    pub fn insert_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        item: &T,
-    ) {
         let hash = leaf_hash(c, item);
-        self.insert_hash_under(c, guard, &hash);
+        self.insert_hash(c, &hash);
     }
 
     /// `t.insertIndex(item, at)`.
     pub fn insert_index(&self, c: &mut Circuit3, item: &T, at: Uint<64, Public>) {
-        self.insert_index_under(c, STRAIGHT_LINE, item, at)
-    }
-
-    /// [`LedgerHistoricMerkleTree::insert_index`] under a branch condition.
-    pub fn insert_index_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        item: &T,
-        at: Uint<64, Public>,
-    ) {
         let hash = leaf_hash(c, item);
-        self.insert_hash_index_under(c, guard, &hash, at);
+        self.insert_hash_index(c, &hash, at);
     }
 
     /// `t.insertIndexDefault(at)`.
     pub fn insert_index_default(&self, c: &mut Circuit3, at: Uint<64, Public>) {
-        self.insert_index_default_under(c, STRAIGHT_LINE, at)
-    }
-
-    /// [`LedgerHistoricMerkleTree::insert_index_default`] under a branch
-    /// condition.
-    pub fn insert_index_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        at: Uint<64, Public>,
-    ) {
         let hash = default_leaf_hash::<T>(c);
-        self.insert_hash_index_under(c, guard, &hash, at);
+        self.insert_hash_index(c, &hash, at);
     }
 }
 
@@ -2243,45 +1785,15 @@ impl<T> LedgerCell<T> {
 impl<T: LedgerRepr> LedgerCell<T> {
     /// `x` (a Cell read) — `dup 0; idx [field]; popeq`.
     pub fn read(&self, c: &mut Circuit3) -> T {
-        self.read_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerCell::read`] under a branch condition.
-    pub fn read_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> T {
-        let (value, embed) = T::witness_read::<Public>(c, None);
-        cell_read_embedded_at(c, guard, &self.ledger_path(), &embed);
+        let (value, embed) = T::witness_read(c);
+        cell_read_embedded_at(c, &self.ledger_path(), &embed);
         value
-    }
-
-    /// [`LedgerCell::read`] inside a conditional branch.
-    pub fn read_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, G>,
-    ) -> Guarded<T, G> {
-        let (value, embed) = T::witness_read(c, Some(guard));
-        cell_read_embedded_at(c, guard, &self.ledger_path(), &embed);
-        Guarded::new(value, guard)
     }
 
     /// `x = value` — `push key; pushs value; ins 1`.
     pub fn write(&self, c: &mut Circuit3, value: &T) {
-        self.write_under(c, STRAIGHT_LINE, value)
-    }
-
-    /// [`LedgerCell::write`] under a branch condition.
-    pub fn write_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        value: &T,
-    ) {
         let value = value.ledger_value(c);
-        emit(c, guard, &cell_write_at(&self.ledger_path(), &value));
+        emit(c, &cell_write_at(&self.ledger_path(), &value));
     }
 }
 
@@ -2337,79 +1849,29 @@ impl<P: LedgerPath> LedgerCounter<P> {
 
     /// `n` (a Counter read) — `dup 0; idx [field]; popeqc`.
     pub fn read(&self, c: &mut Circuit3) -> Uint<64, Public> {
-        self.read_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerCounter::read`] under a branch condition.
-    pub fn read_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) -> Uint<64, Public> {
-        Uint::from_field_unchecked(counter_read_at(c, guard, &self.ledger_path()))
-    }
-
-    /// [`LedgerCounter::read`] inside a conditional branch.
-    pub fn read_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: Wire3<FieldT, G>,
-    ) -> Guarded<Uint<64, Public>, G> {
-        Guarded::new(
-            Uint::from_field_unchecked(counter_read_guarded_at(c, guard, &self.ledger_path())),
-            guard,
-        )
+        Uint::from_field_unchecked(counter_read_at(c, &self.ledger_path()))
     }
 
     /// `n.resetToDefault()` — `push key; pushs (cell 0u64); ins 1`, the
     /// fourth of the nine whole-field-replace ops; a nested `Map<K, Counter>`
     /// is what needs it.
     pub fn reset_to_default(&self, c: &mut Circuit3) {
-        self.reset_to_default_under(c, STRAIGHT_LINE)
-    }
-
-    /// [`LedgerCounter::reset_to_default`] under a branch condition.
-    pub fn reset_to_default_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-    ) {
-        emit(c, guard, &counter_reset_at(&self.ledger_path()));
+        emit(c, &counter_reset_at(&self.ledger_path()));
     }
 
     /// `n.increment(amount)` — `idxp [field]; addi amount; insc 1`.
     pub fn increment(&self, c: &mut Circuit3, amount: u32) {
-        self.increment_under(c, STRAIGHT_LINE, amount)
-    }
-
-    /// [`LedgerCounter::increment`] under a branch condition.
-    pub fn increment_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        amount: u32,
-    ) {
-        emit(c, guard, &counter_increment_at(&self.ledger_path(), amount));
+        emit(c, &counter_increment_at(&self.ledger_path(), amount));
     }
 
     /// `n.lessThan(threshold)` — `dup 0; idx [field]; push threshold; lt;
     /// popeqc`.
     pub fn less_than(&self, c: &mut Circuit3, threshold: u64) -> Bool<Public> {
-        self.less_than_under(c, STRAIGHT_LINE, threshold)
-    }
-
-    /// [`LedgerCounter::less_than`] under a branch condition.
-    pub fn less_than_under<G: Visibility + minocrab::OnChainGuard>(
-        &self,
-        c: &mut Circuit3,
-        guard: impl Into<Operand<FieldT, G>>,
-        threshold: u64,
-    ) -> Bool<Public> {
         let threshold = LedgerValue::bytes(
             8,
             vec![ImpactElem::Imm(minocrab::Fr::from(threshold))],
         );
-        Bool::from_field_unchecked(counter_less_than_at(c, guard, &self.ledger_path(), &threshold))
+        Bool::from_field_unchecked(counter_less_than_at(c, &self.ledger_path(), &threshold))
     }
 }
 

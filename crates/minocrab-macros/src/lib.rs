@@ -282,7 +282,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     fn deposit_emit(recipient: B32<Public>, amount: Uint<128, Public>);
 /// }
 ///
-/// let hash = Token::at_field(TOKEN).deposit(c, guard, amount, me);
+/// let hash = Token::at_field(TOKEN).deposit(c, amount, me);
 /// ```
 ///
 /// The trait is REPLACED by a handle struct with an inherent impl: an
@@ -305,8 +305,10 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// and `at` takes an address at runtime, so an interface crate is publishable
 /// without knowing where its contract is deployed.
 ///
-/// The generated methods take `c: &mut Circuit3` and a guard wire before the
-/// callee's own parameters. The expansion needs `minocrab_ledger` and
+/// The generated methods take `c: &mut Circuit3` before the callee's own
+/// parameters — no guard parameter (notes/edsl-trim.org §B): the call
+/// resolves the AMBIENT scope, so a guarded call is `c.when(g, |c|
+/// callee.deposit(c, amount, me))`. The expansion needs `minocrab_ledger` and
 /// `minocrab_std` in the using crate's dependencies.
 #[proc_macro_attribute]
 pub fn interface(attr: TokenStream, item: TokenStream) -> TokenStream {

@@ -56,7 +56,7 @@ use minocrab::{Private, Public};
 use minocrab_std::v3::borsh::CircuitBorsh;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    contract, eq, is_true, label, own_public_key, own_public_key_guarded, Bool, Bytes, Check,
+    contract, eq, is_true, label, own_public_key, Bool, Bytes, Check,
     CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerCounter, LedgerRepr, Maybe, Secp256k1Point, TokenDomainSeparator, Uint,
     B32,
@@ -638,7 +638,8 @@ impl Vault {
             let rec_is_some = recipient.is_some.field().disclose_as::<ClaimRecipientTag>(c);
             let rec_is_left = recipient.value.is_left.field().disclose_as::<ClaimRecipientSide>(c);
             let not_some = c.not(rec_is_some);
-            let own_pk = own_public_key_guarded(c, not_some)
+            let own_pk = c
+                .when(not_some, own_public_key)
                 .or_default()
                 .disclose_as::<ClaimRecipientOwnKey>(c);
             let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
@@ -656,7 +657,7 @@ impl Vault {
         });
 
         let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-        common::mint_shielded_token(c, one, &domain_sep, outcome.env.amount, &mint_nonce, &recipient);
+        common::mint_shielded_token(c, &domain_sep, outcome.env.amount, &mint_nonce, &recipient);
         Discloses::of(())
     }
 

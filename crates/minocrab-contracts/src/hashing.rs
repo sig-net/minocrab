@@ -88,9 +88,12 @@ enum HashKind {
 fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
     let mut c = Circuit3::new();
     let data = bytesn_arg(&mut c, len);
-    let one = c.constant(1u64);
+    // Kept even though guard threading no longer uses it: dropping this
+    // `Copy` would renumber every later identifier, moving the ZKIR
+    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    let _ = c.constant(1u64);
 
-    emit(&mut c, one, &counter_increment(CALL_COUNT, 1));
+    emit(&mut c, &counter_increment(CALL_COUNT, 1));
 
     let inputs: Vec<_> = data.limbs.iter().map(|w| w.erase()).collect();
     match kind {
@@ -105,14 +108,14 @@ fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
             let hi = c.disclose_as::<TheDigestHi, _>(digest.hi);
             let lo = c.disclose_as::<TheDigestLo, _>(digest.lo);
             let value = LedgerValue::bytes(32, vec![ImpactElem::Wire(hi), ImpactElem::Wire(lo)]);
-            emit(&mut c, one, &cell_write(DIGEST, &value));
+            emit(&mut c, &cell_write(DIGEST, &value));
         }
         HashKind::Transient => {
             let limbs: Vec<Wire3<_, Private>> = data.limbs.clone();
             let f = c.transient_hash(&limbs);
             let f = c.disclose_as::<TheFieldDigest, _>(f);
             let value = LedgerValue::new(vec![AlignmentAtom::Field], vec![ImpactElem::Wire(f)]);
-            emit(&mut c, one, &cell_write(FDIGEST, &value));
+            emit(&mut c, &cell_write(FDIGEST, &value));
         }
     }
     c.finish(true)
@@ -155,9 +158,12 @@ impl Hashing {
     #[circuit]
     pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
         let parts = data;
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
-        emit(c, one, &counter_increment(CALL_COUNT, 1));
+        emit(c, &counter_increment(CALL_COUNT, 1));
 
         let alignment = Alignment(
             (0..8)
@@ -175,7 +181,7 @@ impl Hashing {
             32,
             vec![ImpactElem::Wire(digest.hi), ImpactElem::Wire(digest.lo)],
         );
-        emit(c, one, &cell_write(DIGEST, &value));
+        emit(c, &cell_write(DIGEST, &value));
         Discloses::of(())
     }
 }

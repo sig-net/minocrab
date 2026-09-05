@@ -18,12 +18,16 @@
 //!     pub const DEPOSIT: EntryPoint = EntryPoint::new("deposit");
 //!     pub const fn at_field(index: u8) -> Self { .. }
 //!     pub fn at(address: ContractAddress<Public>) -> Self { .. }
-//!     pub fn pin<V>(self, c, guard) -> Self { .. }
-//!     pub fn deposit<V>(self, c, guard, amount, caller) -> B32<Public> {
-//!         minocrab_ledger::call(c, guard, self.callee, Self::DEPOSIT, (amount, caller))
+//!     pub fn pin(self, c) -> Self { .. }
+//!     pub fn deposit(self, c, amount, caller) -> B32<Public> {
+//!         minocrab_ledger::call(c, self.callee, Self::DEPOSIT, (amount, caller))
 //!     }
 //! }
 //! ```
+//!
+//! No guard parameter (notes/edsl-trim.org §B): `minocrab_ledger::call`
+//! resolves the AMBIENT scope, so a guarded cross-contract call is
+//! `c.when(g, |c| callee.deposit(c, amount, caller))`.
 //!
 //! A trait, rather than a macro over a struct, because a bodyless trait IS
 //! the callee's declaration: one item per circuit, typed, no bodies to get
@@ -352,13 +356,12 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
         };
         quote! {
             #( #attrs )*
-            pub fn #ident<__V: #private::OnChainGuard + ::core::marker::Copy>(
+            pub fn #ident(
                 self,
                 c: &mut #private::Circuit3,
-                guard: #private::Wire3<#private::FieldT, __V>,
                 #( #names: #types, )*
             ) -> #result {
-                #ledger::call(c, guard, self.callee, Self::#const_ident, (#( #names, )*))
+                #ledger::call(c, self.callee, Self::#const_ident, (#( #names, )*))
             }
         }
     });
@@ -403,12 +406,11 @@ fn emit(vis: &Visibility, name: &Ident, attrs: &[Attribute], circuits: &[Circuit
             /// Resolve an [`Self::at_field`] handle's address NOW — for the
             /// call whose argument expressions emit instructions, where
             /// compactc's receiver-first evaluation order is visible.
-            pub fn pin<__V: #private::OnChainGuard + ::core::marker::Copy>(
+            pub fn pin(
                 self,
                 c: &mut #private::Circuit3,
-                guard: #private::Wire3<#private::FieldT, __V>,
             ) -> Self {
-                Self { callee: #ledger::Callee::pin(self.callee, c, guard) }
+                Self { callee: #ledger::Callee::pin(self.callee, c) }
             }
 
             /// Where this handle's address comes from.
@@ -473,14 +475,14 @@ mod tests {
         assert!(!expanded.contains("trait Token"), "the trait must be replaced:\n{expanded}");
         assert!(expanded.contains("const fn at_field"), "{expanded}");
         assert!(expanded.contains("fn at ("), "{expanded}");
-        assert!(expanded.contains("fn pin <"), "{expanded}");
+        assert!(expanded.contains("fn pin ("), "{expanded}");
     }
 
     #[test]
     fn arguments_are_passed_as_a_tuple_in_declaration_order() {
         let expanded = expansion(token_fixture());
         assert!(
-            expanded.contains("call (c , guard , self . callee , Self :: DEPOSIT , (amount , caller ,))"),
+            expanded.contains("call (c , self . callee , Self :: DEPOSIT , (amount , caller ,))"),
             "{expanded}"
         );
     }

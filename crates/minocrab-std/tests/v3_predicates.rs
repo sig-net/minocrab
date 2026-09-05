@@ -322,8 +322,10 @@ fn is_true_composes_with_the_combinators() {
     assert_eq!(build(true), build(false));
 }
 
-/// `.when(guard)` (M9 phase 8, candidate 6) is the in-branch assert:
-/// `assert(select(guard, cond, 1))`, with the `1` inline.
+/// The in-branch assert (M9 phase 8, candidate 6; notes/edsl-trim.org §B) is
+/// the SCOPE, not a `Check` method: `c.when(g, |c| c.assert(p))` lowers to
+/// `assert(select(guard, cond, 1))`, with the `1` inline — the same
+/// instruction `Check::when` used to build by hand.
 #[test]
 fn when_is_the_in_branch_assert() {
     let build = |predicates: bool| {
@@ -332,7 +334,9 @@ fn when_is_the_in_branch_assert() {
         let b = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("b"));
         let guard = c.public_transcript_input::<FieldT>();
         if predicates {
-            c.assert(less_than(a, b).when(guard).message("Not the withdrawer"));
+            c.when(guard, |c| {
+                c.assert(less_than(a, b).message("Not the withdrawer"));
+            });
         } else {
             let lt = c.less_than(a.field(), b.field(), 64);
             let gated = c.cond_select(guard, lt, 1u64);
@@ -356,7 +360,9 @@ fn a_public_guard_gates_a_private_check() {
     let mut c = Circuit3::new();
     let secret = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("secret"));
     let guard = c.public_transcript_input::<FieldT>();
-    let _: Bool<Private> = less_than(0u64, secret).when(guard).eval(&mut c);
+    c.when(guard, |c| {
+        c.assert(less_than(0u64, secret));
+    });
 }
 
 /// `.widen::<W>()` (dmd's decision A) is free: the same wire, no instruction,

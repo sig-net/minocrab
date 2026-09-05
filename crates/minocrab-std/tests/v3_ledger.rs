@@ -10,7 +10,7 @@ use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, emit, map_insert, map_is_empty,
-    map_lookup, map_lookup_guarded, map_member, map_member_guarded, map_remove, map_size,
+    map_lookup, map_member, map_remove, map_size,
     ImpactElem, LedgerValue,
 };
 use minocrab_std::v3::{
@@ -112,61 +112,58 @@ fn record_value(record: &Record) -> LedgerValue {
 }
 
 /// Every map method, in one circuit, against the explicit form of the same
-/// sequence.
+/// sequence — both run inside the SAME scope (notes/edsl-trim.org §B: the
+/// scope is the one spelling of a conditional, so a guarded call is a plain
+/// method under `c.when`, not a per-operation guard parameter).
 #[test]
 fn the_map_methods_are_the_explicit_ops() {
     let typed = {
         let mut c = Circuit3::new();
         let (key, record) = inputs(&mut c);
-        let one = c.constant(1u64);
-        let exists = DEMO.event_map.member_under(&mut c, one, &key);
-        c.assert(exists.field());
-        let record_back = DEMO.event_map.lookup_under(&mut c, one, &key);
-        DEMO.event_map.insert_under(&mut c, one, &key, &record);
-        DEMO.event_map.remove_under(&mut c, one, &key);
-        let size = DEMO.event_map.size_under(&mut c, one);
-        let empty = DEMO.event_map.is_empty_under(&mut c, one);
-        let stored = DEMO.refund_commitment.lookup_under(&mut c, one, &key);
-        c.assert_eq(record_back.0[0], stored.hi);
-        c.assert_eq(size.field(), empty.field());
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        c.when(g, |c| {
+            let exists = DEMO.event_map.member(c, &key);
+            c.assert(exists.field());
+            let record_back = DEMO.event_map.lookup(c, &key);
+            DEMO.event_map.insert(c, &key, &record);
+            DEMO.event_map.remove(c, &key);
+            let size = DEMO.event_map.size(c);
+            let empty = DEMO.event_map.is_empty(c);
+            let stored = DEMO.refund_commitment.lookup(c, &key);
+            c.assert_eq(record_back.0[0], stored.hi);
+            c.assert_eq(size.field(), empty.field());
+        });
         c.finish(true)
     };
 
     let explicit = {
         let mut c = Circuit3::new();
         let (key, record) = inputs(&mut c);
-        let one = c.constant(1u64);
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
         let key_val = key_value(&key);
-        let exists = map_member(&mut c, one, 0, &key_val);
-        c.assert(exists);
-        let record_back = map_lookup(&mut c, one, 0, &key_val, Record::atom_list());
-        emit(
-            &mut c,
-            one,
-            &map_insert(0, &key_val, &record_value(&record)),
-        );
-        emit(&mut c, one, &map_remove(0, &key_val));
-        let size = map_size(&mut c, one, 0);
-        let empty = map_is_empty(&mut c, one, 0);
-        let stored = map_lookup(
-            &mut c,
-            one,
-            6,
-            &key_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        c.assert_eq(record_back[0], stored[0]);
-        c.assert_eq(size, empty);
+        c.when(g, |c| {
+            let exists = map_member(c, 0, &key_val);
+            c.assert(exists);
+            let record_back = map_lookup(c, 0, &key_val, Record::atom_list());
+            emit(c, &map_insert(0, &key_val, &record_value(&record)));
+            emit(c, &map_remove(0, &key_val));
+            let size = map_size(c, 0);
+            let empty = map_is_empty(c, 0);
+            let stored = map_lookup(c, 6, &key_val, vec![AlignmentAtom::Bytes { length: 32 }]);
+            c.assert_eq(record_back[0], stored[0]);
+            c.assert_eq(size, empty);
+        });
         c.finish(true)
     };
 
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// The GUARD-FREE forms (M9 phase 8, candidate 1) are the same ops with the
-/// immediate `1` where the guard operand goes — one instruction fewer than
-/// the `_under` form, because nothing has to name the `1`, and identical
-/// otherwise.
+/// The STRAIGHT-LINE forms are the same ops with the immediate `1` where the
+/// guard operand goes — no ambient scope, so [`Circuit3::effect_guard`]
+/// resolves to the bare immediate and nothing is named.
 #[test]
 fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
     let typed = {
@@ -194,27 +191,25 @@ fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
         let mut c = Circuit3::new();
         let (key, record) = inputs(&mut c);
         let key_val = key_value(&key);
-        let exists = map_member(&mut c, 1u64, 0, &key_val);
+        let exists = map_member(&mut c, 0, &key_val);
         c.assert(exists);
-        let record_back = map_lookup(&mut c, 1u64, 0, &key_val, Record::atom_list());
-        emit(&mut c, 1u64, &map_insert(0, &key_val, &record_value(&record)));
-        emit(&mut c, 1u64, &map_remove(0, &key_val));
-        let size = map_size(&mut c, 1u64, 0);
-        let empty = map_is_empty(&mut c, 1u64, 0);
-        let addr = cell_read(&mut c, 1u64, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
+        let record_back = map_lookup(&mut c, 0, &key_val, Record::atom_list());
+        emit(&mut c, &map_insert(0, &key_val, &record_value(&record)));
+        emit(&mut c, &map_remove(0, &key_val));
+        let size = map_size(&mut c, 0);
+        let empty = map_is_empty(&mut c, 0);
+        let addr = cell_read(&mut c, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
         emit(
             &mut c,
-            1u64,
             &cell_write(
                 4,
                 &LedgerValue::bytes(20, vec![ImpactElem::Wire(addr[0])]),
             ),
         );
-        let count = counter_read(&mut c, 1u64, 3);
-        emit(&mut c, 1u64, &counter_increment(2, 1));
+        let count = counter_read(&mut c, 3);
+        emit(&mut c, &counter_increment(2, 1));
         let under = minocrab_ledger::counter_less_than(
             &mut c,
-            1u64,
             3,
             &LedgerValue::bytes(8, vec![ImpactElem::Imm(minocrab::Fr::from(7u64))]),
         );
@@ -225,25 +220,6 @@ fn the_guard_free_methods_are_the_ops_with_an_immediate_guard() {
     };
 
     assert_eq!(zkir(typed), zkir(explicit));
-}
-
-/// ...and the whole difference between the two forms is the `Copy` that named
-/// the guard: the `_under(c, one, ..)` circuit is the guard-free one plus one
-/// instruction, and no rows (a `Copy` of an immediate is free).
-#[test]
-fn the_guard_free_form_is_one_copy_shorter() {
-    let count = |guard_free: bool| {
-        let mut c = Circuit3::new();
-        let (key, _) = inputs(&mut c);
-        if guard_free {
-            DEMO.event_map.remove(&mut c, &key);
-        } else {
-            let one = c.constant(1u64);
-            DEMO.event_map.remove_under(&mut c, one, &key);
-        }
-        c.instruction_count()
-    };
-    assert_eq!(count(false), count(true) + 1);
 }
 
 /// A `Secp256k1Point` CELL (M9 phase 8, candidate 2): the limbs are computed
@@ -271,7 +247,6 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
         );
         emit(
             &mut c,
-            1u64,
             &[
                 minocrab_ledger::dup(0),
                 minocrab_ledger::idx_field(7),
@@ -283,62 +258,24 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
             atoms,
             limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
         );
-        emit(&mut c, 1u64, &cell_write(7, &value));
+        emit(&mut c, &cell_write(7, &value));
         c.finish(true)
     };
 
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
-/// The guarded reads (a lookup inside a conditional branch) are the guarded
-/// ops, not the straight-line ones.
-#[test]
-fn the_guarded_map_reads_are_the_guarded_ops() {
-    let typed = {
-        let mut c = Circuit3::new();
-        let (key, _) = inputs(&mut c);
-        let one = c.constant(1u64);
-        let branch = c.not(one);
-        // `.or_default()` is the typed layer saying what the raw form below
-        // does silently: a guarded-off read IS the type's default. Zero
-        // instructions, which is what keeps the two sides equal.
-        let pending = DEMO
-            .refund_commitment
-            .member_guarded(&mut c, branch, &key)
-            .or_default();
-        let stored = DEMO
-            .refund_commitment
-            .lookup_guarded(&mut c, branch, &key)
-            .or_default();
-        c.assert_eq(pending.field(), stored.hi);
-        c.finish(true)
-    };
-
-    let explicit = {
-        let mut c = Circuit3::new();
-        let (key, _) = inputs(&mut c);
-        let one = c.constant(1u64);
-        let branch = c.not(one);
-        let key_val = key_value(&key);
-        let pending = map_member_guarded(&mut c, branch, 6, &key_val);
-        let stored = map_lookup_guarded(
-            &mut c,
-            branch,
-            6,
-            &key_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
-        c.assert_eq(pending, stored[0]);
-        c.finish(true)
-    };
-
-    assert_eq!(zkir(typed), zkir(explicit));
-}
-
-/// The same guarded reads spelled as the SCOPE returning its value —
-/// `when(branch, |c| map.lookup(c, &key)).or_default()` — are the same
-/// guarded ops: the per-operation `_guarded` parameter and the scope are
-/// one lowering.
+/// The guarded reads (a lookup inside a conditional branch) spelled as the
+/// SCOPE returning its value — `when(branch, |c| map.lookup(c, &key))
+/// .or_default()` — are the raw ops under the SAME scope: the scope is the
+/// one spelling of a conditional read (notes/edsl-trim.org §B), so there is
+/// no separate `_guarded` twin left to compare the typed layer against —
+/// only that its plain methods, under `when`, match the raw layer's plain
+/// functions under the identical scope.
+///
+/// `.or_default()` is the typed layer saying what the raw form does
+/// silently: a guarded-off read IS the type's default. Zero instructions,
+/// which is what keeps the two sides equal.
 #[test]
 fn the_scoped_map_reads_are_the_guarded_ops() {
     let scoped = {
@@ -362,14 +299,12 @@ fn the_scoped_map_reads_are_the_guarded_ops() {
         let one = c.constant(1u64);
         let branch = c.not(one);
         let key_val = key_value(&key);
-        let pending = map_member_guarded(&mut c, branch, 6, &key_val);
-        let stored = map_lookup_guarded(
-            &mut c,
-            branch,
-            6,
-            &key_val,
-            vec![AlignmentAtom::Bytes { length: 32 }],
-        );
+        let pending = c.when(branch, |c| map_member(c, 6, &key_val)).or_default();
+        let stored = c
+            .when(branch, |c| {
+                map_lookup(c, 6, &key_val, vec![AlignmentAtom::Bytes { length: 32 }])
+            })
+            .or_default();
         c.assert_eq(pending, stored[0]);
         c.finish(true)
     };
@@ -383,41 +318,36 @@ fn the_scoped_map_reads_are_the_guarded_ops() {
 fn the_cell_and_counter_methods_are_the_explicit_ops() {
     let typed = {
         let mut c = Circuit3::new();
-        let one = c.constant(1u64);
-        let addr = DEMO.evm_address.read_under(&mut c, one);
-        DEMO.evm_address.write_under(&mut c, one, &addr);
-        let chain = DEMO.chain_id.read_under(&mut c, one);
-        DEMO.chain_id.write_under(&mut c, one, &chain);
-        let count = DEMO.initialized.read_under(&mut c, one);
-        DEMO.request_nonce.increment_under(&mut c, one, 1);
-        let under = DEMO.initialized.less_than_under(&mut c, one, 7);
+        let addr = DEMO.evm_address.read(&mut c);
+        DEMO.evm_address.write(&mut c, &addr);
+        let chain = DEMO.chain_id.read(&mut c);
+        DEMO.chain_id.write(&mut c, &chain);
+        let count = DEMO.initialized.read(&mut c);
+        DEMO.request_nonce.increment(&mut c, 1);
+        let under = DEMO.initialized.less_than(&mut c, 7);
         c.assert_eq(count.field(), under.field());
         c.finish(true)
     };
 
     let explicit = {
         let mut c = Circuit3::new();
-        let one = c.constant(1u64);
-        let addr = cell_read(&mut c, one, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
+        let addr = cell_read(&mut c, 4, vec![AlignmentAtom::Bytes { length: 20 }]);
         emit(
             &mut c,
-            one,
             &cell_write(
                 4,
                 &LedgerValue::bytes(20, vec![ImpactElem::Wire(addr[0])]),
             ),
         );
-        let chain = cell_read(&mut c, one, 5, vec![AlignmentAtom::Bytes { length: 8 }]);
+        let chain = cell_read(&mut c, 5, vec![AlignmentAtom::Bytes { length: 8 }]);
         emit(
             &mut c,
-            one,
             &cell_write(5, &LedgerValue::bytes(8, vec![ImpactElem::Wire(chain[0])])),
         );
-        let count = counter_read(&mut c, one, 3);
-        emit(&mut c, one, &counter_increment(2, 1));
+        let count = counter_read(&mut c, 3);
+        emit(&mut c, &counter_increment(2, 1));
         let under = minocrab_ledger::counter_less_than(
             &mut c,
-            one,
             3,
             &LedgerValue::bytes(8, vec![ImpactElem::Imm(minocrab::Fr::from(7u64))]),
         );

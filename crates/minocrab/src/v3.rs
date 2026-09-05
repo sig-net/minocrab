@@ -363,9 +363,13 @@ pub struct Guarded<T, V: Visibility> {
 }
 
 impl<T, V: Visibility> Guarded<T, V> {
-    /// Wrap a value read under `guard`. Called by the guarded read helpers;
-    /// a contract receives one rather than building it.
-    pub fn new(value: T, guard: Wire3<FieldT, V>) -> Self {
+    /// Wrap a value read under `guard`.
+    ///
+    /// Crate-private: only [`Circuit3::when`] / [`Circuit3::when_private`]
+    /// (via [`Branches::guarded`]) may mint one, so holding a `Guarded` is
+    /// proof it came from the scope — the one spelling of a conditional read
+    /// (notes/edsl-trim.org §B). Contract code never calls this directly.
+    pub(crate) fn new(value: T, guard: Wire3<FieldT, V>) -> Self {
         Guarded { value, guard }
     }
 
@@ -952,6 +956,12 @@ impl Circuit3 {
     /// a scope consumed the private transcript on the path not taken
     /// whenever its own guard was true — shifting every later witness, and
     /// invisible to a differential on an honest preimage.
+    /// Contract code should reach for [`Circuit3::when`] /
+    /// [`Circuit3::when_private`] instead — the scope resolves the guard
+    /// automatically, so a plain [`Circuit3::witness`] inside one IS this.
+    /// This is the primitive the scope lowers to, kept as the twin
+    /// `minocrab-std/tests/v3_guard_scope.rs` compares the scoped form
+    /// against, byte for byte.
     pub fn witness_guarded<T: IrTy, V: Visibility>(
         &mut self,
         guard: Wire3<FieldT, V>,
@@ -983,6 +993,12 @@ impl Circuit3 {
     /// call has `is_left` true while the arm is off. Straight-line callers
     /// are untouched — with no ambient guard the operand passes through
     /// unchanged.
+    /// Contract code should reach for [`Circuit3::when`] instead — the scope
+    /// resolves the guard automatically, so a plain
+    /// [`Circuit3::public_transcript_input`] inside one IS this. This is the
+    /// primitive the scope lowers to, kept as the twin
+    /// `minocrab-std/tests/v3_guard_scope.rs` compares the scoped form
+    /// against, byte for byte.
     #[track_caller]
     pub fn public_transcript_input_guarded<T: IrTy, V: OnChainGuard>(
         &mut self,
@@ -1473,6 +1489,11 @@ impl Circuit3 {
 
     /// Declare a guarded block of native public inputs (one Impact
     /// instruction). The full ledger-op encoding layer sits above this.
+    ///
+    /// Contract code should reach for [`Circuit3::when`] instead — the scope
+    /// resolves the guard automatically, so an Impact op emitted through the
+    /// ledger layer inside one already carries it. This is a primitive the
+    /// scope lowers to.
     #[track_caller]
     pub fn impact<V: OnChainGuard>(
         &mut self,
@@ -1494,6 +1515,10 @@ impl Circuit3 {
     /// straight-line circuit), so the immediate form is a deliberate
     /// departure — zero rows, one fewer instruction, and no longer
     /// byte-identical to compactc's stream.
+    ///
+    /// Contract code should reach for [`Circuit3::when`] instead — the scope
+    /// resolves the guard automatically. This is the primitive the scope
+    /// lowers to.
     #[track_caller]
     pub fn impact_mixed<V: OnChainGuard>(
         &mut self,

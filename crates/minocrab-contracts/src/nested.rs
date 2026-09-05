@@ -40,7 +40,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::{
     contract, label, leaf_hash, Bool, Disclose, Discloses, LedgerRepr, Maybe,
-    MerkleTreeDigest, Uint, B32, STRAIGHT_LINE,
+    MerkleTreeDigest, Uint, B32,
 };
 
 label! {
@@ -108,7 +108,7 @@ impl Nested {
         let v = v.disclose_as::<Val>(c);
         let path = under(c, MM, &k);
         let (k2, v) = (k2.ledger_value(c), v.ledger_value(c));
-        emit(c, STRAIGHT_LINE, &map_insert_at(&path, &k2, &v));
+        emit(c, &map_insert_at(&path, &k2, &v));
         Discloses::of(())
     }
 
@@ -128,7 +128,6 @@ impl Nested {
         let k2 = k2.ledger_value(c);
         emit(
             c,
-            STRAIGHT_LINE,
             &map_insert_default_at(&path, &k2, <Uint<64, Public>>::atoms()),
         );
         Discloses::of(())
@@ -152,7 +151,6 @@ impl Nested {
         let k2 = k2.ledger_value(c);
         let wires = map_lookup_at(
             c,
-            STRAIGHT_LINE,
             &path,
             &k2,
             <Uint<64, Public>>::atoms(),
@@ -173,7 +171,6 @@ impl Nested {
         let k2 = k2.ledger_value(c);
         Discloses::of(Bool::from_field_unchecked(map_member_at(
             c,
-            STRAIGHT_LINE,
             &path,
             &k2,
         )))
@@ -190,7 +187,7 @@ impl Nested {
         let k2 = k2.disclose_as::<Key2>(c);
         let path = under(c, MM, &k);
         let k2 = k2.ledger_value(c);
-        emit(c, STRAIGHT_LINE, &map_remove_at(&path, &k2));
+        emit(c, &map_remove_at(&path, &k2));
         Discloses::of(())
     }
 
@@ -201,7 +198,6 @@ impl Nested {
         let path = under(c, MM, &k);
         Discloses::of(Uint::from_field_unchecked(map_size_at(
             c,
-            STRAIGHT_LINE,
             &path,
         )))
     }
@@ -213,7 +209,6 @@ impl Nested {
         let path = under(c, MM, &k);
         Discloses::of(Bool::from_field_unchecked(map_is_empty_at(
             c,
-            STRAIGHT_LINE,
             &path,
         )))
     }
@@ -229,7 +224,7 @@ impl Nested {
     pub fn map_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
-        emit(c, STRAIGHT_LINE, &map_reset_at(&path));
+        emit(c, &map_reset_at(&path));
         Discloses::of(())
     }
 
@@ -246,7 +241,6 @@ impl Nested {
         let k = k.ledger_value(c);
         emit(
             c,
-            STRAIGHT_LINE,
             &map_insert_adt_default_at(&[LedgerKey::Field(MM)], &k, empty_map()),
         );
         Discloses::of(())
@@ -268,7 +262,7 @@ impl Nested {
         let v = v.disclose_as::<Val>(c);
         let path = under(c, ML, &k);
         let v = v.ledger_value(c);
-        emit(c, STRAIGHT_LINE, &list_push_front_at(&path, &v));
+        emit(c, &list_push_front_at(&path, &v));
         Discloses::of(())
     }
 
@@ -277,7 +271,7 @@ impl Nested {
     pub fn list_pop_front(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
-        emit(c, STRAIGHT_LINE, &list_pop_front_at(&path));
+        emit(c, &list_pop_front_at(&path));
         Discloses::of(())
     }
 
@@ -288,7 +282,6 @@ impl Nested {
         let path = under(c, ML, &k);
         Discloses::of(Uint::from_field_unchecked(list_length_at(
             c,
-            STRAIGHT_LINE,
             &path,
         )))
     }
@@ -304,7 +297,7 @@ impl Nested {
     ) -> Discloses<(Key,), Maybe<B32<Public>, Public>> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
-        let mut limbs = list_head_at(c, STRAIGHT_LINE, &path, <B32<Public>>::atoms());
+        let mut limbs = list_head_at(c, &path, <B32<Public>>::atoms());
         let value = <B32<Public>>::from_limbs(limbs.split_off(1));
         Discloses::of(Maybe {
             is_some: Bool::from_field_unchecked(limbs[0]),
@@ -319,7 +312,6 @@ impl Nested {
         let path = under(c, ML, &k);
         Discloses::of(Bool::from_field_unchecked(list_is_empty_at(
             c,
-            STRAIGHT_LINE,
             &path,
         )))
     }
@@ -329,7 +321,7 @@ impl Nested {
     pub fn list_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
-        emit(c, STRAIGHT_LINE, &list_reset_at(&path));
+        emit(c, &list_reset_at(&path));
         Discloses::of(())
     }
 
@@ -346,7 +338,7 @@ impl Nested {
         let e = e.disclose_as::<Elem>(c);
         let path = under(c, MS, &k);
         let e = e.ledger_value(c);
-        emit(c, STRAIGHT_LINE, &set_insert_at(&path, &e));
+        emit(c, &set_insert_at(&path, &e));
         Discloses::of(())
     }
 
@@ -361,7 +353,7 @@ impl Nested {
         let e = e.disclose_as::<Elem>(c);
         let path = under(c, MS, &k);
         let e = e.ledger_value(c);
-        emit(c, STRAIGHT_LINE, &set_remove_at(&path, &e));
+        emit(c, &set_remove_at(&path, &e));
         Discloses::of(())
     }
 
@@ -382,7 +374,6 @@ impl Nested {
         let e = e.ledger_value(c);
         Discloses::of(Bool::from_field_unchecked(map_member_at(
             c,
-            STRAIGHT_LINE,
             &path,
             &e,
         )))
@@ -398,7 +389,7 @@ impl Nested {
     pub fn set_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MS, &k);
-        emit(c, STRAIGHT_LINE, &set_reset_at(&path));
+        emit(c, &set_reset_at(&path));
         Discloses::of(())
     }
 
@@ -409,7 +400,7 @@ impl Nested {
     pub fn counter_increment(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
-        emit(c, STRAIGHT_LINE, &counter_increment_at(&path, 1));
+        emit(c, &counter_increment_at(&path, 1));
         Discloses::of(())
     }
 
@@ -420,7 +411,6 @@ impl Nested {
         let path = under(c, MC, &k);
         Discloses::of(Uint::from_field_unchecked(counter_read_at(
             c,
-            STRAIGHT_LINE,
             &path,
         )))
     }
@@ -433,7 +423,7 @@ impl Nested {
     pub fn counter_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
-        emit(c, STRAIGHT_LINE, &counter_reset_at(&path));
+        emit(c, &counter_reset_at(&path));
         Discloses::of(())
     }
 
@@ -454,7 +444,7 @@ impl Nested {
         let hash = leaf_hash(c, &item);
         let path = under(c, MT, &k);
         let hash = hash.ledger_value(c);
-        emit(c, STRAIGHT_LINE, &merkle_tree_insert_at(&path, &hash));
+        emit(c, &merkle_tree_insert_at(&path, &hash));
         Discloses::of(())
     }
 
@@ -471,7 +461,6 @@ impl Nested {
         let rt = rt.ledger_value(c);
         Discloses::of(Bool::from_field_unchecked(merkle_tree_check_root_at(
             c,
-            STRAIGHT_LINE,
             &path,
             &rt,
         )))
@@ -486,7 +475,7 @@ impl Nested {
     pub fn mt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MT, &k);
-        emit(c, STRAIGHT_LINE, &merkle_tree_reset_at(&path, DEPTH));
+        emit(c, &merkle_tree_reset_at(&path, DEPTH));
         Discloses::of(())
     }
 
@@ -504,7 +493,6 @@ impl Nested {
         let hash = hash.ledger_value(c);
         emit(
             c,
-            STRAIGHT_LINE,
             &historic_merkle_tree_insert_at(&path, &hash),
         );
         Discloses::of(())
@@ -520,7 +508,6 @@ impl Nested {
         let path = under(c, MH, &k);
         emit(
             c,
-            STRAIGHT_LINE,
             &historic_merkle_tree_reset_history_at(&path),
         );
         Discloses::of(())
@@ -537,7 +524,6 @@ impl Nested {
         let path = under(c, MH, &k);
         emit(
             c,
-            STRAIGHT_LINE,
             &historic_merkle_tree_reset_at(&path, DEPTH),
         );
         Discloses::of(())
@@ -563,7 +549,7 @@ impl Nested {
         let v = v.disclose_as::<Val>(c);
         let path = under2(c, MMM, &k, &k2);
         let (k3, v) = (k3.ledger_value(c), v.ledger_value(c));
-        emit(c, STRAIGHT_LINE, &map_insert_at(&path, &k3, &v));
+        emit(c, &map_insert_at(&path, &k3, &v));
         Discloses::of(())
     }
 
@@ -582,7 +568,6 @@ impl Nested {
         let k3 = k3.ledger_value(c);
         let wires = map_lookup_at(
             c,
-            STRAIGHT_LINE,
             &path,
             &k3,
             <Uint<64, Public>>::atoms(),

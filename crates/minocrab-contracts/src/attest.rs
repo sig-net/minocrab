@@ -41,7 +41,10 @@ label! {
 /// call-count increment, emitted in source order (increment first).
 fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
     let request_id = request_id.disclose_as::<AttestedRequestId>(c);
-    let one = c.constant(1u64);
+    // Kept even though guard threading no longer uses it: dropping this
+    // `Copy` would renumber every later identifier, moving the ZKIR
+    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    let _ = c.constant(1u64);
 
     let key = LedgerValue::bytes(
         32,
@@ -50,7 +53,7 @@ fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
     let true_val = LedgerValue::bytes(1, vec![ImpactElem::Imm(Fr::from(1u64))]);
     let mut ops = counter_increment(CALL_COUNT, 1);
     ops.extend(map_insert(VERIFIED, &key, &true_val));
-    emit(c, one, &ops);
+    emit(c, &ops);
 }
 
 /// `struct RespondOutput { success: Boolean; amount: Uint<128>;

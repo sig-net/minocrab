@@ -102,14 +102,17 @@ impl Xcall {
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount)> {
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
         let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
         let recipient_val = LedgerValue::bytes(32, vec![ImpactElem::Wire(r.hi), ImpactElem::Wire(r.lo)]);
         let mut ops = counter_increment(CALL_COUNT, 1);
         ops.extend(cell_write(LAST_AMOUNT, &amount_val));
         ops.extend(map_insert(BALANCES, &recipient_val, &amount_val));
-        emit(c, one, &ops);
+        emit(c, &ops);
         Discloses::of(())
     }
 
@@ -123,9 +126,12 @@ impl Xcall {
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount, XcallEntryPointHash, XcallCommitment)> {
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
-        let one = c.constant(1u64);
-        emit(c, one, &counter_increment(CALL_COUNT, 1));
-        TARGET_CONTRACT.deposit_emit(c, one, r, Uint::from_field_unchecked(a));
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        emit(c, &counter_increment(CALL_COUNT, 1));
+        TARGET_CONTRACT.deposit_emit(c, r, Uint::from_field_unchecked(a));
         Discloses::of(())
     }
 
@@ -137,10 +143,13 @@ impl Xcall {
         data: BytesN<Private, 256>,
     ) -> Discloses<(Data, XcallEntryPointHash, XcallCommitment)> {
         let data: BytesN<Public, 256> = data.disclose_as::<Data>(c);
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
-        emit(c, one, &counter_increment(CALL_COUNT, 1));
-        TARGET_CONTRACT.deposit_big(c, one, data);
+        emit(c, &counter_increment(CALL_COUNT, 1));
+        TARGET_CONTRACT.deposit_big(c, data);
         Discloses::of(())
     }
 
@@ -149,8 +158,11 @@ impl Xcall {
     /// the contract boundary.
     #[circuit]
     pub fn target_deposit_big(c: &mut Circuit3, _data: BytesN<Private, 256>) -> Discloses<()> {
-        let one = c.constant(1u64);
-        emit(c, one, &counter_increment(T_CALL_COUNT, 1));
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        emit(c, &counter_increment(T_CALL_COUNT, 1));
         // The callee's own argument never leaves the private domain: it is
         // declared for the wire shape and never read. `Discloses<()>` is that
         // fact, stated positively and checked like any other declaration.
@@ -180,11 +192,14 @@ pub fn call_twice() -> Compiled3 {
 fn call_n_times(n: usize) -> Compiled3 {
     entry(|c, args: DepositArgs| -> CallDisclosures {
         let (r, a) = disclose_args(c, args);
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
-        emit(c, one, &counter_increment(CALL_COUNT, 1));
+        emit(c, &counter_increment(CALL_COUNT, 1));
         for _ in 0..n {
-            TARGET_CONTRACT.deposit(c, one, r, Uint::from_field_unchecked(a));
+            TARGET_CONTRACT.deposit(c, r, Uint::from_field_unchecked(a));
         }
         Discloses::of(())
     })
@@ -200,10 +215,13 @@ pub fn call_once_bound() -> Compiled3 {
     entry(|c, args: DepositArgs| -> CallDisclosures {
         minocrab_ledger::bind_entry_points(c);
         let (r, a) = disclose_args(c, args);
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
-        emit(c, one, &counter_increment(CALL_COUNT, 1));
-        TARGET_CONTRACT.deposit(c, one, r, Uint::from_field_unchecked(a));
+        emit(c, &counter_increment(CALL_COUNT, 1));
+        TARGET_CONTRACT.deposit(c, r, Uint::from_field_unchecked(a));
         Discloses::of(())
     })
 }

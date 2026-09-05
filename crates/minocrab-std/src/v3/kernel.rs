@@ -29,13 +29,13 @@
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
-use minocrab::v3::{AnyWire3, Circuit3, FieldT, Guarded, Operand, Wire3};
-use minocrab::{AlignmentAtom, Fr, Private, Public, Visibility};
+use minocrab::v3::{AnyWire3, Circuit3, FieldT, Wire3};
+use minocrab::{AlignmentAtom, Fr, Private, Public};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
     kernel_claim_zswap_coin_receive, kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier,
     kernel_inc_unshielded_inputs, kernel_inc_unshielded_outputs, kernel_mint_shielded,
-    kernel_mint_unshielded, kernel_self, kernel_self_guarded, BalanceCmp, ImpactElem, LedgerValue,
+    kernel_mint_unshielded, kernel_self, BalanceCmp, ImpactElem, LedgerValue,
 };
 
 use super::hash;
@@ -46,11 +46,6 @@ use super::{Select,
     CoinNonce, CoinRecipient, ContractAddress, Either, Maybe, QualifiedShieldedCoinInfo3,
     ShieldedCoinInfo3, ShieldedSendResult, TokenDomainSeparator, Uint, UserAddress, B32,
 };
-
-/// The guard of a STRAIGHT-LINE kernel operation: the immediate `1`, inlined
-/// into the Impact instruction rather than named by a `Copy` — the same
-/// convention the ledger slots use.
-const STRAIGHT_LINE: u64 = 1;
 
 /// Compact's `TokenType` — `Either<Bytes<32>, Bytes<32>>`.
 pub type TokenType<V = Public> = Either<B32<V>, B32<V>, V>;
@@ -163,7 +158,7 @@ pub fn self_address(c: &mut Circuit3) -> SelfAddress {
     if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
         return cached.0;
     }
-    self_address_under(c, STRAIGHT_LINE)
+    SelfAddress(ContractAddress::from_limbs(kernel_self(c)))
 }
 
 /// Read `kernel.self()` ONCE and make it the ambient answer for every
@@ -180,66 +175,27 @@ pub fn self_address(c: &mut Circuit3) -> SelfAddress {
 /// swallow those reads and move the stream (the dump gate enforces this
 /// per circuit).
 ///
-/// Guarded reads ([`self_address_under`], [`self_address_guarded`]) are
-/// different instructions and never consult the cache.
+/// A `kernel.self()` read inside [`Circuit3::when`] / [`Circuit3::when_private`]
+/// picks up the ambient scope automatically and never consults the cache —
+/// `c.when(g, |c| self_address(c)).or_default()` is the guarded read
+/// (notes/edsl-trim.org §B).
 pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
-    let me = self_address_under(c, STRAIGHT_LINE);
+    let me = SelfAddress(ContractAddress::from_limbs(kernel_self(c)));
     c.ext_insert(CachedSelfAddress(me));
     me
 }
 
-/// [`self_address`] under a branch condition.
-pub fn self_address_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-) -> SelfAddress {
-    SelfAddress(ContractAddress::from_limbs(kernel_self(c, guard)))
-}
-
-/// [`self_address`] inside a conditional branch, where the READ itself is
-/// guarded — so the answer is the zero address wherever the guard was off,
-/// which is why it comes back in a [`Guarded`].
-pub fn self_address_guarded<G: Visibility + Copy + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: Wire3<FieldT, G>,
-) -> Guarded<SelfAddress, G> {
-    Guarded::new(
-        SelfAddress(ContractAddress::from_limbs(kernel_self_guarded(c, guard))),
-        guard,
-    )
-}
-
 /// `kernel.mintShielded(domain_sep, amount)` — effects\[4\].
 pub fn mint_shielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>, amount: Uint<64, Public>) {
-    mint_shielded_under(c, STRAIGHT_LINE, domain_sep, amount)
-}
-
-/// [`mint_shielded`] under a branch condition.
-pub fn mint_shielded_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    domain_sep: &TokenDomainSeparator<Public>,
-    amount: Uint<64, Public>,
-) {
     let (ds, amt) = (domain_sep.bytes().ledger_value(c), amount.ledger_value(c));
-    emit(c, guard, &kernel_mint_shielded(&ds, &amt));
+    emit(c, &kernel_mint_shielded(&ds, &amt));
 }
 
 /// `kernel.mintUnshielded(domain_sep, amount)` — effects\[5\], and the same
 /// accumulator shape [`mint_shielded`] is.
 pub fn mint_unshielded(c: &mut Circuit3, domain_sep: &TokenDomainSeparator<Public>, amount: Uint<64, Public>) {
-    mint_unshielded_under(c, STRAIGHT_LINE, domain_sep, amount)
-}
-
-/// [`mint_unshielded`] under a branch condition.
-pub fn mint_unshielded_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    domain_sep: &TokenDomainSeparator<Public>,
-    amount: Uint<64, Public>,
-) {
     let (ds, amt) = (domain_sep.bytes().ledger_value(c), amount.ledger_value(c));
-    emit(c, guard, &kernel_mint_unshielded(&ds, &amt));
+    emit(c, &kernel_mint_unshielded(&ds, &amt));
 }
 
 /// `kernel.incUnshieldedInputs(token_type, amount)` — effects\[6\]. Called when
@@ -249,18 +205,8 @@ pub fn inc_unshielded_inputs(
     token: &UnshieldedToken<Public>,
     amount: Uint<128, Public>,
 ) {
-    inc_unshielded_inputs_under(c, STRAIGHT_LINE, token, amount)
-}
-
-/// [`inc_unshielded_inputs`] under a branch condition.
-pub fn inc_unshielded_inputs_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-    amount: Uint<128, Public>,
-) {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    emit(c, guard, &kernel_inc_unshielded_inputs(&t, &amt));
+    emit(c, &kernel_inc_unshielded_inputs(&t, &amt));
 }
 
 /// `kernel.incUnshieldedOutputs(token_type, amount)` — effects\[7\]. Called when
@@ -270,18 +216,8 @@ pub fn inc_unshielded_outputs(
     token: &UnshieldedToken<Public>,
     amount: Uint<128, Public>,
 ) {
-    inc_unshielded_outputs_under(c, STRAIGHT_LINE, token, amount)
-}
-
-/// [`inc_unshielded_outputs`] under a branch condition.
-pub fn inc_unshielded_outputs_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-    amount: Uint<128, Public>,
-) {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    emit(c, guard, &kernel_inc_unshielded_outputs(&t, &amt));
+    emit(c, &kernel_inc_unshielded_outputs(&t, &amt));
 }
 
 /// `kernel.claimUnshieldedCoinSpend(token_type, recipient, amount)` —
@@ -293,20 +229,9 @@ pub fn claim_unshielded_coin_spend(
     recipient: &UnshieldedRecipient<Public>,
     amount: Uint<128, Public>,
 ) {
-    claim_unshielded_coin_spend_under(c, STRAIGHT_LINE, token, recipient, amount)
-}
-
-/// [`claim_unshielded_coin_spend`] under a branch condition.
-pub fn claim_unshielded_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-    recipient: &UnshieldedRecipient<Public>,
-    amount: Uint<128, Public>,
-) {
     let key = concat_values(token.ledger_value(), recipient.ledger_value(c));
     let amt = amount.ledger_value(c);
-    emit(c, guard, &kernel_claim_unshielded_coin_spend(&key, &amt));
+    emit(c, &kernel_claim_unshielded_coin_spend(&key, &amt));
 }
 
 /// The two halves of `claimUnshieldedCoinSpend`'s key, side by side in one
@@ -323,17 +248,8 @@ fn concat_values(a: LedgerValue, b: LedgerValue) -> LedgerValue {
 /// token, or ZERO if it has never held one. See the module docs for what
 /// "balance" means here.
 pub fn balance(c: &mut Circuit3, token: &UnshieldedToken<Public>) -> Uint<128, Public> {
-    balance_under(c, STRAIGHT_LINE, token)
-}
-
-/// [`balance`] under a branch condition.
-pub fn balance_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-) -> Uint<128, Public> {
     let t = token.ledger_value();
-    Uint::from_field_unchecked(kernel_balance(c, guard, &t, BalanceCmp::Value, None))
+    Uint::from_field_unchecked(kernel_balance(c, &t, BalanceCmp::Value, None))
 }
 
 /// `kernel.balanceLessThan(token_type, amount)`.
@@ -342,24 +258,8 @@ pub fn balance_less_than(
     token: &UnshieldedToken<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
-    balance_less_than_under(c, STRAIGHT_LINE, token, amount)
-}
-
-/// [`balance_less_than`] under a branch condition.
-pub fn balance_less_than_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-    amount: Uint<128, Public>,
-) -> Bool<Public> {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    Bool::from_field_unchecked(kernel_balance(
-        c,
-        guard,
-        &t,
-        BalanceCmp::LessThan,
-        Some(&amt),
-    ))
+    Bool::from_field_unchecked(kernel_balance(c, &t, BalanceCmp::LessThan, Some(&amt)))
 }
 
 /// `kernel.balanceGreaterThan(token_type, amount)`.
@@ -368,54 +268,20 @@ pub fn balance_greater_than(
     token: &UnshieldedToken<Public>,
     amount: Uint<128, Public>,
 ) -> Bool<Public> {
-    balance_greater_than_under(c, STRAIGHT_LINE, token, amount)
-}
-
-/// [`balance_greater_than`] under a branch condition.
-pub fn balance_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    token: &UnshieldedToken<Public>,
-    amount: Uint<128, Public>,
-) -> Bool<Public> {
     let (t, amt) = (token.ledger_value(), amount.ledger_value(c));
-    Bool::from_field_unchecked(kernel_balance(
-        c,
-        guard,
-        &t,
-        BalanceCmp::GreaterThan,
-        Some(&amt),
-    ))
+    Bool::from_field_unchecked(kernel_balance(c, &t, BalanceCmp::GreaterThan, Some(&amt)))
 }
 
 /// `kernel.blockTimeLessThan(t)` — whether the block time is before `t`.
 pub fn block_time_less_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool<Public> {
-    block_time_less_than_under(c, STRAIGHT_LINE, time)
-}
-
-/// [`block_time_less_than`] under a branch condition.
-pub fn block_time_less_than_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    time: Uint<64, Public>,
-) -> Bool<Public> {
     let t = time.ledger_value(c);
-    Bool::from_field_unchecked(kernel_block_time(c, guard, &t, false))
+    Bool::from_field_unchecked(kernel_block_time(c, &t, false))
 }
 
 /// `kernel.blockTimeGreaterThan(t)`.
 pub fn block_time_greater_than(c: &mut Circuit3, time: Uint<64, Public>) -> Bool<Public> {
-    block_time_greater_than_under(c, STRAIGHT_LINE, time)
-}
-
-/// [`block_time_greater_than`] under a branch condition.
-pub fn block_time_greater_than_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    time: Uint<64, Public>,
-) -> Bool<Public> {
     let t = time.ledger_value(c);
-    Bool::from_field_unchecked(kernel_block_time(c, guard, &t, true))
+    Bool::from_field_unchecked(kernel_block_time(c, &t, true))
 }
 
 // ---- the stdlib circuits ----------------------------------------------------
@@ -520,12 +386,51 @@ pub fn receive_unshielded(c: &mut Circuit3, color: CoinColor<Public>, amount: Ui
 /// because that is how compactc lowers `&&` on Booleans.
 fn is_self(c: &mut Circuit3, recipient: &UnshieldedRecipient<Public>) -> Wire3<FieldT, Public> {
     let is_left = recipient.is_left.field();
-    let me = kernel_self_guarded(c, is_left);
+    let me = guarded_kernel_self(c, is_left);
     let left = recipient.left.bytes();
     let eq_hi = c.test_eq(left.hi, me[0]);
     let eq_lo = c.test_eq(left.lo, me[1]);
     let both = c.cond_select(eq_hi, eq_lo, 0u64);
     c.cond_select(is_left, both, 0u64)
+}
+
+/// [`minocrab_ledger::kernel_self`], guarded by an EXPLICIT wire rather than
+/// the ambient scope.
+///
+/// Not spelled `c.when(is_left, |c| kernel_self(c)).or_default()`: both
+/// [`send_unshielded`] and [`mint_unshielded_token`] are called from inside
+/// another `c.when` at some corpus call sites (e.g. `manager.compact`'s
+/// `execute`), and the scope conjoins the two guards ONCE on entry
+/// (`Circuit3::when`'s doc) where the deleted `kernel_self_guarded` conjoined
+/// PER EFFECT (`Circuit3::effect_guard`, once per read and once for the
+/// Impact op) — fewer rows there, so not zero-movement. This reproduces the
+/// same op sequence [`minocrab_ledger::kernel_self`] does, through the core
+/// primitives that resolve the guard the same way regardless of nesting.
+fn guarded_kernel_self(c: &mut Circuit3, guard: Wire3<FieldT, Public>) -> [Wire3<FieldT, Public>; 2] {
+    let atoms = vec![AlignmentAtom::Bytes { length: 32 }];
+    let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
+    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+        .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
+        .collect();
+    let value = LedgerValue::new(atoms, wires.iter().map(|&w| ImpactElem::Wire(w)).collect());
+    for op in [
+        minocrab_ledger::dup(2),
+        minocrab_ledger::idx_one(true, false, 0),
+        minocrab_ledger::popeq(true, &value),
+    ] {
+        c.impact_mixed(guard, &op.0);
+    }
+    [wires[0], wires[1]]
+}
+
+/// Emit `ops` under an EXPLICIT guard, resolved against the ambient scope
+/// PER OP — [`Circuit3::impact_mixed`] directly, once per op, which is what
+/// the deleted `minocrab_ledger::emit(c, guard, ops)` did. See
+/// [`guarded_kernel_self`] for why this is not `c.when(guard, |c| ..)`.
+fn emit_guarded(c: &mut Circuit3, guard: Wire3<FieldT, Public>, ops: &[minocrab_ledger::ImpactOp]) {
+    for op in ops {
+        c.impact_mixed(guard, &op.0);
+    }
 }
 
 /// ```text
@@ -548,7 +453,9 @@ pub fn send_unshielded(
     inc_unshielded_outputs(c, &token, amount);
     claim_unshielded_coin_spend(c, &token, recipient, amount);
     let mine = is_self(c, recipient);
-    inc_unshielded_inputs_under(c, mine, &token, amount);
+    let t = token.ledger_value();
+    let amt = amount.ledger_value(c);
+    emit_guarded(c, mine, &minocrab_ledger::kernel_inc_unshielded_inputs(&t, &amt));
 }
 
 /// ```text
@@ -579,7 +486,9 @@ pub fn mint_unshielded_token(
     let wide = Uint::<128, Public>::from_field_unchecked(amount.field());
     claim_unshielded_coin_spend(c, &token, recipient, wide);
     let mine = is_self(c, recipient);
-    inc_unshielded_inputs_under(c, mine, &token, wide);
+    let t = token.ledger_value();
+    let amt = wide.ledger_value(c);
+    emit_guarded(c, mine, &minocrab_ledger::kernel_inc_unshielded_inputs(&t, &amt));
     color
 }
 
@@ -603,50 +512,23 @@ pub fn mint_unshielded_token(
 /// `kernel.claimZswapNullifier(nul)` — effects\[0\]. Says this contract spent
 /// the coin that nullifier names.
 pub fn claim_zswap_nullifier(c: &mut Circuit3, nullifier: &B32<Public>) {
-    claim_zswap_nullifier_under(c, STRAIGHT_LINE, nullifier)
-}
-
-/// [`claim_zswap_nullifier`] under a branch condition.
-pub fn claim_zswap_nullifier_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    nullifier: &B32<Public>,
-) {
     let nul = nullifier.ledger_value(c);
-    emit(c, guard, &kernel_claim_zswap_nullifier(&nul));
+    emit(c, &kernel_claim_zswap_nullifier(&nul));
 }
 
 /// `kernel.claimZswapCoinSpend(cm)` — effects\[2\]. Says this contract
 /// AUTHORIZED the output that commitment names.
 pub fn claim_zswap_coin_spend(c: &mut Circuit3, commitment: &B32<Public>) {
-    claim_zswap_coin_spend_under(c, STRAIGHT_LINE, commitment)
-}
-
-/// [`claim_zswap_coin_spend`] under a branch condition.
-pub fn claim_zswap_coin_spend_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    commitment: &B32<Public>,
-) {
     let cm = commitment.ledger_value(c);
-    emit(c, guard, &kernel_claim_zswap_coin_spend(&cm));
+    emit(c, &kernel_claim_zswap_coin_spend(&cm));
 }
 
 /// `kernel.claimZswapCoinReceive(cm)` — effects\[1\]. Says this contract now
 /// OWNS the coin that commitment names. Separate from the spend claim because
 /// a contract paying itself makes both.
 pub fn claim_zswap_coin_receive(c: &mut Circuit3, commitment: &B32<Public>) {
-    claim_zswap_coin_receive_under(c, STRAIGHT_LINE, commitment)
-}
-
-/// [`claim_zswap_coin_receive`] under a branch condition.
-pub fn claim_zswap_coin_receive_under<G: Visibility + minocrab::OnChainGuard>(
-    c: &mut Circuit3,
-    guard: impl Into<Operand<FieldT, G>>,
-    commitment: &B32<Public>,
-) {
     let cm = commitment.ledger_value(c);
-    emit(c, guard, &kernel_claim_zswap_coin_receive(&cm));
+    emit(c, &kernel_claim_zswap_coin_receive(&cm));
 }
 
 /// The domain a coin's successor nonce is derived under, and the `/2` variant
@@ -849,7 +731,8 @@ pub fn send_shielded(
     let same = bytes_eq(c, &recipient.right.bytes(), &me);
     let mine = c.cond_select(recipient.is_left, 0u64, same);
     let cm_again = coin_commitment_to(c, &output, recipient.is_left.erase(), &to);
-    claim_zswap_coin_receive_under(c, mine, &cm_again);
+    let cm_again_val = cm_again.ledger_value(c);
+    emit_guarded(c, mine, &minocrab_ledger::kernel_claim_zswap_coin_receive(&cm_again_val));
 
     let spent_it_all = c.test_eq(change, 0u64);
     let has_change = not(c, Bool::from_field_unchecked(spent_it_all)).field();

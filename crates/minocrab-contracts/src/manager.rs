@@ -47,7 +47,7 @@ use minocrab_std::v3::{
     CoinColor, CoinNonce,
     contract, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
-    LedgerCell, LedgerMap, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
+    LedgerCell, LedgerMap, LedgerRepr, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
     ShieldedCoinInfo3, Uint, UserAddress, B32,
 };
 
@@ -231,18 +231,62 @@ fn unshielded_key(c: &mut Circuit3, acct: &B32<Public>, colour: &CoinColor<Publi
 }
 
 /// A missing cell reads 0: `map.member(k) ? map.lookup(k) : 0`, the lookup
-/// guarded by the member result. `or_default()` IS the `: 0` arm for free —
-/// a skipped read's wires already hold zero, which is compactc's own
-/// lowering of this shape (no select). Emitted under whatever ambient guard
-/// is in scope; the member result carries it, so the composition needs no
-/// extra conjunction here.
+/// guarded by the member result. A skipped read's wires already hold zero,
+/// which is compactc's own lowering of this shape (no select) — the member
+/// result already carries whatever ambient guard is in scope, so no further
+/// conjunction is LOGICALLY needed.
+///
+/// Not spelled as `c.when(member, |c| map.lookup(c, k)).or_default()`: this
+/// call NESTS under an outer `c.when` at its one non-straight-line call site
+/// (`custody_dispatch`'s debit read), and the scope conjoins once on entry
+/// (`Circuit3::when`'s doc) where the old `_guarded` primitives conjoined
+/// PER EFFECT (`Circuit3::effect_guard`, once per read and once for the
+/// Impact op) — fewer rows, so not zero-movement. This calls the same core
+/// primitives the deleted `LedgerMap::lookup_guarded` did, so the row count
+/// is unchanged whether or not an outer scope is active.
 fn balance_at(
     c: &mut Circuit3,
     map: &LedgerMap<B32<Public>, Uint<128, Public>>,
     k: &B32<Public>,
 ) -> Wire3<FieldT, Public> {
     let member = map.member(c, k).field();
-    map.lookup_guarded(c, member, k).or_default().field()
+    let key = k.ledger_value(c);
+    let atoms = <Uint<128, Public> as LedgerRepr>::atoms();
+    guarded_map_lookup_field(c, member, map.index(), &key, atoms)
+}
+
+/// The one Impact op [`LedgerMap::lookup`] emits, under an EXPLICIT guard
+/// resolved against the ambient scope PER EFFECT — [`Circuit3::
+/// public_transcript_input_guarded`] for each limb, [`Circuit3::impact_mixed`]
+/// for the op — exactly what the deleted `map_lookup_guarded_at` did. Kept
+/// as the one caller ([`balance_at`]) that nests an explicit data-dependent
+/// guard under another scope and needs the per-effect conjunction, not the
+/// once-on-entry one `c.when` gives.
+fn guarded_map_lookup_field(
+    c: &mut Circuit3,
+    guard: Wire3<FieldT, Public>,
+    index: u8,
+    key: &minocrab_ledger::LedgerValue,
+    atoms: Vec<AlignmentAtom>,
+) -> Wire3<FieldT, Public> {
+    let limbs: usize = atoms.iter().map(minocrab_ledger::atom_limbs).sum();
+    let wires: Vec<Wire3<FieldT, Public>> = (0..limbs)
+        .map(|_| c.public_transcript_input_guarded::<FieldT, Public>(guard))
+        .collect();
+    let value = minocrab_ledger::LedgerValue::new(
+        atoms,
+        wires.iter().map(|&w| minocrab::v3::ImpactElem::Wire(w)).collect(),
+    );
+    let path = [minocrab_ledger::LedgerKey::Field(index)];
+    for op in [
+        minocrab_ledger::dup(0),
+        minocrab_ledger::idx_path(false, false, &path),
+        minocrab_ledger::idx_key(key),
+        minocrab_ledger::popeq(false, &value),
+    ] {
+        c.impact_mixed(guard, &op.0);
+    }
+    wires[0]
 }
 
 /// `ownerCommitment(sk)` — `persistentCommit<Bytes<21>>(OWNER_TAG, sk)`:
@@ -480,9 +524,8 @@ impl Manager {
         // The mode read carries `registered`, and a SKIPPED read's zero IS the
         // inactive record's mode — no select anywhere in this circuit, which is
         // compactc's own shape for the early-return ladder.
-        let mode = MANAGER
-            .account_modes
-            .lookup_guarded(c, registered, &acct)
+        let mode = c
+            .when(registered, |c| MANAGER.account_modes.lookup(c, &acct))
             .or_default()
             .field();
         let is_native = c.test_eq(mode, 0u64);
@@ -569,7 +612,7 @@ impl Manager {
     ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
         let col = colour.disclose_as::<QueriedColour>(c);
         let member = MANAGER.pools.member(c, &col).field();
-        let v = MANAGER.pools.lookup_guarded(c, member, &col).or_default().value;
+        let v = c.when(member, |c| MANAGER.pools.lookup(c, &col)).or_default().value;
         Discloses::of(Uint::from_field_unchecked(v))
     }
 
@@ -601,7 +644,10 @@ impl Manager {
         };
         let acct = account.disclose_as::<CreditAccount>(c);
 
-        let one = c.constant(1u64);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
 
         // assert(c.value > 0, "deposit must be positive")
         c.assert(
@@ -618,7 +664,7 @@ impl Manager {
 
         // receiveShielded(c) — allocates the Merkle-tree index; must precede
         // insertCoin.
-        common::receive_shielded(c, one, &coin);
+        common::receive_shielded(c, &coin);
 
         // Merge-on-deposit: one pooled coin per colour.
         let member = MANAGER.pools.member(c, &coin.color).field();
@@ -1502,8 +1548,11 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
             color: p.want_color,
             value: p.want_amount,
         };
-        let one = c.constant(1u64);
-        common::receive_shielded(c, one, &want_coin);
+        // Kept even though guard threading no longer uses it: dropping this
+        // `Copy` would renumber every later identifier, moving the ZKIR
+        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+        let _ = c.constant(1u64);
+        common::receive_shielded(c, &want_coin);
         let member = MANAGER.pools.member(c, &p.want_color).field();
         c.when(member, |c| {
             let pooled = MANAGER.pools.lookup(c, &p.want_color);

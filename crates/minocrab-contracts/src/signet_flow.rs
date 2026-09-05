@@ -469,7 +469,10 @@ fn file_request<const WORDS: usize>(
     kind: u8,
     after_insert: impl FnOnce(&mut Circuit3, RequestId<Public>),
 ) -> RequestId<Public> {
-    let one = c.constant(1u64);
+    // Kept even though guard threading no longer uses it: dropping this
+    // `Copy` would renumber every later identifier, moving the ZKIR
+    // (notes/edsl-trim.org §B, the removal's zero-movement gate).
+    let _ = c.constant(1u64);
     let zero = c.constant(0u64);
     let me = kernel::cache_self_address(c);
     let nonce = signet.request_nonce.read(c);
@@ -513,12 +516,12 @@ fn file_request<const WORDS: usize>(
 
     c.region("signet flow: notify", |c| {
         // Receiver first (compactc's order; the argument below emits).
-        let signer = signet.signer().pin(c, one);
+        let signer = signet.signer().pin(c);
         let path = records.field_path();
         let mut bytes = [0u8; 4];
         bytes[..path.as_slice().len()].copy_from_slice(path.as_slice());
         let notification = construct_notification_v1::<Public>(c, &me.bytes(), path.depth(), bytes);
-        signer.sign_bidirectional(c, one, request_id, notification);
+        signer.sign_bidirectional(c, request_id, notification);
     });
     request_id
 }
