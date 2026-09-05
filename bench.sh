@@ -18,7 +18,7 @@ export MINOCRAB_DUMP_PREIMAGES="$PWD/target/bench/preimages"
 mkdir -p "$MINOCRAB_DUMP_PREIMAGES"
 
 cargo test --release -p minocrab-contracts \
-  --test erc20_vault_differential --test signet_contract_differential \
+  --test erc20_vault_differential --test signet_construction \
   -- --quiet
 
 cargo run --release -p minocrab-bench
