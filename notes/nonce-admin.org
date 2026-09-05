@@ -1,0 +1,137 @@
+#+title: M39 — Nonces, fee policy, and the administrator: the design note (written before sig-net's Compact lands)
+
+* 0. Why this note exists, and its status
+dmd (2026-09-05/06) asked, in order: how an administrator could set the
+gas price instead of the user; then for two administrator abilities being
+implemented in Compact by sig-net — UNSTICK (a blank replacement at a
+stuck nonce with a higher fee) and BATCH (write-only insert, one flush
+numbers N transactions from the last used nonce); then whether a wrong
+nonce is a security issue and whether the Signet request counter is
+load-bearing. This note is written BEFORE their contract is in the
+corpus, so that reading it later is a prediction checked (the M31 method)
+rather than a story fitted afterwards. Nothing here is built; M39 B–D
+build it when the corpus refreshes.
+
+* 1. The EVM nonce today: untrusted, and safely so
+Every request circuit takes =evm_nonce= as a public input the prover
+chooses; the circuit cannot check it against chain state. That is fine:
+- The nonce does not change what the transaction DOES. Recipient, amount,
+  calldata, gas envelope and signing path are all bound into the record
+  the MPC hashes and signs; the nonce decides only whether and when it
+  can mine.
+- Too low → rejected at submission, never executes, the MPC attests
+  failure, the requester refunds. Too high → waits for the gap; if it
+  never fills, the MPC's timeout policy attests failure. Either way the
+  requester hurts only themselves: a high nonce blocks nobody else.
+- Two honest provers racing for the same next nonce: both prove, the MPC
+  signs both, one mines, the other becomes "too low" and refunds. Wasted
+  proving and a bad experience; no loss, no gained authority.
+VERDICT: a liveness problem for the requester, not a security one. The
+batch (§4) removes the race; nothing needs to trust the nonce more than
+it does today.
+
+* 2. The Signet request counter: load-bearing for FRESHNESS, not as a shared number
+=signetRequestNonce= is read (=popeq=) and incremented in every request
+and is an element of the record, hence of the request id. It is what
+makes two otherwise identical requests distinct: without it they would
+collide in the record map and — the part the unlinkability argument
+rests on (notes/zkir-semantics.org §7, V4) — produce the same refund
+commitment =H(sk, reqId)= for the same user twice. So: load-bearing.
+It is NOT load-bearing as a SHARED counter. Freshness needs something new
+per request, not agreement on a number. REQUESTER-SUPPLIED RANDOMNESS
+bound into the record gives uniqueness with overwhelming probability; a
+membership check on the resulting id catches a requester deliberately
+reusing their own value, and that read touches a key only that
+requester's request ever touches — contention-free across users.
+CONSEQUENCE FOR THE BATCH (§4): if the insert still =popeq=s the shared
+counter, two concurrent provers still race on that read, and batching
+removes only one of the two races. TO CONFIRM against sig-net's
+contract when it lands: does the insert read anything shared?
+
+* 3. The fee policy: an administrator's cell, one read per request
+Today the envelope is a contract constant (1 gwei priority, 30 gwei cap,
+a per-call gas LIMIT). The limit is a property of the call and stays on
+the call type (=EvmCall::GAS_LIMIT=). The two fees are market conditions
+and belong in a =FeePolicy { max_priority_fee, max_fee }= cell in the
+=Signet= block (or an =Admin= block beside it), written by a
+=set_fee_policy= circuit gated on an administrator, and READ by every
+request in place of the constants — one public read (=popeq=), a few
+rows. The administrator: the deployer key the vault already gates
+=initialise= on is the minimal choice; a rotatable admin commitment
+(=Commit<AdminKey, AdminTag>= opened with a fresh witness, the same
+construction as =Owned=) is the better one, because deployer keys are
+cold. DECISION FOR DMD; the note recommends the rotatable commitment.
+
+* 4. BATCH: write-only insert, one flush
+The shape dmd described: a request circuit does not choose a nonce; it
+INSERTS the transaction-minus-nonce (callee, calldata words, gas limit,
+the fee policy read at insert or at flush — decide: at FLUSH, so a fee
+change between insert and flush applies) into a structure whose insert
+is WRITE-ONLY; a FLUSH circuit pulls N entries, reads =last_nonce= ONCE,
+numbers them =last+1 … last+N=, writes =last+N=, and emits N sign events
+in one transaction; the MPC signs and submits N consecutive txs.
+Which Midnight ADT is write-only on insert: =List.pushFront= (an Impact
+push, no read); a =Map= keyed by a requester-owned handle likewise. A
+counter-keyed tail (=tail++= then insert at =tail=) is NOT: reading the
+tail is the contention. So the queue is a =List= (LIFO order — nonce
+order among a flush's N entries is whatever the flush pulls; fairness is
+not a correctness property here) or a =Map= keyed by =H(pre-record ‖
+requester randomness)= — the §2 key, which also serves as the handle the
+requester keeps to find their request.
+THE RECORD MOVES TO FLUSH: the record the MPC hashes contains the nonce,
+so it cannot exist at insert. The queue holds a PRE-RECORD; the flush
+creates N records and N request ids and notifies the singleton N times.
+Consequences: (i) the settle side keys on ids the requester did not know
+when they proved — the environment (who may refund, how much) is
+attached at INSERT under the requester's handle and copied into the
+record's env at flush, or the settle looks it up by handle; (ii) the
+requester's refund commitment =H(sk, reqId)= can no longer be computed at
+insert (no reqId yet) — bind it to the HANDLE instead (=H(sk, handle)=),
+which is fresh per request by §2 and known to the requester; (iii) the
+flush is the one circuit that reads shared state (=last_nonce=, the
+queue head) — it is the contention point by design, run by anyone or by
+the administrator, and a stale flush proof simply fails (its =popeq=s no
+longer match) and is re-proven.
+COST SHAPE: insert is cheaper than today's request (no counter read, no
+record hash); flush pays N record hashes + N notifications in one
+circuit — its k grows with N, so N is a per-contract const (=Queued<Call,
+Env, WORDS, N>=) and a large N is a large circuit. Two or three flush
+sizes may be worth having.
+
+* 5. UNSTICK: a blank replacement, administrator only
+A transaction that never mines at nonce n blocks n+1, n+2, … for the
+key. The administrator asks the MPC to sign a BLANK at n — the key's own
+address, zero value, no calldata, 21,000 gas — with a HIGHER,
+administrator-chosen fee (the replacement rule: same nonce, fee bumped
+by the node's minimum, typically 10%). As a call type: =Blank= with
+=Args = ()=, =Return = Unit=, =succeeded = always=, callee = the signing
+key's own address (read from the Signet block or derived), an EXPLICIT
+nonce and an EXPLICIT fee envelope (the fixed default does not apply —
+the whole point is to exceed the stuck fee).
+This is a CANCEL-BY-REPLACEMENT power: whatever user transaction was
+pending at n is displaced. Hence administrator-only, and its effect is
+honest by construction: the MPC observes the replacement mine, the
+original never executes, its request is attested FAILURE, and it routes
+to the owner's =refund=. The MPC's side must recognise a replacement at
+an already-issued nonce (M39 D: signet-sim).
+OPTIONAL per contract: a contract without the =Admin= block has no
+=unstick= and no =set_fee_policy= and compiles to the M37 shape unchanged
+(zero movement on the treasury and the vault).
+
+* 6. What stays PI-equal to sig-net, what our API does differently
+PI-EQUAL (M39 B): whatever their Compact emits for insert / flush /
+unstick / setFeePolicy — the compat port mirrors it op for op, as the
+vault's port does. OUR OWN (M39 C): =Queued<Call, Env, WORDS, N>= beside
+=Pending=, =Admin= with =FeePolicy=, the =Blank= call, the handle-keyed
+refund commitment — the Pending lineage's shape, byte-identical where
+the statement is the same and deliberately different where §2/§4 say
+their design still races.
+
+* 7. Predictions to check when their contract lands
+P1 the insert reads the request counter (the second race survives).
+P2 the queue is a List with pushFront. P3 the flush reads one nonce cell
+and increments by N. P4 the refund commitment is computed at flush from
+the reqId, so the requester must be present at flush OR the env carries
+the commitment from insert. P5 unstick is a fixed-shape tx to self with
+caller-supplied fees and nonce, gated on the deployer. P6 the fee policy
+is either absent (fees stay constants) or a cell the deployer writes.

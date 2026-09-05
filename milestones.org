@@ -2187,7 +2187,16 @@ record, or keyed by a requester-owned handle; (b) today's request circuit
 also =popeq=s the Signet request counter, a second shared read that races
 the same way — a contention-free insert must drop it or key the queue by
 something the requester owns.
-- [ ] A. DESIGN NOTE FIRST: notes/nonce-admin.org — the three nonce
+- [X] A. (2026-09-06: notes/nonce-admin.org §0–§7 — the nonce is
+      untrusted and safely so (liveness, not security); the request
+      counter is load-bearing for FRESHNESS and replaceable by requester
+      randomness + a self-keyed membership check; the fee policy cell
+      under a rotatable admin commitment (recommended, dmd decides); the
+      queue as a write-only List/handle-keyed Map with the record and
+      the refund commitment moving to the HANDLE; unstick as a =Blank=
+      call type with explicit nonce and fee, a cancel-by-replacement
+      power; six predictions P1–P6 to check against sig-net's Compact.)
+      DESIGN NOTE FIRST: notes/nonce-admin.org — the three nonce
       homes (expected-nonce cell written by an authorised relayer / the
       MPC fills the nonce / a per-path counter) and why batching
       supersedes them; the =FeePolicy= cell in the =Signet= block under
