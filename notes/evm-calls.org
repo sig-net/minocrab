@@ -162,7 +162,31 @@ Common to all: the predicate is a =Check= (composes, carries a message,
 costs nothing until asserted); =complete= asserts it, =refund= asserts
 =kind == FAILURE || !succeeded=; the trivial rule is free by the
 =assert(imm 1)= fold (=passes::drop_true_asserts=, 3c17586, run-equality
-proven in =AssertIr.lean=). D3 → D2 is deleting the default: dmd's call.
+proven in =AssertIr.lean=).
+
+DECIDED (dmd, 2026-09-06): D2 + D4 — "no default, and add a mapping
+function, but make it default to the identity function."
+#+begin_src rust
+pub trait EvmCall {
+    const NAME: &'static str;  type Args: AbiTuple;  type Return: AbiType;
+    const KIND: u8;  const GAS_LIMIT: u64;
+    /// MANDATORY: the success predicate over the executed response.
+    fn succeeded(c: &mut Circuit3, out: &<Self::Return as AbiType>::Wire<Public>) -> Check<Public>;
+    /// What `complete` hands back. Stable Rust has no associated-type
+    /// defaults, so the author names it (one line); the METHOD defaults.
+    type Success: FromReturn<<Self::Return as AbiType>::Wire<Public>>;
+    fn map(c: &mut Circuit3, out: <Self::Return as AbiType>::Wire<Public>) -> Self::Success {
+        Self::Success::from_return(c, out)          // identity for Success = Wire; () for an asserted Bool
+    }
+}
+impl EvmCall for Erc20Transfer  { …  type Success = ();             fn succeeded(_, ok) -> Check { is_true(*ok) } }
+impl EvmCall for Erc4626Deposit { …  type Success = Uint<64, Public>; fn succeeded(c, _) -> Check { always(c) } }
+#+end_src
+=FromReturn<W>=: blanket identity =impl<W> FromReturn<W> for W=, plus
+=impl FromReturn<Bool<Public>> for ()=. =complete= asserts =succeeded=
+THEN =map=s. =always(c)= lowers to the constant 1 and the fold removes
+the assert. Type errors: a call without =succeeded= (missing item);
+=Success = ()= on a numeric return (no =FromReturn=).
 
 ** 3.1 HAZARD — what the MPC's failure output actually means, and USDT
 mpc's execution watcher (chain-signatures/chain-ethereum/src/

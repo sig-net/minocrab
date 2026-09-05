@@ -2059,10 +2059,10 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       2026-09-06, 3c17586: =passes::drop_true_asserts= between copy fold
       and dedup in =finish=, =AssertIr.lean= proves =run= equality over the
       real semantics, dormant on all 211 dumped circuits; notes/ir-passes.org
-      §12). The OUTCOME RULE ITSELF is being reworked with dmd (a
-      predicate FUNCTION over the successful response, not marker types —
-      the D1–D4 options in chat, D3 recommended: the default from the
-      return type, one overridable =succeeded= on the call).
+      §12). The OUTCOME RULE, DECIDED 2026-09-06 (§3.2): a MANDATORY
+      =succeeded(c, &out) -> Check= on the call (D2) plus =type Success=
+      with =map= defaulting to the identity conversion (D4);
+      =complete= asserts then maps.
 - [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.
