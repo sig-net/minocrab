@@ -25,7 +25,17 @@ mkdir -p .compact-path
 jq -r '.compact_path_links // {} | to_entries[] | "\(.key)\t\(.value)"' sources.json |
 while IFS=$'\t' read -r pkg target; do
   mkdir -p ".compact-path/$(dirname "$pkg")"
-  ln -sfn "$(pwd)/src/$target" ".compact-path/$pkg"
+  # RELATIVE target, deliberately (notes/version-bump.org hazard 8 /
+  # decision list item 6): an absolute one bakes in THIS checkout's path,
+  # so the tracked symlink breaks in any other checkout (a worktree, a
+  # clone) even though it still resolves here. `.compact-path/<pkg>` and
+  # `src/<target>` are always siblings under `corpus/`, so the relative
+  # path is one `../` per path component of `.compact-path/<pkg>` itself
+  # (1 + the number of `/`s in `pkg`) followed by `src/<target>`.
+  depth=$(($(grep -o "/" <<<"$pkg" | wc -l | tr -d ' ') + 1))
+  prefix=""
+  for ((i = 0; i < depth; i++)); do prefix="../$prefix"; done
+  ln -sfn "${prefix}src/$target" ".compact-path/$pkg"
 done
 export COMPACT_PATH="$(pwd)/.compact-path"
 
