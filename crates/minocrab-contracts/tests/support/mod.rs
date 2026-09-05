@@ -17,8 +17,8 @@ use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
     adts, attest, bounded, bounded_ledger, coins, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
-    serde_builtin, signet_contract, test_caller, xcall, xcall_with_payment, xcontract_events,
-    xcontract_events_borsh,
+    serde_builtin, signet_contract, test_caller, treasury, xcall, xcall_with_payment,
+    xcontract_events, xcontract_events_borsh,
 };
 
 /// A circuit under snapshot: its name and how to build it.
@@ -351,6 +351,10 @@ pub fn circuits() -> Vec<Circuit> {
     listed.extend(of("mint_tokens", &mint_tokens::MintTokens::CIRCUITS));
     listed.extend(of("serde_builtin", &serde_builtin::SerdeBuiltin::CIRCUITS));
     listed.extend(of("test_caller", &test_caller::TestCaller::CIRCUITS));
+    // `treasury` (M37 rung C): notes/evm-calls.org §0's target shape as a
+    // real contract — the README's cross-chain example, compiled. Three
+    // circuits, derived like every other `#[contract]` block.
+    listed.extend(of("treasury", &treasury::Treasury::CIRCUITS));
     // `bounded.compact` (M14): Compact's `Uint<0..n>` at every shape the
     // bound can take, one circuit each. The only block here whose Compact
     // source is OURS rather than the corpus's — no compiled corpus

@@ -93,12 +93,53 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // (`LedgerWidth::WIDTH > 1`) shifts everything after it, and the type
     // says by how much — nothing is counted by hand.
     let total = quote!(0usize #( + <#types as #width>::WIDTH )*);
+
+    // THE SIGNET BLOCK, THREADED (M37 rung B, notes/evm-calls.org §3). An
+    // `evm_flow::Pending` slot reads the contract's Signet configuration —
+    // the MPC key, the nonce, the two chain ids — so it needs that block's
+    // own start offset, and the ONE place that knows it is here: a block
+    // has exactly one `Signet` field, and its offset is the same width sum
+    // every other field's is. Threading it is what lets `request` /
+    // `complete` / `refund` take no `&SELF.signet` argument.
+    let signets: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Signet")).collect();
+    let pendings: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Pending")).collect();
+    if signets.len() > 1 {
+        let second = fields.iter().nth(signets[1]).expect("index from this list");
+        return Err(syn::Error::new_spanned(
+            second,
+            "#[derive(Ledger)] wants EXACTLY ONE `Signet` field per block: it \
+             is the contract's one Sig Network configuration (signer, MPC key, \
+             request nonce, caip2 id, chain id), and every `Pending` slot is \
+             built against its offset. Two of them would give one contract two \
+             MPC keys and two nonce sequences; delete this one.",
+        ));
+    }
+    if signets.is_empty() && !pendings.is_empty() {
+        let first = fields.iter().nth(pendings[0]).expect("index from this list");
+        return Err(syn::Error::new_spanned(
+            first,
+            "a `Pending` slot needs the block's `Signet` field, and this block \
+             has none. Add `pub signet: Signet,` to the ledger block — it is \
+             the signer address, the MPC response key, the request nonce and \
+             the two chain identifiers a request reads from context.",
+        ));
+    }
+    let signet_start = signets.first().map(|i| {
+        let before = &types[..*i];
+        quote!(0usize #( + <#before as #width>::WIDTH )*)
+    });
+
     let inits = fields.iter().enumerate().map(|(i, field)| {
         let ident = &field.ident;
         let ty = &field.ty;
         let before = &types[..i];
         let start = quote!(0usize #( + <#before as #width>::WIDTH )*);
-        quote!(#ident: <#ty>::at_block(__TOTAL, #start))
+        match (&signet_start, named_as(ty, "Pending")) {
+            (Some(signet_start), true) => {
+                quote!(#ident: <#ty>::at_block_with_signet(__TOTAL, #start, #signet_start))
+            }
+            _ => quote!(#ident: <#ty>::at_block(__TOTAL, #start)),
+        }
     });
 
     Ok(quote! {
@@ -125,6 +166,20 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             #( <#types as #width>::KINDS ),*
         ]);
     })
+}
+
+/// Is this type SPELLED `name` — is the last segment of its path that
+/// identifier? Spelling, not resolution: a proc macro sees tokens, and a
+/// `use` alias or a fully-qualified `signet_flow::Pending` both read as
+/// `Pending` here, which is the intended latitude.
+fn named_as(ty: &syn::Type, name: &str) -> bool {
+    let syn::Type::Path(path) = ty else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == name)
 }
 
 /// compactc's `maximum-ledger-segment-length` (langs.ss:851).

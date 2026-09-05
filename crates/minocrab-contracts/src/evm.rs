@@ -104,10 +104,82 @@
 //! // error[E0080]: `build_tx::<C, WORDS>` needs WORDS == <C::Args>::WORDS …
 //! let tx = build_tx::<Erc20Transfer, 3>(&mut c, token, (to, amount), nonce);
 //! ```
+//!
+//! A call type that does not say whether its return means success. There
+//! is NO DEFAULT for [`EvmCall::succeeded`], on purpose: "executed ⇒
+//! succeeded" is right for most calls and wrong for an ERC-20 `transfer`,
+//! and a default would make the dangerous case the one nobody types:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::{Address, EvmCall, U64};
+//! use minocrab_std::v3::Uint;
+//! use minocrab::Private;
+//!
+//! struct Balance;
+//! // ERROR: not all trait items implemented, missing: `succeeded`
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     type Success = Uint<64, Private>;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//! }
+//! ```
+//!
+//! A projection the return value cannot produce — `()` is [`FromReturn`]
+//! for a `Bool` return and for nothing else, so a numeric call cannot
+//! quietly throw its answer away:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_std::v3::{Check, Uint};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     // ERROR: the trait bound `(): FromReturn<Uint<64>>` is not satisfied
+//!     type Success = ();
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles, so each rejection
+//! above is the missing item and the mapping rather than a typo:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_std::v3::{Check, Uint};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     type Success = Uint<64, Private>;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! assert_eq!(Balance::signature(), "balanceOf(address)");
+//! assert_eq!(Balance::selector(), [0x70, 0xa0, 0x82, 0x31]);
+//! ```
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
-use minocrab_std::v3::{pow2_const, Bool as BoolWire, Bytes, Uint, Vis3, B32};
+use minocrab_std::v3::{is_true, pow2_const, Bool as BoolWire, Bytes, Check, Uint, Vis3, B32};
 use sha3::{Digest as _, Keccak256};
 
 use crate::erc20_vault::{ERC20_CALL_GAS, FIXED_MAX_FEE, FIXED_PRIORITY_FEE, LENDING_GAS, SWAP_GAS};
@@ -222,6 +294,42 @@ impl AbiType for Bytes32 {
 
     fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         *w
+    }
+}
+
+/// NO RETURN AT ALL — the shape a non-conforming ERC-20 actually has.
+///
+/// USDT, BNB and other pre-EIP-20-final tokens omit the `bool` their
+/// `transfer` is supposed to return. Declaring such a callee's calls with
+/// `Return = Unit` is what stops the MPC being asked to decode a `bool`
+/// from empty return data — a terminal extraction failure, which it
+/// resolves as its FAILURE kind, which would refund a transfer that MOVED
+/// the tokens (notes/evm-calls.org §3.1, the dangerous direction).
+///
+/// `Wire<V> = ()`: no slot, no word, no verdict to read. A call returning
+/// it writes [`always`] for its [`EvmCall::succeeded`], because for a call
+/// with nothing to say, executing IS succeeding and there is no flag to be
+/// fooled by.
+///
+/// A RETURN TYPE ONLY. It has no ABI word, and [`Self::word`] says so
+/// rather than encoding a zero: a `Unit` in an argument tuple is a mistake,
+/// and one that would otherwise put a silent zero word on the wire.
+/// (Recorded for dmd: a build-time panic where the hard rule prefers a
+/// compile error — making it one needs `Args` and `Return` to be separate
+/// traits, which re-types every call. notes/evm-calls.org §10.)
+pub struct Unit;
+
+impl AbiType for Unit {
+    const SOLIDITY: &'static str = "";
+    const RESPOND: &'static str = "";
+    type Wire<V: Vis3> = ();
+
+    fn word<V: Vis3>(_c: &mut Circuit3, _w: &Self::Wire<V>) -> B32<V> {
+        panic!(
+            "`Unit` has no ABI word: it is an EvmCall::Return for a callee that \
+             returns nothing, never an EvmCall::Args element. Drop it from the \
+             argument tuple."
+        )
     }
 }
 
@@ -418,6 +526,69 @@ pub trait EvmCall {
         let digest = Keccak256::digest(Self::signature().as_bytes());
         [digest[0], digest[1], digest[2], digest[3]]
     }
+
+    /// WHAT A SETTLE CIRCUIT IS HANDED once success has been asserted —
+    /// the identity by default ([`FromReturn`]), `()` for a call whose
+    /// whole return was the flag [`Self::succeeded`] just checked.
+    ///
+    /// Stable Rust has no associated-type defaults, so every call names it;
+    /// it is one line, and it is the line where "does the caller get to see
+    /// this?" is answered.
+    type Success: FromReturn<<Self::Return as AbiType>::Wire<Private>>;
+
+    /// DID IT WORK? — the predicate [`crate::evm_flow::Pending::complete`]
+    /// asserts and [`crate::evm_flow::Pending::refund`] negates, over the
+    /// attested return value (notes/evm-calls.org §3.2).
+    ///
+    /// NO DEFAULT, deliberately. "Executed ⇒ succeeded" is the answer for
+    /// most calls and the WRONG one for an ERC-20 `transfer`, which mines
+    /// happily and returns `false`; a default would make the dangerous case
+    /// the one nobody has to type. So every call type answers, and the two
+    /// answers already in the vocabulary are [`always`] (a number came back,
+    /// so it executed — the constant-true assert folds away) and
+    /// [`is_true`] (the returned flag IS the verdict).
+    ///
+    /// A call with a business notion of success writes it here — an
+    /// ERC-4626 `deposit` that minted zero shares executed perfectly and
+    /// achieved nothing:
+    ///
+    /// ```
+    /// # use minocrab::v3::Circuit3;
+    /// # use minocrab::Private;
+    /// # use minocrab_contracts::evm::{Address, AbiType, EvmCall, U128, U64};
+    /// # use minocrab_std::v3::{Check, Uint};
+    /// struct StrictDeposit;
+    /// impl EvmCall for StrictDeposit {
+    ///     const NAME: &'static str = "deposit";
+    ///     type Args = (U128, Address);
+    ///     type Return = U64;
+    ///     type Success = Uint<64, Private>;
+    ///     const KIND: u8 = 5;
+    ///     const GAS_LIMIT: u64 = 500_000;
+    ///
+    ///     fn succeeded(_c: &mut Circuit3, shares: &Uint<64, Private>) -> Check<Private> {
+    ///         shares.gt(0u64)
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// The vault's own calls deliberately keep "executed": their deployed
+    /// semantics are that, and tightening them is a protocol change rather
+    /// than a refactor.
+    fn succeeded(
+        c: &mut Circuit3,
+        output: &<Self::Return as AbiType>::Wire<Private>,
+    ) -> Check<Private>;
+
+    /// The projection, applied AFTER [`Self::succeeded`] has been asserted.
+    /// The default is [`Self::Success`]'s own [`FromReturn`]; override it
+    /// for a projection that needs the circuit (a decode, a range check).
+    fn map(
+        c: &mut Circuit3,
+        output: <Self::Return as AbiType>::Wire<Private>,
+    ) -> Self::Success {
+        Self::Success::from_return(c, output)
+    }
 }
 
 /// `transfer(address,uint256) -> bool` — selector `a9059cbb`.
@@ -433,8 +604,13 @@ impl EvmCall for Erc20Transfer {
     const NAME: &'static str = "transfer";
     type Args = (Address, U128);
     type Return = Bool;
+    type Success = ();
     const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
     const GAS_LIMIT: u64 = ERC20_CALL_GAS;
+
+    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+        is_true(*ok)
+    }
 }
 
 /// `approve(address,uint256) -> bool` — selector `095ea7b3`.
@@ -448,8 +624,13 @@ impl EvmCall for Erc20Approve {
     const NAME: &'static str = "approve";
     type Args = (Address, U256);
     type Return = Bool;
+    type Success = ();
     const KIND: u8 = RESPONSE_KIND_APPROVE as u8;
     const GAS_LIMIT: u64 = ERC20_CALL_GAS;
+
+    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+        is_true(*ok)
+    }
 }
 
 /// Uniswap V3's
@@ -469,8 +650,15 @@ impl EvmCall for ExactOutputSingle {
     const NAME: &'static str = "exactOutputSingle";
     type Args = (Address, Address, U24, Address, U128, U128, U160);
     type Return = U64;
+    type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_SWAP as u8;
     const GAS_LIMIT: u64 = SWAP_GAS;
+
+    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
+        // constant-true assert this makes is removed by `drop_true_asserts`.
+        always(c)
+    }
 
     fn signature() -> String {
         format!("{}(({}))", Self::NAME, <Self::Args as AbiTuple>::signature())
@@ -486,8 +674,15 @@ impl EvmCall for Erc4626Deposit {
     const NAME: &'static str = "deposit";
     type Args = (U128, Address);
     type Return = U64;
+    type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_SUPPLY as u8;
     const GAS_LIMIT: u64 = LENDING_GAS;
+
+    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
+        // constant-true assert this makes is removed by `drop_true_asserts`.
+        always(c)
+    }
 }
 
 /// ERC-4626 `redeem(uint256,address,address) -> uint256` — selector
@@ -499,8 +694,61 @@ impl EvmCall for Erc4626Redeem {
     const NAME: &'static str = "redeem";
     type Args = (U128, Address, Address);
     type Return = U64;
+    type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_REDEEM as u8;
     const GAS_LIMIT: u64 = LENDING_GAS;
+
+    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
+        // constant-true assert this makes is removed by `drop_true_asserts`.
+        always(c)
+    }
+}
+
+// ---- did it work? ------------------------------------------------------------
+
+/// A `Check` that is CONSTANTLY TRUE — the [`EvmCall::succeeded`] of a call
+/// whose return carries no failure signal of its own.
+///
+/// It lowers to `assert` on the IMMEDIATE 1, which
+/// `minocrab_ir::v3::passes::drop_true_asserts` removes in
+/// `Builder3::finish` (notes/ir-passes.org §11). So "executed is succeeded"
+/// costs exactly nothing in the artifact, and it costs it by FOLDING rather
+/// than by a branch in this API that an author could take wrongly (dmd,
+/// 2026-09-05: *"I'm inclined to just use the fold"*).
+pub fn always(c: &mut Circuit3) -> Check<Private> {
+    is_true(BoolWire::from_field_unchecked(c.constant(1u64).private()))
+}
+
+/// THE PROJECTION [`EvmCall::map`] applies to an attested return value —
+/// what a settle circuit is handed once success has been asserted.
+///
+/// The default is the IDENTITY (the blanket impl below), so a call that
+/// wants the number back writes `type Success = Uint<64, Private>` and
+/// nothing else. The one other impl is the interesting one: a `Bool` return
+/// maps to `()`, because a flag [`EvmCall::succeeded`] has already asserted
+/// carries no information a caller could act on, and handing it back is an
+/// invitation to re-read it as data (notes/evm-calls.org §3.2, the
+/// filter-map).
+///
+/// A domain projection — an amount into a newtype, a raw word into a
+/// decoded value — is an impl of this trait plus an override of
+/// [`EvmCall::map`].
+pub trait FromReturn<W> {
+    /// Build the projection from the attested wire.
+    fn from_return(c: &mut Circuit3, w: W) -> Self;
+}
+
+/// THE IDENTITY: hand back exactly what the MPC attested.
+impl<W> FromReturn<W> for W {
+    fn from_return(_c: &mut Circuit3, w: W) -> W {
+        w
+    }
+}
+
+/// A `bool` return that `succeeded` has already asserted says nothing more.
+impl<V: Vis3> FromReturn<BoolWire<V>> for () {
+    fn from_return(_c: &mut Circuit3, _w: BoolWire<V>) {}
 }
 
 // ---- the transaction ---------------------------------------------------------
@@ -606,8 +854,13 @@ mod tests {
             const NAME: &'static str = "noop";
             type Args = ();
             type Return = Bool;
+            type Success = ();
             const KIND: u8 = 0;
             const GAS_LIMIT: u64 = 21_000;
+
+            fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+                is_true(*ok)
+            }
         }
         assert_eq!(Noop::signature(), "noop()");
         assert_eq!(<() as AbiTuple>::WORDS, 0);

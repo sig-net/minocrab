@@ -60,7 +60,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-macros/src/circuit_arg.rs` | 530 | v3_derive (twin); every derived struct's slots in interface_snapshot | a field's slots declared out of order |
 | `minocrab-macros/src/circuit_borsh.rs` | 495 | v3_borsh_derive (twin) + the generated schema cross-check | a Borsh field encoded at the wrong width |
 | `minocrab-macros/src/interface.rs` | 620 | interface_macro (twin, byte-identical ZKIR); contract_matches_its_interface | a call handle passing limbs in an order the callee does not expect |
-| `minocrab-macros/src/ledger.rs` | 346 | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
+| `minocrab-macros/src/ledger.rs` | 401 | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
 | `minocrab-macros/src/ledger_repr.rs` | 152 | v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots | an environment's limbs split at the wrong boundaries on read-back |
 | `minocrab-macros/src/contract.rs` | 122 | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
 | `minocrab-sim/src/lib.rs` | 129 | **READING** | nothing beyond the Profile types (129 lines) |
@@ -68,7 +68,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-24828 lines in the seven crates; 10473 of them in files whose warrant is READING in whole or in part (the rows in bold).
+24883 lines in the seven crates; 10473 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget

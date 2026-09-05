@@ -70,7 +70,25 @@ impl<V: minocrab_std::v3::Vis3> From<UserCommitment<V>> for SigningPath<V> {
 impl SigningPath<Public> {
     /// `pad(32, "vault")` — the contract-authored path the non-deposit
     /// circuits sign from.
+    ///
+    /// The vault's spelling of [`Self::contract_path`], kept because the
+    /// deployed lineage names it (and because its pad IS the vault's).
     pub fn vault_path(c: &mut Circuit3) -> Self {
+        Self::contract_path(c)
+    }
+
+    /// THE CONTRACT'S OWN SIGNING PATH — the constant the MPC derives this
+    /// contract's EVM account from, and the value `evm_flow::Pending::request`
+    /// files without asking the caller for it.
+    ///
+    /// It is a CONSTANT of the contract, not an input: a request that could
+    /// name its own path could ask the MPC to sign from somebody else's
+    /// account. Today every lineage in this workspace derives from the same
+    /// pad (`erc20_vault::VAULT_PATH`, `pad(32, "vault")`), so this is that
+    /// pad under a name that no longer says "vault"; making the pad
+    /// per-contract is queued with the nonce and the gas policy
+    /// (notes/evm-calls.org §7).
+    pub fn contract_path(c: &mut Circuit3) -> Self {
         SigningPath(B32::pad(c, super::erc20_vault::VAULT_PATH))
     }
 }
