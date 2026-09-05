@@ -1,0 +1,322 @@
+#+title: M27 rung 4 — executable semantics: the intrinsics made concrete
+
+Rung 3 (notes/zkir-semantics.org §4.1, §5) left ZKIR v3's intrinsics
+UNINTERPRETED: =MinocrabZkir.Semantics= is =IrSource::preprocess=
+transcribed arm by arm over the real =Instr=, with the hashes and the
+curve operations as fields of a =Model= record over opaque =Carriers=.
+Everything Native and Bytes32 was already concrete, so rung 3 was a real
+interpreter for any circuit that used no hash and no curve — which is no
+circuit anyone deploys.
+
+Rung 4 fills the record in and proves the filled-in interpreter agrees
+with the Rust reference on real preimages. This note is what was ported,
+from where, what deliberately was NOT, what the corpus of records covers,
+how to run the gate, and the four things that disagreed before they were
+fixed.
+
+Design of record for the interface itself is zkir-semantics.org §6; this
+note records what was built against it and where the build departed from
+the sketch.
+
+* 1. The gate, in one block
+
+#+begin_src sh
+# the standing gate — plain `cargo test`, skips loudly without lake/corpus
+cargo test -p minocrab-zkir --test lean_run
+#   lean agrees with the rust oracle on 40 run records
+#   (29 accepting, 11 rejecting) and 73 known-answer vectors
+
+# the two halves, by hand
+cd crates/minocrab-zkir/lean && lake build
+./.lake/build/bin/zkir-run --kat differential/known-answers.txt
+./.lake/build/bin/zkir-run \
+  ../../../corpus/zkir/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault/zkir/startSwap.zkir \
+  differential/startSwap.record
+#+end_src
+
+CI's =lean= job runs =--kat= beside =zkir-roundtrip= / =zkir-wellformed=
+and then =cargo test -p minocrab-zkir --test lean_run= for the per-record
+loop, so CI and the local loop check the same thing.
+
+Regenerating the records is two steps, both from the repo root:
+
+#+begin_src sh
+MINOCRAB_DUMP_PREIMAGES=$PWD/target/lean-differential/preimages \
+  cargo test -p minocrab-contracts \
+    --test erc20_vault_differential \
+    --test signet_contract_differential \
+    --test manager_differential
+MINOCRAB_PREIMAGES=$PWD/target/lean-differential/preimages \
+  cargo test -p minocrab-contracts --test lean_differential -- --ignored
+#+end_src
+
+* 2. The interface, as built
+
+§6 said: a Rust regenerator, an =--ignored= test in the house snapshot
+pattern, writing one PLAIN-TEXT run record per (side, circuit). Built as
+=crates/minocrab-contracts/tests/lean_differential.rs=. Departures from
+the sketch, each deliberate:
+
+- ARTIFACTS ARE REFERENCED, NOT COPIED. §6 left open whether to commit a
+  =.zkir= per record. Every circuit with a dumped preimage has a CORPUS
+  twin — compactc's own artifact, already tracked under =corpus/zkir/= —
+  and the differential suites already assert PI-equality of our artifact
+  and that twin on exactly these preimages
+  (=minocrab_sim::v3::assert_call_compatible=, which also checks
+  =pi_skips= and cross-checks both sides against upstream
+  =IrSource::check=). So a record names a repo-relative corpus path and
+  the committed bytes are the record alone: 360K for forty of them, no
+  duplicated artifacts. It also makes the gate a differential between
+  COMPACTC'S artifact and our Lean, rather than between two things we
+  wrote — strictly the better statement.
+- CONSEQUENCE, stated so it is not discovered later: the gate needs the
+  corpus, and skips loudly without it, exactly like =lean_roundtrip.rs=
+  and =corpus_roundtrip.rs=.
+- LEXEME: a field element is =0x= + little-endian hex bytes, minimal
+  length, at least one byte — the artifact's own immediate spelling
+  (=zkir-field-rep->string=, print-zkir-v3.ss:46-61; =immString= in
+  Print.lean). A byte string is =#= + hex in stream order. Both sides
+  have one implementation each and the KAT pins that they agree.
+- WRAPPING: keys repeat, eight values a line; a bare key is an empty
+  stream. A =pis= stream runs to hundreds of elements and a single line
+  of 20K is not diffable.
+- The expected block is everything from the =result= line on, and it is
+  BYTE-EQUAL to =zkir-run='s entire stdout. No normalisation on either
+  side, so nothing can be hidden in the comparison.
+- A SECOND, lake-free test (=the_run_records_agree_with_the_rust_oracle=)
+  re-derives every record's expected block from the artifact and preimage
+  the record names. A hand-edited record, or a drift in =simulate=, fails
+  plain =cargo test= without Lean in the picture at all.
+
+* 3. The record corpus: what is in it and why
+
+Forty records; 28 honest, 12 tampered; 29 accepting, 11 rejecting.
+
+| side | records | why these |
+|---|---|---|
+| erc20-vault | 17 honest | every circuit of the M28 seventeen-circuit vault — the milestone's own target, and the only side where the leakage inventory's claims live |
+| Signet singleton | 3 honest (=signBidirectional=, =respond=, =respondBidirectional=) | the emit-only shape: =add= / =mul= / =div_mod_power_of_two= / =impact= and nothing else, so a failure here is the WALK, not an intrinsic |
+| AA-manager | 8 honest (=depositShielded=, and seven preimages of =execute=) | =depositShielded= is persistent_hash + transient_hash; =execute= is the only circuit in the workspace carrying keccak256 AND persistent_hash AND transient_hash AND a full secp256k1 ECDSA verification, and its seven preimages take seven different branches through it |
+
+Intrinsic coverage, counted from the artifacts the records name:
+
+| intrinsic | exercised by |
+|---|---|
+| =transient_hash= (Poseidon) | every vault circuit (56 sites across the seventeen), =manager_depositShielded=, =manager_execute_*= |
+| =persistent_hash= (SHA-256 over the FAB bytes) | 36 sites in the vault; both manager sides |
+| =keccak256= | =manager_execute_*= |
+| secp256k1 =encode= / =decode= | =initialise= and the nine =complete*=/=refund*= vault circuits (a =Point<Secp256k1>= argument), =manager_execute_*= |
+| secp256k1 =ec_mul=, =ec_mul_generator=, point =add=, =into_coordinates=, =into_bytes32=, =from_bytes32=, scalar =mul=/=inv= | the nine =complete*=/=refund*= vault circuits and =manager_execute_*= — the ECDSA block |
+| the FAB alignment decode | every =persistent_hash= / =keccak256= site above, plus its own KAT vectors (§5) |
+| Jubjub, secp256r1, curve25519 | NOTHING. See §4. |
+
+The twelve tampered records perturb one element of one stream by +1:
+=initialise= (transcript, inputs), =startWithdraw= (transcript, witness),
+=completeWithdraw= (transcript, witness), =startSwap= (transcript),
+=respond= (transcript), =signBidirectional= (inputs),
+=manager_depositShielded= (transcript), =manager_execute_reg_native=
+(transcript), =manager_execute_withdraw_shielded= (witness). An =inputs=
+tamper additionally breaks the communications commitment, so the
+epilogue's =transient_commit= equality is on the exercised path too.
+
+ELEVEN of the twelve reject. The twelfth is a FACT, not a stale table:
+=completeWithdraw.tamper-witness-0= is still ACCEPTED, because transcript
+reads and their guards are unconstrained in the v3 statement
+(zkir-semantics.org §4.3; upstream's own spec PR #16 §6.6(d) and O4 say
+the same), and =completeWithdraw='s success branch takes no secret
+witness — the unlinkability draft's Gap 2, §7 V5. The record carries the
+accepting verdict, so the Lean has to reproduce the acceptance too; an
+accepting tamper pins that fact as firmly as a rejecting one pins the
+reject. The regenerator asserts only that at least eight tampers reject,
+so the reject path cannot silently empty out.
+
+* 4. Concrete vs uninterpreted, with citations
+
+** Concrete (=MinocrabZkir.Intrinsics=)
+
+| primitive | file | ported from |
+|---|---|---|
+| =transient_hash=, =transient_commit= | Poseidon.lean | transient-crypto/src/hash.rs:78-90 (rev 04c9c5d9) → midnight-circuits 7.2.4 =PoseidonChip=: mod.rs:135-141 (=HashCPU::hash=), poseidon_cpu.rs:127-183 (the sponge), :63-101 and :276-291 (the rounds and the SKIP-FREE permutation), constants/mod.rs:18-28 (WIDTH 3, RATE 2, 8 full, 60 partial), constants/blstrs.rs:28-1445 (204 round constants + 3x3 MDS) |
+| =persistent_hash= | Sha256.lean | SHA-256 as such; ir_vm.rs:501 is =Sha256::digest= of the FAB bytes |
+| =keccak256= | Keccak.lean | Keccak-256 in the ORIGINAL 0x01 padding (=sha3::Keccak256=, ir_vm.rs:502) — NOT FIPS 202's SHA3-256, which differs only in that byte |
+| the FAB byte decode | Semantics.lean =fabAtom= / =fabBytes= | transient-crypto/src/fab.rs:337-345, 427-433, 513-527 and repr.rs:133-163 (off-circuit), ir_vm.rs:125-180 (in-circuit) |
+| all secp256k1 | Secp256k1.lean | zkir-v3 =ir_instructions/{add,mul,neg,inv,eq,ec_mul,into_coordinates,from_coordinates,into_bytes32,from_bytes32,encode}.rs=; midnight-curves 0.3.1 k256/curve.rs:31-115; the emulated-field encoding from midnight-circuits field_chip.rs:130-165 + weierstrass_chip.rs:235-266 with params.rs:181-189/212-221 |
+
+Two details of the Poseidon port worth having written down, because both
+are load-bearing and neither is obvious:
+
+- the permutation ported is =permutation_cpu_raw= (upstream's own test
+  module), not the shipped =permutation_cpu=. They are equal — upstream's
+  =cpu_test= asserts it — and the difference is the partial-round SKIP
+  optimisation, an arithmetisation trick with no semantic content. The
+  KAT vectors are computed through the SHIPPED path, so this is checked,
+  not assumed.
+- =HashCPU::hash= calls =init(Some(len))=, so the register starts at
+  =[0, 0, len]= and the squeeze takes the fixed-length branch (no
+  padding element). An EMPTY input therefore yields no chunk, hence no
+  permutation, hence exactly =0=. A vector pins it.
+
+And one of the secp256k1 port: a field element's public-input encoding
+is of =element − 1= (=as_public_input= shifts for a unique-zero
+representation), split base =2^64= into 4 limbs and packed 3 + 1, i.e.
+=[low 192 bits, top 64 bits]= of the shifted value. The identity point
+encodes as the shifted =(0, 0)= plus a flag byte of 1, and =decode=
+tests that flag BEFORE the length, so a trailing 1 yields the identity
+whatever precedes it. All three facts have vectors.
+
+** Uninterpreted, and why
+
+Jubjub (=hash_to_curve=, =jubjub_scalar_from_native=, the point/scalar
+arithmetic and encodings), secp256r1, and curve25519 stay uninterpreted
+at rung 4. §5's rule is explicit — port them ONLY if a record exercises
+them — and none does: the vault, the Signet singleton and the AA-manager
+between them contain no Jubjub, r1 or 25519 value. The one workspace
+circuit that touches Jubjub (=opaque::op_jubjub=, an =encode= of a
+Jubjub value) has no dumped preimage, because no differential suite
+proves it against a compactc twin, so there is nothing to validate a
+port against. Writing 300 lines of twisted-Edwards arithmetic that no
+gate exercises is exactly the unvalidated code the rule exists to
+prevent.
+
+THE SILENCE IS ENFORCED. Two =Model= fields — =hashToCurve= and
+=jubjubScalarFromNative= — return a carrier type, not an =Except=, so
+they cannot signal failure; a program using them would run to a WRONG
+answer rather than an error. =Concrete.unsupported= closes that before
+the walk starts: a value of an uninterpreted type can only enter a
+program through a declared input or output type, a =public_input= /
+=private_input= / =from_bytes32= type annotation, or one of those two
+instructions, and =unsupported= refuses all of them by name.
+=zkir-run= exits 3 with the objection printed. The placeholder carriers
+are =Unit= for the same reason: a slip cannot masquerade as a real
+value for long.
+
+Cost, since the brief asked for the reasoning: secp256k1 WAS ported
+despite being the expensive one, because the vault's own =complete*= and
+=refund*= circuits need it — nine of the seventeen — and =initialise=
+needs its =decode= for a =Point<Secp256k1>= argument. Restricting the
+record corpus to the eight k256-free vault circuits would have been the
+cheap option and would have left the vault prong's own circuits outside
+the executable semantics, which is the wrong trade at this rung.
+
+* 5. Known answers: validating each primitive BEFORE the interpreter
+
+73 vectors in =lean/differential/known-answers.txt=, printed by the Rust
+reference and recomputed by =zkir-run --kat=. This exists so that a
+whole-circuit disagreement is never the first thing that tells you a
+primitive is wrong: a drifted primitive names itself, with its arguments,
+before any circuit is walked.
+
+| op | vectors | what they pin |
+|---|---|---|
+| =poseidon= | 9 | lengths 0, 1, 2, 3, 4, 5, 8, 17 (either side of the rate, and several chunks), plus a 31-byte element |
+| =poseidon_commit= | 1 | the opening LEADS the value (hash.rs:86-90) |
+| =sha256=, =keccak256= | 12 each | lengths 0, 1, 3, 55, 56, 63, 64, 65, 135, 136, 137, 200 — both padding rules at and either side of both block sizes |
+| =fab_bytes= | 8 | the corpus's own atom shapes (stray + chunks, chunks only, a lone stray, empty) AND the three rejecting shapes: a full limb at or above 2^248, a stray limb above its slot, too few limbs |
+| =fab_field= | 4 | the 32-byte width, including a full-width element |
+| =k256_gen_mul=, =k256_gen_mul_x= | 6 each | scalar multiplication and the =into_coordinates= + =into_bytes32= path the ECDSA block uses |
+| =k256_add= | 4 | including a doubling (3+3), an identity operand (5+0), and identity+identity |
+| =k256_scalar_from_bytes32=, =k256_base_from_bytes32= | 4 each | the reduction of a 32-byte value, including one above the group order |
+| =k256_point_decode= | 3 | the identity flag, a real point, and an off-curve pair (rejects) |
+
+Every one of them goes through the SAME functions =preprocess= calls —
+=transient_hash=, =Sha256::digest=, =Keccak256::digest=,
+=Alignment::parse_field_repr= + =binary_repr=, and zkir-v3's own
+=*_offcircuit= helpers — so what is pinned is the reference's behaviour,
+not a second opinion about it.
+
+* 6. What disagreed, and why
+
+Four things. Two were bugs in the Lean, one was a gap the reading closed,
+one is a property of the circuit that the records now carry.
+
+** D1 — secp256k1 scalar multiplication computed the BIT-REVERSED scalar
+
+=Secp256k1.mulAux= indexed the scalar's bits by the recursion depth
+(=bit k= at step =k + 1=) instead of by =255 − k=, so =s · P= came out as
+=reverse_bits(s) · P=. Caught by =k256_gen_mul= on the FIRST run of the
+KAT — the very first vector, =s = 1=, did not give the generator.
+
+Worth recording because of how it reads: every structural property one
+would check by eye holds. The identity is right at =s = 0=, the number of
+doublings is right, termination is obvious, the loop shape is the
+textbook one. Only a known answer distinguishes it. This is the case
+for the KAT existing at all.
+
+** D2 — the FAB limb decode TRUNCATED where both readings reject
+
+=Semantics.fabAtom= built a =bytes n= atom's limbs with =natToLE=, which
+silently truncates a field element carrying a byte above its slot. Both
+of upstream's readings reject instead: off-circuit,
+=bytes_from_field_repr= (transient-crypto repr.rs:133-163, reached from
+=Alignment::parse_field_repr=) returns =None= when any byte at or above
+index =k= is non-zero, which =preprocess= turns into "Inputs did not
+match alignment" (ir_vm.rs:493-496); in-circuit,
+=assigned_to_le_bytes(.., Some(k))= RANGE-CHECKS the value to =k= bytes
+(ir_vm.rs:155-160). So the Lean accepted preimages the reference rejects.
+
+Found by READING the off-circuit path, not by running the differential:
+no corpus record hits it, because every honest limb is canonical and a
++1 tamper does not lift one over its slot. Fixed (=limbBytes=), and now
+gated by the three rejecting =fab_bytes= vectors, which the pre-fix Lean
+would fail.
+
+The rung-3 note recorded =fabAtom= as transcribed from the IN-CIRCUIT
+decoder while =run= models =preprocess=. The two agree on the byte
+layout — stray bytes from the FIRST operand, full limbs in REVERSED
+operand order, stray appended LAST — and now agree on rejection as well.
+
+** D3 — CLOSED: zkir-semantics.org §10 I3, the =field= atom's width
+
+§10 I3 flagged the =field= atom's 32-byte width as INFERRED from
+=assigned_to_le_bytes(.., None)= rather than transcribed from the
+off-circuit =parse_field_repr=. Reading it settles the question in the
+Lean's favour: =AlignmentAtom::Field='s parse takes =res.as_le_bytes()=
+and =normalize=s it (stripping trailing zeros), and =binary_repr= sends
+it back through =value_atom_as_field= (=from_uniform_bytes= over a
+64-byte buffer, which reduces to the same element for any canonical
+=Fr=) and then =Fr::binary_repr=, which writes =as_le_bytes= —
+=FR_BYTES= = 32 of them (transient-crypto repr.rs:49-55, curve.rs:194).
+So a =field= atom is exactly the operand's 32 little-endian bytes. Four
+=fab_field= vectors pin it. I3 can be struck.
+
+** D4 — an accepting tamper, which is the circuit's property, not a defect
+
+See §3: =completeWithdraw='s guarded-off success-branch witness can be
+perturbed and the run still accepts. Not a disagreement between the Lean
+and the Rust — they agree, and the record says =accept= — but it is the
+first place in this repo where the unconstrained-transcript-read fact of
+§4.3 shows up as an executable observation rather than a statement about
+the constraint system. The unlinkability draft's Gap 2 (§7 V5) is the
+same fact seen from the other side.
+
+** Housekeeping found on the way
+
+Three count assertions were stale on =main= and had to move in rung 4's
+first commit: the AA-manager port and the signet corpus refresh took the
+corpus to 814 files / 92 v3 / 16,666 instructions, while
+=corpus_roundtrip.rs= still said (806, 84), =lean_roundtrip.rs= "84 ok",
+and =lean_dataflow.rs= 16,815. The COMPARISONS were all green — 92 files
+round-tripped byte-for-byte and the Lean and Rust dataflow dumps were
+equal line for line — so nothing had regressed; only the numbers had.
+Recorded because the house rule is that these move in the same commit as
+the corpus, and this time they did not.
+
+* 7. What rung 4 does NOT claim
+
+- It is a DIFFERENTIAL, not a proof. What is established is that the Lean
+  interpreter and the Rust reference (itself cross-checked against
+  upstream =IrSource::check=) agree on 40 preimages of 22 distinct
+  circuits, and that four ported primitives reproduce 73 reference
+  answers. No theorem about =run= was proved here; rung 3's =Sat= and
+  =completeness= are untouched.
+- =SatCommitment= still needs =encode ∘ decode = id= on the raw inputs, a
+  =Model= property. It is now CHECKABLE (the model is concrete) but it is
+  not proved; the epilogue's commitment equality is exercised by every
+  accepting record and by the =inputs= tampers, which is evidence, not a
+  lemma.
+- The eight uninterpreted foreign types are a real boundary, not a
+  formality: any future circuit using Jubjub, secp256r1 or curve25519 is
+  refused by =Concrete.unsupported= rather than approximated. The next
+  time one appears with a dumped preimage, that is when it gets ported.
+- Nothing here touches the pass theorems (=MinocrabProofs=), which are
+  about IR-to-IR transformations and are unaffected by the model.
