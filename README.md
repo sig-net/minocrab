@@ -312,7 +312,7 @@ Limit: the circuit binds neither the entry point nor the argument types unless i
 
 A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **settle** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the MPC attests that the transaction never executed. `Pending<Env, Resp>` ([signet_flow.rs](crates/minocrab-contracts/src/signet_flow.rs)) makes the two halves one typed value.
 
-A minimal, illustrative shape — a treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account, and records who may collect the result:
+A minimal, illustrative shape — a treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account. Anyone may complete the request once the MPC has attested the result (there is nothing to protect: the attestation is the MPC's signature); only the original sender may take the refund when the MPC attests that the transfer never ran, because the refund is theirs:
 
 ```rust
 /// What the MPC attests back: the ERC-20 call's `bool` return. The kind
@@ -348,23 +348,24 @@ pub fn send(c: &mut Circuit3, evm_nonce: Uint<64>, token: EvmAddress, to: EvmAdd
     Discloses::of(())
 }
 
-/// Transaction 2: the MPC attested the return value; only the sender may settle.
+/// Transaction 2: the MPC attested the return value. Anyone may complete —
+/// the ticket carries the MPC's signature, and that is the whole gate.
 #[circuit]
-pub fn settle(c: &mut Circuit3, ticket: Settle<TransferEnv, TransferReceipt>) -> Discloses<(Settled, Transferred)> {
+pub fn complete(c: &mut Circuit3, ticket: Settle<TransferEnv, TransferReceipt>) -> Discloses<(Settled, Transferred)> {
     let outcome = TREASURY.transfers.settle(c, &TREASURY.signet, ticket); // kind, signature, record + env, removal
-    let sk = witness_sk(c);
-    outcome.env.sender.open(c, PAD, &sk, outcome.request_id, "not the sender");
     let _ok = outcome.output.ok.disclose_as::<Transferred>(c);
     Discloses::of(())
 }
 
-/// Transaction 2': the MPC attested "never executed"; the amount is free again.
+/// Transaction 2': the MPC attested "never executed". Only the original
+/// sender may refund: a fresh witness must open the commitment stored on request.
 #[circuit]
-pub fn abandon(c: &mut Circuit3, ticket: Settle<TransferEnv, Failure>) -> Discloses<(Settled,)> {
+pub fn refund(c: &mut Circuit3, ticket: Settle<TransferEnv, Failure>) -> Discloses<(Settled, RefundRecipient)> {
     let outcome = TREASURY.transfers.settle_failed(c, &TREASURY.signet, ticket);
     let sk = witness_sk(c);
     outcome.env.sender.open(c, PAD, &sk, outcome.request_id, "not the sender");
-    // ... re-mint outcome.env.amount to own_public_key()
+    let me = own_public_key(c).disclose_as::<RefundRecipient>(c);
+    // ... re-mint outcome.env.amount to `me`
     Discloses::of(())
 }
 ```
@@ -372,7 +373,7 @@ pub fn abandon(c: &mut Circuit3, ticket: Settle<TransferEnv, Failure>) -> Disclo
 What the type does for the author:
 
 - **Mis-pairing does not compile.** A `Settle<TransferEnv, TransferReceipt>` ticket settles `transfers` and no other slot; `Settle<TransferEnv, Failure>` is the only thing `settle_failed` accepts. The kind check, the version check, the signature check and the removal are inside `settle`, so none can be forgotten.
-- **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment bound to the request id; `open` on the settle side takes a fresh witness.
+- **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment bound to the request id; `open` on the refund side takes a fresh witness. Completion needs no secret, so it asks for none — a circuit that consumed a witness it never checked would be the deployed vault's Gap 2 ([notes/zkir-semantics.org §7.1](notes/zkir-semantics.org)).
 - **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte is the response type's; the record format version is the API's.
 
 The full flows — burning a shielded coin on request, minting the attested amount on settle, refunding on failure — are the vault's supply, redeem, swap, deposit and withdraw circuits in [erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs); [signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, the settles at k16 within 70 rows of the port ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
