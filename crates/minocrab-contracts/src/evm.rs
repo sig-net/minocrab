@@ -104,6 +104,44 @@
 //! // error[E0080]: `build_tx::<C, WORDS>` needs WORDS == <C::Args>::WORDS …
 //! let tx = build_tx::<Erc20Transfer, 3>(&mut c, token, (to, amount), nonce);
 //! ```
+//!
+//! An [`OutcomeRule`] that does not fit the return type. `ByFlag` reads the
+//! returned `bool` AS the answer, so it exists for [`Bool`] and for nothing
+//! else — a call returning a number that claims it is a missing impl, not a
+//! settle circuit that silently treats "executed" as "succeeded":
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::{Always, ByFlag, EvmCall, U128, U64, Address};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     // ERROR: the trait bound `ByFlag: OutcomeRule<U64>` is not satisfied
+//!     type Outcome = ByFlag;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles, so the rejection
+//! above is the rule and not a typo:
+//!
+//! ```
+//! use minocrab_contracts::evm::{Always, EvmCall, U64, Address};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     type Outcome = Always;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//! }
+//! assert_eq!(Balance::signature(), "balanceOf(address)");
+//! ```
 
 use core::marker::PhantomData;
 

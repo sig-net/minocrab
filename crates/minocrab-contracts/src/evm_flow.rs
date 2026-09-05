@@ -65,6 +65,136 @@
 //! `tests/treasury.rs::the_refund_pays_one_extra_digest`.
 //! (notes/evm-calls.org §3 predicted "cost: nil" on the belief that both
 //! payloads are one limb; they are not — §10 records the correction.)
+//!
+//! # What does not compile
+//!
+//! A ticket for one call handed to another call's slot — the tickets carry
+//! the call as a type parameter, so the two do not unify:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab_contracts::evm::{Erc20Approve, Erc20Transfer};
+//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn settle(c: &mut Circuit3, ticket: Succeeded<Erc20Approve>) {
+//!     // ERROR: expected `Succeeded<Erc20Transfer>`, found `Succeeded<Erc20Approve>`
+//!     BLOCK.transfers.complete(c, ticket);
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn settle(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) {
+//!     BLOCK.transfers.complete(c, ticket);
+//! }
+//! ```
+//!
+//! A `WORDS` that is not the call's argument-word count — `error[E0080]`
+//! from the slot's constructor, which `#[derive(Ledger)]` calls:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     // error[E0080]: `Pending<Call, Env, WORDS>` needs WORDS == …
+//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 3>,
+//! }
+//! const BLOCK: Block = Block::new();
+//! const _: usize = BLOCK.transfers.record_path().depth() as usize;
+//! ```
+//!
+//! A `Pending` slot in a block with no `Signet` field — the derive's own
+//! error, because there would be no configuration to read the MPC key,
+//! the nonce and the chain from:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_std::v3::{Ledger, LedgerCounter, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     initialized: LedgerCounter,
+//!     // ERROR: a `Pending` slot needs the block's `Signet` field …
+//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//! }
+//! ```
+//!
+//! TWO `Signet` fields — one contract, one MPC key, one nonce sequence:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     // ERROR: #[derive(Ledger)] wants EXACTLY ONE `Signet` field per block
+//!     other: Signet,
+//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//! }
+//! ```
+//!
+//! A callee where a recipient belongs — `Contract<C>` and `Bytes<20>` are
+//! the same twenty bytes and do not unify:
+//!
+//! ```compile_fail
+//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm_flow::Contract;
+//! use minocrab_std::v3::Bytes;
+//!
+//! fn f(c: &mut Circuit3, callee: Contract<Erc20Transfer>) -> Bytes<20, Private> {
+//!     // ERROR: expected `Bytes<20>`, found `Contract<Erc20Transfer>`
+//!     callee
+//! }
+//! ```
 
 use core::marker::PhantomData;
 

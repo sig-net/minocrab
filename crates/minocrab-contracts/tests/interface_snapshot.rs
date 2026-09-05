@@ -1359,6 +1359,57 @@ wit Scalar<BLS12-381>
 ",
     ),
     (
+        "treasury::send",
+        "\
+in  evmNonce: Scalar<BLS12-381>
+in  keyVersion: Scalar<BLS12-381>
+in  token: Scalar<BLS12-381>
+in  to: Scalar<BLS12-381>
+in  amount: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "treasury::complete",
+        "\
+in  ticket_requestId_hi: Scalar<BLS12-381>
+in  ticket_requestId_lo: Scalar<BLS12-381>
+in  ticket_respond_bigR_x_hi: Scalar<BLS12-381>
+in  ticket_respond_bigR_x_lo: Scalar<BLS12-381>
+in  ticket_respond_bigR_y_hi: Scalar<BLS12-381>
+in  ticket_respond_bigR_y_lo: Scalar<BLS12-381>
+in  ticket_respond_s_hi: Scalar<BLS12-381>
+in  ticket_respond_s_lo: Scalar<BLS12-381>
+in  ticket_respond_recoveryId: Scalar<BLS12-381>
+in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output: Scalar<BLS12-381>
+",
+    ),
+    (
+        "treasury::refund",
+        "\
+in  ticket_requestId_hi: Scalar<BLS12-381>
+in  ticket_requestId_lo: Scalar<BLS12-381>
+in  ticket_respond_bigR_x_hi: Scalar<BLS12-381>
+in  ticket_respond_bigR_x_lo: Scalar<BLS12-381>
+in  ticket_respond_bigR_y_hi: Scalar<BLS12-381>
+in  ticket_respond_bigR_y_lo: Scalar<BLS12-381>
+in  ticket_respond_s_hi: Scalar<BLS12-381>
+in  ticket_respond_s_lo: Scalar<BLS12-381>
+in  ticket_respond_recoveryId: Scalar<BLS12-381>
+in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
         "bounded::b10",
         "\
 in  x: Scalar<BLS12-381>

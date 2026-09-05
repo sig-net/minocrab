@@ -30,6 +30,7 @@ pub mod signet;
 pub mod signet_flow;
 pub mod signet_contract;
 pub mod test_caller;
+pub mod treasury;
 pub mod xcall;
 pub mod xcall_with_payment;
 pub mod xcontract_events;
