@@ -37,7 +37,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
 use midnight_curves::k256;
+use midnight_base_crypto::repr::BinaryHashRepr;
+use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::hash::{transient_commit, transient_hash};
 use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
@@ -423,6 +426,39 @@ fn known_answers() -> String {
         ));
     }
 
+    // -- the FAB alignment decode, `preprocess`'s own path into the two
+    //    byte hashes: `Alignment::parse_field_repr` then
+    //    `ValueReprAlignedValue::binary_repr` (ir_vm.rs:491-499). The
+    //    non-canonical vectors are the point: a limb carrying a byte above
+    //    its slot must REJECT, not truncate.
+    for (length, limbs) in fab_cases() {
+        let align = Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes { length })]);
+        let got = align.parse_field_repr(&limbs).map(|v| {
+            let mut repr = Vec::new();
+            ValueReprAlignedValue(v).binary_repr(&mut repr);
+            repr
+        });
+        out.push_str(&format!(
+            "fab_bytes {length} {} => {}\n",
+            limbs.iter().map(fr_lexeme).collect::<Vec<_>>().join(" "),
+            match got {
+                Some(bytes) => bytes_lexeme(&bytes),
+                None => "reject".to_string(),
+            }
+        ));
+    }
+    for x in [Fr::from(0u64), Fr::from(1u64), big, Fr::from(0u64) - Fr::from(1u64)] {
+        let align = Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Field)]);
+        let v = align.parse_field_repr(&[x]).expect("a field atom always parses");
+        let mut repr = Vec::new();
+        ValueReprAlignedValue(v).binary_repr(&mut repr);
+        out.push_str(&format!(
+            "fab_field {} => {}\n",
+            fr_lexeme(&x),
+            bytes_lexeme(&repr)
+        ));
+    }
+
     // -- secp256k1. Every vector goes through zkir-v3's own off-circuit
     //    helpers, so what is pinned is exactly what `preprocess` calls.
     let scalars: Vec<k256::Fq> = [1u64, 2, 3, 7, 1_000_003, u64::MAX]
@@ -530,6 +566,35 @@ fn known_answers() -> String {
         ));
     }
     out
+}
+
+/// `(bytes-atom length, limbs)` for the FAB vectors: the canonical shapes
+/// the corpus actually uses (a stray plus chunks, chunks only, a single
+/// stray), then the three ways an input can fail to match the alignment —
+/// a full limb wider than 31 bytes, a stray limb wider than its slot, and
+/// too few limbs.
+fn fab_cases() -> Vec<(u32, Vec<Fr>)> {
+    let limb = |n: u64| Fr::from(n);
+    let wide31 = Fr::from_le_bytes(&[0xab; 31]).expect("31 bytes fit");
+    let over248 = Fr::from(0u64) - Fr::from(1u64); // p - 1: 32 bytes, >= 2^248
+    vec![
+        // hashing::keccak(64)'s shape: stray 2, chunks 2.
+        (64, vec![limb(0x0102), wide31, limb(7)]),
+        // A Bytes<32>: stray 1, chunks 1.
+        (32, vec![limb(0xfe), wide31]),
+        // Exactly one full limb.
+        (31, vec![wide31]),
+        // Two full limbs, no stray — note the REVERSED limb order.
+        (62, vec![wide31, limb(9)]),
+        // Empty.
+        (0, vec![]),
+        // A full limb at or above 2^248: no room in its 31-byte slot.
+        (31, vec![over248]),
+        // A stray limb above its 1-byte slot.
+        (32, vec![limb(0x0100), wide31]),
+        // Too few limbs for the declared length.
+        (64, vec![limb(1), limb(2)]),
+    ]
 }
 
 fn enc_limbs(v: &IrValue) -> Vec<String> {

@@ -21,6 +21,7 @@ include = [
     "lean/lake-manifest.json",
     "lean/MinocrabZkir.lean",
     "lean/MinocrabZkir/*.lean",
+    "lean/MinocrabZkir/Intrinsics/*.lean",
     "lean/Roundtrip.lean",
     "lean/DataflowDump.lean",
     "lean/Wellformed.lean",
