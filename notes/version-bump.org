@@ -727,3 +727,328 @@ are compactc artifacts committed BY HAND, not produced by
 differentials keep comparing against 0.33.0-rc.2 output until someone
 recompiles them. That is a decision for step 5, and it is listed in the
 decision list below.
+
+** The gates, in taxonomy order
+=nix develop -c ./bump.sh gates=, on the recompiled corpus. The
+workspace stage was re-run with =--no-fail-fast= afterwards, because
+=cargo test --workspace= stops at the first failing TARGET and a
+classification made from a truncated list is not a classification.
+
+| # | stage | taxonomy | result |
+|---+-------+----------+--------|
+| 1 | dependency resolution | 1 | PASS (0s) — no pin moved but compactc |
+| 2 | workspace builds | — | PASS (104s) |
+| 3 | corpus compile report | 2 | PASS (0s) — 316 ok, was 315 |
+| 4 | ZKIR round-trip | 3 | FAIL, then PASS — see below |
+| 5 | ABI + Impact baseline | 4 | FAIL, then PASS — see below |
+| 6 | workspace | 5/6/7/8/10/11 | FAIL — three tests, two classes |
+| 7 | row snapshot (release) | 9 | PASS (173s) |
+| 8 | TypeScript vectors (node) | 10 | PASS (2s) |
+
+*** Stage 4 — taxonomy 3, and it is the corpus's size, not the IR
+: round-tripped 92 v3 corpus .zkir files (739 v2 files skipped)
+: corpus size moved: 831 files (92 v3) … left: (831, 92) right: (814, 92)
+ZERO round-trip failures. What fired is the ASSERTED COUNT, which exists
+so a partial checkout cannot be silently green — and it fired because
+the corpus grew by the 17 artifacts of the newly-compiling
+=compact/examples/types=. The v3 count is unchanged at 92. Moved in the
+corpus commit with the source named, per the assertion's own message.
+The same for =lean_roundtrip='s "722 v2 skipped" -> 739 (the Lean
+round-trip agrees with the Rust one on the new corpus) and, at stage 5,
+=entry_point='s 315 -> 316. =lean_dataflow='s 16666 did NOT move, and
+that is a result: it walks the v3 artifacts, and no v3 artifact moved.
+
+*** Stage 5 — taxonomy 4, and again a count
+=ep_hash_matches_upstream_for_every_corpus_circuit=: 316 artifacts where
+315 was asserted. The hash RULE is untouched — every circuit name in the
+corpus, including the new source's, still hashes to upstream's entry
+point — and =differential_baseline= (the noop/base Impact op stream) is
+green. Pin moved in the corpus commit.
+
+*** Stage 6 — three failures, two classes, and everything else green
+Green, and worth listing because silence is the half that is easy to get
+wrong: 19 differential targets (taxonomy 5) of which 18 fully pass and
+the 19th fails only in a parse, =interface_snapshot= (8),
+=serialization_conformance= and the 52 node vectors (10), the
+=erc20_vault_spec= / =erc20_vault_adversarial= harness (11), and 101 of
+105 test targets overall.
+
+**** 6a. =opaque_differential::the_vaults_own_initialize_now_flattens= — taxonomy 4, FIX OUR LOWERING
+: contract-info parses: Error("unknown Compact type-name `Secp256k1Point`
+:   — compactc grew a type this crate does not model", line 145)
+Our own error message, doing its job. =minocrab-abi='s
+=parse_type= (=crates/minocrab-abi/src/info.rs:201-236=) already models
+=JubjubScalar=, =Secp256k1Base= and =Secp256k1Scalar= as first-class
+=type-name=s, because compactc already emitted those that way; the two
+POINT types arrived as =Alias=-of-=Opaque= and 0.33.118 made them
+first-class too. The fix is two arms in that match plus whatever
+=CurvePoint= mapping they need — it is a code change, not an accepted
+baseline, so it is on the decision list rather than in this branch.
+
+**** 6b. both interface crates' =the_committed_pin_is_the_artifacts_distillation= — taxonomy 6, ACCEPT
+=signet-signer-interface= and =xcall-target-interface=. The diff of the
+two =Pin= values is the whole reading:
+: compiler_version: "0.33.0" -> "0.34.0"
+: language_version: "0.25.0" -> "0.26.0"
+: runtime_version: "0.18.0-rc.1" -> "0.19.0"
+: contract_info_sha256: eba48362… -> b30f60ef…   (signer)
+: contract_info_sha256: a65b0b3f… -> ff78362c…   (xcall target)
+and *every other field is identical*: each circuit's =zkir_sha256=, its
+=inputs=, its =do_communications_commitment=, and its full =constraints=
+list, on all six circuits. This is the taxonomy's "the corpus was
+recompiled, i.e. exactly what a compactc bump does" — ACCEPT via
+=./bump.sh accept=, which re-copies =contract-info.json= and re-distills
+the pin. Note what did NOT fire:
+=every_declared_circuit_matches_the_artifact= passed on both crates, so
+the callee ARGUMENT LAYOUT did not move and this is not a semver event
+for either published crate (notes/interface-crates.org §Versioning).
+
+*** Our own side did not move, and here is the evidence rather than the claim
+- =row_snapshot= (release, 209 circuits) PASS against the table frozen
+  before the bump; =interface_snapshot= PASS likewise.
+- =git diff= of the whole bump under =crates/= is FOUR count assertions
+  in three test files. No source that builds a circuit changed, and the
+  dump is deterministic, so the 209 ZKIR dumps cannot have moved;
+  =zkir_dump= runs green and writes all 209.
+- =spec/vectors=, =spec/borsh-subset.md= and =spec/ts= untouched, node
+  suite 52/52.
+Exactly as predicted. Our lowering does not read compactc, and this bump
+is the first evidence for that claim from a compiler that actually
+changed.
+
+** The reading — per family, with the answer
+Five families cover every moved byte.
+
+*** Family A — the 814 unchanged .zkir. No answer needed, and it is the finding
+Every committed artifact compiled by 0.33.0-rc.2 is byte-identical under
+0.34.0. Dry run D1 established that a recompile with the SAME compiler
+reproduces the corpus; this is the stronger statement, and it is what
+makes the rest of the diff readable. Whatever 23 patch releases changed,
+they did not change the lowering of anything this corpus contains.
+
+*** Family B — the version restamp (630 files, all of them) → ACCEPT
+=contract-info.json= and =contract-manifest.json= carry
+=compiler-version= / =language-version= / =runtime-version=, and the
+manifests carry the sizes and hashes of the generated JS those strings
+live in (index.js is 5 bytes shorter: "0.18.0-rc.1" -> "0.19.0"). Not
+one of (a)/(b)/(c): it is the recompile's own fingerprint. The taxonomy
+already names it — §6's "after a compactc bump those three fields are
+the cheapest confirmation that the artifact really was rebuilt".
+
+*** Family C — the point types stop being aliases (8 contracts, 12 sites) → (a)
+: - "type-name": "Alias", "name": "Secp256k1Point",
+: -   "type": { "type-name": "Opaque", "tsType": "Secp256k1Point" }
+: + "type-name": "Secp256k1Point"
+CHANGELOG 0.33.118. The answer is (a) — upstream changed how it FRAMES
+something and the statement is preserved — and the evidence is specific
+rather than inferred:
+- the =.zkir= of all eight contracts is byte-identical, so no
+  constraint, no instruction and no public input moved;
+- both interface pins' per-circuit =zkir_sha256=, =inputs= and
+  =constraints= are unchanged;
+- =every_declared_circuit_matches_the_artifact='s six checks pass on
+  both interface crates, so the argument LAYOUT is unchanged;
+- =row_snapshot= and the 18 green differentials say the same from our
+  side.
+It is emphatically NOT (c): a wire-contract change would have moved the
+argument list, the entry-point hash or a PI, and each of those has an
+instrument that stayed silent. What it does cost is one code change in
+=minocrab-abi= (6a above), because our ABI model is a closed enumeration
+of compactc's =type-name=s BY DESIGN — the error message it produced is
+the design working.
+
+*** Family D — a source the corpus gained (17 new v2 artifacts) → data
+=compact/examples/types/examples.compact=, rejected by 0.33.0-rc.2 with
+"Uint width 0 is not between 1 and the maximum Uint width 248", accepted
+by 0.34.0 because =Uint<0>= became legal (0.33.111). Taxonomy 2's "MORE
+ok MEANS the new compiler accepts contracts that used to fail — usually
+good, and the corpus grew new artifacts that everything downstream now
+sweeps". All 17 round-trip; all 17 are v2.
+
+*** Family E — issue #588, which moved NOTHING here and is still a live divergence → (b)
+This is the one worth the milestone. P1 predicted that 0.33.108's
+=Uint<0..1>= alignment fix (=bytes:0= -> =bytes:1=) would move
+artifacts. Nothing in the corpus or in the seven fixtures moved. That is
+not evidence the fix is absent — it is evidence about what we compile,
+and the difference matters, so it was PROBED rather than assumed.
+
+A three-circuit probe (a ledger cell of =Uint<0..1>=, a ledger cell of a
+single-variant enum, and a read of the first), compiled under both
+pinned compilers with =--feature-zkir-v3=:
+
+: setUnit.zkir, setOnly.zkir, readUnit.zkir all differ, each by ONE byte:
+: - { "op": "impact", "guard": "0x01", "inputs": ["0x11","0x01","0x01","0x00","%x.0"] }
+: + { "op": "impact", "guard": "0x01", "inputs": ["0x11","0x01","0x01","0x01","%x.0"] }
+: - { "op": "impact", "guard": "0x01", "inputs": ["0x0c","0x01","0x00","%t.0"] }
+: + { "op": "impact", "guard": "0x01", "inputs": ["0x0c","0x01","0x01","%t.0"] }
+
+The alignment operand of the Impact op: 0 -> 1. The fix is real, it
+lands in the IMPACT stream (taxonomy 4, not 3), and it fires only when
+such a value sits in LEDGER position. No corpus contract and no fixture
+puts one there — the =bounded= fixture's =b1(x: Uint<0..1>)= takes it as
+a circuit ARGUMENT and is byte-identical under both compilers — which is
+why every gate stayed silent.
+
+OUR SIDE MIRRORS THE OLD BEHAVIOUR, in exactly one place:
+=crates/minocrab/src/v3/abi.rs:183= =uint_atom_bytes(maxval) =
+integer_length(maxval).div_ceil(8)=, which is 0 at =maxval = 0=, with
+the doc comment "Compact's =Uint<0..1>= occupies no bytes, which is what
+the corpus's own serde fixtures say about it". It reaches
+=AlignmentAtom::Bytes { length: 0 }= through =BoundedUint='s
+=CircuitAbi= (=minocrab-std/src/v3/entry.rs:215=) and
+=minocrab-abi/src/info.rs:443= (where a single-variant ENUM takes the
+same path), and from there into =minocrab-ledger='s =push_cell=
+alignment header — i.e. into the same operand the probe shows moving.
+Three assertions pin the old value: =v3_bounded.rs:185=
+(=atom(BoundedUint::<1, Private>::atoms()) == 0=), =abi.rs:542=
+(=uint_atom_bytes(0) == 0=), and notes/bounded-integers.org §3.
+
+So this is answer *(b): upstream FIXED something we mirrored, and the
+mirror should move with it.* It is not urgent — nothing deployed, no
+contract of ours uses a =Uint<0..1>= or single-variant enum in ledger
+position, which is why no instrument fires — and it is not mine to
+change under this milestone's scope. It is decision-list item 2, and it
+is worth noticing that =bounded_differential='s
+=compactc_s_abi_agrees_with_the_leafs= CANNOT catch it: it flattens
+compactc's =contract-info.json= through OUR =uint_bytes=, and
+contract-info publishes =maxval=, not the alignment. Both sides of that
+equality come from the same formula. Whatever fixes the mirror should
+bring an instrument that would have seen this.
+
+** The predictions, checked
+Thirteen were written down before the recompile. Four held, one held in
+mechanism and failed in reach, seven were right to check and did not
+fire, and one — the most alarming — was wrong in the good direction.
+
+| # | prediction | outcome |
+|---+------------+---------|
+| P1 | Uint<0..1> alignment moves artifacts | MECHANISM CONFIRMED, REACH ZERO — family E; a probe shows the one-byte Impact change, no artifact we compile has one in ledger position |
+| P2 | point/scalar hashing alignment moves the sig-net v3 artifacts | DID NOT FIRE — all four are byte-identical |
+| P3 | secp256k1EthereumAddress's new assert moves rows | DID NOT FIRE — the only corpus source exporting it does not compile on the v2 path, before or after |
+| P4 | the ECDSA big-endian z change moves the Signet circuits | DID NOT FIRE, and PROBED rather than assumed: a =secp256k1EcdsaVerify= probe compiled under both pins is byte-identical (97 lines each), and so are signet-contract's three compiled circuits |
+| P5 | sources naming the removed ECDSA stdlib names lose ok | INCONCLUSIVE — the one corpus hit (zkir-v3-library.compact) fails before and after, now on the type import instead |
+| P6 | the point/scalar types stop being built-in → FEWER ok, sig-net at risk | HELD FOR THE COMPACT REPO, WRONG FOR SIG-NET — two compact-repo files change their error to "unbound identifier Secp256k1Scalar"; all 23 sig-net rows stay ok. Exporting a LEDGER FIELD of a point type is still fine; the breaking change is exporting the TYPE |
+| P7 | stdlib add/mul removal changes nothing here | HELD |
+| P8 | Uint<0> legality changes nothing (negatives are never compiled) | HALF WRONG, and it is the +1: it did not change a negative, it turned =examples/types/examples.compact= from fail to ok |
+| P9 | #704's nested-native fix moves Impact streams | DID NOT FIRE — no contract-info's ledger shape and no artifact moved |
+| P10 | the v2 zkir printer moved, so the 722 v2 artifacts churn | WRONG — every v2 artifact is byte-identical too, despite the release's flake.lock moving zkir from 4823b535 to f227f1e5 |
+| P11 | --no-communications-commitment: no change | HELD |
+| P12 | in-process manifest hashing: no change | HELD |
+| P13 | callee Zswap ops: no .zkir change | HELD |
+| — | OUR artifacts, snapshots, spec and vectors stay still | HELD, and it is the load-bearing one |
+
+The pattern in the misses is worth keeping: every prediction that
+over-reached did so by reasoning from a CHANGELOG entry to "an artifact
+must move" without asking whether anything we compile is in the shape
+the entry describes. The corpus is narrower than the language. The one
+prediction that was right about the mechanism (P1) needed a purpose-made
+probe to show it at all — which is the argument for probes as a standard
+part of a bump reading, not an extra.
+
+** Step 6 — the numbers
+notes/compact-findings.org §4 deferred a re-measurement to "the
+bump-time bench", because 0.34.0's notes mention smaller circuits and
+better CSE. Here it is, and the answer is that nothing moved.
+
+Method: the two benchmark contracts — signet-contract (the Signet
+singleton, 3 circuits) and erc20-vault (17 circuits since M28) — were
+recompiled from the SAME sources with BOTH pinned compilers into a
+scratch tree, and priced with Midnight's own cost model
+(=minocrab_sim::v3::cost=, the =zkircost= example, which is what
+=row_snapshot= freezes for our circuits). Proving was not re-run: the
+artifacts are byte-identical, so prove time and RSS cannot move, and
+=./bench.sh='s value here would be its noise.
+
+: diff -rq old/zkir new/zkir  →  (nothing) for both contracts
+
+| circuit | 0.33.0-rc.2 (k, rows) | 0.34.0 (k, rows) | Δ |
+|---------+----------------------+------------------+---|
+| initialise | 10, 891 | 10, 891 | 0 |
+| approveStata | 14, 8483 | 14, 8483 | 0 |
+| approveRouter | 14, 8516 | 14, 8516 | 0 |
+| startDeposit | 14, 11406 | 14, 11406 | 0 |
+| completeDeposit | 16, 40776 | 16, 40776 | 0 |
+| startWithdraw | 15, 32751 | 15, 32751 | 0 |
+| completeWithdraw | 16, 40553 | 16, 40553 | 0 |
+| refundWithdraw | 16, 40273 | 16, 40273 | 0 |
+| startSwap | 16, 43592 | 16, 43592 | 0 |
+| completeSwap | 16, 52536 | 16, 52536 | 0 |
+| refundSwap | 16, 40279 | 16, 40279 | 0 |
+| startSupply | 15, 32693 | 15, 32693 | 0 |
+| completeSupply | 16, 42639 | 16, 42639 | 0 |
+| refundSupply | 16, 40283 | 16, 40283 | 0 |
+| startRedeem | 16, 35646 | 16, 35646 | 0 |
+| completeRedeem | 16, 42639 | 16, 42639 | 0 |
+| refundRedeem | 16, 40283 | 16, 40283 | 0 |
+| signBidirectional | 16, 50429 | 16, 50429 | 0 |
+| respond | 16, 40931 | 16, 40931 | 0 |
+| respondBidirectional | 16, 40931 | 16, 40931 | 0 |
+
+Twenty circuits, no =k= crossed, no row moved. BENCHMARK.md is
+therefore still correct and is NOT re-stamped — the taxonomy's rule for
+§12 is that the bench is publishing, run when 9 moved a =k=, and 9 did
+not move at all. compact-findings §4 stands as written: the
+explode/rebuild serialization cost 0.34.0 might have improved, it did
+not improve here.
+
+** Decision list for dmd
+The milestone's compromise says: if the reading is broad, deliver the
+classified reading plus a decision list rather than a forced accept.
+This bump was NARROW, so the list is short — but =./bump.sh accept= was
+deliberately not run, and nothing was regenerated. Four items:
+
+1. *ACCEPT the two interface pins* (family B/C, taxonomy 6). Run
+   =./bump.sh accept=; the reviewed diff should be the three version
+   fields and the two =contract_info_sha256= in each =pin.json=, plus
+   the re-copied =contract-info.json=, and NOTHING else — every
+   =zkir_sha256= and every =constraints= list must come back
+   unchanged. If anything else moves, that is not this bump.
+   =interface-schema.txt= should also be unchanged, since the argument
+   layout did not move.
+2. *FIX =minocrab-abi='s type model* (family C, taxonomy 4): add
+   =Secp256k1Point= and =JubjubPoint= as first-class =type-name= arms in
+   =crates/minocrab-abi/src/info.rs='s =parse_type=, alongside the
+   scalar arms already there, and give them the same =CurvePoint=
+   answer the =Alias=-of-=Opaque= spelling gets today. One test then
+   goes green (=opaque_differential::the_vaults_own_initialize_now_flattens=)
+   and =opaque.compact='s own fixture should be recompiled with it (5
+   below). This is our lowering following theirs, not an accepted
+   baseline.
+3. *DECIDE the =Uint<0..1>= alignment* (family E, answer (b)). Upstream
+   now emits alignment 1 where we emit 0, for a =Uint<0..1>= or
+   single-variant enum in ledger position. Nothing of ours has one, so
+   nothing fires; the question is whether =uint_atom_bytes(0)= becomes
+   1 now or when something needs it. Whatever is decided, the gap is
+   that no instrument would have caught it — =bounded_differential='s
+   ABI check reads =maxval= and recomputes the alignment with OUR
+   formula, so both sides agree by construction. A probe contract in
+   ledger position, compiled and committed like the other seven
+   fixtures, is what would have seen it.
+4. *DECIDE the seven hand-compiled fixtures.*
+   =crates/minocrab-contracts/tests/fixtures/{adts,bounded,coins,kernel,nested,opaque,wide}/out=
+   are compactc artifacts committed by hand, so a pin bump leaves them
+   at the OLD compiler while everything around them moves. Recompiled
+   under 0.34.0 in a scratch tree for this reading: all seven compile,
+   every =.zkir= is byte-identical, and only =opaque='s
+   =contract-info.json= changes beyond the version strings (the same
+   point-type reshape, four sites). So refreshing them is safe and
+   nearly empty — but it is a decision, and it should be one commit
+   that says the artifacts did not move.
+5. *An upstream finding to consider reporting* (theirs, not ours): on
+   the ZKIR v2 path 0.34.0 lost a good diagnostic. 0.33.0-rc.2 said
+   "secp256k1 is not supported in ZKIR v2: try recompiling with the flag
+   =--feature-zkir-v3="; 0.34.0 says "unbound identifier
+   Secp256k1Scalar", because 0.33.118 moved those names into a
+   standard library injected only for v3. Two corpus sources show it.
+   Recorded in notes/compact-findings.org for dmd's review.
+6. *A latent diff-that-is-not-the-bump* (hazard 8):
+   =corpus/.compact-path/@sig-net/midnight= is a tracked symlink with an
+   ABSOLUTE target, so =corpus/compile.sh= rewrites it in any checkout
+   that is not =/Users/dmd/minocrab= — it was restored by hand in this
+   session rather than committed. Make it relative, or untrack it and
+   let compile.sh build it.
+
+M8's honest remainder is answerable now, and the answer is on the
+narrow side of what the taxonomy braced for: a corpus diff produced by a
+different compiler HAS been read, and it was 630 metadata files, twelve
+ABI type nodes, one gained source, and not a single moved instruction.

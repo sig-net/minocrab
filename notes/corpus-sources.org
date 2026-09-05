@@ -272,3 +272,35 @@ bricktowers trio (identity/seabattle/rwa, 13 total), edda-contracts (5).
 Mind the licenses: several community repos have NO license file — fine for
 analysis, questionable for redistribution; prefer the licensed ones if the
 corpus will be published.
+
+* Language-level compatibility, per toolchain bump
+
+The checklist (notes/version-bump.org step 2) says a source that stops
+compiling under a new language version is DATA, recorded here rather
+than patched in the corpus — and that a *sig-net* contract that stops
+compiling is a finding for its owners.
+
+** compactc 0.33.0-rc.2 -> 0.34.0 (language 0.25.0 -> 0.26.0), 2026-09-05
+315 ok -> 316 ok of 481. NOTHING regressed; one source was gained.
+
+- GAINED: =compact/examples/types/examples.compact=, which 0.33.0-rc.2
+  rejected with "Uint width 0 is not between 1 and the maximum Uint
+  width 248 (inclusive)" at =export struct SY<#n, T> { curidx:
+  Uint<0..n> }=. =Uint<0>= became a legal type in toolchain 0.33.111.
+  17 new v2 artifacts.
+- UNCHANGED-BUT-RE-DIAGNOSED, both already failing and still failing:
+  =compact/examples/secp256k1/arithmetic.compact= and
+  =compact/compiler/zkir-v3-library.compact= now say "unbound
+  identifier Secp256k1Scalar" where 0.33.0-rc.2 said "secp256k1 is not
+  supported in ZKIR v2: try recompiling with the flag
+  =--feature-zkir-v3=". Language 0.26.0 moved the point/scalar types
+  out of the built-ins (toolchain 0.33.118), so on the v2 path the
+  names are unbound. Written up as an upstream diagnostic regression:
+  notes/compact-findings.org finding 9.
+- NO SIG-NET CONTRACT STOPPED COMPILING. All 23 sig-net rows are ok,
+  including the two that export a =Secp256k1Point= LEDGER FIELD
+  (signet-midnight-examples' erc20-vault, signet-midnight-integration's
+  test-caller-contract). 0.26.0's breaking change is that the point and
+  scalar TYPES can no longer be exported from a contract's top level;
+  a ledger field OF such a type is still fine. Nothing to report to
+  their owners from this bump.

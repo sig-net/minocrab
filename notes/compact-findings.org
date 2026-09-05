@@ -103,12 +103,20 @@ finding), notes/borsh-format.org §"Site classification" (the 0x02 hazard).
 
 * 4. INEFFICIENCY — serialization lowering explodes bytes it could shift
 
-STATUS 2026-08-28: NOT RE-MEASURED. 0.34.0's changelog notes
-"circuit generation ... sometimes produces smaller circuits" and better
-CSE, so the numbers may have moved; the honest re-check is the
-bump-time bench (compile the Signet singleton under 0.34.0 and re-run
-the row comparison), which belongs to a version-bump session, not this
-sweep.
+STATUS 2026-09-05 (M31, the 0.34.0 bump): RE-MEASURED, STANDS UNMOVED.
+The deferred bump-time bench was run: the Signet singleton (3 circuits)
+and the vault's seventeen, recompiled from the same sources with both
+0.33.0-rc.2 and 0.34.0 and priced with =minocrab_sim::v3::cost=. Every
+one of the twenty artifacts is BYTE-IDENTICAL between the two
+compilers, so no =k= crossed and no row moved — table in
+notes/version-bump.org "Bump 1 — 2026-09-05" §"Step 6 — the numbers".
+Whatever 0.34.0 improved in circuit generation, it did not touch the
+explode/rebuild serialization chains this entry is about. The numbers
+below stand as measured.
+
+(Superseded, 2026-08-28: "NOT RE-MEASURED. 0.34.0's changelog notes
+smaller circuits and better CSE, so the numbers may have moved; the
+honest re-check is the bump-time bench.")
 
 compactc lowers byte-reordering through full explode/rebuild chains (~150
 rows per exploded byte) where ZKIR's own =ReverseBytes= (~150 rows TOTAL) or
@@ -197,6 +205,42 @@ but it is a comment where a compile error should be.
 Impact: none observed; a check would cost one line. Evidence:
 notes/coin-arms-nested-adts.org (the 2026-08-16 investigation; the scheme
 source is in corpus/src/compact).
+
+* 9. MINOR — 0.34.0 lost the "try --feature-zkir-v3" diagnostic for secp256k1
+
+FOUND 2026-09-05, at the M31 bump (0.33.0-rc.2 -> 0.34.0), by reading
+the corpus compile-report diff: two sources changed their first-error
+line without changing whether they compile.
+
+compactc 0.33.0-rc.2, on a source using =Secp256k1Base= / =Secp256k1Scalar=
+without =--feature-zkir-v3=:
+
+: Exception: arithmetic.compact line 18 char 1:
+:   secp256k1 is not supported in ZKIR v2: try recompiling with the flag `--feature-zkir-v3`
+
+compactc 0.34.0, same source, same invocation:
+
+: Exception: arithmetic.compact line 46 char 35:
+:   unbound identifier Secp256k1Scalar
+
+The cause is CHANGELOG 0.33.118: the point and scalar types stopped
+being built-ins and became standard-library names injected from
+=midnight-natives.ss= / =zkir-v3-natives.ss=. On the v2 path they are
+now simply not injected, so the type name is unbound and the message
+that named the fix is gone. A user on the default (v2) path who writes
+=Secp256k1Scalar= is told the identifier does not exist, which invites
+the wrong repair — spelling, imports — instead of the flag.
+
+Evidence, checkable: =corpus/src/compact/examples/secp256k1/arithmetic.compact=
+and =corpus/src/compact/compiler/zkir-v3-library.compact= under both
+release binaries; the first of the two COMPILES cleanly under 0.34.0
+with =--feature-zkir-v3=, so the flag really is the whole remedy.
+Recorded in notes/version-bump.org "Bump 1 — 2026-09-05".
+
+Impact: diagnostics only, no correctness issue, nothing deployed. The
+fix would be to keep an "unbound because this needs --feature-zkir-v3"
+hint for the injected names, or to inject them on the v2 path solely to
+produce the old error.
 
 * Adjacent findings recorded elsewhere (sig-net repos, not for this list)
 
