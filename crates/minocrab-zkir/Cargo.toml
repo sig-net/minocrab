@@ -1,6 +1,6 @@
 [package]
 name = "minocrab-zkir"
-description = "MinoCrab L0: read, write and round-trip Midnight ZKIR (v2 and v3), reusing midnight-zkir's own types"
+description = "MinoCrab L0: read, write and round-trip Midnight ZKIR v3, reusing midnight-zkir-v3's own types"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

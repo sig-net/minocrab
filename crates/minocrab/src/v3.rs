@@ -1,8 +1,8 @@
 //! L2 for ZKIR v3 — the typed eDSL frontend.
 //!
-//! Same shape as the v2 [`Circuit`](crate::Circuit) (visibility in the
-//! type, `disclose` as the single Private→Public gate) but wires also carry
-//! their ZKIR v3 *value type* ([`IrTy`] markers for [`IrType`]), so the
+//! Visibility in the type and `disclose` as the single Private→Public gate
+//! (the crate docs), and wires also carry their ZKIR v3 *value type*
+//! ([`IrTy`] markers for [`IrType`]), so the
 //! per-instruction supported-type lists that [`Builder3`] checks at circuit
 //! build time become Rust compile errors here: `ec_mul` of a secp256k1
 //! point by a Jubjub scalar simply does not type-check.
@@ -899,7 +899,7 @@ impl Circuit3 {
     /// transcript not consumed).
     ///
     /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, like every
-    /// effect's does ([`Circuit3::effect_guard`]): inside a
+    /// effect's does (`Circuit3::effect_guard`): inside a
     /// [`Circuit3::when`], the witness is consumed only where BOTH hold.
     /// Passed through verbatim, as it once was, a `_guarded` witness under
     /// a scope consumed the private transcript on the path not taken
@@ -926,7 +926,7 @@ impl Circuit3 {
     /// The explicit guard RESOLVES AGAINST THE AMBIENT SCOPE, exactly as an
     /// emitted op's does — without this, a `_guarded` read inside
     /// [`Circuit3::when`] would fire its gates on the raw condition while
-    /// its op embed (which goes through [`Circuit3::effect_guard`]) stays
+    /// its op embed (which goes through `Circuit3::effect_guard`) stays
     /// correctly skipped, shifting every later read's public inputs by the
     /// orphaned gates. Found by the AA manager port: `sendUnshielded`'s
     /// auto-receive `kernel.self` read is guarded by `recipient.is_left`,

@@ -1,6 +1,6 @@
 [package]
 name = "minocrab-ir"
-description = "MinoCrab L1: typed circuit builder over ZKIR instructions, with statically-tracked value handles"
+description = "MinoCrab L1: typed circuit builder over ZKIR v3 instructions, with named, typed values"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

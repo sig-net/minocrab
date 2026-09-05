@@ -421,7 +421,7 @@ Consume it today as a **git dependency** (crates.io is blocked on upstream — s
 | **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
 | **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
 | **internal** | the raw `Builder3`/`Val` layers, the simulator VMs — gated behind an `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
-| **internal** | the Impact ledger-op layer, the interface generator, the v2 layers | `minocrab-ledger`, `minocrab-interface-gen`, v2 modules |
+| **internal** | the Impact ledger-op layer, the interface generator | `minocrab-ledger`, `minocrab-interface-gen` |
 
 The `unstable` gate is a hard wall exactly where it matters most: a **pass or lint crate depending on `minocrab-ir` alone** never sees the internals. Graphs that include the full eDSL activate the feature transitively (cargo feature unification), so there the tier lives in the docs and the semver commitment rather than the compiler. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise — the line widens by decision, never by accident.
 

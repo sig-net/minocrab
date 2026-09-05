@@ -23,7 +23,7 @@ b.output(&[Arg::from(hashed)]);
 let ir = b.finish(false);               // false: no communications commitment
 ```
 
-`v3::Builder3` is the current builder (named, typed values); `Builder` is the ZKIR v2 equivalent over an append-only value memory. `v3::passes` holds the normalisations both sides of a differential test are run through.
+`v3::Builder3` is the builder (named, typed values, every operand type-checked against the instruction's table). `v3::passes` holds the normalisations both sides of a differential test are run through.
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 

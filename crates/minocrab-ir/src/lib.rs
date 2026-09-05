@@ -22,8 +22,8 @@
 //! - [`v3::IrType`] — the v3 value types the builder checks operands against
 //! - [`v3::passes`] — the normalisation passes both sides of a differential
 //!   are run through
-//! - [`v3::IrSource`](minocrab_zkir::v3::IrSource) — what a finished build
-//!   hands to L0 for writing
+//! - [`minocrab_zkir::v3::IrSource`] — what a finished build hands to L0 for
+//!   writing
 //!
 //! # Stability (M24 tier boundary)
 //!

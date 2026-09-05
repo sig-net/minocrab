@@ -20,6 +20,8 @@ include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 [[bin]]
 name = "minocrab"
 path = "src/bin/minocrab.rs"
+# The lib crate `minocrab` owns target/doc/minocrab; the CLI has --help.
+doc = false
 
 [dependencies]
 minocrab.workspace = true

@@ -13,15 +13,11 @@
 Nothing above L0 touches serialization or the zkir toolchain directly.
 
 ```rust
-use minocrab_zkir::{read_any, AnyIr};
-
-match read_any("counter_increment.zkir")? {
-    AnyIr::V3(ir) => println!("v3, {} instructions", ir.instructions.len()),
-    AnyIr::V2(ir) => println!("v2, {} instructions", ir.instructions.len()),
-}
+let ir = minocrab_zkir::v3::read_zkir("respond.zkir")?;
+println!("v3, {} instructions", ir.instructions.len());
 ```
 
-`write_zkir` is the exact inverse of the reader, including the `{"major": n, "minor": m}` envelope — every one of the 788 pinned compactc artifacts parses and re-emits byte-identically.
+`v3::write_zkir` is the exact inverse of the reader, including the `{"major": 3, "minor": m}` envelope — every pinned compactc v3 artifact parses and re-emits byte-identically (the corpus's v2 artifacts are told apart by `major_version` and skipped).
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 

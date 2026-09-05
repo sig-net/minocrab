@@ -14,7 +14,7 @@
 //! header quotes the failure.
 
 use minocrab::v3::Compiled3;
-use minocrab_contracts::kernel_tokens::{self as kt, KernelTokens};
+use minocrab_contracts::kernel_tokens::KernelTokens;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 
 /// compactc's artifact for one fixture circuit.

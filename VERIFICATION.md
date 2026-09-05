@@ -36,7 +36,7 @@ make specific error classes unwritable rather than merely untested.
 - **Claim** — every artifact the pinned compactc produces parses, re-emits and
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
-  over all 806 `.zkir` in `corpus/zkir` (722 v2 + 84 v3, and the test asserts that count), plus
+  over the 84 ZKIR v3 `.zkir` in `corpus/zkir` (the 722 v2 artifacts compactc also emits are counted and skipped; the test asserts both counts), plus
   [toolchain_accepts.rs](crates/minocrab-zkir/tests/toolchain_accepts.rs), a
   hand-built circuit through the pinned `zkir mock-compile`.
 - **Command** — `cargo test -p minocrab-zkir`

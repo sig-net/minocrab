@@ -57,7 +57,7 @@ use midnight_storage::storage::HashMap as StorageHashMap;
 use midnight_transient_crypto::merkle_tree::MerkleTree as VmMerkleTree;
 use midnight_transient_crypto::repr::FieldRepr;
 use minocrab::v3::{
-    CallArgs, CallResult, Circuit3, Disclose, DisclosureLabel, FieldT, Operand, Prim, Wire3,
+    CallArgs, CallResult, Circuit3, Disclose, FieldT, Operand, Prim, Wire3,
 };
 use minocrab::{Fr, Public, Visibility};
 
@@ -538,15 +538,15 @@ pub fn cell_write_at(path: &[LedgerKey], value: &LedgerValue) -> Vec<ImpactOp> {
 /// `cm` is the runtime coin commitment (`rt-coin-commit`, a `bytes<32>`);
 /// `coin` the 3-atom `[bytes<32>, bytes<32>, bytes<16>]` ShieldedCoinInfo.
 ///
-/// The middle six are [`qualify_coin`], shared with the three collection
+/// The middle six are `qualify_coin`, shared with the three collection
 /// arms; this is `cell_write` with its value push replaced by them.
 pub fn cell_write_coin(index: u8, cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
     cell_write_coin_at(&field_path(index), cm, coin)
 }
 
 /// [`cell_write_coin`] on a general path — [`cell_write_at`] with its value
-/// push replaced by [`qualify_coin`], and the `dup` reach growing with the
-/// path ([`cell_coin_dup`]).
+/// push replaced by `qualify_coin`, and the `dup` reach growing with the
+/// path (`cell_coin_dup`).
 pub fn cell_write_coin_at(path: &[LedgerKey], cm: &LedgerValue, coin: &LedgerValue) -> Vec<ImpactOp> {
     let mut ops = idxp_container(path);
     ops.push(path[path.len() - 1].push_as_cell());
@@ -599,7 +599,7 @@ fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6
     ]
 }
 
-/// The four coin arms' [`qualify_coin`] reaches, as compactc writes them —
+/// The four coin arms' `qualify_coin` reaches, as compactc writes them —
 /// each counting the arm's own pushes, the result slot, the `2·len(f)` path
 /// items the leading `idx` left, and the effects. At `len(f) = 1` they are
 /// 3, 4, 5 and 7, which is what M22 stage A pinned.
@@ -610,17 +610,17 @@ fn cell_coin_dup(len: usize) -> u8 {
     (3 + 2 * (len - 1)) as u8
 }
 
-/// See [`cell_coin_dup`].
+/// See `cell_coin_dup`.
 fn set_coin_dup(len: usize) -> u8 {
     (2 + 2 * len) as u8
 }
 
-/// See [`cell_coin_dup`].
+/// See `cell_coin_dup`.
 fn map_coin_dup(len: usize) -> u8 {
     (3 + 2 * len) as u8
 }
 
-/// See [`cell_coin_dup`].
+/// See `cell_coin_dup`.
 fn list_coin_dup(len: usize) -> u8 {
     (5 + 2 * len) as u8
 }
@@ -647,7 +647,7 @@ pub fn map_insert_at(path: &[LedgerKey], key: &LedgerValue, value: &LedgerValue)
 
 /// `Map<K, QualifiedShieldedCoinInfo>.insertCoin(key, coin, recipient)` on
 /// ledger field `index` (midnight-ledger.ss:769-795) — [`map_insert`] with
-/// its `pushs value` replaced by [`qualify_coin`]:
+/// its `pushs value` replaced by `qualify_coin`:
 ///
 /// ```text
 /// idxp [field]; push key
@@ -719,7 +719,7 @@ pub fn set_insert_at(path: &[LedgerKey], elem: &LedgerValue) -> Vec<ImpactOp> {
 
 /// `Set<QualifiedShieldedCoinInfo>.insertCoin(coin, recipient)` on ledger
 /// field `index` (midnight-ledger.ss:670-696) — [`set_insert`] with its
-/// `push elem` replaced by [`qualify_coin`]:
+/// `push elem` replaced by `qualify_coin`:
 ///
 /// ```text
 /// idxp [field]
@@ -795,7 +795,7 @@ pub fn map_insert_default_at(
 /// initial value>; ins 1; insc len(f)` — verified against compactc for
 /// `Map<K, Map<..>>`, `Map<K, List<..>>` and `Map<K, Counter>`. The initial
 /// values are the same constants `resetToDefault` writes, so they come from
-/// [`empty_map`], [`empty_list`], [`empty_counter`] and [`empty_merkle_tree`]
+/// [`empty_map`], [`empty_list`], [`empty_counter`] and `empty_merkle_tree`
 /// rather than a second table.
 pub fn map_insert_adt_default_at(
     path: &[LedgerKey],
@@ -1260,7 +1260,7 @@ pub fn historic_merkle_tree_reset(index: u8, depth: u8) -> Vec<ImpactOp> {
 
 /// [`historic_merkle_tree_reset`] on a general path — the ninth and last of
 /// the whole-field-replace ops, and the one that open-codes the suppression
-/// rather than going through [`reset_to_at`] because its closing pair is
+/// rather than going through `reset_to_at` because its closing pair is
 /// `insc 2; ins 1` where every other reset's is `ins 1; insc len(f)-1`.
 pub fn historic_merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<ImpactOp> {
     let initial = empty_historic_merkle_tree_value(depth);

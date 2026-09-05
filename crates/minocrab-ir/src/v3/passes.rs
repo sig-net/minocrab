@@ -261,7 +261,7 @@ fn returned_identifiers(instructions: &[Instruction]) -> AssocMap<()> {
 
 /// The operand positions through which a value LEAVES the circuit named.
 ///
-/// Exhaustive by construction, the same way [`operands_mut`] is, and for a
+/// Exhaustive by construction, the same way `operands_mut` is, and for a
 /// sharper reason: this list is what stops [`fold_immediate_copies`] folding
 /// a constant compactc keeps named, so an upstream terminator this function
 /// did not know about would make the fold do MORE, not less — the unsound
@@ -386,7 +386,7 @@ pub fn returned(instruction: &Instruction) -> Vec<Operand> {
 
 /// The identifiers an instruction binds, in output order.
 ///
-/// Exhaustive by construction like [`operands_mut`]: an upstream variant
+/// Exhaustive by construction like `operands_mut`: an upstream variant
 /// that defines a value this list does not know about breaks the build.
 pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
     match instruction {

@@ -3,7 +3,7 @@
 //! Executes a circuit in plain Rust for `cargo test` loops: no proving, no
 //! keys, instant feedback. Semantics mirror midnight-ledger's reference
 //! interpreter (`zkir-v3/src/ir_vm.rs`) instruction for instruction:
-//! [`v3::simulate`] *verifies* a complete `ProofPreimage` — arguments
+//! `v3::simulate` *verifies* a complete `ProofPreimage` — arguments
 //! decoded per the input schema, Impact public inputs checked against the
 //! transcript as they accumulate — so every run can be cross-checked against
 //! the reference VM via `IrSource::check`, and the simulator is never
@@ -23,8 +23,8 @@
 //!
 //! # Start here
 //!
-//! - [`v3::simulate`] and [`v3::Run3`] — run a circuit against a preimage
-//! - [`v3::report`] and [`v3::DisclosedValue3`] — what the run actually
+//! - `v3::simulate` and `v3::Run3` — run a circuit against a preimage
+//! - `v3::report` and `v3::DisclosedValue3` — what the run actually
 //!   published, label by label
 //! - [`v3::cost`] and [`v3::profile`] — `(k, rows)` for a circuit, and
 //!   [`Profile`], the per-region breakdown the benchmark charts

@@ -58,7 +58,7 @@ minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 # binary despite identical version strings. This rev is what the official
 # compact flake pins for the zkir-v3 binaries our compactc ships with.
 midnight-zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-# Same repo+rev as midnight-zkir's own path dep, so types unify (Fr etc.).
+# Same repo+rev as midnight-zkir-v3's own path deps, so types unify (Fr etc.).
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 # The Impact VM's op set (Op::field_repr is the authority on the PI
@@ -116,11 +116,14 @@ borsh = { version = "1.6", features = ["derive", "unstable__schema"] }
 bincode = { version = "2", features = ["serde"] }
 
 [patch.crates-io]
-# midnight-zkir depends on "transient-crypto-old" ^2.2.0 (back-compat v1
-# proving), which was never published to crates.io. Mirror midnight-ledger's
-# own workspace patches: transient-crypto-old from its release tag, and
+# Nothing of ours depends on midnight-zkir (v2) any more, but midnight-zswap
+# — which the contracts crate needs for coins — still does, and midnight-zkir
+# depends on "transient-crypto-old" ^2.2.0 (back-compat v1 proving), which
+# was never published to crates.io. So the ledger's own workspace patches
+# are mirrored: transient-crypto-old from its release tag, and
 # serialize/base-crypto unified onto the rc.3 copies so the old and new
-# transient-crypto share one set of core types.
+# transient-crypto share one set of core types. Drop this block when
+# midnight-zswap drops zkir_v2.
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
