@@ -19,7 +19,8 @@
 //! `completeWithdraw` accepts an attested `false` and refunds inside the
 //! completion, so a transfer that moved nothing can be marked done. Here a
 //! `false` cannot complete, whoever presents it, because
-//! `Erc20Transfer::Outcome = ByFlag` and `complete` asserts the rule.
+//! `Erc20Transfer`'s return is `Bool`, whose `AbiType::success` IS the
+//! flag, and `complete` asserts `EvmCall::succeeded`.
 //!
 //! The third column is `Owned`: the environment carries a commitment to the
 //! SENDER's secret, and `refund_to_owner` opens it against a fresh witness.
@@ -103,7 +104,8 @@ fn anyone_can_complete() {
 
 /// THE HOLE THIS API CLOSES. A mined `transfer` that returned `false` is a
 /// perfectly valid attestation of THIS kind, correctly signed — and it
-/// cannot complete, because `ByFlag`'s predicate is the flag and `complete`
+/// cannot complete, because a `Bool` return's `success` is the flag and
+/// `complete`
 /// asserts it.
 #[test]
 fn a_false_attestation_cannot_complete() {

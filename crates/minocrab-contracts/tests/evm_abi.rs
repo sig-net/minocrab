@@ -34,7 +34,7 @@ use minocrab_contracts::erc20_vault::{
     FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
 };
 use minocrab_contracts::evm::{
-    build_tx, AbiType, Address, Always, Bool, Bytes32, Erc20Approve, Erc20Transfer, Erc4626Deposit,
+    build_tx, AbiType, Address, Bool, Bytes32, Erc20Approve, Erc20Transfer, Erc4626Deposit,
     Erc4626Redeem, EvmCall, ExactOutputSingle, U128, U24, U256, U64,
 };
 use minocrab_contracts::signet::{self, EvmCalldata};
@@ -139,7 +139,6 @@ fn the_hash_is_not_circular() {
         const NAME: &'static str = "balanceOf";
         type Args = (Address,);
         type Return = U256;
-        type Outcome = Always;
         const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 30_000;
     }
@@ -156,7 +155,6 @@ fn the_struct_wrapping_changes_the_selector() {
         const NAME: &'static str = "exactOutputSingle";
         type Args = <ExactOutputSingle as EvmCall>::Args;
         type Return = U64;
-        type Outcome = Always;
         const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 0;
         // no `signature()` override — the flat join

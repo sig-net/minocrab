@@ -117,10 +117,10 @@ impl Treasury {
     /// `complete(ticket)` — the transfer executed AND returned `true`.
     ///
     /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
-    /// witness in the circuit at all. `Erc20Transfer::Outcome = ByFlag`, so
-    /// the attested `false` case cannot reach here — `complete` asserts the
-    /// flag — and `ByFlag`'s success projection is `()`, so there is no
-    /// attested value to misread.
+    /// witness in the circuit at all. And the attested `false` case cannot
+    /// reach here: `Erc20Transfer`'s return is `Bool`, whose
+    /// `AbiType::success` is the flag itself, and `complete` asserts it —
+    /// so nothing in this body has to remember to look.
     #[circuit]
     pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
@@ -140,7 +140,11 @@ impl Treasury {
         c: &mut Circuit3,
         ticket: Failed<Erc20Transfer>,
     ) -> Discloses<(Settled, RefundRecipient)> {
-        let (_owner, Amount { amount: _amount }, ()) = TREASURY
+        // The attested flag comes back too — `false` for a mined call that
+        // moved nothing, and prover-chosen padding when the MPC attested
+        // its failure kind. A treasury has no use for it; naming it `_`
+        // says so where dropping it silently would not.
+        let (_owner, Amount { amount: _amount }, _flag) = TREASURY
             .transfers
             .refund_to_owner::<RefundRecipient>(c, ticket);
         Discloses::of(())

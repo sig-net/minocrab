@@ -27,7 +27,7 @@
 //!
 //! - [`Pending::complete`] takes a `Succeeded`, asserts the attestation is
 //!   this slot's kind, verifies it, consumes the entry — and then asserts
-//!   the call's own [`OutcomeRule`] predicate. A mined ERC-20 `transfer`
+//!   the call's own [`EvmCall::succeeded`] predicate. A mined ERC-20 `transfer`
 //!   that returned `false` therefore CANNOT complete, whoever presents it
 //!   (notes/evm-calls.org §3: the spurious-completion hole the deployed
 //!   vault leaves open by putting a refund branch inside its
@@ -211,7 +211,7 @@ use signet_signer_interface::{RequestId, Signature};
 
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
-use crate::evm::{build_tx, AbiTuple, AbiType, EvmCall, OutcomeRule};
+use crate::evm::{build_tx, AbiTuple, AbiType, EvmCall};
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
     file_request, Attested, Outcome, RequestIdSettled, SignRequest, Signet,
@@ -238,11 +238,6 @@ impl<T: Copy + CircuitArg + CircuitBorsh<Private>> Attestable for T {}
 /// A call's attested return value, as a circuit wire.
 pub type Ret<C> = <<C as EvmCall>::Return as AbiType>::Wire<Private>;
 
-/// What [`Pending::complete`] hands the author for `C`.
-pub type SuccessOf<C> = <<C as EvmCall>::Outcome as OutcomeRule<<C as EvmCall>::Return>>::Success;
-
-/// What [`Pending::refund`] hands the author for an EXECUTED-but-failed `C`.
-pub type FailureOf<C> = <<C as EvmCall>::Outcome as OutcomeRule<<C as EvmCall>::Return>>::Failure;
 
 // ---- the callee ---------------------------------------------------------------
 
@@ -381,7 +376,7 @@ ticket!(
      takes.\n\n\
      The claim is CHECKED, not believed: `complete` asserts the kind, the \
      signature, the record's own kind and version, and then the call's \
-     [`OutcomeRule`] predicate. What the ticket's TYPE buys is that a ticket \
+     [`EvmCall::succeeded`] predicate. What the ticket's TYPE buys is that a ticket \
      for call `X` cannot be handed to a slot for call `Y`, and that a \
      [`Failed`] cannot be handed to `complete` at all."
 );
@@ -392,7 +387,7 @@ ticket!(
      for both non-successes.\n\n\
      Either the MPC attested its failure kind ([`FAILURE_KIND`]: reverted, \
      never mined, or an undecodable return), or it attested THIS call's kind \
-     with a return the call's [`OutcomeRule`] says is not a success (an \
+     with a return the call's [`EvmCall::succeeded`] says is not a success (an \
      ERC-20 `transfer` that mined and returned `false`). The wire shape is \
      [`Succeeded`]'s; in the first case the output slots carry the MPC's \
      padding and are not part of the signed preimage."
@@ -681,7 +676,7 @@ where
     /// verifies the MPC's signature over the Poseidon digest of
     /// `(requestId ‖ borsh(kind ‖ output))`, consumes record and
     /// environment, checks the record's own kind and format version — and
-    /// then asserts the call's [`OutcomeRule`] predicate.
+    /// then asserts the call's [`EvmCall::succeeded`] predicate.
     ///
     /// ANYONE MAY CALL IT: the attestation is the gate, and no secret is
     /// witnessed. Discloses `signet_flow::Settled`.
@@ -689,7 +684,7 @@ where
         &self,
         c: &mut Circuit3,
         ticket: Succeeded<Call>,
-    ) -> Outcome<Env, SuccessOf<Call>, WORDS> {
+    ) -> Outcome<Env, Call::Success, WORDS> {
         let request_id = ticket.request_id.disclose_as::<RequestIdSettled>(c);
         let attested = ticket.output;
 
@@ -712,19 +707,21 @@ where
         });
 
         let (record, env) = self.consume(c, request_id);
-        let split = <Call::Outcome as OutcomeRule<Call::Return>>::split(c, attested.output);
-        c.assert(split.succeeded.message("The attested call did not succeed"));
+        let succeeded = Call::succeeded(c, &attested.output);
+        c.assert(succeeded.message("The attested call did not succeed"));
 
         Outcome {
             request_id,
             env,
-            output: split.success,
+            // The projection runs AFTER the assert, so nothing a caller can
+            // read has escaped the check.
+            output: Call::map(c, attested.output),
             record,
         }
     }
 
     /// SETTLE A NON-SUCCESS. Accepts [`FAILURE_KIND`] (reverted, never
-    /// mined, undecodable) OR this slot's kind with the [`OutcomeRule`]
+    /// mined, undecodable) OR this slot's kind with the [`EvmCall::succeeded`]
     /// predicate false. Discloses `signet_flow::Settled`.
     ///
     /// The two accepted attestations have different preimage LENGTHS (see
@@ -734,11 +731,9 @@ where
         &self,
         c: &mut Circuit3,
         ticket: Failed<Call>,
-    ) -> Outcome<Env, FailureOf<Call>, WORDS> {
+    ) -> Outcome<Env, Ret<Call>, WORDS> {
         let request_id = ticket.request_id.disclose_as::<RequestIdSettled>(c);
         let attested = ticket.output;
-
-        let split = <Call::Outcome as OutcomeRule<Call::Return>>::split(c, attested.output);
 
         c.region("signet flow: attestation", |c| {
             // BOTH kinds are legal here, and they sign DIFFERENT preimages:
@@ -775,9 +770,10 @@ where
             // EXECUTED one accepted only when the call did not succeed.
             let failure_kind = eq(attested.kind.field(), u64::from(FAILURE_KIND));
             let this_kind = eq(attested.kind.field(), u64::from(Call::KIND));
+            let succeeded = Call::succeeded(c, &attested.output);
             c.assert(
                 failure_kind
-                    .or(this_kind.and(not(split.succeeded)))
+                    .or(this_kind.and(not(succeeded)))
                     .message("Not a refundable outcome"),
             );
         });
@@ -786,7 +782,7 @@ where
         Outcome {
             request_id,
             env,
-            output: split.failure,
+            output: attested.output,
             record,
         }
     }
@@ -852,7 +848,7 @@ where
         &self,
         c: &mut Circuit3,
         ticket: Failed<Call>,
-    ) -> (ZswapCoinPublicKey<Public>, E, FailureOf<Call>) {
+    ) -> (ZswapCoinPublicKey<Public>, E, Ret<Call>) {
         let outcome = self.refund(c, ticket);
         let sk = common::witness_sk(c);
         outcome
