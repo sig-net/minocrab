@@ -285,9 +285,9 @@ pub struct Vector {
     /// `SHA-256(hex)` — what Midnight's `persistentHash` computes over this
     /// preimage.
     pub sha256: String,
-    /// `keccak256(hex)`. For a request record this IS the request id; for an
-    /// `AttestationPreimage` it IS the digest the MPC signs. Elsewhere it is
-    /// a checksum an implementation can compare against.
+    /// `keccak256(hex)` — a checksum an implementation can compare against.
+    /// Since the protocol move (M28) it is NOT the request id and NOT the
+    /// signed digest: both are Poseidon over field elements (§6a, §5).
     pub keccak256: String,
     /// The 288-byte `Misc` envelope these bytes are logged inside, where
     /// there is one: `pad(32, eventName) ‖ hex ‖ zeros`.
@@ -473,6 +473,77 @@ pub fn swap_event() -> SwapEvent {
     }
 }
 
+/// The supply record, in the shape `startSupply` writes: an ERC-4626
+/// `deposit(assets, receiver)` to the stata token under the vault's own path.
+/// The same 2-word middle as [`vault_event`] with the lending schemas, so the
+/// two vectors differ only in the last 71 bytes.
+pub fn supply_event() -> SupplyEvent {
+    let e = vault_event();
+    SupplyEvent {
+        sender: e.sender,
+        request_nonce: 11,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: EvmType2TxParams2 {
+            nonce: 44,
+            gas_limit: 500_000,
+            calldata: Flagged {
+                is_some: true,
+                value: EvmCalldata2 {
+                    selector: erc20_vault::DEPOSIT_SELECTOR,
+                    no_words: 2,
+                    words: [word(0xff), pattern(0xb0, 1)],
+                },
+            },
+            ..e.tx_params
+        },
+        caip2_id: e.caip2_id,
+        output_deserialization_schema: schema(erc20_vault::SUPPLY_OUTPUT_SCHEMA),
+        respond_serialization_schema: schema(erc20_vault::SUPPLY_RESPOND_SCHEMA),
+    }
+}
+
+/// The 3-word redeem record, in the shape `startRedeem` writes: an ERC-4626
+/// `redeem(shares, receiver, owner)` with receiver and owner both the vault.
+pub fn redeem_event() -> RedeemEvent {
+    let e = vault_event();
+    RedeemEvent {
+        sender: e.sender,
+        request_nonce: 13,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: EvmType2TxParams3 {
+            chain_id: e.tx_params.chain_id,
+            nonce: 45,
+            max_priority_fee_per_gas: e.tx_params.max_priority_fee_per_gas,
+            max_fee_per_gas: e.tx_params.max_fee_per_gas,
+            gas_limit: 500_000,
+            to: e.tx_params.to,
+            value: 0,
+            calldata: Flagged {
+                is_some: true,
+                value: EvmCalldata3 {
+                    selector: erc20_vault::REDEEM_SELECTOR,
+                    no_words: 3,
+                    words: [word(0xfe), pattern(0xb0, 1), pattern(0xb0, 1)],
+                },
+            },
+            access_list_entry_count: 0,
+        },
+        caip2_id: e.caip2_id,
+        output_deserialization_schema: schema(erc20_vault::REDEEM_OUTPUT_SCHEMA),
+        respond_serialization_schema: schema(erc20_vault::REDEEM_RESPOND_SCHEMA),
+    }
+}
+
 /// The 2-word record as M11 STAGE 7 writes it: the same value as
 /// [`vault_event`] with the version byte in front and the response kind (0,
 /// CLAIM — a `deposit` request) where the two schema strings were.
@@ -513,6 +584,46 @@ pub fn swap_event_v2() -> SwapEventV2 {
         tx_params: e.tx_params,
         caip2_id: e.caip2_id,
         response_kind: erc20_vault_pending::RESPONSE_KIND_SWAP as u8,
+    }
+}
+
+/// The supply record in V2 — `VaultEventV2` at kind 5, SUPPLY: the lending
+/// schemas were the only thing that told a supply record from a vault record,
+/// and V2 carries neither.
+pub fn supply_event_v2() -> VaultEventV2 {
+    let e = supply_event();
+    VaultEventV2 {
+        format_version: RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: erc20_vault_pending::RESPONSE_KIND_SUPPLY as u8,
+    }
+}
+
+/// The 3-word redeem record in V2 — kind 6, REDEEM.
+pub fn redeem_event_v2() -> RedeemEventV2 {
+    let e = redeem_event();
+    RedeemEventV2 {
+        format_version: RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: erc20_vault_pending::RESPONSE_KIND_REDEEM as u8,
     }
 }
 
@@ -583,17 +694,23 @@ fn leaves() -> String {
 /// ids they hash to.
 fn records() -> String {
     file(
-        "The request-record instantiations, DEPLOYED and M11 stage 7. keccak256 of these bytes \
-         IS the request id the vault stores and the MPC recomputes (it drops the request on \
-         mismatch). The V2 pair carries the same values as its deployed twin, so the diff is \
-         exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte \
-         responseKind where the two in-band ABI-JSON schema strings were (404 → 338 and \
-         571 → 498 bytes).",
+        "The request-record instantiations, DEPLOYED (the 2-word vault record, the 7-word swap \
+         record, and the lending pair: the 2-word supply record with its own schema strings \
+         and the 3-word redeem record) and V2. The request id is NOT a hash of these bytes: it \
+         is Poseidon over the record's field elements (borsh-subset.md §6a); keccak256 here is \
+         a checksum. Each V2 record carries the same values as its deployed twin, so the diff \
+         is exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte \
+         responseKind where the two in-band ABI-JSON schema strings were (404 → 338, 571 → \
+         498, 407 → 338 and 439 → 370 bytes).",
         vec![
             vector("VaultEvent", &vault_event()),
             vector("SwapEvent", &swap_event()),
+            vector("SupplyEvent", &supply_event()),
+            vector("RedeemEvent", &redeem_event()),
             vector("VaultEventV2 (M11 stage 7, kind 0 CLAIM)", &vault_event_v2()),
             vector("SwapEventV2 (M11 stage 7, kind 2 SWAP)", &swap_event_v2()),
+            vector("VaultEventV2 (kind 5 SUPPLY)", &supply_event_v2()),
+            vector("RedeemEventV2 (kind 6 REDEEM)", &redeem_event_v2()),
         ],
     )
 }

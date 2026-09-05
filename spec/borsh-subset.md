@@ -260,18 +260,23 @@ fixtures (`crates/signet-sim`).
 There are TWO record formats, and this document specifies both.
 
 **The current format** — `VaultEvent` (2 calldata words, 404 bytes) for deposit
-/ approveRouter / withdraw, `SwapEvent` (7 words, 571 bytes) for swap — is what
-the deployed contract writes, verified byte-for-byte against the deployed
-encoding.
+/ approveRouter / withdraw, `SwapEvent` (7 words, 571 bytes) for swap,
+`SupplyEvent` (2 words, 407 bytes: the vault record's shape with the lending
+schema strings) for startSupply and `RedeemEvent` (3 words, 439 bytes) for
+startRedeem — is what the deployed contract writes, verified byte-for-byte
+against the deployed encoding.
 
-**The V2 format** — `VaultEventV2` (338 bytes) and `SwapEventV2` (498 bytes) —
-is what the contracts of this specification write. It changes the record at its
-two ENDS and nowhere in between:
+**The V2 format** — `VaultEventV2` (338 bytes), `SwapEventV2` (498 bytes) and
+`RedeemEventV2` (370 bytes) — is what the contracts of this specification
+write. A V2 supply record is a `VaultEventV2` with `response_kind` 5: the
+schema strings were the only thing that told a supply record from a vault
+record, and V2 carries neither. The format changes the record at its two ENDS
+and nowhere in between:
 
 | | current | V2 |
 |---|---|---|
 | first field | `sender: [u8; 32]` | `format_version: u8` = **`0x80`**, then `sender` |
-| last fields | `output_deserialization_schema: [u8; L]` + `respond_serialization_schema: [u8; L']` (68 bytes on a vault record, 75 on a swap record) | `response_kind: u8` — the §5 kind, one byte |
+| last fields | `output_deserialization_schema: [u8; L]` + `respond_serialization_schema: [u8; L']` (68 bytes on a vault record, 75 on a swap record, 71 on a lending record) | `response_kind: u8` — the §5 kind, one byte |
 
 Everything between is identical, field for field, so every V2 offset is the old
 one **plus one**. Both layouts are in §9.
@@ -435,6 +440,65 @@ preimage; the `output.*` rows are the attested output at offset 32.
 | 496 | 38 | `output_deserialization_schema` | `[u8; 38]` |
 | 534 | 37 | `respond_serialization_schema` | `[u8; 37]` |
 
+### `SupplyEvent` — 407 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 32 | `sender` | `[u8; 32]` |
+| 32 | 8 | `request_nonce` | `u64` |
+| 40 | 1 | `key_version` | `u8` |
+| 41 | 32 | `path` | `[u8; 32]` |
+| 73 | 1 | `algo` | `u8` |
+| 74 | 1 | `dest` | `u8` |
+| 75 | 64 | `params` | `[u8; 64]` |
+| 139 | 1 | `tx_param_type` | `u8` |
+| 140 | 8 | `tx_params.chain_id` | `u64` |
+| 148 | 8 | `tx_params.nonce` | `u64` |
+| 156 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 172 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 188 | 8 | `tx_params.gas_limit` | `u64` |
+| 196 | 20 | `tx_params.to` | `[u8; 20]` |
+| 216 | 16 | `tx_params.value` | `u128` |
+| 232 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 233 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 237 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 239 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 271 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 303 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 304 | 32 | `caip2_id` | `[u8; 32]` |
+| 336 | 36 | `output_deserialization_schema` | `[u8; 36]` |
+| 372 | 35 | `respond_serialization_schema` | `[u8; 35]` |
+
+### `RedeemEvent` — 439 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 32 | `sender` | `[u8; 32]` |
+| 32 | 8 | `request_nonce` | `u64` |
+| 40 | 1 | `key_version` | `u8` |
+| 41 | 32 | `path` | `[u8; 32]` |
+| 73 | 1 | `algo` | `u8` |
+| 74 | 1 | `dest` | `u8` |
+| 75 | 64 | `params` | `[u8; 64]` |
+| 139 | 1 | `tx_param_type` | `u8` |
+| 140 | 8 | `tx_params.chain_id` | `u64` |
+| 148 | 8 | `tx_params.nonce` | `u64` |
+| 156 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 172 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 188 | 8 | `tx_params.gas_limit` | `u64` |
+| 196 | 20 | `tx_params.to` | `[u8; 20]` |
+| 216 | 16 | `tx_params.value` | `u128` |
+| 232 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 233 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 237 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 239 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 271 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 303 | 32 | `tx_params.calldata.value.words[2]` | `[u8; 32]` |
+| 335 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 336 | 32 | `caip2_id` | `[u8; 32]` |
+| 368 | 36 | `output_deserialization_schema` | `[u8; 36]` |
+| 404 | 35 | `respond_serialization_schema` | `[u8; 35]` |
+
 ### `VaultEventV2` — 338 bytes
 
 | offset | width | field | type |
@@ -497,6 +561,36 @@ preimage; the `output.*` rows are the attested output at offset 32.
 | 464 | 1 | `tx_params.access_list_entry_count` | `u8` |
 | 465 | 32 | `caip2_id` | `[u8; 32]` |
 | 497 | 1 | `response_kind` | `u8` |
+
+### `RedeemEventV2` — 370 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `format_version` | `u8` |
+| 1 | 32 | `sender` | `[u8; 32]` |
+| 33 | 8 | `request_nonce` | `u64` |
+| 41 | 1 | `key_version` | `u8` |
+| 42 | 32 | `path` | `[u8; 32]` |
+| 74 | 1 | `algo` | `u8` |
+| 75 | 1 | `dest` | `u8` |
+| 76 | 64 | `params` | `[u8; 64]` |
+| 140 | 1 | `tx_param_type` | `u8` |
+| 141 | 8 | `tx_params.chain_id` | `u64` |
+| 149 | 8 | `tx_params.nonce` | `u64` |
+| 157 | 16 | `tx_params.max_priority_fee_per_gas` | `u128` |
+| 173 | 16 | `tx_params.max_fee_per_gas` | `u128` |
+| 189 | 8 | `tx_params.gas_limit` | `u64` |
+| 197 | 20 | `tx_params.to` | `[u8; 20]` |
+| 217 | 16 | `tx_params.value` | `u128` |
+| 233 | 1 | `tx_params.calldata.is_some` | `bool` |
+| 234 | 4 | `tx_params.calldata.value.selector` | `[u8; 4]` |
+| 238 | 2 | `tx_params.calldata.value.no_words` | `u16` |
+| 240 | 32 | `tx_params.calldata.value.words[0]` | `[u8; 32]` |
+| 272 | 32 | `tx_params.calldata.value.words[1]` | `[u8; 32]` |
+| 304 | 32 | `tx_params.calldata.value.words[2]` | `[u8; 32]` |
+| 336 | 1 | `tx_params.access_list_entry_count` | `u8` |
+| 337 | 32 | `caip2_id` | `[u8; 32]` |
+| 369 | 1 | `response_kind` | `u8` |
 
 ### `ClaimOutput` — 1 bytes
 
@@ -652,7 +746,7 @@ regeneration.
 | file | contents |
 |---|---|
 | `leaves.json` | one vector per leaf type, including `Flagged<u32>` set and unset (same width) |
-| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values; the request id is §6a's Poseidon over their field elements, not a hash of these bytes |
+| `records.json` | `VaultEvent` / `SwapEvent` / `SupplyEvent` / `RedeemEvent` (current) and `VaultEventV2` (kinds 0 and 5) / `SwapEventV2` / `RedeemEventV2` (§6) at the SAME field values; the request id is §6a's Poseidon over their field elements, not a hash of these bytes |
 | `attested-outputs.json` | the kind-tagged responses of §5 and their signed digest preimages |
 | `attested-outputs-deployed.json` | what the deployed contract accepts TODAY, for reference |
 | `misc-payloads.json` | the singleton's logged payloads, with the 288-byte envelope |
@@ -691,14 +785,12 @@ Read this before implementing.
   specifies what is already on the wire; it was verified byte-for-byte against
   the deployed encoding, including by handing the bytes to the compiled
   contract itself.
-- **`VaultEvent` / `SwapEvent` are what the DEPLOYED vault writes**, likewise
-  verified byte-for-byte, and their request ids are §6a's Poseidon over the
-  field elements (signet-midnight-examples `0d9c1660`). The deployed vault's
-  two lending flows (`startSupply`, `startRedeem`) write the same record shape
-  at other instantiations — 2 and 3 calldata words, 36/35-byte schema strings
-  — which this document does not yet tabulate in §9; they follow §6a and the
-  §9 layout rule unchanged (`crates/minocrab-contracts/src/erc20_vault.rs`,
-  `SupplyEvent` / `RedeemEvent`).
+- **`VaultEvent` / `SwapEvent` / `SupplyEvent` / `RedeemEvent` are what the
+  DEPLOYED vault writes**, likewise verified byte-for-byte, and their request
+  ids are §6a's Poseidon over the field elements (signet-midnight-examples
+  `0d9c1660`). The lending pair is the same record shape at two more
+  instantiations — 2 and 3 calldata words, 36/35-byte schema strings — and
+  §9 tabulates all four.
 - **`VaultEventV2` / `SwapEventV2` (§6) and the response kinds of §5 are
   SPECIFIED, not deployed.** The MPC has never settled a transaction on
   Midnight (its Midnight publisher is unimplemented) and nothing has been

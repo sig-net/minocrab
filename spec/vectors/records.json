@@ -2,7 +2,7 @@
   "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
   "format": "borsh-subset-vectors/1",
   "spec": "spec/borsh-subset.md",
-  "about": "The request-record instantiations, DEPLOYED and M11 stage 7. keccak256 of these bytes IS the request id the vault stores and the MPC recomputes (it drops the request on mismatch). The V2 pair carries the same values as its deployed twin, so the diff is exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte responseKind where the two in-band ABI-JSON schema strings were (404 → 338 and 571 → 498 bytes).",
+  "about": "The request-record instantiations, DEPLOYED (the 2-word vault record, the 7-word swap record, and the lending pair: the 2-word supply record with its own schema strings and the 3-word redeem record) and V2. The request id is NOT a hash of these bytes: it is Poseidon over the record's field elements (borsh-subset.md §6a); keccak256 here is a checksum. Each V2 record carries the same values as its deployed twin, so the diff is exactly the format change: a formatVersion = 0x80 byte at offset 0, and a 1-byte responseKind where the two in-band ABI-JSON schema strings were (404 → 338, 571 → 498, 407 → 338 and 439 → 370 bytes).",
   "vectors": [
     {
       "type": "VaultEvent",
@@ -418,6 +418,395 @@
           "offset": 534,
           "width": 37,
           "hex": "5b7b226e616d65223a22616d6f756e74496e222c2274797065223a2275696e743634227d5d"
+        }
+      ]
+    },
+    {
+      "type": "SupplyEvent",
+      "len": 407,
+      "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0b0000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002c0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000020a1070000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000000000000000000000000000016e553f65020000000000000000000000000000000000000000000000000000000000000000ffb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f5b7b226e616d65223a22736861726573222c2274797065223a2275696e74323536227d5d5b7b226e616d65223a22736861726573222c2274797065223a2275696e743634227d5d",
+      "sha256": "70646a87d2b56bdc7825273fd38e9272b1ede40167bc46a5aac7c8c0a3edb6e0",
+      "keccak256": "4ed79a488bdccd1ef118cab453805fdb400d7d40c9090ec5d1c6f003eebdf73d",
+      "fields": [
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 32,
+          "width": 8,
+          "hex": "0b00000000000000",
+          "number": 11
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 40,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 41,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 73,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 75,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 139,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 140,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 148,
+          "width": 8,
+          "hex": "2c00000000000000",
+          "number": 44
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 156,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 172,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 188,
+          "width": 8,
+          "hex": "20a1070000000000",
+          "number": 500000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 196,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 216,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 232,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 233,
+          "width": 4,
+          "hex": "6e553f65"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 237,
+          "width": 2,
+          "hex": "0200",
+          "number": 2
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 239,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000ff"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 271,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 303,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 304,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "output_deserialization_schema",
+          "type": "[u8; 36]",
+          "offset": 336,
+          "width": 36,
+          "hex": "5b7b226e616d65223a22736861726573222c2274797065223a2275696e74323536227d5d"
+        },
+        {
+          "path": "respond_serialization_schema",
+          "type": "[u8; 35]",
+          "offset": 372,
+          "width": 35,
+          "hex": "5b7b226e616d65223a22736861726573222c2274797065223a2275696e743634227d5d"
+        }
+      ]
+    },
+    {
+      "type": "RedeemEvent",
+      "len": 439,
+      "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0d0000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002d0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000020a1070000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b30000000000000000000000000000000001ba087652030000000000000000000000000000000000000000000000000000000000000000feb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f5b7b226e616d65223a22617373657473222c2274797065223a2275696e74323536227d5d5b7b226e616d65223a22617373657473222c2274797065223a2275696e743634227d5d",
+      "sha256": "dbcbad9bdc319ea13125c83996340a6aded61c6b41d49a9a28e49aafd34d576f",
+      "keccak256": "5126872221fb145fed956622401472292efbdab02933f4c40d1de7a9a21902a7",
+      "fields": [
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 32,
+          "width": 8,
+          "hex": "0d00000000000000",
+          "number": 13
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 40,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 41,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 73,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 75,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 139,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 140,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 148,
+          "width": 8,
+          "hex": "2d00000000000000",
+          "number": 45
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 156,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 172,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 188,
+          "width": 8,
+          "hex": "20a1070000000000",
+          "number": 500000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 196,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 216,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 232,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 233,
+          "width": 4,
+          "hex": "ba087652"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 237,
+          "width": 2,
+          "hex": "0300",
+          "number": 3
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 239,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000fe"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 271,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.calldata.value.words[2]",
+          "type": "[u8; 32]",
+          "offset": 303,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 335,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 336,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "output_deserialization_schema",
+          "type": "[u8; 36]",
+          "offset": 368,
+          "width": 36,
+          "hex": "5b7b226e616d65223a22617373657473222c2274797065223a2275696e74323536227d5d"
+        },
+        {
+          "path": "respond_serialization_schema",
+          "type": "[u8; 35]",
+          "offset": 404,
+          "width": 35,
+          "hex": "5b7b226e616d65223a22617373657473222c2274797065223a2275696e743634227d5d"
         }
       ]
     },
@@ -839,6 +1228,399 @@
           "width": 1,
           "hex": "02",
           "number": 2
+        }
+      ]
+    },
+    {
+      "type": "VaultEventV2 (kind 5 SUPPLY)",
+      "len": 338,
+      "hex": "80101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0b0000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002c0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000020a1070000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b300000000000000000000000000000000016e553f65020000000000000000000000000000000000000000000000000000000000000000ffb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f05",
+      "sha256": "29d52e87f846707dea3ab3b9be26ce740195111b217b250fee9858b842658e9b",
+      "keccak256": "1569822d5ed748457add7f7f3af10c26044e8f526d2118789b091ed1acc0e44f",
+      "fields": [
+        {
+          "path": "format_version",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "80",
+          "number": 128
+        },
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 1,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "0b00000000000000",
+          "number": 11
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 41,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 42,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 75,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 76,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 140,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 141,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 149,
+          "width": 8,
+          "hex": "2c00000000000000",
+          "number": 44
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 157,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 173,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 189,
+          "width": 8,
+          "hex": "20a1070000000000",
+          "number": 500000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 197,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 217,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 233,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 234,
+          "width": 4,
+          "hex": "6e553f65"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 238,
+          "width": 2,
+          "hex": "0200",
+          "number": 2
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 240,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000ff"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 272,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 304,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 305,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "response_kind",
+          "type": "u8",
+          "offset": 337,
+          "width": 1,
+          "hex": "05",
+          "number": 5
+        }
+      ]
+    },
+    {
+      "type": "RedeemEventV2 (kind 6 REDEEM)",
+      "len": 370,
+      "hex": "80101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f0d0000000000000001404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000002d0000000000000000ca9a3b00000000000000000000000000ac23fc06000000000000000000000020a1070000000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b30000000000000000000000000000000001ba087652030000000000000000000000000000000000000000000000000000000000000000feb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0001030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f06",
+      "sha256": "517f1d686e477adf24bf5df18ccc7972373259b0c61120626e159129e96386ba",
+      "keccak256": "825e99488978dc5f47794f4e2629ace225fd87b9ba516c5935b41dbb583594e1",
+      "fields": [
+        {
+          "path": "format_version",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "80",
+          "number": 128
+        },
+        {
+          "path": "sender",
+          "type": "[u8; 32]",
+          "offset": 1,
+          "width": 32,
+          "hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+        },
+        {
+          "path": "request_nonce",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "0d00000000000000",
+          "number": 13
+        },
+        {
+          "path": "key_version",
+          "type": "u8",
+          "offset": 41,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "path",
+          "type": "[u8; 32]",
+          "offset": 42,
+          "width": 32,
+          "hex": "404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9d"
+        },
+        {
+          "path": "algo",
+          "type": "u8",
+          "offset": 74,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "dest",
+          "type": "u8",
+          "offset": 75,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "params",
+          "type": "[u8; 64]",
+          "offset": 76,
+          "width": 64,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "path": "tx_param_type",
+          "type": "u8",
+          "offset": 140,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "tx_params.chain_id",
+          "type": "u64",
+          "offset": 141,
+          "width": 8,
+          "hex": "0100000000000000",
+          "number": 1
+        },
+        {
+          "path": "tx_params.nonce",
+          "type": "u64",
+          "offset": 149,
+          "width": 8,
+          "hex": "2d00000000000000",
+          "number": 45
+        },
+        {
+          "path": "tx_params.max_priority_fee_per_gas",
+          "type": "u128",
+          "offset": 157,
+          "width": 16,
+          "hex": "00ca9a3b000000000000000000000000",
+          "number": 1000000000
+        },
+        {
+          "path": "tx_params.max_fee_per_gas",
+          "type": "u128",
+          "offset": 173,
+          "width": 16,
+          "hex": "00ac23fc060000000000000000000000",
+          "number": 30000000000
+        },
+        {
+          "path": "tx_params.gas_limit",
+          "type": "u64",
+          "offset": 189,
+          "width": 8,
+          "hex": "20a1070000000000",
+          "number": 500000
+        },
+        {
+          "path": "tx_params.to",
+          "type": "[u8; 20]",
+          "offset": 197,
+          "width": 20,
+          "hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3"
+        },
+        {
+          "path": "tx_params.value",
+          "type": "u128",
+          "offset": 217,
+          "width": 16,
+          "hex": "00000000000000000000000000000000",
+          "number": 0
+        },
+        {
+          "path": "tx_params.calldata.is_some",
+          "type": "bool",
+          "offset": 233,
+          "width": 1,
+          "hex": "01",
+          "number": 1
+        },
+        {
+          "path": "tx_params.calldata.value.selector",
+          "type": "[u8; 4]",
+          "offset": 234,
+          "width": 4,
+          "hex": "ba087652"
+        },
+        {
+          "path": "tx_params.calldata.value.no_words",
+          "type": "u16",
+          "offset": 238,
+          "width": 2,
+          "hex": "0300",
+          "number": 3
+        },
+        {
+          "path": "tx_params.calldata.value.words[0]",
+          "type": "[u8; 32]",
+          "offset": 240,
+          "width": 32,
+          "hex": "00000000000000000000000000000000000000000000000000000000000000fe"
+        },
+        {
+          "path": "tx_params.calldata.value.words[1]",
+          "type": "[u8; 32]",
+          "offset": 272,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.calldata.value.words[2]",
+          "type": "[u8; 32]",
+          "offset": 304,
+          "width": 32,
+          "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+        },
+        {
+          "path": "tx_params.access_list_entry_count",
+          "type": "u8",
+          "offset": 336,
+          "width": 1,
+          "hex": "00",
+          "number": 0
+        },
+        {
+          "path": "caip2_id",
+          "type": "[u8; 32]",
+          "offset": 337,
+          "width": 32,
+          "hex": "01030507090b0d0f11131517191b1d1f21232527292b2d2f31333537393b3d3f"
+        },
+        {
+          "path": "response_kind",
+          "type": "u8",
+          "offset": 369,
+          "width": 1,
+          "hex": "06",
+          "number": 6
         }
       ]
     }

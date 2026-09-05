@@ -254,3 +254,19 @@ test('reject: readSwapEventV2 on a record whose format version is not 0x80', () 
     );
   }
 });
+
+test('reject: readRedeemEventV2 on a record whose format version is not 0x80', () => {
+  const codec = CODECS['RedeemEventV2'];
+  const bytes = new Uint8Array(codec.byteLength);
+  bytes[0] = RECORD_FORMAT_VERSION;
+  assert.equal(codec.read(bytes).formatVersion, RECORD_FORMAT_VERSION);
+  for (const wrong of [0x00, 0x01, 0x7f, 0x81, 0xff]) {
+    bytes[0] = wrong;
+    const hex = wrong.toString(16).padStart(2, '0');
+    assert.throws(
+      () => codec.read(bytes),
+      new RegExp(`record-version: expected 0x80, got 0x${hex}`),
+      `version 0x${hex} must be rejected by name`,
+    );
+  }
+});

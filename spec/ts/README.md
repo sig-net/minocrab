@@ -114,8 +114,11 @@ as the decoder.
 | `Flagged<u32>` | `readFlaggedU32` / `writeFlaggedU32` | 5 |
 | `VaultEvent` | `readVaultEvent` / `writeVaultEvent` | 404 |
 | `SwapEvent` | `readSwapEvent` / `writeSwapEvent` | 571 |
+| `SupplyEvent` | `readSupplyEvent` / `writeSupplyEvent` | 407 |
+| `RedeemEvent` | `readRedeemEvent` / `writeRedeemEvent` | 439 |
 | `VaultEventV2` | `readVaultEventV2` / `writeVaultEventV2` | 338 |
 | `SwapEventV2` | `readSwapEventV2` / `writeSwapEventV2` | 498 |
+| `RedeemEventV2` | `readRedeemEventV2` / `writeRedeemEventV2` | 370 |
 | `ClaimOutput` | `readClaimOutput` / `writeClaimOutput` | 1 |
 | `CompleteWithdrawOutput` | `readCompleteWithdrawOutput` / `writeCompleteWithdrawOutput` | 1 |
 | `RefundOutput` | `readRefundOutput` / `writeRefundOutput` | 5 |

@@ -134,9 +134,10 @@ impl<T: FixedLen> FixedLen for Flagged<T> {
 // Field order, widths and nesting are read off the deployed shape:
 // `signet::SignBidirectionalEvent::atoms()` (the alignment
 // `calculateRequestId` hands to keccak256) and `signet::layout`. The vault's
-// two instantiations are `<2, 34, 34>` (deposit / approveRouter / withdraw
-// and the claim / completeWithdraw settlements that read the record back)
-// and `<7, 38, 37>` (swap / completeSwap).
+// four instantiations are `<2, 34, 34>` (deposit / approveRouter / withdraw
+// and the claim / completeWithdraw settlements that read the record back),
+// `<7, 38, 37>` (swap / completeSwap), and the lending pair `<2, 36, 35>`
+// (supply) and `<3, 36, 35>` (redeem).
 
 /// `struct EvmCalldata<#maxWords>` — the ABI calldata of the EVM
 /// transaction the MPC is asked to sign.
@@ -164,6 +165,19 @@ pub struct EvmCalldata7 {
 
 impl FixedLen for EvmCalldata7 {
     const LEN: usize = 4 + 2 + 7 * 32;
+}
+
+/// [`EvmCalldata2`] with the redeem instantiation's three words —
+/// `redeem(shares, receiver, owner)`.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EvmCalldata3 {
+    pub selector: [u8; 4],
+    pub no_words: u16,
+    pub words: [[u8; 32]; 3],
+}
+
+impl FixedLen for EvmCalldata3 {
+    const LEN: usize = 4 + 2 + 3 * 32;
 }
 
 /// `struct EvmType2TxParams<#maxCalldataWords, 0, 0>` — the EIP-1559
@@ -203,6 +217,24 @@ pub struct EvmType2TxParams7 {
 
 impl FixedLen for EvmType2TxParams7 {
     const LEN: usize = 8 + 8 + 16 + 16 + 8 + 20 + 16 + Flagged::<EvmCalldata7>::LEN + 1;
+}
+
+/// [`EvmType2TxParams2`] with the redeem instantiation's three calldata words.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EvmType2TxParams3 {
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub max_priority_fee_per_gas: u128,
+    pub max_fee_per_gas: u128,
+    pub gas_limit: u64,
+    pub to: [u8; 20],
+    pub value: u128,
+    pub calldata: Flagged<EvmCalldata3>,
+    pub access_list_entry_count: u8,
+}
+
+impl FixedLen for EvmType2TxParams3 {
+    const LEN: usize = 8 + 8 + 16 + 16 + 8 + 20 + 16 + Flagged::<EvmCalldata3>::LEN + 1;
 }
 
 /// The vault's request record: `SignBidirectionalEvent<EvmType2TxParams<2,
@@ -265,6 +297,56 @@ pub struct SwapEvent {
 
 impl FixedLen for SwapEvent {
     const LEN: usize = 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams7::LEN + 32 + 38 + 37;
+}
+
+/// The supply request record: `SignBidirectionalEvent<EvmType2TxParams<2,
+/// 0, 0>, 36, 35>` — the SAME 2-word shape as [`VaultEvent`] with the two
+/// schema strings two bytes longer (`shares` for `success`, `uint256` /
+/// `uint64` for `bool`), so 404 + 2 + 1 = 407 bytes. `startSupply` writes one
+/// (an ERC-4626 `deposit(assets, receiver)` to the stata token);
+/// `completeSupply` and `refundSupply` read it back.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SupplyEvent {
+    pub sender: [u8; 32],
+    pub request_nonce: u64,
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub algo: u8,
+    pub dest: u8,
+    pub params: ByteArray<64>,
+    pub tx_param_type: u8,
+    pub tx_params: EvmType2TxParams2,
+    pub caip2_id: [u8; 32],
+    pub output_deserialization_schema: ByteArray<36>,
+    pub respond_serialization_schema: ByteArray<35>,
+}
+
+impl FixedLen for SupplyEvent {
+    const LEN: usize = 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams2::LEN + 32 + 36 + 35;
+}
+
+/// The redeem request record: `SignBidirectionalEvent<EvmType2TxParams<3,
+/// 0, 0>, 36, 35>` — three ABI words (`redeem(shares, receiver, owner)`) and
+/// the lending schemas, 439 bytes. `startRedeem` writes one; `completeRedeem`
+/// and `refundRedeem` read it back.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RedeemEvent {
+    pub sender: [u8; 32],
+    pub request_nonce: u64,
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub algo: u8,
+    pub dest: u8,
+    pub params: ByteArray<64>,
+    pub tx_param_type: u8,
+    pub tx_params: EvmType2TxParams3,
+    pub caip2_id: [u8; 32],
+    pub output_deserialization_schema: ByteArray<36>,
+    pub respond_serialization_schema: ByteArray<35>,
+}
+
+impl FixedLen for RedeemEvent {
+    const LEN: usize = 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams3::LEN + 32 + 36 + 35;
 }
 
 // ---- the request record, M11 stage 7 -----------------------------------------
@@ -339,6 +421,32 @@ pub struct SwapEventV2 {
 
 impl FixedLen for SwapEventV2 {
     const LEN: usize = 1 + 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams7::LEN + 32 + 1;
+}
+
+/// [`RedeemEvent`] as the V2 format defines it — 370 bytes (the 3-word
+/// middle with the version byte in front and kind 6, REDEEM, where the schema
+/// strings were). A V2 SUPPLY record needs no type of its own: it is a
+/// [`VaultEventV2`] whose `response_kind` is 5, SUPPLY — the same 2-word
+/// middle, as the `Pending<SupplyEnv, SupplyResponse, 2>` instantiation says.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RedeemEventV2 {
+    pub format_version: u8,
+    pub sender: [u8; 32],
+    pub request_nonce: u64,
+    pub key_version: u8,
+    pub path: [u8; 32],
+    pub algo: u8,
+    pub dest: u8,
+    pub params: ByteArray<64>,
+    pub tx_param_type: u8,
+    pub tx_params: EvmType2TxParams3,
+    pub caip2_id: [u8; 32],
+    /// Kind 6, REDEEM.
+    pub response_kind: u8,
+}
+
+impl FixedLen for RedeemEventV2 {
+    const LEN: usize = 1 + 32 + 8 + 1 + 32 + 1 + 1 + 64 + 1 + EvmType2TxParams3::LEN + 32 + 1;
 }
 
 // ---- the attested outputs ----------------------------------------------------
@@ -527,9 +635,13 @@ pub fn schema_containers() -> Vec<(&'static str, BorshSchemaContainer)> {
     vec![
         ("VaultEvent", BorshSchemaContainer::for_type::<VaultEvent>()),
         ("SwapEvent", BorshSchemaContainer::for_type::<SwapEvent>()),
+        // The lending flows' instantiations (signet-midnight-examples 0d9c1660).
+        ("SupplyEvent", BorshSchemaContainer::for_type::<SupplyEvent>()),
+        ("RedeemEvent", BorshSchemaContainer::for_type::<RedeemEvent>()),
         // M11 stage 7: the versioned, kind-tagged records.
         ("VaultEventV2", BorshSchemaContainer::for_type::<VaultEventV2>()),
         ("SwapEventV2", BorshSchemaContainer::for_type::<SwapEventV2>()),
+        ("RedeemEventV2", BorshSchemaContainer::for_type::<RedeemEventV2>()),
         ("ClaimOutput", BorshSchemaContainer::for_type::<ClaimOutput>()),
         (
             "CompleteWithdrawOutput",

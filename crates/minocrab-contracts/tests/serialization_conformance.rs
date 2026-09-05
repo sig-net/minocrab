@@ -108,6 +108,19 @@ fn calldata7() -> impl Strategy<Value = EvmCalldata7> {
         })
 }
 
+fn calldata3() -> impl Strategy<Value = EvmCalldata3> {
+    (
+        byte_array::<4>(),
+        any::<u16>(),
+        proptest::collection::vec(byte_array::<32>(), 3),
+    )
+        .prop_map(|(selector, no_words, words)| EvmCalldata3 {
+            selector,
+            no_words,
+            words: words.try_into().expect("three words in, three out"),
+        })
+}
+
 /// The seven scalar fields every `EvmType2TxParams` instantiation shares.
 type TxHeader = (u64, u64, u128, u128, u64, [u8; 20], u128);
 
@@ -148,6 +161,25 @@ fn tx_params7() -> impl Strategy<Value = EvmType2TxParams7> {
           is_some,
           calldata,
           access_list_entry_count)| EvmType2TxParams7 {
+            chain_id,
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            calldata: Flagged { is_some, value: calldata },
+            access_list_entry_count,
+        },
+    )
+}
+
+fn tx_params3() -> impl Strategy<Value = EvmType2TxParams3> {
+    (tx_header(), any::<bool>(), calldata3(), any::<u8>()).prop_map(
+        |((chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, to, value),
+          is_some,
+          calldata,
+          access_list_entry_count)| EvmType2TxParams3 {
             chain_id,
             nonce,
             max_priority_fee_per_gas,
@@ -234,6 +266,83 @@ fn swap_event() -> impl Strategy<Value = SwapEvent> {
         )
 }
 
+fn supply_event() -> impl Strategy<Value = SupplyEvent> {
+    (
+        record_header(),
+        tx_params2(),
+        byte_array::<36>(),
+        byte_array::<35>(),
+    )
+        .prop_map(
+            |((sender, request_nonce, key_version, path, algo, dest, params, tx_param_type, caip2_id),
+              tx_params,
+              out_schema,
+              respond_schema)| SupplyEvent {
+                sender,
+                request_nonce,
+                key_version,
+                path,
+                algo,
+                dest,
+                params: ByteArray(params),
+                tx_param_type,
+                tx_params,
+                caip2_id,
+                output_deserialization_schema: ByteArray(out_schema),
+                respond_serialization_schema: ByteArray(respond_schema),
+            },
+        )
+}
+
+fn redeem_event() -> impl Strategy<Value = RedeemEvent> {
+    (
+        record_header(),
+        tx_params3(),
+        byte_array::<36>(),
+        byte_array::<35>(),
+    )
+        .prop_map(
+            |((sender, request_nonce, key_version, path, algo, dest, params, tx_param_type, caip2_id),
+              tx_params,
+              out_schema,
+              respond_schema)| RedeemEvent {
+                sender,
+                request_nonce,
+                key_version,
+                path,
+                algo,
+                dest,
+                params: ByteArray(params),
+                tx_param_type,
+                tx_params,
+                caip2_id,
+                output_deserialization_schema: ByteArray(out_schema),
+                respond_serialization_schema: ByteArray(respond_schema),
+            },
+        )
+}
+
+fn redeem_event_v2() -> impl Strategy<Value = RedeemEventV2> {
+    (record_header(), tx_params3(), any::<u8>()).prop_map(
+        |((sender, request_nonce, key_version, path, algo, dest, params, tx_param_type, caip2_id),
+          tx_params,
+          response_kind)| RedeemEventV2 {
+            format_version: RECORD_FORMAT_VERSION,
+            sender,
+            request_nonce,
+            key_version,
+            path,
+            algo,
+            dest,
+            params: ByteArray(params),
+            tx_param_type,
+            tx_params,
+            caip2_id,
+            response_kind,
+        },
+    )
+}
+
 /// M11 stage 7's 2-word record: the same generated middle, a version byte and
 /// a kind byte. Generated, not fixed, at both ends — the conformance
 /// properties are about the ENCODING, so they must hold at every value the
@@ -313,18 +422,30 @@ fn respond_misc() -> impl Strategy<Value = RespondMisc> {
 proptest! {
     #![proptest_config(gen::config())]
 
-    /// (a) + (b) for the two request records.
+    /// (a) + (b) for the four deployed request records.
     #[test]
-    fn records_are_conformant(vault in vault_event(), swap in swap_event()) {
+    fn records_are_conformant(
+        vault in vault_event(),
+        swap in swap_event(),
+        supply in supply_event(),
+        redeem in redeem_event(),
+    ) {
         assert_conformant(&vault);
         assert_conformant(&swap);
+        assert_conformant(&supply);
+        assert_conformant(&redeem);
     }
 
-    /// (a) + (b) for M11 stage 7's two request records.
+    /// (a) + (b) for M11 stage 7's three request records.
     #[test]
-    fn stage7_records_are_conformant(vault in vault_event_v2(), swap in swap_event_v2()) {
+    fn stage7_records_are_conformant(
+        vault in vault_event_v2(),
+        swap in swap_event_v2(),
+        redeem in redeem_event_v2(),
+    ) {
         assert_conformant(&vault);
         assert_conformant(&swap);
+        assert_conformant(&redeem);
     }
 
     /// (a) + (b) for the four attested outputs and their digest preimages.
@@ -379,6 +500,20 @@ fn lens_match_the_deployed_alignments() {
     // The design of record's stage-7 arithmetic is built on this number.
     assert_eq!(SwapEvent::LEN, 571);
     assert_eq!(VaultEvent::LEN, 404);
+    // The lending pair: the vault record's shape with schema strings two and
+    // one bytes longer (407), and its 3-word sibling (one more ABI word, 439).
+    assert_eq!(
+        SupplyEvent::LEN,
+        deployed::fab_len(&records::supply_record_atoms()),
+        "supply record width"
+    );
+    assert_eq!(
+        RedeemEvent::LEN,
+        deployed::fab_len(&records::redeem_record_atoms()),
+        "redeem record width"
+    );
+    assert_eq!(SupplyEvent::LEN, 404 + 2 + 1);
+    assert_eq!(RedeemEvent::LEN, 404 + 32 + 2 + 1);
 
     // M11 STAGE 7, and the same statement about the SHIPPING alignment: the
     // widths are the borsh artifacts' own atom lists, not our arithmetic.
@@ -397,6 +532,16 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(VaultEventV2::LEN, 338);
     assert_eq!(SwapEventV2::LEN, 571 + 1 - 38 - 37 + 1);
     assert_eq!(SwapEventV2::LEN, 498);
+    // The V2 redeem record: 439 → 370 by the same two edits; the V2 supply
+    // record is `VaultEventV2` itself (the schema strings were the only
+    // difference, and V2 has none).
+    assert_eq!(
+        RedeemEventV2::LEN,
+        deployed::fab_len(&records::redeem_record_v2_atoms()),
+        "V2 redeem record width"
+    );
+    assert_eq!(RedeemEventV2::LEN, 439 + 1 - 36 - 35 + 1);
+    assert_eq!(RedeemEventV2::LEN, 370);
     // The keccak block counts those widths buy: 3 → 3 for the vault record,
     // 5 → 4 for the swap record — the block that takes `swap` from k16 to
     // k15. Counted by the ROW MODEL's own `keccak_blocks` (rate 136, at least
@@ -443,8 +588,11 @@ fn schema_widths_match_the_lens() {
     let expected: Vec<(&str, usize)> = vec![
         ("VaultEvent", VaultEvent::LEN),
         ("SwapEvent", SwapEvent::LEN),
+        ("SupplyEvent", SupplyEvent::LEN),
+        ("RedeemEvent", RedeemEvent::LEN),
         ("VaultEventV2", VaultEventV2::LEN),
         ("SwapEventV2", SwapEventV2::LEN),
+        ("RedeemEventV2", RedeemEventV2::LEN),
         ("ClaimOutput", ClaimOutput::LEN),
         ("CompleteWithdrawOutput", CompleteWithdrawOutput::LEN),
         ("RefundOutput", RefundOutput::LEN),
@@ -549,6 +697,56 @@ proptest! {
         let spec = records::swap_event(&swap);
         prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
         prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+    }
+
+    /// The lending pair: `startSupply`'s 2-word record with the lending
+    /// schemas, and `startRedeem`'s 3-word record.
+    #[test]
+    fn lending_record_bytes_are_canonical_borsh(
+        supply in gen::start_supply(),
+        redeem in gen::start_redeem(),
+    ) {
+        let limbs = supply.req().limbs(&supply.env);
+        prop_assert_eq!(limbs.len(), records::SUPPLY_RECORD_LIMBS);
+        let on_chain = deployed::fab_bytes(&records::supply_record_atoms(), &limbs);
+        let spec = records::supply_event(&supply);
+        prop_assert_eq!(on_chain.len(), SupplyEvent::LEN);
+        prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+        prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+
+        let limbs = redeem.req().limbs(&redeem.env);
+        prop_assert_eq!(limbs.len(), records::REDEEM_RECORD_LIMBS);
+        let on_chain = deployed::fab_bytes(&records::redeem_record_atoms(), &limbs);
+        let spec = records::redeem_event(&redeem);
+        prop_assert_eq!(on_chain.len(), RedeemEvent::LEN);
+        prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+        prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+    }
+
+    /// The lending pair in V2: supply lands in `VaultEventV2` (kind 5), redeem
+    /// in its own 3-word type (kind 6).
+    #[test]
+    fn stage7_lending_record_bytes_are_canonical_borsh(
+        supply in gen::start_supply(),
+        redeem in gen::start_redeem(),
+    ) {
+        use minocrab_contracts::erc20_vault_pending::{RESPONSE_KIND_REDEEM, RESPONSE_KIND_SUPPLY};
+        let limbs = v2_limbs(&supply.req().limbs(&supply.env), records::kind(RESPONSE_KIND_SUPPLY));
+        prop_assert_eq!(limbs.len(), records::VAULT_RECORD_V2_LIMBS);
+        let on_chain = deployed::fab_bytes(&records::vault_record_v2_atoms(), &limbs);
+        let spec = records::supply_event_v2(&supply);
+        prop_assert_eq!(on_chain.len(), VaultEventV2::LEN);
+        prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+        prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+
+        let limbs = v2_limbs(&redeem.req().limbs(&redeem.env), records::kind(RESPONSE_KIND_REDEEM));
+        prop_assert_eq!(limbs.len(), records::REDEEM_RECORD_V2_LIMBS);
+        let on_chain = deployed::fab_bytes(&records::redeem_record_v2_atoms(), &limbs);
+        let spec = records::redeem_event_v2(&redeem);
+        prop_assert_eq!(on_chain.len(), RedeemEventV2::LEN);
+        prop_assert_eq!(&on_chain, &borsh_bytes(&spec));
+        prop_assert_eq!(bincode_fixint_bytes(&spec), on_chain.clone());
+        prop_assert_eq!(on_chain[0], spec_types::RECORD_FORMAT_VERSION);
     }
 
     /// M11 STAGE 7: the record the V2 format writes (the `Pending`
@@ -915,6 +1113,55 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("SwapEvent", "caip2_id", "[u8; 32]", 464, 32),
     ("SwapEvent", "output_deserialization_schema", "[u8; 38]", 496, 38),
     ("SwapEvent", "respond_serialization_schema", "[u8; 37]", 534, 37),
+    ("SupplyEvent", "sender", "[u8; 32]", 0, 32),
+    ("SupplyEvent", "request_nonce", "u64", 32, 8),
+    ("SupplyEvent", "key_version", "u8", 40, 1),
+    ("SupplyEvent", "path", "[u8; 32]", 41, 32),
+    ("SupplyEvent", "algo", "u8", 73, 1),
+    ("SupplyEvent", "dest", "u8", 74, 1),
+    ("SupplyEvent", "params", "[u8; 64]", 75, 64),
+    ("SupplyEvent", "tx_param_type", "u8", 139, 1),
+    ("SupplyEvent", "tx_params.chain_id", "u64", 140, 8),
+    ("SupplyEvent", "tx_params.nonce", "u64", 148, 8),
+    ("SupplyEvent", "tx_params.max_priority_fee_per_gas", "u128", 156, 16),
+    ("SupplyEvent", "tx_params.max_fee_per_gas", "u128", 172, 16),
+    ("SupplyEvent", "tx_params.gas_limit", "u64", 188, 8),
+    ("SupplyEvent", "tx_params.to", "[u8; 20]", 196, 20),
+    ("SupplyEvent", "tx_params.value", "u128", 216, 16),
+    ("SupplyEvent", "tx_params.calldata.is_some", "bool", 232, 1),
+    ("SupplyEvent", "tx_params.calldata.value.selector", "[u8; 4]", 233, 4),
+    ("SupplyEvent", "tx_params.calldata.value.no_words", "u16", 237, 2),
+    ("SupplyEvent", "tx_params.calldata.value.words[0]", "[u8; 32]", 239, 32),
+    ("SupplyEvent", "tx_params.calldata.value.words[1]", "[u8; 32]", 271, 32),
+    ("SupplyEvent", "tx_params.access_list_entry_count", "u8", 303, 1),
+    ("SupplyEvent", "caip2_id", "[u8; 32]", 304, 32),
+    ("SupplyEvent", "output_deserialization_schema", "[u8; 36]", 336, 36),
+    ("SupplyEvent", "respond_serialization_schema", "[u8; 35]", 372, 35),
+    ("RedeemEvent", "sender", "[u8; 32]", 0, 32),
+    ("RedeemEvent", "request_nonce", "u64", 32, 8),
+    ("RedeemEvent", "key_version", "u8", 40, 1),
+    ("RedeemEvent", "path", "[u8; 32]", 41, 32),
+    ("RedeemEvent", "algo", "u8", 73, 1),
+    ("RedeemEvent", "dest", "u8", 74, 1),
+    ("RedeemEvent", "params", "[u8; 64]", 75, 64),
+    ("RedeemEvent", "tx_param_type", "u8", 139, 1),
+    ("RedeemEvent", "tx_params.chain_id", "u64", 140, 8),
+    ("RedeemEvent", "tx_params.nonce", "u64", 148, 8),
+    ("RedeemEvent", "tx_params.max_priority_fee_per_gas", "u128", 156, 16),
+    ("RedeemEvent", "tx_params.max_fee_per_gas", "u128", 172, 16),
+    ("RedeemEvent", "tx_params.gas_limit", "u64", 188, 8),
+    ("RedeemEvent", "tx_params.to", "[u8; 20]", 196, 20),
+    ("RedeemEvent", "tx_params.value", "u128", 216, 16),
+    ("RedeemEvent", "tx_params.calldata.is_some", "bool", 232, 1),
+    ("RedeemEvent", "tx_params.calldata.value.selector", "[u8; 4]", 233, 4),
+    ("RedeemEvent", "tx_params.calldata.value.no_words", "u16", 237, 2),
+    ("RedeemEvent", "tx_params.calldata.value.words[0]", "[u8; 32]", 239, 32),
+    ("RedeemEvent", "tx_params.calldata.value.words[1]", "[u8; 32]", 271, 32),
+    ("RedeemEvent", "tx_params.calldata.value.words[2]", "[u8; 32]", 303, 32),
+    ("RedeemEvent", "tx_params.access_list_entry_count", "u8", 335, 1),
+    ("RedeemEvent", "caip2_id", "[u8; 32]", 336, 32),
+    ("RedeemEvent", "output_deserialization_schema", "[u8; 36]", 368, 36),
+    ("RedeemEvent", "respond_serialization_schema", "[u8; 35]", 404, 35),
     ("VaultEventV2", "format_version", "u8", 0, 1),
     ("VaultEventV2", "sender", "[u8; 32]", 1, 32),
     ("VaultEventV2", "request_nonce", "u64", 33, 8),
@@ -968,6 +1215,31 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("SwapEventV2", "tx_params.access_list_entry_count", "u8", 464, 1),
     ("SwapEventV2", "caip2_id", "[u8; 32]", 465, 32),
     ("SwapEventV2", "response_kind", "u8", 497, 1),
+    ("RedeemEventV2", "format_version", "u8", 0, 1),
+    ("RedeemEventV2", "sender", "[u8; 32]", 1, 32),
+    ("RedeemEventV2", "request_nonce", "u64", 33, 8),
+    ("RedeemEventV2", "key_version", "u8", 41, 1),
+    ("RedeemEventV2", "path", "[u8; 32]", 42, 32),
+    ("RedeemEventV2", "algo", "u8", 74, 1),
+    ("RedeemEventV2", "dest", "u8", 75, 1),
+    ("RedeemEventV2", "params", "[u8; 64]", 76, 64),
+    ("RedeemEventV2", "tx_param_type", "u8", 140, 1),
+    ("RedeemEventV2", "tx_params.chain_id", "u64", 141, 8),
+    ("RedeemEventV2", "tx_params.nonce", "u64", 149, 8),
+    ("RedeemEventV2", "tx_params.max_priority_fee_per_gas", "u128", 157, 16),
+    ("RedeemEventV2", "tx_params.max_fee_per_gas", "u128", 173, 16),
+    ("RedeemEventV2", "tx_params.gas_limit", "u64", 189, 8),
+    ("RedeemEventV2", "tx_params.to", "[u8; 20]", 197, 20),
+    ("RedeemEventV2", "tx_params.value", "u128", 217, 16),
+    ("RedeemEventV2", "tx_params.calldata.is_some", "bool", 233, 1),
+    ("RedeemEventV2", "tx_params.calldata.value.selector", "[u8; 4]", 234, 4),
+    ("RedeemEventV2", "tx_params.calldata.value.no_words", "u16", 238, 2),
+    ("RedeemEventV2", "tx_params.calldata.value.words[0]", "[u8; 32]", 240, 32),
+    ("RedeemEventV2", "tx_params.calldata.value.words[1]", "[u8; 32]", 272, 32),
+    ("RedeemEventV2", "tx_params.calldata.value.words[2]", "[u8; 32]", 304, 32),
+    ("RedeemEventV2", "tx_params.access_list_entry_count", "u8", 336, 1),
+    ("RedeemEventV2", "caip2_id", "[u8; 32]", 337, 32),
+    ("RedeemEventV2", "response_kind", "u8", 369, 1),
     ("ClaimOutput", "success", "u8", 0, 1),
     ("CompleteWithdrawOutput", "success", "u8", 0, 1),
     ("RefundOutput", "failure", "[u8; 5]", 0, 5),

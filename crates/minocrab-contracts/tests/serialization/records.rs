@@ -22,11 +22,13 @@ use minocrab_contracts::{erc20_vault, erc20_vault_pending};
 
 use crate::serialization::spec_types;
 use crate::serialization::spec_types::{
-    ByteArray, EvmCalldata2, EvmCalldata7, EvmType2TxParams2, EvmType2TxParams7, Flagged,
-    SwapEvent, SwapEventV2, VaultEvent, VaultEventV2,
+    ByteArray, EvmCalldata2, EvmCalldata3, EvmCalldata7, EvmType2TxParams2, EvmType2TxParams3,
+    EvmType2TxParams7, Flagged, RedeemEvent, RedeemEventV2, SupplyEvent, SwapEvent, SwapEventV2,
+    VaultEvent, VaultEventV2,
 };
 use crate::vault::model::{
-    ApproveRouterScenario, StartDepositScenario, StartSwapScenario, StartWithdrawScenario,
+    ApproveRouterScenario, StartDepositScenario, StartRedeemScenario, StartSupplyScenario,
+    StartSwapScenario, StartWithdrawScenario,
 };
 use crate::vault::prims::{abi_addr_word, abi_num_word, pad32};
 
@@ -47,6 +49,17 @@ pub fn swap_record_atoms() -> Vec<minocrab::AlignmentAtom> {
     erc20_vault::SwapEvent::<Public>::atoms()
 }
 
+/// The FAB atoms of the deployed 2-word supply record (the vault record's
+/// shape with the lending schema strings).
+pub fn supply_record_atoms() -> Vec<minocrab::AlignmentAtom> {
+    erc20_vault::SupplyEvent::<Public>::atoms()
+}
+
+/// The FAB atoms of the deployed 3-word redeem record.
+pub fn redeem_record_atoms() -> Vec<minocrab::AlignmentAtom> {
+    erc20_vault::RedeemEvent::<Public>::atoms()
+}
+
 /// `MPCSignatureAlgorithm.ecdsa` / `MPCDestination.unused` /
 /// `TxParamType.evmType2` — all first enum members, so all zero.
 const TAG_FIRST_MEMBER: u8 = 0;
@@ -56,6 +69,7 @@ const FIXED_MAX_PRIORITY_FEE: u128 = 1_000_000_000;
 const FIXED_MAX_FEE: u128 = 30_000_000_000;
 const VAULT_GAS_LIMIT: u64 = 100_000;
 const SWAP_GAS_LIMIT: u64 = 700_000;
+const LENDING_GAS_LIMIT: u64 = 500_000;
 
 /// `numericAbiWord(unlimitedAllowance())`.
 fn max_allowance_word() -> [u8; 32] {
@@ -218,9 +232,89 @@ pub fn swap_event(s: &StartSwapScenario) -> SwapEvent {
     }
 }
 
+/// `startSupply`'s record: an ERC-4626 `deposit(assets, receiver)` request to
+/// the stata token, signed under the vault's own path — the 2-word shape with
+/// the lending schemas.
+pub fn supply_event(s: &StartSupplyScenario) -> SupplyEvent {
+    SupplyEvent {
+        sender: s.env.self_addr,
+        request_nonce: s.env.request_nonce,
+        key_version: s.key_version,
+        path: pad32(erc20_vault::VAULT_PATH),
+        algo: TAG_FIRST_MEMBER,
+        dest: TAG_FIRST_MEMBER,
+        params: ByteArray::default(),
+        tx_param_type: TAG_FIRST_MEMBER,
+        tx_params: EvmType2TxParams2 {
+            chain_id: s.env.chain_id,
+            nonce: s.evm_nonce,
+            max_priority_fee_per_gas: FIXED_MAX_PRIORITY_FEE,
+            max_fee_per_gas: FIXED_MAX_FEE,
+            gas_limit: LENDING_GAS_LIMIT,
+            to: s.env.stata_token,
+            value: 0,
+            calldata: Flagged {
+                is_some: true,
+                value: EvmCalldata2 {
+                    selector: erc20_vault::DEPOSIT_SELECTOR,
+                    no_words: 2,
+                    words: [abi_num_word(s.amount), abi_addr_word(&s.env.vault_evm)],
+                },
+            },
+            access_list_entry_count: 0,
+        },
+        caip2_id: s.env.caip2,
+        output_deserialization_schema: schema(erc20_vault::SUPPLY_OUTPUT_SCHEMA),
+        respond_serialization_schema: schema(erc20_vault::SUPPLY_RESPOND_SCHEMA),
+    }
+}
+
+/// `startRedeem`'s record: an ERC-4626 `redeem(shares, receiver, owner)`
+/// request to the stata token — three ABI words, receiver and owner both the
+/// vault's own EVM account.
+pub fn redeem_event(r: &StartRedeemScenario) -> RedeemEvent {
+    RedeemEvent {
+        sender: r.env.self_addr,
+        request_nonce: r.env.request_nonce,
+        key_version: r.key_version,
+        path: pad32(erc20_vault::VAULT_PATH),
+        algo: TAG_FIRST_MEMBER,
+        dest: TAG_FIRST_MEMBER,
+        params: ByteArray::default(),
+        tx_param_type: TAG_FIRST_MEMBER,
+        tx_params: EvmType2TxParams3 {
+            chain_id: r.env.chain_id,
+            nonce: r.evm_nonce,
+            max_priority_fee_per_gas: FIXED_MAX_PRIORITY_FEE,
+            max_fee_per_gas: FIXED_MAX_FEE,
+            gas_limit: LENDING_GAS_LIMIT,
+            to: r.env.stata_token,
+            value: 0,
+            calldata: Flagged {
+                is_some: true,
+                value: EvmCalldata3 {
+                    selector: erc20_vault::REDEEM_SELECTOR,
+                    no_words: 3,
+                    words: [
+                        abi_num_word(r.shares),
+                        abi_addr_word(&r.env.vault_evm),
+                        abi_addr_word(&r.env.vault_evm),
+                    ],
+                },
+            },
+            access_list_entry_count: 0,
+        },
+        caip2_id: r.env.caip2,
+        output_deserialization_schema: schema(erc20_vault::REDEEM_OUTPUT_SCHEMA),
+        respond_serialization_schema: schema(erc20_vault::REDEEM_RESPOND_SCHEMA),
+    }
+}
+
 /// The deployed records' limb counts, so a shape change here is loud.
 pub const VAULT_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 2, 34, 34>::LIMBS;
 pub const SWAP_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 7, 38, 37>::LIMBS;
+pub const SUPPLY_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 2, 36, 35>::LIMBS;
+pub const REDEEM_RECORD_LIMBS: usize = SignBidirectionalEvent::<Public, 3, 36, 35>::LIMBS;
 
 // ---- M11 stage 7: the same records, versioned and kind-tagged ----------------
 
@@ -234,10 +328,17 @@ pub fn swap_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
     erc20_vault_pending::SwapEventV2::<Public>::atoms()
 }
 
+/// The FAB atoms of the V2 3-word redeem record (`Pending<RedeemEnv,
+/// RedeemResponse, 3>`). The V2 supply record IS the 2-word record above.
+pub fn redeem_record_v2_atoms() -> Vec<minocrab::AlignmentAtom> {
+    SignBidirectionalEventV2::<Public, { erc20_vault::REDEEM_WORDS }>::atoms()
+}
+
 /// The stage-7 records' limb counts (31 and 41, where the deployed pair is 33
 /// and 43 — one limb gained at the head, four schema limbs traded for one).
 pub const VAULT_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 2>::LIMBS;
 pub const SWAP_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 7>::LIMBS;
+pub const REDEEM_RECORD_V2_LIMBS: usize = SignBidirectionalEventV2::<Public, 3>::LIMBS;
 
 /// The stage-7 twin of a deployed 2-word record: the same middle, a format
 /// version in front, a response kind instead of the two schema strings.
@@ -294,5 +395,45 @@ pub fn swap_event_v2(s: &StartSwapScenario) -> SwapEventV2 {
         tx_params: e.tx_params,
         caip2_id: e.caip2_id,
         response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SWAP),
+    }
+}
+
+/// `startSupply`'s V2 record — response kind SUPPLY, in the 2-word type: the
+/// deployed supply record's middle is a vault record's middle, and V2 drops
+/// the only fields that told them apart.
+pub fn supply_event_v2(s: &StartSupplyScenario) -> VaultEventV2 {
+    let e = supply_event(s);
+    VaultEventV2 {
+        format_version: spec_types::RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: kind(erc20_vault_pending::RESPONSE_KIND_SUPPLY),
+    }
+}
+
+/// `startRedeem`'s V2 record — response kind REDEEM.
+pub fn redeem_event_v2(r: &StartRedeemScenario) -> RedeemEventV2 {
+    let e = redeem_event(r);
+    RedeemEventV2 {
+        format_version: spec_types::RECORD_FORMAT_VERSION,
+        sender: e.sender,
+        request_nonce: e.request_nonce,
+        key_version: e.key_version,
+        path: e.path,
+        algo: e.algo,
+        dest: e.dest,
+        params: e.params,
+        tx_param_type: e.tx_param_type,
+        tx_params: e.tx_params,
+        caip2_id: e.caip2_id,
+        response_kind: kind(erc20_vault_pending::RESPONSE_KIND_REDEEM),
     }
 }
