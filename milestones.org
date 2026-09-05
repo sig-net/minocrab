@@ -2041,7 +2041,7 @@ inferred … macros that don't completely break tooling"; "make it so".
 Design of record: notes/evm-calls.org (§1 ABI types, §2 =EvmCall=, §3
 the slot, §4 =Owned=, §5 what stays explicit, §6 tooling, §8 gates).
 Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
-- [ ] A. The ABI type layer + =EvmCall= (notes §1–2): =AbiType= for
+- [X] A. (2026-09-05, a9f71a0 — crates/minocrab-contracts/src/evm.rs: =AbiType= × 8 (U24/U160 added: the corpus uses them), =AbiTuple= to 8 by a declarative macro, =EvmCall= with =signature()= overridable (Uniswap's struct argument is a nested tuple), five call types at the vault's kinds, =build_tx= with the WORDS inline-const check; all five selectors matched compactc's calldata first run (+ balanceOf as the non-circular control); encoders moved byte for byte, dump identical; 11 tests + compile_fail pair. Found for D: =transfer= is filed under two kinds (CLAIM for deposits) → a second call type; =deposit= alone has a caller-chosen gas envelope. notes/evm-calls.org §9.) The ABI type layer + =EvmCall= (notes §1–2): =AbiType= for
       Address / Bool / Bytes32 / U64 / U128 / U256, =AbiTuple= to eight,
       the existing word encoders moved under the trait, the selector
       hashed at build time with =sha3=; the fixture: selectors and words
@@ -2054,8 +2054,8 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       takes never-executed OR executed-false — closes the spurious
       completion dmd asked about), =complete= / =refund=; the outcome
       rule as a sealed associated type (§3.2: =Always= / =ByFlag= /
-      =ByPredicate=; =CAN_FAIL= decides at build time what is emitted)
-      plus the =assert(imm 1)= fold with its Lean theorem.
+      =ByPredicate=; zero cost for =Always= by the =assert(imm 1)= fold
+      with its Lean theorem, not by an API-level const).
 - [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.

@@ -146,11 +146,10 @@ methods. So =EvmCall= gains =type Outcome: OutcomeRule<Self::Return>=:
 pub trait OutcomeRule<R: AbiType>: sealed::Sealed {
     type Success;               // what `complete` hands the author
     type Failure;               // what `refund` hands the author for executed-but-failed
-    const CAN_FAIL: bool;
-    fn split(c, output: R::Wire<Public>) -> Split<Self::Success, Self::Failure>;
+    fn split(c, output: R::Wire<Public>) -> Split<Self::Success, Self::Failure>;   // the predicate + both projections
 }
-pub struct Always;                 // executed ⇒ succeeded; Success = the value, Failure = Never, CAN_FAIL = false
-pub struct ByFlag;                 // impl only for R = Bool; Success = (), Failure = (), CAN_FAIL = true
+pub struct Always;                 // executed ⇒ succeeded; Success = the value, Failure = Never; predicate = constant true (folded away)
+pub struct ByFlag;                 // impl only for R = Bool; Success = (), Failure = (); predicate = the flag
 pub struct ByPredicate<P>;         // a predicate over the value; Success = the value
 #+end_src
 - =complete= calls =split= and asserts the success side; the author cannot
@@ -160,14 +159,16 @@ pub struct ByPredicate<P>;         // a predicate over the value; Success = the 
   Always= on its own call type, chosen at callee registration (§3.1).
 - =Success = ()= for =ByFlag=: the filter-map — a transfer's =complete=
   receives nothing readable, so nothing can be misread.
-ZERO COST for =Always=, two ways, both to be done: by construction
-(=CAN_FAIL= is a build-time Rust branch: no assert, no disjunct emitted —
-the guarantee the API states, the dump shows) and by FOLDING (dmd's
-alternative): =when= on a constant-true guard already costs nothing (the
-effect layer treats an immediate-1 guard as none), and the one residue,
-=assert(imm 1)=, gets a fold rule beside =fold_immediate_copies= with its
-Lean theorem — general hygiene, benefits every constant-true assert, and
-makes the =CAN_FAIL= branches belt-and-braces rather than load-bearing.
+ZERO COST for =Always= — DECIDED (dmd, 2026-09-05: "I'm inclined to just
+use the fold, because it's a fairly small number of rows either way"): by
+FOLDING, not by a =CAN_FAIL= branch in the API. =when= on a constant-true
+guard already costs nothing (the effect layer treats an immediate-1 guard
+as none); the one residue, =assert(imm 1)=, gets a fold rule beside
+=fold_immediate_copies= with its Lean theorem. So =OutcomeRule= has no
+=CAN_FAIL= const: =Always::split= returns the constant-true predicate,
+=complete= asserts it, the fold removes the assert, and the dump shows
+nothing emitted. General hygiene that benefits every constant-true assert
+in the tree.
 
 ** 3.1 HAZARD — what the MPC's failure output actually means, and USDT
 mpc's execution watcher (chain-signatures/chain-ethereum/src/
