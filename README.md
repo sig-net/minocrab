@@ -310,108 +310,65 @@ Limit: the circuit binds neither the entry point nor the argument types unless i
 
 ## Cross-chain calls
 
-A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the vault's derived key, executes it on the EVM chain, and attests the call's output back; a **settle** circuit verifies that attestation and finishes the operation (or a **refund** circuit does, when the MPC attests that the transaction never executed). The `Pending<Env, Resp>` API ([signet_flow.rs](crates/minocrab-contracts/src/signet_flow.rs)) makes the two halves one typed value: the slot owns the request map, the environment map and the nonce, and only a `Settle<Env, Resp>` ticket declared against that slot can settle it.
+A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **settle** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the MPC attests that the transaction never executed. `Pending<Env, Resp>` ([signet_flow.rs](crates/minocrab-contracts/src/signet_flow.rs)) makes the two halves one typed value.
 
-The Aave supply flow from the vault, abridged from [erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs) — surrender shielded USDC on Midnight, deposit it into the ERC-4626 wrapper on the EVM chain, receive shielded wrapper shares back:
+A minimal, illustrative shape — a contract that asks the MPC to call `ping()` on an EVM contract and records who may collect the reply:
 
 ```rust
-/// The MPC's attested output: `{ kind: 5, shares: u64 }`. The kind byte is
-/// the type's; a `Pending<_, SupplyResponse>` slot settles under it and
-/// nothing else.
+/// What the MPC attests back. The kind byte is the type's: a slot of
+/// `Pending<_, PingReply>` settles under it and nothing else.
 #[derive(CircuitBorsh)]
-pub struct SupplyResponse { pub shares: Uint<64> }
-impl Response for SupplyResponse { const KIND: u8 = RESPONSE_KIND_SUPPLY as u8; }
+pub struct PingReply { pub ok: Bool }
+impl Response for PingReply { const KIND: u8 = 7; }
 
-/// What crosses the suspension: who may settle (a commitment, opened with a
-/// fresh witness on the other side) and what to re-mint on failure.
+/// What crosses the suspension: a commitment to the requester's key,
+/// bound to this request. Only `Public` fields and `Commit<_>` unify here.
 #[derive(LedgerRepr)]
-pub struct SupplyEnv {
-    pub supplier: Commit<common::SecretKey<Private>>,
-    pub amount: Uint<64, Public>,
-}
+pub struct PingEnv { pub requester: Commit<SecretKey<Private>> }
 
 #[derive(Ledger)]
-pub struct Vault {
-    // ...
-    pub signet: Signet,                                  // signer, MPC key, nonce, chain ids
-    pub supplies: Pending<SupplyEnv, SupplyResponse, 2>, // request map + env map, one slot
+pub struct Pinger {
+    pub signet: Signet,                        // signer, MPC key, nonce, chain ids
+    pub pings: Pending<PingEnv, PingReply, 0>, // request map + env map, one slot
 }
 
-/// Transaction 1 — request: burn the coin, file `stataToken.deposit(amount, vault)`.
+/// Transaction 1: file `target.ping()` and notify the singleton.
 #[circuit]
-pub fn supply(c: &mut Circuit3, evm_nonce: Uint<64>, key_version: Uint<8>, amount: Uint<128>, coin: ShieldedCoinArg)
-    -> Discloses<(SurrenderedCoinNonce, SurrenderedCoinColor, SurrenderedCoinValue, SupplierRefundCommitment, SuppliedAmount, Requested)>
-{
-    c.region("guards", |c| {
-        assert_initialized(c);
-        c.assert(amount.gt(0u64).message("amount must be positive"));
-        c.assert(amount.le(u64::MAX).message("amount exceeds Uint<64> max"));
-    });
-    let amount = amount.field();
-    let stata_underlying = VAULT.stata_underlying.read(c);
-    burn_vault_coin(c, one, stata_underlying.field(), amount, coin);
-
-    // deposit(amount, vaultEvmAddress) on the wrapper, under the vault's fixed gas envelope
-    let word0 = signet::numeric_abi_word(c, amount);
-    let vault_evm = VAULT.vault_evm_address.read(c);
-    let word1 = signet::evm_address_abi_word(c, vault_evm.field().private());
-    let stata_token = VAULT.stata_token.read(c);
-    let tx = erc20_call(c, &DEPOSIT_SELECTOR, stata_token.field().private(), [word0, word1], evm_nonce.field(), FixedGas::<LENDING_GAS>::wires(c));
-
-    // freshness, nonce, record + environment, the notification with THIS slot's
-    // ledger path, the cross-contract call to the singleton — one call
-    let sk = common::witness_sk(c);
-    let amount = amount.disclose_as::<SuppliedAmount>(c);
-    VAULT.supplies.request(c, &VAULT.signet, SignRequest { key_version, path: vault_path, tx },
-        |c, id| SupplyEnv {
-            supplier: Commit::to::<SupplierRefundCommitment>(c, REFUND_PAD, &sk, id),
-            amount: Uint::from_field_unchecked(amount),
-        });
+pub fn ping(c: &mut Circuit3, evm_nonce: Uint<64>, target: EvmAddress) -> Discloses<(Requested,)> {
+    let tx = evm_call(c, &PING_SELECTOR, target, [], evm_nonce, FixedGas::<100_000>::wires(c));
+    let sk = witness_sk(c);
+    PINGER.pings.request(c, &PINGER.signet, SignRequest { key_version, path: contract_path, tx },
+        |c, id| PingEnv { requester: Commit::to::<RequesterCommitment>(c, PAD, &sk, id) });
     Discloses::of(())
 }
 
-/// Transaction 2 — settle: the MPC attested the wrapper's shares; mint them.
+/// Transaction 2: the MPC attested the reply; only the requester may settle.
 #[circuit]
-pub fn complete_supply(c: &mut Circuit3, ticket: Settle<SupplyEnv, SupplyResponse>, mint_nonce: CoinNonce<Private>)
-    -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)>
-{
-    assert_initialized(c);
-    // kind == SupplyResponse::KIND, the MPC's signature over Poseidon(id ‖ borsh(output)),
-    // the entry exists, record + env read and removed, the record's kind and version bound
-    let outcome = VAULT.supplies.settle(c, &VAULT.signet, ticket);
-    // the supplier gate, as one op: a FRESH witness against the stored commitment
-    let sk = common::witness_sk(c);
-    outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
-
-    let recipient = own_public_key(c).disclose_as::<SupplyRecipient>(c);
-    let shares = outcome.output.shares.disclose_as::<AttestedShares>(c);
-    let stata_token = VAULT.stata_token.read(c);
-    common::mint_shielded_token_to_key(c, &vault_token_domain_separator(c, stata_token.field()), shares, &mint_nonce.disclose_as::<SupplyMintNonce>(c), &recipient);
+pub fn collect(c: &mut Circuit3, ticket: Settle<PingEnv, PingReply>) -> Discloses<(Settled, Pinged)> {
+    let outcome = PINGER.pings.settle(c, &PINGER.signet, ticket); // kind, signature, record + env, removal
+    let sk = witness_sk(c);
+    outcome.env.requester.open(c, PAD, &sk, outcome.request_id, "not the requester");
+    let _ok = outcome.output.ok.disclose_as::<Pinged>(c);
     Discloses::of(())
 }
 
-/// Transaction 2' — refund: the MPC attested "never executed"; re-mint the USDC.
+/// Transaction 2': the MPC attested "never executed".
 #[circuit]
-pub fn refund_supply(c: &mut Circuit3, ticket: Settle<SupplyEnv, Failure>, mint_nonce: CoinNonce<Private>)
-    -> Discloses<(Settled, RefundMintNonce, RefundRecipient)>
-{
-    assert_initialized(c);
-    let outcome = VAULT.supplies.settle_failed(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
-    // ... mint outcome.env.amount of the underlying to own_public_key()
+pub fn abandon(c: &mut Circuit3, ticket: Settle<PingEnv, Failure>) -> Discloses<(Settled,)> {
+    let outcome = PINGER.pings.settle_failed(c, &PINGER.signet, ticket);
+    let sk = witness_sk(c);
+    outcome.env.requester.open(c, PAD, &sk, outcome.request_id, "not the requester");
     Discloses::of(())
 }
 ```
 
 What the type does for the author:
 
-- **Mis-pairing does not compile.** A `Settle<SupplyEnv, SupplyResponse>` ticket settles `supplies` and no other slot; a `Settle<SupplyEnv, Failure>` is the only thing `settle_failed` accepts. There is no way to settle a supply with a swap's attestation, or to forget the kind check, the version check or the removal — they are inside `settle`.
-- **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment to the supplier's key bound to this request id; `open` on the settle side takes a fresh witness. An `Env` field that is not `Public` fails to unify.
-- **Nothing is hand-synced with the MPC.** The notification's depth and path bytes are read off the slot's ledger path (and pinned by an artifact-agreement test against the compiled contract-info); the kind byte is the response type's; the record format version is the API's; `Bool` outputs are 0/1 by construction, which closes the deployed vault's 0x02 hazard.
-- **The MPC reads what the circuit filed.** The record's field-element preimage is what the MPC's own reader recomputes the request id from ([signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs) decodes a filed record with the reader logic and hashes it both ways; [signet-sim](crates/signet-sim) is that reader plus the responder, so a flow round-trips under `cargo test` without an MPC).
+- **Mis-pairing does not compile.** A `Settle<PingEnv, PingReply>` ticket settles `pings` and no other slot; `Settle<PingEnv, Failure>` is the only thing `settle_failed` accepts. The kind check, the version check, the signature check and the removal are inside `settle`, so none can be forgotten.
+- **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment bound to the request id; `open` on the settle side takes a fresh witness.
+- **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte is the response type's; the record format version is the API's.
 
-The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, the settles at k16 within 70 rows of the port ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
+The full flows — burning a shielded coin on request, minting the attested amount on settle, refunding on failure — are the vault's supply, redeem, swap, deposit and withdraw circuits in [erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs); [signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, the settles at k16 within 70 rows of the port ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
 
 ## Porting kit
 
