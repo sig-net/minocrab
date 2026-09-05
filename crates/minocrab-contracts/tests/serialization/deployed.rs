@@ -12,27 +12,21 @@
 //! - [`misc_envelope`] is `serialize<Misc, 288>`: the event name, the
 //!   circuit's `Serializer` segments, zero-padded;
 //! - [`misc_preimage`] builds the singleton's public transcript so the
-//!   CORPUS ARTIFACT itself can be asked whether it accepts those bytes.
-
-use std::borrow::Cow;
+//!   CORPUS ARTIFACT itself can be asked whether it accepts those bytes. It
+//!   is a THIN WRAPPER over `support::signet_call::call_preimage` — the
+//!   ledger's own `ContractCallPrototype`/`construct_proof` path (M29 rung
+//!   C) — not a second construction of a preimage.
 
 use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment};
 use midnight_base_crypto::repr::BinaryHashRepr;
-use midnight_onchain_state::state::StateValue;
-use midnight_onchain_vm::ops::Op;
-use midnight_onchain_vm::result_mode::ResultModeVerify;
-use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
-use midnight_transient_crypto::hash::transient_commit;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use midnight_transient_crypto::repr::FieldRepr;
+use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::Fr;
-use minocrab_contracts::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+use minocrab_contracts::events::MISC_SIZE;
 use minocrab_zkir::v3::IrSource;
 
-use crate::vault::prims::{b32_slots, cell, bytesn_value};
-
-type VmOp = Op<ResultModeVerify, InMemoryDB>;
+use crate::support::signet_call::{call_preimage, scalar_input};
+use crate::vault::prims::b32_slots;
 
 /// The value-only FAB binary of `limbs` laid out against `atoms` — the byte
 /// string the deployed hash constructions consume.
@@ -114,45 +108,26 @@ pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
         .collect()
 }
 
-/// The singleton's Impact program: one Misc event, `Push` + `Log`.
-fn log_ops(misc_bytes: &[u8]) -> Vec<VmOp> {
-    vec![
-        Op::Push {
-            storage: false,
-            value: StateValue::Array(
-                vec![
-                    cell(bytesn_value(4, &MISC_VERSION.to_le_bytes())),
-                    cell(bytesn_value(1, &[MISC_TAG])),
-                    cell(bytesn_value(MISC_SIZE as u32, misc_bytes)),
-                ]
-                .into(),
-            ),
-        },
-        Op::Log,
-    ]
-}
-
-/// A singleton call's proof preimage: the circuit arguments, and the logged
-/// 288 Misc bytes as the public transcript. Identical in shape to
-/// `signet_contract_differential`'s, which is where these bytes are proven
-/// to be the deployed ones: the corpus artifact accepts this transcript and
-/// rejects any single-byte perturbation of it.
+/// A singleton call's proof preimage: the circuit arguments as their field
+/// limbs, and the logged 288 Misc bytes as the public transcript.
+///
+/// THE HAND-BUILT VERSION IS GONE (M29 rung C). This delegates to
+/// `support::signet_call::call_preimage`, so the preimage the corpus
+/// artifact is asked about here is the very one the ledger's
+/// `ContractCallPrototype` + `ContractCallExt::construct_proof` produce for
+/// a real intent — the same bytes `tests/signet_construction.rs` runs its
+/// call-compatibility gate on.
+///
+/// The limbs arrive raw rather than as a typed `AlignedValue` because this
+/// module's caller is a proptest over thousands of generated payloads with
+/// no typed argument value to hand. That is licensed by
+/// `signet_construction::the_alignment_does_not_reach_the_preimage`, which
+/// asserts a typed `[Bytes<32>, Uint<8>, ...]` argument value and the flat
+/// `[Field; n]` one `scalar_input` builds give byte-identical preimages —
+/// the ledger reads an argument value only through its
+/// `value_only_field_repr`.
 pub fn misc_preimage(inputs: Vec<Fr>, misc_bytes: &[u8]) -> ProofPreimage {
-    let mut transcript = Vec::new();
-    for op in log_ops(misc_bytes) {
-        op.field_repr(&mut transcript);
-    }
-    let rand = Fr::from(0x516_e37u64);
-    let comm = transient_commit(&inputs[..], rand);
-    ProofPreimage {
-        inputs,
-        private_transcript: vec![],
-        public_transcript_inputs: transcript,
-        public_transcript_outputs: vec![],
-        binding_input: 0.into(),
-        communications_commitment: Some((comm, rand)),
-        key_location: KeyLocation(Cow::Borrowed("minocrab-contracts-test")),
-    }
+    call_preimage("respond", scalar_input(&inputs), misc_bytes)
 }
 
 /// A pinned signet-contract corpus artifact (what compactc emitted for the

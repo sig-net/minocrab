@@ -32,7 +32,10 @@ The =full-stack-demo= repo is the Next.js front-end for this vault (no
   circuits ARE signet-contract.compact's. Ported 2026-08-14:
   =minocrab-contracts::signet_contract=, all 3 differential-green incl.
   tamper + swapped-event-name rejection agreement
-  (tests/signet_contract_differential.rs).
+  (tests/signet_construction.rs since M29 C, which retired
+  tests/signet_contract_differential.rs by moving the same gate onto the
+  LEDGER-constructed preimage; tests/signet_ledger_apply.rs adds the
+  apply gate against mpc's captured on-chain transactions).
 - =test-caller-contract{,-20-field}/src/*.compact= — cross-contract test
   callers.
 - =midnight-serde/tests/fixtures/serde-fixtures.compact=

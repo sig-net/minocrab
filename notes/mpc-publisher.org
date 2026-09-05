@@ -340,3 +340,379 @@ not "matches what got deployed".
 - The =expectedVk.json= pin is "matches compact-js's source read
   today", not "matches a real, mpc-published, deployed-contract
   =expectedVk=" — see above.
+
+* 9. As built — M29 C+D+E, and F's pin facts (2026-09-05)
+
+Rungs C, D and E in one session, on top of §8's A+B. The through-line: §4
+said every existing gate was PI-level or had proofs switched off, and that
+"our preimage proves under our key" was inferred from =check=, not shown.
+It is shown now.
+
+** C. The construction gate — the ledger's preimage, not a hand-built one
+
+*** What was wrong with the old differential
+
+=tests/signet_contract_differential.rs= built its =ProofPreimage= by hand:
+=inputs= a =Vec<Fr>= the test wrote out, =public_transcript_inputs= an
+=op.field_repr= over ops the test wrote out, =communications_commitment= a
+=transient_commit(&inputs, rand)= the test computed. Every one of those is
+a SECOND READING of a rule =ledger/src/construct.rs= already states, and a
+differential run against a second reading tells you nothing about the
+first. Two artifacts agreeing on a preimage neither of them will ever see
+is not evidence.
+
+*** What replaced it
+
+=crates/minocrab-contracts/tests/support/signet_call.rs= — the one place
+in the suite that builds a singleton preimage, through the production
+path:
+
+#+begin_example
+Impact program ──partition_transcripts──▶ Transcript (gas, effects, version)
+                                                 │
+arguments as an AlignedValue ────────────────────┤
+                                                 ▼
+                                      ContractCallPrototype
+                                                 │
+            Intent::new ──▶ add_call ──▶ communication_commitment
+                                         ContractCallExt::construct_proof
+                                         (construct.rs:515-573)
+                                                 ▼
+                                          ProofPreimage
+#+end_example
+
+The preimage is READ BACK OUT of the =ContractCall= the intent carries,
+not reconstructed from what =construct_proof= would have said — so the
+bytes under test are the bytes a real intent holds. §3's claim ("the
+sidecar never interprets the IR; =construct_proof= makes the preimage and
+whatever sits at =zkir/<circuit>.bzkir= proves it") is now the code path
+the tests take, not a description of one.
+
+=tests/signet_construction.rs= replaces the old file: the same
+call-compatibility gate on all three circuits (=assert_call_compatible= —
+same input/output schema, same =pis= and =pi_skips= under our simulator,
+=IrSource::check= accepting on both sides) and the same three tamper twins
+(tampered event byte, tampered signature byte, swapped event name), all on
+that preimage. =partition_transcripts= is content-blind — it runs whatever
+program it is handed — so the tampers survive the move onto the production
+path unchanged.
+
+*** Three facts that were prose and are now assertions
+
+1. =the_ledgers_inputs_are_the_arguments_field_repr=: =construct_proof=
+   fills =inputs= from =ValueReprAlignedValue(call.input).field_vec()=,
+   i.e. the argument value's =value_only_field_repr=. The hand-written
+   limb lists the suite used before were right, and this says why.
+2. =the_alignment_does_not_reach_the_preimage=: a typed =[Bytes<32>,
+   Uint<8>, Bytes<128>]= argument value and a flat =[Field; n]= one over
+   the same limbs give BYTE-IDENTICAL preimages (tagged-serialized and
+   compared). The ledger reads an argument value only through its field
+   repr; the alignment never enters the transaction.
+3. =input_schema_matches_the_corpus_artifact=: the corpus artifacts
+   declare 8 / 9 / 9 =Scalar<BLS12-381>= inputs, and the ledger-built
+   preimages carry exactly that many — so the differential is comparing
+   two circuits that read the same argument list, not two that happen to
+   agree on a prefix.
+
+*** The hand-built helper: REDUCED TO A WRAPPER, not deleted, and why
+
+The milestone allowed either. =serialization/deployed.rs='s
+=misc_preimage= survives as
+
+#+begin_src rust
+pub fn misc_preimage(inputs: Vec<Fr>, misc_bytes: &[u8]) -> ProofPreimage {
+    call_preimage("respond", scalar_input(&inputs), misc_bytes)
+}
+#+end_src
+
+because its caller is =serialization_conformance='s proptest over
+thousands of generated payloads, which has raw limbs and no typed argument
+value to hand. Fact 2 above is exactly the licence for that: the flat
+alignment and the typed one produce the same bytes, so this wrapper is
+not a second construction — there is now ONE definition of a singleton
+preimage in the workspace, and this is a call to it. The
+=signet_contract_differential.rs= copy was deleted outright.
+
+=bench.sh= dumps its preimages from =--test signet_construction= now, so
+BENCHMARK.md's singleton rows price the preimage production builds.
+
+** D. The ledger-apply gate, against mpc's captured transactions
+
+*** The goldens, imported
+
+=crates/minocrab-contracts/tests/fixtures/mpc/= holds
+=respond-tx-161.mn= and =respond-bidirectional-tx-181.mn=, copied
+=cmp=-identical from =~/mpc/chain-signatures/chain-midnight/fixtures/=,
+with a =README.md= carrying the capture record (chain
+=c171225731f5ca07=, =@sig-net/midnight-contract@0.20.0-rc.1=, compactc
+0.33.0-rc.2, singleton =b116cd04…=, request id =1cd10eb1…=, blocks 161 and
+181, extrinsic 4, =TxApplied=). A pleasant accident worth pinning: each
+file's SHA-256 IS the ledger transaction hash the capture recorded
+(=9444aa63…= and =5291b70c…=), so one assertion is both the integrity
+check and the provenance pin, and the test makes it before decoding
+anything.
+
+Not imported: =notify-tx-156.mn=, =caller-post-state-156.mn=,
+=golden-state-caller-156.json=. Those belong to the READER side, which
+=crates/signet-sim= pins for itself; M29 D is about the two respond calls
+a publisher makes.
+
+*** The gate
+
+=tests/signet_ledger_apply.rs=, per respond circuit:
+
+1. =ContractDeploy= a singleton whose three operations carry the COMMITTED
+   managed verifier keys (§8's =managed/keys/*.verifier=) into a fresh
+   =LedgerState=; =well_formed=; =apply=.
+2. Decode the golden's singleton call through a mechanical translation of
+   =chain-midnight/src/emissions.rs:96-148= — run the guaranteed
+   transcript under the ledger VM on an empty =QueryContext=, take the one
+   =VersionedLogItem=, check version 1 / type =Misc= / one =Bytes<288>=
+   cell, split =name(32) ‖ payload(256)= — and pull the request id and
+   signature OUT of that payload at the singleton's declared offsets.
+3. Build OUR call on those same values through C's path, =well_formed= it
+   against the deployed state, =apply= it.
+4. Compare the emission the LEDGER RECORDED while applying ours (an
+   =EventDetails::ContractLog= off =TransactionResult::Success=, not a
+   re-run of our own program) with the golden's.
+
+*** The comparison, field by field
+
+COMPARED and required equal:
+| field | why it must match |
+| =ContractCall::entry_point= | the sidecar addresses the circuit by this name |
+| the guaranteed transcript's Impact program, OP FOR OP | this is the emission: =Push= of =[Bytes<4> version, Bytes<1> tag, Bytes<288> data]=, then =Log= |
+| =fallible_transcript= absent on both | mpc's reader REFUSES a singleton call that has one (=UnsupportedFallibleCall=) |
+| =Transcript::version= present | =well_formed= rejects a call against a v3-keyed operation whose transcript declares none |
+| =VersionedLogItem::version= (1) and =event_type= (=Misc=) | =emission_from_log_item= checks both before reading a byte |
+| the logged cell's alignment: one =Bytes<288>= atom | ditto |
+| all 288 emitted bytes: =pad(32, name)= ‖ payload(256) | the name selects mpc's =EmissionKind=; the payload is what the MPC signs over |
+
+NECESSARILY DIFFERENT:
+| field | why |
+| =ContractCall::address= | theirs is the capture chain's deployment =b116cd04…=; ours is a fresh =ContractDeploy= whose address derives from its own nonce and initial state. Unmatchable without replaying their deployment, which is impossible by construction — their operations carry compactc's verifier keys and ours carry MinoCrab's, and that difference IS the swap |
+| =communication_commitment= | =transient_commit(input ‖ output, rand)= over a per-call =rand=; the sidecar sampled theirs, this suite pins ours so dumped preimages stay reproducible |
+| =ContractCall::proof= | theirs a real =ProofVersioned::V3=; ours a =ProofPreimageVersioned::V2=. This gate runs under the proof-preimage marker, where =ProofKind::proof_verify= is a NO-OP — which is precisely why rung E exists |
+| intent =binding_commitment= / =ttl=, tx =binding_randomness= / =network_id= | per transaction, per chain |
+| =Transcript::gas= | see below |
+
+The gas figure is the one measured surprise, and it is worth writing down.
+Both sides declare =bytes_written= 678, =bytes_deleted= 678 and
+=read_time= 0 (the singleton reads nothing). But the golden declares
+=compute_time= *2.208 ms* where ours declares *1.303 ms* — theirs
+partitioned by the sidecar against the capture chain's
+=crate-ledger-9.1.0.0-rc.3= parameters, ours against =INITIAL_PARAMETERS=
+at rev =04c9c5d=. Printed by the test, not asserted; our transaction
+applies at our figure, which is what =apply= checks. If a publisher ever
+declares gas against the WRONG parameter set the failure is a rejected
+transaction on chain, not a test failure here — that is a live item for
+M30 B (fetch ledger parameters from the node, do not assume
+=INITIAL_PARAMETERS=).
+
+The payload VALUES match only because step 2 feeds the golden's own
+request id and signature back in. That is the design: a field the two
+toolchains laid out differently would surface as a payload mismatch at a
+fixed offset, and the assertion covers all 288 bytes including the zero
+pad.
+
+*** Two supporting facts, asserted separately
+
+- =the_deployed_operations_are_our_committed_verifier_keys=: without it,
+  the apply gates would pass equally against a contract declaring no keys
+  at all, since the proof-preimage marker never looks at one.
+- =log_ops_is_the_program_the_captured_transactions_carry=: the Impact
+  program the suite writes out (the one thing in C's path NOT taken from
+  the ledger — in production it comes from compactc's generated JS
+  executor) is op-for-op the program a real chain carried. That closes the
+  last hand-written link in the chain.
+
+** E. The real-proving gate — the first real proof in the test suite
+
+=tests/signet_real_proof.rs=, =#[ignore]=d like =row_snapshot=:
+
+#+begin_src sh
+cargo test --release -p minocrab-contracts --test signet_real_proof -- --ignored --nocapture
+#+end_src
+
+keygen from our IR → assert the verifier key is BYTE-IDENTICAL to the
+committed =managed/keys/<circuit>.verifier= → =ContractDeploy= under those
+keys → build the call C's way → =Transaction::prove= through an in-process
+=ProvingProvider= → =seal= → =well_formed= with =verify_contract_proofs=
+ON in =ProofVerificationMode::Real= → =apply=. All three circuits, one
+process, sequentially.
+
+*** The negative control, in the same loop
+
+A gate that only ever says yes is not a gate. Each proof is ALSO offered
+to a second singleton deployed with the keys PERMUTED (respond's operation
+carrying signBidirectional's key, and so on) and =well_formed= must
+reject it. All three reject. Without this, the positive half passing would
+be consistent with nothing being verified at all — and note that the D
+gate genuinely is in that position, by design.
+
+*** The provider: what the pinned ledger does and does not offer
+
+There IS an in-process =ProvingProvider= upstream, but not a reachable
+one: =midnight_ledger::test_utilities::CombinedProofProvider= is a private
+struct behind the ledger's =test-utilities= + =proving= features, and its
+resolver is =ledger::prove::Resolver=, which owns a =ZswapResolver= and a
+=DustResolver= — network-fetched parameter sets this gate has no use for,
+since the transaction carries no zswap offer and no dust action. And
+=zkir::LocalProvingProvider= (the public one) is the ZKIR V2 crate's: it
+loads =zkir_v2::IrSource=, which will not read our
+=ir-source[v3-generic]=.
+
+So =V3ProvingProvider= is a mechanical translation of
+=CombinedProofProvider='s v3 arm only
+(=ledger/src/test_utilities.rs:749-818=): resolve the key material, load
+the =IrSource= from its =ir_source= bytes, hand the preimage to
+=ProofPreimage::prove::<zkir_v3::IrSource>=. About 35 lines. The
+milestone's fallback ("prove the ledger-constructed preimage with =Zkir=
+directly, the bench harness's path") was NOT needed — the full
+=Transaction::prove= path is reachable at the pinned rev.
+
+That matters beyond this test: it is §2's claim about the port, exercised.
+Proving is a plain async Rust call — no proof server, no child process, no
+network once the KZG parameters are on disk.
+
+*** Numbers (this machine, =--release=, params warm under
+=~/.cache/midnight/zk-params=; single-shot, NOT a median)
+
+| circuit              |  k |  rows | keygen | pk size | prove   | well_formed(verify) | peak RSS after |
+| signBidirectional    | 11 | 1,205 | 0.112s |  1.8 MB | *0.182s* |             0.015s |        76.6 MB |
+| respond              | 10 | 1,004 | 0.071s |  0.9 MB | *0.121s* |             0.004s |        80.7 MB |
+| respondBidirectional | 10 | 1,004 | 0.070s |  0.9 MB | *0.116s* |             0.004s |        82.7 MB |
+
+Process baseline before any keygen: *18.7 MB*. Whole-run peak: *82.8 MB*.
+The whole test — three keygens, six proofs (three honest, three for the
+negative control), six =well_formed=s — takes *1.20 s*.
+
+Run-to-run spread, from a second identical run: prove 0.187 / 0.121 /
+0.119 s, per-circuit peaks 78.0 / 81.0 / 82.7 MB, whole-run peak the same
+*82.8 MB*, total 1.22 s. So the prove figures are stable to ~3% and the
+whole-run peak is reproducible to the tenth of a megabyte; the PER-CIRCUIT
+deltas are the noisy part (+59.3 / +3.0 / +1.7 against +57.9 / +4.1 / +2.0),
+which is what a monotone process-wide high-water mark does when allocation
+order shifts. Quote the whole-run peak, not the deltas.
+
+Read against BENCHMARK.md's minocrab rows (which this note does NOT edit):
+
+| circuit              | BENCHMARK.md prove | here   | BENCHMARK.md RSS | here (cumulative) |
+| signBidirectional    |              0.14s | 0.182s |            51 MB |           76.6 MB |
+| respond              |              0.09s | 0.121s |            41 MB |           80.7 MB |
+| respondBidirectional |              0.09s | 0.116s |            42 MB |           82.7 MB |
+
+The two are measuring different things and the differences are explained,
+not anomalies:
+- PROVE is ~30% slower here because BENCHMARK.md reports the MEDIAN OF 3
+  (=MINOCRAB_PROVE_ITERS=) on a warmed process while this is a single
+  cold shot, and because this path goes through =Transaction::prove= —
+  =ProvingProvider::check=, the noop-insertion pass and the binding-input
+  overwrite — where the harness calls =IrSource::prove= directly.
+- RSS is NOT comparable cell by cell: the benchmark spawns one subprocess
+  per measurement precisely so each figure is that circuit alone, whereas
+  this figure is monotone across a single process holding all three
+  prover keys at once. The interesting number is therefore the LAST one:
+  *a publisher process serving all three signer circuits peaks at ~83 MB*,
+  against ~900 MB for a single compactc =respond= proof (BENCHMARK.md).
+  That is the sizing fact M30 needs, and it is why the deltas are printed
+  beside the mark: +57.9 MB for the first circuit (params + first prover
+  key), then +4.1 and +2.0 for the two k=10 circuits.
+- VERIFY is larger than the harness's 0.003s because =well_formed= checks
+  the whole transaction, not only the proof.
+
+*** What E does NOT prove
+
+No fee: =enforce_balancing= and =enforce_limits= are off, and there is
+still no DUST wallet anywhere in this workspace (§2's one remaining GAP,
+M30 C). Nothing is submitted. And the deployed key is ours by
+construction — that a real chain carries it is deploy tooling's job,
+outside this repo.
+
+** F. The pin reconciliation, facts only
+
+Read off both =Cargo.lock=s on 2026-09-05. The headline is that §6's table
+UNDERSTATES the agreement: every shared crate is at the SAME SEMVER
+version in both repos. What differs is which git object supplies it —
+this repo takes all of them from one rev; mpc takes each from its own
+release tag, the way midnight-node pins them.
+
+| crate                     | version | this repo (one rev)      | sig-net/mpc (per-crate tags)           |
+| midnight-ledger-v9        |   1.0.0 | rev =04c9c5d9=           | tag =crate-ledger-9.1.0.0-rc.3= (=85e769a0=) |
+| midnight-transient-crypto |   3.0.0 | rev =04c9c5d9=           | tag =transient-crypto-3.0.0-rc.2= (=29f5c5de=) |
+| midnight-transient-crypto |   2.2.0 | tag =transient-crypto-2.2.0-rc.1= (=a01a1ea0=) | the SAME tag (=a01a1ea0=) |
+| midnight-base-crypto      |   1.1.0 | rev =04c9c5d9=           | tag =base-crypto-1.1.0-rc.2= (=00cfcb09=) |
+| midnight-onchain-runtime  |   4.0.0 | rev =04c9c5d9=           | tag =onchain-runtime-4.0.0-rc.2= (=37337e70=) |
+| midnight-onchain-state    |   4.0.0 | rev =04c9c5d9=           | tag =onchain-state-4.0.0-rc.3= (=a2a4aa50=) |
+| midnight-onchain-vm       |   4.0.0 | rev =04c9c5d9=           | tag =onchain-vm-4.0.0-rc.2= (=a2c3c5d5=) |
+| midnight-coin-structure   |   3.0.0 | rev =04c9c5d9=           | tag =coin-structure-3.0.0-rc.1= (=8c27955d=) |
+| midnight-serialize        |   1.2.0 | rev =04c9c5d9=           | tag =serialize-1.2.0-rc.1= (=7267bca4=) |
+| midnight-zswap            |   9.0.0 | rev =04c9c5d9=           | tag =zswap-9.0.0-rc.3= |
+| midnight-storage          |   2.0.1 | rev =04c9c5d9=           | crates.io registry |
+| midnight-zkir (v2)        |   2.2.0 | rev =04c9c5d9=           | tag =zkir-2.2.0-rc.3= (=5350e0ff=) |
+| midnight-zkir-v3          | 3.0.0-rc.2 | rev =04c9c5d9=        | ABSENT — mpc has no v3 dependency |
+
+Two asymmetries worth naming:
+- =midnight-transient-crypto 2.2.0= is at the IDENTICAL commit in both
+  (=a01a1ea0=), because both repos mirror the ledger's own back-compat
+  patch. That is one crate where the pins already coincide exactly.
+- mpc carries NO =midnight-zkir-v3=. It never needs one: the sidecar's
+  proof server does the proving, and mpc's Rust side only READS
+  transactions. A Rust publisher (M30) is the thing that will need it, so
+  that row is a dependency mpc will ACQUIRE from the swap, not a conflict
+  to resolve.
+
+*** Do the =.mn= goldens deserialize under our pin? YES
+
+This is itself the reconciliation evidence, and D's gate carries it:
+=respond-tx-161.mn= and =respond-bidirectional-tx-181.mn= were
+tagged-serialized by mpc's =crate-ledger-9.1.0.0-rc.3= and
+=tagged_deserialize= into
+=Transaction<Signature, ProofMarker, PureGeneratorPedersen, InMemoryDB>=
+here at rev =04c9c5d= with no adaptation — same tag
+=midnight:transaction[v12](signature[v2],proof,pedersen-schnorr[v1])=,
+same =pedersen-schnorr[v1]=. The transaction wire format, the transcript
+op encoding, the FAB alignment encoding and the =ProofVersioned=
+discriminants are all shared between the two pins, because every proven
+transaction in those files round-trips through them. That is a stronger
+statement than "the version numbers match", and it is now checked on every
+=cargo test= run.
+
+*** The decision this leaves
+
+M29 F's task was to CHOOSE one pin. The facts above say the choice is not
+forced: the two pins agree on every shared crate's semver and on the wire
+format, so nothing here has to move for the swap. The remaining
+difference is provenance discipline — one rev versus per-crate release
+tags — and the argument for adopting mpc's shape is that release tags are
+what midnight-node itself pins, so drifting from them is drifting from
+what the network runs. Against it: this repo's single rev is also what
+the official compact flake pins for the =zkir-v3= binaries our compactc
+ships with (Cargo.toml's comment on the =midnight-zkir-v3= entry), and
+=zkir-v3= has no release tag to move to. dmd's call; recorded here rather
+than taken unilaterally, and =notes/zkir.org='s pin table is left
+untouched until it is made.
+
+** Files
+
+| file | rung |
+| =crates/minocrab-contracts/tests/support/signet_call.rs= | C (built), D (deploy/apply helpers) |
+| =crates/minocrab-contracts/tests/signet_construction.rs= | C — replaces =signet_contract_differential.rs= |
+| =crates/minocrab-contracts/tests/signet_ledger_apply.rs= | D |
+| =crates/minocrab-contracts/tests/fixtures/mpc/{README.md,respond-tx-161.mn,respond-bidirectional-tx-181.mn}= | D |
+| =crates/minocrab-contracts/tests/signet_real_proof.rs= | E |
+| =crates/minocrab-contracts/tests/serialization/deployed.rs= | C — =misc_preimage= reduced to a wrapper |
+| =bench.sh= | C — dumps preimages from the new target |
+
+** Unresolved / left for later
+
+- F's CHOICE (above) is dmd's, and =notes/zkir.org='s pin table is
+  deliberately unedited.
+- M30 B should fetch =LedgerParameters= from the node rather than assume
+  =INITIAL_PARAMETERS=: D measured a 2.208 ms vs 1.303 ms gap in the
+  declared transcript =compute_time= between the capture chain's
+  parameters and ours.
+- The DUST wallet is still zero code here (§2), so no gate in this
+  milestone pays a fee or balances anything.
+- =BENCHMARK.md= is untouched, as instructed; E's numbers live only in
+  this note.
