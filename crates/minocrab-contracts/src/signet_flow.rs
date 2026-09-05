@@ -432,6 +432,20 @@ impl<Env, Resp, const WORDS: usize> Pending<Env, Resp, WORDS> {
         }
     }
 
+    /// [`Self::at_block`], ignoring the block's `Signet` offset.
+    ///
+    /// RUNG D DELETES THIS. `#[derive(Ledger)]` threads the block's Signet
+    /// start into every field whose type is spelled `Pending` (M37 rung B),
+    /// because `evm_flow::Pending` reads its configuration from the block
+    /// instead of taking `&VAULT.signet` per call. THIS lineage still takes
+    /// it as an argument, so the third parameter is dropped on the floor —
+    /// the method exists only so the vault's existing block keeps compiling
+    /// through the derive change, and it goes when rung D migrates the vault
+    /// off this type.
+    pub const fn at_block_with_signet(total: usize, start: usize, _signet_start: usize) -> Self {
+        Self::at_block(total, start)
+    }
+
     /// The record map's ledger path: the notification's `depth ‖ path`.
     pub const fn record_path(&self) -> FieldPath {
         self.records.field_path()
@@ -461,7 +475,7 @@ pub struct Outcome<Env, R, const WORDS: usize> {
 /// assemble the record with `kind`, hash it, assert freshness, bump the
 /// nonce, store the record, run `after_insert` (a `Pending` stores its
 /// environment there), notify the MPC with the record map's own path.
-fn file_request<const WORDS: usize>(
+pub(crate) fn file_request<const WORDS: usize>(
     c: &mut Circuit3,
     signet: &Signet,
     records: &LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,

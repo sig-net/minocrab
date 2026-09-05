@@ -781,7 +781,7 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
 /// two copies of the ECDSA plumbing. The extraction is instruction-for-
 /// instruction identical to the inlined original (row and interface
 /// snapshots, and every vault differential suite, say so).
-fn verify_attestation_signature<V: Vis3>(
+pub fn verify_attestation_signature<V: Vis3>(
     c: &mut Circuit3,
     digest: &B32<V>,
     sig: &Secp256k1SigLimbs<V>,

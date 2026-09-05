@@ -105,9 +105,11 @@
 //! let tx = build_tx::<Erc20Transfer, 3>(&mut c, token, (to, amount), nonce);
 //! ```
 
+use core::marker::PhantomData;
+
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
-use minocrab_std::v3::{pow2_const, Bool as BoolWire, Bytes, Uint, Vis3, B32};
+use minocrab_std::v3::{is_true, pow2_const, Bool as BoolWire, Bytes, Check, Uint, Vis3, B32};
 use sha3::{Digest as _, Keccak256};
 
 use crate::erc20_vault::{ERC20_CALL_GAS, FIXED_MAX_FEE, FIXED_PRIORITY_FEE, LENDING_GAS, SWAP_GAS};
@@ -392,6 +394,14 @@ pub trait EvmCall {
     /// is the response a settle circuit consumes.
     type Return: AbiType;
 
+    /// HOW THAT RETURN SAYS "it worked" — [`Always`], [`ByFlag`] or
+    /// [`ByPredicate`] (notes/evm-calls.org §3.2). `complete` asserts the
+    /// rule's predicate and `refund` takes its negation as one disjunct, so
+    /// the declaration here is what makes "a mined `transfer` that returned
+    /// `false` cannot complete" a property of the call type rather than of a
+    /// line somebody remembered to write.
+    type Outcome: OutcomeRule<Self::Return>;
+
     /// The protocol kind byte the response carries — explicit, a wire
     /// commitment, and the one thing the type layer will not guess.
     const KIND: u8;
@@ -433,6 +443,7 @@ impl EvmCall for Erc20Transfer {
     const NAME: &'static str = "transfer";
     type Args = (Address, U128);
     type Return = Bool;
+    type Outcome = ByFlag;
     const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
     const GAS_LIMIT: u64 = ERC20_CALL_GAS;
 }
@@ -448,6 +459,7 @@ impl EvmCall for Erc20Approve {
     const NAME: &'static str = "approve";
     type Args = (Address, U256);
     type Return = Bool;
+    type Outcome = ByFlag;
     const KIND: u8 = RESPONSE_KIND_APPROVE as u8;
     const GAS_LIMIT: u64 = ERC20_CALL_GAS;
 }
@@ -469,6 +481,7 @@ impl EvmCall for ExactOutputSingle {
     const NAME: &'static str = "exactOutputSingle";
     type Args = (Address, Address, U24, Address, U128, U128, U160);
     type Return = U64;
+    type Outcome = Always;
     const KIND: u8 = RESPONSE_KIND_SWAP as u8;
     const GAS_LIMIT: u64 = SWAP_GAS;
 
@@ -486,6 +499,7 @@ impl EvmCall for Erc4626Deposit {
     const NAME: &'static str = "deposit";
     type Args = (U128, Address);
     type Return = U64;
+    type Outcome = Always;
     const KIND: u8 = RESPONSE_KIND_SUPPLY as u8;
     const GAS_LIMIT: u64 = LENDING_GAS;
 }
@@ -499,8 +513,146 @@ impl EvmCall for Erc4626Redeem {
     const NAME: &'static str = "redeem";
     type Args = (U128, Address, Address);
     type Return = U64;
+    type Outcome = Always;
     const KIND: u8 = RESPONSE_KIND_REDEEM as u8;
     const GAS_LIMIT: u64 = LENDING_GAS;
+}
+
+// ---- the outcome rule --------------------------------------------------------
+
+/// The sealed set: [`Always`], [`ByFlag`], [`ByPredicate`] and nothing else.
+/// A contract cannot add a rule, which is what makes "every `complete`
+/// asserts a success predicate" a fact about the API rather than a habit.
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// A zero-size value NOBODY OUTSIDE THIS MODULE CAN BUILD: what [`Always`]
+/// hands `refund` as the executed-but-failed payload, because for a call
+/// whose every execution is a success there is no such payload.
+///
+/// Not an empty enum, because [`OutcomeRule::split`] must return BOTH
+/// projections and an uninhabited one could not be returned at all. The
+/// private field is what makes it unconstructible elsewhere, so a `Never`
+/// in a signature reads as "this arm carries nothing".
+pub struct Never(());
+
+/// What [`OutcomeRule::split`] computes: the success PREDICATE and both
+/// PROJECTIONS of the attested output.
+///
+/// `complete` asserts `succeeded` and keeps `success`; `refund` takes
+/// `!succeeded` as one disjunct and keeps `failure`. Each circuit uses one
+/// side, and the unused projection is a value the compiler drops — no
+/// instruction is emitted for it, because every projection here is a
+/// re-labelling of wires the ticket already declared.
+pub struct Split<S, F> {
+    /// The predicate `complete` asserts.
+    pub succeeded: Check<Private>,
+    /// What `complete` hands the author.
+    pub success: S,
+    /// What `refund` hands the author for an executed-but-failed call.
+    pub failure: F,
+}
+
+/// HOW A CALL'S ATTESTED RETURN SAYS "it worked" — one named type per rule,
+/// from a sealed set (notes/evm-calls.org §3.2).
+///
+/// Rust cannot demand "implement exactly one of these two methods" — mutual
+/// defaults compile and recurse — but it can demand ONE NAMED TYPE, and each
+/// type brings its own [`split`](OutcomeRule::split). So [`EvmCall::Outcome`]
+/// is the declaration, and a rule that does not fit the return type is a
+/// missing impl: [`ByFlag`] exists only for [`Bool`].
+pub trait OutcomeRule<R: AbiType>: sealed::Sealed {
+    /// What a successful `complete` hands the author.
+    type Success;
+    /// What a `refund` of an EXECUTED-but-failed call hands the author.
+    type Failure;
+
+    /// The predicate and both projections, over the attested return value.
+    fn split(c: &mut Circuit3, output: R::Wire<Private>) -> Split<Self::Success, Self::Failure>;
+}
+
+/// EXECUTED IS SUCCEEDED: the call has no failure signal of its own, so the
+/// only non-success is the MPC's failure kind.
+///
+/// `Success` is the whole attested value; `Failure` is [`Never`]. The
+/// predicate is a constant `1`, and the `assert(imm 1)` it produces is
+/// removed by the backend's immediate-assert fold — the zero cost is a fold's
+/// job, not a `CAN_FAIL` branch in this API (dmd, 2026-09-05).
+pub struct Always;
+
+impl sealed::Sealed for Always {}
+
+impl<R: AbiType> OutcomeRule<R> for Always {
+    type Success = R::Wire<Private>;
+    type Failure = Never;
+
+    fn split(c: &mut Circuit3, output: R::Wire<Private>) -> Split<Self::Success, Self::Failure> {
+        let one = BoolWire::from_field_unchecked(c.constant(1u64).private());
+        Split {
+            succeeded: is_true(one),
+            success: output,
+            failure: Never(()),
+        }
+    }
+}
+
+/// THE RETURNED FLAG IS THE ANSWER — ERC-20's `transfer` and `approve`.
+///
+/// Implemented for [`Bool`] and nothing else, so `type Outcome = ByFlag` on a
+/// call returning a number does not compile.
+///
+/// Both projections are `()`: a `complete` whose predicate IS the whole
+/// return value has nothing left to hand back, and handing back a `true` a
+/// caller might re-read as data is exactly the misreading this rule exists to
+/// prevent (notes/evm-calls.org §3.2, "the filter-map").
+pub struct ByFlag;
+
+impl sealed::Sealed for ByFlag {}
+
+impl OutcomeRule<Bool> for ByFlag {
+    type Success = ();
+    type Failure = ();
+
+    fn split(_c: &mut Circuit3, output: BoolWire<Private>) -> Split<(), ()> {
+        Split {
+            succeeded: is_true(output),
+            success: (),
+            failure: (),
+        }
+    }
+}
+
+/// A PREDICATE OVER THE VALUE — "succeeded" is a property of the number that
+/// came back (a non-zero share count, a minimum output amount).
+///
+/// Both projections are the value: `complete` gets it having asserted the
+/// predicate, `refund` gets it knowing the predicate failed.
+pub struct ByPredicate<P>(PhantomData<fn() -> P>);
+
+impl<P> sealed::Sealed for ByPredicate<P> {}
+
+/// The predicate [`ByPredicate`] carries: a named type, so the rule reads as
+/// a rule rather than as a closure buried in a settle circuit.
+pub trait SuccessPredicate<R: AbiType> {
+    /// Does this attested return count as a success?
+    fn holds(c: &mut Circuit3, output: &R::Wire<Private>) -> Check<Private>;
+}
+
+impl<R: AbiType, P: SuccessPredicate<R>> OutcomeRule<R> for ByPredicate<P>
+where
+    R::Wire<Private>: Copy,
+{
+    type Success = R::Wire<Private>;
+    type Failure = R::Wire<Private>;
+
+    fn split(c: &mut Circuit3, output: R::Wire<Private>) -> Split<Self::Success, Self::Failure> {
+        Split {
+            succeeded: P::holds(c, &output),
+            success: output,
+            failure: output,
+        }
+    }
 }
 
 // ---- the transaction ---------------------------------------------------------
@@ -606,6 +758,7 @@ mod tests {
             const NAME: &'static str = "noop";
             type Args = ();
             type Return = Bool;
+            type Outcome = ByFlag;
             const KIND: u8 = 0;
             const GAS_LIMIT: u64 = 21_000;
         }
