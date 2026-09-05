@@ -154,6 +154,8 @@ the two preimages differ in their first byte.
 | 2 | `SWAP` | `swap` | `completeSwap` | `[uint256 amountIn]` | `SwapResponse { kind: u8, amount_in: u64 }` | 9 |
 | 3 | `FAILURE` | — | `refund` | — (never executed) | `FailureResponse { kind: u8 }` | 1 |
 | 4 | `APPROVE` | `approveRouter` | — | `[bool success]` | `VaultResponse { kind: u8, success: bool }` | 2 |
+| 5 | `SUPPLY` | `supply` | `completeSupply` | `[uint256 shares]` | `SupplyResponse { kind: u8, shares: u64 }` | 9 |
+| 6 | `REDEEM` | `redeem` | `completeRedeem` | `[uint256 assets]` | `RedeemResponse { kind: u8, assets: u64 }` | 9 |
 <!-- END GENERATED: response kinds -->
 
 This table is generated from the contract's own `RESPONSE_KIND_*` constants and
@@ -583,6 +585,36 @@ preimage; the `output.*` rows are the attested output at offset 32.
 | 0 | 32 | `request_id` | `[u8; 32]` |
 | 32 | 1 | `output.kind` | `u8` |
 | 33 | 8 | `output.amount_in` | `u64` |
+
+### `SupplyResponse` — 9 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `kind` | `u8` |
+| 1 | 8 | `shares` | `u64` |
+
+### `AttestationPreimage<SupplyResponse>` — 41 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 32 | `request_id` | `[u8; 32]` |
+| 32 | 1 | `output.kind` | `u8` |
+| 33 | 8 | `output.shares` | `u64` |
+
+### `RedeemResponse` — 9 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 1 | `kind` | `u8` |
+| 1 | 8 | `assets` | `u64` |
+
+### `AttestationPreimage<RedeemResponse>` — 41 bytes
+
+| offset | width | field | type |
+|---:|---:|---|---|
+| 0 | 32 | `request_id` | `[u8; 32]` |
+| 32 | 1 | `output.kind` | `u8` |
+| 33 | 8 | `output.assets` | `u64` |
 
 ### `AttestationPreimage<FailureResponse>` — 33 bytes
 

@@ -1991,6 +1991,240 @@ export const attestationPreimageSwapResponseCodec: Codec<AttestationPreimageSwap
   leaves: attestationPreimageSwapResponseLeaves,
 };
 
+// ---- SupplyResponse --------------------------------------------------------------
+
+/** The fixed serialized width of `SupplyResponse`. */
+export const SUPPLY_RESPONSE_LEN = 9;
+
+/** `SupplyResponse`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const SUPPLY_RESPONSE_FIELDS: readonly FieldSpec[] = [
+  { path: 'kind', type: 'u8', offset: 0, width: 1 },
+  { path: 'shares', type: 'u64', offset: 1, width: 8 },
+];
+
+export interface SupplyResponse {
+  readonly kind: number;
+  readonly shares: bigint;
+}
+
+/** Read a `SupplyResponse` from `bytes` at `offset` — 9 bytes, fixed. */
+export function readSupplyResponse(bytes: Uint8Array, offset = 0): SupplyResponse {
+  const view = checkedView(bytes, offset, SUPPLY_RESPONSE_LEN);
+  return {
+    kind: getU8(view, 0),
+    shares: getU64(view, 1),
+  };
+}
+
+/** Write a `SupplyResponse` into `out` at `offset`, and return `out`. */
+export function writeSupplyResponse(
+  value: SupplyResponse,
+  out = new Uint8Array(SUPPLY_RESPONSE_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, SUPPLY_RESPONSE_LEN);
+  setU8(view, 0, value.kind);
+  setU64(view, 1, value.shares);
+  return out;
+}
+
+/** `SupplyResponse`'s leaves, in declaration order — one per `SUPPLY_RESPONSE_FIELDS` entry. */
+export function supplyResponseLeaves(value: SupplyResponse): readonly LeafValue[] {
+  return [
+    value.kind,
+    value.shares,
+  ];
+}
+
+export const supplyResponseCodec: Codec<SupplyResponse> = {
+  name: 'SupplyResponse',
+  byteLength: SUPPLY_RESPONSE_LEN,
+  fields: SUPPLY_RESPONSE_FIELDS,
+  read: readSupplyResponse,
+  write: writeSupplyResponse,
+  leaves: supplyResponseLeaves,
+};
+
+// ---- AttestationPreimage<SupplyResponse> -----------------------------------------
+
+/** The fixed serialized width of `AttestationPreimage<SupplyResponse>`. */
+export const ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_LEN = 41;
+
+/** `AttestationPreimage<SupplyResponse>`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_FIELDS: readonly FieldSpec[] = [
+  { path: 'request_id', type: '[u8; 32]', offset: 0, width: 32 },
+  { path: 'output.kind', type: 'u8', offset: 32, width: 1 },
+  { path: 'output.shares', type: 'u64', offset: 33, width: 8 },
+];
+
+export interface AttestationPreimageSupplyResponse {
+  readonly requestId: Uint8Array;
+  readonly output: {
+    readonly kind: number;
+    readonly shares: bigint;
+  };
+}
+
+/** Read a `AttestationPreimage<SupplyResponse>` from `bytes` at `offset` — 41 bytes, fixed. */
+export function readAttestationPreimageSupplyResponse(bytes: Uint8Array, offset = 0): AttestationPreimageSupplyResponse {
+  const view = checkedView(bytes, offset, ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_LEN);
+  return {
+    requestId: getBytes(view, 0, 32),
+    output: {
+      kind: getU8(view, 32),
+      shares: getU64(view, 33),
+    },
+  };
+}
+
+/** Write a `AttestationPreimage<SupplyResponse>` into `out` at `offset`, and return `out`. */
+export function writeAttestationPreimageSupplyResponse(
+  value: AttestationPreimageSupplyResponse,
+  out = new Uint8Array(ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_LEN);
+  setBytes(view, 0, 32, value.requestId);
+  setU8(view, 32, value.output.kind);
+  setU64(view, 33, value.output.shares);
+  return out;
+}
+
+/** `AttestationPreimage<SupplyResponse>`'s leaves, in declaration order — one per `ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_FIELDS` entry. */
+export function attestationPreimageSupplyResponseLeaves(value: AttestationPreimageSupplyResponse): readonly LeafValue[] {
+  return [
+    value.requestId,
+    value.output.kind,
+    value.output.shares,
+  ];
+}
+
+export const attestationPreimageSupplyResponseCodec: Codec<AttestationPreimageSupplyResponse> = {
+  name: 'AttestationPreimage<SupplyResponse>',
+  byteLength: ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_LEN,
+  fields: ATTESTATION_PREIMAGE_SUPPLY_RESPONSE_FIELDS,
+  read: readAttestationPreimageSupplyResponse,
+  write: writeAttestationPreimageSupplyResponse,
+  leaves: attestationPreimageSupplyResponseLeaves,
+};
+
+// ---- RedeemResponse --------------------------------------------------------------
+
+/** The fixed serialized width of `RedeemResponse`. */
+export const REDEEM_RESPONSE_LEN = 9;
+
+/** `RedeemResponse`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const REDEEM_RESPONSE_FIELDS: readonly FieldSpec[] = [
+  { path: 'kind', type: 'u8', offset: 0, width: 1 },
+  { path: 'assets', type: 'u64', offset: 1, width: 8 },
+];
+
+export interface RedeemResponse {
+  readonly kind: number;
+  readonly assets: bigint;
+}
+
+/** Read a `RedeemResponse` from `bytes` at `offset` — 9 bytes, fixed. */
+export function readRedeemResponse(bytes: Uint8Array, offset = 0): RedeemResponse {
+  const view = checkedView(bytes, offset, REDEEM_RESPONSE_LEN);
+  return {
+    kind: getU8(view, 0),
+    assets: getU64(view, 1),
+  };
+}
+
+/** Write a `RedeemResponse` into `out` at `offset`, and return `out`. */
+export function writeRedeemResponse(
+  value: RedeemResponse,
+  out = new Uint8Array(REDEEM_RESPONSE_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, REDEEM_RESPONSE_LEN);
+  setU8(view, 0, value.kind);
+  setU64(view, 1, value.assets);
+  return out;
+}
+
+/** `RedeemResponse`'s leaves, in declaration order — one per `REDEEM_RESPONSE_FIELDS` entry. */
+export function redeemResponseLeaves(value: RedeemResponse): readonly LeafValue[] {
+  return [
+    value.kind,
+    value.assets,
+  ];
+}
+
+export const redeemResponseCodec: Codec<RedeemResponse> = {
+  name: 'RedeemResponse',
+  byteLength: REDEEM_RESPONSE_LEN,
+  fields: REDEEM_RESPONSE_FIELDS,
+  read: readRedeemResponse,
+  write: writeRedeemResponse,
+  leaves: redeemResponseLeaves,
+};
+
+// ---- AttestationPreimage<RedeemResponse> -----------------------------------------
+
+/** The fixed serialized width of `AttestationPreimage<RedeemResponse>`. */
+export const ATTESTATION_PREIMAGE_REDEEM_RESPONSE_LEN = 41;
+
+/** `AttestationPreimage<RedeemResponse>`'s offset table — `spec/borsh-subset.md` §9, as data. */
+export const ATTESTATION_PREIMAGE_REDEEM_RESPONSE_FIELDS: readonly FieldSpec[] = [
+  { path: 'request_id', type: '[u8; 32]', offset: 0, width: 32 },
+  { path: 'output.kind', type: 'u8', offset: 32, width: 1 },
+  { path: 'output.assets', type: 'u64', offset: 33, width: 8 },
+];
+
+export interface AttestationPreimageRedeemResponse {
+  readonly requestId: Uint8Array;
+  readonly output: {
+    readonly kind: number;
+    readonly assets: bigint;
+  };
+}
+
+/** Read a `AttestationPreimage<RedeemResponse>` from `bytes` at `offset` — 41 bytes, fixed. */
+export function readAttestationPreimageRedeemResponse(bytes: Uint8Array, offset = 0): AttestationPreimageRedeemResponse {
+  const view = checkedView(bytes, offset, ATTESTATION_PREIMAGE_REDEEM_RESPONSE_LEN);
+  return {
+    requestId: getBytes(view, 0, 32),
+    output: {
+      kind: getU8(view, 32),
+      assets: getU64(view, 33),
+    },
+  };
+}
+
+/** Write a `AttestationPreimage<RedeemResponse>` into `out` at `offset`, and return `out`. */
+export function writeAttestationPreimageRedeemResponse(
+  value: AttestationPreimageRedeemResponse,
+  out = new Uint8Array(ATTESTATION_PREIMAGE_REDEEM_RESPONSE_LEN),
+  offset = 0,
+): Uint8Array {
+  const view = checkedView(out, offset, ATTESTATION_PREIMAGE_REDEEM_RESPONSE_LEN);
+  setBytes(view, 0, 32, value.requestId);
+  setU8(view, 32, value.output.kind);
+  setU64(view, 33, value.output.assets);
+  return out;
+}
+
+/** `AttestationPreimage<RedeemResponse>`'s leaves, in declaration order — one per `ATTESTATION_PREIMAGE_REDEEM_RESPONSE_FIELDS` entry. */
+export function attestationPreimageRedeemResponseLeaves(value: AttestationPreimageRedeemResponse): readonly LeafValue[] {
+  return [
+    value.requestId,
+    value.output.kind,
+    value.output.assets,
+  ];
+}
+
+export const attestationPreimageRedeemResponseCodec: Codec<AttestationPreimageRedeemResponse> = {
+  name: 'AttestationPreimage<RedeemResponse>',
+  byteLength: ATTESTATION_PREIMAGE_REDEEM_RESPONSE_LEN,
+  fields: ATTESTATION_PREIMAGE_REDEEM_RESPONSE_FIELDS,
+  read: readAttestationPreimageRedeemResponse,
+  write: writeAttestationPreimageRedeemResponse,
+  leaves: attestationPreimageRedeemResponseLeaves,
+};
+
 // ---- AttestationPreimage<FailureResponse> ----------------------------------------
 
 /** The fixed serialized width of `AttestationPreimage<FailureResponse>`. */
@@ -2212,6 +2446,10 @@ export const CODECS: Readonly<Record<string, AnyCodec>> = {
   'FailureResponse': failureResponseCodec,
   'AttestationPreimage<VaultResponse>': attestationPreimageVaultResponseCodec,
   'AttestationPreimage<SwapResponse>': attestationPreimageSwapResponseCodec,
+  'SupplyResponse': supplyResponseCodec,
+  'AttestationPreimage<SupplyResponse>': attestationPreimageSupplyResponseCodec,
+  'RedeemResponse': redeemResponseCodec,
+  'AttestationPreimage<RedeemResponse>': attestationPreimageRedeemResponseCodec,
   'AttestationPreimage<FailureResponse>': attestationPreimageFailureResponseCodec,
   'SignBidirectionalMisc': signBidirectionalMiscCodec,
   'RespondMisc': respondMiscCodec,

@@ -421,9 +421,13 @@ fn lens_match_the_deployed_alignments() {
     assert_eq!(VaultResponse::LEN, 2);
     assert_eq!(SwapResponse::LEN, 9);
     assert_eq!(FailureResponse::LEN, 1);
+    assert_eq!(SupplyResponse::LEN, 9);
+    assert_eq!(RedeemResponse::LEN, 9);
     assert_eq!(AttestationPreimage::<VaultResponse>::LEN, 34);
     assert_eq!(AttestationPreimage::<SwapResponse>::LEN, 41);
     assert_eq!(AttestationPreimage::<FailureResponse>::LEN, 33);
+    assert_eq!(AttestationPreimage::<SupplyResponse>::LEN, 41);
+    assert_eq!(AttestationPreimage::<RedeemResponse>::LEN, 41);
 
     // The Misc payloads sit inside `Bytes<256>` after the 32-byte name.
     assert_eq!(SignBidirectionalMisc::LEN, 161);
@@ -465,6 +469,16 @@ fn schema_widths_match_the_lens() {
         (
             "AttestationPreimage<SwapResponse>",
             AttestationPreimage::<SwapResponse>::LEN,
+        ),
+        ("SupplyResponse", SupplyResponse::LEN),
+        (
+            "AttestationPreimage<SupplyResponse>",
+            AttestationPreimage::<SupplyResponse>::LEN,
+        ),
+        ("RedeemResponse", RedeemResponse::LEN),
+        (
+            "AttestationPreimage<RedeemResponse>",
+            AttestationPreimage::<RedeemResponse>::LEN,
         ),
         (
             "AttestationPreimage<FailureResponse>",
@@ -977,6 +991,16 @@ const LAYOUT_SNAPSHOT: &[(&str, &str, &str, usize, usize)] = &[
     ("AttestationPreimage<SwapResponse>", "request_id", "[u8; 32]", 0, 32),
     ("AttestationPreimage<SwapResponse>", "output.kind", "u8", 32, 1),
     ("AttestationPreimage<SwapResponse>", "output.amount_in", "u64", 33, 8),
+    ("SupplyResponse", "kind", "u8", 0, 1),
+    ("SupplyResponse", "shares", "u64", 1, 8),
+    ("AttestationPreimage<SupplyResponse>", "request_id", "[u8; 32]", 0, 32),
+    ("AttestationPreimage<SupplyResponse>", "output.kind", "u8", 32, 1),
+    ("AttestationPreimage<SupplyResponse>", "output.shares", "u64", 33, 8),
+    ("RedeemResponse", "kind", "u8", 0, 1),
+    ("RedeemResponse", "assets", "u64", 1, 8),
+    ("AttestationPreimage<RedeemResponse>", "request_id", "[u8; 32]", 0, 32),
+    ("AttestationPreimage<RedeemResponse>", "output.kind", "u8", 32, 1),
+    ("AttestationPreimage<RedeemResponse>", "output.assets", "u64", 33, 8),
     ("AttestationPreimage<FailureResponse>", "request_id", "[u8; 32]", 0, 32),
     ("AttestationPreimage<FailureResponse>", "output.kind", "u8", 32, 1),
     ("SignBidirectionalMisc", "version", "u8", 0, 1),

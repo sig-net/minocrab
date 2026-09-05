@@ -436,6 +436,28 @@ impl FixedLen for SwapResponse {
     const LEN: usize = 1 + 8;
 }
 
+/// `completeSupply` (kind 5): the kind byte and the attested Aave `shares`.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SupplyResponse {
+    pub kind: u8,
+    pub shares: u64,
+}
+
+impl FixedLen for SupplyResponse {
+    const LEN: usize = 1 + 8;
+}
+
+/// `completeRedeem` (kind 6): the kind byte and the attested Aave `assets`.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RedeemResponse {
+    pub kind: u8,
+    pub assets: u64,
+}
+
+impl FixedLen for RedeemResponse {
+    const LEN: usize = 1 + 8;
+}
+
 /// `refund` (kind 3): the kind byte, and nothing else — the whole content of
 /// the deployed 5-byte `0xdeadbeef01` sentinel, in the byte position every
 /// response type puts its kind.
@@ -548,6 +570,16 @@ pub fn schema_containers() -> Vec<(&'static str, BorshSchemaContainer)> {
         (
             "AttestationPreimage<SwapResponse>",
             BorshSchemaContainer::for_type::<AttestationPreimage<SwapResponse>>(),
+        ),
+        ("SupplyResponse", BorshSchemaContainer::for_type::<SupplyResponse>()),
+        (
+            "AttestationPreimage<SupplyResponse>",
+            BorshSchemaContainer::for_type::<AttestationPreimage<SupplyResponse>>(),
+        ),
+        ("RedeemResponse", BorshSchemaContainer::for_type::<RedeemResponse>()),
+        (
+            "AttestationPreimage<RedeemResponse>",
+            BorshSchemaContainer::for_type::<AttestationPreimage<RedeemResponse>>(),
         ),
         (
             "AttestationPreimage<FailureResponse>",

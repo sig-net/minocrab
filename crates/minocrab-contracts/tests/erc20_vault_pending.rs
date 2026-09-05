@@ -12,6 +12,7 @@
 //! it (commit abb4cfb, 2026-09-05), kept here as the baseline the rule was
 //! stated against.
 
+use minocrab_contracts::erc20_vault;
 use minocrab_contracts::erc20_vault_pending as pending;
 use minocrab_sim::v3::cost;
 
@@ -29,14 +30,17 @@ mod modern {
     pub const COMPLETE_SWAP: (u8, usize) = (16, 45961);
 }
 
-/// Sixteen fields, segmented: `[0]`, then `[1, i − 1]`.
+/// Twenty-two fields, segmented (the remainder leads): `[0, i]` for i < 7,
+/// then `[1, i − 7]`.
 #[test]
 fn the_block_is_segmented_past_fifteen_fields() {
     let v = &pending::VAULT;
-    assert_eq!(v.deposits.record_path().as_slice(), &[1, 8]);
-    assert_eq!(v.withdrawals.record_path().as_slice(), &[1, 10]);
-    assert_eq!(v.swaps.record_path().as_slice(), &[1, 12]);
-    assert_eq!(v.approvals.record_path().as_slice(), &[1, 14]);
+    assert_eq!(v.deposits.record_path().as_slice(), &[1, 2]);
+    assert_eq!(v.withdrawals.record_path().as_slice(), &[1, 4]);
+    assert_eq!(v.swaps.record_path().as_slice(), &[1, 6]);
+    assert_eq!(v.approvals.record_path().as_slice(), &[1, 8]);
+    assert_eq!(v.supplies.record_path().as_slice(), &[1, 11]);
+    assert_eq!(v.redeems.record_path().as_slice(), &[1, 13]);
     assert_eq!(v.deposits.record_path().depth(), 2);
 }
 
@@ -105,4 +109,53 @@ fn no_pair_costs_more_than_the_modern_lineage() {
     const SEGMENTATION_ALLOWANCE: usize = 64;
     assert!(p_init.1 <= m_init.1 + SEGMENTATION_ALLOWANCE, "initialize: {} vs {}", p_init.1, m_init.1);
     assert!(p_appr.1 <= m_appr.1 + SEGMENTATION_ALLOWANCE, "approve_router: {} vs {}", p_appr.1, m_appr.1);
+}
+
+/// The lending flows (M35 rung C extension), against their COMPAT PORT
+/// twins (`erc20_vault`, PI-equal to compactc) rather than the retired
+/// modern lineage, which never had them: each `Pending`-based circuit must
+/// cost no more `k` than the circuit it replaces.
+#[test]
+fn the_lending_flows_cost_no_more_than_the_compat_port() {
+    let rows: Vec<(&str, (u8, usize), (u8, usize))> = vec![
+        (
+            "approve_stata",
+            cost(&pending::approve_stata().ir),
+            cost(&erc20_vault::approve_stata().ir),
+        ),
+        (
+            "supply / start_supply",
+            cost(&pending::supply().ir),
+            cost(&erc20_vault::start_supply().ir),
+        ),
+        (
+            "complete_supply",
+            cost(&pending::complete_supply().ir),
+            cost(&erc20_vault::complete_supply().ir),
+        ),
+        (
+            "refund_supply",
+            cost(&pending::refund_supply().ir),
+            cost(&erc20_vault::refund_supply().ir),
+        ),
+        (
+            "redeem / start_redeem",
+            cost(&pending::redeem().ir),
+            cost(&erc20_vault::start_redeem().ir),
+        ),
+        (
+            "complete_redeem",
+            cost(&pending::complete_redeem().ir),
+            cost(&erc20_vault::complete_redeem().ir),
+        ),
+        (
+            "refund_redeem",
+            cost(&pending::refund_redeem().ir),
+            cost(&erc20_vault::refund_redeem().ir),
+        ),
+    ];
+    for (name, (k, r), (k_c, r_c)) in &rows {
+        eprintln!("{name:>22}: pending k={k} rows={r:>6}   compat k={k_c} rows={r_c:>6}");
+        assert!(k <= k_c, "{name}: k rose from {k_c} to {k}");
+    }
 }

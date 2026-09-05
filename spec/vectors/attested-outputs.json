@@ -97,6 +97,56 @@
       ]
     },
     {
+      "type": "SupplyResponse (kind 5, SUPPLY)",
+      "len": 9,
+      "hex": "05b168de3a00000000",
+      "sha256": "8cc3bc96ba7f3626a74f1dc0f7c2e9b887ac463e2a986e97c96c60805cd0aa7f",
+      "keccak256": "7c8077826089cdd980a6319fdf71350a194e9c863b62d70e9049322c625512da",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "05",
+          "number": 5
+        },
+        {
+          "path": "shares",
+          "type": "u64",
+          "offset": 1,
+          "width": 8,
+          "hex": "b168de3a00000000",
+          "number": 987654321
+        }
+      ]
+    },
+    {
+      "type": "RedeemResponse (kind 6, REDEEM)",
+      "len": 9,
+      "hex": "06b168de3a00000000",
+      "sha256": "85bf4f3c1ff419b329f7d2309022f1c6a0c8708b32b0c8f391d42bea97308731",
+      "keccak256": "7fc68e84b92829a0fa16613e425b7a592b855ad90a48ebd0a6d8f0de0febb0f5",
+      "fields": [
+        {
+          "path": "kind",
+          "type": "u8",
+          "offset": 0,
+          "width": 1,
+          "hex": "06",
+          "number": 6
+        },
+        {
+          "path": "assets",
+          "type": "u64",
+          "offset": 1,
+          "width": 8,
+          "hex": "b168de3a00000000",
+          "number": 987654321
+        }
+      ]
+    },
+    {
       "type": "AttestationPreimage<VaultResponse>",
       "len": 34,
       "hex": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a0001",
@@ -181,6 +231,70 @@
           "width": 1,
           "hex": "03",
           "number": 3
+        }
+      ]
+    },
+    {
+      "type": "AttestationPreimage<SupplyResponse>",
+      "len": 41,
+      "hex": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a05b168de3a00000000",
+      "sha256": "895b467309faa159d32a88d5d479d88ca7f780ca97a5ca0d03831d5e212c8482",
+      "keccak256": "3e4161dc0fd7be8647b176dca3c5db3bf7c1f92508366f66810e7ffb914568ab",
+      "fields": [
+        {
+          "path": "request_id",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a"
+        },
+        {
+          "path": "output.kind",
+          "type": "u8",
+          "offset": 32,
+          "width": 1,
+          "hex": "05",
+          "number": 5
+        },
+        {
+          "path": "output.shares",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "b168de3a00000000",
+          "number": 987654321
+        }
+      ]
+    },
+    {
+      "type": "AttestationPreimage<RedeemResponse>",
+      "len": 41,
+      "hex": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a06b168de3a00000000",
+      "sha256": "b64d9d0be0bce135265ad1c718516337effbe304fc02a77ad612afb622d90055",
+      "keccak256": "87ebeeac0a34524f15c8acfda2abf7a266901531c975c92b189ac014ff3d1439",
+      "fields": [
+        {
+          "path": "request_id",
+          "type": "[u8; 32]",
+          "offset": 0,
+          "width": 32,
+          "hex": "61ff008c04ade6de5645f131f04873d7040d2765e6758d3fc9fb23f45579b11a"
+        },
+        {
+          "path": "output.kind",
+          "type": "u8",
+          "offset": 32,
+          "width": 1,
+          "hex": "06",
+          "number": 6
+        },
+        {
+          "path": "output.assets",
+          "type": "u64",
+          "offset": 33,
+          "width": 8,
+          "hex": "b168de3a00000000",
+          "number": 987654321
         }
       ]
     }

@@ -1586,7 +1586,7 @@ Decisions of record (dmd, 2026-09-05):
       path derived from the slot AND pinned by an artifact-agreement
       test against the compiled contract-info's field path (a wrong
       path is a silent "record not found" on the MPC).
-- [-] C. (2026-09-05: circuits DONE, cost gate restated PER PAIR from measurement — §9 table; spec-harness extension NOT done) The vault re-expressed: all four request/settle pairs on
+- [-] C. (2026-09-05: circuits DONE, cost gate restated PER PAIR from measurement — §9 table; lending extension DONE 2026-09-05 — notes/signet-async.org "Rung C, lending extension"; spec-harness extension NOT done) The vault re-expressed: all four request/settle pairs on
       =Pending= (deposit/claim, withdraw/completeWithdraw,
       swap/completeSwap, approveRouter/refund), as a new lineage the
       spec harness runs like =Art::Opt= — the shared spec stays the
@@ -1594,7 +1594,11 @@ Decisions of record (dmd, 2026-09-05):
       binding; every guard in =spec::Guard= still enumerated. Row cost
       measured (=row_snapshot=) and NOT above the current optimised
       lineage per circuit — the calls do what the circuits do today,
-      so any excess is a bug in the API, not a price of it.
+      so any excess is a bug in the API, not a price of it. EXTENDED
+      with upstream's lending flows (=approveStata=, supply/redeem via
+      the stataUSDC wrapper): seventeen circuits on a twenty-two-field
+      block, each new circuit costed against =erc20_vault='s (compat
+      port) twin rather than modern, which never had them.
 - [-] D. (2026-09-05: the responder half DONE as =crates/signet-sim=; the state-driving half BLOCKED on the v3 transcript executor dmd holds in M26 — §9) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
       (singleton event, caller ledger state, =EvmOutcome=) →
       attestation; ONE root key with the real =derive_epsilon_midnight=

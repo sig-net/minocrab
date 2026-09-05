@@ -143,6 +143,24 @@ fn kind_rows() -> Vec<KindRow> {
             response: "`VaultResponse { kind: u8, success: bool }`",
             len: VaultResponse::LEN,
         },
+        KindRow {
+            number: erc20_vault_pending::RESPONSE_KIND_SUPPLY,
+            name: "SUPPLY",
+            requested_by: "`supply`",
+            settles: "`completeSupply`",
+            abi_types: "`[uint256 shares]`",
+            response: "`SupplyResponse { kind: u8, shares: u64 }`",
+            len: SupplyResponse::LEN,
+        },
+        KindRow {
+            number: erc20_vault_pending::RESPONSE_KIND_REDEEM,
+            name: "REDEEM",
+            requested_by: "`redeem`",
+            settles: "`completeRedeem`",
+            abi_types: "`[uint256 assets]`",
+            response: "`RedeemResponse { kind: u8, assets: u64 }`",
+            len: RedeemResponse::LEN,
+        },
     ];
     assert_eq!(
         rows.len(),
@@ -599,11 +617,21 @@ fn attested_outputs() -> String {
     let failure = FailureResponse {
         kind: erc20_vault_pending::RESPONSE_KIND_FAILURE as u8,
     };
+    let supply = SupplyResponse {
+        kind: erc20_vault_pending::RESPONSE_KIND_SUPPLY as u8,
+        shares: 987_654_321,
+    };
+    let redeem = RedeemResponse {
+        kind: erc20_vault_pending::RESPONSE_KIND_REDEEM as u8,
+        assets: 987_654_321,
+    };
     let vectors = vec![
         vector("VaultResponse (kind 0, CLAIM, success)", &claim),
         vector("VaultResponse (kind 1, WITHDRAW, failure)", &withdraw),
         vector("SwapResponse (kind 2, SWAP)", &swap),
         vector("FailureResponse (kind 3, FAILURE)", &failure),
+        vector("SupplyResponse (kind 5, SUPPLY)", &supply),
+        vector("RedeemResponse (kind 6, REDEEM)", &redeem),
         vector(
             "AttestationPreimage<VaultResponse>",
             &AttestationPreimage {
@@ -623,6 +651,20 @@ fn attested_outputs() -> String {
             &AttestationPreimage {
                 request_id,
                 output: failure,
+            },
+        ),
+        vector(
+            "AttestationPreimage<SupplyResponse>",
+            &AttestationPreimage {
+                request_id,
+                output: supply,
+            },
+        ),
+        vector(
+            "AttestationPreimage<RedeemResponse>",
+            &AttestationPreimage {
+                request_id,
+                output: redeem,
             },
         ),
     ];

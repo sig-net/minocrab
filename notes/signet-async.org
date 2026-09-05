@@ -536,6 +536,48 @@ written against the thirteen-field layout and the per-circuit
 argument shapes; extending them is the same size as the harness's own
 last extension (M11 stage 5). Recorded, not started.
 
+** Rung C, lending extension (2026-09-05): =approveStata=, =supply=, =redeem=
+Upstream's Aave flows, added to =erc20_vault_pending= the same way the
+first ten circuits were built, against =erc20_vault= (the compat port,
+PI-equal to compactc) rather than the retired modern lineage — modern
+never had them. Two new =Pending= slots (=supplies=, =redeems=, kinds 5
+SUPPLY and 6 REDEEM — =SupplyResponse { shares: u64 }=,
+=RedeemResponse { assets: u64 }=), two new sealed cells
+(=stata_underlying=, =stata_token=, written by =initialize= alongside
+the router), and =approveStata= as a second =Fired= request reusing
+=RESPONSE_KIND_APPROVE= (request-only, like =approveRouter=). Block
+grows from sixteen fields to twenty-two (thirteen declarations); the
+compactc-style segmentation remainder moves from one field to seven
+(=22 = 15 + 7=, remainder leads: field =i= is =[0, i]= for =i < 7=,
+=[1, i − 7]= otherwise) — every path stays two elements.
+
+Seventeen circuits now, not ten. The cost gate for this extension is
+against the COMPAT PORT's twins (there is no modern-lineage lending
+circuit to compare against): every one of the seven new circuits costs
+no more =k= than its =erc20_vault= counterpart, and the two request
+circuits (=supply=, =redeem=) are far cheaper in rows too (11.5k vs
+23k) since the =Pending= slot's environment insert replaces a second
+settle-view map and the calldata is never re-parsed on settle:
+
+| circuit               | pending k/rows  | compat k/rows   |
+|------------------------+-----------------+-----------------|
+| approve_stata          | 11 /  1,120     | 11 /  1,156     |
+| supply (start_supply)  | 14 / 11,474     | 15 / 23,038     |
+| complete_supply        | 16 / 35,576     | 16 / 35,645     |
+| refund_supply          | 16 / 35,557     | 16 / 35,642     |
+| redeem (start_redeem)  | 14 / 11,631     | 15 / 23,220     |
+| complete_redeem        | 16 / 35,581     | 16 / 35,645     |
+| refund_redeem          | 16 / 35,562     | 16 / 35,642     |
+
+(=tests/erc20_vault_pending.rs::the_lending_flows_cost_no_more_than_the_compat_port=.)
+=redeem='s three ABI words build the =EvmTx= directly (as =swap= does
+for seven), reading =vaultEvmAddress= ONCE and reusing the wire for
+both words that need it — this lineage is not PI-pinned to compactc,
+which reads the cell twice. =unlimited_allowance_word= was factored out
+of =approve_router= so =approve_stata= reuses it rather than repeating
+the max-=u128= word construction. Same NOT DONE as rung C proper: the
+spec harness extension.
+
 ** Rung D as built (2026-09-05): =crates/signet-sim=, the responder half
 - =Responder= trait: (singleton event payload, caller =StateValue=,
   =EvmOutcome=) → =Attestation= | =Refusal=. =SigNetSim= implements it

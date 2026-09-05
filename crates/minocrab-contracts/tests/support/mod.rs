@@ -269,6 +269,13 @@ pub fn circuits() -> Vec<Circuit> {
         c!("erc20_vault_pending::swap", || erc20_vault_pending::swap()),
         c!("erc20_vault_pending::complete_swap", || erc20_vault_pending::complete_swap()),
         c!("erc20_vault_pending::refund_swap", || erc20_vault_pending::refund_swap()),
+        c!("erc20_vault_pending::approve_stata", || erc20_vault_pending::approve_stata()),
+        c!("erc20_vault_pending::supply", || erc20_vault_pending::supply()),
+        c!("erc20_vault_pending::complete_supply", || erc20_vault_pending::complete_supply()),
+        c!("erc20_vault_pending::refund_supply", || erc20_vault_pending::refund_supply()),
+        c!("erc20_vault_pending::redeem", || erc20_vault_pending::redeem()),
+        c!("erc20_vault_pending::complete_redeem", || erc20_vault_pending::complete_redeem()),
+        c!("erc20_vault_pending::refund_redeem", || erc20_vault_pending::refund_redeem()),
         c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
         c!("signet_contract::respond", || signet_contract::respond()),
         c!("signet_contract::respond_bidirectional", || {

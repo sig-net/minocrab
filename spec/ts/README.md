@@ -129,6 +129,10 @@ as the decoder.
 | `FailureResponse` | `readFailureResponse` / `writeFailureResponse` | 1 |
 | `AttestationPreimage<VaultResponse>` | `readAttestationPreimageVaultResponse` / `writeAttestationPreimageVaultResponse` | 34 |
 | `AttestationPreimage<SwapResponse>` | `readAttestationPreimageSwapResponse` / `writeAttestationPreimageSwapResponse` | 41 |
+| `SupplyResponse` | `readSupplyResponse` / `writeSupplyResponse` | 9 |
+| `AttestationPreimage<SupplyResponse>` | `readAttestationPreimageSupplyResponse` / `writeAttestationPreimageSupplyResponse` | 41 |
+| `RedeemResponse` | `readRedeemResponse` / `writeRedeemResponse` | 9 |
+| `AttestationPreimage<RedeemResponse>` | `readAttestationPreimageRedeemResponse` / `writeAttestationPreimageRedeemResponse` | 41 |
 | `AttestationPreimage<FailureResponse>` | `readAttestationPreimageFailureResponse` / `writeAttestationPreimageFailureResponse` | 33 |
 | `SignBidirectionalMisc` | `readSignBidirectionalMisc` / `writeSignBidirectionalMisc` | 161 |
 | `RespondMisc` | `readRespondMisc` / `writeRespondMisc` | 129 |
