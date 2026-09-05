@@ -20,7 +20,7 @@
 //! derived (`sel`/`add`) from such reads, and 7 computed values embedded in
 //! unconditional ledger WRITES (`push`, whose in-range argument is
 //! transaction well-formedness, deliberately not encoded). compactc's own
-//! artifacts retain the identical residue — 4 of 84 v3 corpus artifacts,
+//! artifacts retain the identical residue — 4 of 92 v3 corpus artifacts,
 //! 85 findings, the same guarded-read circuits
 //! (`cargo run -p minocrab-ir --example taint_corpus`).
 //!
