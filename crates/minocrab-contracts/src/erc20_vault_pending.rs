@@ -56,7 +56,7 @@ use minocrab::{Private, Public};
 use minocrab_std::v3::borsh::CircuitBorsh;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    circuit, eq, is_true, label, own_public_key, own_public_key_guarded, Bool, Bytes, Check,
+    contract, eq, is_true, label, own_public_key, own_public_key_guarded, Bool, Bytes, Check,
     CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerCounter, LedgerRepr, Maybe, Secp256k1Point, TokenDomainSeparator, Uint,
     B32,
@@ -436,64 +436,16 @@ fn change_nonce(c: &mut Circuit3, mint_nonce: &CoinNonce<Public>) -> CoinNonce<P
     })
 }
 
-// ---- initialize ---------------------------------------------------------------------------------
-
-/// `initialize(vaultEvm, swapRouter, stataUnderlyingAddr, stataTokenAddr,
-/// chainId, chainCaip2Id, responseKey)`.
-#[circuit]
-pub fn initialize(
-    c: &mut Circuit3,
-    vault_evm: Bytes<20>,
-    swap_router: Bytes<20>,
-    stata_underlying_addr: Bytes<20>,
-    stata_token_addr: Bytes<20>,
-    chain_id: Uint<64>,
-    chain_caip2_id: common::Caip2Id<Private>,
-    response_key: Secp256k1Point,
-) -> Discloses<(
-    VaultEvmAddress,
-    UniswapRouter,
-    StataUnderlying,
-    StataToken,
-    EvmChainId,
-    Caip2Id,
-    MpcResponseKey,
-)> {
-    c.region("initialized gate", |c| {
-        let count = VAULT.initialized.read(c);
-        c.assert(count.eq(0u64).message("Already initialized"));
-    });
-    c.region("deployer gate", assert_deployer);
-    c.assert(chain_id.gt(0u64).message("Chain ID must be positive"));
-    c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
-    c.assert(stata_underlying_addr.ne(0u64).message("stataUnderlying cannot be zero"));
-    c.assert(stata_token_addr.ne(0u64).message("stataToken cannot be zero"));
-    // An identity key authenticates anything; extracting coordinates IS
-    // the check (external review §4.5).
-    c.region("response key is a point", |c| {
-        let _ = c.into_coordinates(response_key.point());
-    });
-
-    VAULT.initialized.increment(c, 1);
-
-    c.region("configuration writes", |c| {
-        let vault_evm = vault_evm.disclose_as::<VaultEvmAddress>(c);
-        VAULT.vault_evm_address.write(c, &vault_evm);
-        let swap_router = swap_router.disclose_as::<UniswapRouter>(c);
-        VAULT.uniswap_router.write(c, &swap_router);
-        let stata_underlying = stata_underlying_addr.disclose_as::<StataUnderlying>(c);
-        VAULT.stata_underlying.write(c, &stata_underlying);
-        let stata_token = stata_token_addr.disclose_as::<StataToken>(c);
-        VAULT.stata_token.write(c, &stata_token);
-        let chain_id = chain_id.disclose_as::<EvmChainId>(c);
-        let caip2 = chain_caip2_id.disclose_as::<Caip2Id>(c);
-        let response_key = response_key.disclose_as::<MpcResponseKey>(c);
-        VAULT.signet.initialize(c, &response_key, &caip2, &chain_id);
-    });
-    Discloses::of(())
+/// `numericAbiWord(unlimitedAllowance())` — 2^128 − 1 as an ABI word: 16
+/// zero bytes then 16 `0xff` bytes.
+fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
+    let mut max_word = [0u8; 32];
+    max_word[16..].copy_from_slice(&[0xff; 16]);
+    B32 {
+        hi: c.constant(minocrab::Fr::from(u64::from(max_word[31]))).private(),
+        lo: c.constant(minocrab::Fr::from_le_bytes(&max_word[..31]).unwrap()).private(),
+    }
 }
-
-// ---- deposit / claim ------------------------------------------------------------------------
 
 /// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`.
 #[derive(CircuitArg)]
@@ -502,134 +454,6 @@ struct DepositRequest {
     amount: Uint<128>,
 }
 
-/// `deposit(evmNonce, gasLimit, maxFeePerGas, maxPriorityFeePerGas,
-/// keyVersion, depositRequest)`: file `transfer(vaultEvmAddress, amount)`
-/// under the depositor's identity commitment and notify the MPC.
-#[circuit]
-pub fn deposit(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    gas_limit: Uint<64>,
-    max_fee_per_gas: Uint<128>,
-    max_priority_fee_per_gas: Uint<128>,
-    key_version: Uint<8>,
-    deposit_request: DepositRequest,
-) -> Discloses<(DepositorCommitment, DepositedErc20, DepositedAmount, Requested)> {
-    c.region("guards", |c| {
-        assert_initialized(c);
-        c.assert(deposit_request.erc20_address.ne(0u64));
-        c.assert(deposit_request.amount.gt(0u64));
-        c.assert(deposit_request.amount.le(u64::MAX));
-        c.assert(gas_limit.gt(0u64));
-    });
-
-    let sk = common::witness_sk(c);
-    let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
-
-    // transfer(vaultEvmAddress, amount), paid from the DEPOSITOR's account:
-    // the gas envelope is the caller's.
-    let vault_evm = VAULT.vault_evm_address.read(c);
-    let word0 = signet::evm_address_abi_word(c, vault_evm.field().private());
-    let word1 = signet::numeric_abi_word(c, deposit_request.amount.field());
-    let tx = erc20_call(
-        c,
-        &TRANSFER_SELECTOR,
-        deposit_request.erc20_address.field(),
-        [word0, word1],
-        evm_nonce.field(),
-        [
-            max_priority_fee_per_gas.field(),
-            max_fee_per_gas.field(),
-            gas_limit.field(),
-        ],
-    );
-
-    let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
-    let amount = deposit_request.amount.field().disclose_as::<DepositedAmount>(c);
-    VAULT.deposits.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: common::SigningPath::from(caller.private()),
-            tx,
-        },
-        |_, _| DepositEnv {
-            depositor: caller,
-            erc20,
-            amount: Uint::from_field_unchecked(amount),
-        },
-    );
-    Discloses::of(())
-}
-
-/// `claim(ticket, mintNonce, recipient)`: settle a deposit — the attested
-/// transfer succeeded — and mint the deposited amount as shielded vault
-/// tokens to the recipient (depositor-only).
-#[circuit]
-pub fn claim(
-    c: &mut Circuit3,
-    ticket: Settle<DepositEnv, ClaimResponse>,
-    mint_nonce: CoinNonce<Private>,
-    recipient: Maybe<
-        Either<
-            minocrab_std::v3::ZswapCoinPublicKey<Private>,
-            minocrab_std::v3::ContractAddress<Private>,
-            Private,
-        >,
-    >,
-) -> Discloses<(
-    Settled,
-    ClaimRecipientTag,
-    ClaimRecipientSide,
-    ClaimRecipientOwnKey,
-    ClaimRecipientKey,
-    ClaimRecipientContract,
-    ClaimMintNonce,
-)> {
-    let one = c.constant(1u64);
-    assert_initialized(c);
-    let outcome = VAULT.deposits.settle(c, &VAULT.signet, ticket);
-    c.assert(is_true(outcome.output.success).message("The MPC attested a failure"));
-
-    // Depositor gate: a FRESH witness against the filed commitment.
-    c.region("depositor gate", |c| {
-        let sk = common::witness_sk(c);
-        let caller = common::commitment_transient(c, &sk).bytes();
-        c.assert(
-            b32_eq(&caller, &outcome.env.depositor.private().bytes()).message("Not the depositor"),
-        );
-    });
-
-    let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
-    let recipient = c.region("recipient select", |c| {
-        let rec_is_some = recipient.is_some.field().disclose_as::<ClaimRecipientTag>(c);
-        let rec_is_left = recipient.value.is_left.field().disclose_as::<ClaimRecipientSide>(c);
-        let not_some = c.not(rec_is_some);
-        let own_pk = own_public_key_guarded(c, not_some)
-            .or_default()
-            .disclose_as::<ClaimRecipientOwnKey>(c);
-        let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
-        let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
-        let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-        let left = minocrab_std::v3::ZswapCoinPublicKey(B32 {
-            hi: c.cond_select(rec_is_some, rec_left.bytes().hi, own_pk.bytes().hi),
-            lo: c.cond_select(rec_is_some, rec_left.bytes().lo, own_pk.bytes().lo),
-        });
-        let right = minocrab_std::v3::ContractAddress(B32 {
-            hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
-            lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
-        });
-        CoinRecipient { is_left, left, right }
-    });
-
-    let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
-    common::mint_shielded_token(c, one, &domain_sep, outcome.env.amount, &mint_nonce, &recipient);
-    Discloses::of(())
-}
-
-// ---- withdraw / completeWithdraw / refundWithdrawal ---------------------------------
-
 /// `struct WithdrawRequest { erc20Address, amount, destEvmAddress }`.
 #[derive(CircuitArg)]
 struct WithdrawRequest {
@@ -637,108 +461,6 @@ struct WithdrawRequest {
     amount: Uint<128>,
     dest_evm_address: Bytes<20>,
 }
-
-/// `withdraw(evmNonce, keyVersion, withdrawRequest, coin)`: burn the
-/// surrendered vault tokens and file `transfer(destEvmAddress, amount)`
-/// signed by the VAULT's account, the withdrawer kept as a commitment.
-#[circuit]
-pub fn withdraw(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-    withdraw_request: WithdrawRequest,
-    coin: ShieldedCoinArg,
-) -> Discloses<(
-    WithdrawnErc20,
-    WithdrawnAmount,
-    SurrenderedCoinNonce,
-    SurrenderedCoinColor,
-    SurrenderedCoinValue,
-    WithdrawerRefundCommitment,
-    Requested,
-)> {
-    let one = c.constant(1u64);
-    c.region("guards", |c| {
-        assert_initialized(c);
-        c.assert(withdraw_request.erc20_address.ne(0u64));
-        c.assert(withdraw_request.amount.gt(0u64));
-        c.assert(withdraw_request.amount.le(u64::MAX));
-    });
-
-    let erc20 = withdraw_request.erc20_address.disclose_as::<WithdrawnErc20>(c);
-    let amount = withdraw_request.amount.field();
-    burn_vault_coin(c, one, erc20.field(), amount, coin);
-
-    let word0 = signet::evm_address_abi_word(c, withdraw_request.dest_evm_address.field());
-    let word1 = signet::numeric_abi_word(c, amount);
-    let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
-    let tx = erc20_call(c, &TRANSFER_SELECTOR, erc20.field().private(), [word0, word1], evm_nonce.field(), gas);
-
-    let sk = common::witness_sk(c);
-    let amount = amount.disclose_as::<WithdrawnAmount>(c);
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.withdrawals.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-        |c, id| WithdrawEnv {
-            withdrawer: Commit::to::<WithdrawerRefundCommitment>(c, REFUND_PAD, &sk, id),
-            erc20,
-            amount: Uint::from_field_unchecked(amount),
-        },
-    );
-    Discloses::of(())
-}
-
-/// `completeWithdraw(ticket, mintNonce)`: the withdrawal EXECUTED; on an
-/// attested `false` return, re-mint the surrendered value to the
-/// withdrawer (fresh witness against the commitment).
-#[circuit]
-pub fn complete_withdraw(
-    c: &mut Circuit3,
-    ticket: Settle<WithdrawEnv, WithdrawResponse>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, WithdrawalOutcome, RefundMintNonce, RefundRecipient)> {
-    assert_initialized(c);
-    let outcome = VAULT.withdrawals.settle(c, &VAULT.signet, ticket);
-    let succeeded = outcome.output.success.field().disclose_as::<WithdrawalOutcome>(c);
-    let refunding = c.not(succeeded);
-    let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
-    c.when(refunding, |c| {
-        let sk = common::witness_sk(c);
-        outcome.env.withdrawer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the withdrawer");
-        let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
-        let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-        common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
-    });
-    Discloses::of(())
-}
-
-/// `refundWithdrawal(ticket, mintNonce)`: the withdrawal NEVER EXECUTED
-/// (the MPC's failure kind); re-mint the surrendered value to the
-/// withdrawer.
-#[circuit]
-pub fn refund_withdrawal(
-    c: &mut Circuit3,
-    ticket: Settle<WithdrawEnv, Failure>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
-    assert_initialized(c);
-    let outcome = VAULT.withdrawals.settle_failed(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.withdrawer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the withdrawer");
-    let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
-    let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
-    let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
-    Discloses::of(())
-}
-
-// ---- swap / completeSwap / refundSwap ----------------------------------------------------
 
 /// `struct SwapRequest { tokenIn, tokenOut, fee: Uint<24>, amountOut,
 /// amountInMaximum }`.
@@ -751,465 +473,746 @@ struct SwapRequest {
     amount_in_maximum: Uint<128>,
 }
 
-/// `swap(evmNonce, keyVersion, swapRequest, coin)`: burn the surrendered
-/// tokenIn (amountInMaximum) and file `exactOutputSingle` on the pinned
-/// router, signed by the VAULT's account.
-#[circuit]
-pub fn swap(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-    swap_request: SwapRequest,
-    coin: ShieldedCoinArg,
-) -> Discloses<(
-    SoldErc20,
-    BoughtErc20,
-    SwapAmountOut,
-    SwapAmountInMaximum,
-    SurrenderedCoinNonce,
-    SurrenderedCoinColor,
-    SurrenderedCoinValue,
-    SwapperRefundCommitment,
-    Requested,
-)> {
-    let one = c.constant(1u64);
-    let zero = c.constant(0u64);
-    c.region("guards", |c| {
-        assert_initialized(c);
-        c.assert(swap_request.token_in.ne(0u64));
-        c.assert(swap_request.token_out.ne(0u64));
-        c.assert(swap_request.amount_out.gt(0u64));
-        c.assert(swap_request.amount_in_maximum.gt(0u64));
-        c.assert(swap_request.amount_out.le(u64::MAX));
-        c.assert(swap_request.amount_in_maximum.le(u64::MAX));
-    });
+#[contract]
+impl Vault {
+    // ---- initialize ---------------------------------------------------------------------------------
 
-    let amount_out = swap_request.amount_out.field();
-    let amount_in_max = swap_request.amount_in_maximum.field();
-    let token_in = swap_request.token_in.disclose_as::<SoldErc20>(c);
-    burn_vault_coin(c, one, token_in.field(), amount_in_max, coin);
+    /// `initialize(vaultEvm, swapRouter, stataUnderlyingAddr, stataTokenAddr,
+    /// chainId, chainCaip2Id, responseKey)`.
+    #[circuit]
+    pub fn initialize(
+        c: &mut Circuit3,
+        vault_evm: Bytes<20>,
+        swap_router: Bytes<20>,
+        stata_underlying_addr: Bytes<20>,
+        stata_token_addr: Bytes<20>,
+        chain_id: Uint<64>,
+        chain_caip2_id: common::Caip2Id<Private>,
+        response_key: Secp256k1Point,
+    ) -> Discloses<(
+        VaultEvmAddress,
+        UniswapRouter,
+        StataUnderlying,
+        StataToken,
+        EvmChainId,
+        Caip2Id,
+        MpcResponseKey,
+    )> {
+        c.region("initialized gate", |c| {
+            let count = VAULT.initialized.read(c);
+            c.assert(count.eq(0u64).message("Already initialized"));
+        });
+        c.region("deployer gate", assert_deployer);
+        c.assert(chain_id.gt(0u64).message("Chain ID must be positive"));
+        c.assert(swap_router.ne(0u64).message("Router cannot be zero"));
+        c.assert(stata_underlying_addr.ne(0u64).message("stataUnderlying cannot be zero"));
+        c.assert(stata_token_addr.ne(0u64).message("stataToken cannot be zero"));
+        // An identity key authenticates anything; extracting coordinates IS
+        // the check (external review §4.5).
+        c.region("response key is a point", |c| {
+            let _ = c.into_coordinates(response_key.point());
+        });
 
-    // exactOutputSingle((tokenIn, tokenOut, fee, vault, amountOut,
-    // amountInMaximum, 0)).
-    let token_out = swap_request.token_out.disclose_as::<BoughtErc20>(c);
-    let word0 = signet::evm_address_abi_word(c, token_in.field().private());
-    let word1 = signet::evm_address_abi_word(c, token_out.field().private());
-    let word2 = signet::numeric_abi_word(c, swap_request.fee.field());
-    let vault_evm = VAULT.vault_evm_address.read(c);
-    let word3 = signet::evm_address_abi_word(c, vault_evm.field().private());
-    let word4 = signet::numeric_abi_word(c, amount_out);
-    let word5 = signet::numeric_abi_word(c, amount_in_max);
-    let word6 = B32::<Private> {
-        hi: zero.private(),
-        lo: zero.private(),
-    };
-    let selector = c.constant(minocrab::Fr::from_le_bytes(&EXACT_OUTPUT_SINGLE_SELECTOR).unwrap());
-    let seven = c.constant(7u64);
-    let router = VAULT.uniswap_router.read(c);
-    let [priority_fee, max_fee, gas] = FixedGas::<SWAP_GAS>::wires(c);
-    let tx = EvmTx::<SWAP_WORDS> {
-        nonce: evm_nonce.field(),
-        max_priority_fee_per_gas: priority_fee,
-        max_fee_per_gas: max_fee,
-        gas_limit: gas,
-        to: router.field().private(),
-        value: zero.private(),
-        calldata_is_some: one.private(),
-        calldata: signet::EvmCalldata {
-            selector: selector.private(),
-            no_words: seven.private(),
-            words: [word0, word1, word2, word3, word4, word5, word6],
-        },
-    };
+        VAULT.initialized.increment(c, 1);
 
-    let sk = common::witness_sk(c);
-    let amount_out = amount_out.disclose_as::<SwapAmountOut>(c);
-    let amount_in_max = amount_in_max.disclose_as::<SwapAmountInMaximum>(c);
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.swaps.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-        |c, id| SwapEnv {
-            swapper: Commit::to::<SwapperRefundCommitment>(c, REFUND_PAD, &sk, id),
-            token_in,
-            token_out,
-            amount_out: Uint::from_field_unchecked(amount_out),
-            amount_in_maximum: Uint::from_field_unchecked(amount_in_max),
-        },
-    );
-    Discloses::of(())
-}
-
-/// `completeSwap(ticket, mintNonce)`: the swap EXECUTED; mint the exact
-/// amountOut of tokenOut and the unspent tokenIn as change, to the swapper
-/// (fresh witness against the commitment).
-#[circuit]
-pub fn complete_swap(
-    c: &mut Circuit3,
-    ticket: Settle<SwapEnv, SwapResponse>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
-    assert_initialized(c);
-    let outcome = VAULT.swaps.settle(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.swapper.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the swapper");
-
-    kernel::cache_self_address(c);
-    let recipient = own_public_key(c).disclose_as::<SwapRecipient>(c);
-    let mint_nonce = mint_nonce.disclose_as::<SwapMintNonce>(c);
-
-    let ds_out = vault_token_domain_separator(c, outcome.env.token_out.field());
-    common::mint_shielded_token_to_key(c, &ds_out, outcome.env.amount_out, &mint_nonce, &recipient);
-
-    // Change: amountInMaximum − attested amountIn, guarded against
-    // underflow by `sub_with` (the most dangerous arithmetic in the contract).
-    let amount_in = outcome.output.amount_in.disclose_as::<AttestedAmountIn>(c);
-    let change = outcome
-        .env
-        .amount_in_maximum
-        .sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
-    // CHECKED: the difference is re-bounded to 64 bits where it enters the
-    // coin commitment (one `constrain_bits 64`), as the modern lineage does
-    // — the taint lint's warrant for the 16-byte value atom.
-    let change = Uint::<64, Public>::from_field_checked(c, change.field());
-    let ds_in = vault_token_domain_separator(c, outcome.env.token_in.field());
-    let change_nonce = change_nonce(c, &mint_nonce);
-    common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
-    Discloses::of(())
-}
-
-/// `refundSwap(ticket, mintNonce)`: the swap NEVER EXECUTED; re-mint the
-/// surrendered amountInMaximum of tokenIn to the swapper.
-#[circuit]
-pub fn refund_swap(
-    c: &mut Circuit3,
-    ticket: Settle<SwapEnv, Failure>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
-    assert_initialized(c);
-    let outcome = VAULT.swaps.settle_failed(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.swapper.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the swapper");
-    let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
-    let domain_sep = vault_token_domain_separator(c, outcome.env.token_in.field());
-    let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount_in_maximum, &mint_nonce, &own_pk);
-    Discloses::of(())
-}
-
-// ---- approveRouter / approveStata --------------------------------------------------------------
-
-/// `numericAbiWord(unlimitedAllowance())` — 2^128 − 1 as an ABI word: 16
-/// zero bytes then 16 `0xff` bytes.
-fn unlimited_allowance_word(c: &mut Circuit3) -> B32<Private> {
-    let mut max_word = [0u8; 32];
-    max_word[16..].copy_from_slice(&[0xff; 16]);
-    B32 {
-        hi: c.constant(minocrab::Fr::from(u64::from(max_word[31]))).private(),
-        lo: c.constant(minocrab::Fr::from_le_bytes(&max_word[..31]).unwrap()).private(),
+        c.region("configuration writes", |c| {
+            let vault_evm = vault_evm.disclose_as::<VaultEvmAddress>(c);
+            VAULT.vault_evm_address.write(c, &vault_evm);
+            let swap_router = swap_router.disclose_as::<UniswapRouter>(c);
+            VAULT.uniswap_router.write(c, &swap_router);
+            let stata_underlying = stata_underlying_addr.disclose_as::<StataUnderlying>(c);
+            VAULT.stata_underlying.write(c, &stata_underlying);
+            let stata_token = stata_token_addr.disclose_as::<StataToken>(c);
+            VAULT.stata_token.write(c, &stata_token);
+            let chain_id = chain_id.disclose_as::<EvmChainId>(c);
+            let caip2 = chain_caip2_id.disclose_as::<Caip2Id>(c);
+            let response_key = response_key.disclose_as::<MpcResponseKey>(c);
+            VAULT.signet.initialize(c, &response_key, &caip2, &chain_id);
+        });
+        Discloses::of(())
     }
-}
 
-/// `approveRouter(erc20Address, evmNonce, keyVersion)`: file
-/// `approve(uniswapRouter, 2^128−1)` signed by the VAULT's account.
-/// Request-only.
-#[circuit]
-pub fn approve_router(
-    c: &mut Circuit3,
-    erc20_address: Bytes<20>,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-) -> Discloses<(ApprovedErc20, Requested)> {
-    c.region("guards", |c| {
+    // ---- deposit / claim ------------------------------------------------------------------------
+
+    /// `deposit(evmNonce, gasLimit, maxFeePerGas, maxPriorityFeePerGas,
+    /// keyVersion, depositRequest)`: file `transfer(vaultEvmAddress, amount)`
+    /// under the depositor's identity commitment and notify the MPC.
+    #[circuit]
+    pub fn deposit(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        gas_limit: Uint<64>,
+        max_fee_per_gas: Uint<128>,
+        max_priority_fee_per_gas: Uint<128>,
+        key_version: Uint<8>,
+        deposit_request: DepositRequest,
+    ) -> Discloses<(DepositorCommitment, DepositedErc20, DepositedAmount, Requested)> {
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(deposit_request.erc20_address.ne(0u64));
+            c.assert(deposit_request.amount.gt(0u64));
+            c.assert(deposit_request.amount.le(u64::MAX));
+            c.assert(gas_limit.gt(0u64));
+        });
+
+        let sk = common::witness_sk(c);
+        let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
+
+        // transfer(vaultEvmAddress, amount), paid from the DEPOSITOR's account:
+        // the gas envelope is the caller's.
+        let vault_evm = VAULT.vault_evm_address.read(c);
+        let word0 = signet::evm_address_abi_word(c, vault_evm.field().private());
+        let word1 = signet::numeric_abi_word(c, deposit_request.amount.field());
+        let tx = erc20_call(
+            c,
+            &TRANSFER_SELECTOR,
+            deposit_request.erc20_address.field(),
+            [word0, word1],
+            evm_nonce.field(),
+            [
+                max_priority_fee_per_gas.field(),
+                max_fee_per_gas.field(),
+                gas_limit.field(),
+            ],
+        );
+
+        let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
+        let amount = deposit_request.amount.field().disclose_as::<DepositedAmount>(c);
+        VAULT.deposits.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: common::SigningPath::from(caller.private()),
+                tx,
+            },
+            |_, _| DepositEnv {
+                depositor: caller,
+                erc20,
+                amount: Uint::from_field_unchecked(amount),
+            },
+        );
+        Discloses::of(())
+    }
+
+    /// `claim(ticket, mintNonce, recipient)`: settle a deposit — the attested
+    /// transfer succeeded — and mint the deposited amount as shielded vault
+    /// tokens to the recipient (depositor-only).
+    #[circuit]
+    pub fn claim(
+        c: &mut Circuit3,
+        ticket: Settle<DepositEnv, ClaimResponse>,
+        mint_nonce: CoinNonce<Private>,
+        recipient: Maybe<
+            Either<
+                minocrab_std::v3::ZswapCoinPublicKey<Private>,
+                minocrab_std::v3::ContractAddress<Private>,
+                Private,
+            >,
+        >,
+    ) -> Discloses<(
+        Settled,
+        ClaimRecipientTag,
+        ClaimRecipientSide,
+        ClaimRecipientOwnKey,
+        ClaimRecipientKey,
+        ClaimRecipientContract,
+        ClaimMintNonce,
+    )> {
+        let one = c.constant(1u64);
         assert_initialized(c);
-        c.assert(erc20_address.ne(0u64));
-    });
+        let outcome = VAULT.deposits.settle(c, &VAULT.signet, ticket);
+        c.assert(is_true(outcome.output.success).message("The MPC attested a failure"));
 
-    let router = VAULT.uniswap_router.read(c);
-    let word0 = signet::evm_address_abi_word(c, router.field().private());
-    let word1 = unlimited_allowance_word(c);
-    let erc20 = erc20_address.disclose_as::<ApprovedErc20>(c);
-    let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
-    let tx = erc20_call(c, &APPROVE_SELECTOR, erc20.field().private(), [word0, word1], evm_nonce.field(), gas);
+        // Depositor gate: a FRESH witness against the filed commitment.
+        c.region("depositor gate", |c| {
+            let sk = common::witness_sk(c);
+            let caller = common::commitment_transient(c, &sk).bytes();
+            c.assert(
+                b32_eq(&caller, &outcome.env.depositor.private().bytes()).message("Not the depositor"),
+            );
+        });
 
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.approvals.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-    );
-    Discloses::of(())
-}
+        let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
+        let recipient = c.region("recipient select", |c| {
+            let rec_is_some = recipient.is_some.field().disclose_as::<ClaimRecipientTag>(c);
+            let rec_is_left = recipient.value.is_left.field().disclose_as::<ClaimRecipientSide>(c);
+            let not_some = c.not(rec_is_some);
+            let own_pk = own_public_key_guarded(c, not_some)
+                .or_default()
+                .disclose_as::<ClaimRecipientOwnKey>(c);
+            let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
+            let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
+            let is_left = c.cond_select(rec_is_some, rec_is_left, one);
+            let left = minocrab_std::v3::ZswapCoinPublicKey(B32 {
+                hi: c.cond_select(rec_is_some, rec_left.bytes().hi, own_pk.bytes().hi),
+                lo: c.cond_select(rec_is_some, rec_left.bytes().lo, own_pk.bytes().lo),
+            });
+            let right = minocrab_std::v3::ContractAddress(B32 {
+                hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
+                lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),
+            });
+            CoinRecipient { is_left, left, right }
+        });
 
-/// `approveStata(evmNonce, keyVersion)`: file `approve(stataToken,
-/// 2^128−1)` ON the underlying USDC, signed by the VAULT's account, so the
-/// wrapper can pull it during a supply. Request-only.
-#[circuit]
-pub fn approve_stata(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-) -> Discloses<(Requested,)> {
-    assert_initialized(c);
+        let mint_nonce = mint_nonce.disclose_as::<ClaimMintNonce>(c);
+        common::mint_shielded_token(c, one, &domain_sep, outcome.env.amount, &mint_nonce, &recipient);
+        Discloses::of(())
+    }
 
-    let stata_token = VAULT.stata_token.read(c);
-    let word0 = signet::evm_address_abi_word(c, stata_token.field().private());
-    let word1 = unlimited_allowance_word(c);
-    let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
-    let stata_underlying = VAULT.stata_underlying.read(c);
-    let tx = erc20_call(
-        c,
-        &APPROVE_SELECTOR,
-        stata_underlying.field().private(),
-        [word0, word1],
-        evm_nonce.field(),
-        gas,
-    );
+    // ---- withdraw / completeWithdraw / refundWithdrawal ---------------------------------
 
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.approvals.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-    );
-    Discloses::of(())
-}
+    /// `withdraw(evmNonce, keyVersion, withdrawRequest, coin)`: burn the
+    /// surrendered vault tokens and file `transfer(destEvmAddress, amount)`
+    /// signed by the VAULT's account, the withdrawer kept as a commitment.
+    #[circuit]
+    pub fn withdraw(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+        withdraw_request: WithdrawRequest,
+        coin: ShieldedCoinArg,
+    ) -> Discloses<(
+        WithdrawnErc20,
+        WithdrawnAmount,
+        SurrenderedCoinNonce,
+        SurrenderedCoinColor,
+        SurrenderedCoinValue,
+        WithdrawerRefundCommitment,
+        Requested,
+    )> {
+        let one = c.constant(1u64);
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(withdraw_request.erc20_address.ne(0u64));
+            c.assert(withdraw_request.amount.gt(0u64));
+            c.assert(withdraw_request.amount.le(u64::MAX));
+        });
 
-// ---- supply / completeSupply / refundSupply ----------------------------------------------
+        let erc20 = withdraw_request.erc20_address.disclose_as::<WithdrawnErc20>(c);
+        let amount = withdraw_request.amount.field();
+        burn_vault_coin(c, one, erc20.field(), amount, coin);
 
-/// `supply(evmNonce, keyVersion, amount, coin)`: burn the surrendered USDC
-/// vault coin and file `stataToken.deposit(amount, vaultEvmAddress)`,
-/// signed by the VAULT's account (exact-input, so no change).
-#[circuit]
-pub fn supply(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-    amount: Uint<128>,
-    coin: ShieldedCoinArg,
-) -> Discloses<(
-    SurrenderedCoinNonce,
-    SurrenderedCoinColor,
-    SurrenderedCoinValue,
-    SupplierRefundCommitment,
-    SuppliedAmount,
-    Requested,
-)> {
-    let one = c.constant(1u64);
-    c.region("guards", |c| {
+        let word0 = signet::evm_address_abi_word(c, withdraw_request.dest_evm_address.field());
+        let word1 = signet::numeric_abi_word(c, amount);
+        let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
+        let tx = erc20_call(c, &TRANSFER_SELECTOR, erc20.field().private(), [word0, word1], evm_nonce.field(), gas);
+
+        let sk = common::witness_sk(c);
+        let amount = amount.disclose_as::<WithdrawnAmount>(c);
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.withdrawals.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+            |c, id| WithdrawEnv {
+                withdrawer: Commit::to::<WithdrawerRefundCommitment>(c, REFUND_PAD, &sk, id),
+                erc20,
+                amount: Uint::from_field_unchecked(amount),
+            },
+        );
+        Discloses::of(())
+    }
+
+    /// `completeWithdraw(ticket, mintNonce)`: the withdrawal EXECUTED; on an
+    /// attested `false` return, re-mint the surrendered value to the
+    /// withdrawer (fresh witness against the commitment).
+    #[circuit]
+    pub fn complete_withdraw(
+        c: &mut Circuit3,
+        ticket: Settle<WithdrawEnv, WithdrawResponse>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, WithdrawalOutcome, RefundMintNonce, RefundRecipient)> {
         assert_initialized(c);
-        c.assert(amount.gt(0u64).message("amount must be positive"));
-        // refund_supply re-mints via the Uint<64> mint API.
-        c.assert(amount.le(u64::MAX).message("amount exceeds Uint<64> max"));
-    });
+        let outcome = VAULT.withdrawals.settle(c, &VAULT.signet, ticket);
+        let succeeded = outcome.output.success.field().disclose_as::<WithdrawalOutcome>(c);
+        let refunding = c.not(succeeded);
+        let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
+        c.when(refunding, |c| {
+            let sk = common::witness_sk(c);
+            outcome.env.withdrawer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the withdrawer");
+            let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
+            let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+            common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
+        });
+        Discloses::of(())
+    }
 
-    let amount = amount.field();
-    let stata_underlying = VAULT.stata_underlying.read(c);
-    burn_vault_coin(c, one, stata_underlying.field(), amount, coin);
-
-    // deposit(amount, vaultEvmAddress) on the wrapper.
-    let word0 = signet::numeric_abi_word(c, amount);
-    let vault_evm = VAULT.vault_evm_address.read(c);
-    let word1 = signet::evm_address_abi_word(c, vault_evm.field().private());
-    let gas = FixedGas::<LENDING_GAS>::wires(c);
-    let stata_token = VAULT.stata_token.read(c);
-    let tx = erc20_call(c, &DEPOSIT_SELECTOR, stata_token.field().private(), [word0, word1], evm_nonce.field(), gas);
-
-    let sk = common::witness_sk(c);
-    let amount = amount.disclose_as::<SuppliedAmount>(c);
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.supplies.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-        |c, id| SupplyEnv {
-            supplier: Commit::to::<SupplierRefundCommitment>(c, REFUND_PAD, &sk, id),
-            amount: Uint::from_field_unchecked(amount),
-        },
-    );
-    Discloses::of(())
-}
-
-/// `completeSupply(ticket, mintNonce)`: the supply EXECUTED; mint the
-/// attested shares as shielded stataToken to the supplier (fresh witness
-/// against the commitment).
-#[circuit]
-pub fn complete_supply(
-    c: &mut Circuit3,
-    ticket: Settle<SupplyEnv, SupplyResponse>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)> {
-    assert_initialized(c);
-    let outcome = VAULT.supplies.settle(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
-
-    let recipient = own_public_key(c).disclose_as::<SupplyRecipient>(c);
-    let mint_nonce = mint_nonce.disclose_as::<SupplyMintNonce>(c);
-    let shares = outcome.output.shares.disclose_as::<AttestedShares>(c);
-    let stata_token = VAULT.stata_token.read(c);
-    let domain_sep = vault_token_domain_separator(c, stata_token.field());
-    common::mint_shielded_token_to_key(c, &domain_sep, shares, &mint_nonce, &recipient);
-    Discloses::of(())
-}
-
-/// `refundSupply(ticket, mintNonce)`: the supply NEVER EXECUTED; re-mint the
-/// surrendered USDC amount to the supplier.
-#[circuit]
-pub fn refund_supply(
-    c: &mut Circuit3,
-    ticket: Settle<SupplyEnv, Failure>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
-    assert_initialized(c);
-    let outcome = VAULT.supplies.settle_failed(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
-    let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
-    let stata_underlying = VAULT.stata_underlying.read(c);
-    let domain_sep = vault_token_domain_separator(c, stata_underlying.field());
-    let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
-    Discloses::of(())
-}
-
-// ---- redeem / completeRedeem / refundRedeem ----------------------------------------------
-
-/// `redeem(evmNonce, keyVersion, shares, coin)`: burn the surrendered
-/// stataToken vault coin and file `stataToken.redeem(shares,
-/// vaultEvmAddress, vaultEvmAddress)`, signed by the VAULT's account.
-///
-/// CAUTION (upstream's): the bound is on `shares`, not the assets that come
-/// back — Aave's exchange rate only grows, and `complete_redeem` mints
-/// assets through the same `Uint<64>` API after the coin is already burned.
-#[circuit]
-pub fn redeem(
-    c: &mut Circuit3,
-    evm_nonce: Uint<64>,
-    key_version: Uint<8>,
-    shares: Uint<128>,
-    coin: ShieldedCoinArg,
-) -> Discloses<(
-    SurrenderedCoinNonce,
-    SurrenderedCoinColor,
-    SurrenderedCoinValue,
-    RedeemerRefundCommitment,
-    RedeemedShares,
-    Requested,
-)> {
-    let one = c.constant(1u64);
-    c.region("guards", |c| {
+    /// `refundWithdrawal(ticket, mintNonce)`: the withdrawal NEVER EXECUTED
+    /// (the MPC's failure kind); re-mint the surrendered value to the
+    /// withdrawer.
+    #[circuit]
+    pub fn refund_withdrawal(
+        c: &mut Circuit3,
+        ticket: Settle<WithdrawEnv, Failure>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
         assert_initialized(c);
-        c.assert(shares.gt(0u64).message("shares must be positive"));
-        c.assert(shares.le(u64::MAX).message("shares exceeds Uint<64> max"));
-    });
+        let outcome = VAULT.withdrawals.settle_failed(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.withdrawer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the withdrawer");
+        let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
+        let domain_sep = vault_token_domain_separator(c, outcome.env.erc20.field());
+        let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+        common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
+        Discloses::of(())
+    }
 
-    let shares = shares.field();
-    // The wrapper token gates both the burn and `to`: one read, reused (this
-    // lineage is not PI-pinned to compactc, which reads it twice).
-    let stata_token = VAULT.stata_token.read(c);
-    burn_vault_coin(c, one, stata_token.field(), shares, coin);
+    // ---- swap / completeSwap / refundSwap ----------------------------------------------------
 
-    // redeem(shares, vaultEvmAddress, vaultEvmAddress) — the cell is read
-    // once and the wire reused for both words.
-    let word0 = signet::numeric_abi_word(c, shares);
-    let vault_evm = VAULT.vault_evm_address.read(c).field().private();
-    let word1 = signet::evm_address_abi_word(c, vault_evm);
-    let word2 = signet::evm_address_abi_word(c, vault_evm);
-    let selector = c.constant(minocrab::Fr::from_le_bytes(&REDEEM_SELECTOR).unwrap());
-    let three = c.constant(3u64);
-    let zero = c.constant(0u64);
-    let [priority_fee, max_fee, gas] = FixedGas::<LENDING_GAS>::wires(c);
-    let tx = EvmTx::<REDEEM_WORDS> {
-        nonce: evm_nonce.field(),
-        max_priority_fee_per_gas: priority_fee,
-        max_fee_per_gas: max_fee,
-        gas_limit: gas,
-        to: stata_token.field().private(),
-        value: zero.private(),
-        calldata_is_some: one.private(),
-        calldata: signet::EvmCalldata {
-            selector: selector.private(),
-            no_words: three.private(),
-            words: [word0, word1, word2],
-        },
-    };
+    /// `swap(evmNonce, keyVersion, swapRequest, coin)`: burn the surrendered
+    /// tokenIn (amountInMaximum) and file `exactOutputSingle` on the pinned
+    /// router, signed by the VAULT's account.
+    #[circuit]
+    pub fn swap(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+        swap_request: SwapRequest,
+        coin: ShieldedCoinArg,
+    ) -> Discloses<(
+        SoldErc20,
+        BoughtErc20,
+        SwapAmountOut,
+        SwapAmountInMaximum,
+        SurrenderedCoinNonce,
+        SurrenderedCoinColor,
+        SurrenderedCoinValue,
+        SwapperRefundCommitment,
+        Requested,
+    )> {
+        let one = c.constant(1u64);
+        let zero = c.constant(0u64);
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(swap_request.token_in.ne(0u64));
+            c.assert(swap_request.token_out.ne(0u64));
+            c.assert(swap_request.amount_out.gt(0u64));
+            c.assert(swap_request.amount_in_maximum.gt(0u64));
+            c.assert(swap_request.amount_out.le(u64::MAX));
+            c.assert(swap_request.amount_in_maximum.le(u64::MAX));
+        });
 
-    let sk = common::witness_sk(c);
-    let shares = shares.disclose_as::<RedeemedShares>(c);
-    let vault_path = common::SigningPath::vault_path(c).private();
-    VAULT.redeems.request(
-        c,
-        &VAULT.signet,
-        SignRequest {
-            key_version,
-            path: vault_path,
-            tx,
-        },
-        |c, id| RedeemEnv {
-            redeemer: Commit::to::<RedeemerRefundCommitment>(c, REFUND_PAD, &sk, id),
-            shares: Uint::from_field_unchecked(shares),
-        },
-    );
-    Discloses::of(())
-}
+        let amount_out = swap_request.amount_out.field();
+        let amount_in_max = swap_request.amount_in_maximum.field();
+        let token_in = swap_request.token_in.disclose_as::<SoldErc20>(c);
+        burn_vault_coin(c, one, token_in.field(), amount_in_max, coin);
 
-/// `completeRedeem(ticket, mintNonce)`: the redeem EXECUTED; mint the
-/// attested assets as shielded stataUnderlying to the redeemer (fresh
-/// witness against the commitment).
-#[circuit]
-pub fn complete_redeem(
-    c: &mut Circuit3,
-    ticket: Settle<RedeemEnv, RedeemResponse>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, RedeemRecipient, RedeemMintNonce, AttestedAssets)> {
-    assert_initialized(c);
-    let outcome = VAULT.redeems.settle(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.redeemer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the redeemer");
+        // exactOutputSingle((tokenIn, tokenOut, fee, vault, amountOut,
+        // amountInMaximum, 0)).
+        let token_out = swap_request.token_out.disclose_as::<BoughtErc20>(c);
+        let word0 = signet::evm_address_abi_word(c, token_in.field().private());
+        let word1 = signet::evm_address_abi_word(c, token_out.field().private());
+        let word2 = signet::numeric_abi_word(c, swap_request.fee.field());
+        let vault_evm = VAULT.vault_evm_address.read(c);
+        let word3 = signet::evm_address_abi_word(c, vault_evm.field().private());
+        let word4 = signet::numeric_abi_word(c, amount_out);
+        let word5 = signet::numeric_abi_word(c, amount_in_max);
+        let word6 = B32::<Private> {
+            hi: zero.private(),
+            lo: zero.private(),
+        };
+        let selector = c.constant(minocrab::Fr::from_le_bytes(&EXACT_OUTPUT_SINGLE_SELECTOR).unwrap());
+        let seven = c.constant(7u64);
+        let router = VAULT.uniswap_router.read(c);
+        let [priority_fee, max_fee, gas] = FixedGas::<SWAP_GAS>::wires(c);
+        let tx = EvmTx::<SWAP_WORDS> {
+            nonce: evm_nonce.field(),
+            max_priority_fee_per_gas: priority_fee,
+            max_fee_per_gas: max_fee,
+            gas_limit: gas,
+            to: router.field().private(),
+            value: zero.private(),
+            calldata_is_some: one.private(),
+            calldata: signet::EvmCalldata {
+                selector: selector.private(),
+                no_words: seven.private(),
+                words: [word0, word1, word2, word3, word4, word5, word6],
+            },
+        };
 
-    let recipient = own_public_key(c).disclose_as::<RedeemRecipient>(c);
-    let mint_nonce = mint_nonce.disclose_as::<RedeemMintNonce>(c);
-    let assets = outcome.output.assets.disclose_as::<AttestedAssets>(c);
-    let stata_underlying = VAULT.stata_underlying.read(c);
-    let domain_sep = vault_token_domain_separator(c, stata_underlying.field());
-    common::mint_shielded_token_to_key(c, &domain_sep, assets, &mint_nonce, &recipient);
-    Discloses::of(())
-}
+        let sk = common::witness_sk(c);
+        let amount_out = amount_out.disclose_as::<SwapAmountOut>(c);
+        let amount_in_max = amount_in_max.disclose_as::<SwapAmountInMaximum>(c);
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.swaps.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+            |c, id| SwapEnv {
+                swapper: Commit::to::<SwapperRefundCommitment>(c, REFUND_PAD, &sk, id),
+                token_in,
+                token_out,
+                amount_out: Uint::from_field_unchecked(amount_out),
+                amount_in_maximum: Uint::from_field_unchecked(amount_in_max),
+            },
+        );
+        Discloses::of(())
+    }
 
-/// `refundRedeem(ticket, mintNonce)`: the redeem NEVER EXECUTED; re-mint the
-/// surrendered stataToken shares to the redeemer.
-#[circuit]
-pub fn refund_redeem(
-    c: &mut Circuit3,
-    ticket: Settle<RedeemEnv, Failure>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
-    assert_initialized(c);
-    let outcome = VAULT.redeems.settle_failed(c, &VAULT.signet, ticket);
-    let sk = common::witness_sk(c);
-    outcome.env.redeemer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the redeemer");
-    let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
-    let stata_token = VAULT.stata_token.read(c);
-    let domain_sep = vault_token_domain_separator(c, stata_token.field());
-    let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.shares, &mint_nonce, &own_pk);
-    Discloses::of(())
+    /// `completeSwap(ticket, mintNonce)`: the swap EXECUTED; mint the exact
+    /// amountOut of tokenOut and the unspent tokenIn as change, to the swapper
+    /// (fresh witness against the commitment).
+    #[circuit]
+    pub fn complete_swap(
+        c: &mut Circuit3,
+        ticket: Settle<SwapEnv, SwapResponse>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
+        assert_initialized(c);
+        let outcome = VAULT.swaps.settle(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.swapper.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the swapper");
+
+        kernel::cache_self_address(c);
+        let recipient = own_public_key(c).disclose_as::<SwapRecipient>(c);
+        let mint_nonce = mint_nonce.disclose_as::<SwapMintNonce>(c);
+
+        let ds_out = vault_token_domain_separator(c, outcome.env.token_out.field());
+        common::mint_shielded_token_to_key(c, &ds_out, outcome.env.amount_out, &mint_nonce, &recipient);
+
+        // Change: amountInMaximum − attested amountIn, guarded against
+        // underflow by `sub_with` (the most dangerous arithmetic in the contract).
+        let amount_in = outcome.output.amount_in.disclose_as::<AttestedAmountIn>(c);
+        let change = outcome
+            .env
+            .amount_in_maximum
+            .sub_with(c, amount_in, "Attested amountIn exceeds amountInMaximum");
+        // CHECKED: the difference is re-bounded to 64 bits where it enters the
+        // coin commitment (one `constrain_bits 64`), as the modern lineage does
+        // — the taint lint's warrant for the 16-byte value atom.
+        let change = Uint::<64, Public>::from_field_checked(c, change.field());
+        let ds_in = vault_token_domain_separator(c, outcome.env.token_in.field());
+        let change_nonce = change_nonce(c, &mint_nonce);
+        common::mint_shielded_token_to_key(c, &ds_in, change, &change_nonce, &recipient);
+        Discloses::of(())
+    }
+
+    /// `refundSwap(ticket, mintNonce)`: the swap NEVER EXECUTED; re-mint the
+    /// surrendered amountInMaximum of tokenIn to the swapper.
+    #[circuit]
+    pub fn refund_swap(
+        c: &mut Circuit3,
+        ticket: Settle<SwapEnv, Failure>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
+        assert_initialized(c);
+        let outcome = VAULT.swaps.settle_failed(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.swapper.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the swapper");
+        let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
+        let domain_sep = vault_token_domain_separator(c, outcome.env.token_in.field());
+        let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+        common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount_in_maximum, &mint_nonce, &own_pk);
+        Discloses::of(())
+    }
+
+    // ---- approveRouter / approveStata --------------------------------------------------------------
+
+    /// `approveRouter(erc20Address, evmNonce, keyVersion)`: file
+    /// `approve(uniswapRouter, 2^128−1)` signed by the VAULT's account.
+    /// Request-only.
+    #[circuit]
+    pub fn approve_router(
+        c: &mut Circuit3,
+        erc20_address: Bytes<20>,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+    ) -> Discloses<(ApprovedErc20, Requested)> {
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(erc20_address.ne(0u64));
+        });
+
+        let router = VAULT.uniswap_router.read(c);
+        let word0 = signet::evm_address_abi_word(c, router.field().private());
+        let word1 = unlimited_allowance_word(c);
+        let erc20 = erc20_address.disclose_as::<ApprovedErc20>(c);
+        let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
+        let tx = erc20_call(c, &APPROVE_SELECTOR, erc20.field().private(), [word0, word1], evm_nonce.field(), gas);
+
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.approvals.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+        );
+        Discloses::of(())
+    }
+
+    /// `approveStata(evmNonce, keyVersion)`: file `approve(stataToken,
+    /// 2^128−1)` ON the underlying USDC, signed by the VAULT's account, so the
+    /// wrapper can pull it during a supply. Request-only.
+    #[circuit]
+    pub fn approve_stata(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+    ) -> Discloses<(Requested,)> {
+        assert_initialized(c);
+
+        let stata_token = VAULT.stata_token.read(c);
+        let word0 = signet::evm_address_abi_word(c, stata_token.field().private());
+        let word1 = unlimited_allowance_word(c);
+        let gas = FixedGas::<ERC20_CALL_GAS>::wires(c);
+        let stata_underlying = VAULT.stata_underlying.read(c);
+        let tx = erc20_call(
+            c,
+            &APPROVE_SELECTOR,
+            stata_underlying.field().private(),
+            [word0, word1],
+            evm_nonce.field(),
+            gas,
+        );
+
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.approvals.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+        );
+        Discloses::of(())
+    }
+
+    // ---- supply / completeSupply / refundSupply ----------------------------------------------
+
+    /// `supply(evmNonce, keyVersion, amount, coin)`: burn the surrendered USDC
+    /// vault coin and file `stataToken.deposit(amount, vaultEvmAddress)`,
+    /// signed by the VAULT's account (exact-input, so no change).
+    #[circuit]
+    pub fn supply(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+        amount: Uint<128>,
+        coin: ShieldedCoinArg,
+    ) -> Discloses<(
+        SurrenderedCoinNonce,
+        SurrenderedCoinColor,
+        SurrenderedCoinValue,
+        SupplierRefundCommitment,
+        SuppliedAmount,
+        Requested,
+    )> {
+        let one = c.constant(1u64);
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(amount.gt(0u64).message("amount must be positive"));
+            // refund_supply re-mints via the Uint<64> mint API.
+            c.assert(amount.le(u64::MAX).message("amount exceeds Uint<64> max"));
+        });
+
+        let amount = amount.field();
+        let stata_underlying = VAULT.stata_underlying.read(c);
+        burn_vault_coin(c, one, stata_underlying.field(), amount, coin);
+
+        // deposit(amount, vaultEvmAddress) on the wrapper.
+        let word0 = signet::numeric_abi_word(c, amount);
+        let vault_evm = VAULT.vault_evm_address.read(c);
+        let word1 = signet::evm_address_abi_word(c, vault_evm.field().private());
+        let gas = FixedGas::<LENDING_GAS>::wires(c);
+        let stata_token = VAULT.stata_token.read(c);
+        let tx = erc20_call(c, &DEPOSIT_SELECTOR, stata_token.field().private(), [word0, word1], evm_nonce.field(), gas);
+
+        let sk = common::witness_sk(c);
+        let amount = amount.disclose_as::<SuppliedAmount>(c);
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.supplies.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+            |c, id| SupplyEnv {
+                supplier: Commit::to::<SupplierRefundCommitment>(c, REFUND_PAD, &sk, id),
+                amount: Uint::from_field_unchecked(amount),
+            },
+        );
+        Discloses::of(())
+    }
+
+    /// `completeSupply(ticket, mintNonce)`: the supply EXECUTED; mint the
+    /// attested shares as shielded stataToken to the supplier (fresh witness
+    /// against the commitment).
+    #[circuit]
+    pub fn complete_supply(
+        c: &mut Circuit3,
+        ticket: Settle<SupplyEnv, SupplyResponse>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)> {
+        assert_initialized(c);
+        let outcome = VAULT.supplies.settle(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
+
+        let recipient = own_public_key(c).disclose_as::<SupplyRecipient>(c);
+        let mint_nonce = mint_nonce.disclose_as::<SupplyMintNonce>(c);
+        let shares = outcome.output.shares.disclose_as::<AttestedShares>(c);
+        let stata_token = VAULT.stata_token.read(c);
+        let domain_sep = vault_token_domain_separator(c, stata_token.field());
+        common::mint_shielded_token_to_key(c, &domain_sep, shares, &mint_nonce, &recipient);
+        Discloses::of(())
+    }
+
+    /// `refundSupply(ticket, mintNonce)`: the supply NEVER EXECUTED; re-mint the
+    /// surrendered USDC amount to the supplier.
+    #[circuit]
+    pub fn refund_supply(
+        c: &mut Circuit3,
+        ticket: Settle<SupplyEnv, Failure>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
+        assert_initialized(c);
+        let outcome = VAULT.supplies.settle_failed(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.supplier.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the supplier");
+        let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
+        let stata_underlying = VAULT.stata_underlying.read(c);
+        let domain_sep = vault_token_domain_separator(c, stata_underlying.field());
+        let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+        common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.amount, &mint_nonce, &own_pk);
+        Discloses::of(())
+    }
+
+    // ---- redeem / completeRedeem / refundRedeem ----------------------------------------------
+
+    /// `redeem(evmNonce, keyVersion, shares, coin)`: burn the surrendered
+    /// stataToken vault coin and file `stataToken.redeem(shares,
+    /// vaultEvmAddress, vaultEvmAddress)`, signed by the VAULT's account.
+    ///
+    /// CAUTION (upstream's): the bound is on `shares`, not the assets that come
+    /// back — Aave's exchange rate only grows, and `complete_redeem` mints
+    /// assets through the same `Uint<64>` API after the coin is already burned.
+    #[circuit]
+    pub fn redeem(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+        shares: Uint<128>,
+        coin: ShieldedCoinArg,
+    ) -> Discloses<(
+        SurrenderedCoinNonce,
+        SurrenderedCoinColor,
+        SurrenderedCoinValue,
+        RedeemerRefundCommitment,
+        RedeemedShares,
+        Requested,
+    )> {
+        let one = c.constant(1u64);
+        c.region("guards", |c| {
+            assert_initialized(c);
+            c.assert(shares.gt(0u64).message("shares must be positive"));
+            c.assert(shares.le(u64::MAX).message("shares exceeds Uint<64> max"));
+        });
+
+        let shares = shares.field();
+        // The wrapper token gates both the burn and `to`: one read, reused (this
+        // lineage is not PI-pinned to compactc, which reads it twice).
+        let stata_token = VAULT.stata_token.read(c);
+        burn_vault_coin(c, one, stata_token.field(), shares, coin);
+
+        // redeem(shares, vaultEvmAddress, vaultEvmAddress) — the cell is read
+        // once and the wire reused for both words.
+        let word0 = signet::numeric_abi_word(c, shares);
+        let vault_evm = VAULT.vault_evm_address.read(c).field().private();
+        let word1 = signet::evm_address_abi_word(c, vault_evm);
+        let word2 = signet::evm_address_abi_word(c, vault_evm);
+        let selector = c.constant(minocrab::Fr::from_le_bytes(&REDEEM_SELECTOR).unwrap());
+        let three = c.constant(3u64);
+        let zero = c.constant(0u64);
+        let [priority_fee, max_fee, gas] = FixedGas::<LENDING_GAS>::wires(c);
+        let tx = EvmTx::<REDEEM_WORDS> {
+            nonce: evm_nonce.field(),
+            max_priority_fee_per_gas: priority_fee,
+            max_fee_per_gas: max_fee,
+            gas_limit: gas,
+            to: stata_token.field().private(),
+            value: zero.private(),
+            calldata_is_some: one.private(),
+            calldata: signet::EvmCalldata {
+                selector: selector.private(),
+                no_words: three.private(),
+                words: [word0, word1, word2],
+            },
+        };
+
+        let sk = common::witness_sk(c);
+        let shares = shares.disclose_as::<RedeemedShares>(c);
+        let vault_path = common::SigningPath::vault_path(c).private();
+        VAULT.redeems.request(
+            c,
+            &VAULT.signet,
+            SignRequest {
+                key_version,
+                path: vault_path,
+                tx,
+            },
+            |c, id| RedeemEnv {
+                redeemer: Commit::to::<RedeemerRefundCommitment>(c, REFUND_PAD, &sk, id),
+                shares: Uint::from_field_unchecked(shares),
+            },
+        );
+        Discloses::of(())
+    }
+
+    /// `completeRedeem(ticket, mintNonce)`: the redeem EXECUTED; mint the
+    /// attested assets as shielded stataUnderlying to the redeemer (fresh
+    /// witness against the commitment).
+    #[circuit]
+    pub fn complete_redeem(
+        c: &mut Circuit3,
+        ticket: Settle<RedeemEnv, RedeemResponse>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, RedeemRecipient, RedeemMintNonce, AttestedAssets)> {
+        assert_initialized(c);
+        let outcome = VAULT.redeems.settle(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.redeemer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the redeemer");
+
+        let recipient = own_public_key(c).disclose_as::<RedeemRecipient>(c);
+        let mint_nonce = mint_nonce.disclose_as::<RedeemMintNonce>(c);
+        let assets = outcome.output.assets.disclose_as::<AttestedAssets>(c);
+        let stata_underlying = VAULT.stata_underlying.read(c);
+        let domain_sep = vault_token_domain_separator(c, stata_underlying.field());
+        common::mint_shielded_token_to_key(c, &domain_sep, assets, &mint_nonce, &recipient);
+        Discloses::of(())
+    }
+
+    /// `refundRedeem(ticket, mintNonce)`: the redeem NEVER EXECUTED; re-mint the
+    /// surrendered stataToken shares to the redeemer.
+    #[circuit]
+    pub fn refund_redeem(
+        c: &mut Circuit3,
+        ticket: Settle<RedeemEnv, Failure>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(Settled, RefundMintNonce, RefundRecipient)> {
+        assert_initialized(c);
+        let outcome = VAULT.redeems.settle_failed(c, &VAULT.signet, ticket);
+        let sk = common::witness_sk(c);
+        outcome.env.redeemer.open(c, REFUND_PAD, &sk, outcome.request_id, "Not the redeemer");
+        let mint_nonce = mint_nonce.disclose_as::<RefundMintNonce>(c);
+        let stata_token = VAULT.stata_token.read(c);
+        let domain_sep = vault_token_domain_separator(c, stata_token.field());
+        let own_pk = own_public_key(c).disclose_as::<RefundRecipient>(c);
+        common::mint_shielded_token_to_key(c, &domain_sep, outcome.env.shares, &mint_nonce, &own_pk);
+        Discloses::of(())
+    }
 }

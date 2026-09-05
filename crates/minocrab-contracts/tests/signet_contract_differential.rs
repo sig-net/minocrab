@@ -157,7 +157,7 @@ impl SignScenario {
 #[test]
 fn sign_bidirectional_matches_corpus() {
     let theirs = corpus_zkir("signBidirectional");
-    let ours = signet_contract::sign_bidirectional().ir;
+    let ours = signet_contract::SignetContract::sign_bidirectional().ir;
     let pi = SignScenario::new().preimage();
     support::dump_preimage("signBidirectional", &pi);
     assert_call_compatible(&ours, &theirs, &pi);
@@ -168,7 +168,7 @@ fn sign_bidirectional_matches_corpus() {
 #[test]
 fn sign_bidirectional_rejects_tampered_event() {
     let theirs = corpus_zkir("signBidirectional");
-    let ours = signet_contract::sign_bidirectional().ir;
+    let ours = signet_contract::SignetContract::sign_bidirectional().ir;
     let s = SignScenario::new();
 
     let mut misc = s.misc_bytes();
@@ -239,7 +239,7 @@ impl RespondScenario {
 #[test]
 fn respond_matches_corpus() {
     let theirs = corpus_zkir("respond");
-    let ours = signet_contract::respond().ir;
+    let ours = signet_contract::SignetContract::respond().ir;
     let s = RespondScenario::new();
     let pi = s.preimage(signet_contract::SIGNATURE_RESPONDED_EVENT);
     support::dump_preimage("respond", &pi);
@@ -249,7 +249,7 @@ fn respond_matches_corpus() {
 #[test]
 fn respond_bidirectional_matches_corpus() {
     let theirs = corpus_zkir("respondBidirectional");
-    let ours = signet_contract::respond_bidirectional().ir;
+    let ours = signet_contract::SignetContract::respond_bidirectional().ir;
     let s = RespondScenario::new();
     let pi = s.preimage(signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
     support::dump_preimage("respondBidirectional", &pi);
@@ -261,7 +261,7 @@ fn respond_bidirectional_matches_corpus() {
 #[test]
 fn respond_rejects_swapped_event_name() {
     let theirs = corpus_zkir("respond");
-    let ours = signet_contract::respond().ir;
+    let ours = signet_contract::SignetContract::respond().ir;
     let s = RespondScenario::new();
     let pi = s.preimage(signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
     assert!(simulate(&ours, &pi).is_err(), "ours must reject");
@@ -272,7 +272,7 @@ fn respond_rejects_swapped_event_name() {
 #[test]
 fn respond_rejects_tampered_signature() {
     let theirs = corpus_zkir("respond");
-    let ours = signet_contract::respond().ir;
+    let ours = signet_contract::SignetContract::respond().ir;
     let s = RespondScenario::new();
 
     let mut misc = s.misc_bytes(signet_contract::SIGNATURE_RESPONDED_EVENT);

@@ -88,7 +88,7 @@ fn preimage(bytes: &[u8; 128]) -> ProofPreimage {
 #[test]
 fn check_roundtrip_matches_corpus() {
     let theirs = corpus_zkir();
-    let ours = serde_builtin::check_roundtrip().ir;
+    let ours = serde_builtin::SerdeBuiltin::check_roundtrip().ir;
 
     let bytes = mixed_bytes(0xdead_beef_0123, 0x2a, b"mixed-tag-32-bytes-for-the-test!");
     let pi = preimage(&bytes);

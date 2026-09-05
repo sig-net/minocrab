@@ -262,7 +262,7 @@ impl Scenario {
 #[test]
 fn mint_with_recipient_argument_matches_corpus() {
     let theirs = corpus_zkir("mintWithRecipientArgument");
-    let ours = mint_tokens::mint_with_recipient_argument().ir;
+    let ours = mint_tokens::MintTokens::mint_with_recipient_argument().ir;
     let s = Scenario::new();
     assert_call_compatible(&ours, &theirs, &s.preimage());
 }
@@ -270,7 +270,7 @@ fn mint_with_recipient_argument_matches_corpus() {
 #[test]
 fn mint_with_recipient_own_public_key_matches_corpus() {
     let theirs = corpus_zkir("mintWithRecipientOwnPublicKey");
-    let ours = mint_tokens::mint_with_recipient_own_public_key().ir;
+    let ours = mint_tokens::MintTokens::mint_with_recipient_own_public_key().ir;
     let s = Scenario::new();
     let mut own_pk = [0u8; 32];
     own_pk[..6].copy_from_slice(b"own-pk");
@@ -283,7 +283,7 @@ fn mint_with_recipient_own_public_key_matches_corpus() {
 #[test]
 fn mint_rejects_tampered_transcript() {
     let theirs = corpus_zkir("mintWithRecipientArgument");
-    let ours = mint_tokens::mint_with_recipient_argument().ir;
+    let ours = mint_tokens::MintTokens::mint_with_recipient_argument().ir;
     let s = Scenario::new();
 
     let mut pi = s.preimage();

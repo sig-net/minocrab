@@ -727,7 +727,7 @@ fn an_assert_message_inside_a_scope_names_the_assert() {
 /// A NAMED constant 1 as an explicit guard inside a scope yields to the
 /// scope exactly as the literal does — `cond_select(ambient, one, 0)` is
 /// the ambient guard, and is no longer emitted (nine of them left
-/// manager::execute when this landed).
+/// manager::Manager::execute when this landed).
 #[test]
 fn a_named_one_guard_yields_to_the_scope() {
     let literal = zkir(|c| {

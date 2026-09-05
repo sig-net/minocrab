@@ -42,7 +42,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::Public;
 use minocrab_std::v3::{
-    circuit, label, ts, Bool, CircuitArg, Disclose, Discloses, JubjubPoint, Ledger, LedgerCell,
+    contract, label, ts, Bool, CircuitArg, Disclose, Discloses, JubjubPoint, Ledger, LedgerCell,
     LedgerCounter, LedgerMap, LedgerSet, Maybe, Opaque, Secp256k1Point, Uint, B32,
 };
 
@@ -85,137 +85,6 @@ pub struct OpaqueLedger {
 /// The contract's ledger block.
 pub const OPAQUE: OpaqueLedger = OpaqueLedger::new();
 
-/// `export circuit opArg(x: Opaque<"string">): [] { dummy.increment(1); }`
-///
-/// The whole circuit is the argument declaration, and the argument declaration
-/// emits NO constraint — which is the one thing this circuit exists to pin.
-#[circuit]
-pub fn op_arg(c: &mut Circuit3, x: OpaqueStr) -> Discloses<()> {
-    let _ = x;
-    OPAQUE.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit opRet(x: Opaque<"string">): Opaque<"string"> { … return x; }`
-///
-/// Returning is disclosing (M9 phase 2), so the label is in the signature.
-#[circuit(output = "name")]
-pub fn op_ret(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name, OpaqueStr<Public>> {
-    OPAQUE.dummy.increment(c, 1);
-    Discloses::of(x.disclose_as::<Name>(c))
-}
-
-/// `export circuit opEq(a, b: Opaque<"string">): Boolean { return a == b; }`
-///
-/// One `test_eq`. Sound as an equality on the TS-side values, because the two
-/// slots hold their commitments (see the module docs).
-#[circuit(output = "equal")]
-pub fn op_eq(
-    c: &mut Circuit3,
-    a: OpaqueStr,
-    b: OpaqueStr,
-) -> Discloses<(Name, Other), Bool<Public>> {
-    OPAQUE.dummy.increment(c, 1);
-    let a = a.disclose_as::<Name>(c);
-    let b = b.disclose_as::<Other>(c);
-    Discloses::of(Bool::from_field_unchecked(a.eq(c, b)))
-}
-
-/// `export circuit opDefault(): [] { cell = default<Opaque<"string">>; }`
-///
-/// The empty value's commitment is the field zero, so this is one constant
-/// that inlines as the Impact immediate `0x00` — no ceremony on either side.
-#[circuit]
-pub fn op_default(c: &mut Circuit3) -> Discloses<()> {
-    let empty = OpaqueStr::<Public>::default_value(c);
-    OPAQUE.cell.write(c, &empty);
-    Discloses::of(())
-}
-
-/// `export circuit opCell(x: Opaque<"string">): [] { cell = disclose(x); }`
-#[circuit]
-pub fn op_cell(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
-    let x = x.disclose_as::<Name>(c);
-    OPAQUE.cell.write(c, &x);
-    Discloses::of(())
-}
-
-/// `export circuit opWitness(): [] { cell = disclose(w_name()); }`
-///
-/// A witnessed opaque is a bare `private_input` with no constraint — there is
-/// no range to check and no canonicity to enforce, because a `compress` atom
-/// admits any value.
-#[circuit]
-pub fn op_witness(c: &mut Circuit3) -> Discloses<Name> {
-    let name = OpaqueStr::from_field_unchecked(c.witness());
-    let name = name.disclose_as::<Name>(c);
-    OPAQUE.cell.write(c, &name);
-    Discloses::of(())
-}
-
-/// `export circuit opMapValue(k: Bytes<32>, v: Opaque<"string">): []
-/// { by_hash.insert(disclose(k), disclose(v)); }`
-#[circuit]
-pub fn op_map_value(c: &mut Circuit3, k: B32<minocrab::Private>, v: OpaqueStr) -> Discloses<(Key, Name)> {
-    let k = k.disclose_as::<Key>(c);
-    let v = v.disclose_as::<Name>(c);
-    OPAQUE.by_hash.insert(c, &k, &v);
-    Discloses::of(())
-}
-
-/// `export circuit opMapKey(k: Opaque<"string">): []
-/// { by_name.insert(disclose(k), 1); }`
-///
-/// An opaque as a map KEY, which is the position where a wrong atom would
-/// silently key a different entry.
-#[circuit]
-pub fn op_map_key(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key> {
-    let k = k.disclose_as::<Key>(c);
-    let one: Uint<64, Public> = Uint::from_field_unchecked(c.constant(minocrab::Fr::from(1u64)));
-    OPAQUE.by_name.insert(c, &k, &one);
-    Discloses::of(())
-}
-
-/// `export circuit opSet(k: Opaque<"string">): Boolean
-/// { names.insert(disclose(k)); return names.member(disclose(k)); }`
-#[circuit(output = "member")]
-pub fn op_set(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key, Bool<Public>> {
-    let k = k.disclose_as::<Key>(c);
-    OPAQUE.names.insert(c, &k);
-    Discloses::of(OPAQUE.names.member(c, &k))
-}
-
-/// `export circuit opMaybe(x: Opaque<"string">): []
-/// { maybe = some<Opaque<"string">>(disclose(x)); }`
-///
-/// The tag's limb then the payload's — the payload occupies its slot either
-/// way, which is the fixed-width rule Compact's `Maybe` already follows and
-/// M11's `Flagged` names.
-#[circuit]
-pub fn op_maybe(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
-    let x = x.disclose_as::<Name>(c);
-    let some = Maybe {
-        is_some: Bool::from_field_unchecked(c.constant(minocrab::Fr::from(1u64))),
-        value: x,
-    };
-    OPAQUE.maybe.write(c, &some);
-    Discloses::of(())
-}
-
-/// `export circuit opBytes(x: Opaque<"Uint8Array">): []
-/// { bytes_cell = disclose(x); }`
-///
-/// The second ts-type. Its whole job is that `OpaqueStr` and `OpaqueBytes` are
-/// DIFFERENT Rust types: writing this value to `OPAQUE.cell` does not compile,
-/// which is the same rejection compactc makes ("expected right-hand side of =
-/// to have type `Opaque<"string">` but received `Opaque<"Uint8Array">`").
-#[circuit]
-pub fn op_bytes(c: &mut Circuit3, x: OpaqueBytes) -> Discloses<Name> {
-    let x = x.disclose_as::<Name>(c);
-    OPAQUE.bytes_cell.write(c, &x);
-    Discloses::of(())
-}
-
 /// `struct Tagged { tag: Uint<8>, name: Opaque<"string"> }` — an opaque inside
 /// `#[derive(CircuitArg)]`, whose generated `constrain` runs the table over
 /// both slots and emits for exactly one of them.
@@ -225,36 +94,170 @@ pub struct Tagged {
     pub name: OpaqueStr,
 }
 
-/// `export circuit opStruct(w: Tagged): [] { cell = disclose(w.name); }`
-#[circuit]
-pub fn op_struct(c: &mut Circuit3, w: Tagged) -> Discloses<(Tag, Name)> {
-    let _ = w.tag.disclose_as::<Tag>(c);
-    let name = w.name.disclose_as::<Name>(c);
-    OPAQUE.cell.write(c, &name);
-    Discloses::of(())
-}
+#[contract]
+impl OpaqueLedger {
+    /// `export circuit opArg(x: Opaque<"string">): [] { dummy.increment(1); }`
+    ///
+    /// The whole circuit is the argument declaration, and the argument declaration
+    /// emits NO constraint — which is the one thing this circuit exists to pin.
+    #[circuit]
+    pub fn op_arg(c: &mut Circuit3, x: OpaqueStr) -> Discloses<()> {
+        let _ = x;
+        OPAQUE.dummy.increment(c, 1);
+        Discloses::of(())
+    }
 
-/// `export circuit opPoint(p: Secp256k1Point): []
-/// { response_key = disclose(p); }`
-///
-/// compactc publishes this argument as `Opaque<"Secp256k1Point">` under an
-/// `Alias` of the same name, and our ABI reader used to refuse it — which is
-/// why the erc20-vault's own `initialize` was not flattenable. The leaf itself
-/// has existed since M9 phase 5; what M15 fixed is the READER.
-#[circuit]
-pub fn op_point(c: &mut Circuit3, p: Secp256k1Point) -> Discloses<Point> {
-    let p = p.disclose_as::<Point>(c);
-    OPAQUE.response_key.write(c, &p);
-    Discloses::of(())
-}
+    /// `export circuit opRet(x: Opaque<"string">): Opaque<"string"> { … return x; }`
+    ///
+    /// Returning is disclosing (M9 phase 2), so the label is in the signature.
+    #[circuit(output = "name")]
+    pub fn op_ret(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name, OpaqueStr<Public>> {
+        OPAQUE.dummy.increment(c, 1);
+        Discloses::of(x.disclose_as::<Name>(c))
+    }
 
-/// `export circuit opJubjub(p: JubjubPoint): [] { jubjub_key = disclose(p); }`
-///
-/// The other curve spelling, over two `field` atoms instead of five mixed
-/// ones.
-#[circuit]
-pub fn op_jubjub(c: &mut Circuit3, p: JubjubPoint) -> Discloses<Point> {
-    let p = p.disclose_as::<Point>(c);
-    OPAQUE.jubjub_key.write(c, &p);
-    Discloses::of(())
+    /// `export circuit opEq(a, b: Opaque<"string">): Boolean { return a == b; }`
+    ///
+    /// One `test_eq`. Sound as an equality on the TS-side values, because the two
+    /// slots hold their commitments (see the module docs).
+    #[circuit(output = "equal")]
+    pub fn op_eq(
+        c: &mut Circuit3,
+        a: OpaqueStr,
+        b: OpaqueStr,
+    ) -> Discloses<(Name, Other), Bool<Public>> {
+        OPAQUE.dummy.increment(c, 1);
+        let a = a.disclose_as::<Name>(c);
+        let b = b.disclose_as::<Other>(c);
+        Discloses::of(Bool::from_field_unchecked(a.eq(c, b)))
+    }
+
+    /// `export circuit opDefault(): [] { cell = default<Opaque<"string">>; }`
+    ///
+    /// The empty value's commitment is the field zero, so this is one constant
+    /// that inlines as the Impact immediate `0x00` — no ceremony on either side.
+    #[circuit]
+    pub fn op_default(c: &mut Circuit3) -> Discloses<()> {
+        let empty = OpaqueStr::<Public>::default_value(c);
+        OPAQUE.cell.write(c, &empty);
+        Discloses::of(())
+    }
+
+    /// `export circuit opCell(x: Opaque<"string">): [] { cell = disclose(x); }`
+    #[circuit]
+    pub fn op_cell(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
+        let x = x.disclose_as::<Name>(c);
+        OPAQUE.cell.write(c, &x);
+        Discloses::of(())
+    }
+
+    /// `export circuit opWitness(): [] { cell = disclose(w_name()); }`
+    ///
+    /// A witnessed opaque is a bare `private_input` with no constraint — there is
+    /// no range to check and no canonicity to enforce, because a `compress` atom
+    /// admits any value.
+    #[circuit]
+    pub fn op_witness(c: &mut Circuit3) -> Discloses<Name> {
+        let name = OpaqueStr::from_field_unchecked(c.witness());
+        let name = name.disclose_as::<Name>(c);
+        OPAQUE.cell.write(c, &name);
+        Discloses::of(())
+    }
+
+    /// `export circuit opMapValue(k: Bytes<32>, v: Opaque<"string">): []
+    /// { by_hash.insert(disclose(k), disclose(v)); }`
+    #[circuit]
+    pub fn op_map_value(c: &mut Circuit3, k: B32<minocrab::Private>, v: OpaqueStr) -> Discloses<(Key, Name)> {
+        let k = k.disclose_as::<Key>(c);
+        let v = v.disclose_as::<Name>(c);
+        OPAQUE.by_hash.insert(c, &k, &v);
+        Discloses::of(())
+    }
+
+    /// `export circuit opMapKey(k: Opaque<"string">): []
+    /// { by_name.insert(disclose(k), 1); }`
+    ///
+    /// An opaque as a map KEY, which is the position where a wrong atom would
+    /// silently key a different entry.
+    #[circuit]
+    pub fn op_map_key(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key> {
+        let k = k.disclose_as::<Key>(c);
+        let one: Uint<64, Public> = Uint::from_field_unchecked(c.constant(minocrab::Fr::from(1u64)));
+        OPAQUE.by_name.insert(c, &k, &one);
+        Discloses::of(())
+    }
+
+    /// `export circuit opSet(k: Opaque<"string">): Boolean
+    /// { names.insert(disclose(k)); return names.member(disclose(k)); }`
+    #[circuit(output = "member")]
+    pub fn op_set(c: &mut Circuit3, k: OpaqueStr) -> Discloses<Key, Bool<Public>> {
+        let k = k.disclose_as::<Key>(c);
+        OPAQUE.names.insert(c, &k);
+        Discloses::of(OPAQUE.names.member(c, &k))
+    }
+
+    /// `export circuit opMaybe(x: Opaque<"string">): []
+    /// { maybe = some<Opaque<"string">>(disclose(x)); }`
+    ///
+    /// The tag's limb then the payload's — the payload occupies its slot either
+    /// way, which is the fixed-width rule Compact's `Maybe` already follows and
+    /// M11's `Flagged` names.
+    #[circuit]
+    pub fn op_maybe(c: &mut Circuit3, x: OpaqueStr) -> Discloses<Name> {
+        let x = x.disclose_as::<Name>(c);
+        let some = Maybe {
+            is_some: Bool::from_field_unchecked(c.constant(minocrab::Fr::from(1u64))),
+            value: x,
+        };
+        OPAQUE.maybe.write(c, &some);
+        Discloses::of(())
+    }
+
+    /// `export circuit opBytes(x: Opaque<"Uint8Array">): []
+    /// { bytes_cell = disclose(x); }`
+    ///
+    /// The second ts-type. Its whole job is that `OpaqueStr` and `OpaqueBytes` are
+    /// DIFFERENT Rust types: writing this value to `OPAQUE.cell` does not compile,
+    /// which is the same rejection compactc makes ("expected right-hand side of =
+    /// to have type `Opaque<"string">` but received `Opaque<"Uint8Array">`").
+    #[circuit]
+    pub fn op_bytes(c: &mut Circuit3, x: OpaqueBytes) -> Discloses<Name> {
+        let x = x.disclose_as::<Name>(c);
+        OPAQUE.bytes_cell.write(c, &x);
+        Discloses::of(())
+    }
+
+    /// `export circuit opStruct(w: Tagged): [] { cell = disclose(w.name); }`
+    #[circuit]
+    pub fn op_struct(c: &mut Circuit3, w: Tagged) -> Discloses<(Tag, Name)> {
+        let _ = w.tag.disclose_as::<Tag>(c);
+        let name = w.name.disclose_as::<Name>(c);
+        OPAQUE.cell.write(c, &name);
+        Discloses::of(())
+    }
+
+    /// `export circuit opPoint(p: Secp256k1Point): []
+    /// { response_key = disclose(p); }`
+    ///
+    /// compactc publishes this argument as `Opaque<"Secp256k1Point">` under an
+    /// `Alias` of the same name, and our ABI reader used to refuse it — which is
+    /// why the erc20-vault's own `initialize` was not flattenable. The leaf itself
+    /// has existed since M9 phase 5; what M15 fixed is the READER.
+    #[circuit]
+    pub fn op_point(c: &mut Circuit3, p: Secp256k1Point) -> Discloses<Point> {
+        let p = p.disclose_as::<Point>(c);
+        OPAQUE.response_key.write(c, &p);
+        Discloses::of(())
+    }
+
+    /// `export circuit opJubjub(p: JubjubPoint): [] { jubjub_key = disclose(p); }`
+    ///
+    /// The other curve spelling, over two `field` atoms instead of five mixed
+    /// ones.
+    #[circuit]
+    pub fn op_jubjub(c: &mut Circuit3, p: JubjubPoint) -> Discloses<Point> {
+        let p = p.disclose_as::<Point>(c);
+        OPAQUE.jubjub_key.write(c, &p);
+        Discloses::of(())
+    }
 }

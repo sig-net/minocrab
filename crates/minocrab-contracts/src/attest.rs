@@ -23,7 +23,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Fr, Private};
 use minocrab_ledger::{counter_increment, emit, map_insert, ImpactElem, LedgerValue};
 use minocrab_std::v3::{
-    circuit, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Disclose, Discloses,
+    contract, rebuild_limb, secp256k1_ecdsa_verify, BytesN, Disclose, Discloses,
     Secp256k1EcdsaSignature, Secp256k1Point, Vis3, B32,
 };
 
@@ -51,42 +51,6 @@ fn ledger_writes(c: &mut Circuit3, request_id: B32<Private>) {
     let mut ops = counter_increment(CALL_COUNT, 1);
     ops.extend(map_insert(VERIFIED, &key, &true_val));
     emit(c, one, &ops);
-}
-
-/// `export circuit mapOnly(requestId: Bytes<32>): []`
-#[circuit]
-pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
-    c.region("ledger writes", |c| ledger_writes(c, request_id));
-    Discloses::of(())
-}
-
-/// `export circuit verifyOnly(requestId, digest, r, s, pk): []`
-#[circuit]
-pub fn verify_only(
-    c: &mut Circuit3,
-    request_id: B32<Private>,
-    digest: B32<Private>,
-    r: B32<Private>,
-    s: B32<Private>,
-    pk: Secp256k1Point,
-) -> Discloses<(AttestedRequestId,)> {
-    let pk = pk.point();
-
-    let ok = c.region("signature verification", |c| {
-        // `r as Secp256k1Scalar` / `s as ..`: Bytes<32> → typed bytes →
-        // mod-n reduction (notes/builtin-lowering.org §8).
-        let r_typed = r.to_typed(c);
-        let s_typed = s.to_typed(c);
-        let sig = Secp256k1EcdsaSignature {
-            r: c.from_bytes32(r_typed),
-            s: c.from_bytes32(s_typed),
-        };
-        secp256k1_ecdsa_verify(c, &digest, &sig, pk)
-    });
-    c.assert(ok); // "attestation signature invalid"
-
-    c.region("ledger writes", |c| ledger_writes(c, request_id));
-    Discloses::of(())
 }
 
 /// `struct RespondOutput { success: Boolean; amount: Uint<128>;
@@ -165,34 +129,76 @@ fn hash_verify(
     c.region("ledger writes", |c| ledger_writes(c, request_id));
 }
 
-/// `export circuit shaVerify(requestId, output, r, s, pk): []`
-#[circuit]
-pub fn sha_verify(
-    c: &mut Circuit3,
-    request_id: B32<Private>,
-    output: BytesN<Private, 128>,
-    r: B32<Private>,
-    s: B32<Private>,
-    pk: Secp256k1Point,
-) -> Discloses<(AttestedRequestId,)> {
-    let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
-    hash_verify(c, hash, request_id, output, r, s, pk);
-    Discloses::of(())
-}
+/// MPC attestation verification.
+pub struct Attest;
 
-/// `export circuit keccakVerify(requestId, output, r, s, pk): []`
-#[circuit]
-pub fn keccak_verify(
-    c: &mut Circuit3,
-    request_id: B32<Private>,
-    output: BytesN<Private, 128>,
-    r: B32<Private>,
-    s: B32<Private>,
-    pk: Secp256k1Point,
-) -> Discloses<(AttestedRequestId,)> {
-    let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
-    hash_verify(c, hash, request_id, output, r, s, pk);
-    Discloses::of(())
+#[contract]
+impl Attest {
+    /// `export circuit mapOnly(requestId: Bytes<32>): []`
+    #[circuit]
+    pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
+        c.region("ledger writes", |c| ledger_writes(c, request_id));
+        Discloses::of(())
+    }
+
+    /// `export circuit verifyOnly(requestId, digest, r, s, pk): []`
+    #[circuit]
+    pub fn verify_only(
+        c: &mut Circuit3,
+        request_id: B32<Private>,
+        digest: B32<Private>,
+        r: B32<Private>,
+        s: B32<Private>,
+        pk: Secp256k1Point,
+    ) -> Discloses<(AttestedRequestId,)> {
+        let pk = pk.point();
+
+        let ok = c.region("signature verification", |c| {
+            // `r as Secp256k1Scalar` / `s as ..`: Bytes<32> → typed bytes →
+            // mod-n reduction (notes/builtin-lowering.org §8).
+            let r_typed = r.to_typed(c);
+            let s_typed = s.to_typed(c);
+            let sig = Secp256k1EcdsaSignature {
+                r: c.from_bytes32(r_typed),
+                s: c.from_bytes32(s_typed),
+            };
+            secp256k1_ecdsa_verify(c, &digest, &sig, pk)
+        });
+        c.assert(ok); // "attestation signature invalid"
+
+        c.region("ledger writes", |c| ledger_writes(c, request_id));
+        Discloses::of(())
+    }
+
+    /// `export circuit shaVerify(requestId, output, r, s, pk): []`
+    #[circuit]
+    pub fn sha_verify(
+        c: &mut Circuit3,
+        request_id: B32<Private>,
+        output: BytesN<Private, 128>,
+        r: B32<Private>,
+        s: B32<Private>,
+        pk: Secp256k1Point,
+    ) -> Discloses<(AttestedRequestId,)> {
+        let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
+        hash_verify(c, hash, request_id, output, r, s, pk);
+        Discloses::of(())
+    }
+
+    /// `export circuit keccakVerify(requestId, output, r, s, pk): []`
+    #[circuit]
+    pub fn keccak_verify(
+        c: &mut Circuit3,
+        request_id: B32<Private>,
+        output: BytesN<Private, 128>,
+        r: B32<Private>,
+        s: B32<Private>,
+        pk: Secp256k1Point,
+    ) -> Discloses<(AttestedRequestId,)> {
+        let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
+        hash_verify(c, hash, request_id, output, r, s, pk);
+        Discloses::of(())
+    }
 }
 
 /// The ledger field indices (callCount, verified), for reference

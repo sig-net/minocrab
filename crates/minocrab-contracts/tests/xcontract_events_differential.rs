@@ -349,7 +349,7 @@ impl Scenario {
 #[test]
 fn deposit_via_vault_matches_corpus() {
     let theirs = corpus_zkir("vault", "depositViaVault");
-    let ours = xce::deposit_via_vault().ir;
+    let ours = xce::XcontractEvents::deposit_via_vault().ir;
     let s = Scenario::new();
     assert_call_compatible(&ours, &theirs, &s.preimage_vault());
 }
@@ -357,7 +357,7 @@ fn deposit_via_vault_matches_corpus() {
 #[test]
 fn token_deposit_matches_corpus() {
     let theirs = corpus_zkir("token", "deposit");
-    let ours = xce::token_deposit().ir;
+    let ours = xce::XcontractEvents::token_deposit().ir;
     let s = Scenario::new();
     assert_call_compatible(&ours, &theirs, &s.preimage_token());
 }
@@ -368,7 +368,7 @@ fn token_deposit_matches_corpus() {
 #[test]
 fn deposit_via_vault_rejects_tampering() {
     let theirs = corpus_zkir("vault", "depositViaVault");
-    let ours = xce::deposit_via_vault().ir;
+    let ours = xce::XcontractEvents::deposit_via_vault().ir;
     let s = Scenario::new();
 
     let pi = s.preimage_vault();
@@ -396,7 +396,7 @@ fn deposit_via_vault_rejects_tampering() {
 
 // ---- M11 stage 6: the Borsh twin ---------------------------------------------
 
-/// `xcontract_events_borsh::token_deposit` emits the same bytes as the
+/// `xcontract_events_borsh::XcontractEventsBorsh::token_deposit` emits the same bytes as the
 /// original — as BYTE-IDENTICAL ZKIR — with both serializations built from
 /// declared types: the 256-byte payload (56 Borsh bytes then the zero pad,
 /// hashed whole) and the 288-byte `Misc` envelope (`LEN` exactly 288, so no
@@ -406,8 +406,8 @@ fn deposit_via_vault_rejects_tampering() {
 fn borsh_twin_is_byte_identical_to_the_original() {
     use minocrab_zkir::v3::to_zkir_string;
     assert_eq!(
-        to_zkir_string(&xce::token_deposit().ir).expect("the original serializes"),
-        to_zkir_string(&minocrab_contracts::xcontract_events_borsh::token_deposit().ir)
+        to_zkir_string(&xce::XcontractEvents::token_deposit().ir).expect("the original serializes"),
+        to_zkir_string(&minocrab_contracts::xcontract_events_borsh::XcontractEventsBorsh::token_deposit().ir)
             .expect("the twin serializes"),
         "the Borsh twin of token_deposit is not byte-identical to the pinned original"
     );
@@ -420,7 +420,7 @@ fn borsh_twin_is_byte_identical_to_the_original() {
 #[test]
 fn borsh_twin_matches_the_corpus() {
     let theirs = corpus_zkir("token", "deposit");
-    let ours = minocrab_contracts::xcontract_events_borsh::token_deposit().ir;
+    let ours = minocrab_contracts::xcontract_events_borsh::XcontractEventsBorsh::token_deposit().ir;
     let s = Scenario::new();
     assert_call_compatible(&ours, &theirs, &s.preimage_token());
 }

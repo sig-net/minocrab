@@ -27,7 +27,7 @@ use minocrab_ledger::{
 };
 // `CircuitBorsh` names both the trait and the derive macro.
 use minocrab_std::v3::borsh::{self, CircuitBorsh};
-use minocrab_std::v3::{circuit, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
+use minocrab_std::v3::{contract, BytesN, ContractAddress, Disclose, Discloses, Uint, Vis3, B32};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 use crate::events_borsh::DepositEvent;
@@ -50,63 +50,69 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
     LedgerValue::bytes(32, vec![ImpactElem::Wire(b.hi), ImpactElem::Wire(b.lo)])
 }
 
-/// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
-/// Bytes<32>` — the token-side callee, with both serializations built from
-/// declared types.
-#[circuit(output = "event hash")]
-pub fn token_deposit(
-    c: &mut Circuit3,
-    amount: Uint<128>,
-    caller: ContractAddress<Private>,
-) -> Discloses<(Amount, Caller), B32<Public>> {
-    let caller = caller.bytes();
-    let a = amount.disclose_as::<Amount>(c).field();
-    let cal = caller.disclose_as::<Caller>(c);
-    let one = c.constant(1u64);
+/// `xcontract-events`, through the Borsh API — the token-side callee.
+pub struct XcontractEventsBorsh;
 
-    // const sequence = depositCount as Uint<64> — read before the increment.
-    let sequence = counter_read(c, one, DEPOSIT_COUNT);
-    emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
-    let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
-    emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
+#[contract]
+impl XcontractEventsBorsh {
+    /// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
+    /// Bytes<32>` — the token-side callee, with both serializations built from
+    /// declared types.
+    #[circuit(output = "event hash")]
+    pub fn token_deposit(
+        c: &mut Circuit3,
+        amount: Uint<128>,
+        caller: ContractAddress<Private>,
+    ) -> Discloses<(Amount, Caller), B32<Public>> {
+        let caller = caller.bytes();
+        let a = amount.disclose_as::<Amount>(c).field();
+        let cal = caller.disclose_as::<Caller>(c);
+        let one = c.constant(1u64);
 
-    // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
-    // The leaves are canonical where they are produced (argument constraints,
-    // a Bytes<8> cell read), so `constrain_canonical` is not re-emitted — see
-    // `events_borsh`'s note; the bytes are pinned against compactc's artifact
-    // in tests/xcontract_events_differential.rs.
-    let event = DepositEvent {
-        amount: minocrab_std::v3::Uint::from_field_unchecked(a),
-        sequence: minocrab_std::v3::Uint::from_field_unchecked(sequence),
-        recipient: cal,
-    };
-    let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);
+        // const sequence = depositCount as Uint<64> — read before the increment.
+        let sequence = counter_read(c, one, DEPOSIT_COUNT);
+        emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
+        let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
+        emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
 
-    // eventHash = persistentHash<Bytes<256>>(payload) — over the WHOLE
-    // envelope, Borsh bytes and zero pad alike, as deployed.
-    let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
-    let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
-    let digest = c.persistent_hash(alignment, &limbs);
-    let event_hash = B32::from_typed(c, digest);
+        // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
+        // The leaves are canonical where they are produced (argument constraints,
+        // a Bytes<8> cell read), so `constrain_canonical` is not re-emitted — see
+        // `events_borsh`'s note; the bytes are pinned against compactc's artifact
+        // in tests/xcontract_events_differential.rs.
+        let event = DepositEvent {
+            amount: minocrab_std::v3::Uint::from_field_unchecked(a),
+            sequence: minocrab_std::v3::Uint::from_field_unchecked(sequence),
+            recipient: cal,
+        };
+        let payload = borsh::to_bytes::<PAYLOAD_SIZE, Public, _>(c, &event);
 
-    emit(
-        c,
-        one,
-        &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
-    );
+        // eventHash = persistentHash<Bytes<256>>(payload) — over the WHOLE
+        // envelope, Borsh bytes and zero pad alike, as deployed.
+        let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
+        let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
+        let digest = c.persistent_hash(alignment, &limbs);
+        let event_hash = B32::from_typed(c, digest);
 
-    // emit (Misc { name: pad(32, "deposit"), payload }) — LEN is exactly 288,
-    // so this envelope has no pad: it is the plain Borsh encoding.
-    let misc = Misc {
-        name: crate::events_borsh::event_name_literal(c, EVENT_NAME),
-        payload,
-    };
-    let misc = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
-    let misc_val = LedgerValue::bytes(
-        MISC_SIZE as u32,
-        misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-    );
-    emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        emit(
+            c,
+            one,
+            &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
+        );
 
-    Discloses::of(event_hash)
+        // emit (Misc { name: pad(32, "deposit"), payload }) — LEN is exactly 288,
+        // so this envelope has no pad: it is the plain Borsh encoding.
+        let misc = Misc {
+            name: crate::events_borsh::event_name_literal(c, EVENT_NAME),
+            payload,
+        };
+        let misc = borsh::to_bytes::<MISC_SIZE, Public, _>(c, &misc);
+        let misc_val = LedgerValue::bytes(
+            MISC_SIZE as u32,
+            misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+
+        Discloses::of(event_hash)
+    }
 }

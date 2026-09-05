@@ -278,12 +278,12 @@ fn entry_point_consts_are_the_derived_names() {
 fn the_ported_circuits_still_call_through_the_interfaces() {
     assert_eq!(
         zkir(&xcall::call_once()),
-        zkir(&xcall::call_emit()),
+        zkir(&xcall::Xcall::call_emit()),
         "depositEmit differs from deposit only in a witness"
     );
     // depositViaVault's result limbs carry the Bytes<32> constraints,
     // which is visible as two ConstrainBits right after the witnesses.
-    let ir = zkir(&xcontract_events::deposit_via_vault());
+    let ir = zkir(&xcontract_events::XcontractEvents::deposit_via_vault());
     assert!(ir.contains("constrain_bits"), "{ir}");
 }
 

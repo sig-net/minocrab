@@ -238,53 +238,52 @@ pub fn circuits() -> Vec<Circuit> {
             ($name, { $f } as fn() -> Compiled3)
         };
     }
+
+    // M32 A: every contract below is a `#[contract]` block now, so its
+    // circuit set is DERIVED (`Contract::CIRCUITS`) rather than hand-listed —
+    // a circuit added to one of them appears here without anyone editing
+    // this file. `of()` names each entry `module::circuit`, matching what
+    // this list named things by hand, so the frozen snapshots below don't
+    // move. Two shapes can't be `of()`-derived in one call and stay in
+    // their ORIGINAL positions instead (both gates row_snapshot and
+    // interface_snapshot on): `erc20_vault_pending`, whose hand-written
+    // order interleaves `approve_router` earlier than the source declares
+    // it, and `xcall`, whose derived circuits sit between `entry()`-built
+    // ones (see below). Listing those individually still calls through the
+    // derived `Contract::circuit()` — only the BULK union is skipped.
     let mut listed: Vec<Circuit> = vec![
         // erc20-vault, the compat port of the seventeen-circuit vault
         // (signet-midnight-examples 0d9c1660, M28): PI-equal to compactc.
-        c!("erc20_vault::initialise", || erc20_vault::initialise()),
-        c!("erc20_vault::approve_stata", || erc20_vault::approve_stata()),
-        c!("erc20_vault::approve_router", || erc20_vault::approve_router()),
-        c!("erc20_vault::start_deposit", || erc20_vault::start_deposit()),
-        c!("erc20_vault::complete_deposit", || erc20_vault::complete_deposit()),
-        c!("erc20_vault::start_withdraw", || erc20_vault::start_withdraw()),
-        c!("erc20_vault::complete_withdraw", || erc20_vault::complete_withdraw()),
-        c!("erc20_vault::refund_withdraw", || erc20_vault::refund_withdraw()),
-        c!("erc20_vault::start_swap", || erc20_vault::start_swap()),
-        c!("erc20_vault::complete_swap", || erc20_vault::complete_swap()),
-        c!("erc20_vault::refund_swap", || erc20_vault::refund_swap()),
-        c!("erc20_vault::start_supply", || erc20_vault::start_supply()),
-        c!("erc20_vault::complete_supply", || erc20_vault::complete_supply()),
-        c!("erc20_vault::refund_supply", || erc20_vault::refund_supply()),
-        c!("erc20_vault::start_redeem", || erc20_vault::start_redeem()),
-        c!("erc20_vault::complete_redeem", || erc20_vault::complete_redeem()),
-        c!("erc20_vault::refund_redeem", || erc20_vault::refund_redeem()),
-        // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
-        c!("erc20_vault_pending::initialize", || erc20_vault_pending::initialize()),
-        c!("erc20_vault_pending::deposit", || erc20_vault_pending::deposit()),
-        c!("erc20_vault_pending::claim", || erc20_vault_pending::claim()),
-        c!("erc20_vault_pending::approve_router", || erc20_vault_pending::approve_router()),
-        c!("erc20_vault_pending::withdraw", || erc20_vault_pending::withdraw()),
-        c!("erc20_vault_pending::complete_withdraw", || erc20_vault_pending::complete_withdraw()),
-        c!("erc20_vault_pending::refund_withdrawal", || erc20_vault_pending::refund_withdrawal()),
-        c!("erc20_vault_pending::swap", || erc20_vault_pending::swap()),
-        c!("erc20_vault_pending::complete_swap", || erc20_vault_pending::complete_swap()),
-        c!("erc20_vault_pending::refund_swap", || erc20_vault_pending::refund_swap()),
-        c!("erc20_vault_pending::approve_stata", || erc20_vault_pending::approve_stata()),
-        c!("erc20_vault_pending::supply", || erc20_vault_pending::supply()),
-        c!("erc20_vault_pending::complete_supply", || erc20_vault_pending::complete_supply()),
-        c!("erc20_vault_pending::refund_supply", || erc20_vault_pending::refund_supply()),
-        c!("erc20_vault_pending::redeem", || erc20_vault_pending::redeem()),
-        c!("erc20_vault_pending::complete_redeem", || erc20_vault_pending::complete_redeem()),
-        c!("erc20_vault_pending::refund_redeem", || erc20_vault_pending::refund_redeem()),
-        c!("signet_contract::sign_bidirectional", || signet_contract::sign_bidirectional()),
-        c!("signet_contract::respond", || signet_contract::respond()),
-        c!("signet_contract::respond_bidirectional", || {
-            signet_contract::respond_bidirectional()
-        }),
-        c!("attest::map_only", || attest::map_only()),
-        c!("attest::verify_only", || attest::verify_only()),
-        c!("attest::sha_verify", || attest::sha_verify()),
-        c!("attest::keccak_verify", || attest::keccak_verify()),
+    ];
+    listed.extend(of("erc20_vault", &erc20_vault::Vault::CIRCUITS));
+    // M35 rung C: the vault on `Pending` — ten circuits (refund per slot).
+    // Individually listed (not `of()`-unioned): the frozen snapshot orders
+    // `approve_router` right after `claim`, but the source (preserved in
+    // its EXISTING order, per the migration's zero-movement rule) declares
+    // it after `refund_swap` — the two orders disagree, and the snapshot
+    // wins.
+    listed.extend([
+        c!("erc20_vault_pending::initialize", || erc20_vault_pending::Vault::initialize()),
+        c!("erc20_vault_pending::deposit", || erc20_vault_pending::Vault::deposit()),
+        c!("erc20_vault_pending::claim", || erc20_vault_pending::Vault::claim()),
+        c!("erc20_vault_pending::approve_router", || erc20_vault_pending::Vault::approve_router()),
+        c!("erc20_vault_pending::withdraw", || erc20_vault_pending::Vault::withdraw()),
+        c!("erc20_vault_pending::complete_withdraw", || erc20_vault_pending::Vault::complete_withdraw()),
+        c!("erc20_vault_pending::refund_withdrawal", || erc20_vault_pending::Vault::refund_withdrawal()),
+        c!("erc20_vault_pending::swap", || erc20_vault_pending::Vault::swap()),
+        c!("erc20_vault_pending::complete_swap", || erc20_vault_pending::Vault::complete_swap()),
+        c!("erc20_vault_pending::refund_swap", || erc20_vault_pending::Vault::refund_swap()),
+        c!("erc20_vault_pending::approve_stata", || erc20_vault_pending::Vault::approve_stata()),
+        c!("erc20_vault_pending::supply", || erc20_vault_pending::Vault::supply()),
+        c!("erc20_vault_pending::complete_supply", || erc20_vault_pending::Vault::complete_supply()),
+        c!("erc20_vault_pending::refund_supply", || erc20_vault_pending::Vault::refund_supply()),
+        c!("erc20_vault_pending::redeem", || erc20_vault_pending::Vault::redeem()),
+        c!("erc20_vault_pending::complete_redeem", || erc20_vault_pending::Vault::complete_redeem()),
+        c!("erc20_vault_pending::refund_redeem", || erc20_vault_pending::Vault::refund_redeem()),
+    ]);
+    listed.extend(of("signet_contract", &signet_contract::SignetContract::CIRCUITS));
+    listed.extend(of("attest", &attest::Attest::CIRCUITS));
+    listed.extend([
         c!("events::base", || events::base()),
         c!("events::emit_n(1)", || events::emit_n(1)),
         c!("events::emit_n(2)", || events::emit_n(2)),
@@ -295,6 +294,11 @@ pub fn circuits() -> Vec<Circuit> {
         c!("events_borsh::emit_n(1)", || events_borsh::emit_n(1)),
         c!("events_borsh::emit_n(2)", || events_borsh::emit_n(2)),
         c!("events_borsh::emit_n(4)", || events_borsh::emit_n(4)),
+        // `hashing`/`keccak` (M9 phase 5): the width sweep is built through
+        // [`hashing::control`] etc., a Rust VALUE parameterizing the family,
+        // so it has no `#[circuit]` to derive from — see that module's docs.
+        // `persistent_vec8`, the one fixed-width circuit in the family, IS
+        // `#[contract]`-derived (below, via `of("hashing", ..)`).
         c!("hashing::control(32)", || hashing::control(32)),
         c!("hashing::control(64)", || hashing::control(64)),
         c!("hashing::control(128)", || hashing::control(128)),
@@ -311,125 +315,62 @@ pub fn circuits() -> Vec<Circuit> {
         c!("hashing::transient(32)", || hashing::transient(32)),
         c!("hashing::transient(256)", || hashing::transient(256)),
         c!("hashing::transient(1024)", || hashing::transient(1024)),
-        c!("hashing::persistent_vec8", || hashing::persistent_vec8()),
-        c!("xcall::local_base", || xcall::local_base()),
+    ]);
+    listed.extend(of("hashing", &hashing::Hashing::CIRCUITS));
+    // `xcall` (M5): individually listed, like `erc20_vault_pending` above —
+    // its derived circuits (`local_base`, `call_emit`, `call_big`,
+    // `target_deposit_big`) sit BETWEEN `entry()`-built family members
+    // (`call_once`, `call_once_bound`, `call_twice`, `target_deposit`,
+    // `target_deposit_emit`) in the frozen snapshot's order, so no single
+    // `of()` call could reproduce it — the derived ones still call through
+    // `Xcall::circuit()`.
+    listed.extend([
+        c!("xcall::local_base", || xcall::Xcall::local_base()),
         c!("xcall::call_once", || xcall::call_once()),
         // Byte-identical to call_once (xcall_differential pins it); listed so
         // the instruments see it under its own name (tests/circuit_closure.rs).
-        c!("xcall::call_emit", || xcall::call_emit()),
+        c!("xcall::call_emit", || xcall::Xcall::call_emit()),
         c!("xcall::call_once_bound", || xcall::call_once_bound()),
         c!("xcall::call_twice", || xcall::call_twice()),
-        c!("xcall::call_big", || xcall::call_big()),
+        c!("xcall::call_big", || xcall::Xcall::call_big()),
         c!("xcall::target_deposit", || xcall::target_deposit()),
         c!("xcall::target_deposit_emit", || xcall::target_deposit_emit()),
-        c!("xcall::target_deposit_big", || xcall::target_deposit_big()),
-        c!("xcall_with_payment::call_once", || xcall_with_payment::call_once()),
-        c!("xcall_with_payment::request", || xcall_with_payment::request()),
-        c!("xcall_with_payment::notify", || xcall_with_payment::notify()),
-        c!("xcall_with_payment::pay", || xcall_with_payment::pay()),
-        c!("xcall_with_payment::confirm_request", || xcall_with_payment::confirm_request()),
-        c!("xcontract_events::deposit_via_vault", || xcontract_events::deposit_via_vault()),
-        c!("xcontract_events::token_deposit", || xcontract_events::token_deposit()),
-        c!("xcontract_events_borsh::token_deposit", || {
-            xcontract_events_borsh::token_deposit()
-        }),
-        c!("mint_tokens::mint_with_recipient_argument", || {
-            mint_tokens::mint_with_recipient_argument()
-        }),
-        c!("mint_tokens::mint_with_recipient_own_public_key", || {
-            mint_tokens::mint_with_recipient_own_public_key()
-        }),
-        c!("serde_builtin::check_roundtrip", || serde_builtin::check_roundtrip()),
-        c!("test_caller::initialise", || test_caller::initialise()),
-        // `bounded.compact` (M14): Compact's `Uint<0..n>` at every shape the
-        // bound can take, one circuit each. The only block here whose Compact
-        // source is OURS rather than the corpus's — no compiled corpus
-        // artifact carries a non-power-of-two bound
-        // (tests/bounded_differential.rs has the scan).
-        c!("bounded::b10", || bounded::b10()),
-        c!("bounded::b300", || bounded::b300()),
-        c!("bounded::b1000", || bounded::b1000()),
-        c!("bounded::b70000", || bounded::b70000()),
-        c!("bounded::b1", || bounded::b1()),
-        c!("bounded::b2", || bounded::b2()),
-        c!("bounded::b256", || bounded::b256()),
-        c!("bounded::b255", || bounded::b255()),
-        c!("bounded::b_enum", || bounded::b_enum()),
-        c!("bounded::b_struct", || bounded::b_struct()),
-        c!("bounded::b_compare", || bounded::b_compare()),
-        // `opaque.compact` (M15): Compact's `Opaque<'ts-type'>` in every
-        // position it can occupy, plus the two CURVE POINT types, which
-        // compactc's ABI also spells `Opaque`. Ours rather than the corpus's
-        // for the same reason as `bounded` above: the corpus's 74 `Opaque`
-        // nodes are all in v2 artifacts except four `Secp256k1Point`s
-        // (tests/opaque_differential.rs has the scan).
-        c!("opaque::op_arg", || opaque::op_arg()),
-        c!("opaque::op_ret", || opaque::op_ret()),
-        c!("opaque::op_eq", || opaque::op_eq()),
-        c!("opaque::op_default", || opaque::op_default()),
-        c!("opaque::op_cell", || opaque::op_cell()),
-        c!("opaque::op_witness", || opaque::op_witness()),
-        c!("opaque::op_map_value", || opaque::op_map_value()),
-        c!("opaque::op_map_key", || opaque::op_map_key()),
-        c!("opaque::op_set", || opaque::op_set()),
-        c!("opaque::op_maybe", || opaque::op_maybe()),
-        c!("opaque::op_bytes", || opaque::op_bytes()),
-        c!("opaque::op_struct", || opaque::op_struct()),
-        c!("opaque::op_point", || opaque::op_point()),
-        c!("opaque::op_jubjub", || opaque::op_jubjub()),
-        // `adts.compact` (M16): every ledger-ADT operation Compact exposes.
-        // Ours rather than the corpus's for the third time and the same
-        // reason — the corpus's `List`/`MerkleTree`/`HistoricMerkleTree`
-        // declarations are in v2 artifacts, and its v3 ones exercise three of
-        // these thirty-one (tests/adts_differential.rs has the scan).
-        c!("adts::set_insert", || adts::set_insert()),
-        c!("adts::set_member", || adts::set_member()),
-        c!("adts::set_remove", || adts::set_remove()),
-        c!("adts::set_size", || adts::set_size()),
-        c!("adts::set_is_empty", || adts::set_is_empty()),
-        c!("adts::set_reset", || adts::set_reset()),
-        c!("adts::list_push_front", || adts::list_push_front()),
-        c!("adts::list_pop_front", || adts::list_pop_front()),
-        c!("adts::list_head", || adts::list_head()),
-        c!("adts::list_length", || adts::list_length()),
-        c!("adts::list_is_empty", || adts::list_is_empty()),
-        c!("adts::list_reset", || adts::list_reset()),
-        c!("adts::map_insert_default", || adts::map_insert_default()),
-        c!("adts::map_reset", || adts::map_reset()),
-        c!("adts::mt_insert", || adts::mt_insert()),
-        c!("adts::mt_insert_index", || adts::mt_insert_index()),
-        c!("adts::mt_insert_hash", || adts::mt_insert_hash()),
-        c!("adts::mt_insert_hash_index", || adts::mt_insert_hash_index()),
-        c!("adts::mt_insert_index_default", || {
-            adts::mt_insert_index_default()
-        }),
-        c!("adts::mt_check_root", || adts::mt_check_root()),
-        c!("adts::mt_is_full", || adts::mt_is_full()),
-        c!("adts::mt_reset", || adts::mt_reset()),
-        c!("adts::hmt_insert", || adts::hmt_insert()),
-        c!("adts::hmt_insert_index", || adts::hmt_insert_index()),
-        c!("adts::hmt_insert_hash", || adts::hmt_insert_hash()),
-        c!("adts::hmt_insert_hash_index", || {
-            adts::hmt_insert_hash_index()
-        }),
-        c!("adts::hmt_insert_index_default", || {
-            adts::hmt_insert_index_default()
-        }),
-        c!("adts::hmt_check_root", || adts::hmt_check_root()),
-        c!("adts::hmt_is_full", || adts::hmt_is_full()),
-        c!("adts::hmt_reset_history", || adts::hmt_reset_history()),
-        c!("adts::hmt_reset", || adts::hmt_reset()),
-        // `kernel.compact` (M17): the kernel primitives and the token-stdlib
-        // circuits built on them. Ours rather than the corpus's for the fourth
-        // time and the same measured reason — the v3 corpus's kernel/token
-        // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
-        // has the scan). `kernel.checkpoint()` is absent because compactc's
-        // v3 backend cannot compile it at all.
-    ];
-    // DERIVED, not listed (the `#[contract]` block): every circuit
-    // `KernelTokens` exports, named the way this list names things. A circuit
-    // added to that contract appears here without anyone editing this file,
-    // which is the completeness the hand-written entries never had.
+        c!("xcall::target_deposit_big", || xcall::Xcall::target_deposit_big()),
+    ]);
+    listed.extend(of("xcall_with_payment", &xcall_with_payment::XcallWithPayment::CIRCUITS));
+    listed.extend(of("xcontract_events", &xcontract_events::XcontractEvents::CIRCUITS));
+    listed.extend(of(
+        "xcontract_events_borsh",
+        &xcontract_events_borsh::XcontractEventsBorsh::CIRCUITS,
+    ));
+    listed.extend(of("mint_tokens", &mint_tokens::MintTokens::CIRCUITS));
+    listed.extend(of("serde_builtin", &serde_builtin::SerdeBuiltin::CIRCUITS));
+    listed.extend(of("test_caller", &test_caller::TestCaller::CIRCUITS));
+    // `bounded.compact` (M14): Compact's `Uint<0..n>` at every shape the
+    // bound can take, one circuit each. The only block here whose Compact
+    // source is OURS rather than the corpus's — no compiled corpus
+    // artifact carries a non-power-of-two bound
+    // (tests/bounded_differential.rs has the scan).
+    listed.extend(of("bounded", &bounded::Bounded::CIRCUITS));
+    // `opaque.compact` (M15): Compact's `Opaque<'ts-type'>` in every
+    // position it can occupy, plus the two CURVE POINT types, which
+    // compactc's ABI also spells `Opaque`. Ours rather than the corpus's
+    // for the same reason as `bounded` above: the corpus's 74 `Opaque`
+    // nodes are all in v2 artifacts except four `Secp256k1Point`s
+    // (tests/opaque_differential.rs has the scan).
+    listed.extend(of("opaque", &opaque::OpaqueLedger::CIRCUITS));
+    // `adts.compact` (M16): every ledger-ADT operation Compact exposes.
+    // Ours rather than the corpus's for the third time and the same
+    // reason — the corpus's `List`/`MerkleTree`/`HistoricMerkleTree`
+    // declarations are in v2 artifacts, and its v3 ones exercise three of
+    // these thirty-one (tests/adts_differential.rs has the scan).
+    listed.extend(of("adts", &adts::Adts::CIRCUITS));
+    // `kernel.compact` (M17): the kernel primitives and the token-stdlib
+    // circuits built on them. Ours rather than the corpus's for the fourth
+    // time and the same measured reason — the v3 corpus's kernel/token
+    // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
+    // has the scan). `kernel.checkpoint()` is absent because compactc's
+    // v3 backend cannot compile it at all.
     listed.extend(of(
         "kernel_tokens",
         &kernel_tokens::KernelTokens::CIRCUITS,
@@ -438,31 +379,20 @@ pub fn circuits() -> Vec<Circuit> {
     // ADTs — `Set.insertCoin`, `Map.insertCoin`, `List.pushFrontCoin`. Ours
     // rather than the corpus's for the fifth time, and here because the
     // demand is OpenZeppelin's and OZ's artifacts are ZKIR v2
-    // (tests/coins_differential.rs has the scan). Derived, like
-    // `kernel_tokens` above.
+    // (tests/coins_differential.rs has the scan).
     listed.extend(of("coins", &coins::Coins::CIRCUITS));
     // `nested.compact` (M22 stage B1): NESTED ledger ADTs — `Map<K, Map>`,
     // `Map<K, List>`, `Map<K, Set>`, `Map<K, Counter>`, the two trees, and a
     // three-level `Map`. Built at the RAW op layer (`&[LedgerKey]` by hand),
     // because the typed surface is stage B2 and the encoding had to be
-    // proven first. Derived, like `coins` above.
+    // proven first.
     listed.extend(of("nested", &nested::Nested::CIRCUITS));
     // `manager.compact` (aa-midnight-evm-experiment, pinned in
     // corpus/sources.json): the AA custody contract's nine provable
     // circuits, ported SEMANTICALLY rather than instruction-mirroring —
     // the rows here are deliberately BELOW compactc's artifacts
     // (tests/manager_differential.rs holds the PI-equality warrant).
-    listed.extend([
-        c!("manager::is_registered", || manager::is_registered()),
-        c!("manager::account_record", || manager::account_record()),
-        c!("manager::shielded_account_balance", || manager::shielded_account_balance()),
-        c!("manager::unshielded_account_balance", || manager::unshielded_account_balance()),
-        c!("manager::pool_value", || manager::pool_value()),
-        c!("manager::pool_has_colour", || manager::pool_has_colour()),
-        c!("manager::deposit_shielded", || manager::deposit_shielded()),
-        c!("manager::deposit_unshielded", || manager::deposit_unshielded()),
-        c!("manager::execute", || manager::execute()),
-    ]);
+    listed.extend(of("manager", &manager::Manager::CIRCUITS));
     listed
 }
 

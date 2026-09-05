@@ -49,7 +49,7 @@ fn report_lines(compiled: &Compiled3, pi: &ProofPreimage) -> Vec<String> {
 /// Every disclosure `startDeposit` makes, with this run's values.
 #[test]
 fn the_start_deposit_disclosure_report_is_valued() {
-    let compiled = erc20_vault::start_deposit();
+    let compiled = erc20_vault::Vault::start_deposit();
     let pi = StartDepositScenario::new().preimage();
     let lines = report_lines(&compiled, &pi);
 
@@ -95,7 +95,7 @@ fn summarize(lines: &[String]) -> Vec<String> {
 #[test]
 #[ignore]
 fn print_start_deposit_disclosure_report() {
-    let compiled = erc20_vault::start_deposit();
+    let compiled = erc20_vault::Vault::start_deposit();
     let pi = StartDepositScenario::new().preimage();
     for line in summarize(&report_lines(&compiled, &pi)) {
         println!("{line}");

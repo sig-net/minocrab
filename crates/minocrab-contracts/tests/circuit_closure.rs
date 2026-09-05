@@ -8,7 +8,7 @@
 //! was covered by nothing. VERIFICATION.md §5 admitted this; the external
 //! review's §7.4 asked for the check. The `#[contract]` migration derives the
 //! set for its adopters; this test closes the gap for everything else, and it
-//! found `xcall::call_emit` on its first run.
+//! found `xcall::Xcall::call_emit` on its first run.
 //!
 //! Textual on purpose, like the escape-hatch greps: the source is the
 //! authority on what carries the attribute, and a Rust-level registry would

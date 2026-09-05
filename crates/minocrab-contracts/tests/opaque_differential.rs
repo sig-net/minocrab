@@ -208,20 +208,20 @@ fn canonical(ir: &IrSource) -> String {
 /// Every circuit of the fixture: compactc's artifact name and our builder.
 fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     vec![
-        ("opArg", opaque::op_arg as fn() -> Compiled3),
-        ("opRet", opaque::op_ret),
-        ("opEq", opaque::op_eq),
-        ("opCell", opaque::op_cell),
-        ("opDefault", opaque::op_default),
-        ("opWitness", opaque::op_witness),
-        ("opMapValue", opaque::op_map_value),
-        ("opMapKey", opaque::op_map_key),
-        ("opSet", opaque::op_set),
-        ("opMaybe", opaque::op_maybe),
-        ("opBytes", opaque::op_bytes),
-        ("opStruct", opaque::op_struct),
-        ("opPoint", opaque::op_point),
-        ("opJubjub", opaque::op_jubjub),
+        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled3),
+        ("opRet", opaque::OpaqueLedger::op_ret),
+        ("opEq", opaque::OpaqueLedger::op_eq),
+        ("opCell", opaque::OpaqueLedger::op_cell),
+        ("opDefault", opaque::OpaqueLedger::op_default),
+        ("opWitness", opaque::OpaqueLedger::op_witness),
+        ("opMapValue", opaque::OpaqueLedger::op_map_value),
+        ("opMapKey", opaque::OpaqueLedger::op_map_key),
+        ("opSet", opaque::OpaqueLedger::op_set),
+        ("opMaybe", opaque::OpaqueLedger::op_maybe),
+        ("opBytes", opaque::OpaqueLedger::op_bytes),
+        ("opStruct", opaque::OpaqueLedger::op_struct),
+        ("opPoint", opaque::OpaqueLedger::op_point),
+        ("opJubjub", opaque::OpaqueLedger::op_jubjub),
     ]
 }
 
@@ -259,7 +259,7 @@ fn identical_instruction_streams() {
 /// equality, so that a future change to both sides at once still fails here.
 #[test]
 fn an_opaque_argument_is_unconstrained() {
-    let ir = opaque::op_arg().ir;
+    let ir = opaque::OpaqueLedger::op_arg().ir;
     let text = to_zkir_string(&ir).expect("serializes");
     for constraint in ["constrain_bits", "constrain_to_boolean", "constrain_eq", "less_than"] {
         assert!(
@@ -269,7 +269,7 @@ fn an_opaque_argument_is_unconstrained() {
     }
     // …while its NEIGHBOUR in `opStruct` does get one, so the absence above is
     // a property of the type and not of the test.
-    let tagged = to_zkir_string(&opaque::op_struct().ir).expect("serializes");
+    let tagged = to_zkir_string(&opaque::OpaqueLedger::op_struct().ir).expect("serializes");
     assert_eq!(
         tagged.matches("constrain_bits").count(),
         1,
@@ -295,7 +295,7 @@ fn the_compress_atom_is_a_transient_commitment() {
             vec![opaque_commitment(bytes)],
             cell_write_transcript(1, opaque_value(bytes)),
         );
-        let ours = opaque::op_cell().ir;
+        let ours = opaque::OpaqueLedger::op_cell().ir;
         let theirs = theirs("opCell");
 
         let our_run = simulate(&ours, &pi)
@@ -330,7 +330,7 @@ fn a_mismatched_commitment_is_rejected_by_both() {
         cell_write_transcript(1, opaque_value(b"goodbye")),
     );
     assert!(
-        simulate(&opaque::op_cell().ir, &pi).is_err(),
+        simulate(&opaque::OpaqueLedger::op_cell().ir, &pi).is_err(),
         "ours accepted a commitment that does not open to the written bytes"
     );
     assert!(
@@ -349,8 +349,8 @@ fn the_increment_only_circuits_are_call_compatible() {
     // into the communications commitment instead. `opEq` returns `a == b` on
     // two equal commitments, hence the `1`.
     for (label, build, inputs, outputs) in [
-        ("opArg", opaque::op_arg as fn() -> Compiled3, vec![name], vec![]),
-        ("opEq", opaque::op_eq, vec![name, name], vec![Fr::from(1u64)]),
+        ("opArg", opaque::OpaqueLedger::op_arg as fn() -> Compiled3, vec![name], vec![]),
+        ("opEq", opaque::OpaqueLedger::op_eq, vec![name, name], vec![Fr::from(1u64)]),
     ] {
         let pi = preimage_out(inputs, increment_transcript(), &outputs);
         let ours = build().ir;

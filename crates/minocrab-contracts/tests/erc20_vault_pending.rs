@@ -57,24 +57,24 @@ fn the_block_is_segmented_past_fifteen_fields() {
 #[test]
 fn no_pair_costs_more_than_the_modern_lineage() {
     let m = |ir: &minocrab_zkir::v3::IrSource| cost(ir);
-    let p_init = m(&pending::initialize().ir);
+    let p_init = m(&pending::Vault::initialize().ir);
     let m_init = modern::INITIALIZE;
-    let p_dep = m(&pending::deposit().ir);
+    let p_dep = m(&pending::Vault::deposit().ir);
     let m_dep = modern::DEPOSIT;
-    let p_claim = m(&pending::claim().ir);
+    let p_claim = m(&pending::Vault::claim().ir);
     let m_claim = modern::CLAIM;
-    let p_wd = m(&pending::withdraw().ir);
+    let p_wd = m(&pending::Vault::withdraw().ir);
     let m_wd = modern::WITHDRAW;
-    let p_cwd = m(&pending::complete_withdraw().ir);
+    let p_cwd = m(&pending::Vault::complete_withdraw().ir);
     let m_cwd = modern::COMPLETE_WITHDRAW;
-    let p_swap = m(&pending::swap().ir);
+    let p_swap = m(&pending::Vault::swap().ir);
     let m_swap = modern::SWAP;
-    let p_cswap = m(&pending::complete_swap().ir);
+    let p_cswap = m(&pending::Vault::complete_swap().ir);
     let m_cswap = modern::COMPLETE_SWAP;
-    let p_appr = m(&pending::approve_router().ir);
+    let p_appr = m(&pending::Vault::approve_router().ir);
     let m_appr = modern::APPROVE_ROUTER;
-    let p_rwd = m(&pending::refund_withdrawal().ir);
-    let p_rsw = m(&pending::refund_swap().ir);
+    let p_rwd = m(&pending::Vault::refund_withdrawal().ir);
+    let p_rsw = m(&pending::Vault::refund_swap().ir);
     let m_ref = modern::REFUND;
 
     let rows: Vec<(&str, (u8, usize), (u8, usize))> = vec![
@@ -120,38 +120,38 @@ fn the_lending_flows_cost_no_more_than_the_compat_port() {
     let rows: Vec<(&str, (u8, usize), (u8, usize))> = vec![
         (
             "approve_stata",
-            cost(&pending::approve_stata().ir),
-            cost(&erc20_vault::approve_stata().ir),
+            cost(&pending::Vault::approve_stata().ir),
+            cost(&erc20_vault::Vault::approve_stata().ir),
         ),
         (
             "supply / start_supply",
-            cost(&pending::supply().ir),
-            cost(&erc20_vault::start_supply().ir),
+            cost(&pending::Vault::supply().ir),
+            cost(&erc20_vault::Vault::start_supply().ir),
         ),
         (
             "complete_supply",
-            cost(&pending::complete_supply().ir),
-            cost(&erc20_vault::complete_supply().ir),
+            cost(&pending::Vault::complete_supply().ir),
+            cost(&erc20_vault::Vault::complete_supply().ir),
         ),
         (
             "refund_supply",
-            cost(&pending::refund_supply().ir),
-            cost(&erc20_vault::refund_supply().ir),
+            cost(&pending::Vault::refund_supply().ir),
+            cost(&erc20_vault::Vault::refund_supply().ir),
         ),
         (
             "redeem / start_redeem",
-            cost(&pending::redeem().ir),
-            cost(&erc20_vault::start_redeem().ir),
+            cost(&pending::Vault::redeem().ir),
+            cost(&erc20_vault::Vault::start_redeem().ir),
         ),
         (
             "complete_redeem",
-            cost(&pending::complete_redeem().ir),
-            cost(&erc20_vault::complete_redeem().ir),
+            cost(&pending::Vault::complete_redeem().ir),
+            cost(&erc20_vault::Vault::complete_redeem().ir),
         ),
         (
             "refund_redeem",
-            cost(&pending::refund_redeem().ir),
-            cost(&erc20_vault::refund_redeem().ir),
+            cost(&pending::Vault::refund_redeem().ir),
+            cost(&erc20_vault::Vault::refund_redeem().ir),
         ),
     ];
     for (name, (k, r), (k_c, r_c)) in &rows {

@@ -45,7 +45,7 @@ use minocrab_std::v3::kernel;
 use minocrab_std::v3::kernel::SelfAddress;
 use minocrab_std::v3::{
     CoinColor, CoinNonce,
-    circuit, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
+    contract, coin_commitment_to_contract, coin_nullifier_contract, ge, greater_than as gt, is_true, label, le,
     Bool, Bytes, CircuitArg, CoinRecipient, ContractAddress, Disclose, Discloses, Either, Ledger,
     LedgerCell, LedgerMap, LedgerSet, QualifiedShieldedCoinInfo3, Secp256k1Point, Secp256k1Scalar,
     ShieldedCoinInfo3, Uint, UserAddress, B32,
@@ -451,14 +451,452 @@ impl ExecutePayloadArg {
 
 // --- readers -----------------------------------------------------------------
 
-/// `export circuit isRegistered(owner: Bytes<32>): Boolean`.
-#[circuit(output = "registered")]
-pub fn is_registered(
-    c: &mut Circuit3,
-    owner: B32<Private>,
-) -> Discloses<(QueriedAccount,), Bool<Public>> {
-    let owner = owner.disclose_as::<QueriedAccount>(c);
-    Discloses::of(MANAGER.accounts.member(c, &owner))
+#[contract]
+impl Manager {
+    /// `export circuit isRegistered(owner: Bytes<32>): Boolean`.
+    #[circuit(output = "registered")]
+    pub fn is_registered(
+        c: &mut Circuit3,
+        owner: B32<Private>,
+    ) -> Discloses<(QueriedAccount,), Bool<Public>> {
+        let owner = owner.disclose_as::<QueriedAccount>(c);
+        Discloses::of(MANAGER.accounts.member(c, &owner))
+    }
+
+    /// `export circuit accountRecord(account: Bytes<32>): AccountRecord` — one
+    /// policy query covering registration, mode, EVM owner and next nonce.
+    /// Unknown accounts return the all-zero inactive record; native records
+    /// return zero owner/nonce WITHOUT reading the EVM maps' values (only their
+    /// membership, asserted absent).
+    #[circuit(output = "record")]
+    pub fn account_record(
+        c: &mut Circuit3,
+        account: B32<Private>,
+    ) -> Discloses<(QueriedAccount,), AccountRecordOut> {
+        let acct = account.disclose_as::<QueriedAccount>(c);
+
+        let registered = MANAGER.accounts.member(c, &acct).field();
+
+        // The mode read carries `registered`, and a SKIPPED read's zero IS the
+        // inactive record's mode — no select anywhere in this circuit, which is
+        // compactc's own shape for the early-return ladder.
+        let mode = MANAGER
+            .account_modes
+            .lookup_guarded(c, registered, &acct)
+            .or_default()
+            .field();
+        let is_native = c.test_eq(mode, 0u64);
+
+        // Native record: no EVM state may exist. The second membership read
+        // short-circuits on the first's result, exactly as `&&` evaluates.
+        let g_native = c.mul(registered, is_native);
+        c.when(g_native, |c| {
+            let m5 = MANAGER.evm_owners.member(c, &acct).field();
+            let n5 = c.not(m5);
+            let zero = c.constant(0u64);
+            let mut m6 = zero;
+            c.when(n5, |c| {
+                m6 = MANAGER.evm_nonces.member(c, &acct).field();
+            });
+            let n6 = c.not(m6);
+            let both = c.mul(n5, n6);
+            c.assert_with(both, Some("native record carries EVM state"));
+        });
+
+        // EVM record: both halves must exist; the lookups' wires are zero on
+        // every other path, which is the record's inactive form already.
+        let is_evm = c.not(is_native);
+        let g_evm = c.mul(registered, is_evm);
+        let zero = c.constant(0u64);
+        let mut owner_v = zero;
+        let mut nonce_v = zero;
+        c.when(g_evm, |c| {
+            let is_one = c.test_eq(mode, 1u64);
+            c.assert_with(is_one, Some("unknown account authorization mode"));
+            let m5 = MANAGER.evm_owners.member(c, &acct).field();
+            let mut m6 = zero;
+            c.when(m5, |c| {
+                m6 = MANAGER.evm_nonces.member(c, &acct).field();
+            });
+            let both = c.mul(m5, m6);
+            c.assert_with(both, Some("EVM record is incomplete"));
+            owner_v = MANAGER.evm_owners.lookup(c, &acct).field();
+            nonce_v = MANAGER.evm_nonces.lookup(c, &acct).field();
+        });
+
+        Discloses::of(AccountRecordOut {
+            registered: Bool::from_field_unchecked(registered),
+            mode: Uint::from_field_unchecked(mode),
+            owner: Bytes::from_field_unchecked(owner_v),
+            next_nonce: Uint::from_field_unchecked(nonce_v),
+        })
+    }
+
+    /// `export circuit shieldedAccountBalance(owner, colour): Uint<128>`.
+    #[circuit(output = "balance")]
+    pub fn shielded_account_balance(
+        c: &mut Circuit3,
+        owner: B32<Private>,
+        colour: CoinColor<Private>,
+    ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
+        let owner = owner.disclose_as::<QueriedAccount>(c);
+        let colour = colour.disclose_as::<QueriedColour>(c);
+        let k = shielded_key(c, &owner, &colour);
+        let v = balance_at(c, &MANAGER.shielded_balances, &k);
+        Discloses::of(Uint::from_field_unchecked(v))
+    }
+
+    /// `export circuit unshieldedAccountBalance(owner, colour): Uint<128>`.
+    #[circuit(output = "balance")]
+    pub fn unshielded_account_balance(
+        c: &mut Circuit3,
+        owner: B32<Private>,
+        colour: CoinColor<Private>,
+    ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
+        let owner = owner.disclose_as::<QueriedAccount>(c);
+        let colour = colour.disclose_as::<QueriedColour>(c);
+        let k = unshielded_key(c, &owner, &colour);
+        let v = balance_at(c, &MANAGER.unshielded_balances, &k);
+        Discloses::of(Uint::from_field_unchecked(v))
+    }
+
+    /// `export circuit poolValue(colour): Uint<128>` — the pooled coin's value,
+    /// 0 for a colour this contract has never seen.
+    #[circuit(output = "value")]
+    pub fn pool_value(
+        c: &mut Circuit3,
+        colour: CoinColor<Private>,
+    ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
+        let col = colour.disclose_as::<QueriedColour>(c);
+        let member = MANAGER.pools.member(c, &col).field();
+        let v = MANAGER.pools.lookup_guarded(c, member, &col).or_default().value;
+        Discloses::of(Uint::from_field_unchecked(v))
+    }
+
+    /// `export circuit poolHasColour(colour): Boolean`.
+    #[circuit(output = "present")]
+    pub fn pool_has_colour(
+        c: &mut Circuit3,
+        colour: CoinColor<Private>,
+    ) -> Discloses<(QueriedColour,), Bool<Public>> {
+        let col = colour.disclose_as::<QueriedColour>(c);
+        Discloses::of(MANAGER.pools.member(c, &col))
+    }
+
+    /// `export circuit depositShielded(coin: ShieldedCoinInfo, account:
+    /// Bytes<32>): []` — claim an incoming shielded coin and credit it to
+    /// `account` under the coin's own colour, merging into the colour's single
+    /// pooled coin (created here on first credit).
+    #[circuit]
+    pub fn deposit_shielded(
+        c: &mut Circuit3,
+        coin: ShieldedCoinArg,
+        account: B32<Private>,
+    ) -> Discloses<(DepositCoin, CreditAccount)> {
+        let coin_value = coin.value;
+        let coin = ShieldedCoinInfo3 {
+            nonce: coin.nonce.disclose_as::<DepositCoin>(c),
+            color: coin.color.disclose_as::<DepositCoin>(c),
+            value: coin_value.disclose_as::<DepositCoin>(c).field(),
+        };
+        let acct = account.disclose_as::<CreditAccount>(c);
+
+        let one = c.constant(1u64);
+
+        // assert(c.value > 0, "deposit must be positive")
+        c.assert(
+            gt(
+                Uint::<128, Public>::from_field_unchecked(coin.value),
+                0u64,
+            )
+            .message("deposit must be positive"),
+        );
+
+        // assert(accounts.member(acct), "credit account is not registered")
+        let known = MANAGER.accounts.member(c, &acct);
+        c.assert(is_true(known).message("credit account is not registered"));
+
+        // receiveShielded(c) — allocates the Merkle-tree index; must precede
+        // insertCoin.
+        common::receive_shielded(c, one, &coin);
+
+        // Merge-on-deposit: one pooled coin per colour.
+        let member = MANAGER.pools.member(c, &coin.color).field();
+        c.when(member, |c| {
+            let pooled = MANAGER.pools.lookup(c, &coin.color);
+            let merged = kernel::merge_coin_immediate(c, &pooled, &coin);
+            let me = kernel::self_address(c);
+            let recipient = contract_recipient(c, me);
+            MANAGER.pools.insert_coin(c, &coin.color, &merged, &recipient);
+        });
+        let fresh = c.not(member);
+        c.when(fresh, |c| {
+            let me = kernel::self_address(c);
+            let recipient = contract_recipient(c, me);
+            MANAGER.pools.insert_coin(c, &coin.color, &coin, &recipient);
+        });
+
+        // shieldedBalances.insert(shieldedKey(acct, c.color),
+        //   (shieldedBalanceOf(acct, c.color) + c.value) as Uint<128>)
+        let k = shielded_key(c, &acct, &coin.color);
+        let prior = balance_at(c, &MANAGER.shielded_balances, &k);
+        let sum = c.add(prior, coin.value);
+        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
+        new_balance.constrain_input(c);
+        MANAGER.shielded_balances.insert(c, &k, &new_balance);
+
+        Discloses::of(())
+    }
+
+    /// `export circuit depositUnshielded(colour, amount, account): []` — credit
+    /// `amount` of `colour` to `account`, unshielded family; the ledger's
+    /// balancing enforces the deposit's honesty.
+    #[circuit]
+    pub fn deposit_unshielded(
+        c: &mut Circuit3,
+        colour: CoinColor<Private>,
+        amount: Uint<128>,
+        account: B32<Private>,
+    ) -> Discloses<(DepositColour, DepositAmount, CreditAccount)> {
+        let col = colour.disclose_as::<DepositColour>(c);
+        let amt = amount.disclose_as::<DepositAmount>(c);
+        let acct = account.disclose_as::<CreditAccount>(c);
+
+        c.assert(gt(amt, 0u64).message("deposit must be positive"));
+        let known = MANAGER.accounts.member(c, &acct);
+        c.assert(is_true(known).message("credit account is not registered"));
+
+        kernel::receive_unshielded(c, col, amt);
+
+        let k = unshielded_key(c, &acct, &col);
+        let prior = balance_at(c, &MANAGER.unshielded_balances, &k);
+        let sum = c.add(prior, amt.field());
+        let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
+        new_balance.constrain_input(c);
+        MANAGER.unshielded_balances.insert(c, &k, &new_balance);
+
+        Discloses::of(())
+    }
+
+    /// `export circuit execute(payload, sig, pk): []` — THE gateway: validate
+    /// the envelope, compute the EIP-712 digest (all four struct-hash branches
+    /// — a circuit has no control flow), run the ECDSA check straight-line,
+    /// resolve the acting account through the witness choke point, enforce the
+    /// deadline, then register OR dispatch custody, then write the nonce.
+    #[circuit]
+    pub fn execute(
+        c: &mut Circuit3,
+        payload: ExecutePayloadArg,
+        sig: SignatureArg,
+        pk: Secp256k1Point,
+    ) -> Discloses<(Payload, NativeAccount)> {
+        // const p = disclose(payload)
+        let p = payload.disclose(c);
+        let f = Flags::of(c, &p);
+
+        assert_action_envelope(c, &p, &f);
+
+        // const manager = kernel.self().bytes
+        let manager = kernel::self_address(c).bytes();
+
+        // const digest = p.selector == 0 ? default<Bytes<32>>
+        //   : evmDigestFor(manager, deploymentDomain, p)
+        // — the deploymentDomain READ is guarded by the branch; the keccak
+        // chain runs unconditionally (a circuit has no control flow).
+        let not_native_reg = c.not(f.is0);
+        let domain = {
+            let mut d = B32 {
+                hi: c.constant(0u64),
+                lo: c.constant(0u64),
+            };
+            c.when(not_native_reg, |c| {
+                d = MANAGER.deployment_domain.read(c);
+            });
+            d
+        };
+        let domain_separator = evm_domain_separator_for(c, &manager, &domain);
+        let struct_hash = evm_struct_hash_for(c, &manager, &p, &f);
+        let evm_digest = eip712_digest(c, &domain_separator, &struct_hash);
+        let zero = c.constant(0u64);
+        let digest = B32 {
+            hi: c.cond_select(f.is0, zero, evm_digest.hi),
+            lo: c.cond_select(f.is0, zero, evm_digest.lo),
+        };
+
+        // const signatureOk = secp256k1EcdsaVerify(digest, sig, pk)
+        // const signer = secp256k1EthereumAddress(pk)
+        // STRAIGHT-LINE, exactly as the source demands (the pinned proving
+        // backend cannot lower guarded secp256k1 operations).
+        let signature = minocrab_std::v3::Secp256k1EcdsaSignature {
+            r: sig.r.scalar(),
+            s: sig.s.scalar(),
+        };
+        let digest_priv = B32 {
+            hi: digest.hi.private(),
+            lo: digest.lo.private(),
+        };
+        let signature_ok = minocrab_std::v3::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
+        let signer = minocrab_std::v3::secp256k1_ethereum_address(c, pk.point());
+
+        let is_evm_action = c.mul(f.is_evm_authorized, f.is_action);
+
+        // const nativeAccount = ownerCommitment(localOwnerSecret())
+        let sk = common::witness_sk(c);
+        let native_account_priv = owner_commitment(c, &sk);
+        let native_account = native_account_priv.disclose_as::<NativeAccount>(c);
+
+        // const evmRegistrationAccount = evmAccountIdFor(manager, owner, salt)
+        let evm_registration_account = evm_account_id_for(c, &manager, p.owner, &p.account_salt);
+
+        // assert(!isEvmRegistration || evmRegistrationAccount == p.account)
+        c.when(f.is1, |c| {
+            let same = b32_eq(c, &evm_registration_account, &p.account);
+            c.assert_with(same, Some("EVM registration account id mismatch"));
+        });
+
+        // const account = gatewayAccount(p, nativeAccount, evmRegistrationAccount)
+        // — registration selects the account being created; every other
+        // selector runs the authentication below, whose ledger reads carry the
+        // action guard.
+        let g_native_action = c.mul(f.is_action, f.is_native_authorized);
+        c.when(g_native_action, |c| {
+            // authenticatedNativeAccount(nativeAccount)
+            let known = MANAGER.accounts.member(c, &native_account).field();
+            c.assert_with(known, Some("caller's owner witness matches no registered account"));
+            let has_mode = MANAGER.account_modes.member(c, &native_account).field();
+            c.assert_with(has_mode, Some("registered account has no authorization mode"));
+            let mode = MANAGER.account_modes.lookup(c, &native_account).field();
+            let native_mode = c.test_eq(mode, 0u64);
+            c.assert_with(native_mode, Some("EVM account cannot enter native authorization"));
+            // …then the action-level checks.
+            let same = b32_eq(c, &native_account, &p.account);
+            c.assert_with(same, Some("native witness does not match supplied account transcript"));
+            let mode_again = MANAGER.account_modes.lookup(c, &native_account).field();
+            let mode_matches = c.test_eq(mode_again, p.auth_mode);
+            c.assert_with(mode_matches, Some("authorization mode does not match account record"));
+            // assert(!evmOwners.member && !evmNonces.member) — the second read
+            // short-circuits on the first.
+            let m5 = MANAGER.evm_owners.member(c, &native_account).field();
+            let n5 = c.not(m5);
+            let zero = c.constant(0u64);
+            let mut m6 = zero;
+            c.when(n5, |c| {
+                m6 = MANAGER.evm_nonces.member(c, &native_account).field();
+            });
+            let n6 = c.not(m6);
+            let both = c.mul(n5, n6);
+            c.assert_with(both, Some("native account carries EVM state"));
+        });
+        let g_evm_action = c.mul(f.is_action, f.is_evm_authorized);
+        c.when(g_evm_action, |c| {
+            let known = MANAGER.accounts.member(c, &p.account).field();
+            c.assert_with(known, Some("gateway account is not registered"));
+            let has_mode = MANAGER.account_modes.member(c, &p.account).field();
+            c.assert_with(has_mode, Some("registered account has no authorization mode"));
+            let mode = MANAGER.account_modes.lookup(c, &p.account).field();
+            let evm_mode = c.test_eq(mode, 1u64);
+            c.assert_with(evm_mode, Some("authorization mode does not match account record"));
+            // assert(evmOwners.member && evmNonces.member) — short-circuit.
+            let m5 = MANAGER.evm_owners.member(c, &p.account).field();
+            let zero = c.constant(0u64);
+            let mut m6 = zero;
+            c.when(m5, |c| {
+                m6 = MANAGER.evm_nonces.member(c, &p.account).field();
+            });
+            let both = c.mul(m5, m6);
+            c.assert_with(both, Some("EVM account record is incomplete"));
+            let stored_owner = MANAGER.evm_owners.lookup(c, &p.account).field();
+            let owner_matches = c.test_eq(p.owner, stored_owner);
+            c.assert_with(owner_matches, Some("signed owner does not match stored owner"));
+            let stored_nonce = MANAGER.evm_nonces.lookup(c, &p.account).field();
+            let nonce_matches = c.test_eq(p.nonce, stored_nonce);
+            c.assert_with(nonce_matches, Some("EVM nonce mismatch"));
+        });
+        let action_account = B32::cond_select(c, f.is_native_authorized, &native_account, &p.account);
+        let reg_account = B32::cond_select(c, f.is0, &native_account, &evm_registration_account);
+        let account = B32::cond_select(c, f.is_registration, &reg_account, &action_account);
+
+        // if (isEvmAuthorized) { assertLiveDeadline(p.validUntil) }
+        c.when(f.is_evm_authorized, |c| {
+            let until = Uint::<64, Public>::from_field_unchecked(p.valid_until);
+            let horizon = gt(until, 3600u64).eval(c).field();
+            c.assert_with(horizon, Some("EVM authorization deadline cannot satisfy the horizon"));
+            // Compact's subtraction guard, folded with this branch.
+            let no_underflow = ge(until, 3600u64).eval(c).field();
+            c.assert_with(no_underflow, Some("result of subtraction would be negative"));
+            // HAZARD kept as-is from the source: on a NATIVE call this
+            // subtraction underflows into a negative field element — safe only
+            // because its single consumer is the guarded blockTimeGte below.
+            let minus = c.constant(3600u64);
+            let neg = c.neg(minus);
+            let earliest = c.add(p.valid_until, neg);
+            let not_expired_early = kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
+            c.assert(
+                is_true(not_expired_early)
+                    .message("EVM authorization deadline exceeds 3600-second horizon"),
+            );
+            let not_expired = kernel::block_time_lt(c, until);
+            c.assert(is_true(not_expired).message("EVM authorization has expired"));
+        });
+
+        // The signature bindings, guard-folded per mode.
+        c.when(f.is1, |c| {
+            c.assert_with(signature_ok, Some("EVM registration signature does not verify"));
+            let same = c.test_eq(signer, p.owner.private());
+            c.assert_with(same, Some("EVM registration signer does not match owner"));
+        });
+        c.when(is_evm_action, |c| {
+            c.assert_with(signature_ok, Some("EVM signature does not verify"));
+            let same = c.test_eq(signer, p.owner.private());
+            c.assert_with(same, Some("EVM signer does not control account"));
+        });
+
+        // if (isRegistration) { registerAccount(account, mode) }
+        c.when(f.is_registration, |c| {
+            let acct0 = b32_is_zero(c, &account);
+            let acct_set = c.not(acct0);
+            c.assert_with(acct_set, Some("account id must be nonzero"));
+            let taken = MANAGER.accounts.member(c, &account).field();
+            let free = c.not(taken);
+            c.assert_with(free, Some("account already registered"));
+            let mode_taken = MANAGER.account_modes.member(c, &account).field();
+            let mode_free = c.not(mode_taken);
+            c.assert_with(mode_free, Some("account mode collision"));
+            MANAGER.accounts.insert(c, &account);
+            let mode = Uint::<8, Public>::from_field_unchecked(f.is1);
+            MANAGER.account_modes.insert(c, &account, &mode);
+        });
+
+        // if (isEvmRegistration) { evmOwners.insert(account, p.owner) }
+        c.when(f.is1, |c| {
+            let owner = Bytes::<20, Public>::from_field_unchecked(p.owner);
+            MANAGER.evm_owners.insert(c, &account, &owner);
+        });
+
+        // if (!isRegistration) { custodyDispatch(p, account) }
+        c.when(f.is_action, |c| {
+            custody_dispatch(c, &p, &f, &account);
+        });
+
+        // The checked nonce write, AFTER the custody dispatch.
+        let one_c = c.constant(1u64);
+        let incremented = c.add(p.nonce, one_c);
+        let inc_u64 = Uint::<64, Public>::from_field_unchecked(incremented);
+        inc_u64.constrain_input(c);
+        c.when(is_evm_action, |c| {
+            let grows = gt(inc_u64, Uint::<64, Public>::from_field_unchecked(p.nonce))
+                .eval(c)
+                .field();
+            c.assert_with(grows, Some("EVM nonce overflow"));
+        });
+        let stored_nonce = c.cond_select(f.is1, zero, incremented);
+        c.when(f.is_evm_authorized, |c| {
+            let value = Uint::<64, Public>::from_field_unchecked(stored_nonce);
+            MANAGER.evm_nonces.insert(c, &account, &value);
+        });
+
+        Discloses::of(())
+    }
 }
 
 /// `AccountRecord { registered, mode, owner, nextNonce }` as circuit
@@ -481,126 +919,6 @@ impl minocrab_std::v3::CircuitOut for AccountRecordOut {
     }
 }
 
-/// `export circuit accountRecord(account: Bytes<32>): AccountRecord` — one
-/// policy query covering registration, mode, EVM owner and next nonce.
-/// Unknown accounts return the all-zero inactive record; native records
-/// return zero owner/nonce WITHOUT reading the EVM maps' values (only their
-/// membership, asserted absent).
-#[circuit(output = "record")]
-pub fn account_record(
-    c: &mut Circuit3,
-    account: B32<Private>,
-) -> Discloses<(QueriedAccount,), AccountRecordOut> {
-    let acct = account.disclose_as::<QueriedAccount>(c);
-
-    let registered = MANAGER.accounts.member(c, &acct).field();
-
-    // The mode read carries `registered`, and a SKIPPED read's zero IS the
-    // inactive record's mode — no select anywhere in this circuit, which is
-    // compactc's own shape for the early-return ladder.
-    let mode = MANAGER
-        .account_modes
-        .lookup_guarded(c, registered, &acct)
-        .or_default()
-        .field();
-    let is_native = c.test_eq(mode, 0u64);
-
-    // Native record: no EVM state may exist. The second membership read
-    // short-circuits on the first's result, exactly as `&&` evaluates.
-    let g_native = c.mul(registered, is_native);
-    c.when(g_native, |c| {
-        let m5 = MANAGER.evm_owners.member(c, &acct).field();
-        let n5 = c.not(m5);
-        let zero = c.constant(0u64);
-        let mut m6 = zero;
-        c.when(n5, |c| {
-            m6 = MANAGER.evm_nonces.member(c, &acct).field();
-        });
-        let n6 = c.not(m6);
-        let both = c.mul(n5, n6);
-        c.assert_with(both, Some("native record carries EVM state"));
-    });
-
-    // EVM record: both halves must exist; the lookups' wires are zero on
-    // every other path, which is the record's inactive form already.
-    let is_evm = c.not(is_native);
-    let g_evm = c.mul(registered, is_evm);
-    let zero = c.constant(0u64);
-    let mut owner_v = zero;
-    let mut nonce_v = zero;
-    c.when(g_evm, |c| {
-        let is_one = c.test_eq(mode, 1u64);
-        c.assert_with(is_one, Some("unknown account authorization mode"));
-        let m5 = MANAGER.evm_owners.member(c, &acct).field();
-        let mut m6 = zero;
-        c.when(m5, |c| {
-            m6 = MANAGER.evm_nonces.member(c, &acct).field();
-        });
-        let both = c.mul(m5, m6);
-        c.assert_with(both, Some("EVM record is incomplete"));
-        owner_v = MANAGER.evm_owners.lookup(c, &acct).field();
-        nonce_v = MANAGER.evm_nonces.lookup(c, &acct).field();
-    });
-
-    Discloses::of(AccountRecordOut {
-        registered: Bool::from_field_unchecked(registered),
-        mode: Uint::from_field_unchecked(mode),
-        owner: Bytes::from_field_unchecked(owner_v),
-        next_nonce: Uint::from_field_unchecked(nonce_v),
-    })
-}
-
-/// `export circuit shieldedAccountBalance(owner, colour): Uint<128>`.
-#[circuit(output = "balance")]
-pub fn shielded_account_balance(
-    c: &mut Circuit3,
-    owner: B32<Private>,
-    colour: CoinColor<Private>,
-) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
-    let owner = owner.disclose_as::<QueriedAccount>(c);
-    let colour = colour.disclose_as::<QueriedColour>(c);
-    let k = shielded_key(c, &owner, &colour);
-    let v = balance_at(c, &MANAGER.shielded_balances, &k);
-    Discloses::of(Uint::from_field_unchecked(v))
-}
-
-/// `export circuit unshieldedAccountBalance(owner, colour): Uint<128>`.
-#[circuit(output = "balance")]
-pub fn unshielded_account_balance(
-    c: &mut Circuit3,
-    owner: B32<Private>,
-    colour: CoinColor<Private>,
-) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
-    let owner = owner.disclose_as::<QueriedAccount>(c);
-    let colour = colour.disclose_as::<QueriedColour>(c);
-    let k = unshielded_key(c, &owner, &colour);
-    let v = balance_at(c, &MANAGER.unshielded_balances, &k);
-    Discloses::of(Uint::from_field_unchecked(v))
-}
-
-/// `export circuit poolValue(colour): Uint<128>` — the pooled coin's value,
-/// 0 for a colour this contract has never seen.
-#[circuit(output = "value")]
-pub fn pool_value(
-    c: &mut Circuit3,
-    colour: CoinColor<Private>,
-) -> Discloses<(QueriedColour,), Uint<128, Public>> {
-    let col = colour.disclose_as::<QueriedColour>(c);
-    let member = MANAGER.pools.member(c, &col).field();
-    let v = MANAGER.pools.lookup_guarded(c, member, &col).or_default().value;
-    Discloses::of(Uint::from_field_unchecked(v))
-}
-
-/// `export circuit poolHasColour(colour): Boolean`.
-#[circuit(output = "present")]
-pub fn pool_has_colour(
-    c: &mut Circuit3,
-    colour: CoinColor<Private>,
-) -> Discloses<(QueriedColour,), Bool<Public>> {
-    let col = colour.disclose_as::<QueriedColour>(c);
-    Discloses::of(MANAGER.pools.member(c, &col))
-}
-
 // --- deposits ----------------------------------------------------------------
 
 /// `ShieldedCoinInfo` as an argument.
@@ -609,101 +927,6 @@ struct ShieldedCoinArg {
     nonce: CoinNonce<Private>,
     color: CoinColor<Private>,
     value: Uint<128>,
-}
-
-/// `export circuit depositShielded(coin: ShieldedCoinInfo, account:
-/// Bytes<32>): []` — claim an incoming shielded coin and credit it to
-/// `account` under the coin's own colour, merging into the colour's single
-/// pooled coin (created here on first credit).
-#[circuit]
-pub fn deposit_shielded(
-    c: &mut Circuit3,
-    coin: ShieldedCoinArg,
-    account: B32<Private>,
-) -> Discloses<(DepositCoin, CreditAccount)> {
-    let coin_value = coin.value;
-    let coin = ShieldedCoinInfo3 {
-        nonce: coin.nonce.disclose_as::<DepositCoin>(c),
-        color: coin.color.disclose_as::<DepositCoin>(c),
-        value: coin_value.disclose_as::<DepositCoin>(c).field(),
-    };
-    let acct = account.disclose_as::<CreditAccount>(c);
-
-    let one = c.constant(1u64);
-
-    // assert(c.value > 0, "deposit must be positive")
-    c.assert(
-        gt(
-            Uint::<128, Public>::from_field_unchecked(coin.value),
-            0u64,
-        )
-        .message("deposit must be positive"),
-    );
-
-    // assert(accounts.member(acct), "credit account is not registered")
-    let known = MANAGER.accounts.member(c, &acct);
-    c.assert(is_true(known).message("credit account is not registered"));
-
-    // receiveShielded(c) — allocates the Merkle-tree index; must precede
-    // insertCoin.
-    common::receive_shielded(c, one, &coin);
-
-    // Merge-on-deposit: one pooled coin per colour.
-    let member = MANAGER.pools.member(c, &coin.color).field();
-    c.when(member, |c| {
-        let pooled = MANAGER.pools.lookup(c, &coin.color);
-        let merged = kernel::merge_coin_immediate(c, &pooled, &coin);
-        let me = kernel::self_address(c);
-        let recipient = contract_recipient(c, me);
-        MANAGER.pools.insert_coin(c, &coin.color, &merged, &recipient);
-    });
-    let fresh = c.not(member);
-    c.when(fresh, |c| {
-        let me = kernel::self_address(c);
-        let recipient = contract_recipient(c, me);
-        MANAGER.pools.insert_coin(c, &coin.color, &coin, &recipient);
-    });
-
-    // shieldedBalances.insert(shieldedKey(acct, c.color),
-    //   (shieldedBalanceOf(acct, c.color) + c.value) as Uint<128>)
-    let k = shielded_key(c, &acct, &coin.color);
-    let prior = balance_at(c, &MANAGER.shielded_balances, &k);
-    let sum = c.add(prior, coin.value);
-    let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-    new_balance.constrain_input(c);
-    MANAGER.shielded_balances.insert(c, &k, &new_balance);
-
-    Discloses::of(())
-}
-
-/// `export circuit depositUnshielded(colour, amount, account): []` — credit
-/// `amount` of `colour` to `account`, unshielded family; the ledger's
-/// balancing enforces the deposit's honesty.
-#[circuit]
-pub fn deposit_unshielded(
-    c: &mut Circuit3,
-    colour: CoinColor<Private>,
-    amount: Uint<128>,
-    account: B32<Private>,
-) -> Discloses<(DepositColour, DepositAmount, CreditAccount)> {
-    let col = colour.disclose_as::<DepositColour>(c);
-    let amt = amount.disclose_as::<DepositAmount>(c);
-    let acct = account.disclose_as::<CreditAccount>(c);
-
-    c.assert(gt(amt, 0u64).message("deposit must be positive"));
-    let known = MANAGER.accounts.member(c, &acct);
-    c.assert(is_true(known).message("credit account is not registered"));
-
-    kernel::receive_unshielded(c, col, amt);
-
-    let k = unshielded_key(c, &acct, &col);
-    let prior = balance_at(c, &MANAGER.unshielded_balances, &k);
-    let sum = c.add(prior, amt.field());
-    let new_balance = Uint::<128, Public>::from_field_unchecked(sum);
-    new_balance.constrain_input(c);
-    MANAGER.unshielded_balances.insert(c, &k, &new_balance);
-
-    Discloses::of(())
 }
 
 // --- the gateway -------------------------------------------------------------
@@ -1326,224 +1549,4 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
                 .insert(c, &credit_key, &new_credit);
         });
     });
-}
-
-/// `export circuit execute(payload, sig, pk): []` — THE gateway: validate
-/// the envelope, compute the EIP-712 digest (all four struct-hash branches
-/// — a circuit has no control flow), run the ECDSA check straight-line,
-/// resolve the acting account through the witness choke point, enforce the
-/// deadline, then register OR dispatch custody, then write the nonce.
-#[circuit]
-pub fn execute(
-    c: &mut Circuit3,
-    payload: ExecutePayloadArg,
-    sig: SignatureArg,
-    pk: Secp256k1Point,
-) -> Discloses<(Payload, NativeAccount)> {
-    // const p = disclose(payload)
-    let p = payload.disclose(c);
-    let f = Flags::of(c, &p);
-
-    assert_action_envelope(c, &p, &f);
-
-    // const manager = kernel.self().bytes
-    let manager = kernel::self_address(c).bytes();
-
-    // const digest = p.selector == 0 ? default<Bytes<32>>
-    //   : evmDigestFor(manager, deploymentDomain, p)
-    // — the deploymentDomain READ is guarded by the branch; the keccak
-    // chain runs unconditionally (a circuit has no control flow).
-    let not_native_reg = c.not(f.is0);
-    let domain = {
-        let mut d = B32 {
-            hi: c.constant(0u64),
-            lo: c.constant(0u64),
-        };
-        c.when(not_native_reg, |c| {
-            d = MANAGER.deployment_domain.read(c);
-        });
-        d
-    };
-    let domain_separator = evm_domain_separator_for(c, &manager, &domain);
-    let struct_hash = evm_struct_hash_for(c, &manager, &p, &f);
-    let evm_digest = eip712_digest(c, &domain_separator, &struct_hash);
-    let zero = c.constant(0u64);
-    let digest = B32 {
-        hi: c.cond_select(f.is0, zero, evm_digest.hi),
-        lo: c.cond_select(f.is0, zero, evm_digest.lo),
-    };
-
-    // const signatureOk = secp256k1EcdsaVerify(digest, sig, pk)
-    // const signer = secp256k1EthereumAddress(pk)
-    // STRAIGHT-LINE, exactly as the source demands (the pinned proving
-    // backend cannot lower guarded secp256k1 operations).
-    let signature = minocrab_std::v3::Secp256k1EcdsaSignature {
-        r: sig.r.scalar(),
-        s: sig.s.scalar(),
-    };
-    let digest_priv = B32 {
-        hi: digest.hi.private(),
-        lo: digest.lo.private(),
-    };
-    let signature_ok = minocrab_std::v3::secp256k1_ecdsa_verify(c, &digest_priv, &signature, pk.point());
-    let signer = minocrab_std::v3::secp256k1_ethereum_address(c, pk.point());
-
-    let is_evm_action = c.mul(f.is_evm_authorized, f.is_action);
-
-    // const nativeAccount = ownerCommitment(localOwnerSecret())
-    let sk = common::witness_sk(c);
-    let native_account_priv = owner_commitment(c, &sk);
-    let native_account = native_account_priv.disclose_as::<NativeAccount>(c);
-
-    // const evmRegistrationAccount = evmAccountIdFor(manager, owner, salt)
-    let evm_registration_account = evm_account_id_for(c, &manager, p.owner, &p.account_salt);
-
-    // assert(!isEvmRegistration || evmRegistrationAccount == p.account)
-    c.when(f.is1, |c| {
-        let same = b32_eq(c, &evm_registration_account, &p.account);
-        c.assert_with(same, Some("EVM registration account id mismatch"));
-    });
-
-    // const account = gatewayAccount(p, nativeAccount, evmRegistrationAccount)
-    // — registration selects the account being created; every other
-    // selector runs the authentication below, whose ledger reads carry the
-    // action guard.
-    let g_native_action = c.mul(f.is_action, f.is_native_authorized);
-    c.when(g_native_action, |c| {
-        // authenticatedNativeAccount(nativeAccount)
-        let known = MANAGER.accounts.member(c, &native_account).field();
-        c.assert_with(known, Some("caller's owner witness matches no registered account"));
-        let has_mode = MANAGER.account_modes.member(c, &native_account).field();
-        c.assert_with(has_mode, Some("registered account has no authorization mode"));
-        let mode = MANAGER.account_modes.lookup(c, &native_account).field();
-        let native_mode = c.test_eq(mode, 0u64);
-        c.assert_with(native_mode, Some("EVM account cannot enter native authorization"));
-        // …then the action-level checks.
-        let same = b32_eq(c, &native_account, &p.account);
-        c.assert_with(same, Some("native witness does not match supplied account transcript"));
-        let mode_again = MANAGER.account_modes.lookup(c, &native_account).field();
-        let mode_matches = c.test_eq(mode_again, p.auth_mode);
-        c.assert_with(mode_matches, Some("authorization mode does not match account record"));
-        // assert(!evmOwners.member && !evmNonces.member) — the second read
-        // short-circuits on the first.
-        let m5 = MANAGER.evm_owners.member(c, &native_account).field();
-        let n5 = c.not(m5);
-        let zero = c.constant(0u64);
-        let mut m6 = zero;
-        c.when(n5, |c| {
-            m6 = MANAGER.evm_nonces.member(c, &native_account).field();
-        });
-        let n6 = c.not(m6);
-        let both = c.mul(n5, n6);
-        c.assert_with(both, Some("native account carries EVM state"));
-    });
-    let g_evm_action = c.mul(f.is_action, f.is_evm_authorized);
-    c.when(g_evm_action, |c| {
-        let known = MANAGER.accounts.member(c, &p.account).field();
-        c.assert_with(known, Some("gateway account is not registered"));
-        let has_mode = MANAGER.account_modes.member(c, &p.account).field();
-        c.assert_with(has_mode, Some("registered account has no authorization mode"));
-        let mode = MANAGER.account_modes.lookup(c, &p.account).field();
-        let evm_mode = c.test_eq(mode, 1u64);
-        c.assert_with(evm_mode, Some("authorization mode does not match account record"));
-        // assert(evmOwners.member && evmNonces.member) — short-circuit.
-        let m5 = MANAGER.evm_owners.member(c, &p.account).field();
-        let zero = c.constant(0u64);
-        let mut m6 = zero;
-        c.when(m5, |c| {
-            m6 = MANAGER.evm_nonces.member(c, &p.account).field();
-        });
-        let both = c.mul(m5, m6);
-        c.assert_with(both, Some("EVM account record is incomplete"));
-        let stored_owner = MANAGER.evm_owners.lookup(c, &p.account).field();
-        let owner_matches = c.test_eq(p.owner, stored_owner);
-        c.assert_with(owner_matches, Some("signed owner does not match stored owner"));
-        let stored_nonce = MANAGER.evm_nonces.lookup(c, &p.account).field();
-        let nonce_matches = c.test_eq(p.nonce, stored_nonce);
-        c.assert_with(nonce_matches, Some("EVM nonce mismatch"));
-    });
-    let action_account = B32::cond_select(c, f.is_native_authorized, &native_account, &p.account);
-    let reg_account = B32::cond_select(c, f.is0, &native_account, &evm_registration_account);
-    let account = B32::cond_select(c, f.is_registration, &reg_account, &action_account);
-
-    // if (isEvmAuthorized) { assertLiveDeadline(p.validUntil) }
-    c.when(f.is_evm_authorized, |c| {
-        let until = Uint::<64, Public>::from_field_unchecked(p.valid_until);
-        let horizon = gt(until, 3600u64).eval(c).field();
-        c.assert_with(horizon, Some("EVM authorization deadline cannot satisfy the horizon"));
-        // Compact's subtraction guard, folded with this branch.
-        let no_underflow = ge(until, 3600u64).eval(c).field();
-        c.assert_with(no_underflow, Some("result of subtraction would be negative"));
-        // HAZARD kept as-is from the source: on a NATIVE call this
-        // subtraction underflows into a negative field element — safe only
-        // because its single consumer is the guarded blockTimeGte below.
-        let minus = c.constant(3600u64);
-        let neg = c.neg(minus);
-        let earliest = c.add(p.valid_until, neg);
-        let not_expired_early = kernel::block_time_gte(c, Uint::from_field_unchecked(earliest));
-        c.assert(
-            is_true(not_expired_early)
-                .message("EVM authorization deadline exceeds 3600-second horizon"),
-        );
-        let not_expired = kernel::block_time_lt(c, until);
-        c.assert(is_true(not_expired).message("EVM authorization has expired"));
-    });
-
-    // The signature bindings, guard-folded per mode.
-    c.when(f.is1, |c| {
-        c.assert_with(signature_ok, Some("EVM registration signature does not verify"));
-        let same = c.test_eq(signer, p.owner.private());
-        c.assert_with(same, Some("EVM registration signer does not match owner"));
-    });
-    c.when(is_evm_action, |c| {
-        c.assert_with(signature_ok, Some("EVM signature does not verify"));
-        let same = c.test_eq(signer, p.owner.private());
-        c.assert_with(same, Some("EVM signer does not control account"));
-    });
-
-    // if (isRegistration) { registerAccount(account, mode) }
-    c.when(f.is_registration, |c| {
-        let acct0 = b32_is_zero(c, &account);
-        let acct_set = c.not(acct0);
-        c.assert_with(acct_set, Some("account id must be nonzero"));
-        let taken = MANAGER.accounts.member(c, &account).field();
-        let free = c.not(taken);
-        c.assert_with(free, Some("account already registered"));
-        let mode_taken = MANAGER.account_modes.member(c, &account).field();
-        let mode_free = c.not(mode_taken);
-        c.assert_with(mode_free, Some("account mode collision"));
-        MANAGER.accounts.insert(c, &account);
-        let mode = Uint::<8, Public>::from_field_unchecked(f.is1);
-        MANAGER.account_modes.insert(c, &account, &mode);
-    });
-
-    // if (isEvmRegistration) { evmOwners.insert(account, p.owner) }
-    c.when(f.is1, |c| {
-        let owner = Bytes::<20, Public>::from_field_unchecked(p.owner);
-        MANAGER.evm_owners.insert(c, &account, &owner);
-    });
-
-    // if (!isRegistration) { custodyDispatch(p, account) }
-    c.when(f.is_action, |c| {
-        custody_dispatch(c, &p, &f, &account);
-    });
-
-    // The checked nonce write, AFTER the custody dispatch.
-    let one_c = c.constant(1u64);
-    let incremented = c.add(p.nonce, one_c);
-    let inc_u64 = Uint::<64, Public>::from_field_unchecked(incremented);
-    inc_u64.constrain_input(c);
-    c.when(is_evm_action, |c| {
-        let grows = gt(inc_u64, Uint::<64, Public>::from_field_unchecked(p.nonce))
-            .eval(c)
-            .field();
-        c.assert_with(grows, Some("EVM nonce overflow"));
-    });
-    let stored_nonce = c.cond_select(f.is1, zero, incremented);
-    c.when(f.is_evm_authorized, |c| {
-        let value = Uint::<64, Public>::from_field_unchecked(stored_nonce);
-        MANAGER.evm_nonces.insert(c, &account, &value);
-    });
-
-    Discloses::of(())
 }

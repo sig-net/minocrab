@@ -31,7 +31,7 @@ use minocrab::v3::Circuit3;
 use minocrab::AlignmentAtom;
 use minocrab_ledger::{cell_read, cell_write, counter_increment, emit, ImpactElem, LedgerValue};
 use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{circuit, Disclose, Discloses, Secp256k1Point, B32};
+use minocrab_std::v3::{contract, Disclose, Discloses, Secp256k1Point, B32};
 
 use crate::common;
 
@@ -49,46 +49,52 @@ pub const DEPLOYER_PAD: &str = "signet-caller:deployer:";
 
 pub use crate::common::secp256k1_point_atoms;
 
-/// `export circuit initialise(responseKey: Secp256k1Point): []`
-#[circuit]
-pub fn initialise(
-    c: &mut Circuit3,
-    response_key: Secp256k1Point,
-) -> Discloses<(MpcResponseKey,)> {
-    let response_key = response_key.point();
-    let one = c.constant(1u64);
+/// The Signet caller contract — one circuit so far, `initialise`.
+pub struct TestCaller;
 
-    // assert(initialised == 0, "Already initialised: …")
-    c.region("initialised gate", |c| {
-        common::assert_counter_zero(c, one, INITIALISED);
-    });
+#[contract]
+impl TestCaller {
+    /// `export circuit initialise(responseKey: Secp256k1Point): []`
+    #[circuit]
+    pub fn initialise(
+        c: &mut Circuit3,
+        response_key: Secp256k1Point,
+    ) -> Discloses<(MpcResponseKey,)> {
+        let response_key = response_key.point();
+        let one = c.constant(1u64);
 
-    // assert(deployerCommitment(deployerSecretKey()) == deployer, "Not the deployer")
-    // — `upgradeFromTransient(transientHash([pad, sk]))`.
-    c.region("deployer gate", |c| {
-        let sk = common::witness_sk(c).bytes();
-        let pad = B32::pad(c, DEPLOYER_PAD);
-        let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
-        let digest = upgrade_from_transient(c, f);
-        let stored = cell_read(c, one, DEPLOYER, vec![AlignmentAtom::Bytes { length: 32 }]);
-        let eq_hi = c.test_eq(digest.hi, stored[0]);
-        let eq_lo = c.test_eq(digest.lo, stored[1]);
-        let both = c.mul(eq_hi, eq_lo);
-        c.assert(both);
-    });
+        // assert(initialised == 0, "Already initialised: …")
+        c.region("initialised gate", |c| {
+            common::assert_counter_zero(c, one, INITIALISED);
+        });
 
-    // initialised.increment(1)
-    emit(c, one, &counter_increment(INITIALISED, 1));
+        // assert(deployerCommitment(deployerSecretKey()) == deployer, "Not the deployer")
+        // — `upgradeFromTransient(transientHash([pad, sk]))`.
+        c.region("deployer gate", |c| {
+            let sk = common::witness_sk(c).bytes();
+            let pad = B32::pad(c, DEPLOYER_PAD);
+            let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
+            let digest = upgrade_from_transient(c, f);
+            let stored = cell_read(c, one, DEPLOYER, vec![AlignmentAtom::Bytes { length: 32 }]);
+            let eq_hi = c.test_eq(digest.hi, stored[0]);
+            let eq_lo = c.test_eq(digest.lo, stored[1]);
+            let both = c.mul(eq_hi, eq_lo);
+            c.assert(both);
+        });
 
-    // mpcResponseKey = disclose(responseKey)
-    c.region("pin response key", |c| {
-        let pk = response_key.disclose_as::<MpcResponseKey>(c);
-        let limbs = c.encode(pk);
-        let value = LedgerValue::new(
-            common::secp256k1_point_atoms(),
-            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
-        );
-        emit(c, one, &cell_write(MPC_RESPONSE_KEY, &value));
-    });
-    Discloses::of(())
+        // initialised.increment(1)
+        emit(c, one, &counter_increment(INITIALISED, 1));
+
+        // mpcResponseKey = disclose(responseKey)
+        c.region("pin response key", |c| {
+            let pk = response_key.disclose_as::<MpcResponseKey>(c);
+            let limbs = c.encode(pk);
+            let value = LedgerValue::new(
+                common::secp256k1_point_atoms(),
+                limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+            );
+            emit(c, one, &cell_write(MPC_RESPONSE_KEY, &value));
+        });
+        Discloses::of(())
+    }
 }

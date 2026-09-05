@@ -27,7 +27,7 @@ use minocrab_ledger::{
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     CoinNonce, ContractAddress, TokenDomainSeparator, ZswapCoinPublicKey,
-    circuit, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
+    contract, coin_commitment, own_public_key, token_type, CoinRecipient, Disclose, Discloses,
     ShieldedCoinInfo3, B32,
 };
 
@@ -91,50 +91,56 @@ fn mint_shielded_token(
     emit(c, one, &kernel_claim_zswap_coin_spend(&cm_val));
 }
 
-/// `export circuit mintWithRecipientArgument(recipient: ZswapCoinPublicKey,
-/// mintNonce: Bytes<32>): []`
-#[circuit]
-pub fn mint_with_recipient_argument(
-    c: &mut Circuit3,
-    recipient: ZswapCoinPublicKey<Private>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(MintRecipient, MintNonce)> {
-    let one = c.constant(1u64);
+/// `mint-tokens` — the shielded-mint circuits.
+pub struct MintTokens;
 
-    let recipient = recipient.disclose_as::<MintRecipient>(c);
-    let nonce = mint_nonce.disclose_as::<MintNonce>(c);
-    mint_shielded_token(c, one, &nonce, &recipient);
-    Discloses::of(())
-}
+#[contract]
+impl MintTokens {
+    /// `export circuit mintWithRecipientArgument(recipient: ZswapCoinPublicKey,
+    /// mintNonce: Bytes<32>): []`
+    #[circuit]
+    pub fn mint_with_recipient_argument(
+        c: &mut Circuit3,
+        recipient: ZswapCoinPublicKey<Private>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(MintRecipient, MintNonce)> {
+        let one = c.constant(1u64);
 
-/// `export circuit mintWithRecipientOwnPublicKey(recipient: ZswapCoinPublicKey,
-/// mintNonce: Bytes<32>): []` — the `recipient` argument is declared but
-/// unused (a slot that exists for the wire shape alone, hence the leading
-/// underscore); the mint goes to `ownPublicKey()`, which is also written to
-/// `veryPublicValue`.
-#[circuit]
-pub fn mint_with_recipient_own_public_key(
-    c: &mut Circuit3,
-    _recipient: B32<Private>,
-    mint_nonce: CoinNonce<Private>,
-) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {
-    let one = c.constant(1u64);
+        let recipient = recipient.disclose_as::<MintRecipient>(c);
+        let nonce = mint_nonce.disclose_as::<MintNonce>(c);
+        mint_shielded_token(c, one, &nonce, &recipient);
+        Discloses::of(())
+    }
 
-    // const mintRecipient = ownPublicKey();
-    let mint_recipient = own_public_key(c).disclose_as::<OwnKeyAsMintRecipient>(c);
+    /// `export circuit mintWithRecipientOwnPublicKey(recipient: ZswapCoinPublicKey,
+    /// mintNonce: Bytes<32>): []` — the `recipient` argument is declared but
+    /// unused (a slot that exists for the wire shape alone, hence the leading
+    /// underscore); the mint goes to `ownPublicKey()`, which is also written to
+    /// `veryPublicValue`.
+    #[circuit]
+    pub fn mint_with_recipient_own_public_key(
+        c: &mut Circuit3,
+        _recipient: B32<Private>,
+        mint_nonce: CoinNonce<Private>,
+    ) -> Discloses<(OwnKeyAsMintRecipient, OwnKeyOnLedger, MintNonce)> {
+        let one = c.constant(1u64);
 
-    // veryPublicValue = ownPublicKey();
-    let very_public = own_public_key(c).disclose_as::<OwnKeyOnLedger>(c);
-    let value = LedgerValue::bytes(
-        32,
-        vec![
-            ImpactElem::Wire(very_public.bytes().hi),
-            ImpactElem::Wire(very_public.bytes().lo),
-        ],
-    );
-    emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
+        // const mintRecipient = ownPublicKey();
+        let mint_recipient = own_public_key(c).disclose_as::<OwnKeyAsMintRecipient>(c);
 
-    let nonce = mint_nonce.disclose_as::<MintNonce>(c);
-    mint_shielded_token(c, one, &nonce, &mint_recipient);
-    Discloses::of(())
+        // veryPublicValue = ownPublicKey();
+        let very_public = own_public_key(c).disclose_as::<OwnKeyOnLedger>(c);
+        let value = LedgerValue::bytes(
+            32,
+            vec![
+                ImpactElem::Wire(very_public.bytes().hi),
+                ImpactElem::Wire(very_public.bytes().lo),
+            ],
+        );
+        emit(c, one, &cell_write(VERY_PUBLIC_VALUE, &value));
+
+        let nonce = mint_nonce.disclose_as::<MintNonce>(c);
+        mint_shielded_token(c, one, &nonce, &mint_recipient);
+        Discloses::of(())
+    }
 }

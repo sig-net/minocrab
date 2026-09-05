@@ -868,7 +868,7 @@ proptest! {
 /// are built and parsed ONCE rather than per case.
 #[test]
 fn sign_bidirectional_misc_bytes_are_canonical_borsh() {
-    let ours = signet_contract::sign_bidirectional().ir;
+    let ours = signet_contract::SignetContract::sign_bidirectional().ir;
     let theirs = deployed::corpus_signet_zkir("signBidirectional");
     let strategy = (
         sign_bidirectional_misc(),
@@ -915,13 +915,13 @@ fn respond_misc_bytes_are_canonical_borsh() {
         (
             "respond",
             signet_contract::SIGNATURE_RESPONDED_EVENT,
-            signet_contract::respond().ir,
+            signet_contract::SignetContract::respond().ir,
             deployed::corpus_signet_zkir("respond"),
         ),
         (
             "respondBidirectional",
             signet_contract::RESPOND_BIDIRECTIONAL_EVENT,
-            signet_contract::respond_bidirectional().ir,
+            signet_contract::SignetContract::respond_bidirectional().ir,
             deployed::corpus_signet_zkir("respondBidirectional"),
         ),
     ];
