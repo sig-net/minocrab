@@ -1,0 +1,168 @@
+#+title: M37 — Typed EVM calls: the call as a type, the slot infers the rest
+
+* 0. The ask (dmd, 2026-09-05)
+"Higher level constructs that make the ERC-20 transfer more terse and easy
+to read … more type safety … more inference" — then, against a first
+sketch that parsed a Solidity signature string in an attribute macro: "I'd
+rather that we have a type somewhere in our system that represents the
+input and output, e.g. a tuple and a bool, then that request type is
+inferred. I'm also keen for macros that don't completely break tooling."
+And on the selector: "Do we actually need a const fn Keccak? Why not just
+run it when we run the eDSL?" — we don't; circuit construction is Rust at
+build time, so the selector is hashed there with =sha3= and embedded as
+an immediate. In-circuit hashing stays Poseidon throughout; no artifact
+gains a =keccak256= instruction.
+
+THE TARGET SHAPE (the README's cross-chain example, as real code):
+#+begin_src rust
+pub struct Erc20Transfer;
+impl EvmCall for Erc20Transfer {
+    const NAME: &'static str = "transfer";
+    type Args = (Address, U64);       // `address`, `uint256` narrowed to 64 bits
+    type Return = Bool;               // the attested output
+    const KIND: u8 = 7;               // the protocol byte — explicit, a wire commitment
+    const GAS_LIMIT: u64 = 100_000;   // the limit, not a price (fees are the envelope's)
+}
+
+#[derive(Ledger)]
+pub struct Treasury {
+    pub signet: Signet,
+    pub transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+}
+
+#[circuit]
+pub fn send(c: &mut Circuit3, token: Contract<Erc20>, to: EvmAddress, amount: Uint<64>)
+    -> Discloses<(SentAmount,)>
+{
+    let amount = amount.disclose_as::<SentAmount>(c);
+    TREASURY.transfers.request(c, token, (to, amount), Amount(amount));
+}
+
+#[circuit]
+pub fn complete(c: &mut Circuit3, ticket: Receipt<Erc20Transfer>) -> Discloses<(Transferred,)> {
+    TREASURY.transfers.complete(c, ticket).output.disclose_as::<Transferred>(c);
+}
+
+#[circuit]
+pub fn refund(c: &mut Circuit3, ticket: Failed<Erc20Transfer>) -> Discloses<(RefundRecipient,)> {
+    let (owner, Amount(amount)) = TREASURY.transfers.refund_to_owner(c, ticket);
+    // ... re-mint `amount` to `owner`
+}
+#+end_src
+Anyone may =complete= (the attestation is the gate); only the original
+caller may =refund= (the owner commitment is opened with a fresh witness).
+
+* 1. The ABI type layer — types, no macro
+=trait AbiType= (crates/minocrab-contracts/src/evm.rs, new):
+- =const SOLIDITY: &'static str= — the spelling in the selector
+  signature: ="address"=, ="bool"=, ="bytes32"=, ="uint256"= (for U64,
+  U128 and U256 alike: the ABI word is always 32 bytes; the Rust type
+  states the RANGE the contract accepts).
+- =const RESPOND: &'static str= — the attested-output schema spelling
+  the record carries (="uint64"= for U64, ="bool"= …), i.e. the
+  narrowing the MPC applies (=SUPPLY_RESPOND_SCHEMA= today).
+- =type Wire<V: Vis3>= — the circuit value: =Address::Wire = EvmAddress<V>=,
+  =U64::Wire = Uint<64, V>=, =U128::Wire = Uint<128, V>=, =U256::Wire =
+  Bytes<32, V>=, =Bool::Wire = Bool<V>=, =Bytes32::Wire = Bytes<32, V>=.
+- =fn word(c, &Wire<V>) -> B32<V>= — the encoder: the EXISTING
+  =signet::evm_address_abi_word= / =numeric_abi_word= moved under the
+  trait unchanged (zero movement).
+=trait AbiTuple= for =()=, =(A,)= … eight-tuples: =const WORDS: usize=,
+=const SIGNATURE: &'static str= (comma-joined SOLIDITY spellings — a
+=const= string built by a small const concatenation or, simpler, a
+=fn signature() -> String= evaluated at build time; the selector is
+built at build time anyway), =type Wires<V>= (the tuple of =Wire=s),
+=fn words(c, Wires<V>) -> Vec<B32<V>>= (length == WORDS, checked into the
+record's fixed array at the slot).
+
+* 2. =EvmCall= — the call as a type
+#+begin_src rust
+pub trait EvmCall {
+    const NAME: &'static str;
+    type Args: AbiTuple;
+    type Return: AbiType;        // Attested<Return::Wire> is the Response; KIND below
+    const KIND: u8;
+    const GAS_LIMIT: u64;
+    fn selector() -> [u8; 4] { keccak256(format!("{NAME}({Args::SIGNATURE})"))[..4] }  // build time, sha3
+}
+#+end_src
+=Attested<R>= gains =impl<C: EvmCall> Response for Attested<C::Return>=
+… (the KIND comes from the call, so the response type is not written).
+The FIXTURE: the selector and words of =Erc20Transfer=, =Erc20Approve=,
+=ExactOutputSingle=, =Erc4626Deposit=, =Erc4626Redeem= pinned against
+compactc's own calldata — the vault differential's transcripts already
+carry every word; a test asserts our encoder's words equal them and the
+selector equals the first four calldata bytes. Not a hash test in a
+circuit.
+
+* 3. =Pending<Call, Env, WORDS>= — the slot infers the rest
+- =Resp= is gone (=Attested<Call::Return>= at =Call::KIND=). =KINDS=
+  uniqueness across a block is ALREADY asserted by the Ledger derive
+  (ledger.rs "No two slots of one block settle under the same Signet
+  response") — keep, cite.
+- WORDS: stable Rust cannot write =EventRecordV2<{ Call::Args::WORDS }>=
+  (=generic_const_exprs=). DECISION: WORDS stays a const generic on the
+  slot, CHECKED — an inline const assert =WORDS == <Call::Args as
+  AbiTuple>::WORDS= makes a mismatch a compile error. Inference of that
+  one number waits for =generic_const_exprs= or a =generic-array=
+  rewrite of =EventRecordV2= (recorded, not done: it re-types every
+  record user for one integer).
+- The =Signet= block is found by the Ledger derive: exactly one =Signet=
+  field per block (zero or two: a compile error from the derive), and
+  every =Pending= slot is constructed with the Signet's block offset
+  (=Pending::at_block_with_signet(total, start, signet_start)=), so
+  =request= / =complete= / =refund= take no =&VAULT.signet=.
+- =request(c, callee: Contract<Abi>, args: <Args as AbiTuple>::Wires<Private>,
+  env)= builds the =EvmTx= (selector, words, GAS_LIMIT, the fixed fee
+  envelope, the contract's own signing path, the Signet's key version)
+  and files it; =Contract<Abi>= is a newtype over =EvmAddress= so a
+  callee and a recipient cannot swap. The per-circuit =evm_nonce=
+  argument stays an input for now (the nonce/admin-gas conversation is
+  next — §7).
+- Tickets: =Receipt<Call>= = =Settle<Attested<Call::Return>>=, =Failed<Call>=
+  = =Settle<Failure>=; =complete(c, Receipt<Call>) -> Outcome<Env, Return::Wire>=,
+  =refund(c, Failed<Call>) -> Outcome<Env, Failure>=. =Requested= /
+  =Settled= labels are the slot's.
+
+* 4. =Owned<Env>= — "only the original caller"
+=Owned<E> { owner: Commit<SecretKey, RefundTag>, inner: E }=; =request=
+witnesses the secret, commits it bound to the request id and stores it;
+=refund_to_owner(c, Failed<Call>) -> (ZswapCoinPublicKey, E)= witnesses a
+fresh secret, opens the commitment, returns the owner's public key and the
+env; =complete= has no method that consumes a secret — the deployed
+vault's Gap 2 is unwritable on this API. =Commit<T, Tag>= takes its domain
+tag as a TYPE (a =DisclosureLabel=-style marker with the pad string), so
+=to= and =open= cannot disagree (a type error where today it is a proof
+that never verifies).
+
+* 5. What stays explicit, on purpose
+The kind byte; the labels the author adds (=SentAmount=, =Transferred=);
+the guards; the =Discloses= tuple (the declaration is the point; the
+generated set-equality test keeps it honest). What the reader no longer
+writes: selector, words, word count (checked), response type, schema
+strings, gas envelope, the Signet reference, the signing path, the key
+version, the owner commitment's construction and opening.
+
+* 6. Tooling
+No new macro. The Ledger derive is extended (Signet offset into each
+slot); derives leave the annotated item intact. The two attribute macros
+that rewrite items (=#[circuit]=, =#[contract]=) are audited as a
+separate item: each must keep the author's fn textually intact and add
+siblings only, so rust-analyzer's goto/hover/rename work inside bodies —
+stated as a property with a test on the expansion.
+
+* 7. Next conversation (dmd): nonces, and an administrator-set gas price
+Queued after the build: the EVM nonce is a per-circuit input today (the
+prover picks it, the MPC's key owns the sequence); the fee envelope is a
+contract constant. Both want a home in the =Signet= block or a treasury
+policy cell an administrator writes, rather than the user choosing them.
+
+* 8. Gates
+Zero movement: the 17 Pending-lineage circuits byte-identical (dump), row
+and interface snapshots unchanged, the Pending spec harness (18 properties)
+green, the selector/word fixtures against compactc's calldata, the
+=compile_fail= gates for each new type error (args order, callee vs
+recipient, response mismatch, WORDS mismatch, tag mismatch, a secret in
+=complete=), clippy, docs warning-free. The README example is compiled as
+a test contract (=crates/minocrab-contracts/src/treasury.rs= or under
+=examples/=) so the README shows real code.

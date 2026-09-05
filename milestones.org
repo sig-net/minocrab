@@ -2031,3 +2031,35 @@ blocked with the missing rung named; and the honest-boundary writeup
 published. Explicitly OUT: the game-level hybrid argument, any
 crypto-assumption discharge, and any new packing analysis duplicating
 the taint lint.
+
+* M37 — Typed EVM calls: the call as a type, the slot infers the rest (dmd, 2026-09-05)
+dmd: "Higher level constructs that make the ERC-20 transfer more terse …
+more type safety … more inference"; against the signature-string macro:
+"I'd rather that we have a type somewhere in our system that represents
+the input and output, e.g. a tuple and a bool, then that request type is
+inferred … macros that don't completely break tooling"; "make it so".
+Design of record: notes/evm-calls.org (§1 ABI types, §2 =EvmCall=, §3
+the slot, §4 =Owned=, §5 what stays explicit, §6 tooling, §8 gates).
+Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
+- [ ] A. The ABI type layer + =EvmCall= (notes §1–2): =AbiType= for
+      Address / Bool / Bytes32 / U64 / U128 / U256, =AbiTuple= to eight,
+      the existing word encoders moved under the trait, the selector
+      hashed at build time with =sha3=; the fixture: selectors and words
+      of the vault's five calls pinned against compactc's calldata.
+- [ ] B. =Pending<Call, Env, WORDS>= (§3): response and kind from the
+      call, WORDS checked by inline const, the =Signet= block located by
+      the Ledger derive (one per block or a compile error) and threaded
+      into each slot, =Contract<Abi>= callee newtype, =Receipt<Call>= /
+      =Failed<Call>= tickets, =complete= / =refund=.
+- [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
+      commitment built on request and opened only on =refund_to_owner=;
+      =Commit<T, Tag>=; =compile_fail= gates per §8.
+- [ ] D. The vault's Pending lineage re-expressed on A–C, dump
+      byte-identical on all 17; =FixedGas= / =erc20_call= / the hand
+      selectors and word calls retired; the README example compiled as
+      a test contract and shown verbatim.
+- [ ] E. Tooling audit (§6): =#[circuit]= / =#[contract]= keep the item
+      textually intact — a test on the expansion.
+Exit criteria: A–D green and byte-identical; the README's cross-chain
+section is compiled code; notes/evm-calls.org as-built per rung.
+
