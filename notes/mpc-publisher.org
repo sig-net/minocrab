@@ -183,3 +183,160 @@ its tests. Outside mpc: deploy tooling in signet-midnight-integration
 carries our artifacts (or a Rust =ContractDeploy= path, ≈150 lines);
 this repo publishes a ≈100-150-line respond-call surface (M30 A). The
 DUST number is the one to distrust.
+
+* 8. As built — M29 A+B (2026-09-05)
+
+** The crate
+
+=crates/signet-artifacts= (workspace member, not a =[workspace.
+dependencies]= entry — nothing else depends on it, and that table is
+only what =workspace_versions.rs= checks): a library
+(=signet_artifacts::{circuits, generate, hash_verifier_key,
+zkir_v3_binary, zkir_v3_available}=) plus a thin binary,
+=cargo run -p signet-artifacts -- <out-dir>=, that calls =generate=.
+=circuits()= lists the three signer circuits under their COMPACT
+names (=signBidirectional=, =respond=, =respondBidirectional=) mapped
+to =signet_contract::{sign_bidirectional, respond,
+respond_bidirectional}= — the sidecar's =expectedVk=/
+=RESPOND_CIRCUITS= key by the Compact name, not the Rust one.
+
+** The exact =zkir-v3= invocation
+
+Confirmed by running =zkir-v3 --help= in the devshell: four
+subcommands (=mock-compile=, =mock-compile-many=, =compile=,
+=compile-many=), matching the note's guess. The pipeline:
+
+1. =minocrab_zkir::v3::write_zkir= writes =<out>/zkir/<circuit>.zkir=
+   for each of the three circuits (compactc's on-disk JSON form).
+2. =zkir-v3 compile-many <out>/zkir <out>/keys= (confirmed CLI:
+   =compile-many <IR_DIR> <KEY_DIR>=). Reading the binary's own source
+   (=~/.cargo/git/checkouts/midnight-ledger-*/04c9c5d/zkir-v3/src/
+   main.rs=) matters here: =compile-many= does keygen (writes
+   =<KEY_DIR>/<circuit>.{prover,verifier}=) but, EXACTLY LIKE
+   =compactc=, also writes each circuit's =.bzkir= AS A SIDE EFFECT of
+   loading a bare =.zkir=, INTO THE SAME =IR_DIR= the =.zkir= came
+   from (=main.rs='s =maybe_bzkir=: on a =.zkir= extension it loads
+   the =IrSource= and =tagged_serialize=s a =.bzkir= sibling before
+   returning). So there is no separate "make me a =.bzkir=" step —
+   =<out>/zkir/<circuit>.bzkir= appears next to the =.zkir= once
+   =compile-many= runs, matching the managed layout named in
+   milestones.org M29 A without any extra copying in this crate.
+
+Located via =$ZKIR_V3= else =zkir-v3= on =PATH= (a bare name with no
+=/= makes =std::process::Command= search =PATH= itself — no =which=
+dependency needed).
+
+** The managed layout (committed under =crates/signet-artifacts/
+managed/=)
+
+#+begin_example
+managed/
+  zkir/{signBidirectional,respond,respondBidirectional}.zkir   COMMITTED (~2.9 KB each)
+  keys/{signBidirectional,respond,respondBidirectional}.verifier COMMITTED (1,353 B each)
+  MANIFEST.sha256   sha256 of all twelve generated files, incl. the two
+                    uncommitted kinds (.bzkir, .prover) — drift in keygen's
+                    OWN output is visible even though nothing regenerates it
+                    by hand
+  expectedVk.json   {circuit -> hashVerifierKey(<circuit>.verifier)}
+#+end_example
+
+=.bzkir= (~16-20 KB) and =.prover= (~56 MB) are NOT committed — the
+milestone's call, since both regenerate byte-identically from the
+committed =.zkir= (=zkir-v3='s keygen is deterministic: rerunning
+=compile-many= on an unchanged =.zkir= reproduces the same =.bzkir=/
+=.prover=/=.verifier= bytes, checked by
+=tests/generated_equals_committed.rs= below). Whole =managed/= is 32 KB.
+
+** The regeneration gate
+
+=crates/signet-artifacts/tests/generated_equals_committed.rs=: calls
+=signet_artifacts::generate= into a fresh temp dir and asserts the
+COMMITTED =.zkir=/=.verifier= files, =MANIFEST.sha256= and
+=expectedVk.json= are byte-identical to the regenerated copies (the
+manifest comparison catches drift in the uncommitted =.bzkir=/
+=.prover= too, since their hashes are IN it). Skips loudly
+(=eprintln!=, like =corpus_roundtrip= without a corpus) if =zkir-v3=
+is not found — it IS found in this devshell, so the gate ran for
+real: keygen for all three circuits (k=10 each, BENCHMARK.md's
+figure) took *0.5 s total* on this machine, next to nothing beside
+compactc's own artifacts (the corpus's compactc-compiled =respond.
+zkir= at k=16/40,931 rows took *≈30 s* for the same three-circuit
+=compile-many= in the same environment, confirming the k=10 vs k=16
+gap BENCHMARK.md already reports also shows up at keygen time, not
+just proving time). No separate "if slow, run once and report" step
+was needed — every test run pays the 0.5 s.
+
+** The hash function: provenance and the pin
+
+=hashVerifierKey= lives at
+=@midnight-ntwrk/compact-js/dist/cjs/ContractKeyLocation.js= (checked
+out with dependencies at =~/midnight-examples/node_modules/
+@midnight-ntwrk/compact-js=, version 2.5.5-rc.7), lines 18-20:
+
+#+begin_src javascript
+function hashVerifierKey(bytes) {
+    return (0, node_crypto_1.createHash)('sha256').update(bytes).digest('hex');
+}
+#+end_src
+
+=sig-net/mpc='s =chain-signatures/midnight-publisher-ts/src/prover.
+ts= (=keyMaterial='s =readFile=/=Uint8Array.from= around line 42,
+checked with =hashVerifierKey(verifierKey) !== verifierKeyHash= at
+line 59) calls it on the RAW bytes of =keys/<circuit>.verifier= read
+straight off disk — no framing, no version byte, no length prefix. So the Rust pin is exactly =sha256(file bytes)= as
+lowercase hex — =signet_artifacts::hash_verifier_key=, backed by the
+=sha2= crate already in =[workspace.dependencies]=. Manually
+confirmed once outside the test suite too: =shasum -a 256
+keys/respond.verifier= and =node -e '...hashVerifierKey(fs.
+readFileSync(...))...'= against the same file printed the identical
+64-hex-char string.
+
+*** What could NOT be pinned against mpc's own fixtures
+
+No committed =(.verifier file, expected hash)= pair exists anywhere
+reachable. =@sig-net/midnight-contract= — the package that carries
+the real =expectedVk= table — is a version-pinned dependency
+(=0.20.0-rc.1=) of =midnight-publisher-ts/package.json= but is NOT
+vendored under =~/mpc= (no =node_modules= is installed there at all,
+so its =dist= is not on disk to read), and grepping =~/mpc= for
+=expectedVk=/=hashVerifierKey= only turns up the CALL SITES
+(=prover.ts=, =intent.ts=, =prover.test.ts=), never a literal hash
+value — consistent with mpc-publisher.org's own framing that the
+signet contract is not deployed yet, so no real =expectedVk= table
+has ever been generated. =tests/hash_verifier_key_pin.rs= therefore
+pins the function the other way the milestone allows: it shells out
+to =node= and REQUIRES the real
+=.../compact-js/dist/cjs/ContractKeyLocation.js= (path from
+=$MIDNIGHT_EXAMPLES_NODE_MODULES=, defaulting to
+=~/midnight-examples/node_modules=) on our own committed
+=managed/keys/respond.verifier=, and asserts the Rust function agrees
+— then separately checks the committed =expectedVk.json='s
+=respond= entry against the same two oracles. Both are present in
+this devshell (node 22.23.2; the real compact-js checkout), so the
+test runs for real rather than skipping; it skips loudly only if
+either is absent elsewhere. If =@sig-net/midnight-contract= is ever
+vendored with real =expectedVk= data, that would be a STRONGER,
+fixture-only pin worth adding alongside this one, not instead of it —
+the node-execution pin only proves "matches the source code today",
+not "matches what got deployed".
+
+** Timings
+
+- Keygen (all three circuits, =zkir-v3 compile-many=, k=10 each):
+  *0.5 s* total, this machine, cold KZG-params cache already warm
+  under =~/.cache/midnight/zk-params=.
+- Same three-circuit =compile-many= on compactc's OWN v3 artifacts
+  (k=16, corpus copies, used only to confirm the CLI's behaviour
+  before wiring the crate): *≈30 s* total.
+
+** Unresolved / left for later rungs
+
+- Rung C/D/E (the ledger's own preimage, ledger-apply, real proving
+  under =--release=) are untouched here — this note only records A/B.
+- =TRUST.md= was NOT regenerated: =signet-artifacts= is not one of
+  the seven eDSL crates =trust_base.rs= closes over (=CRATES= in that
+  file), so it is out of scope for that gate by design, not by
+  oversight.
+- The =expectedVk.json= pin is "matches compact-js's source read
+  today", not "matches a real, mpc-published, deployed-contract
+  =expectedVk=" — see above.

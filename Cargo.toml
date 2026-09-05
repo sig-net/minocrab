@@ -17,6 +17,9 @@ members = [
     # hand-authored-or-generated declaration plus its pinned artifact.
     "crates/signet-signer-interface",
     "crates/xcall-target-interface",
+    # M29 rung A/B: the managed artifact pipeline for the Signet signer
+    # circuits (zkir/keys/expectedVk the MPC sidecar reads unchanged).
+    "crates/signet-artifacts",
 ]
 
 [workspace.package]

@@ -1,0 +1,24 @@
+[package]
+name = "signet-artifacts"
+# M29 rung A/B: the managed-directory pipeline for the three Signet signer
+# circuits (notes/mpc-publisher.org §3, §8) — `.zkir` from minocrab, `.bzkir`
+# + prover/verifier keys from the pinned `zkir-v3` binary, and the
+# `expectedVk` hash table the sidecar's build/prove paths check. Not
+# depended on by anything else in the workspace, so it carries no
+# `[workspace.dependencies]` entry (workspace_versions.rs only checks those).
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Managed artifact pipeline (.zkir/.bzkir/keys/expectedVk) for the Signet signer circuits"
+
+[lints]
+workspace = true
+
+[dependencies]
+minocrab = { path = "../minocrab" }
+minocrab-contracts = { path = "../minocrab-contracts" }
+minocrab-zkir = { path = "../minocrab-zkir" }
+sha2.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
