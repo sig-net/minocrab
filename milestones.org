@@ -1406,26 +1406,26 @@ twelve instruments whose meanings were written down against a DRY RUN
 and synthetic firings, now read against a compiler that changed for
 its own reasons. Follow notes/version-bump.org "The checklist" step by
 step; =./bump.sh pins= / =gates= / =accept= is the runnable half.
-- [ ] 0. Look before touching: =./bump.sh pins= output recorded; the
+- [X] 0. (2026-09-05, in a2f1089: pins recorded, 13 predictions written BEFORE the recompile — 5 held, 3 half, 5 did not fire; every over-reach reasoned from a changelog line to "an artifact must move" without asking whether we compile that shape.) Look before touching: =./bump.sh pins= output recorded; the
       0.34.0 release notes / language 0.26.0 changelog read and the
       items that could plausibly move a corpus artifact listed BEFORE
       the recompile (so the reading in step 4 is a prediction checked,
       not a story fitted afterwards). Hazard 1 (version string vs rev)
       and hazard 2 (=--version= drops the suffix) re-read.
-- [ ] 1. Move the pin: =compactcVersion= in flake.nix, release hashes
+- [X] 1. (a2f1089 — flake.nix, four verified hashes, notes/zkir.org; `compactc --version` 0.34.0; hazard 1: 0.34.0 pins zkir-v3 at 04c9c5d, our rev, ledger pins untouched.) Move the pin: =compactcVersion= in flake.nix, release hashes
       for ALL FOUR systems (the M20 cross-platform flake — a linux
       hash left stale breaks CI, not the laptop), =notes/zkir.org='s
       pin table.
-- [ ] 2. Recompile the corpus (=corpus/compile.sh=) and READ
+- [X] 2. (488810c — 315 → 316 ok of 481: one source gained (`Uint<0>` legal since 0.33.111), two already-failing files fail differently (finding 9); NO sig-net contract stopped compiling; 814 of 814 committed .zkir byte-identical; 630 version restamps; 8 contract-infos reshape point types to first-class names; count pins moved to (831, 92) / "92 ok" / entry_point 316, lean_dataflow 16666 unchanged.) Recompile the corpus (=corpus/compile.sh=) and READ
       =compile-report.tsv='s diff first: language 0.26.0 may reject
       sources that compiled under 0.33 — a source that stops compiling
       is DATA (recorded, not patched), but a sig-net contract that
       stops compiling is a finding for its owners, said so in
       notes/corpus-sources.org.
-- [ ] 3. Gates in taxonomy order (=./bump.sh gates=); every failing
+- [X] 3. (classes 1–4, 6, 9, 10: only COUNT pins and the two interface pins fired, plus one red differential — our ABI parser rejecting the first-class point spelling — fixed in 5ec3322.) Gates in taxonomy order (=./bump.sh gates=); every failing
       instrument classified by notes/version-bump.org "Drift taxonomy"
       1-12 BEFORE anything is regenerated.
-- [ ] 4. The reading, written up as version-bump.org "Bump 1 —
+- [X] 4. (00e4ebd — version-bump.org "Bump 1 — 2026-09-05": A unchanged .zkir; B restamp ACCEPT; C point types (a); D gained source; E issue #588 (b) — our `uint_atom_bytes(0) = 0` mirrored the pre-fix alignment and NO instrument could have caught it, since bounded_differential recomputed the alignment with our own formula.) The reading, written up as version-bump.org "Bump 1 —
       2026-09-xx" beside the dry run: per moved artifact, which
       taxonomy class, and the evidence (the new
       =cargo run -p minocrab-ir --example zkir_text= disassembler is
@@ -1436,14 +1436,14 @@ step; =./bump.sh pins= / =gates= / =accept= is the runnable half.
       say so per circuit; (b) upstream FIXED something we mirrored →
       the mirror moves with it, ledger entry; (c) a wire-contract
       change → stop, dmd decides.
-- [ ] 5. Accept only what step 4 justified (=./bump.sh accept= is
+- [X] 5. (5ec3322 ABI parser; 94e0eae the two interface pins, diff reviewed: version fields + contract_info_sha256 only, every zkir_sha256 / inputs / constraints unchanged; abfaaac the mirror moved with upstream (1 byte) AND the instrument that would have caught it — fixtures/bounded_ledger, a `Uint<0..1>` ledger cell compiled under 0.34.0, tests/bounded_ledger_differential.rs pins the alignment byte against the ARTIFACT, verified to fail on the old value; e4b420b the seven fixtures recompiled, .zkir byte-identical; 3810087 the compact-path symlink made relative. `./bump.sh gates` all 8 stages PASS.) Accept only what step 4 justified (=./bump.sh accept= is
       EVERYTHING — the reviewed diff is the between-markers regen, per
       CONTRIBUTING.md, never a blanket accept). Snapshot diffs read.
-- [ ] 6. Numbers: the bump-time bench compact-findings.org deferred
+- [X] 6. (both benchmark contracts recompiled under both pins: .zkir identical; twenty circuits, no k crossed, no row moved; BENCHMARK.md untouched; compact-findings §4 "RE-MEASURED, STANDS UNMOVED".) Numbers: the bump-time bench compact-findings.org deferred
       here — the Signet singleton and the vault's nine under 0.34.0,
       one row-comparison table; BENCHMARK.md's compactc column
       re-stamped only if rows moved.
-- [ ] 7. Commit shape per version-bump.org §7: the pin commit, the
+- [X] 7. (pin / corpus / reading commits, then the six acceptance commits, each reviewable — merged 00e4ebd and 27a5c9e.) Commit shape per version-bump.org §7: the pin commit, the
       corpus commit, the accepted-baseline commit, the write-up —
       separately reviewable. Then tick M8's honest remainder in place.
 BEST-EFFORT COMPROMISE, stated up front: if step 3 fires broadly (a
