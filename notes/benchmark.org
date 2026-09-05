@@ -290,3 +290,35 @@ in-circuit byte reversal).
 NEXT for a real re-benchmark: M28 A (the compat port of the 17
 circuits, the PI-equal side), remap =minocrab-bench='s target table to
 the new names, then =nix develop -c ./bench.sh= for prove time and RSS.
+
+* 2026-09-05 — the seventeen-circuit run, two sides (M28 C)
+The full BENCHMARK.md run on the re-ported compat lineage: 17 vault
+circuits + the singleton's 3, sides =minocrab= / =compactc=, one shared
+preimage per cell (dumped by the differential suite), median-of-3 prove,
+one subprocess per cell. 40 cells; the =opt= / =borsh= sides are gone with
+the forks (notes/vault-refresh.org §0). Full table in BENCHMARK.md; the
+shape of the result:
+
+| circuit | k port/cc | rows Δ | prove Δ | RSS Δ |
+|--------------------+-----------+--------+--------+--------|
+| initialise | 10/10 | ±0% | +0.3% | −0.4% |
+| approveStata | 11/14 | −86.4% | −80.8% | −76.6% |
+| approveRouter | 11/14 | −86.0% | −80.9% | −75.6% |
+| startDeposit | 11/14 | −83.9% | −80.3% | −74.0% |
+| startWithdraw | 15/15 | −29.4% | −5.3% | −0.9% |
+| startSwap | 15/16 | −45.0% | −45.7% | −43.3% |
+| startSupply | 15/15 | −29.5% | −6.1% | −2.1% |
+| startRedeem | 15/16 | −34.9% | −44.2% | −47.3% |
+| the nine settles | 16/16 | −11.5..−16.4% | ±noise | ±noise |
+| the singleton ×3 | 10-11/16 | −97.5% | −95..−97% | −95% |
+
+Reading: the port's advantage was always instruction selection around
+the vault's own hashes; the protocol move replaced those hashes with
+Poseidon on both sides, so the settle-side wins shrank to rows-only and
+the request-side wins GREW (compactc still explodes every ABI word to
+bytes; the port does one byte-aligned =div_mod= + =reverse_bytes=).
+=initialise= is the first circuit at exactly compactc's rows (891).
+Same-k prove deltas (completeRedeem +9.6%, refundRedeem +6.9%) are the
+session's swing, as in every earlier edition — rows/k are the result.
+The Pending lineage's rows-only table above still stands as the API
+lineage's own statement.

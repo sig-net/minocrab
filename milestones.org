@@ -1202,11 +1202,17 @@ NOT DONE — the vault re-port, which is this milestone's body:
       field limbs now) — spec/borsh-subset.md §5/§6 carry a dated
       "superseded hash rule" note. OPEN for dmd: rewrite the Borsh spec's
       hash sections properly (layout vs identity), see the note §1.
-- [ ] C. The bench's target table (=minocrab-bench=) remapped to the new
-      names (DONE with A: 17 + 3 targets, two sides); BENCHMARK.md re-run
-      (dmd 2026-09-05: "optimise and re-benchmark the vault code" — the
-      compactc side now uses Poseidon too, so the headline comparison
-      changes materially).
+- [X] C. The bench's target table remapped (17 + 3 targets, two sides)
+      and BENCHMARK.md RE-RUN and rewritten (2026-09-05, 40 cells): every
+      request circuit ≥1 k level below compactc (2-word requests k14→k11,
+      prove −80..−81%; startSwap/startRedeem k16→15, −44..−46%), the nine
+      settles ECDSA-floored at k16 (rows −12..−16%, prove ±noise),
+      =initialise= row-identical at 891, singleton −95..−97% as before.
+      The headline did change materially: the settle-side wins shrank to
+      rows-only (Poseidon on both sides now), the request-side wins grew.
+      "Optimise" beyond this is the Pending lineage's job (rows-only table
+      in notes/benchmark.org); the compat lineage is PI-equal by
+      definition.
 - [X] D. M27's V-list re-frozen against the 17-circuit vault
       (2026-09-05, notes/zkir-semantics.org §7.1): one artifact,
       seventeen circuits, the draft's C1-C10 re-mapped; V5's Gap 2
@@ -1219,6 +1225,10 @@ NOT DONE — the vault re-port, which is this milestone's body:
 Exit criteria: the 17 circuits ported PI-equal (compat) and the API
 lineage green; every suite on the branch green; BENCHMARK.md re-run on
 the new protocol; corpus pins on main.
+Exit criteria MET 2026-09-05 on branch =m28-vault= (four commits: the
+fork retirement, the re-port, D, C) — merge is dmd's call. Left open in
+writing: the Borsh spec's §5/§6 hash sections (notes/vault-refresh.org
+§1); the Pending lineage has no lending flows (not in scope here).
 
 * M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
 Survey and decisions: notes/mpc-publisher.org. The signet contract is

@@ -145,3 +145,16 @@ lists the seventeen; the bench's target table remapped to the new names
 - D: M27's V-list against the 17-circuit vault.
 - The Borsh spec's hash sections: rewrite §5/§6 around the Poseidon rule
   or split "layout" from "identity" — a spec decision, flagged for dmd.
+
+* 2. C — the benchmark re-run (2026-09-05)
+Wiring: =minocrab-bench='s target table is the seventeen circuits plus
+the singleton's three, two sides (=minocrab=, =compactc=), preimages
+shared (dumped by the differential suite, so both sides prove the same
+statement per cell). Run as =./bench.sh= from the flake shell, fresh
+(=target/bench/results.jsonl= removed first): 40 cells, ~12 minutes.
+BENCHMARK.md rewritten for the two-sided run; notes/benchmark.org
+§2026-09-05 (second entry) has the shape. Headline: every request circuit
+drops ≥1 k level (the 2-word requests three: k14→k11, prove −80..−81%;
+startSwap/startRedeem k16→15, −44..−46%); the nine settles are
+ECDSA-floored at k16 on both sides (rows −12..−16%, prove ±noise);
+=initialise= is row-identical (891). README's benchmark lines updated.

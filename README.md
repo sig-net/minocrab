@@ -7,7 +7,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these two documents:
 
 - [VERIFICATION.md](VERIFICATION.md) — the steps we take to ensure that this compiler behaves correctly.
-- [BENCHMARK.md](BENCHMARK.md) — the performance of this eDSL, rows −18..−58% against compactc on the vault, prove time −46..−97% amortized.
+- [BENCHMARK.md](BENCHMARK.md) — the performance of this eDSL on the seventeen-circuit vault, proving the identical statement as compactc: every request circuit a `k` level or three lower (prove −44..−81%), the ECDSA-floored settles at parity, the singleton −95..−97%.
  
 ## Why use this
 
@@ -15,7 +15,7 @@ That being said this is a direct port of the Compact compiler and has millions o
 
 **Use Rust testing, benchmarking and verification tools.** Circuits compile natively and run under `cargo test` for faster CI ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes our 9,000,000 property cases against a Rust spec affordable, each accepted run replayed through Midnight's reference VM and the pinned ledger ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)), plus adversarial sweeps that found real bugs ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs)). Every ported circuit is differential-tested against compactc's own artifacts ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 167 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The benchmark reproduces from a clean checkout with a per-region cost profiler and calibrated primitive costs ([BENCHMARK.md](BENCHMARK.md), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs)).
 
-**Low level circuit generation.** MinoCrab emits ZKIR directly, so you can do low level optimisations: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Measured against compactc on the same contracts: rows −18..−58%, prove time −46..−97% amortized ([BENCHMARK.md](BENCHMARK.md)).
+**Low level circuit generation.** MinoCrab emits ZKIR directly, so you can do low level optimisations: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Measured against compactc on the same contracts and the same statement: rows −12..−86% on the vault, prove time −44..−81% wherever a circuit is not floored by protocol-pinned crypto ([BENCHMARK.md](BENCHMARK.md)).
 
 **Use standard serialisation formats — or write your own.** Records are a [Borsh](https://borsh.io) subset: a published, stable spec with implementations in many languages, so both ends of the wire are auditable separately. Compact's FAB encoding can still be used for compatibility, and Compact contract interfaces can be imported. All just a standard `Serialize` implementation.
 
@@ -355,7 +355,7 @@ One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical st
 - Row cuts pay only when they cross a `k` boundary — nine of twelve circuits did
 - `initialize` is identical row for row; `deposit` (−35% rows) and `withdraw` (−19% rows) prove in compactc's time
 - The M10 optimized vault cuts 35–58% of rows but proves its **own** preimage, so its warrant is symbolic-effect equality plus the 9M harness, not PI-equality. Its own new prove-time wins are two circuits (`deposit` k15→14, `withdraw` k16→15); `swap` missed k15 by 51 rows and was left there.
-- All 30 cells, methodology, per-region profiles: [BENCHMARK.md](BENCHMARK.md)
+- All 40 cells, methodology, per-region profiles: [BENCHMARK.md](BENCHMARK.md)
 
 ## What Compact has and MinoCrab does not
 

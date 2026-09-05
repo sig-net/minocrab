@@ -1,300 +1,187 @@
-# erc20-vault proving cost: compactc vs MinoCrab port vs optimized vs borsh
+# erc20-vault proving cost: compactc vs the MinoCrab port
 
 MinoCrab is a Rust eDSL for Midnight that compiles to ZKIR, replacing the
 Compact language. This report benchmarks the real sig-net cross-chain
-contracts — all 9 circuits of `erc20-vault` (sig-net/midnight-examples)
-plus the 3 circuits of its Signet singleton dependency
-(sig-net/midnight-integration) — at the same pinned toolchain versions,
-across four artifacts:
+contracts — all **17 circuits** of `erc20-vault` (sig-net/midnight-examples
+`0d9c1660`, the Poseidon protocol with the Aave lending flows) plus the 3
+circuits of its Signet singleton dependency (sig-net/midnight-integration
+`fff3421c`) — at the same pinned toolchain versions, across two artifacts:
 
-- **compactc** — the Compact contracts compiled by `compactc`.
-- **port (minocrab)** — MinoCrab's direct port. Statement-identical to
-  compactc: same typed schema, same shared `ProofPreimage`, equal
-  public-input streams (`pis`/`pi_skips`). This is the M6/M7 result — a
-  correctness-preserving lowering that is parity-or-better on every
-  circuit while proving the *identical* statement.
-- **opt** — the M10 optimized vault. A **different artifact**: it proves
-  its **own** preimage per circuit, for the same logical operation but
-  **not** the same statement. It re-chooses the vault's discretionary
-  hash constructions, merges a duplicated branch, and reframes one burn.
-  Its comparability to the first two rests on symbolic-effect equality of
-  the two contracts — a **weaker** warrant than the PI-equality the port
-  and compactc share (see [Four sides, three comparability claims](#four-sides-three-comparability-claims)).
-- **borsh** — the optimized vault on the M11 wire format: canonical
-  fixed-width Borsh records and attested outputs, and the stage-7 record
-  change that replaces 68–75 bytes of in-band schema strings with a
-  1-byte response kind (plus a format-version byte, both now bound
-  in-circuit by the settle hardening). Same statement caveat as opt; its
-  own extra warrant is the serialization-conformance suites, which pin
-  every encoder byte-equal to two independent Borsh oracles and to the
-  deployed payloads.
+- **compactc** — the Compact contracts compiled by `compactc 0.33.0-rc.2`.
+- **minocrab** — MinoCrab's direct port. Statement-identical to compactc:
+  same typed schema, same shared `ProofPreimage`, equal public-input
+  streams (`pis`/`pi_skips`), proven per circuit by the differential
+  suite (`tests/erc20_vault_differential.rs`, 57 tests including guard
+  and tamper agreement). Every cell below prices the **identical
+  statement** under the two toolchains.
+
+Earlier editions of this report had two more sides (the M10 optimized
+fork and its M11 Borsh fork, which proved their *own* statements). Both
+were retired in M28 after upstream adopted their avenues — Poseidon
+commitments, per-flow refunds — into the protocol itself
+(`notes/vault-refresh.org` §0); the two-sided comparison is now the whole
+story, and it is the strong comparability claim throughout.
 
 ## Headline
 
-Against compactc, the borsh artifact cuts rows by 35–58% on every
-runtime circuit and 43.5% on `initialize`. But **rows are not prove time
-— `k` is.** Halo2 proving cost tracks the padded circuit size 2^k, not
-the occupied rows, so a row cut pays off in wall-clock and RAM only when
-it crosses a power-of-two boundary. The vault is **hash-bound**: 95–99%
-of every circuit's rows are SHA-256, keccak-256 and secp256k1 ECDSA, and
-most of that crypto is protocol-pinned and immovable. So the row cuts
-are large everywhere, but the **new** prove-time wins over the
-already-fast port are exactly three circuits: `deposit` (M10, crosses
-k15→14, prove −34%), `withdraw` (M10, crosses k16→15, prove −40%), and —
-new in this refresh — **`swap`** (M11, crosses k16→15 on the borsh
-artifact: prove −41% and RAM −46% against opt, −67% and −73% against
-compactc). M10 had left `swap` 51 rows over the k15 boundary and
-deliberately stopped; the stage-7 record change, adopted for wire-format
-reasons, paid the 51 rows as a side effect. The other six circuits cut
-rows but stay k-floored — their big deltas versus compactc are inherited
-from the port's M6/M7 instruction-selection wins, already banked. This
-report shows all of it: the full four-way numbers, and an honest split of
-which side earned which win.
+On the same statement, the port never costs more than compactc and is
+cheaper wherever a circuit is not floored by protocol-pinned crypto:
 
-## Four sides, three comparability claims
+- **Every request circuit crosses at least one `k` boundary.** The three
+  cheap requests drop three levels (`approveStata`, `approveRouter`,
+  `startDeposit`: k14 → k11, prove −80..−81%, RSS −74..−77%); `startSwap`
+  and `startRedeem` drop one (k16 → k15, prove −44..−46%, RSS −43..−47%);
+  `startWithdraw` and `startSupply` cut 29% of rows inside k15 (prove
+  −5..−6%).
+- **The nine settle circuits are ECDSA-floored at k16 on both sides.**
+  They cut 12–16% of rows but the secp256k1 verify (~24,450 rows) pins
+  them above 2^15, so prove time and RSS are flat (±noise).
+- **`initialise` is identical**: 891 rows on both sides at k10, the
+  first circuit where the port's row count equals compactc's exactly —
+  the protocol move took the two SHA blocks out of the deployer gate,
+  which is where the port's earlier −43% on this circuit came from.
+- **The singleton is unchanged from M7**: −97.5% rows, −95..−97% prove,
+  five to six `k` levels lower.
 
-- **compactc ↔ port: same statement.** For every circuit the
-  differential harness proves that the port's artifact and compactc's
-  agree — same typed input/output schema, equal public-input streams
-  (`pis`/`pi_skips`) on a shared `ProofPreimage`, including
-  guard-rejection and tamper agreement. Each benchmark cell then proves
-  that *same* preimage under both artifacts. The numbers compare two
-  circuits proving the identical statement.
-- **port ↔ opt: same operation, re-framed.** The optimized artifact
-  **cannot** share that preimage — it deliberately proves a different
-  statement (a shorter user-commitment hash, a non-hashed token
-  separator, Poseidon refund commitments, a single-spend burn, a merged
-  refund branch). Its warrant is a shared *symbolic effect algebra*: both
-  the port's and the opt's reference models emit the same `Vec<Effect>`
-  over a term algebra, and the two op streams, run through the pinned
-  ledger's `run_program`, produce equal post-state, `Effects` (mints,
-  spends, receives, nullifiers, contract calls) and events — swept by the
-  spec harness at 1,000,000 cases per circuit (9,000,000 total in the
-  gating run).
-- **opt ↔ borsh: the same artifact on a new wire format.** Every borsh
-  circuit is either byte-identical ZKIR to its optimized twin or a
-  divergence declared in a ledger the fork gate checks in both
-  directions. The divergences are the M11 stages themselves — Borsh
-  output types, the kind-tagged record, the settle hardening — each
-  landed against the same reference model (told `Art::Borsh`) and the
-  spec harness, with the byte formats additionally pinned by the
-  conformance suites against `borsh`/`bincode` as dual oracles and
-  against the deployed payload bytes. The `modern` showcase twin is
-  byte-identical to borsh on all nine circuits and is not separately
-  benched.
+Compared with the previous protocol's numbers (the nine-circuit vault),
+the request-side wins **grew** and the settle-side wins **shrank**: the
+port's advantage was always instruction selection around the vault's own
+hashes, and the protocol move replaced most of those hashes (keccak
+request ids and digests, SHA commitments) with Poseidon on both sides.
+What is left to select better is the ABI-word and byte plumbing of the
+request circuits — where compactc still lowers every `Bytes<20>` /
+`Uint<128>` word through per-byte `div_mod` / `reconstitute_field`
+chains — and nothing in the ECDSA-dominated settles.
 
 ## Results
 
-All 42 cells from one session (2026-08-27, Apple Silicon, quiet
-machine), prove = median of 3. Raw data: `target/bench/results.json`.
+All 40 cells from one session (2026-09-05, Apple Silicon, quiet
+machine), prove = median of 3, one subprocess per cell for clean peak
+RSS. Raw data: `target/bench/results.json`.
 
 | circuit | side | k | rows | keygen (s) | prove (s) | verify (s) | proof (B) | peak RSS (MB) |
 |---|---|---|---|---|---|---|---|---|
-| initialize | compactc | 13 | 4,272 | 0.57 | 0.74 | 0.005 | 6,336 | 202 |
-| initialize | port | 13 | 4,272 | 0.58 | 0.75 | 0.005 | 6,336 | 209 |
-| initialize | opt | 13 | 2,412 | 0.51 | 0.72 | 0.004 | 6,336 | 186 |
-| initialize | borsh | 13 | 2,412 | 0.51 | 0.72 | 0.005 | 6,336 | 205 |
-| deposit | compactc | 15 | 27,002 | 3.36 | 4.35 | 0.007 | 9,504 | 920 |
-| deposit | port | 15 | 17,502 | 2.71 | 4.25 | 0.007 | 9,504 | 793 |
-| deposit | opt | **14** | 15,632 | 2.05 | 2.82 | 0.007 | 9,504 | 383 |
-| deposit | borsh | **14** | 15,614 | 2.06 | 2.82 | 0.007 | 9,504 | 388 |
-| claim | compactc | 17 | 64,549 | 12.24 | 18.57 | 0.008 | 10,304 | 2,878 |
-| claim | port | 16 | 47,660 | 6.01 | 8.11 | 0.007 | 10,304 | 1,876 |
-| claim | opt | 16 | 42,051 | 5.90 | 9.03 | 0.008 | 10,304 | 1,879 |
-| claim | borsh | 16 | 42,059 | 5.55 | 8.93 | 0.007 | 10,304 | 1,888 |
-| approveRouter | compactc | 15 | 20,619 | 3.20 | 4.42 | 0.006 | 8,128 | 691 |
-| approveRouter | port | 14 | 13,344 | 2.02 | 2.86 | 0.006 | 8,128 | 353 |
-| approveRouter | opt | 14 | 13,332 | 2.05 | 2.84 | 0.006 | 8,128 | 368 |
-| approveRouter | borsh | 14 | 13,314 | 2.03 | 2.88 | 0.006 | 8,128 | 344 |
-| withdraw | compactc | 16 | 52,009 | 5.96 | 8.38 | 0.007 | 9,504 | 1,608 |
-| withdraw | port | 16 | 42,373 | 4.97 | 8.09 | 0.007 | 9,504 | 1,646 |
-| withdraw | opt | **15** | 23,707 | 3.00 | 4.80 | 0.007 | 9,504 | 823 |
-| withdraw | borsh | **15** | 23,689 | 3.06 | 4.83 | 0.007 | 9,504 | 822 |
-| completeWithdraw | compactc | 17 | 64,498 | 10.89 | 18.15 | 0.007 | 10,304 | 3,211 |
-| completeWithdraw | port | 16 | 47,466 | 5.93 | 8.91 | 0.008 | 10,304 | 1,877 |
-| completeWithdraw | opt | 16 | 40,157 | 5.46 | 8.92 | 0.007 | 10,304 | 1,864 |
-| completeWithdraw | borsh | 16 | 40,165 | 5.36 | 8.89 | 0.007 | 10,304 | 1,876 |
-| refund | compactc | 17 | 97,026 | 12.89 | 18.48 | 0.008 | 10,304 | 3,332 |
-| refund | port | 16 | 65,231 | 5.91 | 9.49 | 0.008 | 10,304 | 1,870 |
-| refund | opt | 16 | 40,806 | 5.42 | 8.92 | 0.008 | 10,304 | 1,714 |
-| refund | borsh | 16 | 40,798 | 5.59 | 8.89 | 0.008 | 10,304 | 1,639 |
-| swap | compactc | 17 | 71,104 | 10.92 | 16.00 | 0.008 | 9,504 | 2,899 |
-| swap | port | 16 | 51,485 | 6.06 | 8.99 | 0.007 | 9,504 | 1,454 |
-| swap | opt | 16 | 32,819 | 5.56 | 8.85 | 0.007 | 9,504 | 1,458 |
-| swap | **borsh** | **15** | 28,625 | 3.60 | **5.27** | 0.007 | 9,504 | **788** |
-| completeSwap | compactc | 17 | 104,615 | 13.15 | 17.87 | 0.007 | 10,304 | 3,241 |
-| completeSwap | port | 16 | 65,071 | 6.40 | 9.21 | 0.007 | 10,304 | 1,736 |
-| completeSwap | opt | 16 | 50,254 | 5.62 | 8.92 | 0.008 | 10,304 | 1,714 |
-| completeSwap | borsh | 16 | 50,265 | 5.52 | 9.09 | 0.008 | 10,304 | 1,633 |
-| signBidirectional | compactc | 16 | 50,429 | 5.26 | 3.60 | 0.004 | 3,824 | 881 |
-| signBidirectional | port | 11 | 1,205 | 0.14 | 0.19 | 0.004 | 3,824 | 56 |
-| respond | compactc | 16 | 40,931 | 4.66 | 3.45 | 0.003 | 3,824 | 855 |
-| respond | port | 10 | 1,004 | 0.08 | 0.12 | 0.003 | 3,824 | 46 |
-| respondBidirectional | compactc | 16 | 40,931 | 4.59 | 3.58 | 0.004 | 3,824 | 879 |
-| respondBidirectional | port | 10 | 1,004 | 0.08 | 0.12 | 0.004 | 3,824 | 43 |
+| initialise | compactc | 10 | 891 | 0.17 | 0.14 | 0.004 | 5,216 | 49 |
+| initialise | minocrab | 10 | 891 | 0.17 | 0.14 | 0.004 | 5,216 | 49 |
+| approveStata | compactc | 14 | 8,483 | 0.73 | 0.73 | 0.004 | 3,824 | 221 |
+| approveStata | minocrab | **11** | 1,156 | 0.09 | **0.14** | 0.004 | 3,824 | **52** |
+| approveRouter | compactc | 14 | 8,516 | 0.73 | 0.74 | 0.004 | 3,824 | 223 |
+| approveRouter | minocrab | **11** | 1,189 | 0.09 | **0.14** | 0.004 | 3,824 | **54** |
+| startDeposit | compactc | 14 | 11,406 | 0.89 | 0.76 | 0.004 | 3,824 | 205 |
+| startDeposit | minocrab | **11** | 1,834 | 0.11 | **0.15** | 0.004 | 3,824 | **53** |
+| completeDeposit | compactc | 16 | 40,776 | 3.92 | 4.21 | 0.005 | 6,336 | 1,496 |
+| completeDeposit | minocrab | 16 | 35,846 | 3.61 | 4.21 | 0.005 | 6,336 | 1,598 |
+| startWithdraw | compactc | 15 | 32,751 | 1.80 | 1.91 | 0.005 | 5,392 | 620 |
+| startWithdraw | minocrab | 15 | 23,109 | 1.18 | 1.81 | 0.005 | 5,392 | 614 |
+| completeWithdraw | compactc | 16 | 40,553 | 3.91 | 4.24 | 0.005 | 6,336 | 1,487 |
+| completeWithdraw | minocrab | 16 | 35,625 | 3.57 | 4.23 | 0.005 | 6,336 | 1,474 |
+| refundWithdraw | compactc | 16 | 40,273 | 3.94 | 4.23 | 0.005 | 6,336 | 1,609 |
+| refundWithdraw | minocrab | 16 | 35,632 | 3.58 | 4.23 | 0.005 | 6,336 | 1,483 |
+| startSwap | compactc | 16 | 43,592 | 3.31 | 3.35 | 0.005 | 5,392 | 1,189 |
+| startSwap | minocrab | **15** | 23,955 | 1.23 | **1.82** | 0.005 | 5,392 | **674** |
+| completeSwap | compactc | 16 | 52,536 | 4.28 | 4.36 | 0.005 | 6,336 | 1,613 |
+| completeSwap | minocrab | 16 | 45,400 | 3.81 | 4.28 | 0.005 | 6,336 | 1,625 |
+| refundSwap | compactc | 16 | 40,279 | 3.88 | 4.27 | 0.005 | 6,336 | 1,498 |
+| refundSwap | minocrab | 16 | 35,638 | 3.57 | 4.24 | 0.005 | 6,336 | 1,625 |
+| startSupply | compactc | 15 | 32,693 | 1.79 | 1.91 | 0.005 | 5,392 | 624 |
+| startSupply | minocrab | 15 | 23,038 | 1.18 | 1.79 | 0.005 | 5,392 | 611 |
+| completeSupply | compactc | 16 | 42,639 | 4.12 | 4.25 | 0.005 | 6,336 | 1,499 |
+| completeSupply | minocrab | 16 | 35,645 | 3.59 | 4.17 | 0.005 | 6,336 | 1,489 |
+| refundSupply | compactc | 16 | 40,283 | 3.89 | 4.20 | 0.005 | 6,336 | 1,484 |
+| refundSupply | minocrab | 16 | 35,642 | 3.58 | 4.17 | 0.005 | 6,336 | 1,484 |
+| startRedeem | compactc | 16 | 35,646 | 2.75 | 3.22 | 0.005 | 5,392 | 1,168 |
+| startRedeem | minocrab | **15** | 23,220 | 1.18 | **1.80** | 0.005 | 5,392 | **615** |
+| completeRedeem | compactc | 16 | 42,639 | 4.06 | 4.31 | 0.005 | 6,336 | 1,496 |
+| completeRedeem | minocrab | 16 | 35,645 | 3.80 | 4.72 | 0.005 | 6,336 | 1,629 |
+| refundRedeem | compactc | 16 | 40,283 | 3.91 | 4.23 | 0.005 | 6,336 | 1,472 |
+| refundRedeem | minocrab | 16 | 35,642 | 3.81 | 4.52 | 0.005 | 6,336 | 1,657 |
+| signBidirectional | compactc | 16 | 50,429 | 4.54 | 2.83 | 0.003 | 3,824 | 1,021 |
+| signBidirectional | minocrab | **11** | 1,205 | 0.10 | **0.14** | 0.003 | 3,824 | **51** |
+| respond | compactc | 16 | 40,931 | 3.88 | 2.69 | 0.003 | 3,824 | 904 |
+| respond | minocrab | **10** | 1,004 | 0.07 | **0.09** | 0.003 | 3,824 | **41** |
+| respondBidirectional | compactc | 16 | 40,931 | 3.89 | 2.68 | 0.003 | 3,824 | 896 |
+| respondBidirectional | minocrab | **10** | 1,004 | 0.07 | **0.09** | 0.003 | 3,824 | **42** |
 
-The three Signet singleton circuits have no opt/borsh variant: the
-singleton is deployed compactc output — not ours to optimize — so it
-stays in the port-vs-compactc layer (see
-[Baseline layer](#baseline-layer-port-vs-compactc)).
+## Deltas, minocrab vs compactc
 
-## borsh vs compactc — the headline table
-
-The end-state artifact against the compactc baseline. This is the
-largest spread, and it carries the [weaker comparability
-claim](#four-sides-three-comparability-claims): borsh proves its own
-preimage per circuit — the same logical operation, not the same
-statement.
-
-| circuit | k borsh / cc | rows Δ | prove Δ | RSS Δ |
+| circuit | k port / cc | rows Δ | prove Δ | RSS Δ |
 |---|---|---|---|---|
-| initialize | 13 / 13 | −43.5% | −3.0% | +1.3% |
-| deposit | **14 / 15** | −42.2% | **−35.2%** | **−57.8%** |
-| claim | **16 / 17** | −34.8% | −51.9% | −34.4% |
-| approveRouter | **14 / 15** | −35.4% | −34.8% | −50.2% |
-| withdraw | **15 / 16** | −54.5% | **−42.4%** | **−48.9%** |
-| completeWithdraw | **16 / 17** | −37.7% | −51.0% | −41.6% |
-| refund | **16 / 17** | −58.0% | −51.9% | −50.8% |
-| swap | **15 / 17** | −59.7% | **−67.1%** | **−72.8%** |
-| completeSwap | **16 / 17** | −52.0% | −49.1% | −49.6% |
-
-## borsh vs opt — what the record change itself bought
-
-Eight circuits are within noise of their optimized twins (the wire-format
-divergences are a handful of rows either way: the settle circuits carry
-+6..+9 rows of hardening binds, the request circuits −18 rows of
-kind-for-schemas serialization). The exception is the point of this
-refresh:
-
-| circuit | k borsh / opt | rows Δ | keygen Δ | prove Δ | RSS Δ |
-|---|---|---|---|---|---|
-| swap | **15 / 16** | −12.8% | −35.3% | **−40.5%** | **−46.0%** |
-
-M10 measured `swap` at 32,819 rows — 51 over the 32,768 k15 boundary —
-and stopped rather than force it (the one remaining lever had a
-disproportionate blast radius). The M11 stage-7 record change replaced
-the swap record's 75 bytes of in-band schema strings with a 1-byte
-response kind, shrinking the request-side keccak by enough to land at
-28,625 rows: the crossing arrived as a side effect of a wire-format
-decision made for the MPC's benefit.
-
-## opt vs the port — isolating the M10 wins
-
-Comparing opt to the **port** isolates the optimization ladder's own
-contribution from the port's already-banked M6/M7 wins:
-
-| circuit | k opt / port | rows Δ | prove Δ | new k crossing? |
-|---|---|---|---|---|
-| initialize | 13 / 13 | −43.5% | −4.0% | no (SHA-floored at k13) |
-| deposit | 14 / 15 | −10.7% | **−33.6%** | **yes, k15→14** |
-| claim | 16 / 16 | −11.8% | +11.3%¹ | no (ECDSA-floored) |
-| approveRouter | 14 / 14 | −0.1% | −0.7% | no (already k14) |
-| withdraw | 15 / 16 | −44.1% | **−40.7%** | **yes, k16→15** |
-| completeWithdraw | 16 / 16 | −15.4% | +0.1% | no (ECDSA-floored) |
-| refund | 16 / 16 | −37.4% | −6.0% | no (ECDSA-floored) |
-| swap | 16 / 16 | −36.3% | −1.6% | no — crossed later by M11 (borsh) |
-| completeSwap | 16 / 16 | −22.8% | −3.1% | no (ECDSA-floored) |
-
-¹ Same-`k` prove deltas are noise (see the honest notes); claim's +11%
-is the same 2^16-padded circuit measured twice.
+| initialise | 10 / 10 | ±0% | +0.3% | −0.4% |
+| approveStata | **11 / 14** | −86.4% | **−80.8%** | −76.6% |
+| approveRouter | **11 / 14** | −86.0% | **−80.9%** | −75.6% |
+| startDeposit | **11 / 14** | −83.9% | **−80.3%** | −74.0% |
+| completeDeposit | 16 / 16 | −12.1% | −0.1% | +6.8% |
+| startWithdraw | 15 / 15 | −29.4% | −5.3% | −0.9% |
+| completeWithdraw | 16 / 16 | −12.2% | −0.3% | −0.9% |
+| refundWithdraw | 16 / 16 | −11.5% | ±0% | −7.8% |
+| startSwap | **15 / 16** | −45.0% | **−45.7%** | −43.3% |
+| completeSwap | 16 / 16 | −13.6% | −1.9% | +0.8% |
+| refundSwap | 16 / 16 | −11.5% | −0.8% | +8.5% |
+| startSupply | 15 / 15 | −29.5% | −6.1% | −2.1% |
+| completeSupply | 16 / 16 | −16.4% | −1.8% | −0.6% |
+| refundSupply | 16 / 16 | −11.5% | −0.7% | ±0% |
+| startRedeem | **15 / 16** | −34.9% | **−44.2%** | −47.3% |
+| completeRedeem | 16 / 16 | −16.4% | +9.6% | +8.9% |
+| refundRedeem | 16 / 16 | −11.5% | +6.9% | +12.5% |
+| signBidirectional | **11 / 16** | −97.6% | **−95.0%** | −95.0% |
+| respond | **10 / 16** | −97.5% | **−96.5%** | −95.4% |
+| respondBidirectional | **10 / 16** | −97.5% | **−96.5%** | −95.3% |
 
 ## Where the wins come from
 
-The vault is hash-bound: reconstructing per-circuit budgets from measured
-primitive costs (`cargo run -p minocrab-sim --example cryptocost`;
-calibrated SHA-256 pair hash at 3,739 rows, keccak attestation block at
-4,207, secp256k1 ECDSA verify at 24,450, Poseidon permutation at 22)
-shows 95–99% of every circuit's rows are SHA/keccak/ECDSA, confirmed by
-the region profiler attributing by estimated rows (e.g. claim's ECDSA
-region is 52.6% of rows against a 53% prediction). So transcript framing,
-`constrain_bits` dedup and serialization — worth a few hundred rows
-each — cross **no** `k` boundary and were largely not the lever. The row
-cuts come from the vault's **own discretionary hash constructions and
-structure**, avenue by avenue:
+The vault is hash-bound: 95–99% of every circuit's rows are SHA-256,
+Poseidon and secp256k1 ECDSA (per-circuit budgets reconstructed from
+measured primitive costs — `cargo run -p minocrab-sim --example
+cryptocost` — and confirmed by the region profiler under
+`target/bench/profiles/`). Every hash the vault computes is now
+**protocol-pinned**: the Poseidon request id and attestation digest (what
+the MPC recomputes and what it signed), the Poseidon identity and refund
+commitments (the MPC's key-derivation path and the settle gate), the
+SHA-256 `tokenType`, coin commitment and nullifier (the ledger's own), and
+the ECDSA verify (the only authentication gate). None of that is ours to
+choose, so the two sides spend the same rows on it.
 
-| # | avenue | change | rows | circuits |
-|---|---|---|---|---|
-| 1 | userCommitment short-SHA | 64-byte (2-block) → 43-byte (1-block) SHA-256, same domain tag; stays SHA (it is the MPC key-derivation path) | −1,860/use | initialize, deposit, claim |
-| 2 | token domain separator | `SHA-256([pad("erc20:vault:"), erc20])` → injective non-hashed encoding `0x01 ‖ zeros ‖ erc20` (ledger derives the colour itself and accepts an arbitrary pre-token) | −3,749/use, 8 uses | withdraw, swap, claim, completeWithdraw, refund×2, completeSwap×2 |
-| 3 | refund commitment → Poseidon | `withdrawRefundCommitment`/`swapRefundCommitment` SHA-256(96 B) → `transientHash` (internal, one-round-trip, never leaves the contract) | −3,560/use | withdraw, swap, completeWithdraw, refund, completeSwap |
-| 4 | refund branch merge | `refund` computed the same mint (domainSep→tokenType→coinCommitment→mint) and commitment hash in both branches; guards gate PI emission, not rows, so both cost full — merged to one shared block, ledger ops still guarded per route | −13,355 | refund |
-| 5 | changeNonce derived | completeSwap's `persistentHash([mintNonce, pad("change")])` → the bijection `[255 − hi, lo]` (uniqueness only; a total, disclosed derivation) | −3,747 | completeSwap |
-| 6 | burn single-spend | withdraw/swap burn reframed from receive+nullifier+spend to one claimed shielded spend of the burn-address output (subset-checked vs the offer, no contract-address requirement; gate proven against the pinned ledger) | −11,309/use | withdraw, swap |
-| 7 | kernel.self dedup | read the contract's own address once and thread it, instead of compactc's per-call-site reads | −12/read, 12 reads | deposit, approveRouter, withdraw, swap, refund, completeSwap |
-| 8 | kind-tagged record (M11) | the record's two in-band ABI schema strings (68–75 B, keccak'd into every request id) → a 1-byte response kind + a 1-byte format version, both in-circuit-bound at settle | request-side keccak shrink; **swap k16→15** | deposit, withdraw, swap, approveRouter (requests); all four settles bind it |
+What differs is **instruction selection around those hashes**:
 
-None of this touches the protocol-pinned crypto, which is immovable: the
-keccak request id and record layout (the MPC decodes the record from raw
-ledger state), the keccak attestation digest (what the MPC signed), the
-in-circuit secp256k1 ECDSA (the only authentication gate; the MPC is
-secp256k1-native), the coin commitments/nullifiers (multiset-checked
-against the offer), and `tokenType`'s own SHA derivation in the ledger.
-That crypto is why the settle circuits are floored above 2^15 and their
-row cuts stay cosmetic for prove time.
+| what | compactc | the port | where it shows |
+|---|---|---|---|
+| ABI words (`evmAddressAbiWord`, `numericAbiWord`), 2–7 per request | per-byte `div_mod` + `reconstitute_field` explode/rebuild chains, ~640 rows a word | one `div_mod` at a byte boundary and a native `reverse_bytes` | every request circuit; the whole of the three-level drop on the 2-word requests |
+| `Bytes<20>` `as Field as Bytes<32>` (the domain separator's input) | explode to bytes and rebuild | the address limb is the low limb, the high limb is the constant 0 | every circuit with a coin |
+| `abiWordToUint128` | gone from the settles (the settle views carry typed amounts) | gone likewise | — |
+| ledger op framing | identical Impact streams (PI-equal by construction) | identical | — |
+
+The request circuits are where those words live: `startSwap` builds seven
+of them and drops a level; the 2-word requests drop three. The settle
+circuits build none and read their amounts off the settle views, so their
+12–16% row cut is the domain-separator input plus framing, and stays
+inside k16.
 
 ## Honest notes and limits
 
-- **`initialize` is cosmetic.** −43.5% rows but SHA-floored at k13 (a
-  single SHA block already sits at k13, measured), so prove and RSS are
-  flat — what the comparison looks like with `k` off the table.
-- **The four settle circuits are ECDSA-floored above 2^15.** `claim`,
-  `completeWithdraw`, `refund`, `completeSwap` cut 34–58% of rows but
-  cannot cross k16 while the secp256k1 verify (~24,450 rows) is pinned.
-  Their row column is real; their prove-time column is mostly inherited
-  from the port.
-- **The own-statement caveat is not a footnote.** opt and borsh prove a
-  different statement from the port and compactc. The chain of trust that
-  replaces PI-equality — symbolic-effect equality, `run_program`
-  post-state/effect agreement, the 9,000,000-case spec sweep, the
-  pinned-ledger burn gate, and for borsh the byte-format conformance
-  suites — is machinery, not prose, but it is a **weaker** warrant than
-  "identical PI stream on a shared preimage." Treat those numbers as
-  "same operation, re-framed, proved cheaper," never as "same statement,
-  proved cheaper."
-- **The settle hardening is included.** The borsh settle circuits carry
-  the stage-7 hardening binds (record.kind == output.kind plus the
-  format-version byte, +6..+9 rows) — the numbers above price the
-  hardened circuits, not a checks-removed variant.
-- **The singleton has no opt/borsh variant.** Its 97.5% row cut is the
-  port's M7 result against a deployed compactc artifact, and it stays in
-  the baseline layer below.
-- Proof sizes are identical per circuit across all four sides (same
-  proof system and public-input counts); verify times are milliseconds
-  everywhere. Sub-second cells and same-`k` prove deltas are
-  noise-dominated; rows/k/RSS are exact. This session's absolute times
-  differ from the 2026-08-15 run's by a few percent either way (machine
-  state); every `k` and row count is identical where the artifacts are.
-
-## Baseline layer: port vs compactc
-
-The M6/M7 story, unchanged and still the floor the opt and borsh sides
-build on: the direct port proves the **identical statement** as compactc
-(shared `ProofPreimage`, PI-equal) and is parity-or-better everywhere,
-because it emits ZKIR's native byte instructions (`ReverseBytes`,
-byte-aligned `div_mod` slices, a segment-based serializer) where compactc
-lowers its standard library's byte manipulation to per-byte `div_mod` /
-`reconstitute_field` chains.
-
-| circuit | k port/cc | rows Δ | prove Δ | RSS Δ |
-|---|---|---|---|---|
-| initialize | 13 / 13 | ±0% | +1.0% | +3.7% |
-| deposit | 15 / 15 | −35.2% | −2.5% | −13.7% |
-| claim | **16 / 17** | −26.2% | **−56.3%** | −34.8% |
-| approveRouter | **14 / 15** | −35.3% | **−35.2%** | −48.9% |
-| withdraw | 16 / 16 | −18.5% | −3.5% | +2.4% |
-| completeWithdraw | **16 / 17** | −26.4% | **−50.9%** | −41.6% |
-| refund | **16 / 17** | −32.8% | **−48.7%** | −43.9% |
-| swap | **16 / 17** | −27.6% | **−43.8%** | −49.9% |
-| completeSwap | **16 / 17** | −37.8% | **−48.5%** | −46.4% |
-| signBidirectional | **11 / 16** | −97.6% | **−94.8%** | −93.6% |
-| respond | **10 / 16** | −97.5% | **−96.5%** | −94.7% |
-| respondBidirectional | **10 / 16** | −97.5% | **−96.7%** | −95.1% |
-
-The same-`k` rows here (`deposit`, `withdraw`) already showed, before any
-M10 work, that a row cut without a boundary crossing leaves prove time
-essentially flat — which is exactly the effect the opt side turned into
-crossings for those two circuits, and the M11 record change then repeated
-for `swap`.
+- **`initialise` is identical, not merely parity.** 891 rows on both
+  sides: one Poseidon commitment, one point encode, seven cell writes.
+  With the SHA blocks gone from the deployer gate there is nothing left
+  to select differently.
+- **The nine settle circuits are ECDSA-floored above 2^15.** They cut
+  11.5–16.4% of rows but cannot cross k16 while the secp256k1 verify is
+  pinned. Their prove column is noise: `completeRedeem` +9.6% and
+  `refundRedeem` +6.9% at identical `k` and fewer rows are the same
+  session's swing (the other seven k16 settles sit within ±2%, and the
+  earlier editions recorded the same spread). Rows, `k` and proof sizes
+  are exact; same-`k` prove and RSS deltas are not findings either way.
+- **Sub-second cells are noise-dominated** in absolute terms; their `k`
+  columns are the result.
+- **The three lending flows have no earlier number to compare with**;
+  they enter the report here. `startRedeem` crosses k16 → k15 like
+  `startSwap` (three ABI words including two copies of the vault
+  address); `startSupply` stays inside k15 like `startWithdraw`.
+- **The API lineage is not in this table.** `erc20_vault_pending` (the
+  vault on the typed Sig Network API) proves its own statement and is
+  priced by rows only in `notes/benchmark.org` §2026-09-05 — 0.14–0.35×
+  of compactc on the request circuits, 0.86–0.88× on the settles.
+- Proof sizes are identical per circuit across both sides (same proof
+  system and public-input counts); verify times are milliseconds
+  everywhere.
 
 ## Reproducing
 
@@ -304,16 +191,12 @@ From a clean checkout (nix + direnv provide the pinned toolchain):
 nix run .#bench        # or: nix develop -c ./bench.sh
 ```
 
-This re-runs the differential tests (dumping corpus-verified preimages
-for all four sides — opt's under `preimages/opt/`, borsh's under
-`preimages/borsh/`), proves all 42 cells, and writes
+This re-runs the differential tests with preimage dumping on (every
+preimage is corpus-verified — PI-equal under both toolchains' artifacts —
+before it is benchmarked), proves all 40 cells, and writes
 `target/bench/results.json`, `report.md`, and the per-region cost
-profiles under `target/bench/profiles/`. The opt and borsh sides prove
-their own dumped preimages, checked by their fork gates
-(`tests/erc20_vault_opt_fork.rs`, `tests/erc20_vault_borsh_fork.rs` —
-each circuit either byte-identical to its parent artifact or a declared,
-ledger-checked divergence, with each side's reference model accepting
-every dumped preimage) and the spec harness (`erc20_vault_spec.rs`,
-9,000,000 cases at `PROPTEST_CASES=1000000` in the gating run). Deleting
+profiles under `target/bench/profiles/`. Deleting
 `target/bench/results.jsonl` forces a fresh run; leaving it resumes an
-interrupted one.
+interrupted one. The property harness (`erc20_vault_spec.rs`,
+`PROPTEST_CASES=1000000 cargo test --release` for the gating run) and the
+adversarial sweeps cover the same seventeen circuits.
