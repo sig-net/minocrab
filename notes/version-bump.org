@@ -566,3 +566,164 @@ what was already there — were each verified on their own (Exercise D).
 Left for the first real bump, and it is the honest remainder: nobody has yet
 read a corpus diff produced by a *different* compiler and decided what it
 means. The taxonomy says how; only the event can prove the saying.
+
+* Bump 1 — 2026-09-05: compactc 0.33.0-rc.2 → 0.34.0 (language 0.26.0)
+The first REAL bump (M31). The dry run above could not take one because
+none existed; this one is a FULL release, shipped 2026-08-25, and the
+compiler genuinely changed for its own reasons.
+
+Written in two passes, deliberately: §"Step 0" (the pins and the
+PREDICTIONS) was committed with the pin commit, BEFORE the corpus was
+recompiled, so the reading in §"The reading" is a prediction checked
+rather than a story fitted afterwards. The revision history is the
+evidence for that claim: the prediction list has an earlier commit than
+the artifacts it predicts.
+
+** Step 0 — the pins, before anything moved
+=./bump.sh pins=, 2026-09-05:
+
+: flake.nix compactc            0.33.0-rc.2
+: Cargo.toml midnight-ledger    04c9c5d9bcebb8d4427d8589fb54d58a55599c14
+: Cargo.toml [patch] tag        transient-crypto-2.2.0-rc.1
+: compactc --version            0.33.0
+: zkir --version                midnight-zkir 2.2.0
+: zkir-v3 --version             midnight-zkir-v3 3.0.0-rc.2
+: rustc --version               rustc 1.97.1 (8bab26f4f 2026-07-14)
+: locked crate versions         2.2.0 3.0.0-rc.2
+:
+: compactc releases (newest first):
+:   compactc-v0.34.0       Latest        2026-08-25   <- the bump
+:   compactc-v0.34.0-rc.1  Pre-release   2026-08-24
+:   compactc-v0.34.0-rc.0  Pre-release   2026-08-19
+:   compactc-v0.33.0-rc.2  Pre-release   2026-07-15   <- the old pin
+: midnight-ledger HEAD    c8365dc6dd3f  diverged: main has 99 commits we
+:                         do not, we have 342 main does not (merge base
+:                         d34a672369f0, 2026-06-25)
+: corpus sources MOVED: compact, oz-compact-contracts, example-counter,
+:                       example-bboard, aa-midnight-evm-experiment
+:                       (all three sig-net sources: same)
+
+TWO PINS DELIBERATELY NOT MOVED IN THIS BUMP, so the diff is readable
+(hazard 8 at scale): the corpus source revs — five moved and stay where
+they are, because a source bump and a compiler bump in one diff is the
+thing the taxonomy cannot separate — and the midnight-ledger rev, which
+is DIVERGED from main, not behind it (dry run B's verdict stands).
+
+*** Hazard 1 re-read: what 0.34.0 was itself built against
+=compactc-v0.34.0='s own =flake.lock=:
+
+: onchain-runtime-v4  4823b5351b17cc49e30f19760dbd30a73cf95e22  ledger-9.1.0.0-rc.3
+: zkir                f227f1e5771c165d829501b830e36b4acbb411ec  -
+: zkir-v3             04c9c5d9bcebb8d4427d8589fb54d58a55599c14  -   <-- OUR Cargo pin
+: zkir-v3-wasm        04c9c5d9bcebb8d4427d8589fb54d58a55599c14  -
+: zkir-wasm           4823b5351b17cc49e30f19760dbd30a73cf95e22  ledger-9.1.0.0-rc.3
+
+This is the fact that bounds the blast radius, and it moved IN OUR
+FAVOUR: 0.33.0-rc.2 pinned =zkir-v3= at =b17df9d1= while we pin
+=04c9c5d9=, so the old pin's binaries and our crates were the same
+version STRING from different code (hazard 1's whole point). 0.34.0
+pins =04c9c5d9= — exactly our rev. The bundled =zkir-v3= binary and our
+=midnight-zkir-v3= crate are now the same code. So the ledger pins do
+not move in this bump, and nothing in =Cargo.toml= is touched.
+
+The v2 =zkir= dependency DID move (=4823b535= → =f227f1e5=); that is
+the printer behind the 722 v2 corpus artifacts, which nothing in the
+workspace targets since M36 retired the v2 bindings. Prediction P10.
+
+*** Hazard 2 re-read
+=compactc --version= reports =0.34.0= — and =compactc-v0.34.0-rc.1=
+would report the same string. The authority is =flake.nix= plus the nix
+store path (=/nix/store/wxf3jda7d8590l1d32x5nqx70f6amnna-compactc-0.34.0=),
+never =--version=. Confirmed in the shell after the pin moved. The old
+binary reported =0.33.0= for an rc.2, which is the same trap.
+
+*** THE PREDICTIONS — what could plausibly move a corpus artifact
+Sources read before any recompile: the =compactc-v0.34.0= release notes
+(https://github.com/LFDT-Minokawa/compact/releases/tag/compactc-v0.34.0)
+and, because those summarise only, the repo's own per-patch
+=CHANGELOG.md= at that tag
+(https://raw.githubusercontent.com/LFDT-Minokawa/compact/compactc-v0.34.0/CHANGELOG.md),
+entries =0.33.100= through =0.34.0= — 23 patch releases between our pin
+and this one. Ranked by how likely each is to move an artifact:
+
+- *P1 — =Uint<0..1>= alignment =bytes:0= → =bytes:1= (0.33.108, issue
+  #588).* The single highest-risk item. Single-variant enums lower to
+  =Uint<0..1>=; the old compiler declared alignment =bytes:0= yet still
+  put one (always-zero) value in the transcript. Predict: every artifact
+  with such a field moves its transcript AND its =contract-info.json=,
+  i.e. taxonomy 2/4/5, not merely 3. Corpus reach: midnight-serde's
+  =serde-fixtures.compact= (=Bounded.unit: Uint<0..1>=). OUR reach: this
+  is a behaviour we MIRRORED — =crates/minocrab-std/src/v3/borsh.rs=
+  §754 and notes/bounded-integers.org §3 both state "Uint<0..1> FAB 0
+  bytes". If the fix is real, our mirror is now wrong: answer (b).
+- *P2 — hashing alignment for point/scalar types (0.33.105 #608,
+  0.33.107).* =persistentHash= / =persistentCommit= / =keccak256= did
+  not handle alignment for =JubjubPoint=, =Secp256k1Point=,
+  =JubjubScalar=, =Secp256k1Base=, =Secp256k1Scalar= in the ZKIR v3
+  backend; #608 CRASHED the compiler on =keccak256<Secp256k1Point>=.
+  Predict: the sig-net v3 artifacts (Signet.compact, circuits.compact,
+  erc20-vault.compact, test-caller-contract.compact — all four use
+  =Secp256k1Point=) move, and something that used to fail may compile.
+- *P3 — =secp256k1EthereumAddress= now asserts a non-identity input
+  (0.33.107).* A NEW CONSTRAINT in a stdlib circuit: rows up, stream
+  moves, statement changes. Corpus reach: =compact/examples/ecdsa=
+  re-exports it; the Signet port if it uses it.
+- *P4 — ECDSA message hash read as a big-endian secp256k1 scalar z
+  (0.33.100).* =secp256k1EcdsaVerify= / =…Recover= changed HOW the
+  message hash is interpreted. Predict: the Signet ECDSA circuits move,
+  and this is semantic — which signatures verify — so if our port
+  mirrors the old reading it is answer (b), and if the artifact's PI
+  framing moves it is (c).
+- *P5 — =secp256k1EcdsaRecover= and =Secp256k1EcdsaSignatureWithRecovery=
+  REMOVED from the standard library (0.33.100).* Predict FEWER ok for
+  any source naming them: =compact/compiler/zkir-v3-library.compact= is
+  the only corpus hit.
+- *P6 — point/scalar types are no longer built-in and no longer
+  exportable from a contract's top level (0.33.118, BREAKING).*
+  Predict FEWER ok. Corpus hits that export such a ledger field at top
+  level: =compact/examples/secp256k1/arithmetic.compact= (=export ledger
+  base: Secp256k1Base=), =signet-midnight-examples= erc20-vault
+  (=export ledger mpcResponseKey: Secp256k1Point=) and
+  =signet-midnight-integration= test-caller-contract (same). *If the
+  sig-net two stop compiling this is a finding for their owners* and it
+  takes the erc20-vault differential and an interface crate with it.
+- *P7 — stdlib =add= / =mul= removed (0.33.113).* Only the
+  =Secp256k1Base= / =Secp256k1Scalar= ones; every corpus =add(= / =mul(=
+  is a user-defined circuit (oz-midnight-apps math, test-center
+  composable). Predict NO change.
+- *P8 — =Uint<0>= is now legal (0.33.111).* Predict no change: the
+  corpus negatives are never compiled.
+- *P9 — nested ZKIR-v3 native values get proper ledger conversions
+  (0.33.122, issue #704).* The fix unified three near-duplicate code
+  paths (hashing / Impact =popeq= / every other Impact instruction), so
+  it can move IMPACT OP STREAMS, not only ZKIR. Predict: contracts
+  nesting a point in a ledger structure move — oz-compact-contracts
+  =ConfidentialFungibleToken= (=Map<Bytes<32>, JubjubPoint>=), the
+  sig-net =Secp256k1Point= ledger fields — and taxonomy 4 is in scope.
+- *P10 — the v2 =zkir= printer moved with the release's flake.lock.*
+  Predict wholesale churn across the 722 v2 artifacts, invisible to
+  every gate (round-trip counts and skips v2 since M36) and visible only
+  as corpus diff volume.
+- *P11 — the v3 printer now respects =--no-communications-commitment=
+  (0.33.112).* We never pass it (=corpus/sources.json= passes only
+  =--feature-zkir-v3=, hazard 5). Predict NO change.
+- *P12 — manifest hashes computed in-process (0.33.121).* Build speed.
+  Predict no artifact change.
+- *P13 — cross-contract callees may do Zswap coin operations
+  (0.33.119).* Runtime and =CircuitContext= work. Predict no =.zkir=
+  change; possible =contract-info.json= movement for callee coin ops.
+
+PREDICTED TO STAY STILL, and worth saying because it is the half that is
+easy to get wrong: our own artifacts (the =zkir_dump= instrument), the
+row and interface snapshots, =spec/vectors= and =spec/ts=. Our lowering
+does not read compactc. If any of those move, the bump is not what it
+appears to be and the session stops.
+
+A STRUCTURAL NOTE recorded before the recompile, because it decides what
+"the corpus moved" even means: seven differential fixtures
+(=crates/minocrab-contracts/tests/fixtures/{adts,bounded,coins,kernel,nested,opaque,wide}/out/zkir=)
+are compactc artifacts committed BY HAND, not produced by
+=corpus/compile.sh=. A pin bump does not touch them, so those
+differentials keep comparing against 0.33.0-rc.2 output until someone
+recompiles them. That is a decision for step 5, and it is listed in the
+decision list below.

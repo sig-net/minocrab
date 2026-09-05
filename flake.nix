@@ -23,10 +23,13 @@
 
         # Pinned Compact toolchain, from the LFDT-Minokawa/compact release
         # binaries (recipe + verified hashes: notes/zkir.org "Option B").
-        # 0.33.0-rc.2 = first cross-contract-capable toolchain (ledger 9);
-        # latest stable is 0.31.1 (current Mainnet, ledger 8, no CCC).
+        # 0.34.0 (language 0.26.0, runtime 0.19.0, released 2026-08-25) — the
+        # first FULL release of the cross-contract-capable line (ledger 9);
+        # latest Mainnet-targeting stable is 0.31.1 (ledger 8, no CCC).
+        # Its own flake.lock pins zkir-v3 at 04c9c5d9bceb — EXACTLY our
+        # Cargo.toml rev — so this is a compactc-only pin (M31, hazard 1).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
-        compactcVersion = "0.33.0-rc.2";
+        compactcVersion = "0.34.0";
         # The release zips name linux targets `-unknown-linux-musl`.
         compactcTarget = {
           aarch64-darwin = "aarch64-darwin";
@@ -35,10 +38,10 @@
           x86_64-linux = "x86_64-unknown-linux-musl";
         };
         compactcHashes = {
-          aarch64-darwin = "sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I=";
-          x86_64-darwin = "sha256-3OGlfYLOBiCPzF2d5TQ/GMSGVKX/Os9rr6vj0Xvx7xg=";
-          aarch64-linux = "sha256-OqI4ErCwhtvOB9o5MaQNywG+yWdrHO7X8tC+Nwqy3EY=";
-          x86_64-linux = "sha256-MFWrkrvI1bsNYoK2Ybg3YdKg3i7jfiHPcQfiWq8qmq0=";
+          aarch64-darwin = "sha256-zkWMQGLxod0pIFkaC7WrZXvgL0q4Qi8tdpiHc/YBA8M=";
+          x86_64-darwin = "sha256-Pe4f3Q1crRM146eAdHtkDi90AQ6Pj2MRfz+B9L6lioE=";
+          aarch64-linux = "sha256-0+KSxPSOJX3Naz0+PkdD19jqByn0iVPquRo2bUTNAm0=";
+          x86_64-linux = "sha256-d1zN31pxOZg1Mpu/dHG6WoxU/Mgl03LHXhm6cEIGlYQ=";
         };
         compactc = pkgs.stdenvNoCC.mkDerivation {
           pname = "compactc";

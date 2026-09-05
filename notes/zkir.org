@@ -361,6 +361,29 @@ The zips have no top-level dir; unpack with unzip. File-level SRI hashes
   =sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I==
   (hex =35a28009c9a57d20902e4fcfd12f0ca9ea94338208954cf8bcd335652e24f382=)
 
+THE PINNED RELEASE, all four systems (M31, verified 2026-09-05 by
+=nix store prefetch-file --hash-type sha256= on each asset URL — none
+guessed; a stale linux hash breaks CI, not the laptop):
+
+| =compactc_v0.34.0_<target>.zip= | SRI hash | sha256 hex |
+|---------------------------------+----------+------------|
+| =aarch64-darwin= | =sha256-zkWMQGLxod0pIFkaC7WrZXvgL0q4Qi8tdpiHc/YBA8M== | =ce458c4062f1a1dd2920591a0bb5ab657be02f4ab8422f2d76988773f60103c3= |
+| =x86_64-darwin= | =sha256-Pe4f3Q1crRM146eAdHtkDi90AQ6Pj2MRfz+B9L6lioE== | =3dee1fdd0d5cad1335e3a780747b640e2f74010e8f8f63117f3f81f4bea58a81= |
+| =aarch64-unknown-linux-musl= | =sha256-0+KSxPSOJX3Naz0+PkdD19jqByn0iVPquRo2bUTNAm0== | =d3e292c4f48e257dcd6b3d3e3e4743d7d8ea0729f48953eab91a366d44cd026d= |
+| =x86_64-unknown-linux-musl= | =sha256-d1zN31pxOZg1Mpu/dHG6WoxU/Mgl03LHXhm6cEIGlYQ== | =775ccddf5a71399835329bbf7471ba5a8c54fcc825d372c75e19ba7042069584= |
+
+(The previous pin's four, kept for a rollback: aarch64-darwin
+=sha256-NaKACcmlfSCQLk/P0S8MqeqUM4IIlUz4vNM1ZS4k84I==, x86_64-darwin
+=sha256-3OGlfYLOBiCPzF2d5TQ/GMSGVKX/Os9rr6vj0Xvx7xg==, aarch64-linux
+=sha256-OqI4ErCwhtvOB9o5MaQNywG+yWdrHO7X8tC+Nwqy3EY==, x86_64-linux
+=sha256-MFWrkrvI1bsNYoK2Ybg3YdKg3i7jfiHPcQfiWq8qmq0==.)
+
+Hazard 2 in the flesh: the 0.34.0 binary reports =compactc --version=
+=0.34.0= and the 0.33.0-rc.2 binary reported =0.33.0=. The version
+string cannot tell an rc from a final, so what says which compiler is
+in the shell is the nix store path (=nix eval
+.#compactc.outPath=) and =flake.nix= — never =--version= alone.
+
 #+begin_src nix
 { pkgs, ... }:
 let
