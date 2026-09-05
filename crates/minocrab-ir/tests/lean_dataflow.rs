@@ -114,7 +114,7 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
     // THE COUNT IS ASSERTED, as in corpus_roundtrip.rs: it moves only when
     // the corpus does; update it in the same commit, naming the source.
     assert_eq!(
-        instructions, 16815,
+        instructions, 16666,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

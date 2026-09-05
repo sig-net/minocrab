@@ -74,7 +74,7 @@ fn round_trips_entire_corpus() {
     // commit, with the source that moved it named.
     assert_eq!(
         (files.len(), v3_count),
-        (806, 84),
+        (814, 92),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

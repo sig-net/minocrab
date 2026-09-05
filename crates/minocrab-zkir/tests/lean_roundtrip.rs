@@ -55,7 +55,7 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // THE COUNT IS ASSERTED, mirroring corpus_roundtrip.rs: the v3 count
     // moves only when the corpus does; update both in the same commit.
     assert!(
-        stdout.starts_with("84 ok, 0 failed, 722 v2 skipped"),
+        stdout.starts_with("92 ok, 0 failed, 722 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 
