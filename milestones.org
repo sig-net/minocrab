@@ -700,8 +700,9 @@ stage declares movement, notes as-built.
       via its supported rustup path; two temporary shims for kani-0.67's
       pre-1.95 nightly vs sysinfo 0.39, documented in kani.sh, both dead
       when kani's nightly catches up.)
-- [ ] NOTED, NOT YET (dmd): cargo-semver-checks on the interface crates
-      in CI — waits for CI (M20 item 2).
+- [X] NOTED, NOT YET (dmd): cargo-semver-checks on the interface crates
+      in CI — waits for CI (M20 item 2). (DONE by M34 B, 2026-09-05:
+      the semver job from the flake, proven to fire.)
 Exit criteria: R1-R4 landed with their gates; the taint lint green over
 all 200 circuits or its findings resolved through dmd; Kani properties
 proved at stated bounds with runtimes recorded; then the M11 hardening
