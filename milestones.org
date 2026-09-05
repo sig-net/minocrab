@@ -1112,7 +1112,11 @@ note in a drawer:
       build this item once it is lifted (best-effort shape: distil the
       vault's =tests/support= into a typed harness first, the tutorial
       second, the deploy binding after M29 D/E exist).
-- [ ] =minocrab-ledger/src/lib.rs= at 3,700 lines — a split by concern
+- [X] (2026-09-05, 7dc65fd: six files — impact / ops / reads / kernel /
+      calls / tests — lib.rs = crate doc + re-exports (103 lines); dump
+      byte-identical on 209 circuits, re-run on main at merge;
+      notes/edsl-trim.org "M26 — the ledger crate split".)
+      =minocrab-ledger/src/lib.rs= at 3,700 lines — a split by concern
       (Impact encoding / ledger ops / calls). Cosmetic; zero-movement by
       construction (the dump gate).
 Exit criteria: =when_private= lands with its gates or is refused in writing
