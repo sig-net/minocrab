@@ -2131,3 +2131,60 @@ calls them, and by what the fixed-width ABI layer can express.
 Exit criteria: A–D and G green, zero movement on shipped circuits, every
 selector alloy-pinned; E and F as far as a consumer needs.
 
+* M39 — Nonces, fee policy, and the administrator: unstick and batch (dmd, 2026-09-06)
+dmd (2026-09-06): two abilities an administrator on the EVM side needs,
+BOTH OPTIONAL per contract, currently being implemented in Compact by
+sig-net; plus the earlier ask that an administrator set the gas price
+rather than the user.
+1. UNSTICK: a transaction that never mines at nonce n blocks n+1, n+2, …
+   for the key. The administrator asks the MPC to sign a BLANK
+   replacement at n — the key's own address, zero value, no calldata,
+   21,000 gas — with a HIGHER, administrator-chosen fee.
+2. BATCH: request circuits no longer choose a nonce (two concurrent
+   provers race for "next nonce" and one proves an unminable tx). A
+   request INSERTS the transaction-minus-nonce into a structure whose
+   insert is WRITE-ONLY (a push, no shared read in the proof); a FLUSH
+   circuit pulls N entries, reads the last used nonce ONCE, numbers them
+   last+1 … last+N, writes last+N, and emits all N sign events in one
+   transaction; the MPC signs and submits N consecutive txs. Contention
+   moves from every prover to the flush.
+Flagged at filing (to confirm against sig-net's contract): (a) the
+request RECORD carries the nonce, so in the batched design the record and
+its request id are created at FLUSH, not insert — the environment (who
+may refund, how much) must be attached at insert and carried into the
+record, or keyed by a requester-owned handle; (b) today's request circuit
+also =popeq=s the Signet request counter, a second shared read that races
+the same way — a contention-free insert must drop it or key the queue by
+something the requester owns.
+- [ ] A. DESIGN NOTE FIRST: notes/nonce-admin.org — the three nonce
+      homes (expected-nonce cell written by an authorised relayer / the
+      MPC fills the nonce / a per-path counter) and why batching
+      supersedes them; the =FeePolicy= cell in the =Signet= block under
+      an administrator role (the deployer key or a rotatable admin
+      commitment); the unstick request as a =Blank= call type (=Return =
+      Unit=, =succeeded = always=) at an explicit nonce with an explicit
+      fee; the queue as a write-only insert (which Midnight ADT: =List.
+      pushFront= is write-only; a =Map= keyed by a requester-owned handle
+      likewise; a counter-keyed tail is NOT) and the flush's single read;
+      the record-at-flush consequence for =Pending= and the settle side;
+      what stays PI-equal to sig-net's Compact and what our typed API
+      does differently. Written before their contract lands, so the
+      reading of it is a prediction checked.
+- [ ] B. THE PORT, when sig-net's Compact lands: corpus refresh, the
+      compat port PI-equal on every new circuit (insert / flush / unstick
+      / setFeePolicy), the reference model and spec harness extended,
+      the leakage inventory re-frozen (a flush publishes N records at
+      once — its inventory line is new).
+- [ ] C. THE TYPED EXPRESSION: =Queued<Call, Env, WORDS>= beside
+      =Pending= (=insert= write-only, =flush(N)= reads the nonce once and
+      files N records, settle as =Pending=), an =Admin= block (=FeePolicy=
+      cell, the administrator gate) with =set_fee_policy= and =unstick=
+      circuits, both OPTIONAL — a contract without the block compiles to
+      the M37 shape unchanged (zero movement on the treasury and vault).
+- [ ] D. The MPC side's reading: signet-sim's responder handles a batch
+      (N sign events in one transaction, consecutive nonces) and a
+      replacement at an already-issued nonce; the run records for the
+      Lean gate include a flush.
+Exit criteria: A written and checked against sig-net's contract when it
+lands; B PI-equal; C zero-movement for contracts that opt out; D green.
+
