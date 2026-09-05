@@ -435,7 +435,8 @@ fn compactc_s_abi_agrees_with_the_leafs() {
 ///
 /// `Secp256k1Point` is the one `Opaque` spelling the corpus DOES compile to
 /// v3, and the erc20-vault — our own benchmark contract — takes one as
-/// `initialize`'s fifth argument. Before M15 `flatten()` returned
+/// `initialise`'s seventh argument (fifth before the lending flows added
+/// the two Aave addresses). Before M15 `flatten()` returned
 /// `TypeError::Opaque` for it, so the benchmark contract was not importable
 /// through our own interface machinery. This is that fact, from the corpus
 /// artifact rather than from our fixture.
@@ -453,10 +454,10 @@ fn the_vaults_own_initialize_now_flattens() {
     ))
     .expect("the corpus artifact is committed");
     let info = ContractInfo::parse(&text).expect("contract-info parses");
-    let initialize = info.circuit("initialize").expect("the vault exports initialize");
+    let initialize = info.circuit("initialise").expect("the vault exports initialise");
 
     // `responseKey: Secp256k1Point`, published as an `Opaque` under an alias.
-    let response_key = &initialize.arguments.last().expect("five arguments").ty;
+    let response_key = &initialize.arguments.last().expect("seven arguments").ty;
     assert_eq!(
         response_key.curve_point(),
         Some(minocrab_abi::info::CurvePoint::Secp256k1)
@@ -468,6 +469,14 @@ fn the_vaults_own_initialize_now_flattens() {
     let mut atoms = Vec::new();
     let mut prims = Vec::new();
     for (a, p) in [
+        (
+            <Bytes<20, Public> as CircuitAbi>::atoms(),
+            <Bytes<20, Public> as CircuitAbi>::prims(),
+        ),
+        (
+            <Bytes<20, Public> as CircuitAbi>::atoms(),
+            <Bytes<20, Public> as CircuitAbi>::prims(),
+        ),
         (
             <Bytes<20, Public> as CircuitAbi>::atoms(),
             <Bytes<20, Public> as CircuitAbi>::prims(),
