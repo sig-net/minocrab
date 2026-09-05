@@ -95,4 +95,29 @@ def rejects (r : R (Result C)) : Bool :=
 -- `inv` is a genuine inverse on a small value.
 #guard (Fr.inv (Fr.ofNat 3) * Fr.ofNat 3 : Fr) == 1
 
+/-! ## `assert` on an immediate (M37, the `drop_true_asserts` rule)
+
+The fact the pass rests on, made executable: an `assert` on the IMMEDIATE
+1 changes NO observable — same `pis`, same skips, same verdict — while an
+assert on ANY other immediate rejects, 0 through "Failed direct assertion"
+and 2 through `resolve_operand_bool`'s "Expected boolean". That is why
+`MinocrabProofs.AssertIr.dropTrueAsserts` deletes the first and keeps the
+second: deleting a rejecting assert would make an unprovable circuit
+provable. The unbounded statement is
+`MinocrabProofs.AssertIr.dropTrueAsserts_preserves_run`; these are the
+hand-traced witnesses beside it. -/
+
+def withAssert (cond : Operand) : Program :=
+  { prog with instructions := .assert cond :: prog.instructions }
+
+-- The immediate 1: accepted, and every observable identical to the run
+-- without it — the cursors, the PI vector and the skip list all untouched.
+#guard pisOf (Eval.run M (withAssert (.imm 1)) π) == pisOf (Eval.run M prog π)
+#guard !rejects (Eval.run M (withAssert (.imm 1)) π)
+
+-- Any other immediate: an always-failing circuit, which the pass keeps.
+#guard rejects (Eval.run M (withAssert (.imm 0)) π)
+#guard rejects (Eval.run M (withAssert (.imm 2)) π)
+#guard rejects (Eval.run M (withAssert (.imm (-1))) π)
+
 end MinocrabZkir.Smoke

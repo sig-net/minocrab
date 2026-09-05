@@ -284,8 +284,9 @@ pub fn dedup_range_constraints(instructions: Vec<Instruction>) -> Vec<Instructio
 /// THE COPY FOLD ONLY, deliberately: [`drop_true_asserts`] also runs in
 /// `Builder3::finish`, and is NOT part of this normalisation. It deletes an
 /// instruction rather than renaming one, and no compactc artifact we hold
-/// contains an `assert` on an immediate (measured: all 332 asserts in the 209
-/// workspace dumps and all 238 in the 92 v3 corpus fixtures name a wire).
+/// contains an `assert` on an immediate (measured 2026-09-06: all 332 asserts
+/// in the 211 workspace dumps, and all 251 in the 209 v3 `.zkir` files under
+/// `corpus/` and `crates/`, name a WIRE).
 /// Adding it here would only ever hide a divergence
 /// — a compactc artifact that DID carry one is something we want a
 /// differential to say out loud, not something to normalise away.
