@@ -77,3 +77,82 @@ comment on the block now says exactly that, and when to drop it.
 - =cargo doc --no-deps= warning-free: DONE (B1).
 - M33's inventory "updated to the trimmed tree": M33 has not run yet;
   it starts from this tree.
+
+* M26 — the ledger crate split (2026-09-05)
+=crates/minocrab-ledger/src/lib.rs= (3,724 lines, one file) split by
+concern into six files, zero behavioural movement. =lib.rs= is now the
+crate doc (byte-identical text) plus =mod= declarations and =pub use=
+re-exports — 103 lines — so every path that was =minocrab_ledger::<name>=
+before still is.
+
+| file | lines | holds |
+|------+-------+-------|
+| =impact.rs= | 348 | the Impact element/op encoding: =ImpactOp=, =ImpactElem= re-export, =LedgerValue=, =LedgerKey=, the alignment/header helpers, =idx_path=, =push_cell=, =dup=, =swap=, =idx_key_cached= |
+| =ops.rs= | 916 | the ledger operations: cell/counter/map/set/list/merkle-tree writes and resets, the =_at= path variants, the four coin arms, =emit_event= |
+| =reads.rs= | 775 | the reads: =cell_read*=, =counter_read*=, =mint_read_with=, =popeq=, =emit=, the guarded-read variants |
+| =kernel.rs= | 344 | the kernel effects: =kernel_*= (balance/block-time/self reads, the mint/claim effect ops) |
+| =calls.rs= | 312 | the cross-contract call: =contract_call=, =Callee=, the =Xcall*= disclosure labels, =EntryPoint=, =ep_hash= |
+| =tests.rs= | 1,037 | the crate's 24 unit tests (=#[cfg(test)] mod tests= in =lib.rs=, one file), unchanged bodies |
+
+Re-export rule: every item that was =pub= at the crate root stays
+reachable as =minocrab_ledger::<name>= via a =pub use= in =lib.rs=
+(grouped by source module); the two upstream re-exports
+(=LimbConstraint=, =ImpactElem=) stay written directly in =lib.rs= as
+before. Private helpers used from more than one of the new files
+(=alignment_header=, =field_path=, =field_index_value=,
+=LedgerKey::push_elems=/=push_as_cell=, the four =*_coin_dup= functions,
+=mint_read=, =max_sizeof=, the =U64_ATOM=/=BOOL_ATOM= and
+=LIST_*=/=TREE*= constants, =LedgerValue='s =atoms=/=elems= fields)
+became =pub(crate)= in whichever file now owns them; everything used
+from exactly one file stayed private there. =u64_aligned=,
+=field_index_value= and =idx_key_cached= physically moved beside the
+functions that actually call them (=ops.rs=, =impact.rs=, =impact.rs=
+respectively) rather than staying at their original line — a pure
+relocation, no behavioural change. One crate-doc intra-link
+(=[`Op`]=) needed a link-reference-definition line added under the doc
+(=[`Op`]: midnight_onchain_vm::ops::Op=) since the =use= that used to
+resolve it at the crate root moved into =impact.rs=; the doc's visible
+prose is untouched.
+
+Fallout fixed outside =minocrab-ledger=: M33's =trust_base= instrument
+(=crates/minocrab-contracts/tests/trust_base.rs=) classifies every
+=.rs= file under the seven eDSL crates' =src/=, one row per file, and
+failed closure once the split added five new files. Replaced the
+single =minocrab-ledger/src/lib.rs= row with one row per new file: the
+five op-layer files keep the original row's warrant verbatim (the same
+differentials cover the same code, wherever the file boundary now
+falls); =lib.rs= and =tests.rs= are new =READING= rows (plumbing, and
+the tests' own bodies, respectively — nothing else checks a test file
+is asserting the right thing). Regenerated =TRUST.md='s table with
+=MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test
+trust_base= and hand-updated §2's read-order row 5, which named the
+single file directly.
+
+** The zero-movement gate
+#+begin_example
+$ mkdir -p /tmp/zkir-before && MINOCRAB_ZKIR_DUMP=/tmp/zkir-before \
+    cargo test -p minocrab-contracts --test zkir_dump -- --ignored dump_every_circuits_zkir
+  ... dumped 209 circuits ... ok
+
+  (the split)
+
+$ mkdir -p /tmp/zkir-after && MINOCRAB_ZKIR_DUMP=/tmp/zkir-after \
+    cargo test -p minocrab-contracts --test zkir_dump -- --ignored dump_every_circuits_zkir
+  ... dumped 209 circuits ... ok
+
+$ diff -r /tmp/zkir-before /tmp/zkir-after
+  (empty — exit 0)
+#+end_example
+
+** Other gates
+- =cargo build --workspace --all-targets=: clean, no warnings.
+- =cargo clippy --workspace --all-targets -- -D warnings=: clean.
+- =cargo test -p minocrab-ledger -p minocrab-std=: green (=minocrab-ledger='s
+  own 24 unit tests plus =v3_disclose= (24), =v3_kernel_cache= (5),
+  =v3_ledger= (9) and the rest of =minocrab-std='s suite, all passing).
+- =cargo test -p minocrab-contracts=: green, all 39 test binaries
+  (including =trust_base= after the fix above).
+- =cargo test --release -p minocrab-contracts --test row_snapshot=:
+  green (=every_circuit_matches_its_frozen_cost=,
+  =the_instruction_diff_keeps_only_the_movement_and_caps_it=).
+- =cargo doc -p minocrab-ledger --no-deps=: warning-free.
