@@ -155,6 +155,21 @@ pub fn commitment_padded_tag(
 /// | byte(s) | 0..10          | 11..42 |
 /// |---------|----------------|--------|
 /// | content | "vault:user:"  | sk[32] |
+/// `userCommitment(sk) = upgradeFromTransient(transientHash([pad(32,
+/// "vault:user:"), sk]))` — the vault's identity commitment since
+/// signet-midnight-examples `0d9c1660` (the protocol move to Poseidon;
+/// upstream accepted that a transientHash change at a fork re-keys derived
+/// accounts). Four limbs in, one field element out, 31 bytes kept: a few
+/// hundred rows where the SHA-256 forms cost ~1,500.
+pub fn commitment_transient(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCommitment<Private> {
+    let sk = sk.bytes();
+    c.region("identity commitment (transientHash)", |c| {
+        let pad = minocrab_std::v3::B32::pad(c, "vault:user:");
+        let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
+        UserCommitment(minocrab_std::v3::hash::upgrade_from_transient(c, f))
+    })
+}
+
 pub fn commitment_packed_tag(c: &mut Circuit3, sk: &SecretKey<Private>) -> UserCommitment<Private> {
     let sk = sk.bytes();
     c.region("identity commitment", |c| {

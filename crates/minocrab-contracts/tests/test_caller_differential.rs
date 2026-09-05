@@ -17,7 +17,6 @@ use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use midnight_base_crypto::repr::BinaryHashRepr;
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
@@ -26,7 +25,6 @@ use minocrab::Fr;
 use minocrab_contracts::test_caller;
 use minocrab_sim::v3::{assert_call_compatible, simulate};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
-use sha2::{Digest, Sha256};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
 
@@ -69,19 +67,15 @@ fn pad32(s: &str) -> [u8; 32] {
     bytes
 }
 
-/// Off-circuit `deployerCommitment(sk)`: SHA-256 over the FAB bytes of
-/// `[pad(32, DEPLOYER_PAD), sk]` — the same construction the in-circuit
-/// `persistent_hash` performs (zkir-v3 ir_vm.rs:478-505).
+/// Off-circuit `deployerCommitment(sk)`: `upgradeFromTransient(transientHash
+/// ([pad(32, DEPLOYER_PAD), sk]))` — Poseidon over the four FAB limbs, the
+/// same construction the in-circuit `transient_hash` performs, through
+/// Midnight's own functions.
 fn deployer_commitment(sk: &[u8; 32]) -> [u8; 32] {
     let (pad_hi, pad_lo) = b32_slots(&pad32(test_caller::DEPLOYER_PAD));
     let (sk_hi, sk_lo) = b32_slots(sk);
-    let alignment = Alignment(vec![atom(32), atom(32)]);
-    let value = alignment
-        .parse_field_repr(&[pad_hi, pad_lo, sk_hi, sk_lo])
-        .expect("limbs match the alignment");
-    let mut repr = Vec::new();
-    ValueReprAlignedValue(value).binary_repr(&mut repr);
-    Sha256::digest(&repr).into()
+    let f = midnight_transient_crypto::hash::transient_hash(&[pad_hi, pad_lo, sk_hi, sk_lo]);
+    midnight_transient_crypto::hash::upgrade_from_transient(f).0
 }
 
 fn scalar(v: u64) -> IrValue {

@@ -24,6 +24,20 @@ pub struct Signature {
     pub recovery_id: u8,
 }
 
+impl Signature {
+    /// `verifyRespondBidirectionalEvent`'s CIRCUIT-INPUT form: `bigR.x` and
+    /// `s` byte-reversed into little-endian (the wire and the ledger carry
+    /// them big-endian; since signet-midnight `fff3421c` the reversal is
+    /// off-chain — the TS SDK's `respondBidirectionalEventToCircuitInput`).
+    pub fn circuit_input(&self) -> Signature {
+        let mut big_r_x = self.big_r_x;
+        big_r_x.reverse();
+        let mut s = self.s;
+        s.reverse();
+        Signature { big_r_x, big_r_y: self.big_r_y, s, recovery_id: self.recovery_id }
+    }
+}
+
 /// The message scalar of a 32-byte digest, as the verifier reads it: the
 /// digest as a big-endian integer, reduced.
 pub fn message_scalar(digest: &[u8; 32]) -> Scalar {

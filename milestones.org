@@ -1111,52 +1111,90 @@ Exit criteria: =when_private= lands with its gates or is refused in writing
 with a measured reason; the authoring-path items are scheduled into their
 own milestone after the super review.
 
-* M28 — Vault refresh: port the Aave-lending extension (dmd, 2026-08-30)
-Upstream =sig-net/midnight-examples= moved 2c929a1b → a37d686b (pulled
-2026-08-30 on the =vault-refresh= branch; corpus recompiled, 811
-artifacts / 89 v3, Lean rungs 1-2 green on the new files). The vault
-gained stataUSDC lending, and every derived contract in this repo —
-=erc20_vault= (the PI-equal port), =_opt=, =_borsh=, =_modern= — plus
-the spec harness, snapshots and the vault prong's inventory must
-follow. On that branch all 15 =*_matches_corpus= differentials fail
-until they do, which is why it is a branch and not main.
-WHAT CHANGED UPSTREAM (the inventory, from the 456-line source diff):
-- Five new exported circuits: =approveStata=, =supply=,
-  =completeSupply=, =redeem=, =completeRedeem= (9 → 14).
-- Six new ledger fields (11 → 17 exported; 19 total): =stataUnderlying=,
-  =stataToken= (=Bytes<20>=, pinned at initialize), =supplyEventMap= /
-  =supplyRefundCommitment=, =redeemEventMap= / =redeemRefundCommitment=
-  (=SignBidirectionalEventMap<EvmType2TxParams<2|3,0,0>, 36, 35>=).
-- The state tree is now CHUNKED (past the 15-field flat limit): every
-  notification path went from depth 1 to depth 2 — =[0,0,0,0]= at
-  depth 2 for signBidirectionalEventMap, =[1,7,0,0]= swapEventMap,
-  =[1,11,0,0]= supplyEventMap, =[1,13,0,0]= redeemEventMap. This alone
-  moves the PI stream of every existing request circuit, which is why
-  even =deposit= fails its differential.
-- =initialize= takes two more arguments (=stataUnderlyingAddr=,
-  =stataTokenAddr=) with non-zero asserts and two more disclosed
-  writes.
-- New schemas/structs: =supplyOutputSchema=/=supplyRespondSchema=,
-  =redeemOutputSchema=/=redeemRespondSchema= (36/35 bytes),
-  =DepositReturnValue=, =RedeemReturnValue=; =export pure circuit
-  unlimitedAllowance(): Uint<128>= (2^128−1) shared by both approve
-  circuits.
-- [ ] Port the ledger/state changes to =erc20_vault= (the compat port)
-      first: fields, chunked paths, =initialize=; get the nine existing
-      circuits PI-equal again before adding any new one.
-- [ ] Port the five new circuits to the compat fork, each with its
-      =*_matches_corpus= differential and guard/tamper twins.
-- [ ] Propagate to =_opt=, =_borsh=, =_modern= per the fork ledgers
-      (=fork_status= / =borsh_fork_status= / =modern_fork_status=,
-      tests/vault/artifact.rs), extending =Circuit::ALL= to 14 and the
-      spec harness, row/interface snapshots, disclosure report, taint
-      baseline, bench targets.
-- [ ] Merge =vault-refresh= into main only when the whole grid is
-      green; then re-freeze M27's vault-prong claim list against the
-      14-circuit vault (the draft's τ-tables predate lending).
-Exit criteria: corpus pin at a37d686b on main; all four forks cover
-all 14 circuits with the differential/fork/spec/snapshot gates green;
-M27's V-list re-frozen.
+* M28 — The sig-net protocol refresh: Poseidon hashing, the renamed 17-circuit vault, and the lending flows (dmd, 2026-08-30; rewritten 2026-09-05)
+WHAT UPSTREAM SHIPPED (corpus refreshed on branch =sig-refresh=, 2026-09-05:
+signet-midnight-integration =1ee4a7f3= → =fff3421c=, signet-midnight-examples
+=2c929a1b= → =0d9c1660=; both still language 0.25, compactc 0.33.0-rc.2
+compiles them, compile-report unchanged):
+- THE PROTOCOL MOVE (integration #85/#87, 2026-08-19..09-03, "Move in
+  circuit hashing to transientHash"): =calculateRequestId= and
+  =calculateSignetAttestationDigest= are =upgradeFromTransient(transientHash(…))=
+  (Poseidon over the FAB field representation; byte 31 of every id is
+  zero); =verifyRespondBidirectionalEvent= takes =bigR.x= / =s=
+  LITTLE-endian (reversed off-chain, "circuit-input form") — no in-circuit
+  =reverseBytes32=; =abiWordToUint128= decomposes the word once (Horner).
+  The MPC followed on 2026-09-04 (mpc #1206 "align Compact hashing": a
+  =compact-hashing= crate; the reader recomputes the id from the stored
+  CELL's field repr; response digest per source chain). The singleton's
+  three circuits are byte-unchanged.
+- THE VAULT (examples, 2026-08-13..24): 17 circuits under NEW NAMES —
+  =initialise=, =startDeposit=/=completeDeposit=, =startWithdraw=/
+  =completeWithdraw=/=refundWithdraw=, =startSwap=/=completeSwap=/
+  =refundSwap=, =approveRouter=, =approveStata=, =startSupply=/
+  =completeSupply=/=refundSupply=, =startRedeem=/=completeRedeem=/
+  =refundRedeem= — per-flow refund circuits (the split the =Pending=
+  lineage made on its own), the Aave lending flows, 19 ledger fields
+  (chunked paths, depth 2), and the commitments / domain separator /
+  change nonce moved to =transientHash= (the =_opt= lineage's own
+  avenues, adopted upstream). The test caller's =deployerCommitment=
+  moved likewise.
+DONE 2026-09-05 (=sig-refresh=):
+- [X] Corpus pins bumped and recompiled (4d9cf61).
+- [X] The Signet module port follows: =signet::request_id_of= and both
+      attestation digests are Poseidon + upgrade; =verify_attestation_signature=
+      takes little-endian scalars (=Secp256k1SigLimbs= says so); the
+      =Limbs::transient_hash= twin. GATED at the artifact level by
+      =test_caller_differential= (=initialise= call-compatible with the
+      NEW artifact — the deployer commitment through =transientHash=)
+      and by the singleton differentials (unchanged). The Poseidon
+      request id's artifact gate is the vault re-port below (or a port
+      of the test caller's =submitSignatureRequest=, not done).
+- [X] =signet-sim= retranslated to mpc =10360c3c=: =hashing.rs=
+      (=compute_request_id= over the cell's field repr,
+      =compute_response_hash=, the MPC's golden passes), both id rules
+      (=IdRule::Transient= / =LegacyKeccak= — the captured fixture is
+      valid under the legacy rule and a "rid-mismatch" under the live
+      one, as the MPC's own renamed test asserts), =Signature::circuit_input=
+      (the LE form). The drift gate (tests/signet_flow.rs) now proves the
+      MPC's field preimage IS the circuit's limb list.
+- [X] =signet_flow= / =erc20_vault_pending= / the toy and is_even
+      callers follow through the shared functions (green; cheaper —
+      Poseidon for keccak, no reversal), and the Pending lineage's
+      identity commitment follows upstream to Poseidon
+      (=common::commitment_transient=): initialize 2,446 → 747 rows,
+      deposit 3,476 → 1,781, claim −1,700. The rows-only re-benchmark
+      against compactc's 17 new artifacts is in notes/benchmark.org
+      (§2026-09-05): every request circuit 0.14-0.35× of compactc's,
+      every settle 0.86-0.88×.
+NOT DONE — the vault re-port, which is this milestone's body:
+- [ ] A. The compat lineage (=erc20_vault=) re-ported against the 17
+      new artifacts: renames, the 19-field chunked block, the lending
+      flows, Poseidon commitments, the new =abiWordToUint128= shape.
+      Until then these suites are RED on this branch (enumerated
+      2026-09-05 with =--no-fail-fast=; goldens renamed, the shared signet
+      functions moved, the pinned keccak-era preimages stale):
+      =erc20_vault_differential= (25), =erc20_vault_adversarial= (12),
+      =erc20_vault_spec= (9), =erc20_vault_borsh_fork= (1),
+      =erc20_vault_opt_fork= (1), =erc20_vault_opt_burn_wellformed= (1),
+      =disclosure_report= (1). Everything else — the singleton, the test
+      caller, every non-vault differential, the Pending lineage, the flow
+      and simulator suites, both snapshots (regenerated), the taint
+      baseline (regenerated), closure, clippy — is green. The branch is a
+      refresh branch for the same reason =vault-refresh= was. The =_opt= / =_borsh= / =_modern= forks: decide
+      whether they survive at all now that upstream adopted their
+      avenues; the =Pending= lineage is the API's expression of the new
+      protocol and is green.
+- [ ] B. =disclosure_report.rs= (a pinned keccak-era preimage for the
+      old =deposit=) and =tests/vault= (the spec harness) re-pinned to
+      the new protocol with A.
+- [ ] C. The bench's target table (=minocrab-bench=) remapped to the new
+      names; BENCHMARK.md re-run (dmd 2026-09-05: "optimise and
+      re-benchmark the vault code" — the compactc side now uses
+      Poseidon too, so the headline comparison changes materially).
+- [ ] D. M27's V-list re-frozen against the 17-circuit vault.
+Exit criteria: the 17 circuits ported PI-equal (compat) and the API
+lineage green; every suite on the branch green; BENCHMARK.md re-run on
+the new protocol; corpus pins on main.
 
 * M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
 Survey and decisions: notes/mpc-publisher.org. The signet contract is

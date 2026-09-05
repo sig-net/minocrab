@@ -6,11 +6,12 @@
 //! `SignBidirectionalEvent`, the caller's ledger state, an EVM outcome) →
 //! (the attestation the caller's settle circuit takes). Inside that
 //! boundary it does what the MPC does, with the MPC's own code where the
-//! MPC has any — [`reader`] and [`request_id`] are translated from
-//! `sig-net/mpc` `chain-signatures/chain-midnight` and [`kdf`] from
-//! `signet-crypto`, all at `b940f0a7`, pinned by the fixtures the MPC pins
-//! itself against — so a record format that drifts from what the reader
-//! decodes fails here the way it fails in production.
+//! MPC has any — [`reader`] and [`hashing`] are translated from
+//! `sig-net/mpc` `chain-signatures/chain-midnight` and `compact-hashing`,
+//! [`kdf`] from `signet-crypto`, all at `10360c3c` (develop, 2026-09-05,
+//! after "align Compact hashing", #1206), pinned by the fixtures and goldens
+//! the MPC pins itself against — so a record format or a hash that drifts
+//! from what the reader computes fails here the way it fails in production.
 //!
 //! The one thing it does not do is execute an EVM: the outcome is an
 //! ORACLE the test supplies ([`EvmOutcome`]).
@@ -23,6 +24,7 @@
 //! trip stops at the attestation, and the circuit-side acceptance is
 //! covered by the vault harness's own signing model.
 
+pub mod hashing;
 pub mod kdf;
 pub mod reader;
 pub mod records;
@@ -38,7 +40,6 @@ use reader::{
     unpack_notification_v1, Resolved, MISC_PAYLOAD_LEN,
 };
 use records::SignBidirectionalRecordV2;
-use request_id::hash_payload;
 pub use sign::Signature;
 
 /// What happened on the destination chain — chosen by the test.
@@ -59,7 +60,9 @@ pub struct Attestation {
     pub request_id: [u8; 32],
     /// `serializedOutput` on the wire: the kind byte then the body.
     pub output: Vec<u8>,
-    /// Over `keccak256(request_id ‖ output)`, under the response key.
+    /// Over the attestation digest (Poseidon, [`hashing::compute_response_hash`]),
+    /// under the response key. In the singleton's WIRE form (big-endian);
+    /// [`Signature::circuit_input`] is what a settle circuit takes.
     pub signature: Signature,
     /// The record the MPC read, for the test's own assertions.
     pub record: SignBidirectionalRecordV2,
@@ -132,12 +135,9 @@ impl SigNetSim {
         kdf::public_key_to_address(&kdf::derive_key(self.root_public_key(), epsilon))
     }
 
-    /// The attestation digest: `keccak256(request_id ‖ output)`.
+    /// The attestation digest — [`hashing::compute_response_hash`].
     pub fn attestation_digest(request_id: &[u8; 32], output: &[u8]) -> [u8; 32] {
-        let mut combined = Vec::with_capacity(32 + output.len());
-        combined.extend_from_slice(request_id);
-        combined.extend_from_slice(output);
-        hash_payload(&combined)
+        hashing::compute_response_hash(request_id, output)
     }
 }
 
@@ -188,8 +188,9 @@ mod tests {
     use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom};
     use midnight_storage::arena::Sp;
     use midnight_storage::storage::{Array, HashMap};
+    use reader::IdRule;
     use records::{CompactMaybe, EvmCalldata, EvmType2TxParams, RECORD_FORMAT_VERSION};
-    use request_id::{binary_repr_v2, compute_request_id_v2};
+    use request_id::binary_repr_v2;
 
     /// The MPC's captured caller state: the DEPLOYED-format record at ledger
     /// field 4 decodes and hashes back to its id — the regression the MPC
@@ -200,12 +201,16 @@ mod tests {
         let map = signet_field_node_by_path(&root, &[4]).unwrap();
         let mut id = [0u8; 32];
         hex::decode_to_slice("1cd10eb1f4fa5c665084d24a7982b09aa321886dce77d85b5f6feee0687a414b", &mut id).unwrap();
-        match reader::resolve_verified_record(map, id) {
-            Resolved::Found(record) => {
-                assert_eq!(record.tx_param_type, 0);
-                assert_eq!(request_id::compute_request_id(&record), id);
-            }
+        // Filed before the hashing move: keccak over its bytes.
+        match reader::resolve_verified_record(map, id, IdRule::LegacyKeccak) {
+            Resolved::Found(record) => assert_eq!(record.tx_param_type, 0),
             other => panic!("expected the captured record, got {other:?}"),
+        }
+        // Under the MPC's current rule the same filing is a spoof: what
+        // the MPC's own renamed test asserts ("…under_transient_id").
+        match reader::resolve_verified_record(map, id, IdRule::Transient) {
+            Resolved::Dropped { reason, .. } => assert_eq!(reason, "rid-mismatch"),
+            other => panic!("expected a rid-mismatch drop, got {other:?}"),
         }
         // And the stage-7 decoder REFUSES it by name: the format-version byte
         // is where the deployed record's sender starts.
@@ -294,11 +299,12 @@ mod tests {
         }
     }
 
-    /// The stage-7 decode round-trips a ledger cell, and the id it recomputes
-    /// is keccak over the FAB binary representation of that cell — which is
-    /// what the circuit hashes (`calculate_request_id_v2`).
+    /// The stage-7 decode round-trips a ledger cell; the cell's FAB BYTE
+    /// representation is the record's byte layout (so the legacy rule and
+    /// the drift gates agree on the bytes); and the live id is Poseidon over
+    /// the cell's FIELD representation.
     #[test]
-    fn a_stage_7_record_decodes_and_hashes_like_its_fab_representation() {
+    fn a_stage_7_record_decodes_and_hashes_over_its_fab_representation() {
         use midnight_base_crypto::repr::BinaryHashRepr;
         use midnight_transient_crypto::fab::ValueReprAlignedValue;
         let record = sample_v2();
@@ -308,12 +314,16 @@ mod tests {
         let StateValue::Cell(aligned) = &cell else { unreachable!() };
         let mut fab = Vec::new();
         ValueReprAlignedValue((**aligned).clone()).binary_repr(&mut fab);
-        assert_eq!(fab, binary_repr_v2(&record), "the reader's preimage is the FAB repr");
-        assert_eq!(compute_request_id_v2(&record), hash_payload(&fab));
+        assert_eq!(fab, binary_repr_v2(&record), "the byte layout is the FAB byte repr");
+        let id = hashing::compute_request_id(aligned);
+        assert_eq!(id[31], 0, "an upgraded transient hash has a zero byte 31");
+        assert_ne!(id, request_id::hash_payload(&fab), "the live rule is not keccak");
     }
 
     fn map_with(record: &SignBidirectionalRecordV2) -> ([u8; 32], StateValue<DefaultDB>) {
-        let id = compute_request_id_v2(record);
+        let cell = v2_cell(record);
+        let StateValue::Cell(aligned) = &cell else { unreachable!() };
+        let id = hashing::compute_request_id(aligned);
         let mut map: HashMap<AlignedValue, StateValue<DefaultDB>, DefaultDB> = HashMap::new();
         map = map.insert(AlignedValue::from(id), v2_cell(record));
         (id, StateValue::Map(map))

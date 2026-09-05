@@ -193,8 +193,10 @@ fn the_circuits_build_at_a_finite_cost() {
 /// THE DRIFT GATE: the atoms `SignBidirectionalEventV2` declares (what a
 /// `Pending` slot stores, limb for limb) are decoded by the MPC reader's
 /// stage-7 twin (`signet_sim::reader`, translated from the MPC's own code)
-/// into the same fields, and the id the reader recomputes is keccak over
-/// exactly those bytes — which is what the circuit hashes.
+/// into the same fields, and the id the reader recomputes — Poseidon over
+/// the cell's field representation — is over exactly the limbs the circuit
+/// hashes: the cell's field repr equals the record's limb values in slot
+/// order.
 #[test]
 fn the_filed_record_is_what_the_mpc_reader_decodes() {
     use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentSegment, Value, ValueAtom};
@@ -203,7 +205,7 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
     use minocrab_contracts::signet::SignBidirectionalEventV2;
     use signet_sim::records::{CompactMaybe, EvmCalldata, EvmType2TxParams, SignBidirectionalRecordV2, RECORD_FORMAT_VERSION};
     use signet_sim::reader::decode_record_v2;
-    use signet_sim::request_id::{binary_repr_v2, compute_request_id_v2};
+    use signet_sim::request_id::binary_repr_v2;
 
     let record = SignBidirectionalRecordV2 {
         format_version: RECORD_FORMAT_VERSION,
@@ -259,5 +261,41 @@ fn the_filed_record_is_what_the_mpc_reader_decodes() {
 
     let decoded = decode_record_v2(&cell).expect("the MPC reader decodes what the circuit files");
     assert_eq!(decoded, record);
-    assert_eq!(compute_request_id_v2(&decoded), signet_sim::request_id::hash_payload(&bytes));
+
+    // The MPC hashes the cell's FIELD representation; the circuit hashes the
+    // record's limbs in slot order. They must be the same field elements —
+    // here reconstructed from the bytes exactly as `SignBidirectionalEventV2`
+    // carries them (a `bytes<n>` atom: the leftover most-significant limb
+    // first, then 31-byte limbs — which for every atom of this record is
+    // one limb, or `[hi, lo]` for a `Bytes<32>`).
+    use midnight_transient_crypto::fab::AlignedValueExt as _;
+    let StateValue::Cell(aligned) = &cell else { unreachable!() };
+    let mut fields = Vec::new();
+    aligned.value_only_field_repr(&mut fields);
+    let mut ours = Vec::new();
+    let mut at = 0usize;
+    for atom in &atoms {
+        let midnight_base_crypto::fab::AlignmentAtom::Bytes { length } = atom else { unreachable!() };
+        let width = *length as usize;
+        let chunk = &bytes[at..at + width];
+        // FAB limbs of a `bytes<n>`: the leftover (n mod 31) MOST-significant
+        // bytes first, then 31-byte limbs from the top down — `[hi, lo]` for
+        // a `Bytes<32>`, three limbs for the 64-byte `params`.
+        let r = width % 31;
+        let mut end = width;
+        if r != 0 {
+            ours.push(minocrab::Fr::from_le_bytes(&chunk[end - r..end]).unwrap());
+            end -= r;
+        }
+        while end > 0 {
+            ours.push(minocrab::Fr::from_le_bytes(&chunk[end - 31..end]).unwrap());
+            end -= 31;
+        }
+        at += width;
+    }
+    assert_eq!(fields, ours, "the MPC's field preimage is the circuit's limb list");
+    assert_eq!(
+        signet_sim::hashing::compute_request_id(aligned),
+        midnight_transient_crypto::hash::upgrade_from_transient(midnight_transient_crypto::hash::transient_hash(&ours)).0
+    );
 }

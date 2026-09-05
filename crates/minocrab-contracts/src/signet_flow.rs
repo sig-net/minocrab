@@ -248,8 +248,12 @@ impl<R: CircuitBorsh<Private>> CircuitBorsh<Private> for Attested<R> {
 /// ticket does not compile.
 pub struct Settle<Env, Resp> {
     pub request_id: RequestId<Private>,
-    /// The MPC's signature (`bigR.y` and `recoveryId` are part of the wire
-    /// shape and read by nothing, as in the Compact original).
+    /// The MPC's signature in `verifyRespondBidirectionalEvent`'s
+    /// CIRCUIT-INPUT form: `bigR.x` and `s` LITTLE-endian (the singleton's
+    /// event carries them big-endian; the reversal is off-chain —
+    /// `signet_sim::Signature::circuit_input`). A wrong order fails to
+    /// prove, never falsely accepts. `bigR.y` and `recoveryId` are part of
+    /// the wire shape and read by nothing, as in the Compact original.
     pub respond: Signature<Private>,
     pub serialized_output: Attested<Resp>,
     _env: PhantomData<fn() -> Env>,

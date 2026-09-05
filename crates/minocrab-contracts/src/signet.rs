@@ -16,8 +16,9 @@
 //! `<2, 0, 0>, 34, 34` for transfers and `<7, 0, 0>, 38, 37` for swaps).
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
-use minocrab::{Alignment, AlignmentAtom, AlignmentSegment, Public};
+use minocrab::{AlignmentAtom, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
+use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
     pow2_const, secp256k1_ecdsa_verify, BytesN, ContractAddress, LedgerRepr,
     Secp256k1EcdsaSignature, Vis3, B32,
@@ -34,10 +35,6 @@ use super::common::{Caip2Id, SigningPath};
 /// a DISCLOSURE LABEL called `RequestId`, and the module qualifier keeps the
 /// two apart at every use.
 pub use signet_signer_interface::RequestId;
-
-fn atom(n: u32) -> AlignmentSegment {
-    AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })
-}
 
 fn bytes(length: u32) -> AlignmentAtom {
     AlignmentAtom::Bytes { length }
@@ -565,11 +562,7 @@ pub fn calculate_request_id_v2<V: Vis3, const WORDS: usize>(
     c: &mut Circuit3,
     request: &SignBidirectionalEventV2<V, WORDS>,
 ) -> RequestId<V> {
-    request_id_of(
-        c,
-        SignBidirectionalEventV2::<V, WORDS>::atoms(),
-        &request.limbs(),
-    )
+    request_id_of(c, &request.limbs())
 }
 
 /// A `SignBidirectionalEvent` read back out of the ledger: the map value's
@@ -695,49 +688,47 @@ pub fn calculate_request_id<
     c: &mut Circuit3,
     request: &SignBidirectionalEvent<V, WORDS, LEN_OUT, LEN_RESPOND>,
 ) -> RequestId<V> {
-    request_id_of(
-        c,
-        SignBidirectionalEvent::<V, WORDS, LEN_OUT, LEN_RESPOND>::atoms(),
-        &request.limbs(),
-    )
+    request_id_of(c, &request.limbs())
 }
 
-/// The keccak half of [`calculate_request_id`], over an atom list and its
-/// limbs — shared with [`calculate_request_id_v2`] so the two record formats
-/// hash through ONE construction rather than two copies of it. The extraction
-/// is instruction-for-instruction identical to the inlined original (the row
-/// and interface snapshots and every vault differential suite say so).
-fn request_id_of<V: Vis3>(
-    c: &mut Circuit3,
-    atoms: Vec<AlignmentAtom>,
-    limbs: &[Wire3<FieldT, V>],
-) -> RequestId<V> {
-    c.region("signet: request id (keccak)", |c| {
-        let alignment = Alignment(atoms.into_iter().map(AlignmentSegment::Atom).collect());
-        let limbs: Vec<_> = limbs.iter().map(|w| w.erase()).collect();
-        let digest = c.keccak256(alignment, &limbs);
-        RequestId::from_typed(c, digest)
+/// The hash half of [`calculate_request_id`] over a record's FAB limbs —
+/// shared with [`calculate_request_id_v2`] so the two record formats hash
+/// through ONE construction.
+///
+/// `upgradeFromTransient(transientHash(record))` since signet-midnight
+/// `fff3421c` (2026-09-03, "Move in circuit hashing to transientHash"):
+/// Poseidon over the record's field-aligned representation — one field
+/// element per FAB limb, in slot order, which is what the MPC's reader
+/// recomputes off-chain (`value_only_field_repr` of the stored cell) —
+/// then the 31 low bytes as a `Bytes<32>` whose byte 31 is zero. The
+/// keccak construction it replaces is in git history (the corpus at
+/// signet-midnight-integration `1ee4a7f3`).
+fn request_id_of<V: Vis3>(c: &mut Circuit3, limbs: &[Wire3<FieldT, V>]) -> RequestId<V> {
+    c.region("signet: request id (transientHash)", |c| {
+        let f = c.transient_hash(limbs);
+        RequestId(upgrade_from_transient(c, f))
     })
 }
 
 // ---- attestation verify -----------------------------------------------------
 
 /// `calculateSignetAttestationDigest(requestId, serializedOutput)` —
-/// `keccak256` over the raw concatenation `[Bytes<32>, Bytes<len>]`.
-/// `output_limbs` are the serialized output's FAB limbs for `LEN_OUTPUT`
-/// bytes ([`BytesN`] slot order above — the settle circuits' 1/5/8-byte
-/// outputs are all the single limb of a `Bytes<n <= 31>`).
+/// `upgradeFromTransient(transientHash([requestId, serializedOutput]))`
+/// (signet-midnight `fff3421c`): Poseidon over the tuple's field-aligned
+/// limbs — the id's `[hi, lo]` then the output's limbs — as the MPC's
+/// `compact-hashing::compute_response_hash` recomputes it. `output_limbs`
+/// are the serialized output's FAB limbs for `LEN_OUTPUT` bytes ([`BytesN`]
+/// slot order; the settle circuits' 1/5/8-byte outputs are one limb).
 pub fn calculate_attestation_digest<V: Vis3, const LEN_OUTPUT: usize>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     output_limbs: &[Wire3<FieldT, V>],
 ) -> B32<V> {
-    c.region("signet: attestation digest (keccak)", |c| {
-        let alignment = Alignment(vec![atom(32), atom(LEN_OUTPUT as u32)]);
-        let mut limbs = vec![request_id.bytes().hi.erase(), request_id.bytes().lo.erase()];
-        limbs.extend(output_limbs.iter().map(|w| w.erase()));
-        let digest = c.keccak256(alignment, &limbs);
-        B32::from_typed(c, digest)
+    c.region("signet: attestation digest (transientHash)", |c| {
+        let mut limbs = vec![request_id.bytes().hi, request_id.bytes().lo];
+        limbs.extend_from_slice(output_limbs);
+        let f = c.transient_hash(&limbs);
+        upgrade_from_transient(c, f)
     })
 }
 
@@ -751,12 +742,14 @@ pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
     B32::from_typed(c, rev)
 }
 
-/// The two 32-byte limbs an MPC attestation's ECDSA signature travels as —
-/// big-endian `bigR.x` and `s` — with NAMED fields, so the two same-shaped
-/// halves cannot be transposed positionally on the way into verification
-/// (newtype-survey A7's sub-case). [`Secp256k1EcdsaSignature`] is this pair
-/// one layer down, already reversed into scalars; this is the wire form the
-/// respond event carries.
+/// The two 32-byte limbs an MPC attestation's ECDSA signature enters the
+/// circuit as — `bigR.x` and `s` in `verifyRespondBidirectionalEvent`'s
+/// CIRCUIT-INPUT FORM, LITTLE-endian (the singleton's event carries them
+/// big-endian; the reversal happens off-chain, where it is free — the TS
+/// SDK's `respondBidirectionalEventToCircuitInput`, `signet-sim`'s
+/// `Signature::circuit_input`). A wrong byte order fails verification,
+/// never a false accept. NAMED fields, so the two same-shaped halves cannot
+/// be transposed positionally (newtype-survey A7's sub-case).
 #[derive(Clone, Copy)]
 pub struct Secp256k1SigLimbs<V: Vis3> {
     pub big_r_x: B32<V>,
@@ -766,7 +759,7 @@ pub struct Secp256k1SigLimbs<V: Vis3> {
 /// `verifyRespondBidirectionalEvent(requestId, serializedOutput, event,
 /// mpcResponseKey)` — recompute the attestation digest and verify the
 /// event's ECDSA signature over it. Only `bigR.x` and `s` enter
-/// verification (big-endian stored, reversed into scalars).
+/// verification, little-endian ([`Secp256k1SigLimbs`]).
 pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
@@ -779,8 +772,8 @@ pub fn verify_respond_bidirectional_event<V: Vis3, const LEN_OUTPUT: usize>(
 }
 
 /// The signature half of [`verify_respond_bidirectional_event`], over an
-/// already-computed digest: only `bigR.x` and `s` enter verification
-/// (big-endian stored, reversed into scalars).
+/// already-computed digest: only `bigR.x` and `s` enter verification, as
+/// little-endian scalars (no in-circuit reversal since `fff3421c`).
 ///
 /// Extracted so the two digest constructions — the deployed
 /// `[Bytes<32>, Bytes<len>]` concatenation and the Borsh-typed
@@ -795,10 +788,8 @@ fn verify_attestation_signature<V: Vis3>(
     mpc_response_key: minocrab::v3::Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     c.region("signet: attestation verify (ecdsa)", |c| {
-        let r_le = reverse_bytes32(c, &sig.big_r_x);
-        let s_le = reverse_bytes32(c, &sig.s);
-        let r_typed = r_le.to_typed(c);
-        let s_typed = s_le.to_typed(c);
+        let r_typed = sig.big_r_x.to_typed(c);
+        let s_typed = sig.s.to_typed(c);
         let sig = Secp256k1EcdsaSignature {
             r: c.from_bytes32(r_typed),
             s: c.from_bytes32(s_typed),
@@ -820,15 +811,15 @@ fn verify_attestation_signature<V: Vis3>(
 /// payload — instead of an opaque byte string.
 ///
 /// FREE: describing the preimage emits no instruction ([`limbs_of`] is
-/// bookkeeping over wires that already exist), and the keccak chip does the
-/// byte packing in-chip. The atom widths ARE the Borsh widths, so the digest
-/// is `keccak256(borsh(v))` for zero extra rows.
+/// bookkeeping over wires that already exist). The atom widths ARE the
+/// Borsh widths, one field element per leaf, so the digest is Poseidon over
+/// exactly the limbs the MPC hashes.
 pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     output: &T,
 ) -> B32<V> {
-    c.region("signet: attestation digest (keccak)", |c| {
+    c.region("signet: attestation digest (transientHash)", |c| {
         let mut limbs = Limbs::<V>::new();
         request_id.push_limbs(&mut limbs);
         output.push_limbs(&mut limbs);
@@ -837,8 +828,8 @@ pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
             <B32<V> as CircuitBorsh<V>>::LEN + T::LEN,
             "the attestation preimage is the request id followed by the output"
         );
-        let digest = limbs.keccak256(c);
-        B32::from_typed(c, digest)
+        let f = limbs.transient_hash(c);
+        upgrade_from_transient(c, f)
     })
 }
 

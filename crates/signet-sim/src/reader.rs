@@ -17,7 +17,8 @@ use crate::records::{
     CompactMaybe, EvmAccessListEntry, EvmCalldata, EvmType2TxParams, SignBidirectionalEventNotification,
     SignBidirectionalRecord, SignBidirectionalRecordV2, RECORD_FORMAT_VERSION,
 };
-use crate::request_id::{compute_request_id, compute_request_id_v2};
+use crate::hashing::{compute_request_id, legacy_request_id};
+use crate::request_id::binary_repr;
 
 /// `TxParamType::evmType2`.
 pub const TX_PARAM_TYPE_EVM_TYPE2: u8 = 0;
@@ -255,19 +256,37 @@ fn relabel<R>(dropped: Resolved<()>) -> Resolved<R> {
     }
 }
 
+/// Which request-id rule a lookup recomputes under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdRule {
+    /// Poseidon over the cell's field representation — the MPC at `10360c3c`
+    /// and the Signet module since `fff3421c`.
+    Transient,
+    /// keccak256 over the record's byte layout — the deployed singleton's
+    /// callers before `fff3421c` (the captured fixture).
+    LegacyKeccak,
+}
+
 /// The DEPLOYED-format lookup: the id must be present, decode, and hash back
-/// to itself.
-pub fn resolve_verified_record(map: &Node, request_id: [u8; 32]) -> Resolved<SignBidirectionalRecord> {
+/// to itself under `rule`.
+pub fn resolve_verified_record(map: &Node, request_id: [u8; 32], rule: IdRule) -> Resolved<SignBidirectionalRecord> {
     let entry = match map_entry(map, request_id) {
         Err(d) => return relabel(d),
         Ok(None) => return Resolved::Absent,
         Ok(Some(entry)) => entry,
     };
+    let cell = match cell_of(&entry, "request record") {
+        Ok(cell) => cell.clone(),
+        Err(err) => return Resolved::Dropped { reason: "record-undecodable", detail: format!("{err:#}") },
+    };
     let record = match decode_record(&entry) {
         Ok(record) => record,
         Err(err) => return Resolved::Dropped { reason: "record-undecodable", detail: format!("{err:#}") },
     };
-    let recomputed = compute_request_id(&record);
+    let recomputed = match rule {
+        IdRule::Transient => compute_request_id(&cell),
+        IdRule::LegacyKeccak => legacy_request_id(&binary_repr(&record)),
+    };
     if recomputed != request_id {
         return Resolved::Dropped {
             reason: "rid-mismatch",
@@ -277,12 +296,18 @@ pub fn resolve_verified_record(map: &Node, request_id: [u8; 32]) -> Resolved<Sig
     Resolved::Found(Box::new(record))
 }
 
-/// The STAGE-7 lookup.
+/// The STAGE-7 lookup, under the transient rule (the cell's field
+/// representation — the format-version and kind bytes are limbs like any
+/// other).
 pub fn resolve_verified_record_v2(map: &Node, request_id: [u8; 32]) -> Resolved<SignBidirectionalRecordV2> {
     let entry = match map_entry(map, request_id) {
         Err(d) => return relabel(d),
         Ok(None) => return Resolved::Absent,
         Ok(Some(entry)) => entry,
+    };
+    let cell = match cell_of(&entry, "request record") {
+        Ok(cell) => cell.clone(),
+        Err(err) => return Resolved::Dropped { reason: "record-undecodable", detail: format!("{err:#}") },
     };
     let record = match decode_record_v2(&entry) {
         Ok(record) => record,
@@ -292,7 +317,7 @@ pub fn resolve_verified_record_v2(map: &Node, request_id: [u8; 32]) -> Resolved<
             return Resolved::Dropped { reason, detail: text };
         }
     };
-    let recomputed = compute_request_id_v2(&record);
+    let recomputed = compute_request_id(&cell);
     if recomputed != request_id {
         return Resolved::Dropped {
             reason: "rid-mismatch",

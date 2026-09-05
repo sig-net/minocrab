@@ -603,3 +603,31 @@ design), and two deployment facts (a response key the MPC won't
 derive; caip2/chain id left zero) that fail at settle or at the MPC.
 Hand-maintained invariants per flow went from §7's eight to those
 four, two of which are the ones the design says must stay.
+
+** The protocol moved under us (2026-09-05, evening): Poseidon, little-endian
+Read off the refreshed corpus (M28's rewritten entry has the inventory).
+For this design:
+- =Pending= is UNCHANGED as an API. =request= mints the id through
+  =signet::request_id_of= (now Poseidon + =upgradeFromTransient=) and
+  =settle= verifies through the Poseidon digest; a =Settle= ticket's
+  =respond.bigR.x= / =respond.s= are now the CIRCUIT-INPUT form
+  (little-endian; the wire is big-endian) — =signet_sim::Signature::
+  circuit_input= produces it, and a wrong order fails to prove.
+- The upstream vault now has PER-FLOW refund circuits (=refundWithdraw=,
+  =refundSwap=, …) — the split §9 rung C made and called a deviation.
+  It is the protocol's own shape now.
+- Costs fall: the request id and the digest were keccak (~a block each);
+  Poseidon over the same limbs is a few hundred rows, and the two
+  =reverse_bytes32= go. The row snapshot on =sig-refresh= carries the new
+  numbers; the pair-cost gate against the modern lineage still holds
+  (both moved).
+- =signet-sim= mirrors the MPC at =10360c3c=: request ids from the stored
+  CELL's field representation (the drift gate shows that preimage is the
+  circuit's limb list, atom by atom, including the 64-byte =params=
+  three-limb split), the response digest through the same helper the
+  MPC ships, both id rules for the captured fixture.
+- STILL OPEN with upstream: the stage-7 record format (version byte,
+  kind byte) is this repo's proposal; the MPC's reader at =10360c3c=
+  still decodes the schema-string format. =Pending= files stage-7
+  records; the sim's =resolve_verified_record_v2= is the reader the
+  work order asks for, not the one that exists.

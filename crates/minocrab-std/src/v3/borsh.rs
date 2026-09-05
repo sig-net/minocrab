@@ -259,6 +259,12 @@ impl<V: Vis3> Limbs<V> {
     pub fn persistent_hash(&self, c: &mut Circuit3) -> Wire3<Bytes32T, V> {
         c.persistent_hash(self.alignment(), &self.wires)
     }
+
+    /// `transientHash(value)` (Poseidon over the limbs, one field element
+    /// per leaf), in one instruction.
+    pub fn transient_hash(&self, c: &mut Circuit3) -> Wire3<FieldT, V> {
+        c.transient_hash(&self.wires)
+    }
 }
 
 impl<V: Vis3> Default for Limbs<V> {

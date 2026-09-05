@@ -24,6 +24,12 @@
 //! | verify → kind → lookup → remove  | one `settle` / `settle_failed`        |
 //! | refund commitment hash + gate    | `Commit::to` / `Commit::open`         |
 //!
+//! THE IDENTITY COMMITMENT follows upstream's protocol move (`0d9c1660`):
+//! `userCommitment` is `upgradeFromTransient(transientHash([pad, sk]))`,
+//! not the SHA-256 forms the older lineages keep — ~1,500 rows out of
+//! `initialize`, `deposit` and `claim` each, and the same bytes the deployed
+//! vault derives keys from.
+//!
 //! WHAT STAYED, deliberately: the initialization gate, the deployer gate,
 //! the business guards, the coin burns and mints, and every authorization
 //! with a FRESH witness (`witness_sk` in `claim`, `complete_withdraw`,
@@ -212,7 +218,7 @@ fn b32_eq(a: &B32<Private>, b: &B32<Private>) -> Check<Private> {
 
 fn assert_deployer(c: &mut Circuit3) {
     let sk = common::witness_sk(c);
-    let digest = common::commitment_packed_tag(c, &sk);
+    let digest = common::commitment_transient(c, &sk);
     let stored = VAULT.deployer.read(c);
     c.assert(b32_eq(&digest.bytes(), &stored.private().bytes()).message("Not the deployer"));
 }
@@ -392,7 +398,7 @@ pub fn deposit(
     });
 
     let sk = common::witness_sk(c);
-    let caller = common::commitment_packed_tag(c, &sk).disclose_as::<DepositorCommitment>(c);
+    let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
 
     // transfer(vaultEvmAddress, amount), paid from the DEPOSITOR's account:
     // the gas envelope is the caller's.
@@ -463,7 +469,7 @@ pub fn claim(
     // Depositor gate: a FRESH witness against the filed commitment.
     c.region("depositor gate", |c| {
         let sk = common::witness_sk(c);
-        let caller = common::commitment_packed_tag(c, &sk).bytes();
+        let caller = common::commitment_transient(c, &sk).bytes();
         c.assert(
             b32_eq(&caller, &outcome.env.depositor.private().bytes()).message("Not the depositor"),
         );

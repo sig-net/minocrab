@@ -23,12 +23,15 @@
 //!     mpcResponseKey = disclose(responseKey);
 //! ```
 //! with `deployerCommitment(sk) =
-//! persistentHash<Vector<2, Bytes<32>>>([pad(32, "signet-caller:deployer:"), sk])`.
+//! upgradeFromTransient(transientHash<Vector<2, Bytes<32>>>([pad(32, "signet-caller:deployer:"), sk]))`
+//! (signet-midnight-integration `fff3421c`; it was `persistentHash` before).
 
 use minocrab::label;
 use minocrab::v3::Circuit3;
-use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, Disclose, Discloses, Secp256k1Point};
+use minocrab::AlignmentAtom;
+use minocrab_ledger::{cell_read, cell_write, counter_increment, emit, ImpactElem, LedgerValue};
+use minocrab_std::v3::hash::upgrade_from_transient;
+use minocrab_std::v3::{circuit, Disclose, Discloses, Secp256k1Point, B32};
 
 use crate::common;
 
@@ -61,8 +64,17 @@ pub fn initialise(
     });
 
     // assert(deployerCommitment(deployerSecretKey()) == deployer, "Not the deployer")
+    // — `upgradeFromTransient(transientHash([pad, sk]))`.
     c.region("deployer gate", |c| {
-        common::assert_deployer(c, one, DEPLOYER_PAD, DEPLOYER);
+        let sk = common::witness_sk(c).bytes();
+        let pad = B32::pad(c, DEPLOYER_PAD);
+        let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
+        let digest = upgrade_from_transient(c, f);
+        let stored = cell_read(c, one, DEPLOYER, vec![AlignmentAtom::Bytes { length: 32 }]);
+        let eq_hi = c.test_eq(digest.hi, stored[0]);
+        let eq_lo = c.test_eq(digest.lo, stored[1]);
+        let both = c.mul(eq_hi, eq_lo);
+        c.assert(both);
     });
 
     // initialised.increment(1)

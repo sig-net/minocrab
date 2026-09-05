@@ -1,8 +1,9 @@
-//! The request-id twin: keccak256 over the record's byte layout.
-//!
-//! MECHANICAL TRANSLATION of `chain-midnight/src/request_id.rs` at
-//! `b940f0a7`, with the stage-7 twin beside it (the version byte in front,
-//! the kind byte where the schemas were, nothing else moved).
+//! The record's BYTE layout, field by field — `chain-midnight/src/
+//! request_id.rs` at `b940f0a7`, kept after the MPC deleted it in #1206 for
+//! two reasons: the legacy (keccak) request id the captured fixture carries
+//! is keccak over exactly these bytes, and the layout drift gate in
+//! minocrab-contracts (`tests/signet_flow.rs`) fills a ledger cell from
+//! them. The LIVE request id is [`crate::hashing::compute_request_id`].
 
 use sha3::{Digest, Keccak256};
 
@@ -11,19 +12,9 @@ use crate::records::{
     SignBidirectionalRecordV2,
 };
 
-/// `hash_payload`: keccak256.
+/// keccak256 — the LEGACY id rule (see [`crate::hashing::legacy_request_id`]).
 pub fn hash_payload(data: &[u8]) -> [u8; 32] {
     Keccak256::digest(data).into()
-}
-
-/// The request id the contract mints for `record` (deployed format).
-pub fn compute_request_id(record: &SignBidirectionalRecord) -> [u8; 32] {
-    hash_payload(&binary_repr(record))
-}
-
-/// The request id the contract mints for a stage-7 `record`.
-pub fn compute_request_id_v2(record: &SignBidirectionalRecordV2) -> [u8; 32] {
-    hash_payload(&binary_repr_v2(record))
 }
 
 /// The hash preimage: each field at its declared width, in declaration order.

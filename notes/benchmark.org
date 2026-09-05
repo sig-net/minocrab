@@ -235,3 +235,58 @@ proving is dominated by the padded 2^k size, so row cuts pay at
 boundary crossings — this framing is in the write-up). initialize
 exact parity by construction. Baseline cells preserved in
 results.jsonl.m6-baseline for the baseline-vs-optimised attribution.
+
+* 2026-09-05 — the refreshed protocol, rows only (branch sig-refresh)
+dmd asked for the vault re-benchmarked after the sig-net refresh. What
+this is: =cost()= (Midnight's own cost model, k and rows) on compactc's
+NEW artifacts (signet-midnight-examples =0d9c1660=: 17 circuits, Poseidon
+commitments, per-flow refunds, lending) against the =Pending= lineage
+(=erc20_vault_pending=, the API's expression of the same protocol —
+Poseidon request id and digest, little-endian scalars, and since tonight
+the Poseidon identity commitment upstream moved to). NOT the four-sided
+BENCHMARK.md run (prove time, RSS): the bench harness's target table still
+names the old circuits and the compat lineage is not yet re-ported (M28).
+The comparability claim is the =_opt= kind — same contract, different
+construction — so the differences are real rows, not PI-equal twins.
+
+| compactc (new)     |  k |   rows | Pending twin       |  k |   rows |  Δ rows |  ratio |
+|--------------------+----+--------+--------------------+----+--------+---------+--------|
+| initialise         | 10 |    891 | initialize         | 10 |    747 |    −144 |  0.84× |
+| startDeposit       | 14 | 11,406 | deposit            | 11 |  1,781 |  −9,625 |  0.16× |
+| completeDeposit    | 16 | 40,776 | claim              | 16 | 35,774 |  −5,002 |  0.88× |
+| approveRouter      | 14 |  8,516 | approve_router     | 11 |  1,153 |  −7,363 |  0.14× |
+| startWithdraw      | 15 | 32,751 | withdraw           | 14 | 11,545 | −21,206 |  0.35× |
+| completeWithdraw   | 16 | 40,553 | complete_withdraw  | 16 | 35,553 |  −5,000 |  0.88× |
+| refundWithdraw     | 16 | 40,273 | refund_withdrawal  | 16 | 35,547 |  −4,726 |  0.88× |
+| startSwap          | 16 | 43,592 | swap               | 14 | 12,379 | −31,213 |  0.28× |
+| completeSwap       | 16 | 52,536 | complete_swap      | 16 | 45,082 |  −7,454 |  0.86× |
+| refundSwap         | 16 | 40,279 | refund_swap        | 16 | 35,578 |  −4,701 |  0.88× |
+| approveStata       | 14 |  8,483 | —                  |    |        |         |        |
+| startSupply        | 15 | 32,693 | —                  |    |        |         |        |
+| completeSupply     | 16 | 42,639 | —                  |    |        |         |        |
+| refundSupply       | 16 | 40,283 | —                  |    |        |         |        |
+| startRedeem        | 16 | 35,646 | —                  |    |        |         |        |
+| completeRedeem     | 16 | 42,639 | —                  |    |        |         |        |
+| refundRedeem       | 16 | 40,283 | —                  |    |        |         |        |
+
+Where the request-side wins come from: no keccak anywhere (compactc's
+request circuits still keccak the ABI words and the record's hash was
+keccak until this release), one =kernel.self= read, the burn instead of
+a receive claim, the typed environment. The settle side is dominated by
+=secp256k1EcdsaVerify= on both sides (~30k rows), which is why every
+settle sits at 0.86-0.88×. The lending flows have no twin yet (M28).
+
+THE OPTIMISATION tonight (dmd: "optimise and re-benchmark"): the
+identity commitment. compactc's new =initialise= was 891 rows against our
+2,446 because the Pending lineage still used the SHA-256 =userCommitment=
+(the "short one-block" form) where upstream moved to
+=upgradeFromTransient(transientHash([pad, sk]))=. Following upstream
+(=common::commitment_transient=): initialize 2,446 → 747 (k 13 → 10),
+deposit 3,476 → 1,781 (k 13 → 11), claim 37,478 → 35,774. Earlier the
+same evening, the protocol move itself had taken deposit 15,666 → 3,476
+and withdraw 23,732 → 11,545 (keccak request id and digest gone, no
+in-circuit byte reversal).
+
+NEXT for a real re-benchmark: M28 A (the compat port of the 17
+circuits, the PI-equal side), remap =minocrab-bench='s target table to
+the new names, then =nix develop -c ./bench.sh= for prove time and RSS.
