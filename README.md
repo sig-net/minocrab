@@ -403,21 +403,24 @@ cargo test --workspace --release
 
 ## Performance
 
-One session, 2026-08-15, Apple Silicon. Port `mc` vs compactc `cc`, identical statements, prove = median of 3.
+One session, 2026-09-05, Apple Silicon, pinned toolchain. Port `mc` vs compactc `cc` on the **identical statement** (same schema, same shared preimage, equal public-input streams, proven per circuit by the differential suite); prove = median of 3, RSS = peak of a fresh subprocess.
 
 | circuit | k mc/cc | prove mc | prove cc | RAM mc | RAM cc |
 |---|---|---|---|---|---|
-| deposit | 15 / 15 | 4.79s | 4.96s | 781MB | 783MB |
-| claim | **16 / 17** | 9.45s | 19.13s | **1.8GB** | 3.2GB |
-| completeSwap | **16 / 17** | 13.05s | 25.14s | **1.9GB** | 3.5GB |
-| respond (singleton) | **10 / 16** | 0.13s | 5.12s | **41MB** | 879MB |
-| initialize | 13 / 13 | 0.90s | 0.89s | 176MB | 179MB |
+| signBidirectional (singleton) | **11 / 16** | **0.14s** | 2.83s | **51MB** | 1,021MB |
+| respond (singleton) | **10 / 16** | **0.09s** | 2.69s | **41MB** | 904MB |
+| startDeposit | **11 / 14** | **0.15s** | 0.76s | **53MB** | 205MB |
+| approveRouter | **11 / 14** | **0.14s** | 0.74s | **54MB** | 223MB |
+| startSwap | **15 / 16** | **1.82s** | 3.35s | **674MB** | 1,189MB |
+| startRedeem | **15 / 16** | **1.80s** | 3.22s | **615MB** | 1,168MB |
+| completeSwap | 16 / 16 | 4.28s | 4.36s | 1.6GB | 1.6GB |
+| initialise | 10 / 10 | 0.14s | 0.14s | 49MB | 49MB |
 
-- Wins come from instruction selection: native `ReverseBytes` and byte-aligned slices instead of per-byte `div_mod_power_of_two` / `reconstitute_field` chains, plus a segment-based serializer
-- Row cuts pay only when they cross a `k` boundary — nine of twelve circuits did
-- `initialize` is identical row for row; `deposit` (−35% rows) and `withdraw` (−19% rows) prove in compactc's time
-- The M10 optimized vault cuts 35–58% of rows but proves its **own** preimage, so its warrant is symbolic-effect equality plus the 9M harness, not PI-equality. Its own new prove-time wins are two circuits (`deposit` k15→14, `withdraw` k16→15); `swap` missed k15 by 51 rows and was left there.
-- All 40 cells, methodology, per-region profiles: [BENCHMARK.md](BENCHMARK.md)
+- The Signet singleton — the contract every cross-chain call goes through — proves in **3–4% of compactc's time** at 5–6 `k` levels lower: −97.5% rows on all three circuits
+- Every vault request circuit crosses at least one `k` boundary: the 2-word requests (`approveStata`, `approveRouter`, `startDeposit`) drop three levels (k14 → k11, prove −80%); `startSwap` and `startRedeem` drop one (prove −44..−46%)
+- Wins come from instruction selection around the protocol's hashes: one `div_mod` at a byte boundary and a native `reverse_bytes` per ABI word where compactc lowers every `Bytes<20>` / `Uint<128>` word through per-byte `div_mod` / `reconstitute_field` chains (~640 rows a word)
+- The nine settle circuits cut 12–16% of rows but the secp256k1 verify (~24,450 rows) floors both sides at k16, so their prove time is flat — the port never costs more than compactc, and `initialise` is identical row for row
+- All 40 cells, methodology, per-region profiles and the honest limits: [BENCHMARK.md](BENCHMARK.md)
 
 ## What Compact has and MinoCrab does not
 
