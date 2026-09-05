@@ -166,3 +166,127 @@ recipient, response mismatch, WORDS mismatch, tag mismatch, a secret in
 =complete=), clippy, docs warning-free. The README example is compiled as
 a test contract (=crates/minocrab-contracts/src/treasury.rs= or under
 =examples/=) so the README shows real code.
+
+* 9. As built — rung A (2026-09-05)
+Built ADDITIVELY: a new module and a new suite, nothing existing rewired.
+The only edits outside them are the module declaration
+(=minocrab-contracts/src/lib.rs=), =sha3= moved from =[dev-dependencies]=
+to =[dependencies]= (the eDSL itself hashes selectors now; Cargo.lock
+unchanged), and the two encoders in =signet.rs= turned into one-line
+delegations.
+
+** The public surface (crates/minocrab-contracts/src/evm.rs, 647 lines;
+   the suite is crates/minocrab-contracts/tests/evm_abi.rs, 496)
+- =pub fn address_word<V: Vis3>(c, Wire3<FieldT,V>) -> B32<V>= and
+  =pub fn numeric_word<V: Vis3>(c, Wire3<FieldT,V>) -> B32<V>= — THE MOVED
+  BODIES, byte for byte. =signet::evm_address_abi_word= and
+  =signet::numeric_abi_word= now call them and nothing else, so the
+  untyped-limb spelling the vault forks use keeps working.
+- =trait AbiType=: =const SOLIDITY=, =const RESPOND=, =type Wire<V: Vis3>=
+  (a GAT), =fn word<V: Vis3>(c, &Wire<V>) -> B32<V>=. Units: =Address=
+  (=Bytes<20,V>=), =Bool= (=minocrab_std::v3::Bool<V>=, imported as
+  =BoolWire= — the ABI unit and the circuit leaf share a name), =Bytes32=
+  and =U256= and =U160= (=B32<V>=, the identity encoder), =U24=
+  (=Uint<24,V>=), =U64= (=Uint<64,V>=), =U128= (=Uint<128,V>=).
+- =trait AbiTuple=: =const WORDS=, =type Wires<V: Vis3>=, =fn signature()
+  -> String=, =fn words<V: Vis3>(c, Wires<V>) -> Vec<B32<V>>=. Implemented
+  for =()= by hand and for 1- to 8-tuples by a =macro_rules!= of eight
+  lines (declarative; rust-analyzer walks into it).
+- =trait EvmCall=: =const NAME=, =type Args: AbiTuple=, =type Return:
+  AbiType=, =const KIND: u8=, =const GAS_LIMIT: u64=, plus TWO defaulted
+  methods — =fn signature() -> String= and =fn selector() -> [u8;4]=
+  (=sha3::Keccak256= over the signature, first four bytes, in Rust at
+  circuit-build time; no artifact gained a keccak instruction — the
+  209-circuit dump is byte-identical).
+- Five call types: =Erc20Transfer=, =Erc20Approve=, =ExactOutputSingle=,
+  =Erc4626Deposit=, =Erc4626Redeem=.
+- =pub fn build_tx<C: EvmCall, const WORDS: usize>(c, callee:
+  Bytes<20,Private>, args: <C::Args as AbiTuple>::Wires<Private>, nonce)
+  -> EvmTx<WORDS>=, with §3's inline-const =WORDS== check.
+
+** How each selector matched
+Hashed from the argument TYPES, equal to the constants
+=erc20_vault_differential= pins against compactc's own calldata:
+
+| call              | signature hashed                                                             | selector |
+|-------------------+------------------------------------------------------------------------------+----------|
+| Erc20Transfer     | =transfer(address,uint256)=                                                   | a9059cbb |
+| Erc20Approve      | =approve(address,uint256)=                                                    | 095ea7b3 |
+| ExactOutputSingle | =exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))= | 5023b4df |
+| Erc4626Deposit    | =deposit(uint256,address)=                                                    | 6e553f65 |
+| Erc4626Redeem     | =redeem(uint256,address,address)=                                             | ba087652 |
+
+All five on the first run, no adjustment. The non-circularity control is
+=balanceOf(address)= = 70a08231, a value this repository does not store.
+
+** Four adjustments the design of record needed
+1. =EvmCall::signature()= IS A METHOD, not just =NAME= + =Args::SIGNATURE=.
+   Uniswap's argument list is a Solidity STRUCT, which the ABI renders as a
+   nested tuple: =exactOutputSingle((address,…))=, two pairs of
+   parentheses. §2's default cannot spell that, so =signature()= is
+   defaulted-and-overridable and =ExactOutputSingle= is the one override
+   (three lines). A test asserts the flat spelling hashes to something
+   ELSE, so the wrapping is not decoration.
+   Also: §1 says =const SIGNATURE: &'static str= "or, simpler, a fn". It is
+   the fn. A const would need const string concatenation, which on stable
+   needs =generic_const_exprs= for the length — the same wall as §3, and
+   for the same one integer.
+2. TWO ABI TYPES §1 DOES NOT LIST, because the corpus uses them: =U24=
+   (Uniswap's fee tier, =SwapRequest::fee: Uint<24>=) and =U160=
+   (=sqrtPriceLimitX96=). Both are needed for the seven-word signature to
+   hash correctly — the selector is over =uint24= and =uint160=, not
+   =uint256=.
+3. =Erc20Transfer::Args= IS =(Address, U128)=, NOT §0's =(Address, U64)=.
+   The deployed vault's amounts enter as =Uint<128>=
+   (=DepositRequest::amount=, =WithdrawRequest::amount=,
+   =SwapRequest::amountOut=). =Uint<64> -> Uint<128>= is =.widen()=, free,
+   no instruction; the other direction is a range check. Taking the wider
+   type is therefore the choice that lets rung D re-express the vault
+   without emitting a constraint the vault does not emit today, and the
+   README's =Uint<64>= caller pays nothing to reach it. The SOLIDITY
+   spelling is =uint256= either way, so no selector moves.
+   For the same reason =Erc20Approve::Args= is =(Address, U256)=: the vault
+   passes =unlimited_allowance_word=, a constant =B32=, through no encoder
+   at all — and =U256='s wire IS the pre-encoded word.
+4. =U160= and =U256= carry an ALREADY-ENCODED =B32= rather than a
+   =Uint<160>= / a decomposition. Nothing in a 255-bit field holds 256
+   bits, and the corpus's two full-width values (the unlimited allowance,
+   the zero price limit) are both built as constant words. The identity
+   encoder emits nothing, which is what the vault emits today.
+
+** One thing rung D will have to decide (found, not fixed)
+A call type carries exactly ONE =KIND=, and the vault files
+=transfer(address,uint256)= under TWO: =RESPONSE_KIND_CLAIM= (0) for a
+deposit and =RESPONSE_KIND_WITHDRAW= (1) for a withdrawal. =Erc20Transfer=
+here takes WITHDRAW; the deposit slot needs a second unit type with the
+same =NAME= and =Args= and =KIND = RESPONSE_KIND_CLAIM=. That is three
+lines and it is arguably RIGHT — the two are different operations of the
+protocol and the kind byte is what says so (§5: "the kind byte … stays
+explicit, on purpose") — but it is a shape §2 does not mention.
+Second, smaller: =deposit= supplies a CALLER-CHOSEN gas envelope
+(=max_priority_fee_per_gas= and =max_fee_per_gas= are circuit arguments),
+where every other request uses the contract-fixed one. =build_tx= fixes
+the envelope, so either =deposit= changes or =build_tx= grows an envelope
+argument — which is §7's conversation (an administrator-set gas price)
+arriving early.
+
+** Gates (all run on this rung)
+- =cargo test -p minocrab-contracts --test evm_abi= — 11 passed.
+- =cargo test -p minocrab-contracts= — green but for
+  =opaque_differential::the_vaults_own_initialize_now_flattens=, which
+  fails IDENTICALLY on the untouched tree (verified by stashing):
+  "unknown Compact type-name =Secp256k1Point=" from the M31 compactc
+  0.34.0 refresh. Not this rung's.
+- =cargo test -p minocrab-contracts --doc= — 7 passed: the two new
+  =compile_fail= blocks and a POSITIVE example that is the same code with
+  the one change reverted, so each rejection is provably the swap and the
+  number rather than a typo. The =WORDS= mismatch was checked by hand to
+  be =error[E0080]= at the call site carrying the prescriptive message.
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7 as
+  the untouched tree (all pre-existing intra-doc links elsewhere); zero
+  from =evm.rs=.
+- The 209-circuit dump before and after: =diff -r= empty.
+- =trust_base= — 2 passed, unregenerated: its closure is over the seven
+  eDSL crates (=CRATES= at trust_base.rs:91) and =minocrab-contracts= is
+  not one of them, so a new file here cannot make TRUST.md stale.

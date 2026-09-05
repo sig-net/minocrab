@@ -24,6 +24,12 @@ signet-signer-interface = { path = "../signet-signer-interface" }
 # xcall target, and nothing needs to — the crate was produced from its
 # compiled artifact by minocrab-interface-gen.
 xcall-target-interface = { path = "../xcall-target-interface" }
+# M37 rung A: `EvmCall::selector()` is the first four bytes of
+# `keccak256("name(argtypes)")`, hashed HERE — in Rust, at circuit-build time
+# — and embedded as an immediate. Nothing in-circuit hashes keccak (in-circuit
+# hashing stays Poseidon); this was a dev-dependency until the eDSL itself
+# needed it.
+sha3.workspace = true
 
 [dev-dependencies]
 signet-sim = { path = "../signet-sim" }
@@ -67,7 +73,6 @@ bincode.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sha3.workspace = true
 proptest.workspace = true
 # The M29 E real-proving gate (tests/signet_real_proof.rs) only. Declared
 # here rather than in `[workspace.dependencies]` for the same reason
