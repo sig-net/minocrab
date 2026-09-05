@@ -211,7 +211,7 @@ use signet_signer_interface::{RequestId, Signature};
 
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
-use crate::evm::{build_tx, AbiTuple, AbiType, EvmCall};
+use crate::evm::{build_tx, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall};
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
     file_request, Attested, Outcome, RequestIdSettled, SignRequest, Signet,
@@ -356,7 +356,22 @@ macro_rules! ticket {
                 $name {
                     request_id: <RequestId<Private>>::declare(c, &path.field("requestId")),
                     respond: <Signature<Private>>::declare(c, &path.field("respond")),
-                    output: <Attested<Ret<C>>>::declare(c, &path.field("serializedOutput")),
+                    output: {
+                        // Spelled out rather than `Attested::declare` so the
+                        // attested value's slot can carry the call's own
+                        // `RETURN_FIELD` — `success`, `amountIn`, `shares`,
+                        // `assets` — where the response record names it.
+                        let out = path.field("serializedOutput");
+                        let value = out.field("output");
+                        let value = match C::RETURN_FIELD {
+                            None => value,
+                            Some(name) => value.field(name),
+                        };
+                        Attested {
+                            kind: <Uint<8>>::declare(c, &out.field("kind")),
+                            output: <Ret<C>>::declare(c, &value),
+                        }
+                    },
                     _call: PhantomData,
                 }
             }
@@ -623,6 +638,87 @@ impl<Call: EvmCall, Env, const WORDS: usize> Pending<Call, Env, WORDS> {
     }
 }
 
+// ---- the fire-and-forget slot -------------------------------------------------
+
+/// A CALL THAT IS NEVER SETTLED — Sig Network's fire-and-forget shape (the
+/// vault's `approveRouter` and `approveStata`): ONE ledger field, the record
+/// map, and [`Fired::request_with`] as its only operation.
+///
+/// No settle method exists, so "no circuit settles this kind" is a fact about
+/// the type rather than a convention. The kind is still claimed in
+/// [`LedgerWidth::KINDS`], so no settling slot of the block can share it and
+/// an approve ATTESTATION is a kind nothing accepts.
+pub struct Fired<Call, const WORDS: usize = 2> {
+    records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
+    signet: Signet,
+    _call: PhantomData<fn() -> Call>,
+}
+
+impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
+    /// The slot's one field at flat index `start`, against the block's
+    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
+    /// field whose type is spelled `Fired`.
+    pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
+        const {
+            assert!(
+                WORDS == <Call::Args as AbiTuple>::WORDS,
+                "`Fired<Call, WORDS>` needs WORDS == <Call::Args as \
+                 AbiTuple>::WORDS — the record's calldata capacity IS the \
+                 call's argument-word count. Stable Rust cannot infer it \
+                 (generic_const_exprs), so name the number the argument \
+                 tuple encodes to."
+            )
+        }
+        Fired {
+            records: LedgerMap::at_block(total, start),
+            signet: Signet::at_block(total, signet_start),
+            _call: PhantomData,
+        }
+    }
+
+    /// The record map's ledger path: the notification's `depth ‖ path`.
+    pub const fn record_path(&self) -> FieldPath {
+        self.records.field_path()
+    }
+
+    /// File the call and notify the MPC; nothing is kept for a settle.
+    /// Discloses `signet_flow::Requested`.
+    ///
+    /// The shape is [`Pending::request_with`]'s minus the environment: the
+    /// callee and the arguments are builders, so a ledger read emits where
+    /// the circuit reads it, and `signer` answers whose key signs.
+    pub fn request_with(
+        &self,
+        c: &mut Circuit3,
+        callee: impl FnOnce(&mut Circuit3) -> Contract<Call>,
+        args: impl AbiArgs<Call::Args>,
+        envelope: Envelope,
+        key_version: Uint<8>,
+        nonce: Uint<64>,
+        signer: impl FnOnce(&mut Circuit3) -> SigningPath<Private>,
+    ) -> RequestId<Public> {
+        let tx =
+            build_tx_with::<Call, WORDS>(c, |c| callee(c).address, args, envelope, nonce.field());
+        let path = signer(c);
+        file_request(
+            c,
+            &self.signet,
+            &self.records,
+            SignRequest {
+                key_version,
+                path,
+                tx,
+            },
+            Call::KIND,
+            |_, _| {},
+        )
+    }
+}
+
+impl<Call: EvmCall, const WORDS: usize> LedgerWidth for Fired<Call, WORDS> {
+    const KINDS: &'static [u8] = &[Call::KIND];
+}
+
 impl<Call: EvmCall, Env, const WORDS: usize> LedgerWidth for Pending<Call, Env, WORDS> {
     const WIDTH: usize = 2;
     const KINDS: &'static [u8] = &[Call::KIND];
@@ -667,6 +763,70 @@ where
                 // The environment is built AFTER the id exists, so a
                 // `Commit` in it binds to this request and no other.
                 let env = env(c, request_id);
+                self.envs.insert(c, &request_id, &env);
+            },
+        )
+    }
+
+    /// [`Self::request`] WITH THE THREE THINGS A DEPLOYED LINEAGE CANNOT LET
+    /// THE SLOT CHOOSE — the shape the vault's seventeen circuits need, and
+    /// the one `request` is the convenience wrapper over.
+    ///
+    /// - `callee` and `args` are BUILDERS ([`AbiArgs`]), not values, so a
+    ///   ledger read emits exactly where the circuit reads it: `supply` reads
+    ///   `vaultEvmAddress` between its two argument words, `approveStata`
+    ///   reads its callee after the gas constants. Building them up front
+    ///   would move those instructions.
+    /// - `envelope` is the fee envelope: [`Envelope::fixed`] for a contract
+    ///   that pays its own way, [`Envelope::caller`] for the vault's
+    ///   `deposit`, whose transaction is paid from the DEPOSITOR's EVM
+    ///   account and whose three gas numbers are therefore circuit arguments.
+    /// - `signer` runs AFTER the transaction and BEFORE the record is filed,
+    ///   and answers "whose key signs this": it returns the signing path and
+    ///   whatever else the environment will need. That is where the vault
+    ///   witnesses the secret its refund commitment is made to — after the
+    ///   transaction, which is where its deployed stream has it — and where
+    ///   `deposit` names the depositor's own commitment as the path instead
+    ///   of the contract's.
+    ///
+    /// A REQUEST STILL CANNOT NAME AN ARBITRARY PATH FROM ITS INPUTS in any
+    /// useful sense: the path is built by contract code here, not read off an
+    /// argument. `deposit`'s per-user path is a commitment the same circuit
+    /// just derived from a witnessed secret.
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_with<S>(
+        &self,
+        c: &mut Circuit3,
+        callee: impl FnOnce(&mut Circuit3) -> Contract<Call>,
+        args: impl AbiArgs<Call::Args>,
+        envelope: Envelope,
+        key_version: Uint<8>,
+        nonce: Uint<64>,
+        signer: impl FnOnce(&mut Circuit3) -> (SigningPath<Private>, S),
+        env: impl FnOnce(&mut Circuit3, RequestId<Public>, &S) -> Env,
+    ) -> RequestId<Public> {
+        let tx = build_tx_with::<Call, WORDS>(
+            c,
+            |c| callee(c).address,
+            args,
+            envelope,
+            nonce.field(),
+        );
+        let (path, carried) = signer(c);
+        file_request(
+            c,
+            &self.signet,
+            &self.records,
+            SignRequest {
+                key_version,
+                path,
+                tx,
+            },
+            Call::KIND,
+            |c, request_id| {
+                // The environment is built AFTER the id exists, so a
+                // `Commit` in it binds to this request and no other.
+                let env = env(c, request_id, &carried);
                 self.envs.insert(c, &request_id, &env);
             },
         )
