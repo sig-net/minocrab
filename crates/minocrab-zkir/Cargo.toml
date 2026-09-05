@@ -25,6 +25,7 @@ include = [
     "lean/Roundtrip.lean",
     "lean/DataflowDump.lean",
     "lean/Wellformed.lean",
+    "lean/ZkirRun.lean",
     "lean/fixtures/*.zkir",
     # M27 rung 4: the differential run records the `zkir-run` gate reads.
     # The artifacts they name live under corpus/ and are NOT shipped — the
