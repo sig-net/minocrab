@@ -195,7 +195,7 @@ cmd_gates() {
     "the pinned compiler no longer compiles what it used to — a real toolchain regression, or a corpus source that moved" \
     check_compile_report
 
-  stage "ZKIR round-trip (788 artifacts)" \
+  stage "ZKIR round-trip (the v3 artifacts)" \
     "compactc's own output no longer parses/re-emits under our bindings: the .zkir format, version envelope or instruction set moved. Fix the bindings; do NOT regenerate anything." \
     cargo test -p minocrab-zkir
 

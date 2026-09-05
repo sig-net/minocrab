@@ -28,7 +28,6 @@ include = [
 ]
 
 [dependencies]
-midnight-zkir.workspace = true
 midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 serde_json.workspace = true

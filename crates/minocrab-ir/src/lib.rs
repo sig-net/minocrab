@@ -36,6 +36,6 @@
 //! tier only; the full-eDSL crates enable `unstable` internally.
 
 pub use midnight_base_crypto::fab::{Alignment, AlignmentAtom, AlignmentSegment};
-pub use minocrab_zkir::{Fr, Instruction, IrSource};
+pub use minocrab_zkir::Fr;
 
 pub mod v3;

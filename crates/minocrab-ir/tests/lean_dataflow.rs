@@ -46,10 +46,10 @@ fn rust_dump(corpus: &Path) -> String {
     files.sort_by(|a, b| a.to_string_lossy().as_bytes().cmp(b.to_string_lossy().as_bytes()));
     let mut out = String::new();
     for path in &files {
-        let minocrab_zkir::AnyIr::V3(ir) = minocrab_zkir::read_any(path).expect("corpus parses")
-        else {
+        if minocrab_zkir::major_version(path).expect("corpus reads") != 3 {
             continue;
-        };
+        }
+        let ir = minocrab_zkir::v3::read_zkir(path).expect("corpus parses");
         for (idx, ins) in ir.instructions.iter().enumerate() {
             out.push_str(&format!(
                 "{}\t{idx}\t{}\t{}\t{}\n",

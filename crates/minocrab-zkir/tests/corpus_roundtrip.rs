@@ -1,6 +1,7 @@
-//! M1 exit criterion: round-trip every compactc-compiled `.zkir` in the
-//! corpus — parse, re-emit, re-parse, assert equality. Skips when the corpus
-//! hasn't been compiled yet (corpus/compile.sh).
+//! M1 exit criterion: round-trip every compactc-compiled ZKIR v3 `.zkir` in
+//! the corpus — parse, re-emit, re-parse, assert equality. The corpus's v2
+//! artifacts are counted and skipped (nothing targets them). Skips when the
+//! corpus hasn't been compiled yet (corpus/compile.sh).
 
 use std::path::{Path, PathBuf};
 
@@ -33,28 +34,19 @@ fn round_trips_entire_corpus() {
     for path in &files {
         let name = path.display().to_string();
         let result = (|| -> Result<bool, String> {
-            match minocrab_zkir::read_any(path).map_err(|e| format!("parse: {e}"))? {
-                minocrab_zkir::AnyIr::V2(ir) => {
-                    let emitted =
-                        minocrab_zkir::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
-                    let reparsed = minocrab_zkir::parse_zkir(emitted.as_bytes(), &name)
-                        .map_err(|e| format!("reparse: {e}"))?;
-                    if reparsed != ir {
-                        return Err("re-emitted v2 IR differs from original".into());
-                    }
-                    Ok(false)
-                }
-                minocrab_zkir::AnyIr::V3(ir) => {
-                    let emitted = minocrab_zkir::v3::to_zkir_string(&ir)
-                        .map_err(|e| format!("emit: {e}"))?;
-                    let reparsed = minocrab_zkir::v3::parse_zkir(emitted.as_bytes(), &name)
-                        .map_err(|e| format!("reparse: {e}"))?;
-                    if reparsed != ir {
-                        return Err("re-emitted v3 IR differs from original".into());
-                    }
-                    Ok(true)
-                }
+            // The corpus keeps compactc's ZKIR v2 artifacts for the record;
+            // nothing here targets them, so they are counted and skipped.
+            if minocrab_zkir::major_version(path).map_err(|e| format!("version: {e}"))? != 3 {
+                return Ok(false);
             }
+            let ir = minocrab_zkir::v3::read_zkir(path).map_err(|e| format!("parse: {e}"))?;
+            let emitted = minocrab_zkir::v3::to_zkir_string(&ir).map_err(|e| format!("emit: {e}"))?;
+            let reparsed = minocrab_zkir::v3::parse_zkir(emitted.as_bytes(), &name)
+                .map_err(|e| format!("reparse: {e}"))?;
+            if reparsed != ir {
+                return Err("re-emitted v3 IR differs from original".into());
+            }
+            Ok(true)
         })();
         match result {
             Ok(true) => v3_count += 1,
@@ -71,10 +63,9 @@ fn round_trips_entire_corpus() {
         failures.join("\n"),
     );
     println!(
-        "round-tripped {} corpus .zkir files ({} v2, {} v3)",
-        files.len(),
+        "round-tripped {} v3 corpus .zkir files ({} v2 files skipped)",
+        v3_count,
         files.len() - v3_count,
-        v3_count
     );
     // THE COUNT IS ASSERTED. Without it this test is green on a partial or
     // empty checkout, which is silence, not evidence. The number moves only

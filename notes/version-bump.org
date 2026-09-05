@@ -146,9 +146,13 @@ today.
   a REPIN decision, because those contracts are the benchmark and the ports.
 
 ** 3. ZKIR round-trip — =cargo test -p minocrab-zkir=
-Parses, re-emits and re-parses all 788 =.zkir= in the corpus (722 v2 + 66
-v3), plus =toolchain_accepts= (a hand-built circuit through =zkir
-mock-compile=, skipped when =zkir= is off PATH).
+Parses, re-emits and re-parses every ZKIR v3 =.zkir= in the corpus (84 at
+the current pin; the 722 v2 artifacts are counted and skipped — M36
+retired the v2 bindings on 2026-09-05, since nothing in the workspace
+targets v2 and the v2 reading answered a question no gate asks). The
+=toolchain_accepts= v2 mock-compile test went with them; the v3 toolchain
+is exercised in-process by the bench (keygen + prove through
+=midnight-zkir-v3=) and by every differential's =IrSource::check=.
 - MEANS: compactc's own output no longer round-trips through our bindings —
   the JSON envelope, an instruction's field set, or the instruction set
   itself moved. This is the most fundamental instrument in the tree: if it

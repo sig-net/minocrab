@@ -54,7 +54,6 @@ minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 # the zkir binaries bundled with our pinned compactc (zkir 2.2.0), so what we
 # parse/emit matches the toolchain byte-for-byte. crates.io only has the older
 # 2.1 (ledger-8) line — see notes/midnight-code-reuse.org.
-midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
 # zkir-v3: the ledger-9.1.0.0-rc.3 tag's copy predates the bundled zkir-v3
 # binary despite identical version strings. This rev is what the official
 # compact flake pins for the zkir-v3 binaries our compactc ships with.

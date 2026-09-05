@@ -2301,7 +2301,6 @@ name = "minocrab-ir"
 version = "0.1.0"
 dependencies = [
  "midnight-base-crypto",
- "midnight-zkir",
  "minocrab-ir",
  "minocrab-zkir",
  "serde_json",
@@ -2379,7 +2378,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "midnight-transient-crypto 3.0.0",
- "midnight-zkir",
  "midnight-zkir-v3",
  "serde_json",
  "thiserror",
