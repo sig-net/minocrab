@@ -2341,7 +2341,6 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-curves 0.3.1",
  "midnight-transient-crypto 3.0.0",
- "midnight-zkir",
  "midnight-zkir-v3",
  "minocrab",
  "minocrab-ir",

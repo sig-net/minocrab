@@ -27,7 +27,6 @@ minocrab-zkir.workspace = true
 # The CLI's `pass` subcommand runs the published passes over a .zkir file
 # (M24 point 4); a regular dependency since then, not just the tests'.
 minocrab-ir = { workspace = true, features = ["unstable"] }
-midnight-zkir.workspace = true
 # v3 simulator: reuse zkir-v3's public off-circuit helpers and the same
 # crypto crates its interpreter calls (see src/v3.rs).
 midnight-zkir-v3.workspace = true

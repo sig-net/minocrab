@@ -1,45 +1,34 @@
 //! L5 — native ZKIR simulator.
 //!
 //! Executes a circuit in plain Rust for `cargo test` loops: no proving, no
-//! keys, instant feedback. Semantics mirror `zkir/src/ir_vm.rs`
-//! (midnight-ledger, the reference VM) instruction for instruction, with one
-//! difference: the reference VM *verifies* a proof preimage, while the
-//! simulator *generates* the public transcript as it runs. [`Run::preimage`]
-//! converts a simulation into a `ProofPreimage`, so every run can be
-//! cross-checked against the reference VM via `IrSource::check` — the
-//! simulator is never trusted alone (see `tests/`).
+//! keys, instant feedback. Semantics mirror midnight-ledger's reference
+//! interpreter (`zkir-v3/src/ir_vm.rs`) instruction for instruction:
+//! [`v3::simulate`] *verifies* a complete `ProofPreimage` — arguments
+//! decoded per the input schema, Impact public inputs checked against the
+//! transcript as they accumulate — so every run can be cross-checked against
+//! the reference VM via `IrSource::check`, and the simulator is never
+//! trusted alone (see `tests/`).
 //!
-//! Crypto primitives (hashes, embedded curve) are Midnight's own — never
+//! Crypto primitives (hashes, curves) are Midnight's own — never
 //! reimplemented here.
 //!
 //! # Where this sits
 //!
 //! The top of the stack and off to the side of it: a dev-dependency, not
-//! something a contract links. It takes the [`minocrab::Compiled`] that the
-//! eDSL produces (or a bare [`IrSource`] from `minocrab-zkir`) and runs it.
-//! `minocrab-std`, `minocrab-ledger` and the contract crates all use it the
-//! same way — build a circuit, simulate it, assert on the disclosure report
-//! and the row cost.
-//!
-//! # v2 and v3
-//!
-//! [`simulate`] is the v2 simulator. **`v3::simulate` is the current one**,
-//! and it mirrors v3's reference semantics rather than v2's: it *verifies* a
-//! complete `ProofPreimage` instead of generating the transcript.
+//! something a contract links. It takes the [`minocrab::v3::Compiled3`] that
+//! the eDSL produces (or a bare [`minocrab_zkir::v3::IrSource`]) and runs
+//! it. `minocrab-std`, `minocrab-ledger` and the contract crates all use it
+//! the same way — build a circuit, simulate it, assert on the disclosure
+//! report and the row cost.
 //!
 //! # Start here
 //!
-//! - [`simulate_compiled`] — run a compiled circuit, get a [`Run`] and a
-//!   [`Report`]
-//! - [`Report`] and [`DisclosedValue`] — what the run actually published,
-//!   label by label
-//! - [`Run::preimage`] — package a run as a `ProofPreimage`, so it can be
-//!   cross-checked against the reference VM (the simulator is never trusted
-//!   alone)
-//! - [`cost`] and [`profile`] — `(k, rows)` for a circuit, and [`Profile`],
-//!   the per-region breakdown the benchmark charts
-//! - `v3::simulate` and `v3::Run3` — the v3 pair
-//! - [`v3::rowcost`] — the calibrated primitive costs behind [`cost`]
+//! - [`v3::simulate`] and [`v3::Run3`] — run a circuit against a preimage
+//! - [`v3::report`] and [`v3::DisclosedValue3`] — what the run actually
+//!   published, label by label
+//! - [`v3::cost`] and [`v3::profile`] — `(k, rows)` for a circuit, and
+//!   [`Profile`], the per-region breakdown the benchmark charts
+//! - [`v3::rowcost`] — the calibrated primitive costs behind [`v3::cost`]
 //!
 //! # Stability (M24 tier boundary)
 //!
@@ -47,468 +36,12 @@
 //! [`v3::profile`], [`v3::assert_max_k`], the calibrated [`v3::rowcost`]
 //! tables, [`Profile`]/[`RegionCost`], and the `minocrab` gate-count CLI.
 //! INTERNAL TIER, gated behind the `unstable` cargo feature: the simulator
-//! VMs (`simulate`, `Run3`, the report machinery) — the correctness
+//! VM (`v3::simulate`, `Run3`, the report machinery) — the correctness
 //! harness's engine, not a public contract.
 
 pub mod v3;
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
-
-use midnight_base_crypto::hash::persistent_hash;
-use midnight_base_crypto::repr::BinaryHashRepr;
-use midnight_transient_crypto::curve::{EmbeddedGroupAffine, FR_BITS, FR_BYTES_STORED};
-use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
-use midnight_transient_crypto::hash::{hash_to_curve, transient_hash};
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
-use midnight_transient_crypto::repr::FieldRepr;
-use minocrab::{Compiled, Disclosure};
-use minocrab_zkir::{Fr, Instruction as I, IrSource};
-
-#[derive(Debug, thiserror::Error)]
-pub enum SimError {
-    #[error("instruction {at} ({op}): {message}")]
-    Failed {
-        at: usize,
-        op: &'static str,
-        message: String,
-    },
-    #[error("communications commitments are not supported by the simulator yet")]
-    CommCommitment,
-}
-
-fn fail(at: usize, op: &'static str, message: impl Into<String>) -> SimError {
-    SimError::Failed {
-        at,
-        op,
-        message: message.into(),
-    }
-}
-
-/// The result of simulating one circuit run.
-#[derive(Debug, Clone)]
-pub struct Run {
-    /// The circuit arguments this run was given.
-    pub inputs: Vec<Fr>,
-    /// Values produced by `Output` instructions (circuit return values).
-    pub outputs: Vec<Fr>,
-    /// The public statement generated by `DeclarePubInput`/`PiSkip`.
-    pub public_transcript_inputs: Vec<Fr>,
-    /// Full value memory at the end of the run (for disclosure resolution).
-    pub memory: Vec<Fr>,
-    /// Witness values consumed from the private transcript.
-    pub consumed_private: usize,
-    /// Values consumed from the public transcript outputs.
-    pub consumed_public: usize,
-    /// Instruction execution counts by opcode.
-    pub op_counts: BTreeMap<&'static str, u32>,
-}
-
-impl Run {
-    /// Package this run as a `ProofPreimage` for the reference VM / prover.
-    pub fn preimage(&self, private_transcript: &[Fr], public_outputs: &[Fr]) -> ProofPreimage {
-        ProofPreimage {
-            inputs: self.inputs.clone(),
-            private_transcript: private_transcript.to_vec(),
-            public_transcript_inputs: self.public_transcript_inputs.clone(),
-            public_transcript_outputs: public_outputs.to_vec(),
-            binding_input: 0.into(),
-            communications_commitment: None,
-            key_location: KeyLocation(std::borrow::Cow::Borrowed("minocrab-sim")),
-        }
-    }
-}
-
-fn idx(memory: &[Fr], i: u32, at: usize, op: &'static str) -> Result<Fr, SimError> {
-    memory
-        .get(i as usize)
-        .copied()
-        .ok_or_else(|| fail(at, op, format!("index out of bounds: {i}")))
-}
-
-fn idx_bool(memory: &[Fr], i: u32, at: usize, op: &'static str) -> Result<bool, SimError> {
-    let val = idx(memory, i, at, op)?;
-    if val == 0.into() {
-        Ok(false)
-    } else if val == 1.into() {
-        Ok(true)
-    } else {
-        Err(fail(at, op, format!("expected boolean, found {val:?}")))
-    }
-}
-
-fn bits_of(val: Fr) -> Vec<bool> {
-    val.as_le_bytes()
-        .into_iter()
-        .flat_map(|byte| {
-            [0x01u8, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
-                .into_iter()
-                .map(move |mask| byte & mask != 0)
-        })
-        .collect()
-}
-
-fn idx_bits(
-    memory: &[Fr],
-    i: u32,
-    constrain: Option<u32>,
-    at: usize,
-    op: &'static str,
-) -> Result<Vec<bool>, SimError> {
-    let val = idx(memory, i, at, op)?;
-    let mut bits = bits_of(val);
-    if let Some(n) = constrain {
-        if n as usize >= FR_BITS {
-            return Err(fail(at, op, "excessive bit bound"));
-        }
-        if bits[n as usize..].iter().any(|b| *b) {
-            return Err(fail(at, op, format!("bit bound failed: {val:?} is not {n}-bit")));
-        }
-        bits.truncate(n as usize);
-    }
-    Ok(bits)
-}
-
-fn from_bits(bits: impl DoubleEndedIterator<Item = bool>) -> Fr {
-    bits.rev()
-        .fold(Fr::from(0), |acc, bit| acc * Fr::from(2) + Fr::from(bit as u64))
-}
-
-fn idx_point(
-    memory: &[Fr],
-    x: u32,
-    y: u32,
-    at: usize,
-    op: &'static str,
-) -> Result<EmbeddedGroupAffine, SimError> {
-    let x = idx(memory, x, at, op)?;
-    let y = idx(memory, y, at, op)?;
-    EmbeddedGroupAffine::new(x, y)
-        .ok_or_else(|| fail(at, op, format!("point not on curve: ({x:?}, {y:?})")))
-}
-
-fn from_point(p: EmbeddedGroupAffine) -> [Fr; 2] {
-    [p.x().unwrap_or(0.into()), p.y().unwrap_or(0.into())]
-}
-
-fn op_name(ins: &I) -> &'static str {
-    match ins {
-        I::Add { .. } => "add",
-        I::Assert { .. } => "assert",
-        I::CondSelect { .. } => "cond_select",
-        I::ConstrainBits { .. } => "constrain_bits",
-        I::ConstrainEq { .. } => "constrain_eq",
-        I::ConstrainToBoolean { .. } => "constrain_to_boolean",
-        I::Copy { .. } => "copy",
-        I::DeclarePubInput { .. } => "declare_pub_input",
-        I::DivModPowerOfTwo { .. } => "div_mod_power_of_two",
-        I::EcAdd { .. } => "ec_add",
-        I::EcMul { .. } => "ec_mul",
-        I::EcMulGenerator { .. } => "ec_mul_generator",
-        I::HashToCurve { .. } => "hash_to_curve",
-        I::LessThan { .. } => "less_than",
-        I::LoadImm { .. } => "load_imm",
-        I::Mul { .. } => "mul",
-        I::Neg { .. } => "neg",
-        I::Not { .. } => "not",
-        I::Output { .. } => "output",
-        I::PersistentHash { .. } => "persistent_hash",
-        I::PiSkip { .. } => "pi_skip",
-        I::PrivateInput { .. } => "private_input",
-        I::PublicInput { .. } => "public_input",
-        I::ReconstituteField { .. } => "reconstitute_field",
-        I::TestEq { .. } => "test_eq",
-        I::TransientHash { .. } => "transient_hash",
-    }
-}
-
-/// Simulate one run of `ir`.
-///
-/// * `inputs` — the circuit's arguments (`num_inputs` field elements).
-/// * `private_transcript` — witness values consumed by `PrivateInput`.
-/// * `public_transcript_outputs` — values consumed by `PublicInput`.
-pub fn simulate(
-    ir: &IrSource,
-    inputs: &[Fr],
-    private_transcript: &[Fr],
-    public_transcript_outputs: &[Fr],
-) -> Result<Run, SimError> {
-    if ir.do_communications_commitment {
-        return Err(SimError::CommCommitment);
-    }
-    if inputs.len() != ir.num_inputs as usize {
-        return Err(fail(
-            0,
-            "inputs",
-            format!("expected {} inputs, received {}", ir.num_inputs, inputs.len()),
-        ));
-    }
-
-    let mut memory: Vec<Fr> = inputs.to_vec();
-    let mut public_transcript_inputs: Vec<Fr> = Vec::new();
-    let mut outputs = Vec::new();
-    let mut private_idx = 0usize;
-    let mut public_idx = 0usize;
-    let mut op_counts: BTreeMap<&'static str, u32> = BTreeMap::new();
-
-    for (at, ins) in ir.instructions.iter().enumerate() {
-        let op = op_name(ins);
-        *op_counts.entry(op).or_default() += 1;
-        match ins {
-            I::Add { a, b } => {
-                let v = idx(&memory, *a, at, op)? + idx(&memory, *b, at, op)?;
-                memory.push(v);
-            }
-            I::Mul { a, b } => {
-                let v = idx(&memory, *a, at, op)? * idx(&memory, *b, at, op)?;
-                memory.push(v);
-            }
-            I::Neg { a } => {
-                let v = -idx(&memory, *a, at, op)?;
-                memory.push(v);
-            }
-            I::Not { a } => {
-                let v = !idx_bool(&memory, *a, at, op)?;
-                memory.push(Fr::from(v as u64));
-            }
-            I::ConstrainEq { a, b } => {
-                let (a, b) = (idx(&memory, *a, at, op)?, idx(&memory, *b, at, op)?);
-                if a != b {
-                    return Err(fail(at, op, format!("failed equality constraint: {a:?} != {b:?}")));
-                }
-            }
-            I::CondSelect { bit, a, b } => {
-                let bit = idx_bool(&memory, *bit, at, op)?;
-                let (a, b) = (idx(&memory, *a, at, op)?, idx(&memory, *b, at, op)?);
-                memory.push(if bit { a } else { b });
-            }
-            I::Assert { cond } => {
-                if !idx_bool(&memory, *cond, at, op)? {
-                    return Err(fail(at, op, "failed direct assertion"));
-                }
-            }
-            I::TestEq { a, b } => {
-                let v = idx(&memory, *a, at, op)? == idx(&memory, *b, at, op)?;
-                memory.push(Fr::from(v as u64));
-            }
-            I::PublicInput { guard } => {
-                let val = match guard {
-                    Some(guard) if !idx_bool(&memory, *guard, at, op)? => 0.into(),
-                    _ => {
-                        public_idx += 1;
-                        public_transcript_outputs
-                            .get(public_idx - 1)
-                            .copied()
-                            .ok_or_else(|| fail(at, op, "ran out of public transcript outputs"))?
-                    }
-                };
-                memory.push(val);
-            }
-            I::DeclarePubInput { var } => {
-                public_transcript_inputs.push(idx(&memory, *var, at, op)?);
-            }
-            I::PrivateInput { guard } => match guard {
-                Some(guard) if !idx_bool(&memory, *guard, at, op)? => memory.push(0.into()),
-                _ => {
-                    memory.push(
-                        private_transcript
-                            .get(private_idx)
-                            .copied()
-                            .ok_or_else(|| fail(at, op, "ran out of private transcript"))?,
-                    );
-                    private_idx += 1;
-                }
-            },
-            I::Copy { var } => {
-                let v = idx(&memory, *var, at, op)?;
-                memory.push(v);
-            }
-            I::ConstrainToBoolean { var } => {
-                idx_bool(&memory, *var, at, op)?;
-            }
-            I::ConstrainBits { var, bits } => {
-                idx_bits(&memory, *var, Some(*bits), at, op)?;
-            }
-            I::DivModPowerOfTwo { var, bits } => {
-                if *bits as usize > FR_BYTES_STORED * 8 {
-                    return Err(fail(at, op, "excessive bit count"));
-                }
-                let var_bits = idx_bits(&memory, *var, None, at, op)?;
-                memory.push(from_bits(var_bits[*bits as usize..].iter().copied()));
-                memory.push(from_bits(var_bits[..*bits as usize].iter().copied()));
-            }
-            I::ReconstituteField { divisor, modulus, bits } => {
-                if *bits as usize > FR_BYTES_STORED * 8 {
-                    return Err(fail(at, op, "excessive bit count"));
-                }
-                let fr_max = Fr::from(-1i64);
-                let max_bits = bits_of(fr_max);
-                let modulus_bits = idx_bits(&memory, *modulus, Some(*bits), at, op)?;
-                let divisor_bits =
-                    idx_bits(&memory, *divisor, Some(FR_BITS as u32 - *bits), at, op)?;
-                let cmp = modulus_bits
-                    .iter()
-                    .chain(divisor_bits.iter())
-                    .rev()
-                    .zip(max_bits[..FR_BITS].iter().rev())
-                    .map(|(ab, max)| ab.cmp(max))
-                    .fold(
-                        Ordering::Equal,
-                        |prefix, local| if prefix.is_eq() { local } else { prefix },
-                    );
-                if cmp.is_gt() {
-                    return Err(fail(at, op, "reconstituted element overflows field"));
-                }
-                let power = (0..*bits).fold(Fr::from(1), |acc, _| Fr::from(2) * acc);
-                let v = power * idx(&memory, *divisor, at, op)? + idx(&memory, *modulus, at, op)?;
-                memory.push(v);
-            }
-            I::LessThan { a, b, bits } => {
-                let a = from_bits(idx_bits(&memory, *a, Some(*bits), at, op)?.into_iter());
-                let b = from_bits(idx_bits(&memory, *b, Some(*bits), at, op)?.into_iter());
-                memory.push(Fr::from((a < b) as u64));
-            }
-            I::TransientHash { inputs } => {
-                let vals = inputs
-                    .iter()
-                    .map(|i| idx(&memory, *i, at, op))
-                    .collect::<Result<Vec<_>, _>>()?;
-                memory.push(transient_hash(&vals));
-            }
-            I::PersistentHash { alignment, inputs } => {
-                let vals = inputs
-                    .iter()
-                    .map(|i| idx(&memory, *i, at, op))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let value = alignment.parse_field_repr(&vals).ok_or_else(|| {
-                    fail(at, op, format!("inputs did not match alignment: {vals:?}"))
-                })?;
-                let mut repr = Vec::new();
-                ValueReprAlignedValue(value).binary_repr(&mut repr);
-                let hash = persistent_hash(&repr);
-                memory.extend(hash.field_vec());
-            }
-            I::PiSkip { guard, count } => match guard {
-                Some(guard) if !idx_bool(&memory, *guard, at, op)? => {
-                    // Untaken branch: the speculatively-declared block is
-                    // dropped from the generated transcript.
-                    let len = public_transcript_inputs.len();
-                    let count = *count as usize;
-                    if count > len {
-                        return Err(fail(at, op, "pi_skip count exceeds declared inputs"));
-                    }
-                    public_transcript_inputs.truncate(len - count);
-                }
-                _ => {}
-            },
-            I::LoadImm { imm } => memory.push(*imm),
-            I::Output { var } => outputs.push(idx(&memory, *var, at, op)?),
-            I::EcAdd { a_x, a_y, b_x, b_y } => {
-                let p = idx_point(&memory, *a_x, *a_y, at, op)?
-                    + idx_point(&memory, *b_x, *b_y, at, op)?;
-                memory.extend(from_point(p));
-            }
-            I::HashToCurve { inputs } => {
-                let vals = inputs
-                    .iter()
-                    .map(|i| idx(&memory, *i, at, op))
-                    .collect::<Result<Vec<_>, _>>()?;
-                memory.extend(from_point(hash_to_curve(&vals)));
-            }
-            I::EcMul { a_x, a_y, scalar } => {
-                let p = idx_point(&memory, *a_x, *a_y, at, op)? * idx(&memory, *scalar, at, op)?;
-                memory.extend(from_point(p));
-            }
-            I::EcMulGenerator { scalar } => {
-                let p = EmbeddedGroupAffine::generator() * idx(&memory, *scalar, at, op)?;
-                memory.extend(from_point(p));
-            }
-        }
-    }
-
-    Ok(Run {
-        inputs: inputs.to_vec(),
-        outputs,
-        public_transcript_inputs,
-        memory,
-        consumed_private: private_idx,
-        consumed_public: public_idx,
-        op_counts,
-    })
-}
-
-// --- reporting ------------------------------------------------------------------
-
-/// A resolved disclosure: what the circuit made public, by label and value.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DisclosedValue {
-    pub label: String,
-    pub kind: &'static str,
-    /// The concrete disclosed value in this run (decimal).
-    pub value: String,
-}
-
-/// Structured simulation report: what ran, what it cost, what it disclosed.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct Report {
-    pub instructions_executed: u32,
-    pub op_counts: BTreeMap<&'static str, u32>,
-    pub witnesses_consumed: usize,
-    pub outputs: Vec<String>,
-    pub public_statement: Vec<String>,
-    /// Everything this circuit disclosed, with the values of this run.
-    pub disclosures: Vec<DisclosedValue>,
-}
-
-fn fr_display(fr: &Fr) -> String {
-    format!("{fr:?}")
-}
-
-/// Simulate a compiled L2 circuit and produce the structured report.
-pub fn simulate_compiled(
-    compiled: &Compiled,
-    inputs: &[Fr],
-    private_transcript: &[Fr],
-    public_transcript_outputs: &[Fr],
-) -> Result<(Run, Report), SimError> {
-    let run = simulate(&compiled.ir, inputs, private_transcript, public_transcript_outputs)?;
-    let report = report(&run, &compiled.disclosures);
-    Ok((run, report))
-}
-
-/// Build the structured report for a run.
-pub fn report(run: &Run, disclosures: &[Disclosure]) -> Report {
-    Report {
-        instructions_executed: run.op_counts.values().sum(),
-        op_counts: run.op_counts.clone(),
-        witnesses_consumed: run.consumed_private,
-        outputs: run.outputs.iter().map(fr_display).collect(),
-        public_statement: run.public_transcript_inputs.iter().map(fr_display).collect(),
-        disclosures: disclosures
-            .iter()
-            .map(|d| DisclosedValue {
-                label: d.label.clone(),
-                kind: match d.kind {
-                    minocrab::DisclosureKind::Disclosed => "disclosed",
-                    minocrab::DisclosureKind::DisclosedUntyped => "disclosed (untyped)",
-                    minocrab::DisclosureKind::Statement => "statement",
-                    minocrab::DisclosureKind::Output => "output",
-                },
-                value: run
-                    .memory
-                    .get(d.index as usize)
-                    .map(fr_display)
-                    .unwrap_or_else(|| "<not computed>".into()),
-            })
-            .collect(),
-    }
-}
-
-/// Static circuit cost via Midnight's own cost model (k = log2 rows needed).
-pub fn cost(ir: &IrSource) -> (u8, usize) {
-    let model = ir.model();
-    (model.k(), model.rows())
-}
 
 // --- profiling -------------------------------------------------------------------
 
@@ -520,8 +53,8 @@ pub struct RegionCost {
     /// Share of the whole circuit's instructions, in percent.
     pub percent: f64,
     /// Estimated share of the *proving table* — the number k, prove time and
-    /// RAM track. `None` for v2 profiles, which have no row-cost model
-    /// (see [`crate::v3::rowcost`]).
+    /// RAM track — from the calibrated [`crate::v3::rowcost`] model. Always
+    /// `Some` for a [`v3::profile`]; the `Option` is kept for API stability.
     pub est_rows: Option<usize>,
     /// Share of the circuit's estimated rows, in percent.
     pub est_rows_percent: Option<f64>,
@@ -538,7 +71,8 @@ pub struct Profile {
     pub total_instructions: usize,
     /// Sum of the per-region row estimates. It undershoots `rows`: the
     /// difference is the circuit's fixed cost (chip stand-up, the pow2range
-    /// table), which belongs to no region. `None` for v2 profiles.
+    /// table), which belongs to no region. Always `Some` for a
+    /// [`v3::profile`]; the `Option` is kept for API stability.
     pub est_rows_total: Option<usize>,
     /// Most expensive region first — by estimated rows where they exist,
     /// else by instruction count.
@@ -591,57 +125,5 @@ impl std::fmt::Display for Profile {
             }
         }
         Ok(())
-    }
-}
-
-/// Attribute each instruction to its innermost region and price the circuit.
-/// Instructions outside every region land in "(top level)".
-pub fn profile(compiled: &Compiled) -> Profile {
-    let instructions = compiled.ir.instructions.as_slice();
-    let (k, rows) = cost(&compiled.ir);
-
-    // regions are pushed on scope exit, so for nested regions the inner one
-    // appears first — the first region containing an index is the innermost.
-    let region_of = |idx: usize| -> &str {
-        compiled
-            .regions
-            .iter()
-            .find(|r| r.start <= idx && idx < r.end)
-            .map(|r| r.label.as_str())
-            .unwrap_or("(top level)")
-    };
-
-    let mut by_label: BTreeMap<&str, RegionCost> = BTreeMap::new();
-    for (idx, ins) in instructions.iter().enumerate() {
-        let label = region_of(idx);
-        let entry = by_label.entry(label).or_insert_with(|| RegionCost {
-            label: label.to_string(),
-            instructions: 0,
-            percent: 0.0,
-            // v2 has no row-cost model; only v3 profiles carry row shares.
-            est_rows: None,
-            est_rows_percent: None,
-            op_counts: BTreeMap::new(),
-        });
-        entry.instructions += 1;
-        *entry.op_counts.entry(op_name(ins)).or_default() += 1;
-    }
-
-    let total = instructions.len().max(1);
-    let mut regions: Vec<RegionCost> = by_label
-        .into_values()
-        .map(|mut r| {
-            r.percent = r.instructions as f64 * 100.0 / total as f64;
-            r
-        })
-        .collect();
-    regions.sort_by(|a, b| b.instructions.cmp(&a.instructions).then(a.label.cmp(&b.label)));
-
-    Profile {
-        k,
-        rows,
-        total_instructions: instructions.len(),
-        est_rows_total: None,
-        regions,
     }
 }

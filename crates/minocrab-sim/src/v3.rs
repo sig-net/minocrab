@@ -2,15 +2,14 @@
 //!
 //! A mechanical port of the off-circuit arm of midnight-ledger's zkir-v3
 //! interpreter: `IrSource::preprocess` in `zkir-v3/src/ir_vm.rs` (rev
-//! 04c9c5d9, line 185), which upstream keeps `pub(crate)`. Unlike the v2
-//! simulator ([`crate::simulate`]), which *generates* the public transcript,
-//! v3's reference semantics *verify* a complete `ProofPreimage`: circuit
-//! arguments are decoded from `preimage.inputs` per the input schema, and
-//! `Impact` public inputs are checked against
+//! 04c9c5d9, line 185), which upstream keeps `pub(crate)`. The reference
+//! semantics *verify* a complete `ProofPreimage` (they do not generate a
+//! transcript): circuit arguments are decoded from `preimage.inputs` per the
+//! input schema, and `Impact` public inputs are checked against
 //! `preimage.public_transcript_inputs` as they accumulate. `Run3` surfaces
 //! everything upstream's `Preprocessed` carries (memory, pis, pi_skips,
 //! binding input, communications commitment) plus the circuit outputs and
-//! the counters the v2 [`crate::Run`] tracks.
+//! per-instruction counters.
 //!
 //! Per-instruction value semantics are *not* re-implemented: zkir-v3
 //! publishes its off-circuit helpers (`midnight_zkir_v3::ir_instructions`),
@@ -943,7 +942,7 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
 
 #[cfg(feature = "unstable")]
 /// A resolved disclosure: what the circuit made public, by label and by the
-/// value it took in this run — the v3 twin of [`crate::DisclosedValue`].
+/// value it took in this run.
 ///
 /// `values` is a list because a v3 disclosure record covers one *logical*
 /// value, which may be several wires (a `Bytes<32>`'s `[hi, lo]`); see
@@ -957,8 +956,7 @@ pub struct DisclosedValue3 {
 }
 
 #[cfg(feature = "unstable")]
-/// Structured simulation report: what ran, what it cost, what it disclosed
-/// — the v3 twin of [`crate::Report`].
+/// Structured simulation report: what ran, what it cost, what it disclosed.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Report3 {
     pub instructions_executed: u32,
@@ -982,7 +980,7 @@ fn value_display(value: &IrValue) -> String {
 
 #[cfg(feature = "unstable")]
 /// Build the structured report for a v3 run — the v3 twin of
-/// [`crate::report`].
+///
 ///
 /// A disclosed value is resolved through the run's memory by the
 /// [`Identifier`] the record carries, or taken straight from the record when
@@ -1026,8 +1024,7 @@ pub fn report(run: &Run3, disclosures: &[minocrab::v3::Disclosure3]) -> Report3 
 }
 
 #[cfg(feature = "unstable")]
-/// Simulate a compiled v3 circuit and produce the structured report — the
-/// v3 twin of [`crate::simulate_compiled`].
+/// Simulate a compiled v3 circuit and produce the structured report.
 pub fn simulate_compiled(
     compiled: &minocrab::v3::Compiled3,
     preimage: &ProofPreimage,
@@ -1065,8 +1062,7 @@ fn name_the_failed_assert(compiled: &minocrab::v3::Compiled3, error: Sim3Error) 
 
 // --- cost + profiling ------------------------------------------------------------
 
-/// Static circuit cost via Midnight's own cost model (k = log2 rows needed)
-/// — the v3 twin of [`crate::cost`].
+/// Static circuit cost via Midnight's own cost model (k = log2 rows needed).
 pub fn cost(ir: &IrSource) -> (u8, usize) {
     let model = ir.model();
     (model.k(), model.rows())
@@ -1105,7 +1101,7 @@ pub fn assert_max_k(circuit: &str, compiled: &minocrab::v3::Compiled3, budget: u
 }
 
 /// Attribute each instruction to its innermost region and price the circuit
-/// — the v3 twin of [`crate::profile`]. Instructions outside every region
+/// Instructions outside every region
 /// land in "(top level)".
 ///
 /// Regions are attributed twice: by instruction count, and by *estimated
