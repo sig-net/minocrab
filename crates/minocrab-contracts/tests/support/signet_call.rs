@@ -39,12 +39,14 @@ use midnight_base_crypto::hash::HashOutput;
 use midnight_ledger::construct::{
     communication_commitment, partition_transcripts, ContractCallPrototype, PreTranscript,
 };
+use midnight_ledger::semantics::{TransactionContext, TransactionResult};
 use midnight_ledger::structure::{
-    ContractAction, Intent, ProofPreimageMarker, ProofPreimageVersioned, Signature,
-    INITIAL_PARAMETERS,
+    ContractAction, ContractDeploy, Intent, LedgerState, ProofPreimageMarker,
+    ProofPreimageVersioned, Signature, Transaction, INITIAL_PARAMETERS,
 };
-use midnight_onchain_runtime::context::QueryContext;
-use midnight_onchain_state::state::{ChargedState, ContractOperation, StateValue};
+use midnight_ledger::verify::WellFormedStrictness;
+use midnight_onchain_runtime::context::{BlockContext, QueryContext};
+use midnight_onchain_state::state::{ChargedState, ContractOperation, ContractState, StateValue};
 use midnight_onchain_vm::ops::Op;
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::arena::Sp;
@@ -252,3 +254,136 @@ pub fn call_preimage(entry_point: &str, input: AlignedValue, misc_bytes: &[u8]) 
     }
 }
 
+
+// ---- deploying the singleton and applying a call ---------------------------
+
+/// One of the COMMITTED managed verifier keys (M29 rung A:
+/// `crates/signet-artifacts/managed/keys/<circuit>.verifier`, written by the
+/// pinned `zkir-v3`'s keygen and gated byte-for-byte by `signet-artifacts`'
+/// `generated_equals_committed`).
+///
+/// Read by path rather than through the `signet-artifacts` crate: that crate
+/// depends on `minocrab-contracts`, so depending back on it — even as a
+/// dev-dependency — would make the graph harder to read than a path join
+/// deserves.
+pub fn managed_verifier_key(circuit: &str) -> VerifierKey {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../signet-artifacts/managed/keys")
+        .join(format!("{circuit}.verifier"));
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    midnight_serialize::tagged_deserialize(&mut &bytes[..])
+        .unwrap_or_else(|e| panic!("{} is a tagged VerifierKey: {e}", path.display()))
+}
+
+/// The three signer circuits' COMPACT names — what the sidecar's
+/// `expectedVk` table and `RESPOND_CIRCUITS` key by, what the managed
+/// directory names its files, and what the captured on-chain transactions
+/// carry as entry points.
+pub const SIGNER_CIRCUITS: [&str; 3] = ["signBidirectional", "respond", "respondBidirectional"];
+
+/// The singleton as this repo would deploy it: NO ledger fields (all three
+/// signer circuits are stateless), one operation per circuit under whatever
+/// verifier key `key` supplies.
+pub fn singleton_contract_state(
+    key: impl Fn(&str) -> Option<VerifierKey>,
+) -> ContractState<InMemoryDB> {
+    let mut operations = midnight_storage::storage::HashMap::new();
+    for circuit in SIGNER_CIRCUITS {
+        operations = operations.insert(circuit.as_bytes().into(), operation(key(circuit)));
+    }
+    ContractState::new(StateValue::Array(Array::new()), operations, Default::default())
+}
+
+/// Balancing and limits OFF: there is no DUST wallet anywhere in this
+/// workspace (notes/mpc-publisher.org §2 names that as the gap M30 C
+/// closes), and none of these transactions carries a zswap offer.
+pub fn unbalanced_strictness() -> WellFormedStrictness {
+    let mut s = WellFormedStrictness::default();
+    s.enforce_balancing = false;
+    s.enforce_limits = false;
+    s
+}
+
+pub fn tx_context(
+    ledger: &LedgerState<InMemoryDB>,
+    tblock: Timestamp,
+) -> TransactionContext<InMemoryDB> {
+    TransactionContext {
+        ref_state: ledger.clone(),
+        block_context: BlockContext { tblock, ..BlockContext::default() },
+        whitelist: None,
+    }
+}
+
+/// One intent, at segment 1, as a proof-preimage transaction on
+/// `local-test`.
+pub fn preimage_tx(
+    intent: PreimageIntent,
+) -> Transaction<Signature, ProofPreimageMarker, PedersenRandomness, InMemoryDB> {
+    Transaction::from_intents(
+        "local-test",
+        midnight_storage::storage::HashMap::new().insert(1, intent),
+    )
+}
+
+/// `ContractDeploy` the singleton into a fresh `LedgerState`, `well_formed`
+/// it and `apply` it — the state a respond call is then made against.
+pub fn deploy_singleton(
+    state: ContractState<InMemoryDB>,
+    tblock: Timestamp,
+) -> (LedgerState<InMemoryDB>, ContractAddress) {
+    let ledger: LedgerState<InMemoryDB> = LedgerState::new("local-test");
+    let mut rng = StdRng::seed_from_u64(0x5369_676e_6574);
+    let deploy = ContractDeploy::new(&mut rng, state);
+    let address = deploy.address();
+    let tx = preimage_tx(call_intent(vec![], ttl(tblock)).add_deploy(deploy));
+    let vtx = tx
+        .well_formed(&ledger, unbalanced_strictness(), tblock)
+        .expect("the singleton deploy is well formed");
+    let (after, result) = ledger.apply(&vtx, &tx_context(&ledger, tblock));
+    assert!(
+        matches!(result, TransactionResult::Success(_)),
+        "the singleton deploy must apply: {result:?}"
+    );
+    assert!(after.index(address).is_some(), "the singleton is in the state after the deploy");
+    (after, address)
+}
+
+/// The 288-byte Misc envelope of a respond-shaped event:
+/// `pad(32, name)` ‖ requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1)
+/// ‖ zeros(127).
+pub fn respond_misc(
+    name: &str,
+    request_id: &[u8; 32],
+    big_r_x: &[u8; 32],
+    big_r_y: &[u8; 32],
+    s: &[u8; 32],
+    recovery_id: u8,
+) -> Vec<u8> {
+    let mut bytes = vec![0u8; MISC_SIZE];
+    bytes[..name.len()].copy_from_slice(name.as_bytes());
+    bytes[32..64].copy_from_slice(request_id);
+    bytes[64..96].copy_from_slice(big_r_x);
+    bytes[96..128].copy_from_slice(big_r_y);
+    bytes[128..160].copy_from_slice(s);
+    bytes[160] = recovery_id;
+    bytes
+}
+
+/// A respond call's arguments with their COMPACT alignment: four
+/// `Bytes<32>` then a one-byte `Uint<8>`.
+pub fn respond_input(
+    request_id: &[u8; 32],
+    big_r_x: &[u8; 32],
+    big_r_y: &[u8; 32],
+    s: &[u8; 32],
+    recovery_id: u8,
+) -> AlignedValue {
+    AlignedValue::concat([
+        &bytesn_value(32, request_id),
+        &bytesn_value(32, big_r_x),
+        &bytesn_value(32, big_r_y),
+        &bytesn_value(32, s),
+        &bytesn_value(1, &[recovery_id]),
+    ])
+}
