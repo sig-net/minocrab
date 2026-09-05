@@ -174,14 +174,38 @@ const fn bounded_bits(maxval: u128) -> u32 {
 /// of the MAXVAL, `(abytes ceil(bitlen(max)/8))`
 /// (flatten-datatypes.ss:80-124, notes/builtin-lowering.org §1).
 ///
-/// Zero for `maxval = 0` — Compact's `Uint<0..1>` occupies no bytes, which
-/// is what the corpus's own serde fixtures say about it.
+/// ONE for `maxval = 0` — Compact's `Uint<0..1>` (and a fieldless
+/// single-variant `enum`) gets a one-byte alignment in LEDGER position,
+/// compactc issue #588, fixed 0.33.108
+/// ("[skip-changelog] Fix alignment width for bounded integers with
+/// maxval=0", CHANGELOG.md at compactc-v0.34.0). Compactc 0.33.0-rc.2 (our
+/// prior pin) put alignment 0 there while still writing one (always-zero)
+/// value in the transcript; 0.34.0 corrects the Impact push's alignment
+/// operand from `0x00` to `0x01` for such a value
+/// (notes/version-bump.org "Bump 1" §"Family E"). Argument position is
+/// unaffected — no compiled artifact's `.zkir` moves, ledger position is
+/// the only place the byte is ever read back — but this function has no
+/// way to tell the two apart, and did not need to: nothing downstream
+/// reads a zero-length atom's bytes when there are none to read.
+///
+/// Pinned against compactc, not recomputed: see
+/// `crates/minocrab-contracts/tests/fixtures/bounded_ledger/` and
+/// `tests/bounded_ledger_differential.rs`, which fail under the OLD
+/// (zero) value and pass under this one — the instrument
+/// notes/version-bump.org asked for, because `bounded_differential`'s ABI
+/// check reads compactc's `maxval` and recomputes the alignment with this
+/// SAME formula, so it can never disagree with itself.
 ///
 /// One of THREE widths a bounded unsigned type carries, and they differ:
 /// this one, [`uint_compare_bits`], and the even-rounded range-constraint
 /// width in [`LimbConstraint::Bounded`] (notes/bounded-integers.org §2).
 pub const fn uint_atom_bytes(maxval: u128) -> u32 {
-    integer_length(maxval).div_ceil(8)
+    let bytes = integer_length(maxval).div_ceil(8);
+    if bytes == 0 {
+        1
+    } else {
+        bytes
+    }
 }
 
 /// The width an ORDERING comparison of a `(tunsigned maxval)` runs at:
@@ -539,10 +563,14 @@ mod tests {
         // `Uint<0..10>`: constraint 4, comparison 4, atom 1 byte.
         assert_eq!(uint_compare_bits(9), 4);
         assert_eq!(uint_atom_bytes(9), 1);
-        // `Uint<0..1>` holds only zero: no bytes at all, and a comparison
-        // still needs a width, so it is 1 (compactc's `max(1, …)`).
+        // `Uint<0..1>` holds only zero: a comparison still needs a width,
+        // so it is 1 (compactc's `max(1, …)`) — and, since compactc
+        // 0.33.108 (issue #588), so is the LEDGER alignment atom: it still
+        // writes one (always-zero) value in the transcript, and the
+        // one-byte alignment is what the Impact op now says so. See
+        // `uint_atom_bytes`'s doc comment.
         assert_eq!(uint_compare_bits(0), 1);
-        assert_eq!(uint_atom_bytes(0), 0);
+        assert_eq!(uint_atom_bytes(0), 1);
         // A `Bytes<n>` limb and a `Uint<BITS>` agree with the sized rule.
         assert_eq!(uint_atom_bytes(255), 1);
         assert_eq!(uint_atom_bytes(u64::MAX as u128), 8);

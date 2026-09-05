@@ -708,6 +708,17 @@ impl<const BITS: u32> CircuitOut for Uint<BITS, Public> {
     }
 }
 
+/// Returning a `Uint<0..BOUND>`: one output slot, the same wire a bounded
+/// argument declares (M31, the bounded-ledger fixture — the first circuit
+/// in this crate to return one).
+impl<const BOUND: u128> CircuitOut for BoundedUint<BOUND, Public> {
+    const SLOTS: usize = 1;
+
+    fn emit(self, c: &mut Circuit3, label: &str) {
+        c.output(self.field(), label);
+    }
+}
+
 impl CircuitOut for Bool<Public> {
     const SLOTS: usize = 1;
 

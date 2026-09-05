@@ -34,7 +34,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-ir/src/v3/taint.rs` | 1229 | Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; the MARKING RULES' warrants are cited in-file per rule and are READING | a limb marked bounded that is not — a false negative in the one lint that sees what honest inputs cannot |
 | `minocrab/src/lib.rs` | 192 | compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself (192 lines) | a Meet impl that lets private meet public as public |
 | `minocrab/src/v3.rs` | 1851 | every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: **READING** against reduce-to-zkir.ss | a guard dropped on one effect inside `when`; a public input minted in the wrong order |
-| `minocrab/src/v3/abi.rs` | 579 | v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot | an argument type constrained to the wrong width |
+| `minocrab/src/v3/abi.rs` | 607 | v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot | an argument type constrained to the wrong width |
 | `minocrab/src/v3/disclose.rs` | 563 | the generated set-equality test on every circuit; disclosure_report; v3_disclose | a disclosure recorded under a label the signature does not name |
 | `minocrab/src/v3/effects.rs` | 284 | v3_guard_scope; every differential with a branch | an effect escaping its guard |
 | `minocrab-ledger/src/lib.rs` | 103 | **READING** | nothing beyond the crate doc and mod/pub-use plumbing (103 lines) |
@@ -50,7 +50,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-std/src/v3/borsh.rs` | 1157 | serialization_conformance (vectors shared with the published TypeScript decoder, spec/ts); v3_borsh; the borsh differentials | a non-canonical encoding accepted, breaking the digest's injectivity (api-safety-survey §B3) |
 | `minocrab-std/src/v3/borsh/schema.rs` | 181 | the generated schema cross-check test per #[derive(CircuitBorsh)] (layout ≡ borsh's schema of the spec type) | a layout table disagreeing with the published spec |
 | `minocrab-std/src/v3/kernel.rs` | 888 | kernel_tokens_differential (24 circuits, byte-identical); v3_kernel_cache | a kernel effect claimed at the wrong effects index |
-| `minocrab-std/src/v3/entry.rs` | 853 | interface_snapshot (every circuit's argument schema frozen); v3_entry; every differential | an argument declared in a different slot order than the wire |
+| `minocrab-std/src/v3/entry.rs` | 864 | interface_snapshot (every circuit's argument schema frozen); v3_entry; every differential | an argument declared in a different slot order than the wire |
 | `minocrab-std/src/v3/predicate.rs` | 704 | v3_predicates; every differential with a comparison | a comparison at the wrong width, or a message-carrying assert that binds outside its branch |
 | `minocrab-std/src/v3/call.rs` | 244 | xcall_differential / xcall_with_payment_differential / xcontract_events_differential; interface_macro; contract_matches_its_interface | call limbs hashed into the communications commitment in the wrong order |
 | `minocrab-std/src/v3/disclose.rs` | 212 | v3_disclose; the generated set-equality tests | a leaf disclosed under fewer wires than it has |
@@ -68,7 +68,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-25605 lines in the seven crates; 10732 of them in files whose warrant is READING in whole or in part (the rows in bold).
+25644 lines in the seven crates; 10732 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget
