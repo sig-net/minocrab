@@ -335,6 +335,48 @@ fn the_guarded_map_reads_are_the_guarded_ops() {
     assert_eq!(zkir(typed), zkir(explicit));
 }
 
+/// The same guarded reads spelled as the SCOPE returning its value —
+/// `when(branch, |c| map.lookup(c, &key)).or_default()` — are the same
+/// guarded ops: the per-operation `_guarded` parameter and the scope are
+/// one lowering.
+#[test]
+fn the_scoped_map_reads_are_the_guarded_ops() {
+    let scoped = {
+        let mut c = Circuit3::new();
+        let (key, _) = inputs(&mut c);
+        let one = c.constant(1u64);
+        let branch = c.not(one);
+        let pending = c
+            .when(branch, |c| DEMO.refund_commitment.member(c, &key))
+            .or_default();
+        let stored = c
+            .when(branch, |c| DEMO.refund_commitment.lookup(c, &key))
+            .or_default();
+        c.assert_eq(pending.field(), stored.hi);
+        c.finish(true)
+    };
+
+    let explicit = {
+        let mut c = Circuit3::new();
+        let (key, _) = inputs(&mut c);
+        let one = c.constant(1u64);
+        let branch = c.not(one);
+        let key_val = key_value(&key);
+        let pending = map_member_guarded(&mut c, branch, 6, &key_val);
+        let stored = map_lookup_guarded(
+            &mut c,
+            branch,
+            6,
+            &key_val,
+            vec![AlignmentAtom::Bytes { length: 32 }],
+        );
+        c.assert_eq(pending, stored[0]);
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(scoped), zkir(explicit));
+}
+
 /// Cells and counters: the same equality, and the same atoms-from-the-type
 /// claim (a `LedgerCell<Bytes<20, Public>>` reads a `bytes 20` cell).
 #[test]

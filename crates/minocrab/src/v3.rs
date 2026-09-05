@@ -540,11 +540,17 @@ impl<V: Visibility, T: Select<V>> ValueBranches<'_, V, T> {
 /// another arm actually arrives, so a bare `c.when(cond, ..)` — a plain `if`
 /// with no `else` — emits nothing beyond the arm itself. (An unused
 /// instruction is a real row; `tests/backend_folding.rs` measures it.)
-pub struct Branches<'a, V: Visibility> {
+pub struct Branches<'a, V: Visibility, R = ()> {
     c: &'a mut Circuit3,
     last: Wire3<FieldT, V>,
     /// `None` is the constant 1 — no arm before this one.
     prior: Option<Wire3<FieldT, V>>,
+    /// What the first arm's body returned — a read made inside the scope,
+    /// or `()` for an effect-only arm.
+    value: R,
+    /// A [`Circuit3::when_private`] chain: every further arm is a private
+    /// scope too, so the on-chain emitters keep refusing inside it.
+    private: bool,
 }
 
 /// `prior && !last`, the accumulator after an arm. Split out because both
@@ -573,26 +579,63 @@ fn arm_guard<V: Visibility>(
     }
 }
 
-impl<V: Visibility> Branches<'_, V> {
+impl<V: Visibility> Branches<'_, V, ()> {
     /// The next arm: runs where `cond` holds and no earlier arm matched.
     pub fn else_when(self, cond: impl GuardCond<V>, body: impl FnOnce(&mut Circuit3)) -> Self {
-        let Branches { c, last, prior } = self;
+        let Branches { c, last, prior, private, .. } = self;
         let prior = unmatched_after(c, last, prior);
         let cond = cond.into_guard(c);
         let guard = arm_guard(c, cond, Some(prior));
-        c.guarded(guard, body);
+        c.scoped(private, guard, body);
         Branches {
             c,
             last: cond,
             prior: Some(prior),
+            value: (),
+            private,
         }
     }
 
     /// The final arm: runs where NO earlier arm matched.
     pub fn otherwise(self, body: impl FnOnce(&mut Circuit3)) {
-        let Branches { c, last, prior } = self;
+        let Branches { c, last, prior, private, .. } = self;
         let guard = unmatched_after(c, last, prior);
-        c.guarded(guard, body);
+        c.scoped(private, guard, body);
+    }
+}
+
+/// A value read inside a scope: the body of [`Circuit3::when`] /
+/// [`Circuit3::when_private`] returned it, and it is the type's DEFAULT
+/// wherever the guard was off (a skipped read's wires hold zero, a skipped
+/// witness yields the default). These are the three ways to take it out,
+/// and the [`Guarded`] they go through says so in its `#[must_use]`.
+impl<V: Visibility, R> Branches<'_, V, R> {
+    /// The body's value as a [`Guarded`], to hand on or decide about later.
+    pub fn guarded(self) -> Guarded<R, V> {
+        Guarded::new(self.value, self.last)
+    }
+
+    /// The value, accepting the default where the guard was off. ZERO
+    /// instructions.
+    pub fn or_default(self) -> R {
+        self.value
+    }
+
+    /// The value, with `fallback` where the guard was off: one `cond_select`
+    /// per slot of `R`.
+    pub fn or(self, fallback: R) -> R
+    where
+        R: Select<V>,
+    {
+        let Branches { c, last, value, .. } = self;
+        R::select(c, last, value, fallback)
+    }
+
+    /// The value, and an `assert(guard)`: the read MUST have happened.
+    pub fn assert_read(self) -> R {
+        let Branches { c, last, value, .. } = self;
+        c.assert_with(last, Some("guarded read: the guard must hold"));
+        value
     }
 }
 
@@ -1569,17 +1612,26 @@ impl Circuit3 {
     /// ran" is not a thing the stream can express — build it with
     /// [`Circuit3::cond_select`] on the arms' results instead, where the
     /// selection is visible.
-    pub fn when<V: OnChainGuard>(
+    ///
+    /// The body may RETURN what it read: `c.when(g, |c| map.lookup(c, &k))`
+    /// hands the value back through [`Branches::or_default`] /
+    /// [`Branches::or`] / [`Branches::assert_read`] (or [`Branches::guarded`]
+    /// to pass it on), which is the ONE way a conditional read is spelled —
+    /// there is no per-operation guard parameter. A skipped read already
+    /// holds the type's default, so `or_default` costs nothing.
+    pub fn when<V: OnChainGuard, R>(
         &mut self,
         cond: impl GuardCond<V>,
-        body: impl FnOnce(&mut Self),
-    ) -> Branches<'_, V> {
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> Branches<'_, V, R> {
         let cond = cond.into_guard(self);
-        self.guarded(cond, body);
+        let value = self.guarded(cond, body);
         Branches {
             c: self,
             last: cond,
             prior: None,
+            value,
+            private: false,
         }
     }
 
@@ -1603,17 +1655,44 @@ impl Circuit3 {
     /// `witness_guarded(g)`), as `minocrab-std/tests/v3_guard_scope.rs`
     /// pins. Nesting follows [`Circuit3::when`]'s rule (a conjunction); a
     /// public [`Circuit3::when`] INSIDE a private scope is still inside it,
-    /// so its on-chain effects are refused too. No `else` chain: write
-    /// `when_private(not(g), ..)` for the other arm.
-    pub fn when_private<V: Visibility>(
+    /// so its on-chain effects are refused too. An `else_when` /
+    /// `otherwise` arm of a private chain is a private scope as well.
+    ///
+    /// Like [`Circuit3::when`], the body may return what it witnessed:
+    /// `c.when_private(g, |c| c.witness::<T>()).or_default()` is the guarded
+    /// witness read, and the only spelling of one.
+    pub fn when_private<V: Visibility, R>(
         &mut self,
         cond: impl GuardCond<V>,
-        body: impl FnOnce(&mut Self),
-    ) {
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> Branches<'_, V, R> {
         let cond = cond.into_guard(self);
-        self.private_scopes += 1;
-        self.guarded(cond, body);
-        self.private_scopes -= 1;
+        let value = self.scoped(true, cond, body);
+        Branches {
+            c: self,
+            last: cond,
+            prior: None,
+            value,
+            private: true,
+        }
+    }
+
+    /// [`Circuit3::guarded`], as a private scope when `private` — the arm
+    /// runner the two chains share.
+    fn scoped<V: Visibility, R>(
+        &mut self,
+        private: bool,
+        cond: Wire3<FieldT, V>,
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        if private {
+            self.private_scopes += 1;
+        }
+        let result = self.guarded(cond, body);
+        if private {
+            self.private_scopes -= 1;
+        }
+        result
     }
 
     /// The chain that produces a VALUE — Compact's `if`-as-an-expression.

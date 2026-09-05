@@ -595,6 +595,19 @@ impl<V: Vis3> Check<V> {
 
 /// A [`Check`] used as a guard, so `when(..)` / `else_when(..)` read the
 /// same whether the condition is a wire or the predicate vocabulary.
+/// A [`Bool`] used as a guard — the typed spelling, so a `when` site takes
+/// the boolean itself rather than its `.field()`. A `Bool` is 0 or 1 by
+/// construction (`from_field_checked`, a comparison's output, a constrained
+/// argument), which is what an Impact guard and a `cond_select` bit require:
+/// the reference circuit converts either to an assigned bit under an
+/// equality constraint, so a non-boolean guard is UNSATISFIABLE, never
+/// silently wrong.
+impl<V: Vis3> minocrab::v3::GuardCond<V> for crate::v3::Bool<V> {
+    fn into_guard(self, _c: &mut Circuit3) -> Wire3<FieldT, V> {
+        self.field()
+    }
+}
+
 impl<V: Vis3> minocrab::v3::GuardCond<V> for Check<V> {
     fn into_guard(self, c: &mut Circuit3) -> Wire3<FieldT, V> {
         self.into_wire(c)

@@ -891,3 +891,89 @@ fn on_chain_effects_resume_after_a_private_scope() {
     });
     assert_eq!(scoped, plain);
 }
+
+// ---- the scope RETURNS what it read (the one spelling of a conditional read) ----
+
+/// `when(g, |c| read).or_default()` is the guarded read — the `_guarded`
+/// twin, byte for byte — so a conditional read needs no per-operation
+/// guard parameter.
+#[test]
+fn a_read_returned_from_a_scope_is_the_guarded_read() {
+    let threaded = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        let w = c.public_transcript_input_guarded::<FieldT, _>(g);
+        c.impact_mixed(g, &[ImpactElem::Wire(w)]);
+    });
+    let scoped = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        let w = c
+            .when(g, |c| c.public_transcript_input::<FieldT>())
+            .or_default();
+        c.impact_mixed(g, &[ImpactElem::Wire(w)]);
+    });
+    assert_eq!(scoped, threaded);
+}
+
+/// The same for a witness under a private condition: `when_private(g, |c|
+/// c.witness()).or_default()` is `witness_guarded(g)`.
+#[test]
+fn a_witness_returned_from_a_private_scope_is_the_guarded_witness() {
+    let threaded = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let w = c.witness_guarded::<FieldT, _>(g);
+        c.assert_eq(w, w);
+    });
+    let scoped = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let w = c.when_private(g, |c| c.witness::<FieldT>()).or_default();
+        c.assert_eq(w, w);
+    });
+    assert_eq!(scoped, threaded);
+}
+
+/// `.or(fallback)` is one `cond_select` on the scope's guard, and
+/// `.assert_read()` is the guarded read plus `assert(guard)` — the same
+/// instructions [`Guarded`] emits for the same decisions.
+#[test]
+fn or_and_assert_read_are_the_guarded_forms() {
+    use minocrab::v3::Guarded;
+    let by_guarded = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        let f = c.arg::<FieldT>("f");
+        let f = c.disclose(f, "f");
+        let w = c.public_transcript_input_guarded::<FieldT, _>(g);
+        let chosen = Guarded::new(w, g).or(c, f);
+        let w2 = c.public_transcript_input_guarded::<FieldT, _>(g);
+        let read = Guarded::new(w2, g).assert_read(c);
+        c.assert_eq(chosen, read);
+    });
+    let by_scope = zkir(|c| {
+        let g = c.arg::<FieldT>("g");
+        let g = c.disclose(g, "g");
+        let f = c.arg::<FieldT>("f");
+        let f = c.disclose(f, "f");
+        let chosen = c.when(g, |c| c.public_transcript_input::<FieldT>()).or(f);
+        let read = c
+            .when(g, |c| c.public_transcript_input::<FieldT>())
+            .assert_read();
+        c.assert_eq(chosen, read);
+    });
+    assert_eq!(by_scope, by_guarded);
+}
+
+/// A private chain's `otherwise` arm is a private scope too: the refusal
+/// holds there as well.
+#[test]
+#[should_panic(expected = "an Impact op inside `when_private`")]
+fn an_impact_in_a_private_else_arm_is_refused() {
+    zkir(|c| {
+        let g = c.witness::<FieldT>();
+        c.when_private(g, |c| {
+            let _ = c.witness::<FieldT>();
+        })
+        .otherwise(|c| c.impact_mixed(1u64, &op()));
+    });
+}
