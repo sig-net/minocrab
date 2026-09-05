@@ -372,7 +372,7 @@ The full flows — burning a shielded coin on request, minting the attested amou
 
 ## Porting kit
 
-- `corpus/` is 673 pinned `.compact` sources and the 806 ZKIR circuits (315 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
+- `corpus/` is 673 pinned `.compact` sources and the 814 ZKIR circuits (315 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
 - Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not against your reading of the source
 - The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ because of our optimiser. Guard rejections and tampered inputs must agree too.
 
@@ -445,7 +445,7 @@ crates/minocrab-abi             the interface/artifact agreement checker
 crates/minocrab-interface-gen   compactc artifact → interface crate (CLI)
 crates/signet-signer-interface  an interface crate: the Signet singleton
 crates/xcall-target-interface   an interface crate, generated from a contract nobody ported
-corpus/                         673 pinned Compact sources + 806 compactc artifacts
+corpus/                         673 pinned Compact sources + 814 compactc artifacts
 spec/                           the Borsh-subset specification, golden vectors, generated TS
 ```
 

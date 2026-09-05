@@ -296,10 +296,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 - **The rev is a hypothesis; the corpus is the proof.** Our pin equals neither
   rev upstream pins, because all `midnight-*` crates must share one for their
   `Fr` / `ProofPreimage` / `IrSource` types to unify. What makes that safe is
-  instrument (a): 806 of compactc's own artifacts round-trip through these
+  instrument (a): 814 of compactc's own artifacts round-trip through these
   bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
-  the 806 ZKIR circuits (315 contracts) the pinned compactc
+  the 814 ZKIR circuits (315 contracts) the pinned compactc
   produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
   in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
   corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
@@ -466,7 +466,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 **Morning — run the gates, cheapest and most diagnostic first.**
 
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
-2. `cargo test -p minocrab-zkir` — 806 artifacts round-trip, count asserted. If this is red, stop.
+2. `cargo test -p minocrab-zkir` — 814 artifacts round-trip, count asserted. If this is red, stop.
 3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
 4. `cargo test --workspace` — the differentials, the Pending lineage's pair pins, the leakage inventory, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.

@@ -36,7 +36,7 @@ const READING: &str = "READING";
 /// a reviewer can run; "READING" means nothing but a human's eyes.
 const ROWS: &[Row] = &[
     // ---- L0: bindings -------------------------------------------------------------------
-    Row { path: "minocrab-zkir/src/lib.rs", warrant: "corpus_roundtrip (84 v3 artifacts, count asserted); lean_roundtrip (byte-exact Lean syntax, M27 rung 1)", hides: "a `.zkir` envelope or version read wrongly — every differential reads compactc's artifacts through here" },
+    Row { path: "minocrab-zkir/src/lib.rs", warrant: "corpus_roundtrip (92 v3 artifacts, count asserted); lean_roundtrip (byte-exact Lean syntax, M27 rung 1)", hides: "a `.zkir` envelope or version read wrongly — every differential reads compactc's artifacts through here" },
     Row { path: "minocrab-zkir/src/v3.rs", warrant: "corpus_roundtrip; lean_roundtrip; every differential (reads compactc's artifact through this pair)", hides: "an IR re-emitted differently from what was parsed" },
     // ---- L1: the builder -----------------------------------------------------------------
     Row { path: "minocrab-ir/src/lib.rs", warrant: READING, hides: "nothing beyond re-exports (41 lines)" },
