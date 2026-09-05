@@ -174,9 +174,7 @@ pub fn transient_hash_compact<V: Vis3>(
 ///
 /// One `Copy`, which is zero rows and is compactc's own shape for a cast
 /// (`kernel.compact`'s `sMergeCoin`: `copy %t.23 = %a.1` before the
-/// `transient_hash`). The v2 twin ([`crate::hash::degrade_to_transient`])
-/// emits nothing at all, because its callers were not agreeing with an
-/// artifact instruction for instruction.
+/// `transient_hash`).
 pub fn degrade_to_transient<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3<FieldT, V> {
     c.copy(b.lo)
 }

@@ -1,0 +1,39 @@
+#+TITLE: The eDSL trim for human handover — M36
+#+DATE: 2026-09-05
+#+STARTUP: overview
+
+dmd (2026-09-05): "I want to hand this over to human reviewers, so
+making it terser, clearer and removing some cruft is a big plus. Just
+the eDSL I'm worried about." Scope: =minocrab=, =minocrab-ir=,
+=minocrab-zkir=, =minocrab-std=, =minocrab-ledger=, =minocrab-macros=,
+=minocrab-sim=. Zero movement: every v3 gate stays green and
+byte-identical.
+
+* 0. Inventory (2026-09-05, before touching)
+
+** The v2 surfaces, and who depends on each
+| surface | where | size | consumers | load-bearing for a v3 claim? |
+|---------+-------+------+-----------+------------------------------|
+| v2 eDSL: =Circuit=, =Compiled=, =Wire<V>=, =disclose= / =declare_public= | =minocrab/src/lib.rs= | ~380 of 552 lines | =minocrab-sim= v2, =minocrab-std= root modules, their tests | NO. v3 (=minocrab::v3=) imports only the shared visibility types from =lib.rs=: =Visibility=, =Public=, =Private=, =Meet=, =OnChainGuard=, =Disclosure=, =DisclosureKind=, =Region= — those STAY |
+| v2 builder: =Builder=, =Val= | =minocrab-ir/src/lib.rs= (=unstable= tier) | ~300 lines | =minocrab::Circuit= only | NO |
+| v2 I/O: =read_zkir= / =parse_zkir= / =write_zkir= / =to_zkir_string=, =read_any= / =AnyIr=, the =midnight_zkir= re-exports | =minocrab-zkir/src/lib.rs= | ~120 lines + the =midnight-zkir= (v2) git dependency | =tests/corpus_roundtrip.rs= (round-trips the ~700 v2 corpus artifacts beside the 89 v3), =minocrab::IrSource= re-export | NO. The Lean gate (M27 rung 1) is v3-only; =minocrab-abi=, the CLI, the bench and every contract read v3 only. The v2 round trip is M1's own exit criterion, self-supporting |
+| v2 stdlib: =bundle=, =coin=, =data=, =hash=, =merkle=, =schnorr=, =types= | =minocrab-std/src/= root | ~1,140 lines | =tests/differential_tiny.rs=, =differential_schnorr.rs=, =gadgets.rs= (v2 goldens: =set.zkir=, =verifySchnorrN3.zkir=) | NO. v3 mentions them in doc links only ("the v2 twin of…") |
+| v2 simulator: =simulate=, =Run=, =Report=, =DisclosedValue=, =simulate_compiled=, =cost=, =profile= (v2) | =minocrab-sim/src/lib.rs= | ~560 of 647 lines | =tests/end_to_end.rs=, =tests/property.rs= (M2/M3 exit criteria) | NO — except =Profile= / =RegionCost=, which =v3::profile= returns and the bench charts: those STAY (moved beside v3) |
+| =minocrab-ledger=, =minocrab-macros=, =minocrab-abi=, =minocrab-bench=, the =minocrab= CLI | — | — | v3 only | nothing to retire |
+
+THE ONE INSTRUMENT THAT MOVES: the bump workflow's stage 3 ("ZKIR
+round-trip — 788 artifacts", =bump.sh:198=, version-bump.org §3) round-trips
+the 722 v2 artifacts beside the 66 v3. After the trim it round-trips the
+66 v3 ones. What the instrument MEANS is unchanged ("compactc's own
+output no longer round-trips through our bindings") and its v3 reading
+is the only one a v3 contract can act on; the v2 reading answered a
+question no gate asks. =bump.sh='s stage label and version-bump.org §3
+are updated with the count, and this is said there.
+
+** Decision (rung A): retire every row marked NO, tests included, one
+crate per commit, in dependency order — std root → sim v2 → eDSL v2 +
+ir builder → zkir v2 I/O and the =midnight-zkir= dependency. What
+stays is said where it stays.
+
+** Duplicated forms, stale re-exports, history narration (rung B) —
+to be listed after A lands, against the trimmed tree.

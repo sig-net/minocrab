@@ -2165,9 +2165,8 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEP
 /// compactc's `rt-leaf-hash`: `persistentHash` of the value's FAB
 /// representation behind the domain separator `"mdn:lh"`.
 ///
-/// The SAME preimage [`crate::merkle`]'s path circuits hash — a Merkle leaf's
-/// digest is one thing whether the tree is in the ledger or the proof — so
-/// this is a fourth caller of an existing gadget rather than a new one.
+/// The SAME preimage Compact's Merkle path circuits hash — a Merkle leaf's
+/// digest is one thing whether the tree is in the ledger or the proof.
 /// Interop flavor by necessity: the digest is one compactc also computes.
 pub fn leaf_hash<T: LedgerRepr>(c: &mut Circuit3, item: &T) -> B32<Public> {
     let limbs: Vec<_> = item.limbs(c).into_iter().map(Wire3::erase).collect();

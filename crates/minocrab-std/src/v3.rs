@@ -190,7 +190,7 @@ pub mod __private {
 }
 
 /// Visibility usable by v3 stdlib gadgets (closed under [`Meet`], reachable
-/// from [`Public`]) — the v3 twin of [`crate::bundle::Vis`].
+/// from [`Public`]).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a visibility a v3 gadget can be generic over",
     label = "expected `Public` or `Private`",
@@ -1361,9 +1361,9 @@ b32_newtype! {
 /// keeps "an unconstrained field argument" from becoming an idiom
 /// (notes/ledger-adts.org §3).
 ///
-/// The transient-hash side of Merkle proofs is [`crate::merkle`], which
-/// computes a root from a path; this is the LEDGER side, which asks the tree
-/// whether a root is one it has had.
+/// Compact's `merkleTreePathRoot` family is the proof side of Merkle
+/// membership (a root computed from a path); this is the LEDGER side, which
+/// asks the tree whether a root is one it has had.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct MerkleTreeDigest<V: Vis3 = Private>(Wire3<FieldT, V>);
@@ -2470,7 +2470,7 @@ pub struct CoinRecipient<V: Vis3> {
 // a signature reads like its Compact source.
 
 /// `struct Maybe<T> { is_some: Boolean; value: T; }` — the v3 twin of
-/// [`crate::data::Maybe`]. `value` is meaningful only when `is_some` is 1,
+/// Compact's `Maybe<T>`. `value` is meaningful only when `is_some` is 1,
 /// but it occupies its slots either way.
 #[derive(Clone, Copy)]
 pub struct Maybe<T, V: Vis3 = Private> {
@@ -2479,7 +2479,7 @@ pub struct Maybe<T, V: Vis3 = Private> {
 }
 
 /// `struct Either<A, B> { is_left: Boolean; left: A; right: B; }` — the v3
-/// twin of [`crate::data::Either`]. Both arms occupy their slots; `is_left`
+/// twin of Compact's `Either<A, B>`. Both arms occupy their slots; `is_left`
 /// says which one is meaningful.
 #[derive(Clone, Copy)]
 pub struct Either<A, B, V: Vis3 = Private> {
@@ -2536,7 +2536,7 @@ fn coin_preimage_alignment() -> Alignment {
 /// `circuit coinCommitment(coin, recipient): Bytes<32>` —
 /// `persistentHash` over the coin preimage `["midnight:zswap-cc[v1]"
 /// (Bytes<21>), nonce, color, value (Uint<128>), is_left (Boolean),
-/// recipient bytes]`, mirroring the v2 port (`crate::coin`) and the
+/// recipient bytes]`, mirroring Compact's `coin_commitment` and the
 /// mint-tokens corpus artifact.
 pub fn coin_commitment<V: Vis3>(
     c: &mut Circuit3,
