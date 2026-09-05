@@ -2049,13 +2049,18 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
 - [ ] B. =Pending<Call, Env, WORDS>= (§3): response and kind from the
       call, WORDS checked by inline const, the =Signet= block located by
       the Ledger derive (one per block or a compile error) and threaded
-      into each slot, =Contract<Abi>= callee newtype, =Receipt<Call>= /
-      =Failed<Call>= tickets, =complete= / =refund=.
+      into each slot, =Contract<Abi>= callee newtype, =Succeeded<Call>= /
+      =Failed<Call>= tickets (§3: =complete= asserts success, =refund=
+      takes never-executed OR executed-false — closes the spurious
+      completion dmd asked about), =complete= / =refund=.
 - [ ] C. =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.
-- [ ] D. The vault's Pending lineage re-expressed on A–C, dump
-      byte-identical on all 17; =FixedGas= / =erc20_call= / the hand
+- [ ] D. The vault's Pending lineage re-expressed on A–C: request
+      circuits, initialize, approves and claim byte-identical; the eight
+      withdraw/swap/supply/redeem settles move DELIBERATELY to the
+      Succeeded/Failed split (spec harness re-derived, leakage inventory
+      shows no settle consuming an unchecked secret); =FixedGas= / =erc20_call= / the hand
       selectors and word calls retired; the README example compiled as
       a test contract and shown verbatim.
 - [ ] E. Tooling audit (§6): =#[circuit]= / =#[contract]= keep the item

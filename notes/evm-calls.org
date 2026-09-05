@@ -39,7 +39,7 @@ pub fn send(c: &mut Circuit3, token: Contract<Erc20>, to: EvmAddress, amount: Ui
 }
 
 #[circuit]
-pub fn complete(c: &mut Circuit3, ticket: Receipt<Erc20Transfer>) -> Discloses<(Transferred,)> {
+pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<(Transferred,)> {
     TREASURY.transfers.complete(c, ticket).output.disclose_as::<Transferred>(c);
 }
 
@@ -119,10 +119,23 @@ circuit.
   callee and a recipient cannot swap. The per-circuit =evm_nonce=
   argument stays an input for now (the nonce/admin-gas conversation is
   next — §7).
-- Tickets: =Receipt<Call>= = =Settle<Attested<Call::Return>>=, =Failed<Call>=
-  = =Settle<Failure>=; =complete(c, Receipt<Call>) -> Outcome<Env, Return::Wire>=,
-  =refund(c, Failed<Call>) -> Outcome<Env, Failure>=. =Requested= /
-  =Settled= labels are the slot's.
+- Tickets, SYMMETRIC (dmd): =Succeeded<Call>= and =Failed<Call>=.
+  =complete(c, Succeeded<Call>)= asserts =kind == Call::KIND= AND
+  =Return::is_success(output)= (=AbiReturn::is_success=: a =Bool= return
+  is its own value; a numeric return is =true= — executed is success);
+  =refund(c, Failed<Call>)= accepts =kind == FAILURE= OR =kind ==
+  Call::KIND && !is_success(output)=. WHY (dmd's question, 2026-09-05:
+  "is false, but succeeding a failure … would that lead to a spurious
+  completion?"): yes — an ERC-20 =transfer= can mine and return =false=;
+  an API whose =complete= accepted any executed attestation would let a
+  contract mark done a transfer that moved nothing, with the MPC's
+  failure kind (= never executed) unavailable. The deployed vault avoids
+  it with the refund branch INSIDE =completeWithdraw= — the origin of
+  Gap 2. Here the two non-successes are one owner-only ticket and a
+  =false= cannot complete, whoever presents it. Cost: nil — the failure
+  payload and the executed-bool payload are each one limb, so digest,
+  signature and lookup are shared and the outcome is a kind disjunction.
+  =Requested= / =Settled= labels are the slot's.
 
 * 4. =Owned<Env>= — "only the original caller"
 =Owned<E> { owner: Commit<SecretKey, RefundTag>, inner: E }=; =request=
@@ -158,7 +171,14 @@ contract constant. Both want a home in the =Signet= block or a treasury
 policy cell an administrator writes, rather than the user choosing them.
 
 * 8. Gates
-Zero movement: the 17 Pending-lineage circuits byte-identical (dump), row
+Zero movement where the statement is unchanged: the request circuits,
+=initialize=, the approves, =claim= byte-identical (dump). DELIBERATE
+movement (§3 tickets): the withdraw / swap / supply / redeem settle pairs
+change statement — =complete= loses its refund branch and its hoisted
+secret, =refund= gains the executed-false case — so those eight are NOT
+byte-identical; the Pending spec harness is re-derived for them and the
+leakage inventory must show no settle circuit consuming a secret it does
+not check. Row
 and interface snapshots unchanged, the Pending spec harness (18 properties)
 green, the selector/word fixtures against compactc's calldata, the
 =compile_fail= gates for each new type error (args order, callee vs
