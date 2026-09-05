@@ -1291,7 +1291,12 @@ Rust publisher on them.
       hash) the sidecar's =build= and =prove= paths check against; pin
       the exact hash function to compact-js's =hashVerifierKey= by a
       test on a corpus =.verifier= whose hash the mpc fixtures carry.
-- [ ] C. Construction gate — the ledger's preimage, not a hand-built one:
+- [X] C. (2026-09-05, d8ae7b5 — tests/support/signet_call.rs builds every
+      singleton preimage through ContractCallPrototype → Intent →
+      construct_proof and reads it back out of the ContractCall;
+      tests/signet_construction.rs: call-compatibility on that preimage
+      for all three circuits + tamper twins + the alignment-invariance
+      claim; signet_contract_differential.rs retired.) Construction gate — the ledger's preimage, not a hand-built one:
       build each signer call through =ContractCallPrototype= and the
       ledger's =construct_proof= (=ContractCallExt for ProofPreimage=,
       construct.rs:515-573), so the preimage under test is byte for byte
@@ -1299,21 +1304,39 @@ Rust publisher on them.
       call-compatibility on THAT preimage for all three circuits. The
       differential test keeps its tamper twins; the hand-built
       =preimage()= helper retires.
-- [ ] D. Ledger-apply gate: =ContractDeploy= with OUR verifier keys into a
+- [X] D. (2026-09-05, 177e922 — tests/signet_ledger_apply.rs; goldens
+      under tests/fixtures/mpc/ whose SHA-256 IS the captured tx hash;
+      entry point, Impact program op for op, log version/type, the 288
+      Misc bytes all equal; address / comm / proof / binding / gas
+      necessarily differ; one measured surprise: compute_time 2.208 ms
+      theirs vs 1.303 ms ours — parameters differ, M30 B item.)
+      Ledger-apply gate: =ContractDeploy= with OUR verifier keys into a
       =LedgerState=; build the respond =Intent= / =Transaction=;
       =well_formed= then =apply= under the proof-preimage marker; the
       emitted Misc bytes must equal the layout mpc's reader decodes —
       import =chain-midnight/fixtures/respond-tx-161.mn= and
       =respond-bidirectional-tx-181.mn= as goldens and compare the call
       transcript to theirs.
-- [ ] E. Real-proving gate (=--release=, ignored by default, with
+- [X] E. (2026-09-05, 9e7ac09 — tests/signet_real_proof.rs: keygen ==
+      the committed managed key byte for byte, Transaction::prove
+      through an in-process V3ProvingProvider (35-line transcription of
+      test_utilities' v3 arm), well_formed with verify_contract_proofs
+      ON in Real mode, apply; permuted-key negative control rejects all
+      three. Prove 0.18 / 0.12 / 0.12 s; whole-run peak RSS 83 MB for
+      all three signer circuits in one process. The first real proof in
+      the test suite.) Real-proving gate (=--release=, ignored by default, with
       =row_snapshot=): keygen from our IR, =Transaction::prove= through an
       in-process =ProvingProvider= (=LocalProvingProvider= +
       =MidnightDataProvider=, params pre-warmed), then =well_formed= with
       =verify_contract_proofs= ON against the deployed key, all three
       circuits. Record prove time and peak RSS beside BENCHMARK.md's
       numbers. This is the first real proof in the test suite.
-- [ ] F. Pin reconciliation: this repo (rev 04c9c5d) vs mpc
+- [-] F. (2026-09-05: FACTS recorded, notes/mpc-publisher.org §9 —
+      every shared crate is at the same semver in both repos, only the
+      git object differs; mpc has no zkir-v3 and acquires one from the
+      swap; the .mn goldens deserialize under our pin unchanged. The
+      CHOICE is dmd's; notes/zkir.org's pin table deliberately
+      unedited.) Pin reconciliation: this repo (rev 04c9c5d) vs mpc
       (crate-ledger-9.1.0.0-rc.3 / transient-crypto-3.0.0-rc.2) —
       choose one, build =minocrab-contracts= against it, record the
       decision in notes/zkir.org's pin table.
@@ -1448,7 +1471,7 @@ listed is covered by NOTHING and nothing fires. The fix in progress is
 adoption today is 57 of 198 =#[circuit]= attributes (kernel_tokens,
 coins, nested). Two halves, both zero-movement by construction under
 the dump gate.
-- [ ] A. (NOT done 2026-09-05 — cleanup per the compromise below; 3 of 23 files derive) Adoption: every remaining =#[circuit]= in
+- [X] A. (DONE 2026-09-05, c6f5123 — 16 more files under =#[contract] impl=; =support::circuits()= = the derived unions + the =entry()=-built remainder (events, events_borsh, the hashing width sweep) + two contracts kept as individual rows to preserve the frozen snapshot order; dump byte-identical on 209 circuits, both snapshots unchanged, circuit_closure green.) Adoption: every remaining =#[circuit]= in
       =crates/minocrab-contracts/src= moves under a =#[contract]= block;
       =support::circuits()= becomes the union of the derived sets plus
       ONE explicit remainder — the =entry()=-built families (the hashing

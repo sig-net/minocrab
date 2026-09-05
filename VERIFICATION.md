@@ -402,11 +402,15 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   statement, proved cheaper".
 - **Nothing has run end to end on a live network.** Keygen, prove and verify go
   through Midnight's own `Zkir` with hash-verified SRS parameters, so the proofs
-  are real; but no MinoCrab verifier key has been deployed in a
-  `ContractOperation`, and binding an artifact to a deployed address needs
-  keygen that is out of scope so far
-  ([notes/interface-crates.org §"Honest limits" #3](notes/interface-crates.org)).
-  Planned, not done.
+  are real, and since M29 the three Signet signer circuits are deployed with
+  MinoCrab's verifier keys into a `LedgerState`, proven through the ledger's
+  own `Transaction::prove`, verified with `verify_contract_proofs` on and
+  applied — in process, against mpc's captured on-chain transactions
+  ([signet_real_proof.rs](crates/minocrab-contracts/tests/signet_real_proof.rs),
+  [signet_ledger_apply.rs](crates/minocrab-contracts/tests/signet_ledger_apply.rs)).
+  What has not happened is a node accepting one: the vault's circuits have no
+  such gate yet, and no MinoCrab artifact has been submitted to a network
+  ([notes/mpc-publisher.org §9](notes/mpc-publisher.org)).
 - **Cross-contract calls: the circuit binds neither the entry point nor the
   argument types — unless it asks to.** `callOnce` and `callEmit` compile to
   byte-identical ZKIR under different entry points, asserted by a test; what
@@ -423,18 +427,17 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   typed methods stop at declared slots); `kernel.checkpoint()`, which is
   outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
-- **The circuit list is closed in both directions, but still partly
-  hand-written.** `support::circuits()` (209 entries) feeds both snapshots,
-  the dump instrument and the adversarial suite. The snapshots guard one
-  direction (a listed circuit that moved);
+- **The circuit list is closed in both directions.** `support::circuits()`
+  (209 entries) feeds both snapshots, the dump instrument and the adversarial
+  suite. Every contract declares its circuits under `#[contract]` and the
+  list is the union of the derived sets; the one hand-written remainder is
+  the `entry()`-built parameter families (the hashing width sweep, the
+  events fixtures), which carry no attribute to derive from. The snapshots
+  guard one direction (a listed circuit that moved);
   [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs)
   guards the other: it walks `src/` for every `#[circuit]` attribute and
-  fails when one is not listed (M32 C's mutation — an unlisted attribute
-  in a source module — fails the test by name). Three contracts derive
-  their sets through `#[contract]` (`kernel_tokens`, `coins`, `nested`);
-  the rest are listed by hand and only the closure test keeps them
-  honest. Moving them under `#[contract]` is cleanup (M32 A), not a
-  correctness gap.
+  fails when one is not listed (M32 C's mutation — an unlisted attribute in
+  a source module — fails the test by name).
 - **The Borsh injectivity obligation is preventable, not prevented.**
   `Serializer::constrained()` plus `Circuit3::dedup_range_constraints` make
   constrain-on-construction **free** — proven by byte-identical serialized ZKIR
