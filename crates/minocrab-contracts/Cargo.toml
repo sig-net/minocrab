@@ -69,3 +69,17 @@ serde_json.workspace = true
 sha2.workspace = true
 sha3.workspace = true
 proptest.workspace = true
+# The M29 E real-proving gate (tests/signet_real_proof.rs) only. Declared
+# here rather than in `[workspace.dependencies]` for the same reason
+# crates/minocrab-bench declares them: two test/bench crates want them and
+# nothing shipping does.
+# - tokio: `Transaction::prove` and `IrSource::keygen` are async; the gate
+#   drives them on a multi-thread runtime, as the proving path does in
+#   production.
+# - libc: `getrusage(RUSAGE_SELF)` for peak RSS, the same measurement the
+#   benchmark harness reports.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+libc = "0.2"
+# `ProvingProvider`'s own error type is `anyhow::Error`, so implementing the
+# trait needs it by name.
+anyhow.workspace = true
