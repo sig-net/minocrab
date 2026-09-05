@@ -143,8 +143,9 @@ lists the seventeen; the bench's target table remapped to the new names
 ** Open (carried in milestones.org M28)
 - C: BENCHMARK.md re-run (=nix develop -c ./bench.sh=).
 - D: M27's V-list against the 17-circuit vault.
-- The Borsh spec's hash sections: rewrite §5/§6 around the Poseidon rule
-  or split "layout" from "identity" — a spec decision, flagged for dmd.
+- (DONE same evening, dmd's call: "replace the rule") spec/borsh-subset.md
+  §5/§6 rewritten around Poseidon; §6a is the field-element rule. Still
+  open: §9 tables for the supply/redeem record instantiations.
 
 * 2. C — the benchmark re-run (2026-09-05)
 Wiring: =minocrab-bench='s target table is the seventeen circuits plus

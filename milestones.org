@@ -1199,9 +1199,11 @@ NOT DONE — the vault re-port, which is this milestone's body:
       =disclosure_report= re-pinned to =startDeposit= (7 disclosures);
       =serialization_conformance= keeps the byte claims and DROPS the
       =keccak256(borsh(record)) == id= equalities (the id is Poseidon over
-      field limbs now) — spec/borsh-subset.md §5/§6 carry a dated
-      "superseded hash rule" note. OPEN for dmd: rewrite the Borsh spec's
-      hash sections properly (layout vs identity), see the note §1.
+      field limbs now) — spec/borsh-subset.md §5/§6 REWRITTEN around the
+      Poseidon rule (dmd, same day): §6a states the field-element rule
+      and =upgradeFromTransient=; layout (Borsh bytes) and identity
+      (Poseidon over field elements) are two halves now. §11 flags the
+      two lending record instantiations not yet tabulated in §9.
 - [X] C. The bench's target table remapped (17 + 3 targets, two sides)
       and BENCHMARK.md RE-RUN and rewritten (2026-09-05, 40 cells): every
       request circuit ≥1 k level below compactc (2-word requests k14→k11,
@@ -1225,10 +1227,10 @@ NOT DONE — the vault re-port, which is this milestone's body:
 Exit criteria: the 17 circuits ported PI-equal (compat) and the API
 lineage green; every suite on the branch green; BENCHMARK.md re-run on
 the new protocol; corpus pins on main.
-Exit criteria MET 2026-09-05 on branch =m28-vault= (four commits: the
-fork retirement, the re-port, D, C) — merge is dmd's call. Left open in
-writing: the Borsh spec's §5/§6 hash sections (notes/vault-refresh.org
-§1); the Pending lineage has no lending flows (not in scope here).
+Exit criteria MET 2026-09-05; merged to main the same evening (dmd:
+"merge everything"). Left open in writing: the Borsh spec's §9 tables
+for the two lending record instantiations; the Pending lineage has no
+lending flows (not in scope here).
 
 * M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
 Survey and decisions: notes/mpc-publisher.org. The signet contract is

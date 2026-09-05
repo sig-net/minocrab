@@ -176,22 +176,22 @@ own kind is what makes that *structural* rather than incidental.
 ### The signed digest
 
 ```
-attestationDigest = keccak256(borsh(AttestationPreimage { request_id: [u8; 32], output: T }))
+attestationDigest = upgradeFromTransient(transientHash(fieldElements(AttestationPreimage { request_id: [u8; 32], output: T })))
 ```
 
-> **Superseded hash rule (2026-09-05, signet-midnight-integration `fff3421c`).**
-> The protocol moved in-circuit hashing to Poseidon: the digest is now
-> `upgradeFromTransient(transientHash([requestId, serializedOutput]))` over the
-> preimage's *field-aligned limbs* (one field element per FAB limb), and
-> `bigR.x` / `s` enter the circuit **little-endian** ("circuit-input form").
-> The PREIMAGE LAYOUT below is unchanged and still what this document
-> specifies; the hash over it is no longer a function of the Borsh bytes alone.
-> See `notes/vault-refresh.org`.
+The preimage's LAYOUT is the Borsh struct — the request id's 32 bytes followed
+by `borsh(output)`; preimage widths **34** bytes for claim/withdraw, **41** for
+swap, **33** for refund — and its offset tables are in §9. The HASH over it is
+not a byte hash: it is Midnight's Poseidon (`transientHash`) over the preimage's
+**field elements**, under the rule of §6a, then upgraded to 32 bytes. (Until
+signet-midnight-integration `fff3421c`, 2026-09-03, the digest was
+`keccak256` of the Borsh bytes; the protocol moved every in-circuit hash to
+Poseidon and this document followed on 2026-09-05.)
 
-Since a Borsh struct is the concatenation of its fields, that is simply the
-request id's 32 bytes followed by `borsh(output)`. Preimage widths: **34**
-bytes for claim/withdraw, **41** for swap, **33** for refund. The signature over
-that digest is secp256k1 ECDSA under `mpcResponseKey`.
+The signature over that digest is secp256k1 ECDSA under `mpcResponseKey`. On
+the wire (`RespondMisc`, §7) `bigR.x` and `s` are big-endian, unchanged; the
+settle circuits take them in **little-endian** "circuit-input form" — the
+reversal is the transaction builder's, off-chain.
 
 `amount_in` is little-endian, as Borsh's `u64` always is — which is
 byte-for-byte what the deployed 8-byte output already was.
@@ -210,20 +210,50 @@ nothing else).
 The vault stores a request record per pending request, and
 
 ```
-requestId = keccak256(borsh(record))
+requestId = upgradeFromTransient(transientHash(fieldElements(record)))
 ```
 
-> **Superseded hash rule (2026-09-05, `fff3421c`).** The deployed contract now
-> computes `requestId = upgradeFromTransient(transientHash(record))` — Poseidon
-> over the record's field-aligned limbs in slot order, which the MPC's
-> `compact-hashing` crate recomputes from the stored cell. The record LAYOUT
-> below is unchanged; its Borsh bytes no longer determine the id. The vault
-> model's `request_id_of` is the reference, pinned to compactc's artifacts by
-> the differential suite.
+The record's LAYOUT is the Borsh struct below, byte for byte. Its IDENTITY is
+Poseidon over the record's field elements (§6a), not a hash of its bytes — so
+an implementation needs both halves: the Borsh declarations to read and write
+the record, and the field-element rule to recompute its id. The MPC recomputes
+the id from the stored record (its `compact-hashing` crate, reading the ledger
+cell's field-aligned representation) and drops any request whose id does not
+match, so an implementation that gets one offset or one limb wrong fails closed
+rather than signing the wrong transaction. (Before `fff3421c` the id was
+`keccak256(borsh(record))`; the layout did not change.)
 
-The MPC recomputes the id and drops any request whose id does not match, so
-an implementation that gets one offset wrong fails closed rather than signing
-the wrong transaction.
+### 6a. The field-element rule (`fieldElements`)
+
+Every leaf of the subset maps to a fixed number of BLS12-381 scalar field
+elements, and a struct or array is the concatenation of its members' elements
+in declaration order — the same order as the bytes, so the two views of one
+value line up field for field:
+
+| leaf | elements | value |
+|---|---|---|
+| `bool`, `u8`, `u16`, `u32`, `u64`, `u128` | 1 | the integer |
+| `[u8; N]`, N ≤ 31 | 1 | the N bytes as a little-endian integer |
+| `[u8; N]`, N > 31 | ⌈N/31⌉ | the **trailing** `N mod 31` bytes first (as a little-endian integer; the whole N-byte string is one 31-byte-chunked little-endian number and this is its top chunk), then each preceding 31-byte chunk in turn |
+
+So `[u8; 32]` is two elements — byte 31, then bytes 0..30 — which is why every
+32-byte circuit argument appears as two scalars constrained to 8 and 248 bits;
+a 34-byte schema string is bytes 31..33 then bytes 0..30; the 64-byte `params`
+is bytes 62..63, bytes 31..61, bytes 0..30. This is Midnight's own
+field-aligned-binary rule (`transient-crypto/src/fab.rs`, `field_repr`), stated
+here because the id depends on it.
+
+`transientHash` is Midnight's Poseidon sponge over those elements
+(`midnight_transient_crypto::hash::transient_hash`). `upgradeFromTransient`
+renders the resulting field element as 32 bytes: its canonical little-endian
+bytes 0..30, and **byte 31 = 0** (the value reduced modulo 2^248). Every
+request id and every commitment in the vault therefore has a zero last byte.
+
+The reference implementation is the vault model's `request_id_of` /
+`attestation_digest` (`crates/minocrab-contracts/tests/vault/prims.rs`),
+pinned to compactc's own artifacts on every circuit by the differential
+suite, and the MPC's `compact-hashing` crate agrees with it on the captured
+fixtures (`crates/signet-sim`).
 
 There are TWO record formats, and this document specifies both.
 
@@ -262,9 +292,10 @@ record/output kind match today. What the two schema strings used to carry — wh
 to decode the destination-chain return data with, and what shape to serialize
 the response in — is the lookup table in §5.
 
-The V2 record is what takes the swap record's keccak preimage from **five
-blocks to four** (5 × 136 = 680 ≥ 572, but 4 × 136 = 544 ≥ 499), which is worth
-about 4,200 circuit rows and one power of two in the proving key.
+The V2 record was designed when the id was keccak, where it took the swap
+record's preimage from five blocks to four; under Poseidon its saving is the
+four fewer field elements per hash, and its purpose is the kind byte and the
+version byte, not the rows.
 
 Decoder note, load-bearing: `words` MUST be declared as a fixed array
 `[[u8; 32]; K]` with the separate `no_words: u16` count. A `Vec` would add a
@@ -589,7 +620,7 @@ regeneration.
 | file | contents |
 |---|---|
 | `leaves.json` | one vector per leaf type, including `Flagged<u32>` set and unset (same width) |
-| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values (their `keccak256` was the request id before the Poseidon move, §6) |
+| `records.json` | `VaultEvent` / `SwapEvent` (current) and `VaultEventV2` / `SwapEventV2` (§6) at the SAME field values; the request id is §6a's Poseidon over their field elements, not a hash of these bytes |
 | `attested-outputs.json` | the kind-tagged responses of §5 and their signed digest preimages |
 | `attested-outputs-deployed.json` | what the deployed contract accepts TODAY, for reference |
 | `misc-payloads.json` | the singleton's logged payloads, with the 288-byte envelope |
@@ -608,8 +639,9 @@ Each vector carries:
 - `hex` — **the authoritative bytes**, the canonical Borsh encoding;
 - `sha256` — SHA-256 of those bytes (Midnight's `persistentHash` of this
   preimage);
-- `keccak256` — Keccak-256 of those bytes: a checksum (it was the request id
-  and the signed digest before the Poseidon move, §5/§6);
+- `keccak256` — Keccak-256 of those bytes, a checksum of the vector (NOT the
+  request id or the signed digest, which are Poseidon over the field elements,
+  §6a);
 - `fields` — the value field by field, in declaration order, each with its
   `offset`, `width`, own `hex` and (for scalars) its decoded `number`. The
   fields tile the value exactly, which is itself a committed test.
@@ -627,9 +659,14 @@ Read this before implementing.
   specifies what is already on the wire; it was verified byte-for-byte against
   the deployed encoding, including by handing the bytes to the compiled
   contract itself.
-- **`VaultEvent` / `SwapEvent` and their request ids are what the DEPLOYED
-  vault writes**, likewise verified byte-for-byte. They are pinned here and are
-  not going to move.
+- **`VaultEvent` / `SwapEvent` are what the DEPLOYED vault writes**, likewise
+  verified byte-for-byte, and their request ids are §6a's Poseidon over the
+  field elements (signet-midnight-examples `0d9c1660`). The deployed vault's
+  two lending flows (`startSupply`, `startRedeem`) write the same record shape
+  at other instantiations — 2 and 3 calldata words, 36/35-byte schema strings
+  — which this document does not yet tabulate in §9; they follow §6a and the
+  §9 layout rule unchanged (`crates/minocrab-contracts/src/erc20_vault.rs`,
+  `SupplyEvent` / `RedeemEvent`).
 - **`VaultEventV2` / `SwapEventV2` (§6) and the response kinds of §5 are
   SPECIFIED, not deployed.** The MPC has never settled a transaction on
   Midnight (its Midnight publisher is unimplemented) and nothing has been
