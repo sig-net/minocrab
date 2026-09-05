@@ -34,13 +34,14 @@ use minocrab_contracts::erc20_vault::{
     FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
 };
 use minocrab_contracts::evm::{
-    build_tx, AbiType, Address, Bool, Bytes32, Erc20Approve, Erc20Transfer, Erc4626Deposit,
+    always, build_tx, AbiType, Address, Bool, Bytes32, Erc20Approve, Erc20Transfer,
+    Erc4626Deposit,
     Erc4626Redeem, EvmCall, ExactOutputSingle, U128, U24, U256, U64,
 };
 use minocrab_contracts::signet::{self, EvmCalldata};
 use minocrab_contracts::signet_flow::EvmTx;
 use minocrab_sim::v3::simulate;
-use minocrab_std::v3::{Bool as BoolWire, Bytes, Uint, B32};
+use minocrab_std::v3::{Bool as BoolWire, Bytes, Check, Uint, B32};
 use minocrab_zkir::v3::IrValue;
 
 mod vault;
@@ -139,8 +140,13 @@ fn the_hash_is_not_circular() {
         const NAME: &'static str = "balanceOf";
         type Args = (Address,);
         type Return = U256;
+        type Success = B32<Private>;
         const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 30_000;
+
+        fn succeeded(c: &mut Circuit3, _out: &B32<Private>) -> Check<Private> {
+            always(c)
+        }
     }
     assert_eq!(BalanceOf::signature(), "balanceOf(address)");
     assert_eq!(BalanceOf::selector(), [0x70, 0xa0, 0x82, 0x31]);
@@ -155,9 +161,14 @@ fn the_struct_wrapping_changes_the_selector() {
         const NAME: &'static str = "exactOutputSingle";
         type Args = <ExactOutputSingle as EvmCall>::Args;
         type Return = U64;
+        type Success = Uint<64, Private>;
         const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 0;
         // no `signature()` override — the flat join
+
+        fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+            always(c)
+        }
     }
     assert_ne!(Flat::selector(), EXACT_OUTPUT_SINGLE_SELECTOR);
 }
@@ -492,4 +503,135 @@ fn build_tx_carries_the_declared_envelope() {
     let (hi1, lo1) = b32_slots(&abi_num_word(amount));
     assert_eq!((native(9), native(10)), (hi0, lo0), "word 0 = the recipient");
     assert_eq!((native(11), native(12)), (hi1, lo1), "word 1 = the amount");
+}
+
+// ---- the outcome predicate ----------------------------------------------------
+
+/// The instructions of a serialized circuit, by op name — enough to say what
+/// was emitted without pinning the identifier NUMBERS, which shift when an
+/// instruction is folded away (a folded `Copy` still consumed its name).
+fn ops_of(zkir: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(zkir).expect("its own output parses");
+    value["instructions"]
+        .as_array()
+        .expect("an array")
+        .iter()
+        .map(|i| i["op"].as_str().expect("an op name").to_string())
+        .collect()
+}
+
+/// `always(c)` COSTS NOTHING, and it costs nothing by FOLDING rather than by
+/// a branch in the API (dmd, 2026-09-05; notes/ir-passes.org §11).
+///
+/// The two circuits below differ by exactly one `c.assert(always(c))`, and
+/// they emit the same instructions: `always` lowers to an `assert` on a copy
+/// of the immediate 1, `fold_immediate_copies` rewrites the operand to the
+/// immediate and `drop_true_asserts` deletes the instruction — both inside
+/// `Builder3::finish`, so nothing downstream ever sees it. (The identifier
+/// NUMBERS still shift by one: the folded `Copy` consumed its name on the
+/// way past. Nothing reads those, and the row cost is what the `k` gate
+/// measures.)
+#[test]
+fn always_is_folded_out_of_the_artifact() {
+    let with = zkir(|c| {
+        let x = c.arg::<FieldT>("x");
+        let ok = always(c);
+        c.assert(ok.message("unreachable: `always` never fails"));
+        let _ = c.mul(x, x);
+    });
+    let without = zkir(|c| {
+        let x = c.arg::<FieldT>("x");
+        let _ = c.mul(x, x);
+    });
+    assert!(!with.contains("\"assert\""), "`always` left an assert behind:\n{with}");
+    assert_eq!(ops_of(&with), ops_of(&without), "`always` left an instruction behind");
+}
+
+/// …and `is_true` on a WIRE does not fold: the flag is a real constraint.
+/// The negative control for the test above — without it, "the same
+/// instructions" would also be consistent with `c.assert` emitting nothing
+/// at all.
+#[test]
+fn is_true_on_a_wire_is_not_folded() {
+    let with = zkir(|c| {
+        let w = c.arg::<FieldT>("ok");
+        let flag = BoolWire::<Private>::from_field_checked(c, w);
+        c.assert(minocrab_std::v3::is_true(flag));
+    });
+    let without = zkir(|c| {
+        let w = c.arg::<FieldT>("ok");
+        let _ = BoolWire::<Private>::from_field_checked(c, w);
+    });
+    assert!(with.contains("\"assert\""), "an assert on a wire was folded away");
+    assert_ne!(ops_of(&with), ops_of(&without));
+}
+
+/// THE FIVE CALL TYPES' VERDICTS, as declared: the two ERC-20 calls read the
+/// returned flag, the three numeric ones treat execution as success. A table
+/// rather than a sentence, because the wrong entry here IS the
+/// spurious-completion hole (notes/evm-calls.org §3) — an `Erc20Transfer`
+/// whose `succeeded` emitted nothing would let an attested `false` complete.
+#[test]
+fn a_flag_return_is_checked_and_a_number_is_not() {
+    let flag = zkir(|c| {
+        let w = c.arg::<FieldT>("ok");
+        let ok = BoolWire::<Private>::from_field_checked(c, w);
+        let check = <Erc20Transfer as EvmCall>::succeeded(c, &ok);
+        c.assert(check);
+    });
+    assert!(flag.contains("\"assert\""), "Erc20Transfer::succeeded emitted no assert");
+
+    let approve = zkir(|c| {
+        let w = c.arg::<FieldT>("ok");
+        let ok = BoolWire::<Private>::from_field_checked(c, w);
+        let check = <Erc20Approve as EvmCall>::succeeded(c, &ok);
+        c.assert(check);
+    });
+    assert_eq!(approve, flag, "the two ERC-20 calls disagree on their verdict");
+
+    for name in ["deposit", "redeem", "swap"] {
+        let executed = zkir(|c| {
+            let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
+            let check = match name {
+                "deposit" => <Erc4626Deposit as EvmCall>::succeeded(c, &n),
+                "redeem" => <Erc4626Redeem as EvmCall>::succeeded(c, &n),
+                _ => <ExactOutputSingle as EvmCall>::succeeded(c, &n),
+            };
+            c.assert(check);
+        });
+        assert!(
+            !executed.contains("\"assert\""),
+            "{name}: `always` left an assert behind:\n{executed}"
+        );
+        assert!(ops_of(&executed).is_empty(), "{name}: `always` emitted an instruction");
+    }
+}
+
+/// THE MAPPING, and why `()` is the right projection for a flag: a return
+/// the verdict already consumed carries nothing a settle circuit could act
+/// on, so there is nothing to misread. The numeric calls keep their value,
+/// and neither projection emits an instruction.
+#[test]
+fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
+    let mut c = Circuit3::new();
+    let ok = BoolWire::<Private>::from_field_unchecked(c.arg::<FieldT>("ok"));
+    let projected: <Erc20Transfer as EvmCall>::Success = <Erc20Transfer as EvmCall>::map(&mut c, ok);
+    assert_eq!(projected, ());
+
+    let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
+    let kept: <Erc4626Deposit as EvmCall>::Success = <Erc4626Deposit as EvmCall>::map(&mut c, n);
+    assert_eq!(
+        format!("{:?}", kept.field().val()),
+        format!("{:?}", n.field().val()),
+        "the identity projection moved the wire"
+    );
+
+    let before = zkir(|c| {
+        let _ = c.arg::<FieldT>("n");
+    });
+    let after = zkir(|c| {
+        let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
+        let _ = <Erc4626Deposit as EvmCall>::map(c, n);
+    });
+    assert_eq!(before, after, "the identity projection emitted an instruction");
 }

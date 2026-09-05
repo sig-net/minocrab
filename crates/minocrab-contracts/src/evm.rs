@@ -105,11 +105,77 @@
 //! let tx = build_tx::<Erc20Transfer, 3>(&mut c, token, (to, amount), nonce);
 //! ```
 //!
-//! A RETURN TYPE'S OWN VERDICT is not a compile-time gate but a default an
-//! [`EvmCall`] inherits: [`Bool::success`] is the flag, so `Erc20Transfer`
-//! cannot be silently treated as "executed ⇒ succeeded" unless somebody
-//! writes an override saying so. The evidence is a run rather than a
-//! rejection — `tests/treasury.rs`'s `a_false_attestation_cannot_complete`.
+//! A call type that does not say whether its return means success. There
+//! is NO DEFAULT for [`EvmCall::succeeded`], on purpose: "executed ⇒
+//! succeeded" is right for most calls and wrong for an ERC-20 `transfer`,
+//! and a default would make the dangerous case the one nobody types:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::{Address, EvmCall, U64};
+//! use minocrab_std::v3::Uint;
+//! use minocrab::Private;
+//!
+//! struct Balance;
+//! // ERROR: not all trait items implemented, missing: `succeeded`
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     type Success = Uint<64, Private>;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//! }
+//! ```
+//!
+//! A projection the return value cannot produce — `()` is [`FromReturn`]
+//! for a `Bool` return and for nothing else, so a numeric call cannot
+//! quietly throw its answer away:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_std::v3::{Check, Uint};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     // ERROR: the trait bound `(): FromReturn<Uint<64>>` is not satisfied
+//!     type Success = ();
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles, so each rejection
+//! above is the missing item and the mapping rather than a typo:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_std::v3::{Check, Uint};
+//!
+//! struct Balance;
+//! impl EvmCall for Balance {
+//!     const NAME: &'static str = "balanceOf";
+//!     type Args = (Address,);
+//!     type Return = U64;
+//!     type Success = Uint<64, Private>;
+//!     const KIND: u8 = 9;
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! assert_eq!(Balance::signature(), "balanceOf(address)");
+//! assert_eq!(Balance::selector(), [0x70, 0xa0, 0x82, 0x31]);
+//! ```
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
