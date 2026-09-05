@@ -1258,7 +1258,14 @@ milestone ships the artifacts AND closes that gap, before M30 puts a
 Rust publisher on them.
 - [ ] DESIGN NOTE: notes/mpc-publisher.org (written 2026-09-02, §3 the
       swap path, §4 the honest test inventory, §6 the pins).
-- [ ] A. Artifact pipeline: emit =.zkir= for the three signer circuits
+- [X] A. (2026-09-05, 992ce06 — =crates/signet-artifacts=: library +
+      =cargo run -p signet-artifacts -- <out-dir>=; managed dir with
+      committed =.zkir= + =.verifier= + =MANIFEST.sha256= (all twelve
+      files' SHA-256, uncommitted prover/bzkir included) +
+      =expectedVk.json=; =generated_equals_committed= runs the real
+      =zkir-v3 compile-many= (0.5s for three k=10 circuits, which also
+      writes the =.bzkir= siblings); notes/mpc-publisher.org §8.)
+      Artifact pipeline: emit =.zkir= for the three signer circuits
       (=signBidirectional=, =respond=, =respondBidirectional=) from
       =signet_contract= via =minocrab_zkir::v3::write_zkir=; run the
       flake's pinned =zkir-v3= (=compile-many=, the same step compactc
@@ -1269,7 +1276,14 @@ Rust publisher on them.
       generated-equals-committed gate on both, like =spec/ts=; the
       prover key and =.bzkir= regenerate deterministically at package
       time (record their SHA-256 so drift is visible).
-- [ ] B. Verifier-key hashes: emit the =expectedVk= table (circuit →
+- [X] B. (2026-09-05, same commit. NO (=.verifier=, hash) fixture pair
+      exists anywhere reachable — =@sig-net/midnight-contract= is not
+      vendored in ~/mpc and the signet contract is undeployed — so the
+      pin RUNS compact-js's =hashVerifierKey= (sha256-hex over the raw
+      file bytes, =ContractKeyLocation.js=) under node on our committed
+      =respond.verifier= and asserts the Rust function agrees; skips
+      loudly without node or the checkout.) Verifier-key hashes: emit
+      the =expectedVk= table (circuit →
       hash) the sidecar's =build= and =prove= paths check against; pin
       the exact hash function to compact-js's =hashVerifierKey= by a
       test on a corpus =.verifier= whose hash the mpc fixtures carry.
