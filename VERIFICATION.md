@@ -311,6 +311,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 
 ## 5. The honest limits
 
+The file-by-file inventory of what these limits leave to a human reader —
+which source file is warranted by which suite, and which by READING alone —
+is [TRUST.md](TRUST.md), generated and closure-tested.
+
 - **Machine-checked semantics: partial, model-level, and honestly bounded.**
   Compact ships an Agda specification in-tree with CI. Read at our pinned rev,
   its checked content is well-formedness plumbing — syntax representation,

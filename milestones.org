@@ -1388,7 +1388,7 @@ says "these files, this many lines, this order". Reviewer time from
 people who know the ledger's =preprocess= and Impact internals is the
 scarce resource in the whole production plan; this document is what
 makes an hour of it count.
-- [ ] A. =notes/trust-base.org= (design of record) + a short
+- [X] A. (2026-09-05: TRUST.md generated from tests/trust_base.rs; 25,332 lines, 10,501 READING in whole or part) =notes/trust-base.org= (design of record) + a short
       =TRUST.md= at the root for the reviewer: per crate and per module
       within the big ones (=minocrab-ledger/src/lib.rs= at 3,700 lines,
       =minocrab-std= at 10k, =minocrab-macros= at 3.2k), three columns —
@@ -1401,18 +1401,18 @@ makes an hour of it count.
       the Impact/ledger-op encoding, the macros' generated code beyond
       shape, and the =minocrab-ir=/ZKIR boundary — the four things §5
       already says the safety survey never covered.
-- [ ] B. The read order with a time budget: which files first, what
+- [X] B. (2026-09-05, TRUST.md §2: nine steps, ~3 days) The read order with a time budget: which files first, what
       question each answers, what to compare it against in the ledger
       source (file and function, with the pinned rev), and the
       escape-hatch greps as the checklist. VERIFICATION.md §6's one-day
       audit path is the seed; this is the multi-day version for
       someone who will sign their name.
-- [ ] C. Numbers generated, not typed: the line counts and the
+- [X] C. (2026-09-05: closure + currency tests, MINOCRAB_TRUST_BASE=1 regenerates) Numbers generated, not typed: the line counts and the
       warrant column are regenerated between markers (the same
       reviewable-diff rule as the snapshots) from a script, so the
       document cannot rot silently; a test asserts the generated
       region is current.
-- [ ] D. Cross-link: VERIFICATION.md §5 points at it; ONBOARDING.md's
+- [-] D. (2026-09-05: VERIFICATION §5 and ONBOARDING DONE; the M20 issue needs the push — dmd) Cross-link: VERIFICATION.md §5 points at it; ONBOARDING.md's
       reading path gains it after VERIFICATION.md; the M20 issue list
       gains one issue pointing at it for the reviewer's board.
 BEST-EFFORT COMPROMISE: the warrant classification for the two big

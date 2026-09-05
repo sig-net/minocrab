@@ -11,6 +11,8 @@ it in.
 2. [VERIFICATION.md](VERIFICATION.md) — where the confidence comes from:
    which artifact is warranted by what (PI-equality, spec harness,
    byte-gates), suite by suite.
+   Then [TRUST.md](TRUST.md) — where the suites stop: the source files a
+   human must read, with a read order and a time budget.
 3. [notes/ledger-abi.org](notes/ledger-abi.org) §6 — the equivalence
    criterion everything hangs off: same typed I/O plus identical
    `pis`/`pi_skips` on a shared `ProofPreimage`, instruction streams free

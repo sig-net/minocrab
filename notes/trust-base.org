@@ -1,0 +1,58 @@
+#+TITLE: The trusted-computing-base inventory — M33 design of record
+#+DATE: 2026-09-05
+#+STARTUP: overview
+
+* What it is
+=TRUST.md= at the root: one row per source file of the seven eDSL crates
+(=minocrab-zkir=, =minocrab-ir=, =minocrab=, =minocrab-ledger=,
+=minocrab-std=, =minocrab-macros=, =minocrab-sim=) — lines, WHAT WARRANTS
+IT, and the failure that would hide there. The rows whose warrant is
+READING are the trusted computing base. Plus a read order with a time
+budget and the escape-hatch greps as the checklist.
+
+* How the warrant column was decided
+A warrant is named only when a specific test, proof or gate would FAIL
+if that file's logic were wrong on the path it covers. The names are
+test files (=v3_guard_scope=, =differential_baseline=), proof
+directories (=crates/minocrab-ir/lean=) or gates (the zkir dump, the
+snapshots). Four grades, in descending strength:
+1. Instruction-level differential against compactc's artifact (the
+   fixture suites: the emitted stream IS compactc's).
+2. PI-equal differential / call-compatibility (the vault, the ledger
+   baseline: same statement, streams free to differ).
+3. A model or proof (Lean pass theorems; Kani harnesses; the
+   reference-VM cross-check =IrSource::check= on every accepted run).
+4. READING — nothing but a human's eyes.
+Where a file is covered on the paths the fixtures take but not on
+others (the ledger ops no fixture reaches; the builder's operand tables;
+Circuit3's public-input minting), the row names the covered warrant AND
+says what part is READING — the reviewer takes the pessimistic reading.
+THE RULE (milestones.org M33): a claimed warrant that is not there is
+the one error the table must not contain; when unsure, READING.
+
+* Generated, not typed
+=crates/minocrab-contracts/tests/trust_base.rs= holds the classification
+as data (=ROWS=) and measures the line counts. Two tests:
+- closure: every =.rs= under the seven crates' =src/= has a row and every
+  row's file exists (a new file cannot slip in unwarranted);
+- currency: the table between =TRUST.md='s markers equals the generated
+  one; =MINOCRAB_TRUST_BASE=1= regenerates it (reviewable diff, as the
+  snapshots).
+First generation (2026-09-05, after M36's trim): 25,332 lines in the
+seven crates; 10,501 in files whose warrant is READING in whole or in
+part. The largest READING mass is =minocrab-ledger/src/lib.rs= (ops no
+fixture reaches) and =minocrab/src/v3.rs= (the instruction methods);
+the smallest-and-most-important is =minocrab/src/lib.rs= — the lattice
+in 192 lines.
+
+* What it deliberately leaves out
+The contracts crate (warranted by its differentials and the spec
+harness), =signet-sim= (a test aid), the interface crates (generated
+from artifacts, gated by =artifact_agreement=), and the notes. Module
+granularity for the two big crates, per the milestone's compromise; a
+per-function pass is a reviewer's own downgrade.
+
+* Cross-links
+VERIFICATION.md §5 points here; ONBOARDING.md's day-one list has
+TRUST.md after VERIFICATION.md. The M20 issue for the reviewer's board
+needs the push and is dmd's (M33 D).
