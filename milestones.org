@@ -1909,7 +1909,13 @@ substantially. Weekend-sized chunks exist at every boundary.
       tests/leakage_inventory.rs), I2 in the writeup (+ upstream note), I3 at rung 4, I4
       confirmed mechanically. None affects the vault (checked
       2026-08-30 against all four forks' artifacts).
-- [ ] THE HONEST-BOUNDARY WRITEUP, published where the claims are:
+- [X] (2026-09-05: VERIFICATION.md §5, first bullet — "The boundary of
+      that layer, stated plainly": ground layer machine-checked; rung 4,
+      hiding/hybrids and the running Rust not; authority = corpus
+      round-trip + differential agreement with the pinned ir_vm.rs, a
+      transcription error the corpus does not exercise invisible to
+      both. Cites, does not re-prove — (e) below stays open for the
+      upstream PRs.) THE HONEST-BOUNDARY WRITEUP, published where the claims are:
       what is machine-checked (the ground layer), what is not (the
       hybrids, the crypto assumptions), and what the semantics'
       authority rests on (corpus round-trip + differential agreement
