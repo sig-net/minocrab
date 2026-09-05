@@ -144,11 +144,34 @@ impl Circuit3 {
         self.b.private_input(ty, Self::read_guard(guard))
     }
 
+    /// The one build-time refusal of this module: an ON-CHAIN effect inside
+    /// [`Circuit3::when_private`]. Whether an Impact op or a public read ran
+    /// is visible on chain, so the private condition would be disclosed by
+    /// it; compactc's own rule, and the last rung of the rejection ladder
+    /// here because the scope is dynamic (recorded in notes/contract-api.org
+    /// §"Panics that could NOT become compile errors").
+    #[track_caller]
+    fn refuse_on_chain_in_private_scope(&self, what: &str) {
+        if self.private_scopes > 0 {
+            panic!(
+                "{what} inside `when_private`: whether it ran is visible on chain, so the \
+                 private condition would be disclosed. Either disclose the condition first \
+                 (`let cond = cond.disclose_as::<L>(c);`, with `L` in the circuit's \
+                 `Discloses<(..)>`) and use `when`, or move the effect out of the private \
+                 scope — a `when_private` body may only witness and check."
+            );
+        }
+    }
+
+    #[track_caller]
     pub(super) fn emit_public_input(&mut self, ty: IrType, guard: EffectGuard) -> Val {
+        self.refuse_on_chain_in_private_scope("a public-transcript read");
         self.b.public_input(ty, Self::read_guard(guard))
     }
 
+    #[track_caller]
     pub(super) fn emit_impact(&mut self, guard: EffectGuard, inputs: &[Arg]) {
+        self.refuse_on_chain_in_private_scope("an Impact op");
         self.b
             .impact(guard.0.unwrap_or(Arg::Imm(Fr::from(1u64))), inputs);
     }

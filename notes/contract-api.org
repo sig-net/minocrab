@@ -1343,6 +1343,20 @@ changes that MOVE their streams.
 4. `entry()`'s two law checks (`arg_count == SLOTS`, no instruction before the
    last declare) — phase 2's, unchanged: both are properties of a built
    circuit, not of a type.
+5. (M26, 2026-09-05) an ON-CHAIN EFFECT inside `Circuit3::when_private` —
+   an Impact op or a public-transcript read whose presence would disclose
+   the private condition. The scope stack is dynamic: the type system
+   cannot see "inside a private scope" without a type-state `Circuit3`,
+   which ripples through every `&mut Circuit3` helper (M26's stated
+   reason). Raised in `v3/effects.rs`'s two on-chain emitters, so no entry
+   point can bypass it; `#[track_caller]` through `impact`,
+   `impact_mixed` and both `public_transcript_input*`, so it blames the
+   user's line. Message: disclose the condition first and use `when`, or
+   move the effect out. Gates: `minocrab-std/tests/v3_guard_scope.rs` —
+   byte-identity of the scope against the hand-threaded private guard
+   (assert and witness), the conjunction with a nested public `when`, and
+   three `should_panic` refusals (an op, a public read, an op inside a
+   nested public `when`).
 
 All four are `#[track_caller]` as of M23 R1, so they blame the line that
 wrote the literal / built the circuit rather than the check — see the

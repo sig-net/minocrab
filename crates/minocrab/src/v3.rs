@@ -792,6 +792,9 @@ pub struct Circuit3 {
     /// already the conjunction of itself and everything below it, so the top
     /// is the effective guard and reading it costs nothing.
     guards: Vec<Val>,
+    /// How many [`Circuit3::when_private`] scopes are open. Inside one, the
+    /// on-chain emitters (`v3/effects.rs`) refuse at build time.
+    private_scopes: u32,
     /// Gadget scratch state — see [`Circuit3::ext_insert`].
     ext: std::collections::BTreeMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
@@ -832,6 +835,7 @@ impl Circuit3 {
             queued_outputs: Vec::new(),
             assert_messages: Vec::new(),
             guards: Vec::new(),
+            private_scopes: 0,
             ext: std::collections::BTreeMap::new(),
         }
     }
@@ -914,6 +918,7 @@ impl Circuit3 {
     }
 
     /// Read the next value from the public transcript (visible on-chain).
+    #[track_caller]
     pub fn public_transcript_input<T: IrTy>(&mut self) -> Wire3<T, Public> {
         // Picks up the ambient guard, so a read inside `guarded` needs no
         // `_guarded` variant at the call site.
@@ -935,6 +940,7 @@ impl Circuit3 {
     /// call has `is_left` true while the arm is off. Straight-line callers
     /// are untouched — with no ambient guard the operand passes through
     /// unchanged.
+    #[track_caller]
     pub fn public_transcript_input_guarded<T: IrTy, V: OnChainGuard>(
         &mut self,
         guard: Wire3<FieldT, V>,
@@ -1424,6 +1430,7 @@ impl Circuit3 {
 
     /// Declare a guarded block of native public inputs (one Impact
     /// instruction). The full ledger-op encoding layer sits above this.
+    #[track_caller]
     pub fn impact<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
@@ -1444,6 +1451,7 @@ impl Circuit3 {
     /// straight-line circuit), so the immediate form is a deliberate
     /// departure — zero rows, one fewer instruction, and no longer
     /// byte-identical to compactc's stream.
+    #[track_caller]
     pub fn impact_mixed<V: OnChainGuard>(
         &mut self,
         guard: impl Into<Operand<FieldT, V>>,
@@ -1573,6 +1581,39 @@ impl Circuit3 {
             last: cond,
             prior: None,
         }
+    }
+
+    /// A scope on a PRIVATE condition, for bodies with no on-chain effect —
+    /// Compact's `if (privateBit) { assert(...) }` without a `disclose`.
+    ///
+    /// [`Circuit3::when`] requires an [`OnChainGuard`]: whether an Impact op
+    /// or a public-transcript read ran is visible on chain, so a private
+    /// condition guarding one is a disclosure (the external review's §4.1).
+    /// But a body that only WITNESSES and CHECKS reveals nothing — a guarded
+    /// witness read yields the default and consumes no transcript, a guarded
+    /// assert becomes `assert(select(g, x, 1))` — and compactc allows it
+    /// without disclosure. This is that scope: the condition may be
+    /// `Private`, the body may read witnesses and assert, and the two
+    /// on-chain emitters REFUSE inside it at build time with the
+    /// disclose-first message. The ladder's last rung, because the scope
+    /// stack is dynamic and the type system cannot reach it without a
+    /// type-state `Circuit3` (M26).
+    ///
+    /// Byte-identical to the hand-threaded form (`assert(select(g, x, 1))`,
+    /// `witness_guarded(g)`), as `minocrab-std/tests/v3_guard_scope.rs`
+    /// pins. Nesting follows [`Circuit3::when`]'s rule (a conjunction); a
+    /// public [`Circuit3::when`] INSIDE a private scope is still inside it,
+    /// so its on-chain effects are refused too. No `else` chain: write
+    /// `when_private(not(g), ..)` for the other arm.
+    pub fn when_private<V: Visibility>(
+        &mut self,
+        cond: impl GuardCond<V>,
+        body: impl FnOnce(&mut Self),
+    ) {
+        let cond = cond.into_guard(self);
+        self.private_scopes += 1;
+        self.guarded(cond, body);
+        self.private_scopes -= 1;
     }
 
     /// The chain that produces a VALUE — Compact's `if`-as-an-expression.

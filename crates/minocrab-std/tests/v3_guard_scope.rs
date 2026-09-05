@@ -764,3 +764,130 @@ fn a_read_under_a_constant_true_guard_is_unguarded() {
     });
     assert_eq!(plain, named);
 }
+
+// ---- when_private (M26): a private condition, a body with no on-chain effect --------------
+
+/// `when_private(g, |c| c.assert(x))` with a PRIVATE `g` is the hand-threaded
+/// `assert(select(g, x, 1))`, byte for byte — the scope is a way of writing
+/// the guard down, as for `when`.
+#[test]
+fn a_private_scope_is_the_threaded_private_guard() {
+    let threaded = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let x = c.witness::<FieldT>();
+        let sel = c.cond_select(g, x, 1u64);
+        c.assert(sel);
+    });
+    let scoped = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let x = c.witness::<FieldT>();
+        c.when_private(g, |c| c.assert(x));
+    });
+    assert_eq!(scoped, threaded);
+}
+
+/// A witness read inside a private scope is the guarded read: the default
+/// off-path, no transcript consumed — `witness_guarded(g)` exactly.
+#[test]
+fn a_private_scope_guards_witness_reads() {
+    let threaded = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let w = c.witness_guarded::<FieldT, _>(g);
+        let ok = c.test_eq(w, 7u64);
+        let sel = c.cond_select(g, ok, 1u64);
+        c.assert(sel);
+    });
+    let scoped = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        c.when_private(g, |c| {
+            let w = c.witness::<FieldT>();
+            let ok = c.test_eq(w, 7u64);
+            c.assert(ok);
+        });
+    });
+    assert_eq!(scoped, threaded);
+}
+
+/// A public `when` INSIDE a private scope is still inside it: the nested
+/// guard is the conjunction, and a check under it is the check under the
+/// hand-written conjunction.
+#[test]
+fn a_public_scope_inside_a_private_one_conjoins() {
+    let threaded = zkir(|c| {
+        let p = c.arg::<FieldT>("p");
+        let g = c.witness::<FieldT>();
+        let p = c.disclose(p, "p");
+        let x = c.witness::<FieldT>();
+        let both = c.cond_select(g, p, 0u64);
+        let sel = c.cond_select(both, x, 1u64);
+        c.assert(sel);
+    });
+    let scoped = zkir(|c| {
+        let p = c.arg::<FieldT>("p");
+        let g = c.witness::<FieldT>();
+        let p = c.disclose(p, "p");
+        let x = c.witness::<FieldT>();
+        c.when_private(g, |c| {
+            c.when(p, |c| c.assert(x));
+        });
+    });
+    assert_eq!(scoped, threaded);
+}
+
+/// THE REFUSAL: an Impact op inside a private scope is a build-time panic
+/// with the disclose-first message — whether the op ran would disclose the
+/// private condition.
+#[test]
+#[should_panic(expected = "an Impact op inside `when_private`")]
+fn an_impact_inside_a_private_scope_is_refused() {
+    zkir(|c| {
+        let g = c.witness::<FieldT>();
+        c.when_private(g, |c| c.impact_mixed(1u64, &op()));
+    });
+}
+
+/// …and so is a public-transcript read, the other on-chain effect.
+#[test]
+#[should_panic(expected = "a public-transcript read inside `when_private`")]
+fn a_public_read_inside_a_private_scope_is_refused() {
+    zkir(|c| {
+        let g = c.witness::<FieldT>();
+        c.when_private(g, |c| {
+            let _ = c.public_transcript_input::<FieldT>();
+        });
+    });
+}
+
+/// …even through a public `when` nested inside the private scope: the
+/// op's presence still reveals the outer condition.
+#[test]
+#[should_panic(expected = "an Impact op inside `when_private`")]
+fn an_impact_in_a_public_scope_nested_in_a_private_one_is_refused() {
+    zkir(|c| {
+        let p = c.arg::<FieldT>("p");
+        let g = c.witness::<FieldT>();
+        let p = c.disclose(p, "p");
+        c.when_private(g, |c| {
+            c.when(p, |c| c.impact_mixed(1u64, &op()));
+        });
+    });
+}
+
+/// After the scope closes, on-chain effects are ordinary again.
+#[test]
+fn on_chain_effects_resume_after_a_private_scope() {
+    let plain = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let x = c.witness::<FieldT>();
+        let sel = c.cond_select(g, x, 1u64);
+        c.assert(sel);
+        c.impact_mixed(1u64, &op());
+    });
+    let scoped = zkir(|c| {
+        let g = c.witness::<FieldT>();
+        let x = c.witness::<FieldT>();
+        c.when_private(g, |c| c.assert(x));
+        c.impact_mixed(1u64, &op());
+    });
+    assert_eq!(scoped, plain);
+}

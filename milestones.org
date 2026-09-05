@@ -1080,8 +1080,15 @@ The review-fixes branch (notes/external-review-triage.org, one commit per
 finding) closed the external review's correctness items. What it
 deliberately left, with the reasoning, so it is a milestone and not a
 note in a drawer:
-- [ ] =when_private= — a private-condition scope for bodies with NO
-      on-chain effect (assert / witness only). Compact allows
+- [X] =when_private= — a private-condition scope for bodies with NO
+      on-chain effect (assert / witness only). (DONE 2026-09-05:
+      =Circuit3::when_private= in minocrab v3; the on-chain emitters
+      refuse inside it at build time with the disclose-first message —
+      the ladder's last rung, so the gate is =should_panic= rather than
+      =compile_fail=, three of them, plus the byte-identity idiom against
+      the hand-threaded private guard; registered as panic 5 in
+      notes/contract-api.org §"Panics that could NOT become compile
+      errors". Zero uses in the workspace, as expected.) Compact allows
       =if (privateBit) { assert(...) }= without =disclose=; since §4.1's
       =OnChainGuard= bound, MinoCrab does not — a private condition must
       be disclosed to branch on at all. Zero uses in the workspace today,
