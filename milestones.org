@@ -1346,14 +1346,14 @@ listed is covered by NOTHING and nothing fires. The fix in progress is
 adoption today is 57 of 198 =#[circuit]= attributes (kernel_tokens,
 coins, nested). Two halves, both zero-movement by construction under
 the dump gate.
-- [ ] A. Adoption: every remaining =#[circuit]= in
+- [ ] A. (NOT done 2026-09-05 — cleanup per the compromise below; 3 of 23 files derive) Adoption: every remaining =#[circuit]= in
       =crates/minocrab-contracts/src= moves under a =#[contract]= block;
       =support::circuits()= becomes the union of the derived sets plus
       ONE explicit remainder — the =entry()=-built families (the hashing
       width sweep rig) that carry no attribute — each remainder entry
       with a comment saying why it cannot be derived. Gate per file:
       dump byte-identical, both snapshots unchanged.
-- [ ] B. The completeness assertion, the half that closes the hole:
+- [X] B. (already built as tests/circuit_closure.rs, c5caf15, review §7.4 — the source scan; it fired tonight on M35's ten new circuits) The completeness assertion, the half that closes the hole:
       a test asserting that every =#[circuit]= attribute in the
       workspace SOURCE appears in the derived union. The honest cheap
       version is a source scan (walk =crates/*/src=, collect the fn
@@ -1364,10 +1364,10 @@ the dump gate.
       link-time registration (=linkme= distributed slice populated by
       the =#[circuit]= expansion; no build.rs, so docs.rs stays clean)
       — decide in writing, do not do both.
-- [ ] C. Mutation check, the way every instrument here is born: add a
+- [X] C. (2026-09-05: `attest::mutant_unlisted` injected → `every_circuit_attribute_is_listed` FAILED naming it; reverted) Mutation check, the way every instrument here is born: add a
       =#[circuit]= to a test-only module and leave it unlisted; the test
       must fail. Record the run.
-- [ ] D. VERIFICATION.md §5's bullet rewritten from "known hole" to
+- [X] D. (2026-09-05) VERIFICATION.md §5's bullet rewritten from "known hole" to
       the instrument, §3's failure-class map gains the row; the
       review-queue entry closed.
 BEST-EFFORT COMPROMISE: A is mechanical but touches every contracts

@@ -637,6 +637,10 @@ reviewer should look at.
       `#[contract]` block that DERIVES the set, so the list stops being
       hand-written. Until then this is a known hole, written down rather
       than assumed away.
+      CLOSED 2026-09-05 (M32): tests/circuit_closure.rs (review §7.4,
+      c5caf15) is the other direction — every `#[circuit]` under src/ must
+      be listed; the mutation run is recorded in milestones.org M32 C.
+      Full `#[contract]` adoption is M32 A, cleanup.
 - [ ] ir-passes step 3 (guard scopes replace the `_under`/`_guarded` call
       sites): the reviewable part is NOT the 54 straight-line renames (the
       dump is byte-identical) but the five circuits that moved to

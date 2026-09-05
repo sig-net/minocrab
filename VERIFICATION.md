@@ -257,6 +257,7 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 | missing guard, assert or range check | the type-level constructions in §2(g); `v3_predicates`; `v3_guard_scope`; row snapshot (as a *row* delta, not a diagnosis) | every differential on an honest preimage — this is the class the API safety survey was commissioned to hunt by reading, not by testing |
 | witness-stream drift (a read on the untaken branch) | interface snapshot (`wit` lines, `(guarded)` marked); the differentials, once the private transcript diverges | row snapshot, if the counts happen to match |
 | undeclared disclosure | the generated set-equality test per circuit | everything else — the labels are not in the ZKIR |
+| a circuit added and not listed | [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs) (every `#[circuit]` under `src/` is in `support::circuits()`); a `#[contract]` block derives its set | an `entry()`-built family with no attribute — listed by hand, with a comment saying why |
 | range-constraint gap at a typed seam | `v3_bounded` / `v3_leaves` / `v3_entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
 | upstream drift after a version bump | in diagnosis order: `cargo metadata` → workspace build → corpus compile report → ZKIR round-trip → ABI/Impact baseline → workspace → row snapshot → spec/vectors/TS → elevated property run | — `./bump.sh gates` runs exactly this sequence and prints the taxonomy line for whatever fired |
 | spec divergence between the four artifacts | the fork tests' divergence ledger, asserted in both directions; the spec harness runs every property against all four | a fork test that was never given a ledger entry — which is why a moved circuit with an unmoved entry fails the build |
@@ -384,14 +385,18 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   typed methods stop at declared slots); `kernel.checkpoint()`, which is
   outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
-- **The circuit list is hand-written, and nothing yet checks it is complete.**
-  `support::circuits()` — 200 entries — is the only statement of which circuits
-  exist, and it feeds both snapshots, the dump instrument and the adversarial
-  suite. Nothing asserts that every `#[circuit]` in the workspace appears in it;
-  the snapshots guard the opposite direction only. A circuit added and not
-  listed is covered by nothing. The fix in progress is `#[contract]`, which
-  derives the set from the impl block (first adopter: `kernel_tokens`, 24
-  circuits) ([notes/review-queue.org](notes/review-queue.org)).
+- **The circuit list is closed in both directions, but still partly
+  hand-written.** `support::circuits()` (221 entries) feeds both snapshots,
+  the dump instrument and the adversarial suite. The snapshots guard one
+  direction (a listed circuit that moved);
+  [circuit_closure.rs](crates/minocrab-contracts/tests/circuit_closure.rs)
+  guards the other: it walks `src/` for every `#[circuit]` attribute and
+  fails when one is not listed (M32 C's mutation — an unlisted attribute
+  in a source module — fails the test by name). Three contracts derive
+  their sets through `#[contract]` (`kernel_tokens`, `coins`, `nested`);
+  the rest are listed by hand and only the closure test keeps them
+  honest. Moving them under `#[contract]` is cleanup (M32 A), not a
+  correctness gap.
 - **The Borsh injectivity obligation is preventable, not prevented.**
   `Serializer::constrained()` plus `Circuit3::dedup_range_constraints` make
   constrain-on-construction **free** — proven by byte-identical serialized ZKIR
