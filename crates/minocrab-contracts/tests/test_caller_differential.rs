@@ -227,7 +227,7 @@ impl Scenario {
 #[test]
 fn initialise_matches_corpus() {
     let theirs = corpus_zkir();
-    let ours = test_caller::initialise().ir;
+    let ours = test_caller::TestCaller::initialise().ir;
     let s = Scenario::new();
 
     let ops = initialise_ops(0, &s.commitment, s.point_av());
@@ -245,7 +245,7 @@ fn initialise_matches_corpus() {
 #[test]
 fn initialise_rejects_when_already_initialised() {
     let theirs = corpus_zkir();
-    let ours = test_caller::initialise().ir;
+    let ours = test_caller::TestCaller::initialise().ir;
     let s = Scenario::new();
 
     let ops = initialise_ops(1, &s.commitment, s.point_av());
@@ -264,7 +264,7 @@ fn initialise_rejects_when_already_initialised() {
 #[test]
 fn initialise_rejects_wrong_deployer_secret() {
     let theirs = corpus_zkir();
-    let ours = test_caller::initialise().ir;
+    let ours = test_caller::TestCaller::initialise().ir;
     let s = Scenario::new();
 
     let mut wrong_sk = s.sk;

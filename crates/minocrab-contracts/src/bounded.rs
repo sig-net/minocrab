@@ -37,7 +37,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::Public;
 use minocrab_std::v3::{
-    circuit, label, Bool, BoundedUint, Bytes, CircuitArg, Disclose, Discloses, Ledger,
+    contract, label, Bool, BoundedUint, Bytes, CircuitArg, Disclose, Discloses, Ledger,
     LedgerCell, LedgerCounter, Uint,
 };
 
@@ -61,93 +61,6 @@ pub struct Bounded {
 /// The contract's ledger block.
 pub const BOUNDED: Bounded = Bounded::new();
 
-/// `export circuit b10(x: Uint<0..10>): [] { dummy.increment(1); }`.
-#[circuit]
-pub fn b10(c: &mut Circuit3, x: BoundedUint<10>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b300(x: Uint<0..300>): []`.
-#[circuit]
-pub fn b300(c: &mut Circuit3, x: BoundedUint<300>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b1000(x: Uint<0..1000>): []`.
-#[circuit]
-pub fn b1000(c: &mut Circuit3, x: BoundedUint<1000>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b70000(x: Uint<0..70000>): []` — the widest bound in the
-/// fairness bullet, and the one whose three widths all differ (constraint
-/// 18, comparison 17, FAB atom 3 bytes).
-#[circuit]
-pub fn b70000(c: &mut Circuit3, x: BoundedUint<70000>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b1(x: Uint<0..1>): []` — the type holding only zero, so
-/// the table's `constrain_eq 0` arm. Its FAB atom is ZERO bytes wide.
-#[circuit]
-pub fn b1(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b2(x: Uint<0..2>): []` — Compact's `Boolean` by another
-/// name, so `constrain_to_boolean`.
-#[circuit]
-pub fn b2(c: &mut Circuit3, x: BoundedUint<2>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b256(x: Uint<0..256>): []` — a bound that IS a power of
-/// two, which compactc lowers as a BIT WIDTH (`constrain_bits 8`), not a
-/// `less_than`. The leaf does not reject it and does not special-case it:
-/// `Prim::unsigned(255)` normalizes to `Prim::Uint { bits: 8 }` and the
-/// table does the rest, so `BoundedUint<256>` and `Uint<8>` emit the same
-/// instruction.
-#[circuit]
-pub fn b256(c: &mut Circuit3, x: BoundedUint<256>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `export circuit b255(x: Uint<0..255>): []` — the bound that looks like a
-/// byte and is not: it admits `0..=254`, so it is a `less_than 255` at 8
-/// bits. The one-off-a-power-of-two case is why the leaf takes the bound and
-/// not a width.
-#[circuit]
-pub fn b255(c: &mut Circuit3, x: BoundedUint<255>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
-/// `enum Status { pending, live, closed }` as an argument: Compact's
-/// `Uint<0..3>`, so `less_than 3` at 2 bits. A fieldless enum has no Rust
-/// representation beyond its index — the VARIANT INDEX is the whole value —
-/// which is why the interface generator maps it to this same leaf.
-#[circuit]
-pub fn b_enum(c: &mut Circuit3, x: BoundedUint<3>) -> Discloses<()> {
-    let _ = x;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
-
 /// `struct Order { kind: Status, quantity: Uint<0..1000>, price: Uint<64>,
 /// tag: Bytes<4> }` — a bounded leaf inside `#[derive(CircuitArg)]`, whose
 /// generated `constrain` runs the table over the four slots in field order.
@@ -159,29 +72,119 @@ pub struct Order {
     pub tag: Bytes<4>,
 }
 
-/// `export circuit bStruct(order: Order): []`.
-#[circuit]
-pub fn b_struct(c: &mut Circuit3, order: Order) -> Discloses<()> {
-    let _ = order;
-    BOUNDED.dummy.increment(c, 1);
-    Discloses::of(())
-}
+#[contract]
+impl Bounded {
+    /// `export circuit b10(x: Uint<0..10>): [] { dummy.increment(1); }`.
+    #[circuit]
+    pub fn b10(c: &mut Circuit3, x: BoundedUint<10>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
 
-/// `export circuit bCompare(a: Uint<0..70000>, b: Uint<0..70000>): []
-/// { flag = disclose(a) < disclose(b); }` — the circuit that shows the two
-/// widths apart: each argument is range-constrained at compactc's
-/// even-rounded 18 bits, and the ORDERING between them runs at 17, the bit
-/// length of the largest legal value. Both numbers come from the type, so
-/// neither is hand-written here.
-#[circuit]
-pub fn b_compare(
-    c: &mut Circuit3,
-    a: BoundedUint<70000>,
-    b: BoundedUint<70000>,
-) -> Discloses<(LeftOperand, RightOperand)> {
-    let a = a.disclose_as::<LeftOperand>(c);
-    let b = b.disclose_as::<RightOperand>(c);
-    let less = a.lt(b).eval(c);
-    BOUNDED.flag.write(c, &less);
-    Discloses::of(())
+    /// `export circuit b300(x: Uint<0..300>): []`.
+    #[circuit]
+    pub fn b300(c: &mut Circuit3, x: BoundedUint<300>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b1000(x: Uint<0..1000>): []`.
+    #[circuit]
+    pub fn b1000(c: &mut Circuit3, x: BoundedUint<1000>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b70000(x: Uint<0..70000>): []` — the widest bound in the
+    /// fairness bullet, and the one whose three widths all differ (constraint
+    /// 18, comparison 17, FAB atom 3 bytes).
+    #[circuit]
+    pub fn b70000(c: &mut Circuit3, x: BoundedUint<70000>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b1(x: Uint<0..1>): []` — the type holding only zero, so
+    /// the table's `constrain_eq 0` arm. Its FAB atom is ZERO bytes wide.
+    #[circuit]
+    pub fn b1(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b2(x: Uint<0..2>): []` — Compact's `Boolean` by another
+    /// name, so `constrain_to_boolean`.
+    #[circuit]
+    pub fn b2(c: &mut Circuit3, x: BoundedUint<2>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b256(x: Uint<0..256>): []` — a bound that IS a power of
+    /// two, which compactc lowers as a BIT WIDTH (`constrain_bits 8`), not a
+    /// `less_than`. The leaf does not reject it and does not special-case it:
+    /// `Prim::unsigned(255)` normalizes to `Prim::Uint { bits: 8 }` and the
+    /// table does the rest, so `BoundedUint<256>` and `Uint<8>` emit the same
+    /// instruction.
+    #[circuit]
+    pub fn b256(c: &mut Circuit3, x: BoundedUint<256>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit b255(x: Uint<0..255>): []` — the bound that looks like a
+    /// byte and is not: it admits `0..=254`, so it is a `less_than 255` at 8
+    /// bits. The one-off-a-power-of-two case is why the leaf takes the bound and
+    /// not a width.
+    #[circuit]
+    pub fn b255(c: &mut Circuit3, x: BoundedUint<255>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `enum Status { pending, live, closed }` as an argument: Compact's
+    /// `Uint<0..3>`, so `less_than 3` at 2 bits. A fieldless enum has no Rust
+    /// representation beyond its index — the VARIANT INDEX is the whole value —
+    /// which is why the interface generator maps it to this same leaf.
+    #[circuit]
+    pub fn b_enum(c: &mut Circuit3, x: BoundedUint<3>) -> Discloses<()> {
+        let _ = x;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit bStruct(order: Order): []`.
+    #[circuit]
+    pub fn b_struct(c: &mut Circuit3, order: Order) -> Discloses<()> {
+        let _ = order;
+        BOUNDED.dummy.increment(c, 1);
+        Discloses::of(())
+    }
+
+    /// `export circuit bCompare(a: Uint<0..70000>, b: Uint<0..70000>): []
+    /// { flag = disclose(a) < disclose(b); }` — the circuit that shows the two
+    /// widths apart: each argument is range-constrained at compactc's
+    /// even-rounded 18 bits, and the ORDERING between them runs at 17, the bit
+    /// length of the largest legal value. Both numbers come from the type, so
+    /// neither is hand-written here.
+    #[circuit]
+    pub fn b_compare(
+        c: &mut Circuit3,
+        a: BoundedUint<70000>,
+        b: BoundedUint<70000>,
+    ) -> Discloses<(LeftOperand, RightOperand)> {
+        let a = a.disclose_as::<LeftOperand>(c);
+        let b = b.disclose_as::<RightOperand>(c);
+        let less = a.lt(b).eval(c);
+        BOUNDED.flag.write(c, &less);
+        Discloses::of(())
+    }
 }

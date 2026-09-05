@@ -41,7 +41,7 @@
 use minocrab::v3::{Circuit3, Compiled3, Wire3};
 use minocrab::{label, Alignment, AlignmentAtom, AlignmentSegment, Private};
 use minocrab_ledger::{cell_write, counter_increment, emit, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, BytesNDyn, Disclose, Discloses, B32};
+use minocrab_std::v3::{contract, BytesNDyn, Disclose, Discloses, B32};
 
 label!(TheDigestHi = "the digest (hi)");
 label!(TheDigestLo = "the digest (lo)");
@@ -138,36 +138,44 @@ pub fn transient(len: usize) -> Compiled3 {
     hash_circuit(len, HashKind::Transient)
 }
 
-/// `persistentVec8(data: Vector<8, Bytes<32>>)`: the same 256 bytes as a
-/// data structure — 8 × `Bytes<32>` atoms, 16 limbs.
-///
-/// The one circuit of this experiment whose argument WIDTH is fixed, so the
-/// one that is a `#[circuit]`: `[B32; 8]` declares `data_0_hi` … `data_7_lo`
-/// and constrains all sixteen limbs from the type (see the module docs for
-/// why the `Bytes<len>` family stays hand-declared).
-#[circuit]
-pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
-    let parts = data;
-    let one = c.constant(1u64);
+/// The one circuit of this experiment whose argument width is fixed — see
+/// the module docs for why the `Bytes<len>` sweep stays hand-declared free
+/// functions instead.
+pub struct Hashing;
 
-    emit(c, one, &counter_increment(CALL_COUNT, 1));
+#[contract]
+impl Hashing {
+    /// `persistentVec8(data: Vector<8, Bytes<32>>)`: the same 256 bytes as a
+    /// data structure — 8 × `Bytes<32>` atoms, 16 limbs.
+    ///
+    /// The one circuit of this experiment whose argument WIDTH is fixed, so the
+    /// one that is a `#[circuit]`: `[B32; 8]` declares `data_0_hi` … `data_7_lo`
+    /// and constrains all sixteen limbs from the type (see the module docs for
+    /// why the `Bytes<len>` family stays hand-declared).
+    #[circuit]
+    pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
+        let parts = data;
+        let one = c.constant(1u64);
 
-    let alignment = Alignment(
-        (0..8)
-            .map(|_| AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }))
-            .collect(),
-    );
-    let mut inputs = Vec::new();
-    for p in &parts {
-        inputs.push(p.hi.erase());
-        inputs.push(p.lo.erase());
+        emit(c, one, &counter_increment(CALL_COUNT, 1));
+
+        let alignment = Alignment(
+            (0..8)
+                .map(|_| AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }))
+                .collect(),
+        );
+        let mut inputs = Vec::new();
+        for p in &parts {
+            inputs.push(p.hi.erase());
+            inputs.push(p.lo.erase());
+        }
+        let typed = c.persistent_hash(alignment, &inputs);
+        let digest = B32::from_typed(c, typed).disclose_as::<TheDigest>(c);
+        let value = LedgerValue::bytes(
+            32,
+            vec![ImpactElem::Wire(digest.hi), ImpactElem::Wire(digest.lo)],
+        );
+        emit(c, one, &cell_write(DIGEST, &value));
+        Discloses::of(())
     }
-    let typed = c.persistent_hash(alignment, &inputs);
-    let digest = B32::from_typed(c, typed).disclose_as::<TheDigest>(c);
-    let value = LedgerValue::bytes(
-        32,
-        vec![ImpactElem::Wire(digest.hi), ImpactElem::Wire(digest.lo)],
-    );
-    emit(c, one, &cell_write(DIGEST, &value));
-    Discloses::of(())
 }

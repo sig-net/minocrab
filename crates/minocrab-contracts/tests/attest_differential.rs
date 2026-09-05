@@ -115,7 +115,7 @@ fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>) -> ProofPreimage {
 #[test]
 fn map_only_matches_corpus() {
     let theirs = corpus_zkir("mapOnly");
-    let ours = attest::map_only().ir;
+    let ours = attest::Attest::map_only().ir;
 
     let request_id = {
         let mut b = [0u8; 32];
@@ -285,7 +285,7 @@ fn check_hash_verify(ours: &IrSource, theirs: &IrSource, digest_of: impl Fn(&[u8
 #[test]
 fn sha_verify_matches_corpus() {
     let theirs = corpus_zkir("shaVerify");
-    let ours = attest::sha_verify().ir;
+    let ours = attest::Attest::sha_verify().ir;
     check_hash_verify(&ours, &theirs, |bytes| {
         use sha2::Digest;
         sha2::Sha256::digest(bytes).into()
@@ -295,7 +295,7 @@ fn sha_verify_matches_corpus() {
 #[test]
 fn keccak_verify_matches_corpus() {
     let theirs = corpus_zkir("keccakVerify");
-    let ours = attest::keccak_verify().ir;
+    let ours = attest::Attest::keccak_verify().ir;
     check_hash_verify(&ours, &theirs, |bytes| {
         use sha3::Digest;
         sha3::Keccak256::digest(bytes).into()
@@ -305,7 +305,7 @@ fn keccak_verify_matches_corpus() {
 #[test]
 fn verify_only_matches_corpus() {
     let theirs = corpus_zkir("verifyOnly");
-    let ours = attest::verify_only().ir;
+    let ours = attest::Attest::verify_only().ir;
 
     let request_id = {
         let mut b = [0u8; 32];

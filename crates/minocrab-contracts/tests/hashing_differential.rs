@@ -177,7 +177,7 @@ fn hashing_persistent_vec8_matches_corpus() {
     // ARGUMENTS are 16 limbs ([hi, lo] per Bytes<32>), not 9.
     let digest = sha(&data(256));
     check_with_inputs(
-        hashing::persistent_vec8().ir,
+        hashing::Hashing::persistent_vec8().ir,
         "hashing",
         "persistentVec8",
         data(256)

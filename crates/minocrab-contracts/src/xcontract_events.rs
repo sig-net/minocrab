@@ -43,7 +43,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    circuit, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
+    contract, BytesN, ContractAddress, Disclose, Discloses, Serializer, Uint, B32,
 };
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -76,86 +76,94 @@ fn b32_ledger_value(b: &B32<Public>) -> LedgerValue {
     LedgerValue::bytes(32, vec![ImpactElem::Wire(b.hi), ImpactElem::Wire(b.lo)])
 }
 
-/// `export circuit depositViaVault(amount: Uint<128>): Bytes<32>`.
-///
-/// The corpus's only circuits with a RETURN VALUE, so the only users of
-/// `#[circuit(output = ..)]`: the label names the disclosed value, and
-/// `CircuitOut for B32<Public>` suffixes the two limbs `(hi)`/`(lo)` — the
-/// hand-written labels, unchanged.
-#[circuit(output = "event hash")]
-pub fn deposit_via_vault(
-    c: &mut Circuit3,
-    amount: Uint<128>,
-) -> Discloses<(Amount, XcallEntryPointHash, XcallCommitment, XcallResult), B32<Public>> {
-    let a = amount.disclose_as::<Amount>(c).field();
-    let one = c.constant(1u64);
+/// `xcontract-events` — the vault side (`deposit_via_vault`) and the token
+/// side (`token_deposit`) it calls, one Rust file per the two Compact
+/// contracts' source.
+pub struct XcontractEvents;
 
-    emit(c, one, &counter_increment(VAULT_CALL_COUNT, 1));
-    let me = kernel::self_address(c);
-    // eventHash = token.deposit(a, me) — the Bytes<32> return type gives
-    // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
-    // `token` cell is read inside the call, as compactc reads it.
-    let event_hash: B32<Public> =
-        Token::at_field(TOKEN).deposit(c, one, Uint::from_field_unchecked(a), me.address());
-    emit(
-        c,
-        one,
-        &set_insert(VAULT_DEPOSITS, &b32_ledger_value(&event_hash)),
-    );
-    Discloses::of(event_hash)
-}
+#[contract]
+impl XcontractEvents {
+    /// `export circuit depositViaVault(amount: Uint<128>): Bytes<32>`.
+    ///
+    /// The corpus's only circuits with a RETURN VALUE, so the only users of
+    /// `#[circuit(output = ..)]`: the label names the disclosed value, and
+    /// `CircuitOut for B32<Public>` suffixes the two limbs `(hi)`/`(lo)` — the
+    /// hand-written labels, unchanged.
+    #[circuit(output = "event hash")]
+    pub fn deposit_via_vault(
+        c: &mut Circuit3,
+        amount: Uint<128>,
+    ) -> Discloses<(Amount, XcallEntryPointHash, XcallCommitment, XcallResult), B32<Public>> {
+        let a = amount.disclose_as::<Amount>(c).field();
+        let one = c.constant(1u64);
 
-/// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
-/// Bytes<32>` — the token-side callee (an ordinary circuit; the caller
-/// machinery is all vault-side).
-#[circuit(output = "event hash")]
-pub fn token_deposit(
-    c: &mut Circuit3,
-    amount: Uint<128>,
-    caller: ContractAddress<Private>,
-) -> Discloses<(Amount, Caller), B32<Public>> {
-    let caller = caller.bytes();
-    let a = amount.disclose_as::<Amount>(c).field();
-    let cal = caller.disclose_as::<Caller>(c);
-    let one = c.constant(1u64);
+        emit(c, one, &counter_increment(VAULT_CALL_COUNT, 1));
+        let me = kernel::self_address(c);
+        // eventHash = token.deposit(a, me) — the Bytes<32> return type gives
+        // the result limbs' [Bits(8), Bits(248)] constraints, and the sealed
+        // `token` cell is read inside the call, as compactc reads it.
+        let event_hash: B32<Public> =
+            Token::at_field(TOKEN).deposit(c, one, Uint::from_field_unchecked(a), me.address());
+        emit(
+            c,
+            one,
+            &set_insert(VAULT_DEPOSITS, &b32_ledger_value(&event_hash)),
+        );
+        Discloses::of(event_hash)
+    }
 
-    // const sequence = depositCount as Uint<64> — read before the increment.
-    let sequence = counter_read(c, one, DEPOSIT_COUNT);
-    emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
-    let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
-    emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
+    /// `export circuit deposit(amount: Uint<128>, caller: ContractAddress):
+    /// Bytes<32>` — the token-side callee (an ordinary circuit; the caller
+    /// machinery is all vault-side).
+    #[circuit(output = "event hash")]
+    pub fn token_deposit(
+        c: &mut Circuit3,
+        amount: Uint<128>,
+        caller: ContractAddress<Private>,
+    ) -> Discloses<(Amount, Caller), B32<Public>> {
+        let caller = caller.bytes();
+        let a = amount.disclose_as::<Amount>(c).field();
+        let cal = caller.disclose_as::<Caller>(c);
+        let one = c.constant(1u64);
 
-    // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
-    let mut s = Serializer::<Public>::new();
-    s.push_uint(a, 16);
-    s.push_uint(sequence, 8);
-    s.push_b32(&cal);
-    let payload = s.finish::<PAYLOAD_SIZE>(c);
+        // const sequence = depositCount as Uint<64> — read before the increment.
+        let sequence = counter_read(c, one, DEPOSIT_COUNT);
+        emit(c, one, &counter_increment(DEPOSIT_COUNT, 1));
+        let amount_val = LedgerValue::bytes(16, vec![ImpactElem::Wire(a)]);
+        emit(c, one, &cell_write(LAST_AMOUNT, &amount_val));
 
-    // eventHash = persistentHash<Bytes<256>>(payload).
-    let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
-    let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
-    let digest = c.persistent_hash(alignment, &limbs);
-    let event_hash = B32::from_typed(c, digest);
+        // payload = serialize<DepositEvent, 256>({amount, sequence, caller}).
+        let mut s = Serializer::<Public>::new();
+        s.push_uint(a, 16);
+        s.push_uint(sequence, 8);
+        s.push_b32(&cal);
+        let payload = s.finish::<PAYLOAD_SIZE>(c);
 
-    emit(
-        c,
-        one,
-        &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
-    );
+        // eventHash = persistentHash<Bytes<256>>(payload).
+        let alignment = BytesN::<Public, PAYLOAD_SIZE>::alignment();
+        let limbs: Vec<_> = payload.limbs().iter().map(|w| w.erase()).collect();
+        let digest = c.persistent_hash(alignment, &limbs);
+        let event_hash = B32::from_typed(c, digest);
 
-    // emit (Misc { name: pad(32, "deposit"), payload }).
-    let mut name = [0u8; 32];
-    name[..EVENT_NAME.len()].copy_from_slice(EVENT_NAME.as_bytes());
-    let mut misc = Serializer::<Public>::new();
-    misc.push_literal(c, &name);
-    misc.push_bytes_n(&payload);
-    let misc = misc.finish::<MISC_SIZE>(c);
-    let misc_val = LedgerValue::bytes(
-        MISC_SIZE as u32,
-        misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
-    );
-    emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+        emit(
+            c,
+            one,
+            &set_insert(EMITTED_DEPOSITS, &b32_ledger_value(&event_hash)),
+        );
 
-    Discloses::of(event_hash)
+        // emit (Misc { name: pad(32, "deposit"), payload }).
+        let mut name = [0u8; 32];
+        name[..EVENT_NAME.len()].copy_from_slice(EVENT_NAME.as_bytes());
+        let mut misc = Serializer::<Public>::new();
+        misc.push_literal(c, &name);
+        misc.push_bytes_n(&payload);
+        let misc = misc.finish::<MISC_SIZE>(c);
+        let misc_val = LedgerValue::bytes(
+            MISC_SIZE as u32,
+            misc.limbs().iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(c, one, &emit_event(MISC_VERSION, MISC_TAG, &misc_val));
+
+        Discloses::of(event_hash)
+    }
 }

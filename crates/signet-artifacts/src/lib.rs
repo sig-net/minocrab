@@ -46,9 +46,9 @@ pub type Circuit = (&'static str, fn() -> Compiled3);
 pub fn circuits() -> Vec<Circuit> {
     use minocrab_contracts::signet_contract;
     vec![
-        ("signBidirectional", signet_contract::sign_bidirectional as fn() -> Compiled3),
-        ("respond", signet_contract::respond as fn() -> Compiled3),
-        ("respondBidirectional", signet_contract::respond_bidirectional as fn() -> Compiled3),
+        ("signBidirectional", signet_contract::SignetContract::sign_bidirectional as fn() -> Compiled3),
+        ("respond", signet_contract::SignetContract::respond as fn() -> Compiled3),
+        ("respondBidirectional", signet_contract::SignetContract::respond_bidirectional as fn() -> Compiled3),
     ]
 }
 

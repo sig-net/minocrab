@@ -17,45 +17,51 @@
 use minocrab::v3::Circuit3;
 use minocrab::Private;
 use minocrab_ledger::{counter_increment, emit};
-use minocrab_std::v3::{bytes_to_b32, circuit, rebuild_limb, BytesN, Discloses, Serializer};
+use minocrab_std::v3::{bytes_to_b32, contract, rebuild_limb, BytesN, Discloses, Serializer};
 
 /// Ledger field indices.
 pub const CHECKS: u8 = 0;
 
-/// `export circuit checkRoundtrip(bytes: Bytes<128>): []`
-///
-/// `Discloses<()>` is the positive statement that this circuit reveals
-/// NOTHING: the roundtrip is checked entirely inside the private domain, and
-/// only the counter increment is public. The generated test says so.
-#[circuit]
-pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
-    let data = bytes;
-    let one = c.constant(1u64);
+/// `serde-builtin` — the one circuit that compiles to ZKIR.
+pub struct SerdeBuiltin;
 
-    // const v = deserialize<Mixed, 128>(bytes)
-    let bytes = data.to_le_bytes(c);
-    let one_p = one.private();
-    let flag = c.test_eq(bytes[0], one_p);
-    let amount = rebuild_limb(c, &bytes[1..17]);
-    let small = bytes[17];
-    let tag = bytes_to_b32(c, &bytes[18..50]);
+#[contract]
+impl SerdeBuiltin {
+    /// `export circuit checkRoundtrip(bytes: Bytes<128>): []`
+    ///
+    /// `Discloses<()>` is the positive statement that this circuit reveals
+    /// NOTHING: the roundtrip is checked entirely inside the private domain, and
+    /// only the counter increment is public. The generated test says so.
+    #[circuit]
+    pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
+        let data = bytes;
+        let one = c.constant(1u64);
 
-    // serialize<Mixed, 128>(v)
-    let mut s = Serializer::<Private>::new();
-    s.push_uint(flag, 1); // Boolean: the 0/1 wire as one byte
-    s.push_uint(amount, 16);
-    s.push_uint(small, 1);
-    s.push_b32(&tag);
-    let reserialized = s.finish::<128>(c);
+        // const v = deserialize<Mixed, 128>(bytes)
+        let bytes = data.to_le_bytes(c);
+        let one_p = one.private();
+        let flag = c.test_eq(bytes[0], one_p);
+        let amount = rebuild_limb(c, &bytes[1..17]);
+        let small = bytes[17];
+        let tag = bytes_to_b32(c, &bytes[18..50]);
 
-    // assert(… == bytes): limbwise equality, folded by multiplication.
-    let mut all = c.constant(1u64).private();
-    for (ours, theirs) in reserialized.limbs().iter().zip(data.limbs()) {
-        let eq = c.test_eq(*ours, *theirs);
-        all = c.mul(all, eq);
+        // serialize<Mixed, 128>(v)
+        let mut s = Serializer::<Private>::new();
+        s.push_uint(flag, 1); // Boolean: the 0/1 wire as one byte
+        s.push_uint(amount, 16);
+        s.push_uint(small, 1);
+        s.push_b32(&tag);
+        let reserialized = s.finish::<128>(c);
+
+        // assert(… == bytes): limbwise equality, folded by multiplication.
+        let mut all = c.constant(1u64).private();
+        for (ours, theirs) in reserialized.limbs().iter().zip(data.limbs()) {
+            let eq = c.test_eq(*ours, *theirs);
+            all = c.mul(all, eq);
+        }
+        c.assert(all); // "serialize/deserialize roundtrip mismatch"
+
+        emit(c, one, &counter_increment(CHECKS, 1));
+        Discloses::of(())
     }
-    c.assert(all); // "serialize/deserialize roundtrip mismatch"
-
-    emit(c, one, &counter_increment(CHECKS, 1));
-    Discloses::of(())
 }

@@ -38,7 +38,7 @@ type RespondBidirectional = (RequestId<Public>, RespondBidirectionalEvent<Public
 #[test]
 fn sign_bidirectional_matches_its_interface() {
     assert_ir_matches_interface::<SignBidirectional, ()>(
-        &signet_contract::sign_bidirectional().ir,
+        &signet_contract::SignetContract::sign_bidirectional().ir,
         SignetSigner::SIGN_BIDIRECTIONAL,
     );
 }
@@ -48,9 +48,9 @@ fn sign_bidirectional_matches_its_interface() {
 /// `SignatureRespondedEvent`.
 #[test]
 fn the_respond_circuits_match_their_interface() {
-    assert_ir_matches_interface::<Respond, ()>(&signet_contract::respond().ir, SignetSigner::RESPOND);
+    assert_ir_matches_interface::<Respond, ()>(&signet_contract::SignetContract::respond().ir, SignetSigner::RESPOND);
     assert_ir_matches_interface::<RespondBidirectional, ()>(
-        &signet_contract::respond_bidirectional().ir,
+        &signet_contract::SignetContract::respond_bidirectional().ir,
         SignetSigner::RESPOND_BIDIRECTIONAL,
     );
 }
@@ -60,7 +60,7 @@ fn the_respond_circuits_match_their_interface() {
 #[test]
 fn a_mismatched_interface_is_rejected() {
     let problems = minocrab_abi::check_ir::<SignBidirectional, ()>(
-        &signet_contract::respond().ir,
+        &signet_contract::SignetContract::respond().ir,
         SignetSigner::RESPOND,
     )
     .expect_err("respond does not have signBidirectional's argument list");

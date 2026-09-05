@@ -173,19 +173,19 @@ fn canonical(ir: &IrSource) -> String {
 /// artifact name, and a LARGEST-LEGAL witness.
 fn cases() -> Vec<(&'static str, fn() -> Compiled3, Vec<u128>)> {
     vec![
-        ("b10", bounded::b10 as fn() -> Compiled3, vec![9]),
-        ("b300", bounded::b300, vec![299]),
-        ("b1000", bounded::b1000, vec![999]),
-        ("b70000", bounded::b70000, vec![69_999]),
-        ("b1", bounded::b1, vec![0]),
-        ("b2", bounded::b2, vec![1]),
-        ("b256", bounded::b256, vec![255]),
-        ("b255", bounded::b255, vec![254]),
-        ("bEnum", bounded::b_enum, vec![2]),
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, vec![9]),
+        ("b300", bounded::Bounded::b300, vec![299]),
+        ("b1000", bounded::Bounded::b1000, vec![999]),
+        ("b70000", bounded::Bounded::b70000, vec![69_999]),
+        ("b1", bounded::Bounded::b1, vec![0]),
+        ("b2", bounded::Bounded::b2, vec![1]),
+        ("b256", bounded::Bounded::b256, vec![255]),
+        ("b255", bounded::Bounded::b255, vec![254]),
+        ("bEnum", bounded::Bounded::b_enum, vec![2]),
         // kind, quantity, price, tag — field order is the slot order.
         (
             "bStruct",
-            bounded::b_struct,
+            bounded::Bounded::b_struct,
             vec![2, 999, u64::MAX as u128, 0xdead_beef],
         ),
     ]
@@ -207,7 +207,7 @@ fn identical_instruction_streams() {
         );
     }
     assert_eq!(
-        canonical(&bounded::b_compare().ir),
+        canonical(&bounded::Bounded::b_compare().ir),
         canonical(&theirs("bCompare")),
         "bCompare: the constraint width, the comparison width or the write differs"
     );
@@ -233,7 +233,7 @@ fn every_bound_is_call_compatible() {
 fn the_comparison_is_call_compatible_both_ways() {
     for (a, b, less) in [(0u128, 69_999u128, true), (69_999, 0, false), (5, 5, false)] {
         let pi = preimage(vec![fr(a), fr(b)], flag_write_transcript(less));
-        assert_call_compatible(&bounded::b_compare().ir, &theirs("bCompare"), &pi);
+        assert_call_compatible(&bounded::Bounded::b_compare().ir, &theirs("bCompare"), &pi);
     }
 }
 
@@ -245,15 +245,15 @@ fn the_comparison_is_call_compatible_both_ways() {
 #[test]
 fn both_reject_the_first_illegal_value() {
     let over: Vec<(&str, fn() -> Compiled3, u128)> = vec![
-        ("b10", bounded::b10 as fn() -> Compiled3, 10),
-        ("b300", bounded::b300, 300),
-        ("b1000", bounded::b1000, 1000),
-        ("b70000", bounded::b70000, 70_000),
-        ("b1", bounded::b1, 1),
-        ("b2", bounded::b2, 2),
-        ("b256", bounded::b256, 256),
-        ("b255", bounded::b255, 255),
-        ("bEnum", bounded::b_enum, 3),
+        ("b10", bounded::Bounded::b10 as fn() -> Compiled3, 10),
+        ("b300", bounded::Bounded::b300, 300),
+        ("b1000", bounded::Bounded::b1000, 1000),
+        ("b70000", bounded::Bounded::b70000, 70_000),
+        ("b1", bounded::Bounded::b1, 1),
+        ("b2", bounded::Bounded::b2, 2),
+        ("b256", bounded::Bounded::b256, 256),
+        ("b255", bounded::Bounded::b255, 255),
+        ("bEnum", bounded::Bounded::b_enum, 3),
     ];
     for (name, build, first_illegal) in over {
         let pi = preimage(vec![fr(first_illegal)], increment_transcript());

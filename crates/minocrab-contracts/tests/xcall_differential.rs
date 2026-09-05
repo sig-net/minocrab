@@ -343,7 +343,7 @@ impl Scenario {
 #[test]
 fn local_base_matches_corpus() {
     let theirs = corpus_zkir("caller", "localBase");
-    let ours = xcall::local_base().ir;
+    let ours = xcall::Xcall::local_base().ir;
     let s = Scenario::new();
     assert_call_compatible(&ours, &theirs, &s.preimage_local_base());
 }
@@ -364,7 +364,7 @@ fn call_once_matches_corpus() {
 #[test]
 fn call_emit_matches_corpus() {
     let theirs = corpus_zkir("caller", "callEmit");
-    let ours = xcall::call_emit().ir;
+    let ours = xcall::Xcall::call_emit().ir;
     let mut s = Scenario::new();
     s.ep = ep_hash("depositEmit");
     assert_call_compatible(&ours, &theirs, &s.preimage_call_n(1));
@@ -375,7 +375,7 @@ fn call_emit_matches_corpus() {
 #[test]
 fn call_once_and_call_emit_are_the_same_circuit() {
     let once = to_zkir_string(&xcall::call_once().ir).expect("serializes");
-    let emit = to_zkir_string(&xcall::call_emit().ir).expect("serializes");
+    let emit = to_zkir_string(&xcall::Xcall::call_emit().ir).expect("serializes");
     assert_eq!(once, emit);
     assert_ne!(ep_hash("deposit"), ep_hash("depositEmit"));
 }
@@ -391,7 +391,7 @@ fn call_twice_matches_corpus() {
 #[test]
 fn call_big_matches_corpus() {
     let theirs = corpus_zkir("caller", "callBig");
-    let ours = xcall::call_big().ir;
+    let ours = xcall::Xcall::call_big().ir;
     let s = Scenario::new();
     let mut data = [0u8; 256];
     for (i, b) in data.iter_mut().enumerate() {
@@ -406,7 +406,7 @@ fn call_big_matches_corpus() {
 #[test]
 fn target_deposit_big_matches_corpus() {
     let theirs = corpus_zkir("target", "depositBig");
-    let ours = xcall::target_deposit_big().ir;
+    let ours = xcall::Xcall::target_deposit_big().ir;
     let mut data = [0u8; 256];
     data[0] = 0x42;
     data[255] = 0x24;

@@ -114,41 +114,41 @@ fn canonicalize(text: &str) -> String {
 fn cases() -> Vec<(&'static str, fn() -> Compiled3)> {
     vec![
         // Set
-        ("setInsert", adts::set_insert as fn() -> Compiled3),
-        ("setMember", adts::set_member),
-        ("setRemove", adts::set_remove),
-        ("setSize", adts::set_size),
-        ("setIsEmpty", adts::set_is_empty),
-        ("setReset", adts::set_reset),
+        ("setInsert", adts::Adts::set_insert as fn() -> Compiled3),
+        ("setMember", adts::Adts::set_member),
+        ("setRemove", adts::Adts::set_remove),
+        ("setSize", adts::Adts::set_size),
+        ("setIsEmpty", adts::Adts::set_is_empty),
+        ("setReset", adts::Adts::set_reset),
         // List
-        ("listPushFront", adts::list_push_front),
-        ("listPopFront", adts::list_pop_front),
-        ("listHead", adts::list_head),
-        ("listLength", adts::list_length),
-        ("listIsEmpty", adts::list_is_empty),
-        ("listReset", adts::list_reset),
+        ("listPushFront", adts::Adts::list_push_front),
+        ("listPopFront", adts::Adts::list_pop_front),
+        ("listHead", adts::Adts::list_head),
+        ("listLength", adts::Adts::list_length),
+        ("listIsEmpty", adts::Adts::list_is_empty),
+        ("listReset", adts::Adts::list_reset),
         // Map — the two operations LedgerMap was missing
-        ("mapInsertDefault", adts::map_insert_default),
-        ("mapReset", adts::map_reset),
+        ("mapInsertDefault", adts::Adts::map_insert_default),
+        ("mapReset", adts::Adts::map_reset),
         // MerkleTree
-        ("mtInsert", adts::mt_insert),
-        ("mtInsertIndex", adts::mt_insert_index),
-        ("mtInsertHash", adts::mt_insert_hash),
-        ("mtInsertHashIndex", adts::mt_insert_hash_index),
-        ("mtInsertIndexDefault", adts::mt_insert_index_default),
-        ("mtCheckRoot", adts::mt_check_root),
-        ("mtIsFull", adts::mt_is_full),
-        ("mtReset", adts::mt_reset),
+        ("mtInsert", adts::Adts::mt_insert),
+        ("mtInsertIndex", adts::Adts::mt_insert_index),
+        ("mtInsertHash", adts::Adts::mt_insert_hash),
+        ("mtInsertHashIndex", adts::Adts::mt_insert_hash_index),
+        ("mtInsertIndexDefault", adts::Adts::mt_insert_index_default),
+        ("mtCheckRoot", adts::Adts::mt_check_root),
+        ("mtIsFull", adts::Adts::mt_is_full),
+        ("mtReset", adts::Adts::mt_reset),
         // HistoricMerkleTree
-        ("hmtInsert", adts::hmt_insert),
-        ("hmtInsertIndex", adts::hmt_insert_index),
-        ("hmtInsertHash", adts::hmt_insert_hash),
-        ("hmtInsertHashIndex", adts::hmt_insert_hash_index),
-        ("hmtInsertIndexDefault", adts::hmt_insert_index_default),
-        ("hmtCheckRoot", adts::hmt_check_root),
-        ("hmtIsFull", adts::hmt_is_full),
-        ("hmtResetHistory", adts::hmt_reset_history),
-        ("hmtReset", adts::hmt_reset),
+        ("hmtInsert", adts::Adts::hmt_insert),
+        ("hmtInsertIndex", adts::Adts::hmt_insert_index),
+        ("hmtInsertHash", adts::Adts::hmt_insert_hash),
+        ("hmtInsertHashIndex", adts::Adts::hmt_insert_hash_index),
+        ("hmtInsertIndexDefault", adts::Adts::hmt_insert_index_default),
+        ("hmtCheckRoot", adts::Adts::hmt_check_root),
+        ("hmtIsFull", adts::Adts::hmt_is_full),
+        ("hmtResetHistory", adts::Adts::hmt_reset_history),
+        ("hmtReset", adts::Adts::hmt_reset),
     ]
 }
 
@@ -205,7 +205,7 @@ fn every_fixture_circuit_is_covered() {
 /// a narrower one.
 #[test]
 fn push_front_matches_the_corpus() {
-    let ours = impact_ops(&adts::list_push_front().ir);
+    let ours = impact_ops(&adts::Adts::list_push_front().ir);
     let theirs = impact_ops(&corpus("submitSignatureRequest"));
 
     // The corpus circuit does much else; find its pushFront by the idxp of
@@ -369,11 +369,11 @@ fn the_tree_reads_are_accepted_by_upstream() {
     };
 
     let cases: Vec<(&str, fn() -> Compiled3, (Vec<VmOp>, Vec<Fr>, u8))> = vec![
-        ("mtIsFull", adts::mt_is_full as fn() -> Compiled3, is_full(4, 0)),
-        ("hmtIsFull", adts::hmt_is_full, is_full(5, 1)),
+        ("mtIsFull", adts::Adts::mt_is_full as fn() -> Compiled3, is_full(4, 0)),
+        ("hmtIsFull", adts::Adts::hmt_is_full, is_full(5, 1)),
         (
             "mtCheckRoot",
-            adts::mt_check_root,
+            adts::Adts::mt_check_root,
             (
                 vec![
                     Op::Dup { n: 0 },
@@ -396,7 +396,7 @@ fn the_tree_reads_are_accepted_by_upstream() {
         ),
         (
             "hmtCheckRoot",
-            adts::hmt_check_root,
+            adts::Adts::hmt_check_root,
             (
                 vec![
                     Op::Dup { n: 0 },

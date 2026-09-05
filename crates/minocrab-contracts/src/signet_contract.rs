@@ -22,7 +22,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
-use minocrab_std::v3::{circuit, label, Disclose, Discloses, Serializer, Uint, B32};
+use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, Uint, B32};
 use signet_signer_interface::{AffinePoint, RequestId, SignBidirectionalEventNotification};
 
 use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -65,39 +65,6 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
     let mut s = Serializer::<Public>::new();
     s.push_literal(c, &padded);
     s
-}
-
-/// `export circuit signBidirectional(requestId: RequestId,
-/// notification: SignBidirectionalEventNotification): []`
-///
-/// The notification's type comes from `signet-signer-interface` — THE
-/// CRATE THIS CONTRACT'S OWN CALLERS IMPORT. There is one declaration of
-/// the record, used at `Private` here (the callee witnesses its arguments)
-/// and at `Public` by every caller, so the two sides of the wire cannot
-/// disagree about its layout; `tests/contract_matches_its_interface.rs`
-/// checks the whole signature the same way.
-#[circuit]
-pub fn sign_bidirectional(
-    c: &mut Circuit3,
-    request_id: RequestId<Private>,
-    notification: SignBidirectionalEventNotification<Private>,
-) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
-    let version = notification.version.field();
-    let payload = notification.payload;
-
-    let rid = request_id.disclose_as::<EmittedRequestId>(c);
-    let version = version.disclose_as::<NotificationVersion>(c);
-    let payload = payload.disclose_as::<NotificationPayload>(c);
-
-    // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
-    c.region("event serialize + emit", |c| {
-        let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
-        s.push_uint(version, 1);
-        s.push_b32(&rid.bytes());
-        s.push_bytes_n(&payload);
-        emit_misc(c, s);
-    });
-    Discloses::of(())
 }
 
 /// The shared body of `respond`/`respondBidirectional`: only the event
@@ -143,44 +110,84 @@ fn respond_like(
     });
 }
 
-/// `export circuit respond(requestId: RequestId, signatureRespondedEvent:
-/// SignatureRespondedEvent): []` — see [`respond_like`] for why the event's
-/// three fields are the parameter list.
-#[circuit]
-pub fn respond(
-    c: &mut Circuit3,
-    request_id: RequestId<Private>,
-    big_r: AffinePoint<Private>,
-    s: B32<Private>,
-    recovery_id: Uint<8>,
-) -> Discloses<(
-    EmittedRequestId,
-    SignatureBigRx,
-    SignatureBigRy,
-    SignatureS,
-    SignatureRecoveryId,
-)> {
-    respond_like(c, SIGNATURE_RESPONDED_EVENT, request_id, big_r, s, recovery_id);
-    Discloses::of(())
-}
+/// The Signet singleton — three stateless, unauthenticated emit-only
+/// circuits.
+pub struct SignetContract;
 
-/// `export circuit respondBidirectional(requestId: RequestId,
-/// respondBidirectionalEvent: RespondBidirectionalEvent): []` — the same
-/// nine slots under a different event name.
-#[circuit]
-pub fn respond_bidirectional(
-    c: &mut Circuit3,
-    request_id: RequestId<Private>,
-    big_r: AffinePoint<Private>,
-    s: B32<Private>,
-    recovery_id: Uint<8>,
-) -> Discloses<(
-    EmittedRequestId,
-    SignatureBigRx,
-    SignatureBigRy,
-    SignatureS,
-    SignatureRecoveryId,
-)> {
-    respond_like(c, RESPOND_BIDIRECTIONAL_EVENT, request_id, big_r, s, recovery_id);
-    Discloses::of(())
+#[contract]
+impl SignetContract {
+    /// `export circuit signBidirectional(requestId: RequestId,
+    /// notification: SignBidirectionalEventNotification): []`
+    ///
+    /// The notification's type comes from `signet-signer-interface` — THE
+    /// CRATE THIS CONTRACT'S OWN CALLERS IMPORT. There is one declaration of
+    /// the record, used at `Private` here (the callee witnesses its arguments)
+    /// and at `Public` by every caller, so the two sides of the wire cannot
+    /// disagree about its layout; `tests/contract_matches_its_interface.rs`
+    /// checks the whole signature the same way.
+    #[circuit]
+    pub fn sign_bidirectional(
+        c: &mut Circuit3,
+        request_id: RequestId<Private>,
+        notification: SignBidirectionalEventNotification<Private>,
+    ) -> Discloses<(EmittedRequestId, NotificationVersion, NotificationPayload)> {
+        let version = notification.version.field();
+        let payload = notification.payload;
+
+        let rid = request_id.disclose_as::<EmittedRequestId>(c);
+        let version = version.disclose_as::<NotificationVersion>(c);
+        let payload = payload.disclose_as::<NotificationPayload>(c);
+
+        // payload: version(1) ‖ requestId(32) ‖ notification.payload(128) ‖ zeros(95)
+        c.region("event serialize + emit", |c| {
+            let mut s = misc_name(c, SIGN_BIDIRECTIONAL_EVENT);
+            s.push_uint(version, 1);
+            s.push_b32(&rid.bytes());
+            s.push_bytes_n(&payload);
+            emit_misc(c, s);
+        });
+        Discloses::of(())
+    }
+
+    /// `export circuit respond(requestId: RequestId, signatureRespondedEvent:
+    /// SignatureRespondedEvent): []` — see [`respond_like`] for why the event's
+    /// three fields are the parameter list.
+    #[circuit]
+    pub fn respond(
+        c: &mut Circuit3,
+        request_id: RequestId<Private>,
+        big_r: AffinePoint<Private>,
+        s: B32<Private>,
+        recovery_id: Uint<8>,
+    ) -> Discloses<(
+        EmittedRequestId,
+        SignatureBigRx,
+        SignatureBigRy,
+        SignatureS,
+        SignatureRecoveryId,
+    )> {
+        respond_like(c, SIGNATURE_RESPONDED_EVENT, request_id, big_r, s, recovery_id);
+        Discloses::of(())
+    }
+
+    /// `export circuit respondBidirectional(requestId: RequestId,
+    /// respondBidirectionalEvent: RespondBidirectionalEvent): []` — the same
+    /// nine slots under a different event name.
+    #[circuit]
+    pub fn respond_bidirectional(
+        c: &mut Circuit3,
+        request_id: RequestId<Private>,
+        big_r: AffinePoint<Private>,
+        s: B32<Private>,
+        recovery_id: Uint<8>,
+    ) -> Discloses<(
+        EmittedRequestId,
+        SignatureBigRx,
+        SignatureBigRy,
+        SignatureS,
+        SignatureRecoveryId,
+    )> {
+        respond_like(c, RESPOND_BIDIRECTIONAL_EVENT, request_id, big_r, s, recovery_id);
+        Discloses::of(())
+    }
 }

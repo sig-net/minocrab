@@ -181,7 +181,7 @@ fn sign_bidirectional_call_is_compatible_with_the_corpus_artifact() {
     let call = SignCall::new();
     let pi = call.preimage();
     support::dump_preimage("signBidirectional", &pi);
-    assert_call_compatible(&signet_contract::sign_bidirectional().ir, &corpus_zkir("signBidirectional"), &pi);
+    assert_call_compatible(&signet_contract::SignetContract::sign_bidirectional().ir, &corpus_zkir("signBidirectional"), &pi);
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn respond_call_is_compatible_with_the_corpus_artifact() {
     let call = RespondCall::new();
     let pi = call.preimage("respond", signet_contract::SIGNATURE_RESPONDED_EVENT);
     support::dump_preimage("respond", &pi);
-    assert_call_compatible(&signet_contract::respond().ir, &corpus_zkir("respond"), &pi);
+    assert_call_compatible(&signet_contract::SignetContract::respond().ir, &corpus_zkir("respond"), &pi);
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn respond_bidirectional_call_is_compatible_with_the_corpus_artifact() {
     let pi = call.preimage("respondBidirectional", signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
     support::dump_preimage("respondBidirectional", &pi);
     assert_call_compatible(
-        &signet_contract::respond_bidirectional().ir,
+        &signet_contract::SignetContract::respond_bidirectional().ir,
         &corpus_zkir("respondBidirectional"),
         &pi,
     );
@@ -291,14 +291,14 @@ fn a_tampered_event_is_rejected_by_both_artifacts() {
     let mut misc = sign.misc_bytes();
     misc[40] ^= 0x01; // a requestId byte inside the logged bytes only
     let pi = call_preimage("signBidirectional", sign.typed_input(), &misc);
-    assert!(simulate(&signet_contract::sign_bidirectional().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::SignetContract::sign_bidirectional().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("signBidirectional"), &pi).is_err(), "corpus must reject");
 
     let respond = RespondCall::new();
     let mut misc = respond.misc_bytes(signet_contract::SIGNATURE_RESPONDED_EVENT);
     misc[130] ^= 0x01; // an s byte inside the logged bytes only
     let pi = call_preimage("respond", respond.typed_input(), &misc);
-    assert!(simulate(&signet_contract::respond().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::SignetContract::respond().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respond"), &pi).is_err(), "corpus must reject");
 }
 
@@ -308,6 +308,6 @@ fn a_tampered_event_is_rejected_by_both_artifacts() {
 fn a_swapped_event_name_is_rejected_by_both_artifacts() {
     let respond = RespondCall::new();
     let pi = respond.preimage("respond", signet_contract::RESPOND_BIDIRECTIONAL_EVENT);
-    assert!(simulate(&signet_contract::respond().ir, &pi).is_err(), "ours must reject");
+    assert!(simulate(&signet_contract::SignetContract::respond().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respond"), &pi).is_err(), "corpus must reject");
 }

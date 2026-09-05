@@ -157,7 +157,7 @@ fn ep(name: &str) -> [u8; 32] {
 #[test]
 fn call_once_matches_corpus() {
     let theirs = corpus_zkir("caller", "callOnce");
-    let ours = xwp::call_once().ir;
+    let ours = xwp::XcallWithPayment::call_once().ir;
 
     // ShieldedCoinInfo { nonce, color, value }.
     let mut nonce = [0u8; 32];
@@ -187,7 +187,7 @@ fn call_once_matches_corpus() {
 #[test]
 fn request_matches_corpus() {
     let theirs = corpus_zkir("caller", "request");
-    let ours = xwp::request().ir;
+    let ours = xwp::XcallWithPayment::request().ir;
 
     let mut request_id = [0u8; 32];
     request_id[..7].copy_from_slice(b"req-id-");
@@ -419,7 +419,7 @@ impl CoinScenario {
 #[test]
 fn notify_matches_corpus() {
     let theirs = corpus_zkir("target", "notify");
-    let ours = xwp::notify().ir;
+    let ours = xwp::XcallWithPayment::notify().ir;
     let s = CoinScenario::new();
     assert_call_compatible(&ours, &theirs, &s.notify_preimage());
 }
@@ -427,7 +427,7 @@ fn notify_matches_corpus() {
 #[test]
 fn pay_matches_corpus() {
     let theirs = corpus_zkir("target", "pay");
-    let ours = xwp::pay().ir;
+    let ours = xwp::XcallWithPayment::pay().ir;
     let s = CoinScenario::new();
     let mut request_id = [0u8; 32];
     request_id[..7].copy_from_slice(b"req-id-");
@@ -441,7 +441,7 @@ fn pay_matches_corpus() {
 #[test]
 fn notify_rejects_tampering() {
     let theirs = corpus_zkir("target", "notify");
-    let ours = xwp::notify().ir;
+    let ours = xwp::XcallWithPayment::notify().ir;
     let s = CoinScenario::new();
 
     let pi = s.notify_preimage();
@@ -461,7 +461,7 @@ fn notify_rejects_tampering() {
 #[test]
 fn confirm_request_matches_corpus() {
     let theirs = corpus_zkir("target", "confirmRequest");
-    let ours = xwp::confirm_request().ir;
+    let ours = xwp::XcallWithPayment::confirm_request().ir;
 
     let mut request_id = [0u8; 32];
     request_id[..7].copy_from_slice(b"req-id-");

@@ -469,7 +469,7 @@ fn self_addr() -> [u8; 32] {
 #[test]
 fn is_registered_matches_corpus() {
     let theirs = corpus_zkir("isRegistered");
-    let ours = manager::is_registered().ir;
+    let ours = manager::Manager::is_registered().ir;
     for holds in [false, true] {
         let ops = member(manager::ACCOUNTS, bytesn_value(32, &acct1()), holds);
         let pi = preimage_returning(
@@ -486,7 +486,7 @@ fn is_registered_matches_corpus() {
 #[test]
 fn pool_has_colour_matches_corpus() {
     let theirs = corpus_zkir("poolHasColour");
-    let ours = manager::pool_has_colour().ir;
+    let ours = manager::Manager::pool_has_colour().ir;
     for holds in [false, true] {
         let ops = member(manager::POOLS, bytesn_value(32, &colour1()), holds);
         let pi = preimage_returning(
@@ -503,7 +503,7 @@ fn pool_has_colour_matches_corpus() {
 #[test]
 fn pool_value_matches_corpus() {
     let theirs = corpus_zkir("poolValue");
-    let ours = manager::pool_value().ir;
+    let ours = manager::Manager::pool_value().ir;
 
     // Colour absent: the guarded lookup is skipped, the value reads 0.
     let ops = member(manager::POOLS, bytesn_value(32, &colour1()), false);
@@ -538,7 +538,7 @@ fn pool_value_matches_corpus() {
 #[test]
 fn shielded_account_balance_matches_corpus() {
     let theirs = corpus_zkir("shieldedAccountBalance");
-    let ours = manager::shielded_account_balance().ir;
+    let ours = manager::Manager::shielded_account_balance().ir;
     let key = shielded_key(&acct1(), &colour1());
 
     // Cell absent — reads 0.
@@ -578,7 +578,7 @@ fn shielded_account_balance_matches_corpus() {
 #[test]
 fn unshielded_account_balance_matches_corpus() {
     let theirs = corpus_zkir("unshieldedAccountBalance");
-    let ours = manager::unshielded_account_balance().ir;
+    let ours = manager::Manager::unshielded_account_balance().ir;
     let key = unshielded_key(&acct1(), &colour1());
     let balance = 99u128;
     let mut ops = member(manager::UNSHIELDED_BALANCES, bytesn_value(32, &key), true);
@@ -605,7 +605,7 @@ fn unshielded_account_balance_matches_corpus() {
 #[test]
 fn account_record_matches_corpus() {
     let theirs = corpus_zkir("accountRecord");
-    let ours = manager::account_record().ir;
+    let ours = manager::Manager::account_record().ir;
     let acct = bytesn_value(32, &acct1());
 
     // Unregistered: one member read, the zero record.
@@ -690,7 +690,7 @@ fn account_record_matches_corpus() {
 #[test]
 fn deposit_unshielded_matches_corpus() {
     let theirs = corpus_zkir("depositUnshielded");
-    let ours = manager::deposit_unshielded().ir;
+    let ours = manager::Manager::deposit_unshielded().ir;
 
     let amount = 777u128;
     let prior = 1_000u128;
@@ -734,7 +734,7 @@ fn deposit_unshielded_matches_corpus() {
 #[test]
 fn deposit_unshielded_rejects_guard_failures() {
     let theirs = corpus_zkir("depositUnshielded");
-    let ours = manager::deposit_unshielded().ir;
+    let ours = manager::Manager::deposit_unshielded().ir;
     let key = unshielded_key(&acct1(), &colour1());
     let amount = 777u128;
 
@@ -792,7 +792,7 @@ fn deposit_shielded_matches_corpus() {
     use vault::prims::coin_commitment_of;
 
     let theirs = corpus_zkir("depositShielded");
-    let ours = manager::deposit_shielded().ir;
+    let ours = manager::Manager::deposit_shielded().ir;
 
     let coin_nonce = pad32("deposit-coin-nonce");
     let value = 4_000u128;
@@ -852,7 +852,7 @@ fn deposit_shielded_merge_matches_corpus() {
     use vault::prims::{coin_commitment_of, coin_nullifier_of, evolved_nonce};
 
     let theirs = corpus_zkir("depositShielded");
-    let ours = manager::deposit_shielded().ir;
+    let ours = manager::Manager::deposit_shielded().ir;
 
     let coin_nonce = pad32("deposit-coin-nonce-2");
     let pooled_nonce = pad32("pooled-coin-nonce");
@@ -1358,7 +1358,7 @@ fn native_gateway_reads(na: &[u8; 32]) -> (Vec<VmOp>, Vec<AlignedValue>) {
 #[test]
 fn execute_native_registration_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -1397,7 +1397,7 @@ fn execute_native_registration_matches_corpus() {
 #[test]
 fn execute_evm_registration_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let me = self_addr();
@@ -1480,7 +1480,7 @@ fn execute_evm_registration_matches_corpus() {
 #[test]
 fn execute_native_transfer_shielded_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -1557,7 +1557,7 @@ fn execute_native_transfer_shielded_matches_corpus() {
 #[test]
 fn execute_evm_transfer_unshielded_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let me = self_addr();
@@ -1678,7 +1678,7 @@ fn execute_evm_transfer_unshielded_matches_corpus() {
 #[test]
 fn execute_native_withdraw_shielded_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -1787,7 +1787,7 @@ fn execute_native_withdraw_shielded_matches_corpus() {
 #[test]
 fn execute_native_withdraw_unshielded_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -1860,7 +1860,7 @@ fn execute_native_withdraw_unshielded_matches_corpus() {
 #[test]
 fn execute_native_open_swap_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -2002,7 +2002,7 @@ fn execute_native_open_swap_matches_corpus() {
 #[test]
 fn execute_rejects_guard_failures() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
@@ -2069,7 +2069,7 @@ fn execute_rejects_guard_failures() {
 #[test]
 fn execute_native_named_swap_exact_spend_matches_corpus() {
     let theirs = corpus_zkir("execute");
-    let ours = manager::execute().ir;
+    let ours = manager::Manager::execute().ir;
 
     let sk = caller_sk();
     let na = owner_commitment(&sk);
