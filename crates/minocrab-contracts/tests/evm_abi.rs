@@ -615,8 +615,11 @@ fn a_flag_return_is_checked_and_a_number_is_not() {
 fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
     let mut c = Circuit3::new();
     let ok = BoolWire::<Private>::from_field_unchecked(c.arg::<FieldT>("ok"));
+    // The projection of a flag IS `()` — a TYPE equality, which is the
+    // whole claim: this line does not compile if `Success` is anything else.
+    #[allow(clippy::let_unit_value)]
     let projected: <Erc20Transfer as EvmCall>::Success = <Erc20Transfer as EvmCall>::map(&mut c, ok);
-    assert_eq!(projected, ());
+    let _: () = projected;
 
     let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
     let kept: <Erc4626Deposit as EvmCall>::Success = <Erc4626Deposit as EvmCall>::map(&mut c, n);

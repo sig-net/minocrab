@@ -370,3 +370,198 @@ arriving early.
 - =trust_base= — 2 passed, unregenerated: its closure is over the seven
   eDSL crates (=CRATES= at trust_base.rs:91) and =minocrab-contracts= is
   not one of them, so a new file here cannot make TRUST.md stale.
+
+* 10. As built — rungs B+C (2026-09-06)
+Built ADDITIVELY, as the brief required: a new module
+(=crates/minocrab-contracts/src/evm_flow.rs=, 900 lines), a new contract
+(=src/treasury.rs=, 148), a new suite (=tests/treasury.rs= + =tests/
+treasury/{model,ops}.rs=, 15 tests), and edits to =evm.rs= and the Ledger
+derive. =signet_flow::Pending= and the vault's seventeen circuits are
+untouched except for one added constructor; the 211-circuit dump is
+byte-identical for every pre-existing file.
+
+** The public surface
+=evm.rs= gains, beside rung A's three layers:
+- =pub fn always(c) -> Check<Private>= — the constantly-true predicate.
+  It lowers to =assert= on a copy of the immediate 1;
+  =fold_immediate_copies= rewrites the operand and =drop_true_asserts=
+  (3c17586) deletes the instruction, both inside =Builder3::finish=.
+  =tests/evm_abi.rs::always_is_folded_out_of_the_artifact= pins that the
+  artifact is instruction-identical to one that never wrote it, with
+  =is_true_on_a_wire_is_not_folded= as the negative control.
+- =pub trait FromReturn<W> { fn from_return(c, w: W) -> Self }= with a
+  blanket identity =impl<W> FromReturn<W> for W= and one other impl,
+  =impl<V: Vis3> FromReturn<Bool<V>> for ()=.
+- =pub struct Unit= as an =AbiType=: =Wire<V> = ()=, no word.
+- =EvmCall= gains =type Success: FromReturn<Wire<Private>>= (named per
+  call — stable Rust has no associated-type defaults), a REQUIRED
+  =fn succeeded(c, &Wire<Private>) -> Check<Private>=, and a defaulted
+  =fn map(c, Wire<Private>) -> Self::Success=.
+- The five call types: =Erc20Transfer= / =Erc20Approve= =succeeded= is
+  =is_true(*ok)= with =Success = ()=; =ExactOutputSingle= /
+  =Erc4626Deposit= / =Erc4626Redeem= are =always(c)= with
+  =Success = Uint<64, Private>=. The vault's deployed semantics are
+  "executed", so none of the three carries a business predicate; the
+  =shares.gt(0)= form is shown in =EvmCall::succeeded='s doctest instead.
+
+=evm_flow.rs= (new):
+- =pub const FAILURE_KIND: u8 = 3= — the MPC's fixed failure kind.
+- =pub trait Attestable: Copy + CircuitArg + CircuitBorsh<Private>= (a
+  blanket alias) and =pub type Ret<C>=.
+- =pub struct Contract<C>= — a =Bytes<20, Private>= newtype with the call
+  as a phantom marker, =CircuitArg= at the same one-slot wire shape as a
+  bare =Bytes<20>=, plus =Contract::<C>::from_address(c, Bytes<20, V>)=
+  for a callee held in a ledger cell.
+- =pub struct Succeeded<C>= / =pub struct Failed<C>= — the two tickets,
+  one wire shape (=requestId=, =respond=, =serializedOutput=), built by
+  one =macro_rules!= so they cannot drift apart.
+- =pub trait CommitTag { const PAD }=, =pub struct OwnerTag=,
+  =pub struct Commit<T, Tag>= — =signet_flow::Commit='s construction with
+  the domain moved from a =&str= argument to a type parameter.
+- =pub struct Owned<E> { owner: Commit<SecretKey, OwnerTag>, inner: E }=
+  with a hand-written =LedgerRepr= (the derive takes no generics).
+- =pub struct Pending<Call, Env, const WORDS: usize = 2>= with
+  =at_block_with_signet=, =record_path=, =LedgerWidth { WIDTH = 2,
+  KINDS = &[Call::KIND] }=, and =request= / =complete= / =refund= /
+  =request_owned::<L>= / =refund_to_owner::<L>=.
+
+=common.rs= gains =SigningPath::contract_path(c)=; =vault_path= is now a
+one-line delegation to it (same pad, zero movement). =signet.rs='s
+=verify_attestation_signature= became =pub= (=refund= verifies a digest
+it selected itself). =signet_flow.rs='s =file_request= became
+=pub(crate)= and =Pending= gained the third-argument-ignoring
+=at_block_with_signet=, doc-marked for rung D to delete.
+
+** The treasury's three circuits
+| circuit | k | rows |
+|---------+---+------|
+| =treasury::send= | 11 | 1619 |
+| =treasury::complete= | 15 | 25610 |
+| =treasury::refund= | 15 | 26008 |
+Seven ledger fields (=Signet='s five, then the slot's two), so under
+compactc's segment length: one-element paths, and the notification the
+MPC follows is depth 1.
+
+** The derive's behaviour, and its two errors
+=#[derive(Ledger)]= now scans the block for a field whose type's LAST
+PATH SEGMENT is =Signet= (spelling, not resolution — a proc macro sees
+tokens, so =signet_flow::Signet= and a =use= alias both match), computes
+its start with the same width-sum machinery every other field uses, and
+emits =at_block_with_signet(__TOTAL, start, signet_start)= for every
+field spelled =Pending=. Everything else keeps =at_block(__TOTAL,
+start)=. Two =syn::Error=s:
+- TWO =Signet= fields (whether or not a =Pending= is present): "wants
+  EXACTLY ONE =Signet= field per block … Two of them would give one
+  contract two MPC keys and two nonce sequences; delete this one."
+- a =Pending= with NO =Signet=: "a =Pending= slot needs the block's
+  =Signet= field, and this block has none. Add =pub signet: Signet,=…"
+Six new unit tests in =ledger.rs= (=expanded.contains= on the expansion,
+as the existing ones do) plus two =compile_fail= doctests in
+=evm_flow.rs=. A block with no =Pending= needs no =Signet= and its
+expansion is unchanged — which is why the 211-circuit dump did not move.
+
+** What =Failed<Call>= costs — §3's "cost: nil" was WRONG, and why
+§3 said "the failure payload and the executed-bool payload are each one
+limb, so digest, signature and lookup are shared". They are not. Per
+spec/borsh-subset.md §5 the MPC's failure output is
+=FailureResponse { kind: u8 }= — ONE byte, the kind itself, no payload —
+where an executed =transfer='s is =VaultResponse { kind, success }=, two.
+The signed preimages are therefore Poseidon over THREE and FOUR field
+elements, and Poseidon is not a stream: one hash cannot cover both.
+=Pending::refund= hashes the preimage both ways, selects the field
+element by the kind byte with a =cond_select=, and then upgrades and
+verifies ONCE. Measured: the second digest plus the select is 46 rows
+(a 3-limb =transient_hash= alone is 45). =refund= as a whole is 398 rows
+above =complete= (1.6%) at the same k=15 — the 46, plus the kind
+disjunction, the owner commitment's opening and =own_public_key=. The
+ECDSA verification the two share is ~25,000.
+
+** Six places the design of record needed adjusting
+1. §3.2's marker types are GONE (dmd, 2026-09-06, twice: first "a
+   function that takes the successful response and runs a predicate",
+   then D3 → D2 — delete the =AbiType::success= default too). Final
+   form is D2 + D4: a required =succeeded= plus a =Success= mapping with
+   an identity default. Recorded above.
+2. VISIBILITY. dmd's sketch spells =Wire<Public>= / =Check<Public>=.
+   The attested output arrives on a ticket, and a ticket is a
+   =CircuitArg=, so its wires are =Private= by construction — there is no
+   =Wire<Public>= to take. Built at =Private= throughout. Disclosing the
+   attested value inside =complete= would need a label, which belongs to
+   the contract, not the slot; the treasury discloses what it wants
+   after the fact, as the vault's settle circuits do.
+3. =Unit='s =word= is a build-time PANIC, where the hard rule prefers a
+   compile error. Making it one needs =Args= and =Return= to be
+   different traits (=AbiTuple= is over =AbiType=, so a =Unit= in an
+   argument list type-checks today and would file a silent zero word).
+   The panic carries a prescriptive message. RECORDED FOR DMD.
+   Second, smaller: =()= is not a =CircuitArg= or a =CircuitBorsh= in
+   minocrab-std, so a =Pending= over a =Unit=-return call cannot form a
+   ticket yet. Adding those two impls is a screenful in
+   =minocrab-std/src/v3/entry.rs= and =borsh.rs=; not done here, because
+   nothing in the corpus files a no-return call and the brief's slot work
+   is over =Erc20Transfer=.
+4. THE SIGNING PATH is the contract's constant, and the slot has no way
+   to hear it: =SigningPath::contract_path(c)= is =pad(32, "vault")= for
+   every lineage in this workspace, so the generalisation here is the
+   NAME. A per-contract pad wants the same home as the nonce and the gas
+   policy — §7.
+5. =Commit<T, Tag>= is ADDED BESIDE =signet_flow::Commit=, not
+   substituted for it. Migrating the vault's five call sites is
+   mechanical and byte-identical (the pad is the same string), but it is
+   an edit to circuits rung D owns, and the brief says those stay
+   unchanged until D.
+6. §0's =send= signature takes =(token, to, amount)=. The built one takes
+   =(evm_nonce, key_version, token, to, amount)=: §7's two values are
+   still the caller's, and §3 says so — the README example cannot hide
+   them until §7 gives them a home.
+
+** Gates (all run on this rung, on the merge of main at 3c17586)
+- The 211-circuit ZKIR dump, before and after: =diff -rq= reports ONLY
+  the three new files (=treasury__send.zkir=, =treasury__complete.zkir=,
+  =treasury__refund.zkir=). Every pre-existing circuit byte-identical.
+- =row_snapshot= and =interface_snapshot= regenerated: exactly three
+  added rows each, no existing row changed (=git diff= reviewed).
+- =cargo test -p minocrab-contracts= — green, all suites. Note that
+  =opaque_differential::the_vaults_own_initialize_now_flattens=, red on
+  the base this rung started from, is GREEN after merging main's M31
+  acceptance.
+- =cargo test -p minocrab-macros= — 57 passed (six new derive tests).
+- =cargo test --workspace= — 983 passed, 0 failed, across 108 targets.
+- =cargo test -p minocrab-contracts --doc= — 18 passed, 1 ignored:
+  eleven =compile_fail= blocks (the two rung-A ones, the two new
+  =EvmCall= ones, the ticket/slot mismatch, the =WORDS= mismatch, the
+  missing =Signet=, the two =Signet=s, the callee-vs-recipient swap, the
+  commitment tag mismatch, and rung A's four in =signet_flow=), each
+  beside the same code with the one change reverted where a positive twin
+  is meaningful.
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7 as
+  the untouched tree; zero from =evm.rs=, =evm_flow.rs= or =treasury.rs=.
+- =circuit_closure= — green (=treasury='s three circuits are picked up
+  through the derived =Treasury::CIRCUITS=, as M32 A intended).
+- =trust_base= — REGENERATED this time: =minocrab-macros/src/ledger.rs=
+  grew from 346 to 401 lines, which is a real TCB delta and the one line
+  of TRUST.md that moved.
+
+** The treasury suite, as a table
+=tests/treasury.rs= builds every =ProofPreimage= by hand — the Impact op
+stream, the argument slots, the witnesses, and a real secp256k1 signature
+over a real Poseidon attestation digest — and runs it through the
+simulator, the way =tests/vault_pending= does for the vault. Fifteen
+tests; the four rows that matter:
+
+| attestation             | complete | refund (owner) | refund (stranger) |
+|-------------------------+----------+----------------+-------------------|
+| this kind, flag =true=  | ACCEPT   | reject         | reject            |
+| this kind, flag =false= | reject   | ACCEPT         | reject            |
+| the MPC's failure kind  | reject   | ACCEPT         | reject            |
+| not in the map          | reject   | —              | —                 |
+
+The middle row is what the milestone is about, and it is the row the
+deployed vault gets wrong. =anyone_can_complete= pins the completion's
+private transcript as EMPTY — there is no secret in the circuit, so a
+stranger's proof is the same proof — and
+=a_failure_signature_does_not_verify_under_the_executed_kind= is the
+negative control for the two-preimage selection: relabelling a failure
+attestation's kind byte leaves its signature over the three-element
+preimage, and the four-element branch rejects it.

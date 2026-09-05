@@ -35,10 +35,13 @@ fn key(i: u8) -> Key {
 /// assumed, so a widened block fails here instead of silently diverging.
 pub fn field_path(field: u8) -> Vec<Key> {
     assert!(field < FIELDS, "field {field} is not one of the treasury's {FIELDS}");
-    assert!(
-        FIELDS <= SEGMENT,
-        "a block past {SEGMENT} fields is segmented and every path is two elements"
-    );
+    const {
+        assert!(
+            FIELDS <= SEGMENT,
+            "a block past compactc's segment length is segmented and every path \
+             is two elements — this builder emits one"
+        )
+    };
     vec![key(field)]
 }
 

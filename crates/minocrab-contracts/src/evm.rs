@@ -306,9 +306,10 @@ impl AbiType for Bytes32 {
 /// resolves as its FAILURE kind, which would refund a transfer that MOVED
 /// the tokens (notes/evm-calls.org §3.1, the dangerous direction).
 ///
-/// `Wire<V> = ()`: no slot, no word, no verdict to read — [`Self::success`]
-/// is [`always`], because for a call with nothing to say, executing IS
-/// succeeding and there is no flag to be fooled by.
+/// `Wire<V> = ()`: no slot, no word, no verdict to read. A call returning
+/// it writes [`always`] for its [`EvmCall::succeeded`], because for a call
+/// with nothing to say, executing IS succeeding and there is no flag to be
+/// fooled by.
 ///
 /// A RETURN TYPE ONLY. It has no ABI word, and [`Self::word`] says so
 /// rather than encoding a zero: a `Unit` in an argument tuple is a mistake,
@@ -706,8 +707,8 @@ impl EvmCall for Erc4626Redeem {
 
 // ---- did it work? ------------------------------------------------------------
 
-/// A `Check` that is CONSTANTLY TRUE — what [`AbiType::success`] returns for
-/// a return type with no failure signal of its own.
+/// A `Check` that is CONSTANTLY TRUE — the [`EvmCall::succeeded`] of a call
+/// whose return carries no failure signal of its own.
 ///
 /// It lowers to `assert` on the IMMEDIATE 1, which
 /// `minocrab_ir::v3::passes::drop_true_asserts` removes in
