@@ -616,6 +616,23 @@ impl<A: CircuitArg, B: CircuitArg> CircuitArg for Either<A, B, Private> {
     }
 }
 
+/// Compact's `[]` value (Rust's `()`) as an argument leaf: a ZERO-SLOT
+/// argument — the attested value of a call that returns nothing.
+///
+/// `()` already has a [`CircuitAbi`] (`SLOTS = 0`, no atoms, no prims); this
+/// impl is the missing other half, needed so a `Pending` over a
+/// `Unit`-returning call can form a ticket (notes/evm-calls.org §10, item 3,
+/// second paragraph — recorded there as not done because nothing in the
+/// corpus filed a no-return call). `declare` touches no slots and
+/// `push_slots` pushes nothing, which is law 1 and law 3 satisfied by
+/// vacuously doing nothing: there is nothing to declare and nothing to
+/// constrain.
+impl CircuitArg for () {
+    fn declare(_c: &mut Circuit3, _path: &ArgPath) -> Self {}
+
+    fn push_slots(&self, _slots: &mut Vec<Wire3<FieldT, Private>>) {}
+}
+
 // ---- CircuitArgs ------------------------------------------------------------
 
 /// A circuit's whole argument list: the per-circuit struct whose fields are

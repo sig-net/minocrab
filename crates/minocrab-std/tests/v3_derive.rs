@@ -187,6 +187,38 @@ fn the_derived_labels_are_the_camel_cased_field_paths() {
     assert_eq!(zkir(&hand), zkir(&derived));
 }
 
+// ---- a unit field derives fine (notes/evm-calls.org §10, item 3) -----------
+
+/// A `()` field costs no slot, so the derive over one has to declare and
+/// lower exactly like the same struct without it.
+#[derive(CircuitArg)]
+struct DerivedWithUnit {
+    evm_nonce: Uint<64>,
+    marker: (),
+    flag: Bool,
+}
+
+#[test]
+fn a_derived_struct_with_a_unit_field_declares_fine() {
+    assert_eq!(<DerivedWithUnit as CircuitArgs>::SLOTS, 2);
+
+    let derived = entry(|c, a: DerivedWithUnit| {
+        let x = c.add(a.evm_nonce.field(), a.flag.field());
+        c.assert_bits(x, 65);
+    });
+    let hand = {
+        let mut c = Circuit3::new();
+        let evm_nonce = c.arg::<FieldT>("evmNonce");
+        let flag = c.arg::<FieldT>("flag");
+        c.assert_bits(evm_nonce, 64);
+        c.assert_boolean(flag);
+        let x = c.add(evm_nonce, flag);
+        c.assert_bits(x, 65);
+        c.finish(true)
+    };
+    assert_eq!(zkir(&derived), zkir(&hand));
+}
+
 /// A derived struct is usable both ways: as a whole argument list (fields at
 /// the root) and as one argument nested under a path.
 #[test]

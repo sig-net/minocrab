@@ -1090,3 +1090,70 @@ fn the_transient_flavors_disagree() {
     assert_ne!(borsh_digest, fab_digest);
     assert_eq!(fab_digest[0], native_transient_hash(&record_slots(&spec)));
 }
+
+// ---- the unit leaf: zero-width Borsh (notes/evm-calls.org §10, item 3) --------------
+//
+// `()` is Compact's `[]` value, the attested value of a call that returns
+// nothing — needed so a `Pending` over a `Unit`-returning call can form a
+// ticket. `borsh::to_vec(&())` is the empty byte string; the subset has to
+// say the identical thing.
+
+#[test]
+fn unit_is_a_zero_width_borsh_value() {
+    assert_eq!(<() as CircuitBorsh<Private>>::LEN, 0);
+    assert_eq!(borsh::to_vec(&()).expect("serializes"), Vec::<u8>::new());
+    assert!(<() as CircuitBorsh<Private>>::layout().is_empty());
+
+    let mut limbs = Limbs::<Private>::new();
+    ().push_limbs(&mut limbs);
+    assert!(limbs.is_empty());
+}
+
+/// `()` satisfies the strict extension the design of record asks for, the
+/// same way every leaf and derived struct does.
+#[test]
+fn unit_is_a_circuit_borsh_arg() {
+    fn assert_borsh_arg<T: CircuitBorshArg>() {}
+    assert_borsh_arg::<()>();
+}
+
+/// A twin pair, one with a `()` field spliced in: same `LEN`, same layout,
+/// and byte-identical packed bytes — a unit field costs nothing.
+#[derive(CircuitBorsh)]
+struct WithMarker {
+    version: Uint<8, Private>,
+    marker: (),
+    flag: Bool<Private>,
+}
+
+#[derive(CircuitBorsh)]
+struct WithoutMarker {
+    version: Uint<8, Private>,
+    flag: Bool<Private>,
+}
+
+#[test]
+fn a_unit_field_costs_no_borsh_width_or_bytes() {
+    assert_eq!(
+        <WithMarker as CircuitBorsh<Private>>::LEN,
+        <WithoutMarker as CircuitBorsh<Private>>::LEN
+    );
+    assert_eq!(
+        <WithMarker as CircuitBorsh<Private>>::layout(),
+        <WithoutMarker as CircuitBorsh<Private>>::layout()
+    );
+
+    let with_marker = ir_of(|c| {
+        let record = <WithMarker as CircuitArg>::declare(c, &ArgPath::root("record"));
+        record.constrain(c);
+        record.constrain_canonical(c);
+        let _ = to_bytes::<32, _, _>(c, &record);
+    });
+    let without_marker = ir_of(|c| {
+        let record = <WithoutMarker as CircuitArg>::declare(c, &ArgPath::root("record"));
+        record.constrain(c);
+        record.constrain_canonical(c);
+        let _ = to_bytes::<32, _, _>(c, &record);
+    });
+    assert_eq!(with_marker, without_marker);
+}
