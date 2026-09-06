@@ -1,0 +1,201 @@
+#+title: The EVM interface library (M38): ERC-20 and the interfaces beyond it
+
+* 0. The ask (dmd, 2026-09-06)
+"I want our library to have a generic ERC-20 constructor … what are the
+most popular interfaces for contracts on Ethereum beyond ERC-20, and can
+we define [them]?" and "put that in our vault contract and our examples".
+Built on M37's =AbiType= / =EvmCall= / =Pending<Call, Env, WORDS>= layer
+(notes/evm-calls.org §1–§3, as built §9–§11). This note is the design
+of record for M38; the as-built sections follow per rung.
+
+* 1. What M37 D left on the call type that is NOT a fact about the call
+After rung D (evm-calls.org §11) =EvmCall= carries eight things. Six are
+facts about the Solidity function and belong to a LIBRARY call type:
+=NAME=, =Args=, =Return=, =Success= + =succeeded= (the rule by which the
+return says it worked — an ERC-20 =transfer='s flag, a numeric return's
+"executed is success"), =signature()= for the struct-argument shape, and
+=GAS_LIMIT= (a per-function default; §2.3). Two are facts about ONE
+DEPLOYMENT's protocol and are why D needed =Erc20TransferAsDeposit= and
+=Erc20TransferAsWithdrawal= — the same Solidity function twice:
+- =KIND= — the response kind byte. The vault files =transfer= under
+  CLAIM (0) for a deposit and WITHDRAW (1) for a withdrawal; the
+  treasury files its one =transfer= under 1 too (it reuses the WITHDRAW
+  byte — a kind is per deployment, so a treasury may pick any). A library =erc20::Transfer=
+  cannot own a kind.
+- =RETURN_FIELD= — the deployed record's NAME for the attested return
+  (=success=, =amountIn=, =shares=, =assets=; =None= → the anonymous
+  =output=). A settle circuit's argument slot is named after it, so it
+  is part of a deployment's interface, not of =transfer=.
+Both move to the SLOT. That is rung A.
+
+* 2. Design of record
+** 2.1 The interface marker
+#+begin_src rust
+/// A callee interface: a set of functions an EVM contract claims to expose.
+/// Sealed within the library's own set (Erc20, Erc4626, UniswapV3Router,
+/// Weth, AaveV3Pool, Erc721, UsdtLike …); OPEN to contracts — a contract
+/// declares its own callee marker in one line.
+pub trait Interface: 'static {}
+
+/// Inheritance. `I: Extends<Base>` says a `Contract<I>` may be handed a
+/// `Base` call. Reflexive by the blanket impl; ERC-4626 IS an ERC-20:
+/// `impl Extends<Erc20> for Erc4626 {}`. Weth IS an ERC-20 likewise.
+pub trait Extends<Base: Interface>: Interface {}
+impl<I: Interface> Extends<I> for I {}
+
+pub trait EvmCall {
+    type Callee: Interface;      // NEW — erc20::Transfer has Callee = Erc20
+    …                            // NAME, Args, Return, Success, succeeded, signature, GAS_LIMIT stay
+}
+
+/// An address that CLAIMS interface `I` (was `Contract<Call>`).
+pub struct Contract<I: Interface> { address: Bytes<20, Private>, … }
+#+end_src
+=request= / =request_with= take =callee: Contract<I>= with =I:
+Extends<Call::Callee>=. A =transfer= filed against a
+=Contract<UniswapV3Router>= is a missing trait impl (the ladder's first
+rung); a =Contract<Erc4626>= takes both =erc4626::Deposit= and
+=erc20::Approve=, which is exactly the vault's stata token
+(=approve_stata= approves an ERC-20 allowance ON the ERC-4626 vault).
+Coherence: =Extends= has a blanket reflexive impl, so a library
+=impl Extends<Erc20> for Erc4626= is fine (distinct types), and a
+downstream crate may write =impl Extends<Erc20> for MyToken= for its own
+marker. It may NOT write =impl Extends<Erc20> for Erc4626= (orphan rule)
+— the library decides its own inheritance, which is right.
+
+** 2.2 The filing — where KIND and RETURN_FIELD go
+DECISION: a =Filing= trait beside =EvmCall=, and a =Kinded<Call, KIND>=
+wrapper as its off-the-shelf impl. NOT a fourth parameter on =Pending=.
+#+begin_src rust
+/// HOW ONE SLOT FILES ITS CALL: the call plus the two per-deployment facts.
+pub trait Filing: 'static {
+    type Call: EvmCall;
+    /// The response kind byte this slot's records carry. A wire commitment
+    /// (the MPC echoes it); distinct across a block (the Ledger derive's
+    /// `assert_distinct_kinds` reads it from here, unchanged).
+    const KIND: u8;
+    /// The deployed record's name for the attested return; `None` is the
+    /// anonymous `output`. Names a settle circuit's argument slot.
+    const RETURN_FIELD: Option<&'static str> = None;
+}
+
+/// The one-line filing: this call at this kind, anonymous return.
+pub struct Kinded<Call, const KIND: u8>(PhantomData<fn() -> Call>);
+impl<Call: EvmCall, const KIND: u8> Filing for Kinded<Call, KIND> {
+    type Call = Call;
+    const KIND: u8 = KIND;
+}
+
+pub struct Pending<F: Filing, Env, const WORDS: usize> { … }   // was Pending<Call, Env, WORDS>
+pub struct Succeeded<F: Filing> { … }                          // was Succeeded<Call>
+pub struct Failed<F: Filing> { … }
+#+end_src
+WHY the wrapper and not =Pending<Call, Env, WORDS, KIND>=: the kind is
+consumed by the TICKETS too (=complete= asserts =kind == KIND=, =refund=
+selects the preimage by it), so a slot-parameter kind means
+=Succeeded<Call, KIND>= on every settle signature, and WORDS is already
+a number the author writes that the type should have inferred
+(evm-calls.org §3). One name per slot, written once:
+#+begin_src rust
+/// The treasury.
+type Transfer = Kinded<erc20::Transfer, 1>;
+pub transfers: Pending<Transfer, Owned<Amount>, 2>,
+pub fn complete(c, ticket: Succeeded<Transfer>) …
+#+end_src
+WHY =RETURN_FIELD= cannot ride on =Kinded=: a =&'static str= is not a
+const-generic type on stable Rust. The vault, the one consumer that needs
+the deployed names, writes four =Filing= impls of its own (three lines
+each):
+#+begin_src rust
+pub struct Withdrawal;
+impl Filing for Withdrawal {
+    type Call = erc20::Transfer;
+    const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+}
+#+end_src
+and =Erc20TransferAsDeposit= / =…AsWithdrawal= are deleted — they were
+this trait spelled as two call types. Everything that read =Call::KIND=
+/ =Call::RETURN_FIELD= in =evm_flow= reads =F::KIND= / =F::RETURN_FIELD=;
+everything that read =Call::NAME= etc. reads =F::Call::…=. The record,
+the notification and the dump do not change: the kind byte and the
+field name are the same bytes from a different const.
+
+** 2.3 What stays on the call, and why
+- =GAS_LIMIT= — a per-function default (a =transfer= costs what a
+  transfer costs). The vault's five values (=ERC20_CALL_GAS=,
+  =SWAP_GAS=, =LENDING_GAS=) BECOME the library defaults, so re-homing
+  is zero movement. A deployment that needs another limit uses
+  =Envelope::caller= today; a =Filing::GAS_LIMIT= override with the
+  call's as default is the cheap extension if a consumer asks
+  (recorded, not done).
+- =Success= / =succeeded= — the outcome rule is the function's (M37
+  §3.2, D2/D4), not the deployment's.
+- =signature()= — the struct-argument spelling is the function's.
+
+** 2.4 Module layout (rungs A–C)
+#+begin_src text
+crates/minocrab-contracts/src/evm.rs        AbiType, AbiTuple, AbiArgs, EvmCall, Filing, Kinded,
+                                            Interface, Extends, Envelope, build_tx*  (the layer)
+crates/minocrab-contracts/src/evm/erc20.rs      Erc20, UsdtLike; Transfer, Approve, TransferFrom,
+                                                IncreaseAllowance, DecreaseAllowance, Permit (B)
+crates/minocrab-contracts/src/evm/weth.rs       Weth: Extends<Erc20>; Deposit, Withdraw (B)
+crates/minocrab-contracts/src/evm/erc4626.rs    Erc4626: Extends<Erc20>; Deposit, Mint, Withdraw, Redeem (C)
+crates/minocrab-contracts/src/evm/uniswap_v3.rs UniswapV3Router; ExactInputSingle, ExactOutputSingle (C)
+crates/minocrab-contracts/src/evm/aave_v3.rs    AaveV3Pool; Supply, Withdraw, Borrow, Repay (C)
+crates/minocrab-contracts/src/evm/erc721.rs     Erc721; TransferFrom, Approve, SetApprovalForAll (C)
+#+end_src
+Rung A creates =erc20=, =erc4626= and =uniswap_v3= with only the five
+M37 calls re-homed (=erc20::{Transfer, Approve}=, =erc4626::{Deposit,
+Redeem}=, =uniswap_v3::ExactOutputSingle=); the old names at the crate
+root are DELETED, not aliased — two spellings of one call is the kind of
+cruft M36 exists to remove, and every user is in this workspace.
+Naming: the call types are named after the Solidity function in
+UpperCamel (=Transfer=, =ExactOutputSingle=), the module after the
+interface. =erc20::Transfer= reads as the wire name it hashes to.
+
+** 2.5 Gates for rung A
+- ZERO MOVEMENT: the full ZKIR dump (=MINOCRAB_ZKIR_DUMP=, tests/zkir_dump.rs)
+  byte-identical before/after (the
+  vault's seventeen, the treasury's three, everything else);
+  =row_snapshot= and =interface_snapshot= unchanged — the settle
+  circuits' argument names come from =RETURN_FIELD= and must not move.
+- The Ledger derive's =assert_distinct_kinds= still fires: a block with
+  two slots at one KIND is E0080 (the existing derive test, re-pointed
+  at =Kinded=).
+- compile_fail: (i) =erc20::Transfer= requested on a
+  =Contract<UniswapV3Router>=; (ii) =Succeeded<Kinded<erc20::Transfer,
+  1>>= presented to a slot filed at kind 2 (distinct types); (iii) a
+  =Pending<Kinded<…>, Env, WORDS>= with the wrong WORDS (the existing
+  inline-const gate, re-spelled). And the positive twin: an
+  =erc20::Approve= on a =Contract<Erc4626>= compiles (inheritance).
+- The existing evm/evm_flow/treasury/vault suites green with the new
+  spellings; README's cross-chain block re-verified verbatim against
+  treasury.rs (the D script).
+
+* 3. Beyond rung A — pointers for B–G
+- B: ERC-2612 =permit(owner, spender, value, deadline, v, r, s)= is seven
+  static words (=Address, Address, U256, U256, U8, Bytes32, Bytes32=) —
+  =U8= joins =AbiType= (the corpus has U24/U160 for the same reason).
+  =UsdtLike= is a sibling INTERFACE whose =Transfer= / =Approve= have
+  =Return = Unit= and =succeeded = always= — the §3.1 hazard in
+  evm-calls.org is the reason it is a distinct marker: a USDT address
+  handed to =Contract<Erc20>= would have its (absent) return read as a
+  flag. =()= is not yet a =CircuitArg= (M37 finding iii), so a =Unit=
+  ticket needs that first — B is where it lands or is recorded.
+- C: Uniswap's =exactInputSingle= is the same nested-tuple =signature()=
+  override as =ExactOutputSingle=; Aave v3 =supply(asset, amount,
+  onBehalfOf, referralCode)= has a =uint16= (=U16=); =borrow= / =repay=
+  carry =interestRateMode: uint256=.
+- D: the alloy oracle — =alloy-sol-types= is what ~/mpc depends on; a
+  test crate (or a dev-dependency of minocrab-contracts) declares each
+  interface with =sol!= and asserts our selector and words against
+  =SolCall::SELECTOR= / =abi_encode= on generated values. Not our
+  encoder as its own witness.
+- E: dynamic types are a WORDS problem — =Bytes<N>= is ceil(N/32)+2
+  words at a fixed head offset, so the record stays static-width;
+  =string= likewise; =T[]= with a length bound. Out until a consumer.
+- G: the vault's four =Filing= impls (§2.2) and the treasury's
+  =type Transfer = Kinded<erc20::Transfer, 1>= ARE rung G's "no
+  contract-local call types remain" — landed by A, re-checked by G
+  with the README side-by-side.
