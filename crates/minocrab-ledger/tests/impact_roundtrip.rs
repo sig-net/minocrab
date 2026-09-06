@@ -203,7 +203,7 @@ fn the_builders_round_trip() {
     let read = LedgerValue::bytes(32, vec![ImpactElem::Imm(Fr::from(3u64)); 2]);
 
     let mut streams: Vec<Vec<ImpactOp>> = Vec::new();
-    streams.push(vec![dup(0), idx_field(4), popeq(false, &read)]);
+    streams.push(vec![dup(0), idx_one(false, false, 4), popeq(false, &read)]);
     streams.push(counter_increment(6, 1));
     streams.push(cell_write(2, &value));
     streams.push(map_insert(9, &key, &value));
