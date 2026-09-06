@@ -588,6 +588,130 @@ inventory wants), never under. The hand-back to the draft's authors
 (their §4 tables replaced by the frozen lines, plus the four lending
 circuits and the two V5 facts) is dmd's to send.
 
+** 7.3 The API lineage's inventory (2026-09-06): tests/leakage_inventory_pending.rs
+§7.2's walk now runs over BOTH lineages. =crates/minocrab-contracts/
+tests/leakage_inventory_pending.rs= is the second frozen table: the
+same derivation over =erc20_vault_pending=, the vault re-expressed on
+=evm_flow::Pending= (M37 rung D, notes/evm-calls.org §11), whose
+seventeen circuits are read off =Vault::CIRCUITS= — the =#[contract]=-
+derived list =tests/circuit_closure.rs= gates — in declaration order.
+1,203 frozen lines; regenerate with =--ignored regenerate_leakage_
+inventory_pending=.
+
+ONE WALK, TWO TABLES. The provenance closure, the label taint, the
+witness inventory and the literal counting moved to =tests/leakage/
+mod.rs= (a shared test module in the =tests/support= / =tests/vault=
+style, =mod leakage;=); both binaries call =leakage::inventory(name,
+&compiled, twin, literals)=. The compat table did NOT move — its
+1,323 generated lines are byte-identical across the refactor, checked
+both by diffing that region against HEAD and by running
+=the_leakage_inventory_is_frozen= without regenerating.
+What is per lineage is exactly three things: the circuit's NAME, the
+TWIN (=Some(compactc's artifact)= / =None=), and the LITERAL list.
+
+WHY A SEPARATE TABLE rather than more rows in the first: the two are
+two artifacts of two deployments. The compat port is PI-equal to
+compactc's and its table is a claim about a DEPLOYED contract, checked
+line by line against compactc's own lowering; this lineage proves its
+OWN statement (twenty-two ledger fields, =Pending= slots, the
+=Succeeded=/=Failed= split) and has no compactc twin at all. Its
+=corpus twin= line says so in words instead of comparing, and
+=the_corpus_twin_has_the_same_surface= exists only on the compat side.
+
+*** The eight settles, as the table reads them
+The exit criterion M37 rung D wrote down — "leakage inventory shows no
+settle consuming an unchecked secret" — is now an assertion over the
+generated lines rather than a claim in prose, and it HOLDS. Per settle
+(witness ordinals as the table names them):
+
+| circuit             | witnesses | w0,w1 (the secret)             | w2,w3           |
+|---------------------+-----------+--------------------------------+-----------------|
+| =complete_withdraw= | 0         | —                              | —               |
+| =refund_withdrawal= | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =complete_swap=     | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =refund_swap=       | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =complete_supply=   | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =refund_supply=     | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =complete_redeem=   | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+| =refund_redeem=     | 4         | assert 1 + constrain_bits 1    | ownPublicKey    |
+None is guarded (=guarded 0= in every settle header). In all seven
+that read a secret, =w0,w1= "reaches labels: none | reaches impact:
+none" — the secret is ASSERTED, never published — and its assert
+depends besides on =in:%ticket_requestId_hi.0=, =in:%ticket_requestId_
+lo.1= and the stored owner commitment (=pi34,pi35= for withdraw and
+supply, =pi44,pi45= swap, =pi36,pi37= redeem): the =Commit<T,
+OwnerTag>= open against the request id, and NOTHING ELSE. =w2,w3= are
+=own_public_key='s two limbs, disclosed as the mint recipient ("own
+public key as refund/swap/supply/redeem recipient") and range-checked;
+the completeness gate covers them as published components.
+
+THE CONTRAST WITH THE COMPAT LINEAGE is the whole of Gap 2, read off
+the two artifacts:
+- =completeWithdraw= (compat): =witnesses 4 (guarded 2) | impact 48
+  (guarded 25)=; =w0,w1='s assert also depends on
+  =in:%serializedOutput.9= — the attested outcome — and =w2,w3= are
+  GUARDED, hoisted for a branch that might not be taken.
+- =complete_withdraw= (API): =witnesses 0 (guarded 0) | impact 27
+  (guarded 0)=, no guarded op at all, and =literals "vault" x0
+  "vault:user:" x0 "vault:refund:" x0= — it opens no commitment
+  because there is nothing to gate: the tokens have left the vault's
+  EVM account and nothing is minted. The outcome picks the circuit, so
+  the consumption and the check cannot come apart.
+
+THE THREE COMPLETIONS THAT KEEP AN OWNER GATE (=complete_swap=,
+=complete_supply=, =complete_redeem=) show in the table as a settle
+that is INDISTINGUISHABLE from its =refund_*= twin in witness shape:
+4 witnesses, the same assert on the same commitment, the same
+=vault:refund:= x1. That is the recorded deviation
+(notes/evm-calls.org §11): they mint proceeds to =own_public_key=, so
+a completion anyone may prove is a completion anyone may take the
+proceeds of; the gate is CHECKED before anything else happens, which
+is a different thing from a hoisted secret. The table cannot tell
+those two apart by itself — which is why the gate below is written to
+catch the shape that matters.
+
+*** The three gates
+1. =the_leakage_inventory_is_frozen= — the table is current.
+2. =no_unlabelled_witness_dependent_public_component= — completeness,
+   the same hard assert as §7.2: green on all seventeen.
+3. =no_settle_consumes_an_unchecked_secret= — M37 rung D's, in two
+   parts: no settle's witness line says =checks: unchecked=, AND a
+   witness that reaches NO declared label (one the circuit keeps
+   rather than publishes) reaches an =assert=, not merely the
+   =constrain_bits= every witnessed limb gets for free. Part two is
+   what makes the gate mean something: without it a bit decomposition
+   would satisfy it. Beside it =complete_withdraw_consumes_no_witness=
+   pins the empty private transcript (and the header's =witnesses 0=).
+   The gate is NOT vacuous: seven circuits in the same table DO carry
+   an =unchecked= witness — the five request circuits and the two
+   =approve*=, whose =w2= (=w0= in the approves) is the xcall
+   commitment randomness, by design and exactly as in §7.2's V5. It is
+   the settles that must not.
+
+*** Two smaller differences worth naming
+LITERALS ARE THE LIBRARY'S, not the contract's: this lineage's source
+names no pad. =pad(32, "vault")= is =common::SigningPath::contract_
+path=, which =Pending::request= files without asking the caller
+(notes/evm-calls.org §11 finding 3); =pad(32, "vault:user:")= is
+=common::commitment_transient=; =pad(32, "vault:refund:")= is
+=Commit<T, OwnerTag>='s tag pad. The counts read: ="vault"= ×2 in
+=withdraw=, =swap=, =supply=, =redeem= and the two =approve*=, ×0
+everywhere else — including =deposit=, which signs from the
+DEPOSITOR's commitment rather than the contract's path; ="vault:user:"= ×1 in =initialize=, =deposit= and
+=claim= alone; ="vault:refund:"= ×1 in the four request circuits that
+build an owner commitment and in the seven settles that open one — ×0
+in =complete_withdraw= and in the two =approve*=, which file into a
+=Fired= slot that has no settle method and therefore no owner.
+
+THE PUBLIC-INPUT COUNTS ARE MUCH HIGHER (38-52 per settle, against
+9-13 on the compat side) for a reason that is not leakage: a =Pending=
+settle READS the stored request record and environment out of its slot
+(each read is a =public_input=), where the compat settle took those
+fields as circuit ARGUMENTS. The values are public either way; what
+moved is which stream carries them, and the =component= lines still
+show every published component as a circuit input, a public read, or
+the labelled =ownPublicKey= witness — §7.2's V7 reading, unchanged.
+
 * 8. The Lean package: where, what, gates
 
 WHERE: a third lake package at =crates/minocrab-zkir/lean/=
