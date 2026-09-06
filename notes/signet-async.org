@@ -910,7 +910,24 @@ baseline, EMPTY. Workspace green, clippy clean.
 
 =crates/minocrab-contracts/tests/signet_round_trip.rs=:
 
-: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+: test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+THE PAIRS CHAIN THROUGH STATE. Six of them — deposit/claim,
+withdraw/completeWithdraw, withdraw/refundWithdrawal, swap/completeSwap,
+supply/completeSupply, redeem/completeRedeem — run the request, take the
+post-state the Impact VM produced, and run the settle against THAT. Nothing
+crosses between the halves but a =StateValue=: the settle's reads (the
+record, the environment, the response key) are answered out of what the
+request wrote, the transcript the executor derives is the model's op for op,
+and the reference VM accepts the chained preimage. This is the first time a
+settle in this workspace has read a record it was not handed.
+
+The one thing still SUPPLIED rather than chained is the signature: a settle
+takes the model's, under the key its pre-state stores, because the
+attestation =SigNetSim= produces cannot verify (the finding below). Every
+other byte of a settle now comes from state.
+
+The responder half, against that same state:
 
 - =the_mpc_resolves_the_record_the_request_circuit_filed= — the deposit
   circuit runs against a real pre-state, the executor derives its transcript

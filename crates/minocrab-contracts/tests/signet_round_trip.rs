@@ -16,6 +16,12 @@
 //!    from the bytes it decoded, and signs. Nothing is handed to it: every
 //!    byte it reads was written by the circuit into a `StateValue`.
 //!
+//! It also chains the pairs THROUGH state: a request circuit's post-state is
+//! the state its settle circuit reads, with nothing carried between them but
+//! a `StateValue`. That is what M35 D's `cargo test` speed asks for, and it
+//! is the first time a settle in this workspace has read a record it was not
+//! handed.
+//!
 //! The adversarial responders live here too, each hitting the reader's own
 //! drop reason by name.
 //!
@@ -25,6 +31,7 @@
 //! file. See notes/signet-async.org §10.
 
 use midnight_onchain_state::state::StateValue;
+use midnight_transient_crypto::proofs::Zkir;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault_pending::{self as pending, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE};
 use minocrab_sim::v3::exec::{self, Call};
@@ -274,5 +281,141 @@ fn the_typed_settle_digest_is_not_the_digest_the_mpc_signs() {
         per_leaf, mpc,
         "if this now holds, the typed digest has been reconciled with the MPC — \
          re-read notes/signet-async.org §10 and close the round trip"
+    );
+}
+
+// ---- the pairs, chained through state ---------------------------------------
+
+/// Run `request_ir` against `pre`, then `settle_ir` against the state that
+/// left behind, and check the settle's transcript against the model's.
+///
+/// Nothing crosses between the halves but a `StateValue`: the settle's
+/// reads — the record, the environment, the response key — are answered out
+/// of what the request wrote, not out of a scenario the test built.
+fn chain(
+    request_ir: &minocrab_zkir::v3::IrSource,
+    request_pi: &midnight_transient_crypto::proofs::ProofPreimage,
+    request_pre: &vault_pending::exec::PreState,
+    settle_ir: &minocrab_zkir::v3::IrSource,
+    settle_pi: &midnight_transient_crypto::proofs::ProofPreimage,
+    settle_ops: &[vault_pending::prims::VmOp],
+    self_addr: &[u8; 32],
+) {
+    let post = post_state_of(
+        request_ir,
+        &request_pi.inputs,
+        &request_pi.private_transcript,
+        request_pi
+            .communications_commitment
+            .expect("a request commits")
+            .1,
+        request_pre,
+        self_addr,
+    );
+
+    let ctx = exec::context(post, *self_addr);
+    let mut call = Call::new(&settle_pi.inputs, &settle_pi.private_transcript);
+    if let Some((_, rand)) = settle_pi.communications_commitment {
+        call = call.with_comm_rand(rand);
+    }
+    let settled = exec::execute(settle_ir, &call, &ctx)
+        .expect("the settle circuit accepts the state its request left");
+
+    assert_eq!(
+        settled.ops, settle_ops,
+        "the settle's transcript against the REQUEST's post-state is the model's"
+    );
+    assert_eq!(
+        settled.preimage.public_transcript_outputs, settle_pi.public_transcript_outputs,
+        "and every value it read came out of that state"
+    );
+    settle_ir
+        .check(&settled.preimage)
+        .expect("the reference VM accepts the chained settle");
+}
+
+#[test]
+fn deposit_then_claim_chains_through_state() {
+    let c = ClaimScenario::new();
+    chain(
+        &pending::Vault::deposit().ir,
+        &c.d.preimage(),
+        &c.d.pre_state(),
+        &pending::Vault::claim().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.d.env.self_addr,
+    );
+}
+
+#[test]
+fn withdraw_then_complete_chains_through_state() {
+    let c = CompleteWithdrawScenario::new();
+    chain(
+        &pending::Vault::withdraw().ir,
+        &c.w.preimage(),
+        &c.w.pre_state(),
+        &pending::Vault::complete_withdraw().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.w.env.self_addr,
+    );
+}
+
+#[test]
+fn swap_then_complete_chains_through_state() {
+    let c = CompleteSwapScenario::new();
+    chain(
+        &pending::Vault::swap().ir,
+        &c.s.preimage(),
+        &c.s.pre_state(),
+        &pending::Vault::complete_swap().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.s.env.self_addr,
+    );
+}
+
+#[test]
+fn supply_then_complete_chains_through_state() {
+    let c = CompleteSupplyScenario::new();
+    chain(
+        &pending::Vault::supply().ir,
+        &c.s.preimage(),
+        &c.s.pre_state(),
+        &pending::Vault::complete_supply().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.s.env.self_addr,
+    );
+}
+
+#[test]
+fn redeem_then_complete_chains_through_state() {
+    let c = CompleteRedeemScenario::new();
+    chain(
+        &pending::Vault::redeem().ir,
+        &c.s.preimage(),
+        &c.s.pre_state(),
+        &pending::Vault::complete_redeem().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.s.env.self_addr,
+    );
+}
+
+/// The refund half of the same pair: an attested failure consumes the very
+/// record the withdrawal filed, out of the same post-state.
+#[test]
+fn withdraw_then_refund_chains_through_state() {
+    let c = RefundWithdrawalScenario::new();
+    chain(
+        &pending::Vault::withdraw().ir,
+        &c.w.preimage(),
+        &c.w.pre_state(),
+        &pending::Vault::refund_withdrawal().ir,
+        &c.preimage(),
+        &c.ops(),
+        &c.w.env.self_addr,
     );
 }
