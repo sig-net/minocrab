@@ -2245,7 +2245,7 @@ calls them, and by what the fixed-width ABI layer can express.
       stay out until a consumer asks.
 - [X] F. (2026-09-06: README's cross-chain section gains the
       interface table — eight interfaces, every call, words, return,
-      all static — and a paragraph classifying the 23 =compile_fail=
+      all static — and a paragraph classifying the 22 =compile_fail=
       doc-tests rungs A–C wrote beside their rules (wrong callee incl.
       both sibling directions; wrong arity / shape incl. =Unit= in Args;
       the "dynamic call on a static slot" gate is VACUOUS until rung E

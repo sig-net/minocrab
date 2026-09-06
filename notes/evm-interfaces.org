@@ -1042,8 +1042,8 @@ callee, wrong arity, a dynamic call on a static-only slot)".
   compactc-calldata control are cited beside it.
 - THE GATES already existed — rungs A–C wrote each beside the rule it
   enforces as a doc-test that must fail to compile. F counted and
-  classified them rather than duplicating them in a test file: 23
-  =compile_fail= blocks (evm.rs 9, evm_flow.rs 11, evm/erc721.rs 2, evm/uniswap_v3.rs 1 — the eight-field SwapRouter v1 struct on the SwapRouter02 marker).
+  classified them rather than duplicating them in a test file: 22
+  =compile_fail= blocks (evm.rs 9, evm_flow.rs 11, evm/erc721.rs 2; counted as fenced =```compile_fail= blocks — a prose mention in uniswap_v3.rs is not one).
   By the milestone's three classes: WRONG CALLEE — a call on an address
   that does not claim its interface (evm_flow.rs:82), UsdtLike ↔ Erc20
   both directions (evm_flow.rs:385, 416), Erc721 ↔ Erc20 both
