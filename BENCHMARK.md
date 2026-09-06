@@ -179,6 +179,31 @@ inside k16.
   vault on the typed Sig Network API) proves its own statement and is
   priced by rows only in `notes/benchmark.org` §2026-09-05 — 0.14–0.35×
   of compactc on the request circuits, 0.86–0.88× on the settles.
+
+  **M37 rung D changed the STATEMENT of that lineage's eight settle
+  circuits** (2026-09-06), so their numbers above are stale and the
+  ones below are from the row snapshot rather than a bench run. The
+  `Succeeded` / `Failed` split moved the executed-but-failed case out of
+  `complete_withdraw` and into `refund_withdrawal`: the completion lost
+  the refund branch it might not take (its coin mint, its commitment
+  opening and its four witnesses) and each refund gained the second
+  Poseidon preimage and the `cond_select` that pick the attestation
+  digest by kind. Nine request circuits, `claim` and every other circuit
+  in the tree are byte-identical.
+
+  | circuit | before | after |
+  |---|---|---|
+  | `complete_withdraw` | k16 / 35,553 | **k15 / 25,655** |
+  | `refund_withdrawal` | k16 / 35,547 | k16 / 35,605 |
+  | `refund_swap` | k16 / 35,578 | k16 / 35,651 |
+  | `refund_supply` | k16 / 35,557 | k16 / 35,630 |
+  | `refund_redeem` | k16 / 35,562 | k16 / 35,635 |
+  | `complete_swap` / `_supply` / `_redeem` | k16 / 45,082 / 35,576 / 35,581 | unchanged |
+
+  `complete_withdraw` crossing k16 → k15 is the one that matters: it
+  halves the proving key and the prover's RAM for the common path of a
+  withdrawal. **The bench has not been re-run**; that is the main
+  session's, and the prove/RSS columns for these rows will move.
 - Proof sizes are identical per circuit across both sides (same proof
   system and public-input counts); verify times are milliseconds
   everywhere.

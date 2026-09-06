@@ -102,15 +102,20 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // every other field's is. Threading it is what lets `request` /
     // `complete` / `refund` take no `&SELF.signet` argument.
     let signets: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Signet")).collect();
-    let pendings: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Pending")).collect();
+    // `Pending` and `Fired` alike: both are `evm_flow` slots that read the
+    // block's Signet configuration, and neither takes a `&SELF.signet`.
+    let pendings: Vec<usize> = (0..fields.len())
+        .filter(|i| named_as(types[*i], "Pending") || named_as(types[*i], "Fired"))
+        .collect();
     if signets.len() > 1 {
         let second = fields.iter().nth(signets[1]).expect("index from this list");
         return Err(syn::Error::new_spanned(
             second,
             "#[derive(Ledger)] wants EXACTLY ONE `Signet` field per block: it \
              is the contract's one Sig Network configuration (signer, MPC key, \
-             request nonce, caip2 id, chain id), and every `Pending` slot is \
-             built against its offset. Two of them would give one contract two \
+             request nonce, caip2 id, chain id), and every `Pending` and \
+             `Fired` slot is built against its offset. Two of them would give \
+             one contract two \
              MPC keys and two nonce sequences; delete this one.",
         ));
     }
@@ -118,8 +123,9 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         let first = fields.iter().nth(pendings[0]).expect("index from this list");
         return Err(syn::Error::new_spanned(
             first,
-            "a `Pending` slot needs the block's `Signet` field, and this block \
-             has none. Add `pub signet: Signet,` to the ledger block — it is \
+            "a `Pending` or `Fired` slot needs the block's `Signet` field, and \
+             this block has none. Add `pub signet: Signet,` to the ledger \
+             block — it is \
              the signer address, the MPC response key, the request nonce and \
              the two chain identifiers a request reads from context.",
         ));
@@ -134,7 +140,10 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         let ty = &field.ty;
         let before = &types[..i];
         let start = quote!(0usize #( + <#before as #width>::WIDTH )*);
-        match (&signet_start, named_as(ty, "Pending")) {
+        match (
+            &signet_start,
+            named_as(ty, "Pending") || named_as(ty, "Fired"),
+        ) {
             (Some(signet_start), true) => {
                 quote!(#ident: <#ty>::at_block_with_signet(__TOTAL, #start, #signet_start))
             }

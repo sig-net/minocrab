@@ -443,7 +443,7 @@ pub fn file_request_ops(
     o
 }
 
-/// The op stream `Pending::consume` (`settle` / `settle_failed`) emits for
+/// The op stream `Pending::consume` (shared by `complete` and `refund`) emits for
 /// EVERY settle circuit, in order: the MPC key read, `records.member`,
 /// `records.lookup`, `records.remove`, `envs.lookup`, `envs.remove`.
 ///
@@ -497,6 +497,88 @@ pub fn settle_head_inputs(key_seed: u64, nonce_seed: u64, request_id: &[u8; 32],
     v.push(Fr::from(u64::from(kind)));
     v.extend_from_slice(output_limbs);
     v
+}
+
+/// [`settle_head_inputs`] where the SIGNED preimage and the circuit's
+/// ARGUMENT SLOTS differ — the shape a `Failed` ticket has (M37 rung D).
+///
+/// The ticket's wire block is one shape whatever the MPC attested, so the
+/// attested-value slot is always there; but when the kind is the MPC's
+/// FAILURE the signed preimage is the request id and the kind byte alone
+/// (`FailureResponse { kind: u8 }`, spec/borsh-subset.md §5) and the slot
+/// carries prover-chosen padding. `Pending::refund` hashes the preimage both
+/// ways and selects by the kind byte, which is exactly what this models.
+pub fn settle_head_inputs_padded(
+    key_seed: u64,
+    nonce_seed: u64,
+    request_id: &[u8; 32],
+    kind: u8,
+    signed_limbs: &[Fr],
+    slot_limbs: &[Fr],
+) -> Vec<Fr> {
+    let mut v = settle_head_inputs(key_seed, nonce_seed, request_id, kind, signed_limbs);
+    // `settle_head_inputs` appended the SIGNED limbs to the slots; replace
+    // them with what the argument slots actually carry.
+    v.truncate(v.len() - signed_limbs.len());
+    v.extend_from_slice(slot_limbs);
+    v
+}
+
+/// WHAT THE MPC ATTESTED, for a settle that takes a `Failed` ticket.
+///
+/// The M37 rung D split: `complete` takes the successes, `refund` takes the
+/// two non-successes — the MPC's failure kind (reverted, never mined, or an
+/// undecodable return) and this call's own kind with a return the call's
+/// `EvmCall::succeeded` says is not a success. A `refund` presented with a
+/// SUCCESS must reject, which is the case this enum's third shape drives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Attested {
+    /// `RESPONSE_KIND_FAILURE`, with prover-chosen padding in the output
+    /// slot.
+    Failure { padding: u64 },
+    /// This call's own kind, carrying the attested return value.
+    Executed { value: u64 },
+}
+
+impl Attested {
+    /// The kind byte on the wire.
+    pub fn kind(self, executed_kind: u32) -> u8 {
+        match self {
+            Attested::Failure { .. } => RESPONSE_KIND_FAILURE as u8,
+            Attested::Executed { .. } => executed_kind as u8,
+        }
+    }
+
+    /// The limbs inside the signed preimage.
+    pub fn signed_limbs(self) -> Vec<Fr> {
+        match self {
+            Attested::Failure { .. } => vec![],
+            Attested::Executed { value } => vec![Fr::from(value)],
+        }
+    }
+
+    /// The limbs in the ticket's argument slots — always one, whatever the
+    /// kind.
+    pub fn slot_limbs(self) -> Vec<Fr> {
+        match self {
+            Attested::Failure { padding } => vec![Fr::from(padding)],
+            Attested::Executed { value } => vec![Fr::from(value)],
+        }
+    }
+
+    /// Whether `Pending::refund` accepts it.
+    ///
+    /// `flag_is_the_verdict` is the call's success rule: `true` for a `Bool`
+    /// return whose `succeeded` is `is_true` (the ERC-20 `transfer` the
+    /// withdrawal makes), `false` for a numeric return whose `succeeded` is
+    /// `always` — for those, EXECUTED IS SUCCESS and only the failure kind
+    /// is refundable, which is exactly the deployed semantics.
+    pub fn refundable(self, flag_is_the_verdict: bool) -> bool {
+        match self {
+            Attested::Failure { .. } => true,
+            Attested::Executed { value } => flag_is_the_verdict && value == 0,
+        }
+    }
 }
 
 /// The part every settle scenario shares: whether the map still holds the
@@ -1219,40 +1301,28 @@ impl CompleteWithdrawScenario {
         }
     }
 
-    pub fn refunding(&self) -> bool {
-        !self.success
-    }
-
     pub fn output_limbs(&self) -> Vec<Fr> {
         vec![Fr::from(u64::from(self.success))]
     }
 
+    /// M37 rung D: no mint nonce. `complete_withdraw` mints nothing — a
+    /// withdrawal that SUCCEEDED moved the tokens on the far side — so the
+    /// ticket is the whole argument list.
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut v = settle_head_inputs(self.w.env.key_seed, self.settle.nonce_seed, &self.w.request_id(), RESPONSE_KIND_WITHDRAW as u8, &self.output_limbs());
-        v.extend(self.settle.nonce_slots());
-        v
+        settle_head_inputs(self.w.env.key_seed, self.settle.nonce_seed, &self.w.request_id(), RESPONSE_KIND_WITHDRAW as u8, &self.output_limbs())
     }
 
+    /// EMPTY, and that is the milestone: a completion witnesses no secret,
+    /// so anyone holding the attestation can prove it and a stranger's proof
+    /// is the same proof.
     pub fn witnesses(&self) -> Vec<Fr> {
-        if self.refunding() {
-            let (hi, lo) = b32_slots(&self.settle.sk(&self.w.sk));
-            let (pk_hi, pk_lo) = b32_slots(&self.settle.own_pk);
-            vec![hi, lo, pk_hi, pk_lo]
-        } else {
-            vec![]
-        }
+        vec![]
     }
 
     pub fn ops(&self) -> Vec<VmOp> {
         let rid = self.w.request_id();
         let mut o = self.w.env.read_initialized();
         o.extend(consume_ops(&self.w.env, WITHDRAWALS_RECORDS, WITHDRAWALS_ENVS, &rid, self.settle.pending, self.w.req().av(&self.w.env), self.w.env_av()));
-        if self.refunding() {
-            o.extend(self.w.env.kernel_self());
-            let color = vault_color(&self.w.erc20, &self.w.env.self_addr);
-            let cm = coin_commitment_of(&b32_slots(&self.settle.nonce_slots_bytes()), &color, u128::from(self.w.amount_u64()), true, &self.settle.own_pk);
-            o.extend(ops::mint_and_spend(&vault_token_domain_sep(&self.w.erc20), self.w.amount_u64(), &cm));
-        }
         o
     }
 
@@ -1289,6 +1359,8 @@ impl Settle {
 pub struct RefundWithdrawalScenario {
     pub w: StartWithdrawScenario,
     pub settle: Settle,
+    /// M37 rung D: BOTH non-successes refund here, and a success must not.
+    pub attested: Attested,
 }
 
 impl RefundWithdrawalScenario {
@@ -1296,11 +1368,25 @@ impl RefundWithdrawalScenario {
         RefundWithdrawalScenario {
             w: StartWithdrawScenario::new(),
             settle: Settle::new(),
+            attested: Attested::Failure { padding: 0 },
         }
     }
 
+    /// The withdrawal's `transfer` returns a `bool`, so an executed call
+    /// that returned `false` IS refundable.
+    pub fn refundable(&self) -> bool {
+        self.attested.refundable(true)
+    }
+
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut v = settle_head_inputs(self.w.env.key_seed, self.settle.nonce_seed, &self.w.request_id(), RESPONSE_KIND_FAILURE as u8, &[]);
+        let mut v = settle_head_inputs_padded(
+            self.w.env.key_seed,
+            self.settle.nonce_seed,
+            &self.w.request_id(),
+            self.attested.kind(RESPONSE_KIND_WITHDRAW),
+            &self.attested.signed_limbs(),
+            &self.attested.slot_limbs(),
+        );
         v.extend(self.settle.nonce_slots());
         v
     }
@@ -1609,6 +1695,10 @@ impl Default for CompleteSwapScenario {
 pub struct RefundSwapScenario {
     pub s: StartSwapScenario,
     pub settle: Settle,
+    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// is `always` and an executed attestation is a success: only the MPC's
+    /// failure kind refunds here, which is the deployed semantics exactly.
+    pub attested: Attested,
 }
 
 impl RefundSwapScenario {
@@ -1616,11 +1706,23 @@ impl RefundSwapScenario {
         RefundSwapScenario {
             s: StartSwapScenario::new(),
             settle: Settle::new(),
+            attested: Attested::Failure { padding: 0 },
         }
     }
 
+    pub fn refundable(&self) -> bool {
+        self.attested.refundable(false)
+    }
+
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut v = settle_head_inputs(self.s.env.key_seed, self.settle.nonce_seed, &self.s.request_id(), RESPONSE_KIND_FAILURE as u8, &[]);
+        let mut v = settle_head_inputs_padded(
+            self.s.env.key_seed,
+            self.settle.nonce_seed,
+            &self.s.request_id(),
+            self.attested.kind(RESPONSE_KIND_SWAP),
+            &self.attested.signed_limbs(),
+            &self.attested.slot_limbs(),
+        );
         v.extend(self.settle.nonce_slots());
         v
     }
@@ -1877,6 +1979,10 @@ impl Default for CompleteSupplyScenario {
 pub struct RefundSupplyScenario {
     pub s: StartSupplyScenario,
     pub settle: Settle,
+    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// is `always` and an executed attestation is a success: only the MPC's
+    /// failure kind refunds here, which is the deployed semantics exactly.
+    pub attested: Attested,
 }
 
 impl RefundSupplyScenario {
@@ -1884,11 +1990,23 @@ impl RefundSupplyScenario {
         RefundSupplyScenario {
             s: StartSupplyScenario::new(),
             settle: Settle::new(),
+            attested: Attested::Failure { padding: 0 },
         }
     }
 
+    pub fn refundable(&self) -> bool {
+        self.attested.refundable(false)
+    }
+
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut v = settle_head_inputs(self.s.env.key_seed, self.settle.nonce_seed, &self.s.request_id(), RESPONSE_KIND_FAILURE as u8, &[]);
+        let mut v = settle_head_inputs_padded(
+            self.s.env.key_seed,
+            self.settle.nonce_seed,
+            &self.s.request_id(),
+            self.attested.kind(RESPONSE_KIND_SUPPLY),
+            &self.attested.signed_limbs(),
+            &self.attested.slot_limbs(),
+        );
         v.extend(self.settle.nonce_slots());
         v
     }
@@ -2145,6 +2263,10 @@ impl Default for CompleteRedeemScenario {
 pub struct RefundRedeemScenario {
     pub s: StartRedeemScenario,
     pub settle: Settle,
+    /// M37 rung D. This call's return is a NUMBER, so `EvmCall::succeeded`
+    /// is `always` and an executed attestation is a success: only the MPC's
+    /// failure kind refunds here, which is the deployed semantics exactly.
+    pub attested: Attested,
 }
 
 impl RefundRedeemScenario {
@@ -2152,11 +2274,23 @@ impl RefundRedeemScenario {
         RefundRedeemScenario {
             s: StartRedeemScenario::new(),
             settle: Settle::new(),
+            attested: Attested::Failure { padding: 0 },
         }
     }
 
+    pub fn refundable(&self) -> bool {
+        self.attested.refundable(false)
+    }
+
     pub fn inputs(&self) -> Vec<Fr> {
-        let mut v = settle_head_inputs(self.s.env.key_seed, self.settle.nonce_seed, &self.s.request_id(), RESPONSE_KIND_FAILURE as u8, &[]);
+        let mut v = settle_head_inputs_padded(
+            self.s.env.key_seed,
+            self.settle.nonce_seed,
+            &self.s.request_id(),
+            self.attested.kind(RESPONSE_KIND_REDEEM),
+            &self.attested.signed_limbs(),
+            &self.attested.slot_limbs(),
+        );
         v.extend(self.settle.nonce_slots());
         v
     }

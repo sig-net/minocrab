@@ -14,7 +14,11 @@
 
 use minocrab_contracts::erc20_vault;
 use minocrab_contracts::erc20_vault_pending as pending;
-use minocrab_sim::v3::cost;
+use minocrab_sim::v3::{cost, simulate};
+
+mod vault_pending;
+
+use vault_pending::model::{Attested, CompleteWithdrawScenario, RefundWithdrawalScenario};
 
 /// `erc20_vault_modern`'s last measured `(k, rows)`, from
 /// `tests/row_snapshot.rs` at abb4cfb.
@@ -54,6 +58,20 @@ fn the_block_is_segmented_past_fifteen_fields() {
 /// consumes it cost no more than the modern pair — and per-circuit `k`
 /// never rises. `initialize` and `approve_router` have no settle; they
 /// are held to modern's `k` and to the segmentation allowance.
+///
+/// THE MEASURED PAIRS, M37 rung D (2026-09-06), with rung C's numbers
+/// beside them. Only the withdrawal's two settles moved: `complete_withdraw`
+/// lost the whole refund branch (the coin mint, the commitment opening, the
+/// four witnesses) and `refund_withdrawal` gained the second Poseidon
+/// preimage and the `cond_select` that pick the digest by kind.
+///
+/// | pair                | rung C          | rung D          | modern |
+/// |---------------------|-----------------|-----------------|--------|
+/// | deposit + claim     | 1,781 + 35,774  | unchanged       | 41,164 |
+/// | withdraw + complete | 11,545 + 35,553 | 11,545 + 25,655 | 47,349 |
+/// | withdraw + refund   | 11,545 + 35,547 | 11,545 + 35,605 | 47,982 |
+/// | swap + complete     | 12,379 + 45,082 | unchanged       | 58,287 |
+/// | swap + refund       | 12,379 + 35,578 | 12,379 + 35,651 | 48,806 |
 #[test]
 fn no_pair_costs_more_than_the_modern_lineage() {
     let m = |ir: &minocrab_zkir::v3::IrSource| cost(ir);
@@ -158,4 +176,89 @@ fn the_lending_flows_cost_no_more_than_the_compat_port() {
         eprintln!("{name:>22}: pending k={k} rows={r:>6}   compat k={k_c} rows={r_c:>6}");
         assert!(k <= k_c, "{name}: k rose from {k_c} to {k}");
     }
+}
+
+// ---- the withdrawal's outcome, circuit by circuit (M37 rung D) ---------------
+
+/// THE ROW THE MILESTONE IS ABOUT. The deployed lineage put the
+/// executed-`false` case in a `when(!succeeded)` branch INSIDE
+/// `completeWithdraw`, which is Gap 2: a completion that hoists a secret
+/// witness for a branch it may not take, and a `false` that "completes".
+///
+/// On the typed API the outcome picks the CIRCUIT:
+///
+/// | attestation             | complete | refund |
+/// |-------------------------|----------|--------|
+/// | this kind, flag `true`  | ACCEPT   | reject |
+/// | this kind, flag `false` | reject   | ACCEPT |
+/// | the MPC's failure kind  | reject   | ACCEPT |
+///
+/// The middle row is the one the deployed vault gets wrong.
+#[test]
+fn the_withdrawals_outcome_picks_the_circuit() {
+    let complete = pending::Vault::complete_withdraw().ir;
+    for success in [true, false] {
+        let mut s = CompleteWithdrawScenario::new();
+        s.success = success;
+        let accepted = simulate(&complete, &s.preimage()).is_ok();
+        assert_eq!(
+            accepted, success,
+            "complete_withdraw with an attested {success}: accepted = {accepted}"
+        );
+    }
+
+    let refund = pending::Vault::refund_withdrawal().ir;
+    for (what, attested, expected) in [
+        ("the MPC's failure kind", Attested::Failure { padding: 0 }, true),
+        (
+            "a mined transfer that returned false",
+            Attested::Executed { value: 0 },
+            true,
+        ),
+        (
+            "a mined transfer that returned true",
+            Attested::Executed { value: 1 },
+            false,
+        ),
+    ] {
+        let mut s = RefundWithdrawalScenario::new();
+        s.attested = attested;
+        let accepted = simulate(&refund, &s.preimage()).is_ok();
+        assert_eq!(accepted, expected, "refund_withdrawal with {what}");
+    }
+}
+
+/// ANYONE MAY COMPLETE: the completion's PRIVATE transcript is empty, so a
+/// stranger's proof is the same proof. There is no secret in the circuit to
+/// hoist — the API has no `Pending` method that consumes one in a
+/// completion, and the interface snapshot has no `wit` row for this circuit.
+#[test]
+fn a_completion_witnesses_nothing() {
+    let s = CompleteWithdrawScenario::new();
+    let pi = s.preimage();
+    assert!(
+        pi.private_transcript.is_empty(),
+        "complete_withdraw must witness nothing: {:?}",
+        pi.private_transcript
+    );
+    assert!(simulate(&pending::Vault::complete_withdraw().ir, &pi).is_ok());
+}
+
+/// The refund still opens the owner commitment with a FRESH witness, so a
+/// stranger cannot refund someone else's withdrawal.
+#[test]
+fn only_the_withdrawer_refunds() {
+    let refund = pending::Vault::refund_withdrawal().ir;
+    let mut s = RefundWithdrawalScenario::new();
+    assert!(
+        simulate(&refund, &s.preimage()).is_ok(),
+        "the withdrawer refunds"
+    );
+    let mut stranger = s.w.sk;
+    stranger[0] ^= 0x5a;
+    s.settle.claimant_sk = Some(stranger);
+    assert!(
+        simulate(&refund, &s.preimage()).is_err(),
+        "a stranger must not refund"
+    );
 }

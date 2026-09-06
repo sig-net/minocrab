@@ -476,12 +476,6 @@ in  ticket_respond_s_lo: Scalar<BLS12-381>
 in  ticket_respond_recoveryId: Scalar<BLS12-381>
 in  ticket_serializedOutput_kind: Scalar<BLS12-381>
 in  ticket_serializedOutput_output_success: Scalar<BLS12-381>
-in  mintNonce_hi: Scalar<BLS12-381>
-in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
-wit Scalar<BLS12-381> (guarded)
 ",
     ),
     (
@@ -497,6 +491,7 @@ in  ticket_respond_s_hi: Scalar<BLS12-381>
 in  ticket_respond_s_lo: Scalar<BLS12-381>
 in  ticket_respond_recoveryId: Scalar<BLS12-381>
 in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output_success: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -562,6 +557,7 @@ in  ticket_respond_s_hi: Scalar<BLS12-381>
 in  ticket_respond_s_lo: Scalar<BLS12-381>
 in  ticket_respond_recoveryId: Scalar<BLS12-381>
 in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output_amountIn: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -633,6 +629,7 @@ in  ticket_respond_s_hi: Scalar<BLS12-381>
 in  ticket_respond_s_lo: Scalar<BLS12-381>
 in  ticket_respond_recoveryId: Scalar<BLS12-381>
 in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output_shares: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -694,6 +691,7 @@ in  ticket_respond_s_hi: Scalar<BLS12-381>
 in  ticket_respond_s_lo: Scalar<BLS12-381>
 in  ticket_respond_recoveryId: Scalar<BLS12-381>
 in  ticket_serializedOutput_kind: Scalar<BLS12-381>
+in  ticket_serializedOutput_output_assets: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>

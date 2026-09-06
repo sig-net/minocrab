@@ -1,25 +1,30 @@
-//! `signet_flow::Pending` on a toy contract: the smallest request/settle
-//! pair, built through the public API alone.
+//! `evm_flow::Pending` on a toy contract: the smallest request/settle pair,
+//! built through the public API alone.
 //!
 //! What this file pins: the block layout the derive computes over the
 //! multi-field slots, the notification path derived from it, the label sets
-//! `request` and `settle` publish (the `#[circuit]` disclosure gate does
-//! that one), and that each circuit builds at a finite cost. The
-//! round-trip through a simulated MPC is M35 rung D's.
+//! `request_with` and the two settles publish (the `#[circuit]` disclosure
+//! gate does that one), that each circuit builds at a finite cost, and — the
+//! drift gate at the bottom — that the record a slot files is the record the
+//! MPC's own reader decodes. The round-trip through a simulated MPC is
+//! `tests/treasury.rs`.
+//!
+//! It is named for `signet_flow` because that is the module the surviving
+//! machinery lives in: the `Signet` configuration block, `file_request`, the
+//! `EventRecordV2` the drift gate is about, and the `Requested` / `Settled`
+//! label sets. M37 rung D retired that module's own `Pending` (and `Fired`,
+//! `Settle`, `Response`, `Commit`) in favour of the typed
+//! [`minocrab_contracts::evm_flow`] slots this file now uses.
 
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::{witness_sk, SecretKey, SigningPath};
-use minocrab_contracts::signet::EvmCalldata;
-use minocrab_contracts::signet_flow::{
-    Commit, EvmTx, FailureResponse, Pending, Requested, Response, Settle, Settled, SignRequest,
-    Signet,
-};
+use minocrab_contracts::evm::{Envelope, Erc20TransferAsDeposit, Erc20TransferAsWithdrawal};
+use minocrab_contracts::evm_flow::{Commit, CommitTag, Contract, Failed, Pending, Succeeded};
+use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
 use minocrab_sim::v3::cost;
-use minocrab_std::v3::borsh::CircuitBorsh;
 use minocrab_std::v3::{
-    circuit, is_true, label, Bool, Disclose, Discloses, Ledger, LedgerCounter, LedgerRepr, Uint,
-    B32,
+    circuit, label, Bytes, Disclose, Discloses, Ledger, LedgerCounter, LedgerRepr, Uint, B32,
 };
 
 // ---- the contract's own types -------------------------------------------------
@@ -32,49 +37,36 @@ struct DepositEnv {
 
 /// A withdrawal's environment: the amount, and a COMMITMENT to the
 /// withdrawer's key — the one thing that survives privately.
+///
+/// Written by hand rather than with `Owned`, so this file exercises the
+/// other half of the API: a contract's own [`CommitTag`] and
+/// `Pending::refund` with the opening spelled out.
 #[derive(LedgerRepr)]
 struct WithdrawEnv {
     amount: Uint<64, Public>,
-    withdrawer: Commit<SecretKey<Private>>,
+    withdrawer: Commit<SecretKey<Private>, ToyWithdrawer>,
 }
 
-const WITHDRAWER_DOMAIN: &str = "toy:withdrawer:";
+/// This contract's commitment domain — a TYPE, so a `to` and an `open` that
+/// disagree does not compile.
+struct ToyWithdrawer;
 
-/// `{ success: bool }`, kind 0.
-#[derive(CircuitBorsh)]
-struct ClaimResponse {
-    success: Bool,
-}
-impl Response for ClaimResponse {
-    const KIND: u8 = 0;
+impl CommitTag for ToyWithdrawer {
+    const PAD: &'static str = "toy:withdrawer:";
 }
 
-/// `{ success: bool }`, kind 1 — the same shape, a different kind.
-#[derive(CircuitBorsh)]
-struct WithdrawResponse {
-    success: Bool,
-}
-impl Response for WithdrawResponse {
-    const KIND: u8 = 1;
-}
-
-/// The MPC's "never executed" output, kind 3, shared by every flow.
-#[derive(CircuitBorsh)]
-struct Failure {
-    _unused: Uint<8>,
-}
-impl Response for Failure {
-    const KIND: u8 = 3;
-}
-impl FailureResponse for Failure {}
-
-/// The ledger block: seven fields from three declarations.
+/// The ledger block: ten fields from four declarations.
+///
+/// The two calls differ only in their kind byte — `transfer` filed as a
+/// deposit (0) and as a withdrawal (1) — which is the rung-A finding this
+/// block is also a witness for: two slots of one block cannot share a kind,
+/// and these do not.
 #[derive(Ledger)]
 struct Toy {
     initialized: LedgerCounter,
     signet: Signet,
-    deposits: Pending<DepositEnv, ClaimResponse>,
-    withdrawals: Pending<WithdrawEnv, WithdrawResponse>,
+    deposits: Pending<Erc20TransferAsDeposit, DepositEnv, 2>,
+    withdrawals: Pending<Erc20TransferAsWithdrawal, WithdrawEnv, 2>,
 }
 
 const TOY: Toy = Toy::new();
@@ -84,41 +76,47 @@ label! {
     WithdrawerCommitment = "withdrawer commitment";
 }
 
-fn evm_tx(c: &mut Circuit3, amount: minocrab::v3::Wire3<minocrab::v3::FieldT, Private>) -> EvmTx<2> {
-    let zero = c.constant(0u64).private();
-    let one = c.constant(1u64).private();
-    let two = c.constant(2u64).private();
-    let to = c.constant(0x42u64).private();
-    let word = B32 { hi: zero, lo: amount };
-    EvmTx {
-        nonce: zero,
-        max_priority_fee_per_gas: one,
-        max_fee_per_gas: two,
-        gas_limit: c.constant(100_000u64).private(),
-        to,
-        value: zero,
-        calldata_is_some: one,
-        calldata: EvmCalldata {
-            selector: c.constant(0xa9059cbbu64).private(),
-            no_words: two,
-            words: [word, word],
-        },
-    }
+/// The toy's callee and recipient: one constant address each.
+fn toy_address(c: &mut Circuit3, byte: u64) -> Bytes<20, Private> {
+    Bytes::from_field_unchecked(c.constant(byte).private())
 }
 
 // ---- the circuits ------------------------------------------------------------------
 
 #[circuit]
-fn deposit(c: &mut Circuit3, key_version: Uint<8>, amount: Uint<64>) -> Discloses<(Amount, Requested)> {
+fn deposit(
+    c: &mut Circuit3,
+    key_version: Uint<8>,
+    evm_nonce: Uint<64>,
+    amount: Uint<64>,
+) -> Discloses<(Amount, Requested)> {
     let amount_pub = amount.field().disclose_as::<Amount>(c);
-    let tx = evm_tx(c, amount.field());
-    let path = SigningPath(B32 {
-        hi: c.constant(7u64).private(),
-        lo: c.constant(9u64).private(),
-    });
-    TOY.deposits.request(c, &TOY.signet, SignRequest { key_version, path, tx }, |_, _| {
-        DepositEnv { amount: Uint::from_field_unchecked(amount_pub) }
-    });
+    TOY.deposits.request_with(
+        c,
+        |c| {
+            let to = toy_address(c, 0x42);
+            Contract::from_address(c, to)
+        },
+        (
+            |c: &mut Circuit3| toy_address(c, 0x43),
+            |_c: &mut Circuit3| amount.widen::<128>(),
+        ),
+        Envelope::fixed(),
+        key_version,
+        evm_nonce,
+        // A path of the contract's own choosing — the shape `deposit` in the
+        // vault has, where the depositor's own commitment signs.
+        |c| {
+            let path = SigningPath(B32 {
+                hi: c.constant(7u64).private(),
+                lo: c.constant(9u64).private(),
+            });
+            (path, ())
+        },
+        |_c, _id, ()| DepositEnv {
+            amount: Uint::from_field_unchecked(amount_pub),
+        },
+    );
     Discloses::of(())
 }
 
@@ -126,43 +124,64 @@ fn deposit(c: &mut Circuit3, key_version: Uint<8>, amount: Uint<64>) -> Disclose
 fn withdraw(
     c: &mut Circuit3,
     key_version: Uint<8>,
+    evm_nonce: Uint<64>,
     amount: Uint<64>,
 ) -> Discloses<(Amount, WithdrawerCommitment, Requested)> {
     let amount_pub = amount.field().disclose_as::<Amount>(c);
-    let tx = evm_tx(c, amount.field());
-    let path = SigningPath::vault_path(c).private();
-    let sk = witness_sk(c);
-    TOY.withdrawals.request(c, &TOY.signet, SignRequest { key_version, path, tx }, |c, id| {
-        WithdrawEnv {
+    TOY.withdrawals.request_with(
+        c,
+        |c| {
+            let to = toy_address(c, 0x42);
+            Contract::from_address(c, to)
+        },
+        (
+            |c: &mut Circuit3| toy_address(c, 0x43),
+            |_c: &mut Circuit3| amount.widen::<128>(),
+        ),
+        Envelope::fixed(),
+        key_version,
+        evm_nonce,
+        |c| {
+            let sk = witness_sk(c);
+            (SigningPath::contract_path(c).private(), sk)
+        },
+        |c, id, sk| WithdrawEnv {
             amount: Uint::from_field_unchecked(amount_pub),
-            withdrawer: Commit::to::<WithdrawerCommitment>(c, WITHDRAWER_DOMAIN, &sk, id),
-        }
-    });
+            withdrawer: Commit::to::<WithdrawerCommitment>(c, sk, id),
+        },
+    );
     Discloses::of(())
 }
 
 #[circuit]
-fn claim(c: &mut Circuit3, ticket: Settle<DepositEnv, ClaimResponse>) -> Discloses<Settled> {
-    let outcome = TOY.deposits.settle(c, &TOY.signet, ticket);
-    c.assert(is_true(outcome.output.success).message("The MPC attested a failure"));
+fn claim(c: &mut Circuit3, ticket: Succeeded<Erc20TransferAsDeposit>) -> Discloses<Settled> {
+    // `complete` asserts `Erc20TransferAsDeposit::succeeded` — the attested
+    // flag — so an attested `false` cannot arrive here at all.
+    let outcome = TOY.deposits.complete(c, ticket);
     let _amount = outcome.env.amount;
     Discloses::of(())
 }
 
 #[circuit]
-fn refund_withdrawal(c: &mut Circuit3, ticket: Settle<WithdrawEnv, Failure>) -> Discloses<Settled> {
-    let outcome = TOY.withdrawals.settle_failed(c, &TOY.signet, ticket);
+fn refund_withdrawal(
+    c: &mut Circuit3,
+    ticket: Failed<Erc20TransferAsWithdrawal>,
+) -> Discloses<Settled> {
+    // Either the MPC's failure kind or a mined transfer that returned
+    // `false`: one ticket for both non-successes.
+    let outcome = TOY.withdrawals.refund(c, ticket);
     // The withdrawer gate: a FRESH witness against the stored commitment.
     let sk = witness_sk(c);
     outcome
         .env
         .withdrawer
-        .open(c, WITHDRAWER_DOMAIN, &sk, outcome.request_id, "Not the withdrawer");
+        .open(c, &sk, outcome.request_id, "Not the withdrawer");
     let _amount = outcome.env.amount;
     Discloses::of(())
 }
 
 // ---- the tests ----------------------------------------------------------------------
+
 
 /// `initialized` is field 0, `signet` fields 1..6, `deposits` 6 and 7,
 /// `withdrawals` 8 and 9 — a block of ten, so still one-element paths.

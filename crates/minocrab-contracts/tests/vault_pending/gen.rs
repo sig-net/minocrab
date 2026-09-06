@@ -308,9 +308,10 @@ fn claimant(requester: [u8; 32], wrong: bool) -> Option<[u8; 32]> {
     }
 }
 
+/// M37 rung D: `success` is now the ACCEPT/REJECT axis, not a branch —
+/// an attested `false` no longer completes, it refunds.
 pub fn complete_withdraw() -> impl Strategy<Value = CompleteWithdrawScenario> {
-    (settled_withdraw(), settle(), any::<bool>(), any::<bool>()).prop_map(|(w, mut settle, wrong, success)| {
-        settle.claimant_sk = claimant(w.sk, wrong && !success);
+    (settled_withdraw(), settle(), any::<bool>()).prop_map(|(w, settle, success)| {
         let mut c = CompleteWithdrawScenario::new();
         c.w = w;
         c.settle = settle;
@@ -319,14 +320,36 @@ pub fn complete_withdraw() -> impl Strategy<Value = CompleteWithdrawScenario> {
     })
 }
 
+/// The MPC's failure kind, an executed `false` (both refundable) and an
+/// executed `true` (which must reject), each about a third of the cases.
+pub fn attested_flag() -> impl Strategy<Value = Attested> {
+    prop_oneof![
+        any::<bool>().prop_map(|p| Attested::Failure { padding: u64::from(p) }),
+        Just(Attested::Executed { value: 0 }),
+        Just(Attested::Executed { value: 1 }),
+    ]
+}
+
+/// A numeric return: the failure kind, or an executed call whose attested
+/// number is a success whatever it is.
+pub fn attested_number() -> impl Strategy<Value = Attested> {
+    prop_oneof![
+        any::<u64>().prop_map(|padding| Attested::Failure { padding }),
+        any::<u64>().prop_map(|value| Attested::Executed { value }),
+    ]
+}
+
 pub fn refund_withdrawal() -> impl Strategy<Value = RefundWithdrawalScenario> {
-    (settled_withdraw(), settle(), any::<bool>()).prop_map(|(w, mut settle, wrong)| {
-        settle.claimant_sk = claimant(w.sk, wrong);
-        let mut r = RefundWithdrawalScenario::new();
-        r.w = w;
-        r.settle = settle;
-        r
-    })
+    (settled_withdraw(), settle(), any::<bool>(), attested_flag()).prop_map(
+        |(w, mut settle, wrong, attested)| {
+            settle.claimant_sk = claimant(w.sk, wrong);
+            let mut r = RefundWithdrawalScenario::new();
+            r.w = w;
+            r.settle = settle;
+            r.attested = attested;
+            r
+        },
+    )
 }
 
 // --- swap ----------------------------------------------------------------------------------
@@ -392,13 +415,16 @@ pub fn complete_swap() -> impl Strategy<Value = CompleteSwapScenario> {
 }
 
 pub fn refund_swap() -> impl Strategy<Value = RefundSwapScenario> {
-    (settled_swap(), settle(), any::<bool>()).prop_map(|(s, mut settle, wrong)| {
-        settle.claimant_sk = claimant(s.sk, wrong);
-        let mut r = RefundSwapScenario::new();
-        r.s = s;
-        r.settle = settle;
-        r
-    })
+    (settled_swap(), settle(), any::<bool>(), attested_number()).prop_map(
+        |(s, mut settle, wrong, attested)| {
+            settle.claimant_sk = claimant(s.sk, wrong);
+            let mut r = RefundSwapScenario::new();
+            r.s = s;
+            r.settle = settle;
+            r.attested = attested;
+            r
+        },
+    )
 }
 
 // --- supply --------------------------------------------------------------------------------
@@ -451,13 +477,16 @@ pub fn complete_supply() -> impl Strategy<Value = CompleteSupplyScenario> {
 }
 
 pub fn refund_supply() -> impl Strategy<Value = RefundSupplyScenario> {
-    (settled_supply(), settle(), any::<bool>()).prop_map(|(s, mut settle, wrong)| {
-        settle.claimant_sk = claimant(s.sk, wrong);
-        let mut r = RefundSupplyScenario::new();
-        r.s = s;
-        r.settle = settle;
-        r
-    })
+    (settled_supply(), settle(), any::<bool>(), attested_number()).prop_map(
+        |(s, mut settle, wrong, attested)| {
+            settle.claimant_sk = claimant(s.sk, wrong);
+            let mut r = RefundSupplyScenario::new();
+            r.s = s;
+            r.settle = settle;
+            r.attested = attested;
+            r
+        },
+    )
 }
 
 // --- redeem --------------------------------------------------------------------------------
@@ -512,11 +541,14 @@ pub fn complete_redeem() -> impl Strategy<Value = CompleteRedeemScenario> {
 }
 
 pub fn refund_redeem() -> impl Strategy<Value = RefundRedeemScenario> {
-    (settled_redeem(), settle(), any::<bool>()).prop_map(|(s, mut settle, wrong)| {
-        settle.claimant_sk = claimant(s.sk, wrong);
-        let mut r = RefundRedeemScenario::new();
-        r.s = s;
-        r.settle = settle;
-        r
-    })
+    (settled_redeem(), settle(), any::<bool>(), attested_number()).prop_map(
+        |(s, mut settle, wrong, attested)| {
+            settle.claimant_sk = claimant(s.sk, wrong);
+            let mut r = RefundRedeemScenario::new();
+            r.s = s;
+            r.settle = settle;
+            r.attested = attested;
+            r
+        },
+    )
 }

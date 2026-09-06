@@ -118,9 +118,9 @@ impl Treasury {
     ///
     /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
     /// witness in the circuit at all. And the attested `false` case cannot
-    /// reach here: `Erc20Transfer`'s return is `Bool`, whose
-    /// `AbiType::success` is the flag itself, and `complete` asserts it —
-    /// so nothing in this body has to remember to look.
+    /// reach here: `Erc20Transfer`'s return is `Bool`, and its
+    /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
+    /// nothing in this body has to remember to look.
     #[circuit]
     pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
