@@ -20,12 +20,19 @@
 //!    `AbiType`s. It knows the WORD COUNT, the comma-joined signature and
 //!    how to encode a tuple of wires into words, in order.
 //! 3. [`EvmCall`] — the call: a name, an argument tuple, a return type, the
-//!    protocol kind byte and a gas limit. [`EvmCall::selector`] is the first
-//!    four bytes of `keccak256("name(argtypes)")`, computed IN RUST at
-//!    circuit-build time and embedded as an immediate. Nothing hashes
-//!    keccak in-circuit; in-circuit hashing stays Poseidon throughout
+//!    [`Interface`] that exposes it and a gas limit. [`EvmCall::selector`]
+//!    is the first four bytes of `keccak256("name(argtypes)")`, computed IN
+//!    RUST at circuit-build time and embedded as an immediate. Nothing
+//!    hashes keccak in-circuit; in-circuit hashing stays Poseidon throughout
 //!    (dmd, 2026-09-05: *"Do we actually need a const fn Keccak? Why not
-//!    just run it when we run the eDSL?"* — we do not).
+//!    just run it when we run the eDSL?"* — we do not). The library's calls
+//!    live one module per interface: [`erc20`], [`erc4626`], [`uniswap_v3`].
+//! 4. [`Filing`] — HOW ONE SLOT FILES ONE CALL: the response kind byte and
+//!    the deployed record's name for the attested return. Those are facts
+//!    about a DEPLOYMENT's protocol, not about the Solidity function (the
+//!    same `transfer` is a deposit under one kind and a withdrawal under
+//!    another), so they sit here rather than on the call.
+//!    [`Kinded<Call, KIND>`](Kinded) is the one-line impl.
 //!
 //! [`build_tx`] is where the three meet: it turns a callee, an argument
 //! tuple and a nonce into the [`EvmTx`] a request files, with the selector,
@@ -49,7 +56,7 @@
 //! ```
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, Erc20Transfer};
+//! use minocrab_contracts::evm::{build_tx, erc20};
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -57,7 +64,7 @@
 //! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 //! let nonce = c.arg::<FieldT>("nonce");
 //! let token = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("token"));
-//! let tx = build_tx::<Erc20Transfer, 2>(&mut c, token, (to, amount), nonce);
+//! let tx = build_tx::<erc20::Transfer, 2>(&mut c, token, (to, amount), nonce);
 //! ```
 //!
 //! THE TWO BLOCKS BELOW ARE THAT SAME CODE, changed in one place each —
@@ -73,7 +80,7 @@
 //! ```compile_fail
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, Erc20Transfer};
+//! use minocrab_contracts::evm::{build_tx, erc20};
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -82,7 +89,7 @@
 //! let nonce = c.arg::<FieldT>("nonce");
 //! let token = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("token"));
 //! // ERROR: expected `(Bytes<20>, Uint<128>)`, found `(Uint<128>, Bytes<20>)`
-//! let tx = build_tx::<Erc20Transfer, 2>(&mut c, token, (amount, to), nonce);
+//! let tx = build_tx::<erc20::Transfer, 2>(&mut c, token, (amount, to), nonce);
 //! ```
 //!
 //! A `WORDS` that is not the argument tuple's word count — stable Rust
@@ -93,7 +100,7 @@
 //! ```compile_fail
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{build_tx, Erc20Transfer};
+//! use minocrab_contracts::evm::{build_tx, erc20};
 //! use minocrab_std::v3::{Bytes, Uint};
 //!
 //! let mut c = Circuit3::new();
@@ -102,7 +109,7 @@
 //! let nonce = c.arg::<FieldT>("nonce");
 //! let token = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("token"));
 //! // error[E0080]: `build_tx::<C, WORDS>` needs WORDS == <C::Args>::WORDS …
-//! let tx = build_tx::<Erc20Transfer, 3>(&mut c, token, (to, amount), nonce);
+//! let tx = build_tx::<erc20::Transfer, 3>(&mut c, token, (to, amount), nonce);
 //! ```
 //!
 //! A call type that does not say whether its return means success. There
@@ -111,18 +118,18 @@
 //! and a default would make the dangerous case the one nobody types:
 //!
 //! ```compile_fail
-//! use minocrab_contracts::evm::{Address, EvmCall, U64};
+//! use minocrab_contracts::evm::{erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::Uint;
 //! use minocrab::Private;
 //!
 //! struct Balance;
 //! // ERROR: not all trait items implemented, missing: `succeeded`
 //! impl EvmCall for Balance {
+//!     type Callee = erc20::Erc20;
 //!     const NAME: &'static str = "balanceOf";
 //!     type Args = (Address,);
 //!     type Return = U64;
 //!     type Success = Uint<64, Private>;
-//!     const KIND: u8 = 9;
 //!     const GAS_LIMIT: u64 = 50_000;
 //! }
 //! ```
@@ -134,17 +141,17 @@
 //! ```compile_fail
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::{Check, Uint};
 //!
 //! struct Balance;
 //! impl EvmCall for Balance {
+//!     type Callee = erc20::Erc20;
 //!     const NAME: &'static str = "balanceOf";
 //!     type Args = (Address,);
 //!     type Return = U64;
 //!     // ERROR: the trait bound `(): FromReturn<Uint<64>>` is not satisfied
 //!     type Success = ();
-//!     const KIND: u8 = 9;
 //!     const GAS_LIMIT: u64 = 50_000;
 //!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
 //!         always(c)
@@ -158,16 +165,16 @@
 //! ```
 //! use minocrab::v3::Circuit3;
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::{always, Address, EvmCall, U64};
+//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, U64};
 //! use minocrab_std::v3::{Check, Uint};
 //!
 //! struct Balance;
 //! impl EvmCall for Balance {
+//!     type Callee = erc20::Erc20;
 //!     const NAME: &'static str = "balanceOf";
 //!     type Args = (Address,);
 //!     type Return = U64;
 //!     type Success = Uint<64, Private>;
-//!     const KIND: u8 = 9;
 //!     const GAS_LIMIT: u64 = 50_000;
 //!     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
 //!         always(c)
@@ -177,18 +184,20 @@
 //! assert_eq!(Balance::selector(), [0x70, 0xa0, 0x82, 0x31]);
 //! ```
 
+use core::marker::PhantomData;
+
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
 use minocrab_std::v3::{is_true, pow2_const, Bool as BoolWire, Bytes, Check, Uint, Vis3, B32};
 use sha3::{Digest as _, Keccak256};
 
-use crate::erc20_vault::{ERC20_CALL_GAS, FIXED_MAX_FEE, FIXED_PRIORITY_FEE, LENDING_GAS, SWAP_GAS};
-use crate::erc20_vault_pending::{
-    RESPONSE_KIND_APPROVE, RESPONSE_KIND_CLAIM, RESPONSE_KIND_REDEEM, RESPONSE_KIND_SUPPLY,
-    RESPONSE_KIND_SWAP, RESPONSE_KIND_WITHDRAW,
-};
+use crate::erc20_vault::{FIXED_MAX_FEE, FIXED_PRIORITY_FEE};
 use crate::signet::{reverse_bytes32, EvmCalldata};
 use crate::signet_flow::EvmTx;
+
+pub mod erc20;
+pub mod erc4626;
+pub mod uniswap_v3;
 
 // ---- the encoders (moved from `signet`, unchanged) ---------------------------
 
@@ -555,27 +564,88 @@ abi_args!(
     H / FH => 7
 );
 
-// ---- the call ----------------------------------------------------------------
+// ---- the callee's interface --------------------------------------------------
 
-/// A named EVM function call: what it is called, what it takes, what it
-/// returns, which protocol kind its response carries and what it may spend.
+/// A CALLEE INTERFACE: a set of functions an EVM contract claims to expose.
 ///
-/// Everything else — the selector, the word count, the response type, the
-/// schema spellings — is DERIVED from these five, which is the whole point
-/// (notes/evm-calls.org §2).
-pub trait EvmCall {
-    /// The Solidity function name, without parentheses.
-    const NAME: &'static str;
+/// It is what a [`Contract<I>`](crate::evm_flow::Contract) is typed by, and
+/// what [`EvmCall::Callee`] names. The library's own set is
+/// [`erc20::Erc20`], [`erc4626::Erc4626`] and
+/// [`uniswap_v3::UniswapV3Router`] today (`Weth`, `AaveV3Pool`, `Erc721`,
+/// `UsdtLike` in rungs B and C); the trait is OPEN, so a contract calling a
+/// deployment of its own declares a marker in one line:
+///
+/// ```
+/// use minocrab_contracts::evm::Interface;
+///
+/// /// The MPC's integration target.
+/// pub struct SignetEvmTarget;
+/// impl Interface for SignetEvmTarget {}
+/// ```
+///
+/// `'static` because a marker is a unit type and the
+/// [`Contract`](crate::evm_flow::Contract) built over it lives in a `const`
+/// ledger block.
+pub trait Interface: 'static {}
 
-    /// The argument list.
-    type Args: AbiTuple;
+/// INTERFACE INHERITANCE: `I: Extends<Base>` says a `Contract<I>` may be
+/// handed a `Base` call.
+///
+/// Reflexive by the blanket impl below, so an interface always takes its own
+/// calls and the common case needs no impl at all. The one inheritance rung
+/// A carries is the real one: an ERC-4626 vault IS an ERC-20 (its shares are
+/// a token), so `impl Extends<Erc20> for Erc4626` is what lets the deployed
+/// vault's `approve_stata` file an [`erc20::Approve`] against its
+/// `Contract<Erc4626>` stata-token cell.
+///
+/// COHERENCE: a downstream crate may write `impl Extends<Erc20> for MyToken`
+/// for its OWN marker, and may not write `impl Extends<Erc20> for Erc4626`
+/// (the orphan rule). The library decides its own inheritance, which is
+/// right — inheritance here is a claim about a deployed contract's ABI.
+pub trait Extends<Base: Interface>: Interface {}
 
-    /// The attested return value. `Attested<Return::Wire>` at [`Self::KIND`]
-    /// is the response a settle circuit consumes.
-    type Return: AbiType;
+/// Every interface takes its own calls.
+impl<I: Interface> Extends<I> for I {}
 
-    /// The protocol kind byte the response carries — explicit, a wire
-    /// commitment, and the one thing the type layer will not guess.
+// ---- the filing ---------------------------------------------------------------
+
+/// HOW ONE SLOT FILES ITS CALL — the call plus the two facts that are about
+/// a DEPLOYMENT's protocol rather than about the Solidity function
+/// (notes/evm-interfaces.org §1).
+///
+/// [`EvmCall`] carries what `transfer` IS. What it cannot carry is which
+/// response kind byte a particular protocol files a `transfer` under, or
+/// what a particular deployed record calls the flag that comes back: the
+/// vault files one `transfer` under CLAIM and another under WITHDRAW, and
+/// the treasury files its own under WITHDRAW's byte again. Those are facts
+/// about the SLOT, and this is where a slot states them.
+///
+/// [`Kinded`] is the off-the-shelf impl for the common case (a kind, an
+/// anonymous return). A deployment whose record NAMES the attested value
+/// writes three lines instead:
+///
+/// ```
+/// use minocrab_contracts::evm::{erc20, Filing};
+///
+/// /// `transfer` as this protocol's withdrawal.
+/// pub struct Withdrawal;
+/// impl Filing for Withdrawal {
+///     type Call = erc20::Transfer;
+///     const KIND: u8 = 1;
+///     const RETURN_FIELD: Option<&'static str> = Some("success");
+/// }
+/// ```
+pub trait Filing: 'static {
+    /// The call this slot files.
+    type Call: EvmCall;
+
+    /// THE RESPONSE KIND BYTE this slot's records carry.
+    ///
+    /// A wire commitment — the MPC echoes it, and it is inside the signed
+    /// preimage, so two settle circuits' digests differ for the same request
+    /// id and outcome. Distinct across a ledger block: the Ledger derive's
+    /// `assert_distinct_kinds` reads it from here (through
+    /// `LedgerWidth::KINDS`) and a duplicate is `error[E0080]`.
     const KIND: u8;
 
     /// WHAT THE ATTESTED RETURN VALUE IS CALLED inside the response record,
@@ -593,8 +663,70 @@ pub trait EvmCall {
     /// circuit's argument schema, so a caller built against the deployed
     /// record keeps working.
     const RETURN_FIELD: Option<&'static str> = None;
+}
+
+/// THE ONE-LINE FILING: this call, at this kind, with the anonymous return.
+///
+/// `type Transfer = Kinded<erc20::Transfer, 1>;` and the slot, both tickets
+/// and both settle signatures are that one name
+/// (notes/evm-interfaces.org §2.2).
+///
+/// WHY A WRAPPER RATHER THAN A `KIND` PARAMETER ON THE SLOT: the kind is
+/// consumed by the TICKETS too (`complete` asserts it, `refund` selects the
+/// signed preimage by it), so a slot-parameter kind would put
+/// `Succeeded<Call, KIND>` on every settle signature.
+///
+/// [`Filing::RETURN_FIELD`] cannot ride here — a `&'static str` is not a
+/// const-generic type on stable Rust — so a deployment whose record names
+/// its attested value writes its own [`Filing`] impl.
+pub struct Kinded<Call, const KIND: u8>(PhantomData<fn() -> Call>);
+
+impl<Call: EvmCall + 'static, const KIND: u8> Filing for Kinded<Call, KIND> {
+    type Call = Call;
+    const KIND: u8 = KIND;
+}
+
+// ---- the call ----------------------------------------------------------------
+
+/// A named EVM function call: what it is called, what it takes, what it
+/// returns, WHICH INTERFACE EXPOSES IT and what it may spend.
+///
+/// Everything else — the selector, the word count, the response type, the
+/// schema spellings — is DERIVED from these, which is the whole point
+/// (notes/evm-calls.org §2).
+///
+/// WHAT IS NOT HERE, since M38 rung A: the response kind byte and the
+/// deployed record's name for the attested return. Neither is a fact about
+/// the Solidity function — the same `transfer` is a deposit under one
+/// protocol byte and a withdrawal under another — so both live on the SLOT's
+/// [`Filing`] (notes/evm-interfaces.org §1).
+pub trait EvmCall {
+    /// THE INTERFACE THAT EXPOSES THIS FUNCTION.
+    ///
+    /// A call may be filed only against a `Contract<I>` whose `I`
+    /// [`Extends`] this — so a `transfer` cannot be sent to a
+    /// [`uniswap_v3::UniswapV3Router`], and an [`erc20::Approve`] can be
+    /// sent to an [`erc4626::Erc4626`], which is the deployed vault's stata
+    /// token.
+    type Callee: Interface;
+
+    /// The Solidity function name, without parentheses.
+    const NAME: &'static str;
+
+    /// The argument list.
+    type Args: AbiTuple;
+
+    /// The attested return value. `Attested<Return::Wire>` at the slot's
+    /// [`Filing::KIND`] is the response a settle circuit consumes.
+    type Return: AbiType;
 
     /// The gas LIMIT (not a price; the fee envelope is [`build_tx`]'s).
+    ///
+    /// A PER-FUNCTION DEFAULT — a `transfer` costs what a transfer costs —
+    /// which is why it stayed here when the kind left (§2.3). The library's
+    /// values ARE the deployed vault's: [`erc20::CALL_GAS`],
+    /// [`erc4626::CALL_GAS`], [`uniswap_v3::SWAP_GAS`]. A deployment that
+    /// needs another limit passes [`Envelope::caller`] today.
     const GAS_LIMIT: u64;
 
     /// The full signature the selector is hashed over.
@@ -602,7 +734,8 @@ pub trait EvmCall {
     /// The default is `NAME(comma-joined argument types)`. It is overridable
     /// for the one shape the flat join cannot spell: a call whose arguments
     /// are a Solidity STRUCT, which the ABI renders as a nested tuple —
-    /// `exactOutputSingle((address,address,…))`. See [`ExactOutputSingle`].
+    /// `exactOutputSingle((address,address,…))`. See
+    /// [`uniswap_v3::ExactOutputSingle`].
     fn signature() -> String {
         format!("{}({})", Self::NAME, <Self::Args as AbiTuple>::signature())
     }
@@ -645,15 +778,15 @@ pub trait EvmCall {
     /// ```
     /// # use minocrab::v3::Circuit3;
     /// # use minocrab::Private;
-    /// # use minocrab_contracts::evm::{Address, AbiType, EvmCall, U128, U64};
+    /// # use minocrab_contracts::evm::{erc4626, Address, AbiType, EvmCall, U128, U64};
     /// # use minocrab_std::v3::{Check, Uint};
     /// struct StrictDeposit;
     /// impl EvmCall for StrictDeposit {
+    ///     type Callee = erc4626::Erc4626;
     ///     const NAME: &'static str = "deposit";
     ///     type Args = (U128, Address);
     ///     type Return = U64;
     ///     type Success = Uint<64, Private>;
-    ///     const KIND: u8 = 5;
     ///     const GAS_LIMIT: u64 = 500_000;
     ///
     ///     fn succeeded(_c: &mut Circuit3, shares: &Uint<64, Private>) -> Check<Private> {
@@ -678,176 +811,6 @@ pub trait EvmCall {
         output: <Self::Return as AbiType>::Wire<Private>,
     ) -> Self::Success {
         Self::Success::from_return(c, output)
-    }
-}
-
-/// `transfer(address,uint256) -> bool` — selector `a9059cbb`.
-///
-/// The vault files this for both a deposit (`CLAIM`) and a withdrawal
-/// (`WITHDRAW`); the kind here is `WITHDRAW`, since a call type carries
-/// exactly one kind. A second unit type with the same `NAME`/`Args` and
-/// `KIND = RESPONSE_KIND_CLAIM` is what the deposit slot needs — rung D's
-/// business, recorded in notes/evm-calls.org §9.
-pub struct Erc20Transfer;
-
-impl EvmCall for Erc20Transfer {
-    const NAME: &'static str = "transfer";
-    type Args = (Address, U128);
-    type Return = Bool;
-    type Success = ();
-    const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
-    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
-
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
-        is_true(*ok)
-    }
-}
-
-/// `transfer` AS A DEPOSIT — the same Solidity function as
-/// [`Erc20Transfer`], filed under the vault protocol's CLAIM kind and with
-/// its response field named.
-///
-/// THE RUNG-A FINDING, resolved (notes/evm-calls.org §9, §11): a call type
-/// carries exactly one [`EvmCall::KIND`], and the deployed vault files
-/// `transfer(address,uint256)` under two — CLAIM for the depositor's
-/// inbound transfer, WITHDRAW for the vault's outbound one. They are two
-/// OPERATIONS of the protocol that happen to share a Solidity function, and
-/// the kind byte is what says so (§5: "the kind byte … stays explicit, on
-/// purpose"), so they are two types. Everything but the kind and the return
-/// name is [`Erc20Transfer`]'s, spelled again rather than inherited, because
-/// three lines of facts read better than a wrapper.
-pub struct Erc20TransferAsDeposit;
-
-impl EvmCall for Erc20TransferAsDeposit {
-    const NAME: &'static str = "transfer";
-    type Args = (Address, U128);
-    type Return = Bool;
-    type Success = ();
-    const KIND: u8 = RESPONSE_KIND_CLAIM as u8;
-    const RETURN_FIELD: Option<&'static str> = Some("success");
-    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
-
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
-        is_true(*ok)
-    }
-}
-
-/// `transfer` AS A WITHDRAWAL — [`Erc20Transfer`] at the vault protocol's
-/// WITHDRAW kind, with the deployed record's own name for the flag.
-///
-/// The only difference from [`Erc20Transfer`] is [`EvmCall::RETURN_FIELD`]:
-/// the vault's `WithdrawResponse` calls the attested flag `success`, and a
-/// settle circuit's argument slot is named after it. A Solidity `transfer`
-/// return is anonymous, which is why the plain [`Erc20Transfer`] keeps the
-/// `"output"` default.
-pub struct Erc20TransferAsWithdrawal;
-
-impl EvmCall for Erc20TransferAsWithdrawal {
-    const NAME: &'static str = "transfer";
-    type Args = (Address, U128);
-    type Return = Bool;
-    type Success = ();
-    const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
-    const RETURN_FIELD: Option<&'static str> = Some("success");
-    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
-
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
-        is_true(*ok)
-    }
-}
-
-/// `approve(address,uint256) -> bool` — selector `095ea7b3`.
-///
-/// The allowance is a [`U256`] (an already-encoded word) because that is
-/// what an approval IS in the wild and what the vault passes: the constant
-/// unlimited-allowance word, no encoder.
-pub struct Erc20Approve;
-
-impl EvmCall for Erc20Approve {
-    const NAME: &'static str = "approve";
-    type Args = (Address, U256);
-    type Return = Bool;
-    type Success = ();
-    const KIND: u8 = RESPONSE_KIND_APPROVE as u8;
-    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
-
-    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
-        is_true(*ok)
-    }
-}
-
-/// Uniswap V3's
-/// `exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))`
-/// — selector `5023b4df`, seven words:
-/// `(tokenIn, tokenOut, fee, recipient, amountOut, amountInMaximum,
-/// sqrtPriceLimitX96)`.
-///
-/// The arguments are a Solidity STRUCT, which the ABI renders as a nested
-/// tuple, so this is the one call that overrides [`EvmCall::signature`] to
-/// wrap the joined list in a second pair of parentheses. The word ENCODING
-/// is unaffected — a static struct is its fields' words, in order, exactly
-/// as a flat argument list would be.
-pub struct ExactOutputSingle;
-
-impl EvmCall for ExactOutputSingle {
-    const NAME: &'static str = "exactOutputSingle";
-    type Args = (Address, Address, U24, Address, U128, U128, U160);
-    type Return = U64;
-    type Success = Uint<64, Private>;
-    const KIND: u8 = RESPONSE_KIND_SWAP as u8;
-    const RETURN_FIELD: Option<&'static str> = Some("amountIn");
-    const GAS_LIMIT: u64 = SWAP_GAS;
-
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
-        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
-        // constant-true assert this makes is removed by `drop_true_asserts`.
-        always(c)
-    }
-
-    fn signature() -> String {
-        format!("{}(({}))", Self::NAME, <Self::Args as AbiTuple>::signature())
-    }
-}
-
-/// ERC-4626 `deposit(uint256,address) -> uint256` — selector `6e553f65`,
-/// `(assets, receiver)`. The attested share count comes back narrowed to
-/// `uint64` ([`U64::RESPOND`]), which is `SUPPLY_RESPOND_SCHEMA`.
-pub struct Erc4626Deposit;
-
-impl EvmCall for Erc4626Deposit {
-    const NAME: &'static str = "deposit";
-    type Args = (U128, Address);
-    type Return = U64;
-    type Success = Uint<64, Private>;
-    const KIND: u8 = RESPONSE_KIND_SUPPLY as u8;
-    const RETURN_FIELD: Option<&'static str> = Some("shares");
-    const GAS_LIMIT: u64 = LENDING_GAS;
-
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
-        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
-        // constant-true assert this makes is removed by `drop_true_asserts`.
-        always(c)
-    }
-}
-
-/// ERC-4626 `redeem(uint256,address,address) -> uint256` — selector
-/// `ba087652`, `(shares, receiver, owner)`. The attested asset count comes
-/// back narrowed to `uint64` (`REDEEM_RESPOND_SCHEMA`).
-pub struct Erc4626Redeem;
-
-impl EvmCall for Erc4626Redeem {
-    const NAME: &'static str = "redeem";
-    type Args = (U128, Address, Address);
-    type Return = U64;
-    type Success = Uint<64, Private>;
-    const KIND: u8 = RESPONSE_KIND_REDEEM as u8;
-    const RETURN_FIELD: Option<&'static str> = Some("assets");
-    const GAS_LIMIT: u64 = LENDING_GAS;
-
-    fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
-        // EXECUTED IS SUCCEEDED here: the number IS the outcome, and the
-        // constant-true assert this makes is removed by `drop_true_asserts`.
-        always(c)
     }
 }
 
@@ -1175,14 +1138,14 @@ mod tests {
     /// into them, where a typo would otherwise only show as four wrong bytes.
     #[test]
     fn signatures_read_as_solidity() {
-        assert_eq!(Erc20Transfer::signature(), "transfer(address,uint256)");
-        assert_eq!(Erc20Approve::signature(), "approve(address,uint256)");
+        assert_eq!(erc20::Transfer::signature(), "transfer(address,uint256)");
+        assert_eq!(erc20::Approve::signature(), "approve(address,uint256)");
         assert_eq!(
-            ExactOutputSingle::signature(),
+            uniswap_v3::ExactOutputSingle::signature(),
             "exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))"
         );
-        assert_eq!(Erc4626Deposit::signature(), "deposit(uint256,address)");
-        assert_eq!(Erc4626Redeem::signature(), "redeem(uint256,address,address)");
+        assert_eq!(erc4626::Deposit::signature(), "deposit(uint256,address)");
+        assert_eq!(erc4626::Redeem::signature(), "redeem(uint256,address,address)");
     }
 
     /// The empty argument list is a real one: `f()`, not `f(())`.
@@ -1190,11 +1153,11 @@ mod tests {
     fn the_empty_tuple_signs_as_nothing() {
         struct Noop;
         impl EvmCall for Noop {
+            type Callee = erc20::Erc20;
             const NAME: &'static str = "noop";
             type Args = ();
             type Return = Bool;
             type Success = ();
-            const KIND: u8 = 0;
             const GAS_LIMIT: u64 = 21_000;
 
             fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
@@ -1209,31 +1172,51 @@ mod tests {
     #[test]
     fn word_counts_are_arities() {
         assert_eq!(<(Address,) as AbiTuple>::WORDS, 1);
-        assert_eq!(<<Erc20Transfer as EvmCall>::Args as AbiTuple>::WORDS, 2);
-        assert_eq!(<<Erc4626Redeem as EvmCall>::Args as AbiTuple>::WORDS, 3);
-        assert_eq!(<<ExactOutputSingle as EvmCall>::Args as AbiTuple>::WORDS, 7);
+        assert_eq!(<<erc20::Transfer as EvmCall>::Args as AbiTuple>::WORDS, 2);
+        assert_eq!(<<erc4626::Redeem as EvmCall>::Args as AbiTuple>::WORDS, 3);
+        assert_eq!(
+            <<uniswap_v3::ExactOutputSingle as EvmCall>::Args as AbiTuple>::WORDS,
+            7
+        );
         assert_eq!(
             <(Address, Address, Address, Address, Address, Address, Address, Address) as AbiTuple>::WORDS,
             8
         );
     }
 
-    /// The kinds are the vault's, unchanged — so rung D can re-express the
-    /// vault's slots without moving a byte of the wire protocol.
+    /// THE GAS DEFAULTS ARE THE DEPLOYED VAULT'S, re-homed (§2.3): the
+    /// numbers moved into this library and the vault's own constants are
+    /// aliases of them, so no request circuit's gas immediate can move.
     #[test]
-    fn kinds_are_the_vaults() {
-        assert_eq!(u32::from(Erc20Transfer::KIND), RESPONSE_KIND_WITHDRAW);
-        assert_eq!(u32::from(Erc20Approve::KIND), RESPONSE_KIND_APPROVE);
-        assert_eq!(u32::from(ExactOutputSingle::KIND), RESPONSE_KIND_SWAP);
-        assert_eq!(u32::from(Erc4626Deposit::KIND), RESPONSE_KIND_SUPPLY);
-        assert_eq!(u32::from(Erc4626Redeem::KIND), RESPONSE_KIND_REDEEM);
+    fn the_gas_defaults_are_the_vaults() {
+        use crate::erc20_vault::{ERC20_CALL_GAS, LENDING_GAS, SWAP_GAS};
+
+        assert_eq!(erc20::Transfer::GAS_LIMIT, ERC20_CALL_GAS);
+        assert_eq!(erc20::Approve::GAS_LIMIT, ERC20_CALL_GAS);
+        assert_eq!(uniswap_v3::ExactOutputSingle::GAS_LIMIT, SWAP_GAS);
+        assert_eq!(erc4626::Deposit::GAS_LIMIT, LENDING_GAS);
+        assert_eq!(erc4626::Redeem::GAS_LIMIT, LENDING_GAS);
+    }
+
+    /// A `Kinded` filing IS its call at its byte, and the return field is
+    /// the anonymous default.
+    #[test]
+    fn kinded_files_the_call_at_the_named_byte() {
+        type Transfer = Kinded<erc20::Transfer, 1>;
+
+        assert_eq!(<Transfer as Filing>::KIND, 1);
+        assert_eq!(<Transfer as Filing>::RETURN_FIELD, None);
+        assert_eq!(
+            <<Transfer as Filing>::Call as EvmCall>::signature(),
+            "transfer(address,uint256)"
+        );
     }
 
     /// The narrowing the MPC applies, as the schema literals spell it.
     #[test]
     fn respond_spellings_are_the_schemas() {
-        assert_eq!(<Erc4626Deposit as EvmCall>::Return::RESPOND, "uint64");
-        assert_eq!(<Erc4626Deposit as EvmCall>::Return::SOLIDITY, "uint256");
-        assert_eq!(<Erc20Transfer as EvmCall>::Return::RESPOND, "bool");
+        assert_eq!(<erc4626::Deposit as EvmCall>::Return::RESPOND, "uint64");
+        assert_eq!(<erc4626::Deposit as EvmCall>::Return::SOLIDITY, "uint256");
+        assert_eq!(<erc20::Transfer as EvmCall>::Return::RESPOND, "bool");
     }
 }

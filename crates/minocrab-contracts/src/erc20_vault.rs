@@ -188,11 +188,20 @@ pub const REDEEM_RESPOND_LEN: usize = REDEEM_RESPOND_SCHEMA.len();
 
 /// The contract-FIXED gas envelope of the vault-signed requests: 1 gwei
 /// priority fee, 30 gwei cap, and a per-call limit.
+///
+/// THE THREE LIMITS NOW LIVE IN THE LIBRARY (M38 rung A,
+/// notes/evm-interfaces.org §2.3): a per-function gas default is a fact
+/// about the function, so [`crate::evm::erc20::CALL_GAS`],
+/// [`crate::evm::uniswap_v3::SWAP_GAS`] and
+/// [`crate::evm::erc4626::CALL_GAS`] define them and these three names are
+/// aliases. Same numbers, one definition — `evm::tests::
+/// the_gas_defaults_are_the_vaults` pins the equality, and this lineage's
+/// hand-written circuits keep spelling the constants they always did.
 pub const FIXED_PRIORITY_FEE: u64 = 1_000_000_000;
 pub const FIXED_MAX_FEE: u64 = 30_000_000_000;
-pub const ERC20_CALL_GAS: u64 = 100_000;
-pub const SWAP_GAS: u64 = 700_000;
-pub const LENDING_GAS: u64 = 500_000;
+pub const ERC20_CALL_GAS: u64 = crate::evm::erc20::CALL_GAS;
+pub const SWAP_GAS: u64 = crate::evm::uniswap_v3::SWAP_GAS;
+pub const LENDING_GAS: u64 = crate::evm::erc4626::CALL_GAS;
 
 /// The event instantiations, one per request shape.
 pub type VaultEvent<V> =
