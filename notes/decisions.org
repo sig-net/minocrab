@@ -111,7 +111,7 @@ Keep bare
   fixtures), decoded on the MPC side by alloy's dynamic ABI
   (=chain-ethereum/src/respond_bidirectional.rs=, =DynSolType=), which
   accepts every =uintN=. No action.
-- [X] D2. A =cargo deny= (or =cargo audit=) CI job: the tree took its first sizeable crates.io graph (alloy, dev-only) in M38 D and CI has no supply-chain job (evm-interfaces.org §7). RECOMMEND: yes, cheap; an agent can add it.
+- [X] D2. (DONE 2026-09-06, merged: deny.toml + the =deny:= CI job + notes/supply-chain.org; three transitive ignores recorded with reasons, no live vulnerability.) A =cargo deny= (or =cargo audit=) CI job: the tree took its first sizeable crates.io graph (alloy, dev-only) in M38 D and CI has no supply-chain job (evm-interfaces.org §7). RECOMMEND: yes, cheap; an agent can add it.
 
 Yes
 
