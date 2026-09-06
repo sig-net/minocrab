@@ -35,9 +35,10 @@
 //!    plus a function taking it (see [`sol_uniswap_v3`]).
 //! 2. A [`SampleLeaf`] impl for any `AbiType` the call uses that has none
 //!    yet — the host-side value, its proptest strategy, the field limbs it
-//!    enters the circuit as, and how to rebuild the wire from them. All
-//!    NINE of today's leaves already have one (`U8` joined at M38 rung B,
-//!    for ERC-2612 `permit`'s `v`).
+//!    enters the circuit as, and how to rebuild the wire from them. All TEN
+//!    of today's leaves already have one (`U8` joined at M38 rung B, for
+//!    ERC-2612 `permit`'s `v`; `U16` at rung C, for Aave v3's
+//!    `referralCode`).
 //! 3. One row in the [`oracle_rows!`] invocation:
 //!
 //!    ```text
@@ -65,8 +66,9 @@ use alloy_sol_types::SolCall;
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
 use minocrab_contracts::evm::{
-    erc20, erc4626, uniswap_v3, usdt, weth, AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32,
-    EvmCall, U128, U160 as OurU160, U24 as OurU24, U256 as OurU256, U64, U8 as OurU8,
+    aave_v3, erc20, erc4626, erc721, uniswap_v3, usdt, weth, AbiArg, AbiTuple, AbiType, Address,
+    Bool, Bytes32, EvmCall, U128, U16 as OurU16, U160 as OurU160, U24 as OurU24, U256 as OurU256,
+    U64, U8 as OurU8,
 };
 use minocrab_sim::v3::simulate;
 use minocrab_std::v3::{is_true, Bool as BoolWire, Bytes, Check, Uint, B32};
@@ -139,8 +141,54 @@ mod sol_usdt {
 mod sol_erc4626 {
     alloy_sol_types::sol! {
         function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+        function mint(uint256 shares, address receiver) external returns (uint256 assets);
+        function withdraw(uint256 assets, address receiver, address owner)
+            external returns (uint256 shares);
         function redeem(uint256 shares, address receiver, address owner)
             external returns (uint256 assets);
+    }
+}
+
+/// Aave v3's `Pool`, from the deployed `IPool` interface. Every one of
+/// these is static-width, and `referralCode` is the `uint16` that makes
+/// [`supply`](sol_aave_v3::supplyCall) a different function from the
+/// `uint256`-tailed one a careless declaration would produce.
+mod sol_aave_v3 {
+    alloy_sol_types::sol! {
+        function supply(
+            address asset,
+            uint256 amount,
+            address onBehalfOf,
+            uint16 referralCode
+        ) external;
+        function withdraw(address asset, uint256 amount, address to)
+            external returns (uint256);
+        function borrow(
+            address asset,
+            uint256 amount,
+            uint256 interestRateMode,
+            uint16 referralCode,
+            address onBehalfOf
+        ) external;
+        function repay(
+            address asset,
+            uint256 amount,
+            uint256 interestRateMode,
+            address onBehalfOf
+        ) external returns (uint256);
+    }
+}
+
+/// ERC-721, from the EIP — declared with NO RETURNS, which is what the
+/// standard says and what makes two of these hash to ERC-20's selectors
+/// while meaning something else (see
+/// [`erc721_selectors_are_the_erc20_ones`]). `uint256 tokenId` is the same
+/// 32-byte word ERC-20 spells `uint256 amount`.
+mod sol_erc721 {
+    alloy_sol_types::sol! {
+        function transferFrom(address from, address to, uint256 tokenId) external;
+        function approve(address to, uint256 tokenId) external;
+        function setApprovalForAll(address operator, bool approved) external;
     }
 }
 
@@ -161,8 +209,20 @@ mod sol_uniswap_v3 {
             uint160 sqrtPriceLimitX96;
         }
 
+        struct ExactInputSingleParams {
+            address tokenIn;
+            address tokenOut;
+            uint24 fee;
+            address recipient;
+            uint256 amountIn;
+            uint256 amountOutMinimum;
+            uint160 sqrtPriceLimitX96;
+        }
+
         function exactOutputSingle(ExactOutputSingleParams calldata params)
             external payable returns (uint256 amountIn);
+        function exactInputSingle(ExactInputSingleParams calldata params)
+            external payable returns (uint256 amountOut);
     }
 }
 
@@ -172,9 +232,12 @@ mod sol_uniswap_v3 {
 /// alloy. It is also the demonstration that a row costs a `sol!` line and a
 /// table entry: nothing below it is call-specific.
 ///
-/// The NINTH leaf, `U8`, is deliberately not here: rung B's ERC-2612
-/// `permit` passes one for real, so it is checked by a shipped call rather
-/// than by a synthetic one, and `bytes32` now is too (permit's `r` and `s`).
+/// The two narrow leaves are deliberately not here: rung B's ERC-2612
+/// `permit` passes a `U8` for real and rung C's Aave `supply` a `U16`, so
+/// both are checked by shipped calls rather than by a synthetic one, and
+/// `bytes32` now is too (permit's `r` and `s`). Rung C's ERC-721
+/// `setApprovalForAll` does the same for the `bool`; this probe keeps it
+/// anyway, as the one place every leaf meets alloy in ONE call.
 mod sol_probe {
     alloy_sol_types::sol! {
         function abiLeafProbe(
@@ -218,8 +281,21 @@ mod sol_wrong {
             uint160 sqrtPriceLimitX96;
         }
 
+        struct ExactInputSingleParamsWithDeadline {
+            address tokenIn;
+            address tokenOut;
+            uint24 fee;
+            address recipient;
+            uint256 deadline;
+            uint256 amountIn;
+            uint256 amountOutMinimum;
+            uint160 sqrtPriceLimitX96;
+        }
+
         function exactOutputSingle(ExactOutputSingleParamsWithDeadline calldata params)
             external payable returns (uint256 amountIn);
+        function exactInputSingle(ExactInputSingleParamsWithDeadline calldata params)
+            external payable returns (uint256 amountOut);
     }
 }
 
@@ -393,6 +469,27 @@ impl SampleLeaf for OurU8 {
 
     fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<8, Private> {
         Uint::<8, Private>::from_field_unchecked(args[0])
+    }
+}
+
+/// `uint16` — Aave v3's `referralCode` (M38 rung C). Zero gets its own arm
+/// because zero is what every integrator passes, both ends of the range get
+/// one because they are where a truncation would show, and the whole range
+/// is sampled behind them.
+impl SampleLeaf for OurU16 {
+    type Value = u16;
+    const SLOTS: usize = 1;
+
+    fn strategy() -> BoxedStrategy<u16> {
+        prop_oneof![Just(0u16), Just(1u16), Just(u16::MAX), any::<u16>()].boxed()
+    }
+
+    fn limbs(v: &u16) -> Vec<Fr> {
+        vec![Fr::from(u64::from(*v))]
+    }
+
+    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<16, Private> {
+        Uint::<16, Private>::from_field_unchecked(args[0])
     }
 }
 
@@ -899,6 +996,124 @@ oracle_rows! {
         amount: SolU256::from(amount),
     };
 
+    /// `mint(uint256,address)` — 94bf804d. [`deposit`](deposit)'s
+    /// exact-output twin: the same two argument TYPES in the same order, a
+    /// different name, and therefore a different function.
+    erc4626_mint: erc4626::Mint => sol_erc4626::mintCall,
+    |(shares, receiver)| sol_erc4626::mintCall {
+        shares: SolU256::from(shares),
+        receiver: SolAddress::from(receiver),
+    };
+
+    /// `withdraw(uint256,address,address)` — b460af94. Its argument types
+    /// are [`redeem`](redeem)'s exactly, which is the case a selector is
+    /// there to separate: only the NAME differs, and the four bytes do.
+    erc4626_withdraw: erc4626::Withdraw => sol_erc4626::withdrawCall,
+    |(assets, receiver, owner)| sol_erc4626::withdrawCall {
+        assets: SolU256::from(assets),
+        receiver: SolAddress::from(receiver),
+        owner: SolAddress::from(owner),
+    };
+
+    /// `exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))`
+    /// — 04e45aaf. `SwapRouter02`'s seven-field struct, the mirror of
+    /// [`exact_output_single`](exact_output_single): the same seven words in
+    /// the same order, with the two amount fields meaning the other thing.
+    /// The eight-field original-router form is `414bf389` and is pinned as a
+    /// negative control in
+    /// [`the_router_shape_is_the_one_we_declare`].
+    exact_input_single: uniswap_v3::ExactInputSingle => sol_uniswap_v3::exactInputSingleCall,
+    |(token_in, token_out, fee, recipient, amount_in, amount_out_min, price)|
+        sol_uniswap_v3::exactInputSingleCall {
+            params: sol_uniswap_v3::ExactInputSingleParams {
+                tokenIn: SolAddress::from(token_in),
+                tokenOut: SolAddress::from(token_out),
+                fee: U24::from(fee),
+                recipient: SolAddress::from(recipient),
+                amountIn: SolU256::from(amount_in),
+                amountOutMinimum: SolU256::from(amount_out_min),
+                sqrtPriceLimitX96: U160::from_be_slice(&price),
+            },
+        };
+
+    /// Aave v3 `supply(address,uint256,address,uint16)` — 617ba037, and the
+    /// library's only `uint16`: spell `referralCode` as a `uint256` and the
+    /// selector is a different function entirely, which is what this row
+    /// stops.
+    aave_supply: aave_v3::Supply => sol_aave_v3::supplyCall,
+    |(asset, amount, on_behalf_of, referral)| sol_aave_v3::supplyCall {
+        asset: SolAddress::from(asset),
+        amount: SolU256::from(amount),
+        onBehalfOf: SolAddress::from(on_behalf_of),
+        referralCode: referral,
+    };
+
+    /// Aave v3 `withdraw(address,uint256,address)` — 69328dec. Note the
+    /// SAME NAME as [`erc4626_withdraw`](erc4626_withdraw) with a different
+    /// argument list: two interfaces, two selectors, and the callee marker
+    /// is what keeps them apart on our side.
+    aave_withdraw: aave_v3::Withdraw => sol_aave_v3::withdrawCall,
+    |(asset, amount, to)| sol_aave_v3::withdrawCall {
+        asset: SolAddress::from(asset),
+        amount: SolU256::from(amount),
+        to: SolAddress::from(to),
+    };
+
+    /// Aave v3 `borrow(address,uint256,uint256,uint16,address)` — a415bcad.
+    /// FIVE words, and the one call whose `uint16` sits in the MIDDLE of the
+    /// list rather than at the end — a word-order bug here is invisible to
+    /// the selector and shows only in the word comparison.
+    aave_borrow: aave_v3::Borrow => sol_aave_v3::borrowCall,
+    |(asset, amount, mode, referral, on_behalf_of)| sol_aave_v3::borrowCall {
+        asset: SolAddress::from(asset),
+        amount: SolU256::from(amount),
+        interestRateMode: SolU256::from(mode),
+        referralCode: referral,
+        onBehalfOf: SolAddress::from(on_behalf_of),
+    };
+
+    /// Aave v3 `repay(address,uint256,uint256,address)` — 573ade81. No
+    /// `referralCode`: paying a debt down refers nobody, and dropping the
+    /// argument is why this is not `borrow`'s shape minus a word.
+    aave_repay: aave_v3::Repay => sol_aave_v3::repayCall,
+    |(asset, amount, mode, on_behalf_of)| sol_aave_v3::repayCall {
+        asset: SolAddress::from(asset),
+        amount: SolU256::from(amount),
+        interestRateMode: SolU256::from(mode),
+        onBehalfOf: SolAddress::from(on_behalf_of),
+    };
+
+    /// ERC-721 `transferFrom(address,address,uint256)` — 23b872dd, THE
+    /// ERC-20 SELECTOR. The calldata is byte-identical to
+    /// [`transfer_from`](transfer_from)'s; the two differ only in the
+    /// declared return, which a signature does not carry — and alloy saying
+    /// so is the point of the row.
+    erc721_transfer_from: erc721::TransferFrom => sol_erc721::transferFromCall,
+    |(from, to, token_id)| sol_erc721::transferFromCall {
+        from: SolAddress::from(from),
+        to: SolAddress::from(to),
+        tokenId: SolU256::from_be_bytes(token_id),
+    };
+
+    /// ERC-721 `approve(address,uint256)` — 095ea7b3, the ERC-20 selector
+    /// again, for [`erc721_transfer_from`](erc721_transfer_from)'s reason.
+    erc721_approve: erc721::Approve => sol_erc721::approveCall,
+    |(to, token_id)| sol_erc721::approveCall {
+        to: SolAddress::from(to),
+        tokenId: SolU256::from_be_bytes(token_id),
+    };
+
+    /// ERC-721 `setApprovalForAll(address,bool)` — a22cb465. The one shipped
+    /// call that passes a `bool` as an ARGUMENT (every other `bool` in the
+    /// library is a return), so this row retires half of what
+    /// [`all_leaves`](all_leaves)'s synthetic probe was standing in for.
+    erc721_set_approval_for_all: erc721::SetApprovalForAll
+        => sol_erc721::setApprovalForAllCall,
+    |(operator, approved)| sol_erc721::setApprovalForAllCall {
+        operator: SolAddress::from(operator),
+        approved,
+    };
+
     /// ALL EIGHT LEAVES AT ONCE — including the `bool` and the `bytes32`
     /// that no shipped call passes as an argument.
     all_leaves: AbiLeafProbe => sol_probe::abiLeafProbeCall,
@@ -984,14 +1199,18 @@ fn the_word_comparison_can_fail() {
 }
 
 /// THE ROUTER GENERATION IS PINNED, and alloy is what pins it. Our
-/// [`uniswap_v3::ExactOutputSingle`] is `SwapRouter02`'s seven-field shape
-/// (`5023b4df`); the original `SwapRouter`'s params struct has a `deadline`
-/// between `recipient` and `amountOut`, and that eight-field shape is a
-/// different function (`db3e2198`) that our seven words would not fill.
+/// [`uniswap_v3::ExactOutputSingle`] and [`uniswap_v3::ExactInputSingle`]
+/// are `SwapRouter02`'s seven-field shapes (`5023b4df` and `04e45aaf`); the
+/// original `SwapRouter`'s params structs have a `deadline` between
+/// `recipient` and the amounts, and those eight-field shapes are different
+/// functions (`db3e2198` and `414bf389`) that our seven words would not
+/// fill.
 ///
-/// This is the negative control that matters for the one call whose
+/// This is the negative control that matters for the two calls whose
 /// `signature()` we override: the extra parentheses are pinned by
-/// `tests/evm_abi.rs`, and the FIELD LIST is pinned here.
+/// `tests/evm_abi.rs`, and the FIELD LIST is pinned here. It is a live
+/// hazard rather than a contrived one — `414bf389` is the selector most of
+/// the Uniswap documentation on the internet shows.
 #[test]
 fn the_router_shape_is_the_one_we_declare() {
     assert_eq!(
@@ -1012,6 +1231,107 @@ fn the_router_shape_is_the_one_we_declare() {
         uniswap_v3::ExactOutputSingle::selector(),
         [0x50, 0x23, 0xb4, 0xdf],
         "SwapRouter02's exactOutputSingle"
+    );
+
+    // The same, for the input side (M38 rung C).
+    assert_eq!(
+        sol_wrong::exactInputSingleCall::SIGNATURE,
+        "exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))"
+    );
+    assert_eq!(
+        sol_wrong::exactInputSingleCall::SELECTOR,
+        [0x41, 0x4b, 0xf3, 0x89],
+        "the deadline-bearing SwapRouter selector"
+    );
+    assert_ne!(
+        uniswap_v3::ExactInputSingle::selector(),
+        sol_wrong::exactInputSingleCall::SELECTOR,
+        "our call type hashes to the deadline-bearing router's selector"
+    );
+    assert_eq!(
+        uniswap_v3::ExactInputSingle::selector(),
+        [0x04, 0xe4, 0x5a, 0xaf],
+        "SwapRouter02's exactInputSingle"
+    );
+
+    // The two directions are DIFFERENT FUNCTIONS with identical argument
+    // types — the case where only the name separates them.
+    assert_ne!(
+        uniswap_v3::ExactInputSingle::selector(),
+        uniswap_v3::ExactOutputSingle::selector()
+    );
+}
+
+/// THE NON-CONFORMING TOKENS HASH TO ERC-20's SELECTORS, and alloy is what
+/// says so: a Solidity signature does not carry the return type, so
+/// `transfer(address,uint256)` is `a9059cbb` whether it returns a `bool` or
+/// nothing at all.
+///
+/// That is the fact [`UsdtLike`](usdt::UsdtLike) is built around. The wire
+/// cannot tell the two apart, so the TYPE has to — and this test is the
+/// evidence that the calldata really is identical, which is what makes
+/// declaring a USDT address as an `Erc20` a silent hazard rather than a
+/// loud one (notes/evm-calls.org §3.1).
+#[test]
+fn usdt_selectors_are_the_erc20_ones() {
+    assert_eq!(usdt::Transfer::selector(), erc20::Transfer::selector());
+    assert_eq!(usdt::Approve::selector(), erc20::Approve::selector());
+    assert_eq!(
+        usdt::TransferFrom::selector(),
+        erc20::TransferFrom::selector()
+    );
+
+    // …and alloy agrees, from its own two declarations.
+    assert_eq!(
+        sol_usdt::transferCall::SELECTOR,
+        sol_erc20::transferCall::SELECTOR
+    );
+    assert_eq!(
+        sol_usdt::approveCall::SELECTOR,
+        sol_erc20::approveCall::SELECTOR
+    );
+    assert_eq!(
+        sol_usdt::transferFromCall::SELECTOR,
+        sol_erc20::transferFromCall::SELECTOR
+    );
+}
+
+/// AND SO DO TWO OF ERC-721's (M38 rung C) — the same fact, on a standard
+/// nobody thinks of as a token variant.
+///
+/// `transferFrom(address,address,uint256)` and `approve(address,uint256)`
+/// are ERC-20's signatures exactly, so an NFT and a fungible token file
+/// byte-identical calldata for functions that return different things. The
+/// callee's INTERFACE is what distinguishes them
+/// ([`erc721`](minocrab_contracts::evm::erc721)'s module docs carry the
+/// compile_fail gates for both directions); nothing on the wire does, and
+/// this test is why we can say that rather than hope it.
+///
+/// `setApprovalForAll` is the counter-example in the same file: a name
+/// ERC-20 does not have, and therefore four bytes of its own.
+#[test]
+fn erc721_selectors_are_the_erc20_ones() {
+    assert_eq!(
+        erc721::TransferFrom::selector(),
+        erc20::TransferFrom::selector()
+    );
+    assert_eq!(erc721::Approve::selector(), erc20::Approve::selector());
+    assert_ne!(
+        erc721::SetApprovalForAll::selector(),
+        erc721::Approve::selector()
+    );
+
+    assert_eq!(
+        sol_erc721::transferFromCall::SELECTOR,
+        sol_erc20::transferFromCall::SELECTOR
+    );
+    assert_eq!(
+        sol_erc721::approveCall::SELECTOR,
+        sol_erc20::approveCall::SELECTOR
+    );
+    assert_eq!(
+        sol_erc721::setApprovalForAllCall::SELECTOR,
+        [0xa2, 0x2c, 0xb4, 0x65]
     );
 }
 

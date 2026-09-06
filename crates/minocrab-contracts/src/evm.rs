@@ -10,8 +10,8 @@
 //! Three layers:
 //!
 //! 1. [`AbiType`] — one Rust unit type per Solidity leaf ([`Address`],
-//!    [`Bool`], [`Bytes32`], [`U8`], [`U24`], [`U64`], [`U128`], [`U160`],
-//!    [`U256`]), plus [`Unit`] for a callee that returns NOTHING. It
+//!    [`Bool`], [`Bytes32`], [`U8`], [`U16`], [`U24`], [`U64`], [`U128`],
+//!    [`U160`], [`U256`]), plus [`Unit`] for a callee that returns NOTHING. It
 //!    carries the leaf's spelling in a selector signature
 //!    ([`AbiType::SOLIDITY`]), its spelling in the attested-output schema
 //!    the MPC narrows to ([`AbiType::RESPOND`]) and the CIRCUIT VALUE that
@@ -29,9 +29,9 @@
 //!    hashes keccak in-circuit; in-circuit hashing stays Poseidon throughout
 //!    (dmd, 2026-09-05: *"Do we actually need a const fn Keccak? Why not
 //!    just run it when we run the eDSL?"* — we do not). The library's calls
-//!    live one module per interface: [`erc20`], [`erc4626`],
-//!    [`uniswap_v3`], [`weth`] and [`usdt`]. [`Payable`] marks the one that
-//!    carries ether.
+//!    live one module per interface: [`erc20`], [`erc4626`], [`erc721`],
+//!    [`uniswap_v3`], [`aave_v3`], [`weth`] and [`usdt`]. [`Payable`] marks
+//!    the one that carries ether.
 //! 4. [`Filing`] — HOW ONE SLOT FILES ONE CALL: the response kind byte and
 //!    the deployed record's name for the attested return. Those are facts
 //!    about a DEPLOYMENT's protocol, not about the Solidity function (the
@@ -401,8 +401,10 @@ use crate::erc20_vault::{FIXED_MAX_FEE, FIXED_PRIORITY_FEE};
 use crate::signet::{reverse_bytes32, EvmCalldata};
 use crate::signet_flow::EvmTx;
 
+pub mod aave_v3;
 pub mod erc20;
 pub mod erc4626;
+pub mod erc721;
 pub mod uniswap_v3;
 pub mod usdt;
 pub mod weth;
@@ -589,6 +591,28 @@ impl AbiType for U8 {
 }
 
 impl AbiArg for U8 {
+    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+        numeric_word(c, w.field())
+    }
+}
+
+/// Solidity `uint16` — Aave v3's `referralCode`, the argument every one of
+/// its Pool functions carries and every caller passes zero for.
+///
+/// The encoding is [`numeric_word`], exactly as [`U8`] and [`U24`]: the
+/// three differ only in the RANGE the Rust type claims and in the spelling
+/// that goes into the selector — and the spelling is the whole point,
+/// because `supply(address,uint256,address,uint16)` and
+/// `supply(address,uint256,address,uint256)` are different functions.
+pub struct U16;
+
+impl AbiType for U16 {
+    const SOLIDITY: &'static str = "uint16";
+    const RESPOND: &'static str = "uint16";
+    type Wire<V: Vis3> = Uint<16, V>;
+}
+
+impl AbiArg for U16 {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
