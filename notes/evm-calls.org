@@ -842,3 +842,144 @@ so nothing caught it; =EvmCall::selector= gives it the checked order and
   settles' before/after rows FROM THE SNAPSHOT, and "the bench has not
   been re-run" left to the main session.
 - VERIFICATION.md: the lineage's row renamed off =Pending<Env, Resp>=.
+
+* 12. As built — rung E (tooling)
+
+§6's ask (dmd, via the eDSL's cover note): "macros that don't completely
+break tooling". Audited the two ATTRIBUTE macros that rewrite items —
+=#[circuit]= and =#[contract]=; derives and =label!= leave the annotated
+item intact by construction and are out of scope here. Wrote the property
+as a test in =minocrab-macros= for each, per the brief; =#[circuit]='s
+did NOT hold, so it was fixed (additively, inside =minocrab-macros=
+only — nothing in =minocrab-contracts/src= or any other crate moved).
+
+** =#[circuit]= (crates/minocrab-macros/src/circuit.rs)
+WHAT IT EMITS: =pub fn NAME() -> Compiled3 { struct __NAME_Args {..};
+impl CircuitArg/CircuitArgs for it; <the author's fn>; entry(|args|
+NAME(...)) }=, plus, beside it, the disclosure set-equality test and (if
+=max_k= is given) the cost-budget test — a zero-argument builder wrapping
+the args struct, the derive's own trait impls, the author's own
+function, and the =entry=/=entry_out= call.
+
+DID THE PROPERTY HOLD BEFORE: NO, not for the signature. The body
+=Block= was always the original node, spliced in verbatim; every
+individual parameter's tokens/spans were the author's own (cloning a
+=syn= node preserves =Span=), so hover/goto/rename on a PARAMETER or a
+LOCAL inside the body already worked. What did NOT hold was "the same
+tokens" for the function ITEM as a whole: =sig.inputs= was cloned
+element-by-element into a =Vec<FnArg>= and rejoined with fresh comma
+tokens under a SYNTHESISED name (=__NAME_body=), so the identifier a
+reader actually typed (=deposit=) never named the function carrying the
+body — only the wrapper, and the span =body_fn= borrowed
+(=format_ident!(.., span = name.span())=) without the matching text.
+rust-analyzer's macro-expansion view, or a literal search for "the
+function named =deposit='", landed on the wrong item.
+
+WHAT CHANGED: the inner function now reuses the author's OWN =Signature=
+cloned WHOLE (not decomposed into pieces) UNDER THE AUTHOR'S OWN NAME,
+minus the =#[arg(..)]= helper attribute stripped from parameter patterns
+— the one unavoidable deviation, since rustc rejects an attribute it does
+not recognise on a plain =fn='s parameter, and that attribute is macro
+bookkeeping the author did not write as part of the circuit's logic. This
+is legal because Rust's item shadowing lets a =fn= declared inside a
+block shadow an outer item of the same name for the REST of that block:
+=pub fn f() -> u32 { fn f(x: u32) -> u32 { x + 1 } f(41) }= compiles,
+returns 42, and =f()= called from OUTSIDE still resolves to the OUTER,
+zero-argument one (checked directly with =rustc= on a scratch file before
+touching the macro). So =entry(..)='s own call, written inside =#name='s
+body, now names =#name= too, and resolves to the newly-declared inner
+one; every OTHER call site in the corpus (200+, =Contract::CIRCUITS=, the
+snapshot/dump harnesses, every test) still sees the outer, unchanged
+public signature. Pinned by
+=circuit::tests::the_authors_signature_and_body_are_emitted_verbatim=: a
+representative =send=-shaped circuit with a doc comment, an
+=#[arg(name = "token")]= parameter and a =Discloses<..>= return; the
+expansion is asserted to contain the ORIGINAL =Signature= (bar the one
+stripped helper attribute) and the ORIGINAL =Block=, each compared as a
+=TokenStream= string, and to contain no surviving =_body= name.
+
+=-> Discloses<(...)>=: never stripped or rewritten, before or after this
+change — it travels as =sig.output=, spliced unchanged into the inner
+function's own return type; the OUTER wrapper's =-> Compiled3= is a
+different type on a different (sibling) function, not a replacement of
+the author's.
+=c: &mut Circuit3=: never stripped or rewritten either — the first
+parameter, like every other, is the author's own =FnArg= node, cloned;
+=check_circuit_param= rejects =#[arg]= on it but does not otherwise touch
+it.
+Doc comments and other outer attributes: attached to the OUTER wrapper
+(the only symbol =cargo doc= and every external caller ever see), and
+also, harmlessly, to the inner definition. Confirmed:
+=cargo doc -p minocrab-contracts --no-deps= renders =treasury::send='s
+own =/// send(evmNonce, keyVersion, ..)= doc paragraph directly on
+=pub fn send() -> Compiled3= in the generated HTML (bonus check #4).
+
+** =#[contract]= (crates/minocrab-macros/src/contract.rs)
+WHAT IT EMITS: a rebuilt =impl SelfType { ..items.. pub const CIRCUITS:
+[...] = [...]; }=, plus the same per-circuit tests =#[circuit]= would
+generate, placed AFTER the impl (they are =mod=s, which cannot go
+inside).
+
+DID THE PROPERTY HOLD, BEFORE AND NOW: YES, for every member — no fix
+needed here. A non-=#[circuit]= member (a plain method, a =const=,
+anything else) is pushed with =member.to_token_stream()= — =syn='s own
+=ToTokens= walking the parsed =ImplItem=, which re-serialises the SAME
+tokens at the SAME spans it was parsed with (the "syn re-emitting the
+parsed item preserves spans" case, not a rebuild), at the SAME
+declaration-order position. A =#[circuit]= member is repackaged from
+=ImplItemFn='s own fields (=attrs=/=vis=/=sig=/=block=, all cloned, none
+decomposed) into an =ItemFn= and handed to =circuit::expand_in=, so it
+inherits that function's property directly (now fixed, per above). What
+IS rebuilt is the =impl= block's own shell (=impl #self_ty { .. }= is a
+fresh =quote!= token, not the original =ItemImpl= reused wholesale) — but
+that shell carries no author content itself; every member's tokens pass
+through it untouched. Pinned by two new tests in =contract::tests=:
+=a_plain_method_passes_through_verbatim= (a =to_token_stream= comparison
+on the non-circuit member) and
+=a_circuit_methods_signature_and_body_are_emitted_verbatim= (the same
+property as =#[circuit]='s, through the =#[contract]= path, plus checking
+=CIRCUITS= names the method by its own identifier:
+=("deposit" , Self :: deposit)=).
+
+** The =proc-macro2= span behaviour that makes the claim true
+Cloning a =syn=/=proc-macro2= AST node (an =Ident=, a =Signature=, a
+=Block=, a whole =ItemFn=/=ImplItem=) clones its =Span=s along with it —
+=Span= is =Copy= and carries a source location tied to the ORIGINAL file
+and byte range, not a fresh =Span::call_site()=. Splicing a cloned node
+into a bigger =quote!= tree therefore keeps every one of its tokens
+pointing at the source text the author actually typed, which is what
+lets rust-analyzer map hover/goto/rename requests made against the
+macro's *expansion* back onto the right characters in the editor. The
+only tokens in either expansion that carry a macro-synthesised span are
+ones that were never source text to begin with — the =__NAME_Args=
+struct's identifier, the =entry=/=entry_out= path, the generated tests'
+module names, =#[contract]='s =impl= shell and its =CIRCUITS= const:
+precisely the SIBLINGS, where nobody expects "go to definition" to land
+because there is no author definition to go to.
+
+** Gates run for this rung
+- =cargo test -p minocrab-macros= — 61 passed (3 new: the verbatim
+  property on =#[circuit]=, and two on =#[contract]=).
+- =cargo test --workspace= — 108 targets, all green.
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — the SAME 7 pre-existing
+  warnings (none from =evm*.rs=/=treasury.rs=); =treasury::send='s doc
+  comment confirmed rendered on =pub fn send() -> Compiled3= in the
+  generated HTML (bonus check #4, first half). =cargo expand= is NOT in
+  this devshell (=cargo: no such command: "expand"=) — skipped per the
+  brief; the =TokenStream=-string tests and the rendered doc HTML are, for
+  THIS question (byte/identifier identity), stronger evidence than an
+  eyeballed =cargo expand= dump would have been anyway.
+- The 214-circuit ZKIR dump, before (macro changes stashed) and after:
+  =diff -rq= empty — every circuit byte-identical. Expected: the fix only
+  changes Rust-level identifiers and item nesting inside
+  =minocrab-macros=; it never changes an instruction the circuit builder
+  emits.
+- =row_snapshot= / =interface_snapshot=: untouched — =git status= shows no
+  file under =crates/minocrab-contracts= changed by this rung besides
+  this note.
+- =trust_base= — REGENERATED: =minocrab-macros/src/circuit.rs= grew
+  802 → 896 lines and =contract.rs= grew 122 → 229 (the verbatim-property
+  doc paragraphs and the three new tests); no other row moved. =TRUST.md=
+  diffed and reviewed — only those two line counts and the two derived
+  totals change.
