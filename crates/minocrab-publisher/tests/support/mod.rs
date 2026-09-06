@@ -21,7 +21,6 @@ use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::Array;
 use midnight_transient_crypto::proofs::VerifierKey;
-use minocrab_contracts::events::{MISC_SIZE, MISC_VERSION};
 use minocrab_publisher::call::{empty_state, operation, SIGNER_CIRCUITS};
 use minocrab_publisher::fab::bytesn_value;
 use minocrab_publisher::intent::{build_intent, preimage_tx};
@@ -29,6 +28,7 @@ use minocrab_publisher::publish::ChainContext;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use sha2::{Digest, Sha256};
+use signet_protocol::misc::{MISC_SIZE, MISC_VERSION};
 
 /// The network these gates deploy and publish on.
 pub const NETWORK_ID: &str = "local-test";

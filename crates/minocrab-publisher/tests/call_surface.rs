@@ -16,15 +16,15 @@ use midnight_onchain_vm::ops::Op;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::fab::AlignedValueExt;
-use minocrab_contracts::events::MISC_SIZE;
-use minocrab_contracts::signet_contract::{
-    RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
-};
 use minocrab_publisher::call::{
     empty_state, event_name, ContractKeyLocation, Deployment, EcdsaSignature, Notification,
     SignerCall, RESPOND, RESPOND_BIDIRECTIONAL, SIGNER_CIRCUITS, SIGN_BIDIRECTIONAL,
 };
 use minocrab_publisher::{respond, respond_bidirectional, sign_bidirectional, PublishError};
+use signet_protocol::circuits::{
+    RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
+};
+use signet_protocol::misc::MISC_SIZE;
 
 /// The COMMITTED `expectedVk` table (M29 A/B,
 /// `crates/signet-artifacts/managed/expectedVk.json`) — real hashes, so the

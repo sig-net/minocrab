@@ -1,4 +1,5 @@
-//! M29 rung B: pin `signet_artifacts::hash_verifier_key` to
+//! M29 rung B: pin `signet_protocol::hash_verifier_key` (M30 C1 moved it
+//! out of this crate; the pin stays here beside the key files) to
 //! `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
 //! (`ContractKeyLocation.js`: `createHash('sha256').update(bytes).digest
 //! ('hex')`, read directly — see notes/mpc-publisher.org §8).
@@ -80,10 +81,10 @@ fn hash_verifier_key_matches_compact_js_source() {
     );
     let ts_hash = String::from_utf8(output.stdout).expect("hashVerifierKey prints hex");
 
-    let rust_hash = signet_artifacts::hash_verifier_key(&bytes);
+    let rust_hash = signet_protocol::hash_verifier_key(&bytes);
     assert_eq!(
         rust_hash, ts_hash,
-        "signet_artifacts::hash_verifier_key disagrees with compact-js's hashVerifierKey \
+        "signet_protocol::hash_verifier_key disagrees with compact-js's hashVerifierKey \
          on {}",
         verifier_path.display()
     );

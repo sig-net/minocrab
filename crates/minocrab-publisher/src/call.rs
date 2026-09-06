@@ -51,10 +51,10 @@ use midnight_storage::db::{DB, InMemoryDB};
 use midnight_storage::storage::Array;
 use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::proofs::{KeyLocation, VerifierKey};
-use minocrab_contracts::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
-use minocrab_contracts::signet_contract::{
+use signet_protocol::circuits::{
     RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
 };
+use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
 use crate::error::PublishError;
 use crate::fab::{bytesn_value, cell};
@@ -259,7 +259,7 @@ impl Deployment {
                     message: e.to_string(),
                 }
             })?;
-            let got = signet_artifacts::hash_verifier_key(&bytes);
+            let got = signet_protocol::hash_verifier_key(&bytes);
             if &got != expected {
                 return Err(PublishError::VerifierKeyMismatch {
                     circuit: circuit.clone(),

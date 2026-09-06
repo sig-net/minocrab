@@ -7,7 +7,22 @@
 //! <root>/keys/<circuit>.prover     the proving key
 //! <root>/keys/<circuit>.verifier   the verifier key (COMMITTED in this repo)
 //! <root>/zkir/<circuit>.bzkir      the binary IR the prover interprets
+//! <root>/expectedVk.json           circuit -> hashVerifierKey (COMMITTED)
 //! ```
+//!
+//! # Where a [`Deployment`]'s table comes from (M30 C2)
+//!
+//! [`ManagedDir::deployment`] builds the table from the package's OWN
+//! `expectedVk.json` — the same file the sidecar's build/prove gate reads —
+//! and CHECKS every entry it uses against the hash of the `.verifier` file
+//! this directory actually carries, failing loudly and by name if they
+//! disagree. Deriving the table from the `.verifier` files directly, the way
+//! an earlier version of this function did, cannot catch this: a directory
+//! can only ever agree with itself. The JSON and the keys are two artifacts
+//! `signet-artifacts::generate` writes from the SAME bytes in the SAME run,
+//! but nothing stops one of them from going stale independently afterward
+//! (a hand-edited JSON, a key regenerated without re-running the pipeline,
+//! a stale file surviving a partial copy) — this is the check that notices.
 //!
 //! `midnight_ledger::test_utilities::test_resolver`'s external resolver reads
 //! exactly these three files under exactly these two subdirectories; this is
@@ -63,6 +78,27 @@ impl ManagedDir {
         self.root.join("zkir").join(format!("{circuit}.bzkir"))
     }
 
+    /// `<root>/expectedVk.json` — the package's own copy of the hash table,
+    /// written by `signet-artifacts::generate` and read by the sidecar's
+    /// build/prove gate.
+    pub fn expected_vk_path(&self) -> PathBuf {
+        self.root.join("expectedVk.json")
+    }
+
+    /// `expectedVk.json`, parsed: circuit -> 64-hex `hashVerifierKey`.
+    fn expected_vk_table(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, String>, PublishError> {
+        let path = self.expected_vk_path();
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| PublishError::Io { path: path.display().to_string(), source: e })?;
+        serde_json::from_str(&text).map_err(|e| PublishError::Decode {
+            path: path.display().to_string(),
+            what: "expectedVk.json",
+            message: e.to_string(),
+        })
+    }
+
     /// The verifier key's raw bytes — what `hashVerifierKey` hashes, before
     /// any deserialization.
     pub fn verifier_key_bytes(&self, circuit: &str) -> Result<Vec<u8>, PublishError> {
@@ -82,23 +118,46 @@ impl ManagedDir {
     }
 
     /// `hashVerifierKey(<circuit>.verifier)` — sha256 of the raw file bytes as
-    /// lowercase hex, via `signet_artifacts::hash_verifier_key`, which M29 B
+    /// lowercase hex, via `signet_protocol::hash_verifier_key`, which M29 B
     /// pinned against compact-js's own function under node.
     pub fn verifier_key_hash(&self, circuit: &str) -> Result<String, PublishError> {
-        Ok(signet_artifacts::hash_verifier_key(&self.verifier_key_bytes(circuit)?))
+        Ok(signet_protocol::hash_verifier_key(&self.verifier_key_bytes(circuit)?))
     }
 
     /// The [`Deployment`] a contract at `address` would have if it carried
-    /// THESE verifier keys — the `expectedVk` table, derived from the files
-    /// rather than trusted from a package.
+    /// THESE verifier keys — the `expectedVk` table, taken from the
+    /// package's OWN `expectedVk.json` and CHECKED against the `.verifier`
+    /// files this directory carries, per circuit requested.
+    ///
+    /// A circuit `expectedVk.json` does not name is
+    /// [`PublishError::UnknownCircuit`] (same as a `Deployment` built any
+    /// other way asking for a circuit not in its table); a circuit the JSON
+    /// and the key file DISAGREE on is
+    /// [`PublishError::ExpectedVkOutOfSync`], naming the circuit, the path
+    /// and both hashes — the mismatch this rung exists to catch (M30 C2,
+    /// notes/mpc-publisher.org §11).
     pub fn deployment(
         &self,
         address: ContractAddress,
         circuits: &[&str],
     ) -> Result<Deployment, PublishError> {
+        let shipped = self.expected_vk_table()?;
         let mut table = std::collections::BTreeMap::new();
         for circuit in circuits {
-            table.insert(circuit.to_string(), self.verifier_key_hash(circuit)?);
+            let json_hash = shipped
+                .get(*circuit)
+                .ok_or_else(|| PublishError::UnknownCircuit((*circuit).to_string()))?
+                .clone();
+            let file_hash = self.verifier_key_hash(circuit)?;
+            if file_hash != json_hash {
+                return Err(PublishError::ExpectedVkOutOfSync {
+                    circuit: (*circuit).to_string(),
+                    json_path: self.expected_vk_path().display().to_string(),
+                    json_hash,
+                    file_hash,
+                });
+            }
+            table.insert((*circuit).to_string(), json_hash);
         }
         Ok(Deployment { address, expected_vk: table })
     }
