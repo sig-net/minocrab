@@ -538,3 +538,171 @@ outside this crate's internals, and exist ONLY because their one caller
 each nests under another scope — everywhere else in the corpus the plain
 method under `c.when` is the whole story.
 
+* D. The one-spelling audit: =Wire3=/=Operand=/=impl Into= and the rest of the API surface (2026-09-06)
+
+dmd (notes/decisions.org D4, 2026-09-06): "Yup do that, let's trim so
+ideally there's generally only one 'correct' way to do something." This
+is §B's "NOT done" line, closed: a judgement pass over the whole eDSL
+public surface — =minocrab=, =minocrab-std=, =minocrab-macros=,
+=minocrab-ledger=, =minocrab-zkir=, =minocrab-sim='s stable tier — for
+every operation spellable more than one way. NOT =minocrab-ir=: the
+milestones.org M36 entry's own scope line names six crates, not seven,
+and does not carry =minocrab-ir= forward from §0's original (broader)
+inventory — the M36 rung this closes is scoped to the six.
+
+** How each removal is proven safe
+
+The CI semver-checks job (=interface-wire-compat-semver=, =.github/workflows/ci.yml=)
+runs =cargo semver-checks= against exactly two crates: =signet-signer-interface=
+and =xcall-target-interface= (notes/interface-crates.org "The semver
+instrument"). NONE of the six eDSL crates in this rung's scope are gated
+by it — nothing of ours is on crates.io, and nothing outside this
+workspace links against =minocrab=/=minocrab-std=/etc as a versioned
+dependency. So a public-signature change here is proven safe by the same
+two instruments §B's removal used, not by semver-checks:
+1. THE WORKSPACE COMPILES after every call site migrates (every consumer
+   of the eDSL is in-tree — contracts, tests, benches, doctests — so a
+   dangling reference is a build error, not a silent break).
+2. THE ZERO-MOVEMENT ZKIR DUMP (=MINOCRAB_ZKIR_DUMP=... cargo test -p
+   minocrab-contracts --test zkir_dump -- --ignored=) shows the 214
+   circuits byte-identical before and after, for removals that touch a
+   call site's lowering at all (both removals below are literally the
+   same instructions under a different name, so this is a formality, not
+   a real test of either — noted per finding).
+
+** The inventory table
+
+| # | operation | spellings (call-site counts, whole workspace) | recommended spelling | why | changes a public signature? | proven safe by |
+|---+-----------+-------------------------------------------------+-----------------------+-----+------------------------------+-----------------|
+| 1 | disclose one private wire under a typed label | (a) =value.disclose_as::<L>(c)= — the [[file:../crates/minocrab/src/v3/disclose.rs][=Disclose= trait method]], 425 call sites (contracts, tests, README) / (b) =c.disclose_as::<L, _>(value)= — the [[file:../crates/minocrab/src/v3.rs][=Circuit3= inherent method]] called directly on a single wire, 6 call sites: =minocrab-contracts/src/hashing.rs= (3, lines 108/109/116) and =minocrab-std/tests/v3_disclose.rs= (3, lines 65/66/68) | (a), =value.disclose_as::<L>(c)= | =disclose.rs='s own doc (line 195) already states the reason: a =Circuit3= method needs TWO type params (the label and the value type) so a turbofish is forced to =::<L, _>=; putting the label on a method of the value leaves exactly one to name. Every one of the 6 sites is a plain =Wire3<T, Private>=, which the blanket =impl Disclose for Wire3<T, Private>= already covers — nothing about them needs the two-param form | YES on (b): =Circuit3::disclose_as= narrows from =pub= to =pub(crate)=, since after migration only the trait impl in the same crate (=minocrab/src/v3/disclose.rs= line 226) calls it | workspace compile (the 6 sites are the only external callers — grep-confirmed) + the dump (identical instructions, same primitive either way) |
+| 2 | build an =ImpactOp::Idx= for one field, cached or not | (a) =idx_one(cached, is_container, index)= — the general 3-bool-arg form, 16 production call sites (=ops.rs= ×8, =reads.rs= ×6, =minocrab-std/src/v3/kernel.rs= ×1 with =cached=true=) / (b) =idx_field(index)= = =idx_one(false, false, index)= and =idxp_field(index)= = =idx_one(false, true, index)= — named wrappers over 2 of =idx_one='s argument combinations, both =pub=, both re-exported from =minocrab-ledger='s =lib.rs=; 2 call sites total, both in tests (=minocrab-ledger/src/tests.rs= line 576, =minocrab-std/tests/v3_ledger.rs= line 252); =idxp_field= itself: 0 call sites anywhere | (a), =idx_one= | Production code never reaches for the named wrappers even where they say exactly what's meant — it already always spells the general form, including the =cached=true= case (b) cannot express at all. Keeping (a) as the one spelling covers every case that exists in the corpus; (b) is a convenience nobody who could use it chose to | YES: =idx_field=/=idxp_field= removed outright from =minocrab-ledger='s public surface (=impact.rs= definitions + =lib.rs= re-export list) | workspace compile (2 test call sites, grep-confirmed no others) + the dump (literally the same three arguments, just spelled out — zero movement is not even a real test here) |
+
+** The removal (2026-09-06)
+
+1. =crates/minocrab/src/v3/disclose.rs=: =hashing.rs='s and =v3_disclose.rs='s
+   6 =c.disclose_as::<L, _>(w)= call sites become =w.disclose_as::<L>(c)=;
+   =Circuit3::disclose_as= (=crates/minocrab/src/v3.rs=) becomes =pub(crate)=.
+   =Circuit3::disclose_all_as=/=disclose_slice_as= are UNCHANGED and stay
+   =pub= — see "kept" below, they are not the same finding.
+2. =crates/minocrab-ledger/src/impact.rs=: =idx_field=/=idxp_field= deleted;
+   =lib.rs='s re-export list drops both names. The 2 test call sites
+   spell out =idx_one(false, false, ..)=/=idx_one(false, true, ..)=.
+
+Both are small, structurally trivial (same underlying primitive, no
+lowering change), and are the ENTIRE removal list this rung produced —
+see "kept, for dmd" for why the audit did not find more, and what was
+seriously considered and rejected.
+
+** Kept, for dmd — considered and NOT removed, with why
+
+- *The predicate module's free constructors vs. the typed-leaf comparison
+  methods* (=minocrab-std/src/v3/predicate.rs=): =less_than=/=greater_than=/=le=/=ge=/=eq=/=ne=
+  as free functions, and the same six names as methods on =Uint=/=BoundedUint=/=Bytes=/=Bool=
+  (=amount.gt(0u64)=), generated by =leaf_comparisons!= and delegating to
+  the free functions verbatim. LOOKED like the textbook case — the
+  module's own doc even says "two surfaces, one implementation" — but
+  the two are NOT interchangeable at every call site: the method
+  requires =self= to be one of the four leaf types (something that
+  implements =CheckOperand= AND got the macro invocation), and a bare
+  =Wire3<FieldT, V>= deliberately did NOT get one (=predicate.rs= lines
+  247-255 give the reason: an ordering's width-agreement rule is a
+  property of the PAIR, not expressible as a missing trait impl on one
+  side alone). Real production call sites depend on exactly this: =eq(a.hi,
+  b.hi)= (=erc20_vault.rs=, =erc20_vault_pending.rs=, =evm_flow.rs=,
+  comparing raw =B32= limb wires) and =le(sel, 6u64)=/=le(auth, 1u64)=
+  (=manager.rs=, raw selector wires) — none of these are spellable as a
+  method, because the wire on the LEFT has no =.eq=/=.le= to call.
+  Method-form call sites (=amount.gt(0u64)=-shaped, self a typed leaf):
+  63 across =erc20_vault.rs=, =erc20_vault_pending.rs=, =evm.rs=,
+  =bounded.rs=, =opaque.rs=, =evm/aave_v3.rs=, =evm/erc4626.rs= and tests
+  (=.lt= 5, =.gt= 27, =.le= 12, =.ge= 0, =.eq= 3, =.ne= 16). Free-form
+  call sites in PRODUCTION code (=minocrab-contracts/src=, excluding the
+  predicate module's own test suite which exercises the primitive
+  directly): 7 (=manager.rs= ×2, =erc20_vault.rs= ×2, =erc20_vault_pending.rs=
+  ×2, =evm_flow.rs= ×1). Removing either loses real, live expressivity
+  with no equally-clear substitute — this is "distinct types that don't
+  unify" (CLAUDE.md's own preferred rejection shape), not a cosmetic
+  duplicate. KEPT, both.
+- *=block_time_lt=/=block_time_gt= vs. =block_time_less_than=/=block_time_greater_than=*
+  (=minocrab-std/src/v3/kernel.rs= lines 276-306): the former is a
+  literal one-line call to the latter. Looks identical to finding 2
+  above in shape, but it is a mechanical, line-cited transcription of
+  TWO SEPARATE THINGS Compact itself exposes — =kernel.blockTimeLessThan=
+  (the kernel primitive) and =blockTimeLt= (a =standard-library.compact=
+  convenience circuit built on it) — per the file's own "transcribed"
+  comment. CLAUDE.md's reuse-Midnight's-code rule prefers mechanical
+  translation over inventing a cleaner surface; collapsing these would
+  diverge from Compact's own two-name split, not clean up an artifact of
+  ours. KEPT.
+- *The =_at= path-variant pairs across =minocrab-ledger='s raw layer*
+  (~30 pairs: =cell_write=/=cell_write_at=, =map_insert=/=map_insert_at=,
+  =merkle_tree_insert=/=merkle_tree_insert_at=, etc. — the plain form is
+  always =foo_at(&field_path(index), ..)= under the hood). Already named
+  as a deliberate, documented split in =ops.rs='s own module doc ("the
+  operations... the =_at= path variants") — top-level field index vs. a
+  general nested path, not two spellings of one idea. Confirmed both
+  genuinely exercised: =minocrab-std='s typed layer (=LedgerMap=/=LedgerCell=/etc.)
+  calls ONLY the =_at= forms; the plain forms are for hand-written raw
+  contract code (=nested.rs= is explicitly "deliberately raw") addressing
+  a circuit's own top-level fields, where a one-element path would be
+  needless ceremony. KEPT, both, per crate.
+- *=EntryPoint::hash=/=EntryPoint::limbs= vs. =ep_hash=/=ep_limbs=*
+  (=minocrab-ledger/src/calls.rs=): compile-time-known =&'static str=
+  (a =const fn=-friendly newtype) vs. a name known only at run time (the
+  artifact walker, a generator). Two ideas, not one signature spelled
+  two ways. KEPT.
+- *=minocrab-zkir='s =read_zkir=/=write_zkir= (path) vs. =parse_zkir=/=to_zkir_string=
+  (in-memory)*: already named as "the on-disk pair" / "the in-memory
+  pair" in the crate doc. =parse_zkir= has 3 real call sites (embedded-bytes
+  tests that never touch a file) against =read_zkir='s 34 — the
+  =std::fs::read= vs. =File::open=-plus-reader split, not a duplicate.
+  KEPT.
+- *=minocrab-sim='s =simulate= vs. =simulate_compiled=*: the latter is
+  =simulate= + =report= + a message-lookup enrichment
+  (=name_the_failed_assert=) a hand-rolled two-call composition would
+  miss; also =#[cfg(feature = "unstable")]=, outside this rung's stable-tier
+  scope regardless. KEPT / out of scope.
+- *=Circuit3::disclose_all_as=/=disclose_slice_as= vs. the =Disclose= trait*:
+  NOT the same finding as #1 above. These multi-wire primitives are
+  =pub= because =minocrab-std='s OWN composite =Disclose= impls (=B32=,
+  =BytesN=, the record types in =minocrab-std/src/v3/disclose.rs=) call
+  them directly from a DIFFERENT crate to fan a label out over several
+  typed wires as one record — there is no single-wire trait method that
+  could stand in for that. KEPT, public, both.
+- *=Circuit3::disclose= (bare string) vs. =disclose_as=/=disclose_all_as=
+  (typed label)*: different =DisclosureKind= (=DisclosedUntyped= vs.
+  =Disclosed=) — the task's own carve-out ("two forms that differ in
+  DISCLOSURE semantics... are two IDEAS, not one spelling"). Already the
+  subject of external review §4.5 and documented as such at each
+  definition. KEPT, not re-litigated.
+- *=minocrab-ledger='s =pub use minocrab::v3::{LimbConstraint, ImpactElem}=*:
+  reachable both as =minocrab::v3::ImpactElem= and =minocrab_ledger::ImpactElem=
+  — looks like re-export cruft, but this is a SETTLED decision from the
+  M26 ledger-crate split (§ above, "Re-export rule"): every item =pub= at
+  the crate root before the split stays reachable the same way after it.
+  Revisiting it is a scope question for a different rung, not this one's
+  cruft to clean. KEPT.
+- *=minocrab-std/src/v3/borsh.rs='s =Limbs::persistent_hash=/=transient_hash=/=keccak256=
+  vs. =hash::persistent_hash=/=transient_hash=*: different return types
+  (raw =Wire3= vs. typed =B32=) — the latter is a generic-=T= wrapper
+  built on the former via =limbs_of(value).persistent_hash(c)=. Layered
+  primitives, not two spellings of one idea. KEPT.
+
+** What the audit did NOT find
+
+No =impl Into<Operand<..>>= vs. bare =Wire3= duplication anywhere in
+scope: =minocrab='s core arithmetic layer (=v3.rs=) already uses
+=impl Into<Operand<T, V>>= everywhere a constant is meaningful (=add=,
+=mul=, =test_eq=, =cond_select=, ...) and bare =Wire3= only where one
+is not (=assert_with=, =assert_bits=, =disclose=, =output=) — each
+documented at its definition; =grep -rn "impl Into<"= over
+=minocrab-std='s stable tier returns nothing at all. No stale re-export
+(one path reachable two ways that ISN'T the settled M26 case above), no
+free-function/method pair duplicating an operation with nothing telling
+them apart, in =minocrab-macros= (four derives, three attribute macros,
+one spelling each; the =#[interface]= expansion emits exactly one method
+per call, never a duplicate free function), =minocrab-zkir=, or
+=minocrab-sim='s stable tier (=cost=/=profile=/=assert_max_k=/the
+=rowcost= tables — distinct granularities and units, not restatements of
+each other).
+
