@@ -714,7 +714,7 @@ impl Vault {
                 (common::SigningPath::vault_path(c).private(), (sk, amount))
             },
             |c, id, (sk, amount)| Owned {
-                owner: Commit::to::<WithdrawerRefundCommitment>(c, sk, id),
+                owner: Commit::to::<WithdrawerRefundCommitment, _>(c, sk, id),
                 inner: WithdrawEnv {
                     erc20,
                     amount: Uint::from_field_unchecked(*amount),
@@ -844,7 +844,7 @@ impl Vault {
                 )
             },
             |c, id, (sk, amount_out, amount_in_max)| Owned {
-                owner: Commit::to::<SwapperRefundCommitment>(c, sk, id),
+                owner: Commit::to::<SwapperRefundCommitment, _>(c, sk, id),
                 inner: SwapEnv {
                     token_in,
                     token_out,
@@ -1044,7 +1044,7 @@ impl Vault {
                 (common::SigningPath::vault_path(c).private(), (sk, amount))
             },
             |c, id, (sk, amount)| Owned {
-                owner: Commit::to::<SupplierRefundCommitment>(c, sk, id),
+                owner: Commit::to::<SupplierRefundCommitment, _>(c, sk, id),
                 inner: SupplyEnv {
                     amount: Uint::from_field_unchecked(*amount),
                 },
@@ -1166,7 +1166,7 @@ impl Vault {
                 (common::SigningPath::vault_path(c).private(), (sk, shares))
             },
             |c, id, (sk, shares)| Owned {
-                owner: Commit::to::<RedeemerRefundCommitment>(c, sk, id),
+                owner: Commit::to::<RedeemerRefundCommitment, _>(c, sk, id),
                 inner: RedeemEnv {
                     shares: Uint::from_field_unchecked(*shares),
                 },

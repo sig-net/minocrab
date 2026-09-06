@@ -1217,6 +1217,42 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
     finish_tx::<C, WORDS>(c, words, Envelope::fixed(), |_| callee, nonce)
 }
 
+/// [`build_tx`] FROM WORDS THAT ARE ALREADY ENCODED — what a BATCHED flush
+/// has, and all it has: the argument words were encoded at INSERT, from
+/// typed wires, and have been sitting in the queue as stored limbs ever
+/// since ([`crate::evm_flow::Queued`]).
+///
+/// Everything else is [`build_tx`]: the same const-checked `WORDS`, the same
+/// emission order through `finish_tx`. Two things the flush supplies rather
+/// than the queue, because supplying them IS the flush (notes/nonce-admin.org
+/// §4, §1.1): the NONCE, which the contract assigns from its own counter,
+/// and the ENVELOPE, which is the contract's — neither is ever a requester's
+/// argument.
+///
+/// The words are a LEDGER READ privatized, not a prover's value: nothing
+/// re-encodes them here and nothing needs to, because the read's `popeq`
+/// binds them to the stored entry [`AbiTuple::words`] encoded at insert.
+pub fn build_tx_from_words<C: EvmCall, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    words: [B32<Private>; WORDS],
+    envelope: Envelope,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS> {
+    const {
+        assert!(
+            WORDS == <C::Args as AbiTuple>::WORDS,
+            "`build_tx_from_words::<C, WORDS>` needs WORDS == <C::Args as \
+             AbiTuple>::WORDS — the record's calldata capacity IS the \
+             argument list's word count. Stable Rust cannot infer it \
+             (generic_const_exprs), so name the number the tuple actually \
+             encodes to."
+        )
+    };
+
+    finish_tx::<C, WORDS>(c, words.to_vec(), envelope, |_| callee, nonce)
+}
+
 /// [`build_tx`] FOR A CALL THAT CARRIES ETHER — the transaction's `value`
 /// field is a real amount rather than the constant zero.
 ///
