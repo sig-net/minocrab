@@ -2089,7 +2089,22 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       eleven compile_fail gates.) =Owned<Env>= and the typed commitment tag (§4): the owner
       commitment built on request and opened only on =refund_to_owner=;
       =Commit<T, Tag>=; =compile_fail= gates per §8.
-- [ ] D. The vault's Pending lineage re-expressed on A–C: request
+- [X] D. (2026-09-06, d69b2b6..cc4365b merged e1b026c — nine request
+      circuits and =claim= byte-identical in the 211-circuit dump; exactly
+      the eight settles moved: =complete_withdraw= (16, 35553) → (15,
+      25655), the four refunds +50..+73 rows at k16, the other three
+      completions row-identical (one folded identifier). DEVIATION,
+      recorded §11: =complete_swap= / =complete_supply= / =complete_redeem=
+      KEEP their owner gate — they mint proceeds to the caller, so an
+      anyone's completion would be anyone's proceeds; making them
+      anyone's is a protocol change to the stored env, for dmd. Rung-A
+      findings resolved as =Erc20TransferAsDeposit= / =…AsWithdrawal=
+      and =Envelope::caller=; the dump forced three more shapes:
+      =EvmCall::RETURN_FIELD=, =AbiArgs= builders, =request_with= with
+      a signing-path closure, and =Envelope::literal= (spelling only,
+      not a circuit fact — flagged for dmd). =signet_flow.rs= 799 → 362
+      lines, the wire only; two taint findings resolved; README's block
+      is treasury.rs verbatim; the bench NOT re-run.) The vault's Pending lineage re-expressed on A–C: request
       circuits, initialize, approves and claim byte-identical; the eight
       withdraw/swap/supply/redeem settles move DELIBERATELY to the
       Succeeded/Failed split (spec harness re-derived, leakage inventory
