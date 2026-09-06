@@ -1029,3 +1029,37 @@ Zero movement: G touched README.md and this note only.
   caller's (§7 of evm-calls.org — M39's nonce / fee-policy home). When
   M39 gives them a home the Rust half shrinks and the Compact half does
   not; that asymmetry is the thing the side-by-side will then be showing.
+
+* 9. As built — rung F (2026-09-06)
+The milestone's F: "one table in README (interface → calls →
+static/dynamic) and the per-interface =compile_fail= gates (wrong
+callee, wrong arity, a dynamic call on a static-only slot)".
+
+- THE TABLE is in README's "Cross-chain calls", before the paragraph
+  on the filing: eight interfaces, every call, the word count and the
+  return, with one sentence saying every row is static and what dynamic
+  would add (rung E, not built — no consumer). The oracle and the
+  compactc-calldata control are cited beside it.
+- THE GATES already existed — rungs A–C wrote each beside the rule it
+  enforces as a doc-test that must fail to compile. F counted and
+  classified them rather than duplicating them in a test file: 23
+  =compile_fail= blocks (evm.rs 9, evm_flow.rs 11, evm/erc721.rs 2, evm/uniswap_v3.rs 1 — the eight-field SwapRouter v1 struct on the SwapRouter02 marker).
+  By the milestone's three classes: WRONG CALLEE — a call on an address
+  that does not claim its interface (evm_flow.rs:82), UsdtLike ↔ Erc20
+  both directions (evm_flow.rs:385, 416), Erc721 ↔ Erc20 both
+  directions (erc721.rs:43, 80), an address and a callee that do not
+  unify (evm_flow.rs:488); WRONG ARITY / SHAPE — WORDS ≠ the call's word
+  count (E0080, evm_flow.rs:201), an argument tuple in the wrong order
+  or of the wrong type (evm.rs:85, 105), =Unit= in an argument tuple
+  (evm.rs:274, 297); A DYNAMIC CALL ON A STATIC SLOT — VACUOUS: no
+  dynamic call type exists, and the =AbiArg= bound on =AbiTuple= is what
+  would refuse one; the gate is written when rung E writes the type.
+  The rest are the slot's own rules (a ticket at another kind,
+  evm_flow.rs:150; duplicate kinds in a block, :225; a block without or
+  with two =Signet= fields, :268, :286; ether on a non-payable call,
+  evm.rs:361 and evm_flow.rs:309; the outcome rule's misuse, evm.rs:125,
+  148, 173, 223; a commitment opened under another tag, evm_flow.rs:773).
+- One stale README bullet fixed in passing: "the kind byte and the
+  response field name are the call type's" → the FILING's (rung A moved
+  them).
+Zero movement: README.md and this note only.

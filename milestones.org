@@ -2243,7 +2243,13 @@ calls them, and by what the fixed-width ABI layer can express.
       unlocks ERC-721 =safeTransferFrom=, ERC-1155 transfers, Safe
       =execTransaction=, Multicall3 =aggregate3=. ERC-4337 and Permit2
       stay out until a consumer asks.
-- [ ] F. Docs: one table in README (interface → calls → static/dynamic)
+- [X] F. (2026-09-06: README's cross-chain section gains the
+      interface table — eight interfaces, every call, words, return,
+      all static — and a paragraph classifying the 23 =compile_fail=
+      doc-tests rungs A–C wrote beside their rules (wrong callee incl.
+      both sibling directions; wrong arity / shape incl. =Unit= in Args;
+      the "dynamic call on a static slot" gate is VACUOUS until rung E
+      writes a dynamic type); one stale bullet fixed; notes §9.) Docs: one table in README (interface → calls → static/dynamic)
       and the per-interface =compile_fail= gates (wrong callee, wrong
       arity, a dynamic call on a static-only slot).
 - [X] G. (2026-09-06: landed by A for the vault and treasury — five
