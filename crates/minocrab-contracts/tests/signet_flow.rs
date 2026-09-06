@@ -19,7 +19,8 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::{witness_sk, SecretKey, SigningPath};
-use minocrab_contracts::evm::{Envelope, Erc20TransferAsDeposit, Erc20TransferAsWithdrawal};
+use minocrab_contracts::evm::erc20::{self, Erc20};
+use minocrab_contracts::evm::{Envelope, Filing};
 use minocrab_contracts::evm_flow::{Commit, CommitTag, Contract, Failed, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
 use minocrab_sim::v3::cost;
@@ -55,18 +56,41 @@ impl CommitTag for ToyWithdrawer {
     const PAD: &'static str = "toy:withdrawer:";
 }
 
+/// The toy's two FILINGS of ONE library call (M38 rung A): `erc20::Transfer`
+/// as a deposit (kind 0) and as a withdrawal (kind 1), both with the
+/// deployed record's `success` field name.
+///
+/// Written as `Filing` impls rather than as `Kinded` because the record
+/// NAMES the attested flag, which a `&'static str` cannot ride a const
+/// generic to carry.
+struct ToyDeposit;
+
+impl Filing for ToyDeposit {
+    type Call = erc20::Transfer;
+    const KIND: u8 = 0;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+}
+
+/// See [`ToyDeposit`].
+struct ToyWithdrawal;
+
+impl Filing for ToyWithdrawal {
+    type Call = erc20::Transfer;
+    const KIND: u8 = 1;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+}
+
 /// The ledger block: ten fields from four declarations.
 ///
-/// The two calls differ only in their kind byte — `transfer` filed as a
-/// deposit (0) and as a withdrawal (1) — which is the rung-A finding this
-/// block is also a witness for: two slots of one block cannot share a kind,
-/// and these do not.
+/// The two slots file the SAME Solidity call and differ only in their kind
+/// byte, which is the finding this block is also a witness for: two slots of
+/// one block cannot share a kind, and these do not.
 #[derive(Ledger)]
 struct Toy {
     initialized: LedgerCounter,
     signet: Signet,
-    deposits: Pending<Erc20TransferAsDeposit, DepositEnv, 2>,
-    withdrawals: Pending<Erc20TransferAsWithdrawal, WithdrawEnv, 2>,
+    deposits: Pending<ToyDeposit, DepositEnv, 2>,
+    withdrawals: Pending<ToyWithdrawal, WithdrawEnv, 2>,
 }
 
 const TOY: Toy = Toy::new();
@@ -95,7 +119,7 @@ fn deposit(
         c,
         |c| {
             let to = toy_address(c, 0x42);
-            Contract::from_address(c, to)
+            Contract::<Erc20>::from_address(c, to)
         },
         (
             |c: &mut Circuit3| toy_address(c, 0x43),
@@ -132,7 +156,7 @@ fn withdraw(
         c,
         |c| {
             let to = toy_address(c, 0x42);
-            Contract::from_address(c, to)
+            Contract::<Erc20>::from_address(c, to)
         },
         (
             |c: &mut Circuit3| toy_address(c, 0x43),
@@ -154,8 +178,8 @@ fn withdraw(
 }
 
 #[circuit]
-fn claim(c: &mut Circuit3, ticket: Succeeded<Erc20TransferAsDeposit>) -> Discloses<Settled> {
-    // `complete` asserts `Erc20TransferAsDeposit::succeeded` — the attested
+fn claim(c: &mut Circuit3, ticket: Succeeded<ToyDeposit>) -> Discloses<Settled> {
+    // `complete` asserts `erc20::Transfer::succeeded` — the attested
     // flag — so an attested `false` cannot arrive here at all.
     let outcome = TOY.deposits.complete(c, ticket);
     let _amount = outcome.env.amount;
@@ -165,7 +189,7 @@ fn claim(c: &mut Circuit3, ticket: Succeeded<Erc20TransferAsDeposit>) -> Disclos
 #[circuit]
 fn refund_withdrawal(
     c: &mut Circuit3,
-    ticket: Failed<Erc20TransferAsWithdrawal>,
+    ticket: Failed<ToyWithdrawal>,
 ) -> Discloses<Settled> {
     // Either the MPC's failure kind or a mined transfer that returned
     // `false`: one ticket for both non-successes.

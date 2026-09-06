@@ -13,7 +13,7 @@
 //! | 1 | forgetting the `signet: Signet` slot in the block         | E0609: `request` needs `&Signet`, no field   |
 //! | 2 | a settle circuit taking another slot's ticket             | E0308 (`Succeeded<Call>` carries the call)   |
 //! | 3 | a response type that is not a Borsh record               | E0277 (`Attestable: CircuitBorsh`)           |
-//! | 4 | two response types with one kind byte                    | E0080, prescriptive (`assert_distinct_kinds`)|
+//! | 4 | two slot filings with one kind byte                       | E0080, prescriptive (`assert_distinct_kinds`)|
 //! | 5 | capturing a private value in the environment             | E0277 (no `LedgerRepr` at `Private`)         |
 //! | 6 | a `WORDS` that is not the call's argument-word count       | E0080, prescriptive (the slot's constructor) |
 //! | 7 | hand-writing the notification's path bytes / depth        | impossible: derived from the slot            |
@@ -36,7 +36,7 @@
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};
 use minocrab_contracts::common::{Caip2Id, SigningPath};
-use minocrab_contracts::evm::{Envelope, EvmCall, U256};
+use minocrab_contracts::evm::{Envelope, EvmCall, Filing, Interface, U256};
 use minocrab_contracts::evm_flow::{Contract, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
 use minocrab_sim::v3::cost;
@@ -45,26 +45,45 @@ use minocrab_std::v3::{
     LedgerRepr, Secp256k1Point, Uint, B32,
 };
 
-/// `SignetEvmTarget.isEven(uint256) -> bool`, attested at kind 0.
+/// THE CALLEE'S INTERFACE — the MPC's integration target, declared by this
+/// contract in one line, which is what `trait Interface` being OPEN buys:
+/// nothing in the library knows about this deployment, and a
+/// `Contract<SignetEvmTarget>` still cannot be handed an ERC-20 `transfer`.
+struct SignetEvmTarget;
+
+impl Interface for SignetEvmTarget {}
+
+/// `SignetEvmTarget.isEven(uint256) -> bool`.
 ///
 /// The argument is a [`U256`] — an ALREADY-ENCODED word, which is what
 /// the MPC's own caller passes (`argWord`), and whose encoder is the
-/// identity. The response record names the flag `result`, so a settle
-/// circuit's slot is `serializedOutput.output.result`.
+/// identity.
 struct IsEven;
 
 impl EvmCall for IsEven {
+    type Callee = SignetEvmTarget;
     const NAME: &'static str = "isEven";
     type Args = (U256,);
     type Return = minocrab_contracts::evm::Bool;
     type Success = Bool<Private>;
-    const KIND: u8 = 0;
-    const RETURN_FIELD: Option<&'static str> = Some("result");
     const GAS_LIMIT: u64 = 100_000;
 
     fn succeeded(_c: &mut Circuit3, ok: &Bool<Private>) -> Check<Private> {
         is_true(*ok)
     }
+}
+
+/// HOW THIS CALLER FILES IT: kind 0, and the response record names the flag
+/// `result`, so a settle circuit's argument slot is
+/// `serializedOutput.output.result`. Both are facts about THIS deployment's
+/// protocol, which is why they are here and not on [`IsEven`] (M38 rung A,
+/// notes/evm-interfaces.org §1).
+struct IsEvenResult;
+
+impl Filing for IsEvenResult {
+    type Call = IsEven;
+    const KIND: u8 = 0;
+    const RETURN_FIELD: Option<&'static str> = Some("result");
 }
 
 /// What the verify circuit gets back: which argument was asked about.
@@ -77,7 +96,7 @@ struct IsEvenEnv {
 struct Caller {
     initialised: LedgerCounter,
     signet: Signet,
-    is_even: Pending<IsEven, IsEvenEnv, 1>,
+    is_even: Pending<IsEvenResult, IsEvenEnv, 1>,
 }
 
 const CALLER: Caller = Caller::new();
@@ -145,7 +164,7 @@ fn submit_is_even_request(
     let argument = arg_word.disclose_as::<Argument>(c);
     CALLER.is_even.request_with(
         c,
-        |c| Contract::from_address(c, to),
+        |c| Contract::<SignetEvmTarget>::from_address(c, to),
         (|_c: &mut Circuit3| arg_word,),
         Envelope::fixed(),
         key_version,
@@ -158,7 +177,10 @@ fn submit_is_even_request(
 
 /// `verifyResponse`: settle, and publish the attested result.
 #[circuit]
-fn verify_response(c: &mut Circuit3, ticket: Succeeded<IsEven>) -> Discloses<(Settled, Outcome)> {
+fn verify_response(
+    c: &mut Circuit3,
+    ticket: Succeeded<IsEvenResult>,
+) -> Discloses<(Settled, Outcome)> {
     assert_initialised(c);
     // `complete` asserts `IsEven::succeeded` — the attested flag itself —
     // so mistake 14 is no longer this circuit's to remember. What it still
