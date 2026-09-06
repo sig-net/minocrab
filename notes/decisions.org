@@ -117,7 +117,7 @@ Yes
 
 - [X] D3. The oracle pins TYPES, not parameter NAMES (§6 q6; Aave =Borrow='s =referralCode= between =interestRateMode= and =onBehalfOf=). Names only matter for the respond schema field names, which =RETURN_FIELD= owns. No action unless a consumer files an Aave call and the record's field names matter to a reader.
   
-- [X] D4. edsl-trim.org §B: a fuller history-narration sweep and the "one spelling per idea" audit of =Wire3= / =Operand= / =impl Into= forms — a judgement pass over the API surface. RECOMMEND: schedule as an M36 rung; an agent can do the sweep, you review the audit.
+- [X] D4. (DONE 2026-09-06, merged — M36 D; two removals, the kept list in edsl-trim.org §D is for dmd's review.) edsl-trim.org §B: a fuller history-narration sweep and the "one spelling per idea" audit of =Wire3= / =Operand= / =impl Into= forms — a judgement pass over the API surface. RECOMMEND: schedule as an M36 rung; an agent can do the sweep, you review the audit.
 
   Yup do that, let's trim so ideally there's generally only one "correct" way to do something.
 

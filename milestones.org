@@ -1752,9 +1752,20 @@ nothing here changes an artifact.
       point a human reads first, ≤ one screen, pointing at the three
       files that matter; =cargo doc --no-deps= warning-free; M33's
       inventory updated to the trimmed tree.
-- [ ] D. (dmd, 2026-09-06, decisions.org D4: "let's trim so ideally
-      there's generally only one 'correct' way to do something"; IN
-      FLIGHT) The one-spelling-per-idea audit M36 B left: every public
+- [X] D. (2026-09-06, notes/edsl-trim.org §D — the audit table with
+      call-site counts and the gate proving each removal safe; two real
+      removals, =Circuit3::disclose_as= → =pub(crate)= (the =Disclose=
+      trait method is the one spelling) and =minocrab-ledger='s
+      =idx_field=/=idxp_field= deleted (=idx_one= is the one spelling);
+      the rest KEPT with reasons for dmd — predicate.rs's free-fn/method
+      split is genuinely non-interchangeable (a raw =Wire3= on the left),
+      =block_time_*= pairs mirror two Compact primitives, the ~30
+      =foo=/=foo_at= raw-layer pairs are two caller categories; no
+      =impl Into<Operand>= vs bare =Wire3= duplication found anywhere.
+      Dump byte-identical on 214, workspace/clippy/doc green.) (dmd,
+      2026-09-06, decisions.org D4: "let's trim so ideally there's
+      generally only one 'correct' way to do something") The
+      one-spelling-per-idea audit M36 B left: every public
       operation spellable more than one way (=Wire3= / =Operand= / =impl
       Into= forms, free-function vs method twins, composition helpers,
       duplicate re-export paths) tabled in notes/edsl-trim.org §D with
