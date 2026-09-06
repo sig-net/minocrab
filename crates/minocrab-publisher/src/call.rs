@@ -42,7 +42,9 @@ use midnight_ledger::construct::{
 };
 use midnight_ledger::structure::LedgerParameters;
 use midnight_onchain_runtime::context::QueryContext;
-use midnight_onchain_state::state::{ChargedState, ContractOperation, StateValue};
+use midnight_onchain_state::state::{
+    ChargedState, ContractOperation, ContractState, EntryPointBuf, StateValue,
+};
 use midnight_onchain_vm::ops::Op;
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::{DB, InMemoryDB};
@@ -224,6 +226,51 @@ impl Deployment {
         Deployment { address, expected_vk: expected_vk.into_iter().collect() }
     }
 
+    /// THE `expectedVk` GATE: every circuit in the table is an operation on
+    /// `state` whose v3 verifier key hashes to the value the table records.
+    ///
+    /// This is `sig-net/mpc`'s `prover.ts` check
+    /// (`hashVerifierKey(verifierKey) !== verifierKeyHash` before it will
+    /// prove), moved to the side that matters more: `state` is what the NODE
+    /// says the contract carries, and notes/mpc-publisher.org §5.2 makes this
+    /// gate the reason a lying endpoint's respond call fails safe. Nothing in
+    /// the publish path calls it automatically — the pure core has no node —
+    /// so a caller with a contract state should, once per pinned read.
+    pub fn check_deployed<D: DB>(
+        &self,
+        state: &ContractState<D>,
+    ) -> Result<(), PublishError> {
+        for (circuit, expected) in &self.expected_vk {
+            let entry_point: EntryPointBuf = circuit.as_bytes().into();
+            let op = state
+                .operations
+                .get(&entry_point)
+                .ok_or_else(|| PublishError::UnknownCircuit(circuit.clone()))?;
+            let vk = op.v3.as_ref().ok_or_else(|| PublishError::VerifierKeyMismatch {
+                circuit: circuit.clone(),
+                expected: expected.clone(),
+                got: "no v3 verifier key on the deployed operation".to_string(),
+            })?;
+            let mut bytes = Vec::new();
+            midnight_serialize::tagged_serialize(vk, &mut bytes).map_err(|e| {
+                PublishError::Decode {
+                    path: format!("the deployed operation for '{circuit}'"),
+                    what: "VerifierKey",
+                    message: e.to_string(),
+                }
+            })?;
+            let got = signet_artifacts::hash_verifier_key(&bytes);
+            if &got != expected {
+                return Err(PublishError::VerifierKeyMismatch {
+                    circuit: circuit.clone(),
+                    expected: expected.clone(),
+                    got,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// The key location for one circuit, or [`PublishError::UnknownCircuit`]
     /// if the deployment's table does not carry it.
     pub fn key_location(&self, circuit: &str) -> Result<ContractKeyLocation, PublishError> {
@@ -381,6 +428,19 @@ pub struct SignerCall<D: DB = InMemoryDB> {
     pub misc: Vec<u8>,
     /// Address, circuit id and verifier-key hash.
     pub key_location: ContractKeyLocation,
+}
+
+/// Everything but the ops, which are a long `Push` of the same bytes `misc`
+/// already shows.
+impl<D: DB> std::fmt::Debug for SignerCall<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignerCall")
+            .field("circuit", &self.circuit)
+            .field("input", &self.input)
+            .field("misc", &hex(&self.misc))
+            .field("key_location", &self.key_location)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<D: DB> Clone for SignerCall<D> {

@@ -23,15 +23,41 @@ workspace = true
 # a publisher that spells the layout out a second time is a second reading of
 # the thing it is supposed to be faithful to (notes/mpc-publisher.org §9 C).
 minocrab-contracts = { path = "../minocrab-contracts" }
+# `hash_verifier_key` — the ONE definition of compact-js's `hashVerifierKey`
+# in this workspace, pinned against the real JS under node by M29 B. The
+# managed directory this crate resolves keys out of is the one that crate
+# writes, so the hash a `Deployment` carries and the hash `expectedVk.json`
+# records come from the same function.
+signet-artifacts = { path = "../signet-artifacts" }
 midnight-base-crypto.workspace = true
 midnight-coin-structure.workspace = true
 midnight-ledger.workspace = true
 midnight-onchain-runtime.workspace = true
 midnight-onchain-state.workspace = true
 midnight-onchain-vm.workspace = true
+midnight-serialize.workspace = true
 midnight-storage.workspace = true
 midnight-transient-crypto.workspace = true
+# The v3 IR the prover interprets: `IrSource::load_ir_from_tagged` on the
+# `.bzkir` beside the keys, then `ProofPreimage::prove::<IrSource>`.
+midnight-zkir-v3.workspace = true
+# `ProvingProvider`'s own error type is `anyhow::Error`, so implementing the
+# trait needs it by name.
+anyhow.workspace = true
+# `Intent::new`, `Intent::sign` and `Transaction::seal` all take rand 0.8's
+# `Rng`/`CryptoRng`, so the publisher's own signatures are spelled in them.
+rand.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-rand.workspace = true
+# `Transaction::prove` and `IrSource::keygen` are async; the gates drive them
+# on a multi-thread runtime, as the proving path does in production. `libc` is
+# `getrusage(RUSAGE_SELF)` for peak RSS — the same measurement
+# crates/minocrab-bench and the M29 E gate report. Declared here rather than in
+# `[workspace.dependencies]` for the same reason minocrab-contracts declares
+# them: test-only, and nothing shipping links them.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+libc = "0.2"
+# The fixture gate hashes the imported `.mn` files (their SHA-256 IS the
+# captured transaction hash, M29 D).
+sha2.workspace = true

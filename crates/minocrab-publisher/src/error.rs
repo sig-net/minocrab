@@ -39,6 +39,12 @@ pub enum PublishError {
         #[source]
         source: std::io::Error,
     },
+    /// The deployed contract's verifier key for a circuit is not the one the
+    /// `expectedVk` table records — the sidecar's `prover.ts` gate, and the
+    /// reason a lying endpoint's respond call fails safe
+    /// (notes/mpc-publisher.org §5.2).
+    #[error("{circuit}: the deployed verifier key hashes to {got}, not the expected {expected}")]
+    VerifierKeyMismatch { circuit: String, expected: String, got: String },
     /// A file on disk did not deserialize as the type its name claims.
     #[error("{path} is not a tagged {what}: {message}")]
     Decode { path: String, what: &'static str, message: String },
