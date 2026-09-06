@@ -10,6 +10,49 @@ Nothing here is built; nothing here is blocking anything an agent can do
 without it. Tick and annotate in place; the answer goes back into the
 milestone entry it belongs to.
 
+* TODO for dmd (2026-09-06 evening, after the backlog above was cleared)
+Everything below is yours to decide, review or do; nothing an agent can
+take without you. Ordered by what it unblocks.
+- [ ] T1. THE ATTESTATION DIGEST (notes/signet-async.org §10; the pinned
+  test =the_typed_settle_digest_is_not_the_digest_the_mpc_signs=). Under
+  Poseidon the typed =Pending= settle hashes one limb per Borsh leaf; the
+  MPC hashes the output packed as one 31-byte-limb byte string. Options:
+  (i) pack the output as one =BytesN= in-circuit before hashing —
+  unilateral, RECOMMENDED; (ii) a typed =compute_response_hash= on the
+  MPC side, coordinated release. UNBLOCKS: M35 E (generated round trips),
+  and the typed lineage's deployability at all.
+- [ ] T2. HAND OVER notes/event-attestation-cases.org to the MPC team.
+  Ask them one question it could not answer: can the respond schema
+  express an array of tuples (Multicall3's =aggregate3= return)?
+- [ ] T3. THE BATCH'S CHANGED DEFAULT (notes/nonce-admin.org §8): the
+  handle is the slot's OWN insert counter, not the Signet request
+  counter, because the flush consumes the Signet counter once per
+  record. Accept, or say what you would rather key the queue by.
+- [ ] T4. THE REQUEST COUNTER'S REPLACEMENT — you said you would design
+  it (§1.1/§2.1). The batch is built around the counter staying; the
+  spent-id set (§2.1) is the recorded alternative for unbatched paths.
+- [ ] T5. THE ADMIN HALF OF M39 C, two calls before an agent builds it:
+  the administrator is the deployer key or a ROTATABLE commitment (§3
+  recommends rotatable); and the shape of the generic EVM-transaction
+  layer the fee material moves into (your A3 answer: ERC-20 token > EVM
+  transaction > sig transaction — say where nonce, fees and value sit).
+- [ ] T6. REVIEW the "kept, for dmd" list in notes/edsl-trim.org §D —
+  the one-spelling audit removed two forms and kept the rest with
+  reasons; a verdict on each closes M36.
+- [ ] T7. REVIEW the three cargo-deny ignores (deny.toml: bincode and
+  paste unmaintained, chacha20 yanked — all via the pinned ledger rev).
+- [ ] T8. THE REVIEW QUEUE: notes/review-queue.org's evening entry —
+  seven landings, the executor first (its termination argument and
+  =decode_program= are the two things a human should read).
+- [ ] T9. Still open from E above: push/close the GitHub items (E1),
+  the M27 hand-back (E2), the upstream ZKIR spec watch ~2026-09-18
+  (E3), the M39 formal model (E4).
+Agent work waiting on none of this (already queued in milestones.org):
+M26's harness distillation from tests/support on the executor; M35 E's
+unread-field sweep; PUBLISHING.md's update for the signet-* crates;
+retiring the vault's prover-chosen =evm_nonce= onto =Queued= when
+sig-net's contract lands (P9).
+
 * A. Decisions that unblock scheduled work
 - [X] A1. THE M29 F PIN (notes/mpc-publisher.org §9 "The decision this
   leaves"). This repo pins one midnight rev (04c9c5d); mpc pins per-crate
