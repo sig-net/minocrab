@@ -2178,7 +2178,26 @@ calls them, and by what the fixed-width ABI layer can express.
       wrapper — decide, keeping the ledger derive's uniqueness assert).
       The five M37 calls re-homed; zero movement on the treasury and
       (after M37 D) the vault.
-- [ ] B. ERC-20 in full, static: =transfer=, =approve=, =transferFrom=,
+- [X] B. (2026-09-06, cdb9bbb..36230ae merged — evm/erc20.rs:
+      TransferFrom 23b872dd, Increase/DecreaseAllowance 39509351 /
+      a457c2d7, ERC-2612 Permit d505accf (seven words, =U8= joins the
+      leaves, =Return = Unit=); evm/weth.rs: =Weth: Extends<Erc20>= (the
+      first shipped consumer of inheritance), Deposit() d0e30db0 PAYABLE
+      and Withdraw 2e1a7d4d; evm/usdt.rs: =UsdtLike= sibling (its names
+      collide with erc20's, so its own module), no Extends either way,
+      both directions compile_fail. THE ARGS/RETURN SPLIT: =AbiArg:
+      AbiType= carries =word=; =Unit= is =AbiType= only, so =Unit= in
+      =Args= is E0277 and =Unit::word='s panic is DELETED (no =AbiReturn=:
+      it would name =AbiType='s exact membership). PAYABLE at ladder rung
+      one: =trait Payable: EvmCall= implemented by =weth::Deposit= alone,
+      =build_tx_payable= / =Pending::request_payable= bounded by it.
+      tests/evm_no_return.rs: a test-only contract with Unit tickets and
+      a =WORDS = 0= slot (test-only so no snapshot rows). Nine alloy
+      oracle rows added (36 passed). ZERO MOVEMENT: 214-circuit dump
+      byte-identical, snapshots unchanged. Open for dmd, §5: Permit's
+      gas default; Increase/DecreaseAllowance are pre-OZ-v5; no payable
+      =request_with=; a UsdtLike =Succeeded= means only "mined without
+      reverting".) ERC-20 in full, static: =transfer=, =approve=, =transferFrom=,
       =increaseAllowance= / =decreaseAllowance= (OpenZeppelin), ERC-2612
       =permit= (7 static words — gasless approval, the MPC-signed flow's
       natural friend), and WETH =deposit= / =withdraw=; the no-return
