@@ -58,6 +58,11 @@ an unbatched =Pending::request= with a user nonce is a design smell to
 retire once =Queued= lands, not a supported second path. §1's three
 bullets stay as the account of WHY a wrong nonce cannot steal, which is
 still true; they no longer justify letting a user choose one.
+STATUS (dmd, 2026-09-06): sig-net is going to fix the user-chosen nonce
+in their Compact; this note and M39 C run AHEAD of that to explore the
+design space, so the batch built here is a prediction of their shape,
+not a port of it. Prediction P9 (added to §7): their request circuit no
+longer takes a nonce or a fee from the prover.
 
 * 2. The Signet request counter: load-bearing for FRESHNESS, not as a shared number
 =signetRequestNonce= is read (=popeq=) and incremented in every request
@@ -206,3 +211,5 @@ the reqId, so the requester must be present at flush OR the env carries
 the commitment from insert. P5 unstick is a fixed-shape tx to self with
 caller-supplied fees and nonce, gated on the deployer. P6 the fee policy
 is either absent (fees stay constants) or a cell the deployer writes.
+P9 (§1.1): the user-chosen nonce and fee are gone from their request
+circuit; whatever assigns the nonce is contract state read once.
