@@ -34,8 +34,8 @@ use minocrab_contracts::erc20_vault::{
     FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
 };
 use minocrab_contracts::evm::{
-    always, build_tx, erc20, erc4626, uniswap_v3, AbiType, Address, Bool, Bytes32, EvmCall,
-    Extends, Interface, Kinded, U128, U24, U256, U64,
+    always, build_tx, build_tx_payable, erc20, erc4626, uniswap_v3, usdt, weth, AbiArg, AbiTuple,
+    AbiType, Address, Bool, Bytes32, EvmCall, Extends, Interface, Kinded, U128, U24, U256, U64, U8,
 };
 use minocrab_contracts::evm_flow::Contract;
 use minocrab_contracts::signet::{self, EvmCalldata};
@@ -742,4 +742,262 @@ fn one_call_files_under_many_kinds() {
     // The off-the-shelf filing: a kind, and the anonymous Solidity return.
     assert_eq!(<Kinded<erc20::Transfer, 7> as Filing>::KIND, 7);
     assert_eq!(<Kinded<erc20::Transfer, 7> as Filing>::RETURN_FIELD, None);
+}
+
+// ---- 6. the rest of ERC-20, WETH and the non-conforming tokens (M38 B) --------
+
+/// THE SELECTORS OF THE CALLS RUNG B ADDS, each hashed from its argument
+/// TYPES by the same `EvmCall::selector()` the vault's five go through.
+///
+/// The four ERC-20 ones are values anyone can look up (etherscan prints
+/// them on every token), and NONE of them is stored anywhere in this
+/// repository — like `balanceOf` above, that is what keeps the assertion
+/// from being circular: if `selector()` were reading a constant rather than
+/// keccaking, these are where it would show.
+#[test]
+fn the_rest_of_erc20_hashes_to_the_known_selectors() {
+    assert_eq!(
+        erc20::TransferFrom::signature(),
+        "transferFrom(address,address,uint256)"
+    );
+    assert_eq!(erc20::TransferFrom::selector(), [0x23, 0xb8, 0x72, 0xdd]);
+
+    assert_eq!(
+        erc20::IncreaseAllowance::signature(),
+        "increaseAllowance(address,uint256)"
+    );
+    assert_eq!(
+        erc20::IncreaseAllowance::selector(),
+        [0x39, 0x50, 0x93, 0x51]
+    );
+
+    assert_eq!(
+        erc20::DecreaseAllowance::signature(),
+        "decreaseAllowance(address,uint256)"
+    );
+    assert_eq!(
+        erc20::DecreaseAllowance::selector(),
+        [0xa4, 0x57, 0xc2, 0xd7]
+    );
+
+    assert_eq!(
+        erc20::Permit::signature(),
+        "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"
+    );
+    assert_eq!(erc20::Permit::selector(), [0xd5, 0x05, 0xac, 0xcf]);
+}
+
+/// AND THE KECCAK IS OURS, not a table: the four selectors above are the
+/// first four bytes of `Keccak256(signature())` computed here, in the test,
+/// from the string the call type builds.
+///
+/// It is the same hash function `selector()` calls, so this is not an
+/// independent oracle (rung D's alloy fixtures are); what it rules out is a
+/// `selector()` that consults something other than its own signature.
+#[test]
+fn the_selectors_are_the_hash_of_the_signature() {
+    fn first_four(sig: &str) -> [u8; 4] {
+        let d = <sha3::Keccak256 as sha3::Digest>::digest(sig.as_bytes());
+        [d[0], d[1], d[2], d[3]]
+    }
+
+    for (sig, selector) in [
+        (
+            erc20::TransferFrom::signature(),
+            erc20::TransferFrom::selector(),
+        ),
+        (
+            erc20::IncreaseAllowance::signature(),
+            erc20::IncreaseAllowance::selector(),
+        ),
+        (
+            erc20::DecreaseAllowance::signature(),
+            erc20::DecreaseAllowance::selector(),
+        ),
+        (erc20::Permit::signature(), erc20::Permit::selector()),
+        (weth::Deposit::signature(), weth::Deposit::selector()),
+        (weth::Withdraw::signature(), weth::Withdraw::selector()),
+    ] {
+        assert_eq!(first_four(&sig), selector, "{sig}");
+    }
+}
+
+/// WETH's two calls. `deposit()` takes NO ARGUMENTS — the ether is the
+/// argument — so its signature has empty parentheses and its slot's `WORDS`
+/// is zero.
+#[test]
+fn weth_hashes_to_the_known_selectors() {
+    assert_eq!(weth::Deposit::signature(), "deposit()");
+    assert_eq!(weth::Deposit::selector(), [0xd0, 0xe3, 0x0d, 0xb0]);
+    assert_eq!(<<weth::Deposit as EvmCall>::Args as AbiTuple>::WORDS, 0);
+
+    assert_eq!(weth::Withdraw::signature(), "withdraw(uint256)");
+    assert_eq!(weth::Withdraw::selector(), [0x2e, 0x1a, 0x7d, 0x4d]);
+    assert_eq!(<<weth::Withdraw as EvmCall>::Args as AbiTuple>::WORDS, 1);
+}
+
+/// `permit` is SEVEN STATIC WORDS, which is what makes it expressible at
+/// all on a fixed-width record: nothing in it is dynamic.
+#[test]
+fn permit_is_seven_static_words() {
+    assert_eq!(<<erc20::Permit as EvmCall>::Args as AbiTuple>::WORDS, 7);
+}
+
+/// THE NON-CONFORMING TOKENS FILE THE SAME CALLDATA AND DECLARE A DIFFERENT
+/// RETURN — the whole of the `UsdtLike` design in two assertions.
+///
+/// Same selector, same words: a USDT `transfer` is byte-identical on the
+/// wire to an ERC-20 one. What differs is `Return`, which is what the MPC
+/// is asked to decode: `Bool` against `Unit`. Declaring the `bool` for a
+/// token that returns nothing makes the decode fail, and a decode failure
+/// is the MPC's FAILURE kind — a refund for a transfer that moved the
+/// tokens (notes/evm-calls.org §3.1).
+#[test]
+fn usdt_is_the_same_calldata_and_a_different_return() {
+    assert_eq!(usdt::Transfer::selector(), erc20::Transfer::selector());
+    assert_eq!(usdt::Approve::selector(), erc20::Approve::selector());
+    assert_eq!(
+        usdt::TransferFrom::selector(),
+        erc20::TransferFrom::selector()
+    );
+    assert_eq!(
+        <<usdt::Transfer as EvmCall>::Args as AbiTuple>::WORDS,
+        <<erc20::Transfer as EvmCall>::Args as AbiTuple>::WORDS
+    );
+
+    assert_eq!(<erc20::Transfer as EvmCall>::Return::RESPOND, "bool");
+    assert_eq!(<usdt::Transfer as EvmCall>::Return::RESPOND, "");
+}
+
+/// …AND THEY ARE NOT THE SAME INTERFACE. `UsdtLike` neither extends `Erc20`
+/// nor is extended by it, so neither address takes the other's calls. The
+/// negative directions are the `compile_fail` twins in `evm_flow`'s module
+/// docs; this is the positive half — each call reaches its own callee, and
+/// `Weth` reaches BOTH its own and the ERC-20 surface.
+#[test]
+fn usdt_is_a_sibling_and_weth_is_a_subtype() {
+    fn reaches<C: EvmCall, I: Extends<C::Callee>>() {}
+
+    reaches::<usdt::Transfer, usdt::UsdtLike>();
+    reaches::<erc20::Transfer, erc20::Erc20>();
+
+    // WETH IS an ERC-20 — the first shipped consumer of inheritance.
+    reaches::<weth::Deposit, weth::Weth>();
+    reaches::<weth::Withdraw, weth::Weth>();
+    reaches::<erc20::Transfer, weth::Weth>();
+    reaches::<erc20::Approve, weth::Weth>();
+    reaches::<erc20::Permit, weth::Weth>();
+}
+
+/// A `uint8` word is the same reversal every other integer gets — the type
+/// states the RANGE, not a different encoder.
+#[test]
+fn u8_words_match_the_oracle() {
+    for v in [0u8, 1, 27, 28, 255] {
+        let (hi, lo) = run_word(&[Fr::from(u64::from(v))], |c, a| {
+            U8::word(c, &Uint::<8, Private>::from_field_unchecked(a[0]))
+        });
+        assert_eq!((hi, lo), b32_slots(&abi_num_word(u128::from(v))), "v = {v}");
+    }
+}
+
+/// ETHER ON THE WIRE: `build_tx_payable` puts the caller's amount in the
+/// transaction's `value` field, where every other call in the library has
+/// the constant zero.
+///
+/// The two halves of the claim, in one circuit each: a WETH `deposit` with
+/// a value, and the same call through the ordinary `build_tx`, which is a
+/// payable call made with no ether (Solidity's own meaning of payable).
+#[test]
+fn a_payable_call_carries_its_value() {
+    fn value_of(tx: EvmTx<0>, c: &mut Circuit3) {
+        let v = c.disclose(tx.value, "value");
+        c.output(v, "value");
+    }
+
+    let mut c = Circuit3::new();
+    let callee = c.arg::<FieldT>("callee");
+    let amount = c.arg::<FieldT>("amount");
+    let nonce = c.arg::<FieldT>("nonce");
+    let tx = build_tx_payable::<weth::Deposit, 0>(
+        &mut c,
+        Bytes::<20, Private>::from_field_unchecked(callee),
+        (),
+        Uint::<128, Private>::from_field_unchecked(amount),
+        nonce,
+    );
+    value_of(tx, &mut c);
+    let compiled = c.finish(false);
+    let run = simulate(
+        &compiled.ir,
+        &preimage(&[b20(&[0x33; 20]), Fr::from(1_000u64), Fr::from(3u64)]),
+    )
+    .expect("build_tx_payable accepts");
+    match &run.outputs[0] {
+        IrValue::Native(v) => assert_eq!(*v, Fr::from(1_000u64), "the ether"),
+        other => panic!("not native: {other:?}"),
+    }
+
+    let mut c = Circuit3::new();
+    let callee = c.arg::<FieldT>("callee");
+    let nonce = c.arg::<FieldT>("nonce");
+    let tx = build_tx::<weth::Deposit, 0>(
+        &mut c,
+        Bytes::<20, Private>::from_field_unchecked(callee),
+        (),
+        nonce,
+    );
+    value_of(tx, &mut c);
+    let compiled = c.finish(false);
+    let run = simulate(
+        &compiled.ir,
+        &preimage(&[b20(&[0x33; 20]), Fr::from(3u64)]),
+    )
+    .expect("build_tx accepts");
+    match &run.outputs[0] {
+        IrValue::Native(v) => assert_eq!(*v, Fr::from(0u64), "no ether"),
+        other => panic!("not native: {other:?}"),
+    }
+}
+
+/// EVERY RUNG-B CALL NAMES THE INTERFACE THAT EXPOSES IT, and the three
+/// non-conforming ones name a marker that is NOT `Erc20`.
+///
+/// The claim is a TYPE equality, so this test stops compiling if a
+/// `Callee` moves — which is the direction that matters for `usdt`, where
+/// naming `Erc20` would put the calls back on the same address as the
+/// conforming ones.
+#[test]
+fn each_rung_b_call_names_the_interface_that_exposes_it() {
+    fn callee_is<C: EvmCall<Callee = I>, I: Interface>() {}
+
+    callee_is::<erc20::TransferFrom, erc20::Erc20>();
+    callee_is::<erc20::IncreaseAllowance, erc20::Erc20>();
+    callee_is::<erc20::DecreaseAllowance, erc20::Erc20>();
+    callee_is::<erc20::Permit, erc20::Erc20>();
+    callee_is::<weth::Deposit, weth::Weth>();
+    callee_is::<weth::Withdraw, weth::Weth>();
+    callee_is::<usdt::Transfer, usdt::UsdtLike>();
+    callee_is::<usdt::Approve, usdt::UsdtLike>();
+    callee_is::<usdt::TransferFrom, usdt::UsdtLike>();
+}
+
+/// THE GAS DEFAULTS OF THE RUNG-B CALLS ARE THE ERC-20 ONE, deliberately:
+/// these are the same functions doing the same work, and inventing a second
+/// number per call would be a measurement nobody made.
+#[test]
+fn the_rung_b_gas_defaults_are_the_erc20_one() {
+    for limit in [
+        erc20::TransferFrom::GAS_LIMIT,
+        erc20::IncreaseAllowance::GAS_LIMIT,
+        erc20::DecreaseAllowance::GAS_LIMIT,
+        erc20::Permit::GAS_LIMIT,
+        weth::Deposit::GAS_LIMIT,
+        weth::Withdraw::GAS_LIMIT,
+        usdt::Transfer::GAS_LIMIT,
+        usdt::Approve::GAS_LIMIT,
+        usdt::TransferFrom::GAS_LIMIT,
+    ] {
+        assert_eq!(limit, erc20::CALL_GAS);
+    }
 }

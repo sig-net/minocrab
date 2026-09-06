@@ -301,6 +301,187 @@
 //! }
 //! ```
 //!
+//! ETHER ON A CALL THAT CANNOT TAKE IT — `Pending::request_payable` is
+//! bounded by [`Payable`], and an ERC-20 `transfer`
+//! has no impl, so an amount cannot be attached to a call that would
+//! ignore it and leave the ether with the contract (M38 rung B):
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     callee: Contract<erc20::Erc20>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     // ERROR: the trait bound `erc20::Transfer: Payable` is not satisfied
+//!     BLOCK.transfers.request_payable(
+//!         c, callee, (to, amount), amount, key_version, nonce, |_, _| env,
+//!     );
+//! }
+//! ```
+//!
+//! THE SAME CALL THAT DOES TAKE ETHER compiles — WETH's `deposit()`, whose
+//! ether IS its argument (it has no calldata beyond the selector, so the
+//! slot's `WORDS` is zero):
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{weth, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     wraps: Pending<Kinded<weth::Deposit, 1>, Amount, 0>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn wrap(
+//!     c: &mut Circuit3,
+//!     callee: Contract<weth::Weth>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     BLOCK.wraps.request_payable(
+//!         c, callee, (), amount, key_version, nonce, |_, _| env,
+//!     );
+//! }
+//! ```
+//!
+//! A CONFORMING TOKEN'S CALL FILED AGAINST A NON-CONFORMING ONE, and the
+//! other direction. `UsdtLike` is a SIBLING of `Erc20`, not a subtype:
+//! neither `Extends` the other, so neither address takes the other's calls.
+//! That is what stops a USDT address being handed to a slot that declares a
+//! `bool` return, whose absent return the MPC would resolve as its FAILURE
+//! kind — refunding a transfer that moved the tokens
+//! (notes/evm-calls.org §3.1, the dangerous direction):
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, usdt, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<usdt::Transfer, 1>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     // ERROR: the trait bound `Erc20: Extends<UsdtLike>` is not satisfied
+//!     callee: Contract<erc20::Erc20>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     BLOCK.transfers.request(c, callee, (to, amount), key_version, nonce, |_, _| env);
+//! }
+//! ```
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, usdt, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     // ERROR: the trait bound `UsdtLike: Extends<Erc20>` is not satisfied
+//!     callee: Contract<usdt::UsdtLike>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     BLOCK.transfers.request(c, callee, (to, amount), key_version, nonce, |_, _| env);
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH EACH CALLEE MATCHED TO ITS OWN INTERFACE compiles,
+//! and the two slots are the same two words on the wire — the difference is
+//! entirely in what the MPC is asked to decode:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, usdt, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     conforming: Pending<Kinded<erc20::Transfer, 1>, Amount, 2>,
+//!     non_conforming: Pending<Kinded<usdt::Transfer, 2>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     token: Contract<erc20::Erc20>,
+//!     tether: Contract<usdt::UsdtLike>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     one: Amount,
+//!     two: Amount,
+//! ) {
+//!     BLOCK.conforming.request(c, token, (to, amount), key_version, nonce, |_, _| one);
+//!     BLOCK.non_conforming.request(c, tether, (to, amount), key_version, nonce, |_, _| two);
+//! }
+//! ```
+//!
 //! A callee where a recipient belongs — `Contract<I>` and `Bytes<20>` are
 //! the same twenty bytes and do not unify:
 //!
@@ -333,12 +514,12 @@ use signet_signer_interface::{RequestId, Signature};
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
 use crate::evm::{
-    build_tx, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall, Extends, Filing,
-    Interface,
+    build_tx, build_tx_payable, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall,
+    Extends, Filing, Interface, Payable,
 };
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
-    file_request, Attested, Outcome, RequestIdSettled, SignRequest, Signet,
+    file_request, Attested, EvmTx, Outcome, RequestIdSettled, SignRequest, Signet,
 };
 
 /// THE MPC'S FAILURE KIND — byte 0 of the fixed output it attests when a
@@ -911,6 +1092,64 @@ where
         env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
         let tx = build_tx::<Called<F>, WORDS>(c, callee.address, args, nonce.field());
+        self.file(c, tx, key_version, env)
+    }
+
+    /// FILE THE CALL WITH ETHER ATTACHED — [`Self::request`] for a
+    /// [`Payable`] call, whose transaction's `value` field is a real amount
+    /// rather than the constant zero.
+    ///
+    /// `Called<F>: Payable` is the gate, and it is a MISSING TRAIT IMPL for
+    /// every other call in the library: an amount cannot be handed to an
+    /// `erc20::Transfer`, which would ignore it and send the ether nowhere
+    /// (notes/evm-interfaces.org §5). WETH's
+    /// [`weth::Deposit`](crate::evm::weth::Deposit) is the one call that
+    /// has the impl, and the ether IS its argument — `deposit()` has no
+    /// calldata beyond the selector.
+    ///
+    /// Everything else is [`Self::request`]: the same callee bound, the
+    /// same environment, the same record, the same disclosures. A payable
+    /// call filed through `request` instead carries no ether, which is what
+    /// Solidity means by payable — the type does not force an amount, it
+    /// forbids one where there is nowhere for it to go.
+    ///
+    /// The ether comes from the CONTRACT's derived EVM account — the one the
+    /// MPC signs for — so a contract that files this must have ether there,
+    /// which this API can no more check than it can check a token balance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_payable(
+        &self,
+        c: &mut Circuit3,
+        callee: Contract<impl Extends<Callee<F>>>,
+        args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
+        value: Uint<128, Private>,
+        key_version: Uint<8>,
+        nonce: Uint<64>,
+        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
+    ) -> RequestId<Public>
+    where
+        Called<F>: Payable,
+    {
+        let tx = build_tx_payable::<Called<F>, WORDS>(
+            c,
+            callee.address,
+            args,
+            value,
+            nonce.field(),
+        );
+        self.file(c, tx, key_version, env)
+    }
+
+    /// The shared tail of [`Self::request`] and [`Self::request_payable`]:
+    /// the contract's own signing path, the record filed under this slot's
+    /// kind, and the environment stored beside it.
+    fn file(
+        &self,
+        c: &mut Circuit3,
+        tx: EvmTx<WORDS>,
+        key_version: Uint<8>,
+        env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
+    ) -> RequestId<Public> {
         let path = SigningPath::contract_path(c).private();
         file_request(
             c,
