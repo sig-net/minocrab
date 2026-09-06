@@ -2,8 +2,11 @@
 //!
 //! Compiled into every test binary that declares `mod support`, each of
 //! which uses only the part it needs — hence the blanket `dead_code`
-//! allowance.
-#![allow(dead_code)]
+//! allowance, and the same allowance for the re-exports through which
+//! `signet_call` now hands on `minocrab-publisher`'s construction path
+//! (M30 rung A): a test binary that needs three of them still names the
+//! module, not the item.
+#![allow(dead_code, unused_imports)]
 
 // The Signet singleton's calls, built through the LEDGER's own
 // `ContractCallPrototype`/`construct_proof` (M29 rung C). Every singleton

@@ -716,3 +716,322 @@ untouched until it is made.
   milestone pays a fee or balances anything.
 - =BENCHMARK.md= is untouched, as instructed; E's numbers live only in
   this note.
+
+* 10. As built — M30 A+B (2026-09-06)
+
+Rungs A and B in one session, on top of §9. The through-line: §1 quoted the
+sidecar's own justification — "the one step that cannot move to Rust: the
+compiled contract's bindings and executor are JavaScript" — and §9 answered
+half of it by making the ledger's own preimage the thing our gates run on.
+What was still missing was that the preimage came out of TEST code. It comes
+out of a library now, and that library also proves, signs and seals.
+
+** The crate
+
+=crates/minocrab-publisher= (new workspace member, one line in the root
+=[workspace] members= list beside signet-artifacts'):
+
+#+begin_example
+src/call.rs      A — the public surface: one function per signer circuit
+src/fab.rs       A — the FAB primitives (moved out of the test support)
+src/error.rs     A — PublishError, one type for the crate
+src/intent.rs    B — prototypes -> Intent (with TTL) -> Transaction; the
+                     three transaction shapes get names
+src/keys.rs      B — ManagedDir: the keys/ + zkir/ layout, and the disk Resolver
+src/prove.rs     B — InProcessProver (the v3 arm of the ledger's
+                     CombinedProofProvider), SignerResolver (managed keys,
+                     then the ledger's DustResolver), params_provider
+src/dust.rs      B — THE SEAM: trait DustBalancer + NoDust (rung C plugs in)
+src/publish.rs   B — ChainContext, FundingKeys, build/prove/sign/seal, publish
+tests/call_surface.rs  A — 8 tests
+tests/publish.rs       B — 7 tests, no proving
+tests/real_proof.rs    B — 1 test, #[ignore] + --release
+tests/support/mod.rs   deploy side + the captured-fixture decoder
+#+end_example
+
+=publish = false=, for ONE reason: it depends on =minocrab-contracts= (itself
+=publish = false=) for the 288-byte Misc envelope (=events::{MISC_SIZE,
+MISC_TAG, MISC_VERSION}=) and the three signer event names. That is reuse over
+restatement — a publisher that spells the layout out a second time is a second
+reading of the thing it must be faithful to — but it does mean mpc's graph
+pulls the corpus crate in. Open question for dmd below.
+
+The dependency edge from =minocrab-contracts= back to the publisher is a
+DEV-dependency (its suites build their preimages through the library), so the
+cycle is the one cargo allows and the one =minocrab-std= ↔ =minocrab-sim=
+already relies on.
+
+** A. The public surface
+
+#+begin_src rust
+// crates/minocrab-publisher/src/call.rs
+pub struct EcdsaSignature { pub big_r_x: [u8; 32], pub big_r_y: [u8; 32],
+                            pub s: [u8; 32], pub recovery_id: u8 }
+pub struct Notification   { pub version: u8, pub payload: [u8; 128] }
+
+pub struct ContractKeyLocation {                 // compact-js's, in Rust
+    pub contract_address: ContractAddress,
+    pub circuit_id: String,
+    pub verifier_key_hash: String,               // 64-hex, hashVerifierKey
+}
+pub struct Deployment { pub address: ContractAddress,
+                        pub expected_vk: BTreeMap<String, String> }
+
+pub struct SignerCall<D: DB = InMemoryDB> {      // THE RETURN VALUE
+    pub circuit: &'static str,                   // = the entry point
+    pub input: AlignedValue,                     // the arguments
+    pub ops: Vec<Op<ResultModeVerify, D>>,       // the Impact program
+    pub misc: Vec<u8>,                           // the 288 logged bytes
+    pub key_location: ContractKeyLocation,       // address, circuit, vk hash
+}
+
+pub fn respond<D: DB>(&Deployment, &[u8; 32], &EcdsaSignature) -> Result<SignerCall<D>, PublishError>;
+pub fn respond_bidirectional<D: DB>(&Deployment, &[u8; 32], &EcdsaSignature) -> Result<SignerCall<D>, PublishError>;
+pub fn sign_bidirectional<D: DB>(&Deployment, &[u8; 32], &Notification) -> Result<SignerCall<D>, PublishError>;
+
+impl<D: DB> SignerCall<D> {
+    pub fn prototype(&self, state: &ChargedState<D>, parameters: &LedgerParameters,
+                     comm_rand: Fr) -> Result<ContractCallPrototype<D>, PublishError>;
+}
+// the general form the differential suites need (any entry point, any
+// argument value, any logged bytes — tamper twins, swapped names, a flat
+// [Field; n] alignment):
+pub fn call_prototype<D: DB>(entry_point: &str, address: ContractAddress,
+    state: &ChargedState<D>, parameters: &LedgerParameters, input: AlignedValue,
+    misc: &[u8], comm_rand: Fr) -> Result<ContractCallPrototype<D>, PublishError>;
+#+end_src
+
+=sign_bidirectional= is included because M29 C's path covers all three signer
+circuits and a publisher's key material, key locations and resolver are keyed
+by the same three names — even though the MPC only READS that call.
+
+=minocrab-contracts/tests/support/signet_call.rs= is now a thin wrapper: it
+re-exports =bytesn_value=/=cell=/=scalar_input=/=log_ops=/=empty_state=/
+=operation=/=SIGNER_CIRCUITS=, and keeps only what is test-only — =COMM_RAND=,
+=INTENT_SEED=, =SINGLETON_ADDRESS_BYTES=, the deploy seed, the limb arithmetic
+(=b32_slots=/=b128_limbs=) the construction gate checks the ledger's own field
+vector against, and the one call site that names =INITIAL_PARAMETERS=. The
+M29 C/D/E gates are green on the same preimages, byte for byte (they pin
+them; nothing moved).
+
+*** The key location has two spellings, and only one is pinned
+
+=@midnight-ntwrk/compact-js='s =ContractKeyLocation.js= (read at
+=~/midnight-examples/node_modules=, the same checkout M29 B's hash pin uses)
+encodes as
+
+: contract:<64-hex address>/<circuitId>?vk=<64-hex verifier key hash>
+
+with three rejections — a non-64-lowercase-hex address, an empty circuit id or
+one containing =/= or =?=, a non-64-lowercase-hex hash. =ContractKeyLocation=
+reproduces the string and the three rejections (=encode=/=parse=, pinned by a
+literal in =tests/call_surface.rs=), but what goes INTO a prototype is the BARE
+circuit id: that is what M29 C pinned, what =managed/= names its files, and a
+field that steers a resolver and does not survive proving (a =Proof= carries no
+=key_location=). =ManagedDir='s resolver accepts EITHER spelling, which is what
+lets it stand in for the sidecar's proof-server resolver without re-spelling any
+preimage.
+
+*** The =expectedVk= gate, moved to the side that matters
+
+The sidecar checks =hashVerifierKey(verifierKey) !== verifierKeyHash= on the
+key it reads OFF DISK. =Deployment::check_deployed(&ContractState)= checks the
+key the NODE says the contract carries against the same table — which is the
+check §5.2 actually leans on when it says a lying endpoint's respond call fails
+safe. Nothing in the publish path calls it automatically (the pure core has no
+node); a caller with a contract state should, once per pinned read.
+=tests/publish.rs= runs it in both directions, including against a deployment
+whose operations carry each OTHER circuit's key.
+
+** The ledger-parameters decision (§9's open item)
+
+§9 left: "M30 B should fetch =LedgerParameters= from the node rather than
+assume =INITIAL_PARAMETERS=". Half of that is done here and the other half
+cannot be, by design:
+
+- DONE: nothing in =minocrab-publisher= mentions =INITIAL_PARAMETERS=.
+  =partition_transcripts= is called with a =&LedgerParameters= the caller
+  supplies, carried in =ChainContext.parameters= beside the contract state, the
+  cost model, the network id, the segment and the block time. The assumption is
+  gone from the library.
+- NOT DONE, deliberately: the FETCH is node I/O, and the milestone's own scope
+  says the node I/O is mpc's. =LedgerState::parameters= is where a caller with
+  a node reads it. So the seam is "the publisher is a function of the
+  parameters", and mpc's =IntentClient= adapter supplies them.
+- The tests spell =INITIAL_PARAMETERS= at one call site each
+  (=tests/support/signet_call.rs= in minocrab-contracts, =support::chain_context=
+  here), because a test with no chain has to choose something and the M29
+  preimages were pinned against that choice.
+
+** B. The pipeline, and why the steps are in this order
+
+#+begin_src rust
+pub struct ChainContext<D: DB> {   // everything the chain tells the publisher
+    pub contract_state: ChargedState<D>,
+    pub parameters: LedgerParameters,
+    pub cost_model: CostModel,
+    pub network_id: String,
+    pub segment: u16,              // never 0 — the guaranteed segment
+    pub tblock: Timestamp,         // DUST is valued at a time
+}
+pub struct FundingKeys { pub guaranteed: Vec<SigningKey>,
+                         pub fallible: Vec<SigningKey>,
+                         pub dust_registration: Vec<SigningKey> }
+
+pub fn build<D>(&ChainContext<D>, &SignerCall<D>, comm_rand: Fr, ttl, rng) -> Result<PreimageTx<D>>;
+pub async fn prove<D>(&ChainContext<D>, &PreimageTx<D>, impl ProvingProvider) -> Result<ProvenTx<D>>;
+pub fn sign<P: ProofKind<D>, D>(Transaction<.., P, PedersenRandomness, D>, &FundingKeys, rng) -> Result<..>;
+pub fn seal<P: ProofKind<D>, D>(&Transaction<.., P, PedersenRandomness, D>, rng) -> Transaction<.., P, PureGeneratorPedersen, D>;
+pub async fn publish<D>(ctx, call, comm_rand, ttl, prover, &mut impl DustBalancer<D>,
+                        &FundingKeys, rng) -> Result<SealedTx<D>, PublishError>;
+#+end_src
+
+build → prove → BALANCE → sign → seal. Three of the four orderings are forced,
+which is worth writing down because the sidecar's ordering looked arbitrary:
+
+- balance after prove, because the fee depends on the transaction's own size
+  and therefore on the proof sizes (=fees_with_impl= over the proven tx). The
+  sidecar does the same thing — =prove= then =balanceUnboundTransaction=.
+- sign after balance, because a dust REGISTRATION added by the wallet is signed
+  by =Intent::sign='s third key list.
+- seal last, by the type: =well_formed= only accepts a =PureGeneratorPedersen=
+  binding, and sealing closes over each intent's contents.
+- =sign= is generic over the proof kind, because =data_to_sign= erases proofs
+  and signatures before hashing — so the signature does not depend on whether
+  the transaction has been proved, and the cheap gate can exercise the same
+  function the real one does.
+
+All three of =FundingKeys='s lists are EMPTY for a respond intent today: it
+carries no unshielded offer and no dust registration, so =Intent::sign= has
+nothing to sign and the transaction's authority is its proof.
+
+*** Proving
+
+=InProcessProver= is the same 35-line mechanical translation of
+=CombinedProofProvider='s v3 arm (=ledger/src/test_utilities.rs:749-818=) that
+M29 E made inside a test, now a library type: resolve the key material, load
+the =ir-source[v3-generic]= =IrSource=, hand the preimage to
+=ProofPreimage::prove::<zkir_v3::IrSource>=. Upstream's is unreachable twice
+over (private, behind =test-utilities= + =proving=; and its resolver insists on
+a =ZswapResolver=, whose parameter sets a respond transaction has no use for).
+
+=SignerResolver= tries =ManagedDir= first and the ledger's own =DustResolver=
+second. The dust half resolves exactly one key, =midnight/dust/spend=, and is
+dead weight until rung C — wired now because the fee proof is the one OTHER
+proof a published respond transaction will carry, and because a resolver that
+cannot find its key fails deep inside an =anyhow::Error= at proving time
+rather than at construction. =SignerResolver::new= leaves it =None=;
+=with_dust= turns it on.
+
+=ManagedDir= is =test_resolver='s external closure with a name and an error
+type: =keys/<circuit>.{prover,verifier}= + =zkir/<circuit>.bzkir=, ALL OR
+NOTHING (this repo commits the =.verifier= but not the 56 MB =.prover= or the
+=.bzkir=, so a directory with only the verifier key must read as "cannot prove
+this circuit", not as a half-resolved key). It also computes the =expectedVk=
+table from the files through =signet_artifacts::hash_verifier_key= — the one
+definition of compact-js's =hashVerifierKey= in this workspace, pinned under
+node by M29 B.
+
+** The gates
+
+| gate | where | cost |
+| 8 tests: key location (encode/parse/3 rejections), envelope layouts, argument limb counts (9/9/8), the prototype | =tests/call_surface.rs= | plain =cargo test= |
+| 7 tests: the =expectedVk= gate both ways, the resolver on both spellings, "the committed dir cannot prove", the hashes vs =expectedVk.json=, TTL/segment/one-call, build→sign→seal→well_formed→apply against the CAPTURED transaction's 288 bytes | =tests/publish.rs= | plain =cargo test= |
+| 1 test: keygen → temp managed dir → build → prove → sign → seal → =well_formed= (verify ON, Real) → apply, plus the permuted-key negative control | =tests/real_proof.rs= | =--release --ignored= |
+
+The fixture gate is the one worth naming: it decodes M29 D's
+=respond-tx-161.mn= (SHA-256 asserted, which is also the captured transaction
+hash), takes the request id and signature OUT of the real chain's emission,
+rebuilds the call through =publisher::respond=, applies it, and requires the
+288 bytes the ledger recorded to equal the golden's. The fixtures are reached
+by path from the other crate rather than copied — one captured artifact in the
+repo, one README recording its provenance.
+
+** Numbers (this machine, =--release=, params warm; single-shot, two runs)
+
+: cargo test --release -p minocrab-publisher --test real_proof -- --ignored --nocapture
+
+| step | run 1 | run 2 |
+| keygen (respond, k=10, 1,004 rows, pk 0.9 MB) | 0.071 s | 0.069 s |
+| *publish: build + prove + sign + seal* | *0.120 s* | *0.121 s* |
+| =well_formed= with proofs verified (Real) | 0.015 s | 0.013 s |
+| process baseline peak RSS | 18.6 MB | 18.6 MB |
+| *whole-run peak RSS* | *66.3 MB* | *66.1 MB* |
+| whole test (incl. the negative control's second proof) | 0.38 s | 0.35 s |
+
+Against M29 E's figures (§9 E: prove 0.182 / 0.121 / 0.116 s, whole-run peak
+82.8 MB for all three circuits in one process; re-run today through the library
+at 0.181 / 0.119 / 0.119 s, peak 84.6 MB):
+
+- The publisher's whole build→prove→sign→seal costs *0.120 s*, i.e. E's respond
+  PROVE figure (0.121 s) and nothing measurable on top. Build, sign and seal are
+  free next to the proof: partitioning a two-op program, signing nothing, and
+  one Pedersen re-randomisation.
+- Peak RSS is *66 MB* against E's 83 MB because this process holds ONE prover
+  key (respond) where E holds three. The publisher a deployment actually runs
+  holds respond and respondBidirectional — two k=10 keys, so E's +3.6 MB
+  marginal figure says ~70 MB, and E's 83 MB remains the ceiling for a process
+  that also serves signBidirectional. Either way the sizing fact stands:
+  ~10× under the ~900 MB a single compactc =respond= proof needs
+  (BENCHMARK.md).
+- Inside the milestone's budget ("inside the M29 E time and RSS budget"), on
+  both axes.
+
+No network access: the KZG parameters were already cached under
+=~/.cache/midnight/zk-params=, and nothing else in the run reaches out.
+
+** What is left for rung C (the DUST wallet)
+
+=src/dust.rs= is the whole of the seam:
+
+#+begin_src rust
+pub trait DustBalancer<D: DB> {
+    async fn balance(&mut self, tx: ProvenTx<D>, parameters: &LedgerParameters,
+                     ctime: Timestamp) -> Result<ProvenTx<D>, PublishError>;
+}
+pub struct NoDust;   // hands the transaction straight back
+#+end_src
+
+=NoDust= is what every gate here runs, and it leaves the transaction
+UNBALANCED: =WellFormedStrictness::enforce_balancing= is off in all of them,
+and on a real chain it is on, so a transaction published through =NoDust= pays
+no fee and is rejected. That is named in the type rather than left in a
+comment. The module header carries the four steps rung C has to implement
+(=balance= → deficit, value UTXOs with =DustOutput::updated_value=, =spend=
+into a =DustActions= intent that is itself proved and merged, =process_ttls=)
+and the policies =balance_tx= does NOT settle: persisted state rebuildable
+from genesis (untrusted event source, §5.3), one submit at a time on a single
+UTXO, readiness = sync past the pinned block.
+
+** What is left for the mpc repo
+
+Unchanged from milestones.org M30's "Out of scope here", and now with a named
+seam for each:
+
+| mpc's piece | what it plugs into here |
+| the subxt extrinsic (pallet call verified against midnight-node) | takes the =SealedTx= =publish= returns |
+| the =IntentClient= replacing =intent_gen.rs= | =build= alone returns the =Intent=/=Transaction= without proving, which is what the current seam passes over stdio |
+| the four error classes (=wallet_unsynced=, =proving_timeout=, =state_conflict=, =ambiguous_submit=) that =publisher.rs='s retry logic keys on | =PublishError= is deliberately NOT those: it is one variant per thing that can go wrong HERE (=UnknownCircuit=, =KeyLocation=, =VerifierKeyMismatch=, =Partition=, =Io=, =Decode=, =Proving=, =Signing=, =Dust=). Classifying them into the sidecar's four is mpc's mapping, because three of the four are about the network and the wallet, not about construction. =proving_timeout= is the only one with a clean pre-image here (=PublishError::Proving=); =wallet_unsynced= will come out of rung C's readiness check |
+| fetching =LedgerParameters= and the contract state from the node | =ChainContext= |
+| the reader's dropped =BlockProofSeed= and the MPC's exposure to a lying endpoint (§5.1) | untouched, as recorded |
+
+** Open questions for dmd
+
+1. =minocrab-publisher= is =publish = false= because it depends on
+   =minocrab-contracts=. If mpc should NOT pull the corpus crate into its
+   graph, the fix is a small publishable crate carrying the Misc envelope
+   constants and the three event names (they are ~6 constants), which
+   minocrab-contracts, signet-artifacts and this crate would all read. Worth
+   doing now or when mpc actually links it?
+2. The =expectedVk= table currently comes from the FILES
+   (=ManagedDir::deployment=), which cannot disagree with itself. The
+   package's own =expectedVk.json= is the independent copy; should
+   =Deployment= be built from that JSON instead, so that a mismatch between
+   the shipped table and the shipped keys is caught here rather than in the
+   sidecar? (M29 B's §8 note that no REAL deployed =expectedVk= exists
+   anywhere yet still holds.)
+3. The publisher writes the BARE circuit id into the preimage's
+   =key_location=, not compact-js's encoded form. Nothing on chain sees it,
+   and both resolvers accept both — but if mpc ever hands one of our
+   preimages to a proof server that only parses the encoded form, that is the
+   line to flip (=ContractKeyLocation::encoded_key_location=).
