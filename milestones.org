@@ -2152,7 +2152,24 @@ call types: =Contract<Erc20>= is an address that claims the interface,
 filed against a =Contract<UniswapV3Router>=; inheritance is a marker impl
 (an ERC-4626 vault IS an ERC-20). Ordered by how often a signer like ours
 calls them, and by what the fixed-width ABI layer can express.
-- [ ] A. The interface marker and =KIND= moved to the slot: =trait
+- [X] A. (2026-09-06, 77c01cf..a3efee5 merged — notes/evm-interfaces.org
+      §2 design, §4 as built: =Interface= / =Extends<Base>= (reflexive
+      blanket impl), =EvmCall::Callee=, =Contract<I: Interface>=;
+      DECIDED: =trait Filing { type Call; const KIND; const RETURN_FIELD
+      = None }= with =Kinded<Call, KIND>= as the one-line impl — NOT a
+      fourth =Pending= parameter (the tickets consume the kind too);
+      =Pending<F: Filing, Env, WORDS>=, =Succeeded<F>= / =Failed<F>=;
+      =evm/{erc20,erc4626,uniswap_v3}.rs= with the five calls re-homed
+      and the root names DELETED; treasury =type Transfer =
+      Kinded<erc20::Transfer, 1>=; the vault's five =Filing= impls carry
+      the deployed RETURN_FIELD names, so =Erc20TransferAsDeposit= /
+      =AsWithdrawal= are gone. ZERO MOVEMENT: 214-circuit dump
+      byte-identical, snapshots unchanged; four E0080/E0277/E0308 gates
+      with positive twins. FOUND: the vault does NOT exercise
+      inheritance (=approve_stata='s callee is the underlying ERC-20) —
+      §2.1 corrected in place; =FIXED_PRIORITY_FEE= / =FIXED_MAX_FEE=
+      still live in erc20_vault (the fee envelope's home is M39's
+      question, for dmd).) The interface marker and =KIND= moved to the slot: =trait
       Interface= (sealed per library, open to contracts), =EvmCall::
       Callee: Interface=, =Contract<I>= typed by interface with the
       inheritance markers; =KIND= leaves the library call type (it is a

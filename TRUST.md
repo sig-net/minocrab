@@ -46,7 +46,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-ledger/src/tests.rs` | 1037 | **READING** | a unit test that pins the wrong constant or asserts a weaker property than intended, unnoticed because it still passes |
 | `minocrab-std/src/lib.rs` | 51 | **READING** | nothing beyond re-exports (51 lines) |
 | `minocrab-std/src/v3.rs` | 2581 | every differential; v3_leaves / v3_bounded / v3_literals / v3_secp; lean_claims (the typed-leaf claims, crates/minocrab-std/lean). `from_field_unchecked` sites: **READING** (the grep in TRUST.md §3) | a leaf whose type promises a bound its constructor did not constrain |
-| `minocrab-std/src/v3/ledger.rs` | 1998 | every contract differential; v3_ledger; nested_typed; the derive's layout pinned against compactc's `batch` for all 256 block sizes and the sixteen-field probe | a typed slot reading the wrong field, or a segmented path computed differently from compactc |
+| `minocrab-std/src/v3/ledger.rs` | 2003 | every contract differential; v3_ledger; nested_typed; the derive's layout pinned against compactc's `batch` for all 256 block sizes and the sixteen-field probe | a typed slot reading the wrong field, or a segmented path computed differently from compactc |
 | `minocrab-std/src/v3/borsh.rs` | 1182 | serialization_conformance (vectors shared with the published TypeScript decoder, spec/ts); v3_borsh; the borsh differentials | a non-canonical encoding accepted, breaking the digest's injectivity (api-safety-survey §B3) |
 | `minocrab-std/src/v3/borsh/schema.rs` | 181 | the generated schema cross-check test per #[derive(CircuitBorsh)] (layout ≡ borsh's schema of the spec type) | a layout table disagreeing with the published spec |
 | `minocrab-std/src/v3/kernel.rs` | 771 | kernel_tokens_differential (24 circuits, byte-identical); v3_kernel_cache | a kernel effect claimed at the wrong effects index |
@@ -60,7 +60,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-macros/src/circuit_arg.rs` | 530 | v3_derive (twin); every derived struct's slots in interface_snapshot | a field's slots declared out of order |
 | `minocrab-macros/src/circuit_borsh.rs` | 495 | v3_borsh_derive (twin) + the generated schema cross-check | a Borsh field encoded at the wrong width |
 | `minocrab-macros/src/interface.rs` | 620 | interface_macro (twin, byte-identical ZKIR); contract_matches_its_interface | a call handle passing limbs in an order the callee does not expect |
-| `minocrab-macros/src/ledger.rs` | 410 | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
+| `minocrab-macros/src/ledger.rs` | 424 | the derive's unit tests; in_block pinned against `batch` for every block size (minocrab-std); the sixteen-field compactc probe | a ledger field laid out at a path compactc would not use |
 | `minocrab-macros/src/ledger_repr.rs` | 152 | v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots | an environment's limbs split at the wrong boundaries on read-back |
 | `minocrab-macros/src/contract.rs` | 229 | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
 | `minocrab-sim/src/lib.rs` | 129 | **READING** | nothing beyond the Profile types (129 lines) |
@@ -68,7 +68,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-25135 lines in the seven crates; 10567 of them in files whose warrant is READING in whole or in part (the rows in bold).
+25154 lines in the seven crates; 10567 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget

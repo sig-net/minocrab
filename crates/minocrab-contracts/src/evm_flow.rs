@@ -1,15 +1,21 @@
-//! The typed EVM call as a ledger slot: `Pending<Call, Env, WORDS>`
-//! (M37 rungs B and C, notes/evm-calls.org §§3-4).
+//! The typed EVM call as a ledger slot: `Pending<Filing, Env, WORDS>`
+//! (M37 rungs B and C, notes/evm-calls.org §§3-4; M38 rung A,
+//! notes/evm-interfaces.org §2).
 //!
 //! [`crate::evm`] made the CALL a type — its name, its argument list, its
-//! return, its kind byte, its gas limit and (rung B) the rule by which its
-//! return says "it worked". This module makes the SLOT a type over that one:
+//! return, the interface that exposes it, its gas limit and the rule by
+//! which its return says "it worked". This module makes the SLOT a type
+//! over a FILING of that call: the call plus the response kind byte this
+//! deployment files it under, which [`Kinded`](crate::evm::Kinded) supplies
+//! in one line.
 //!
 //! ```ignore
+//! type Transfer = Kinded<erc20::Transfer, 1>;
+//!
 //! #[derive(Ledger)]
 //! pub struct Treasury {
 //!     pub signet: Signet,
-//!     pub transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//!     pub transfers: Pending<Transfer, Owned<Amount>, 2>,
 //! }
 //! ```
 //!
@@ -22,8 +28,9 @@
 //!
 //! # The two tickets are SYMMETRIC
 //!
-//! [`Succeeded<Call>`] and [`Failed<Call>`], and nothing else settles a
-//! request:
+//! [`Succeeded<F>`] and [`Failed<F>`], and nothing else settles a request
+//! — and `F` is the FILING, so a ticket for `transfer` at one kind cannot
+//! settle a slot that files `transfer` at another:
 //!
 //! - [`Pending::complete`] takes a `Succeeded`, asserts the attestation is
 //!   this slot's kind, verifies it, consumes the entry — and then asserts
@@ -52,7 +59,7 @@
 //! allow-list**, exactly as the deployed vault has one in effect through its
 //! configured ERC-20 addresses.
 //!
-//! # What `Failed<Call>` costs
+//! # What `Failed<F>` costs
 //!
 //! The two accepted attestations have DIFFERENT PREIMAGES: the MPC's
 //! failure output is one byte (the kind alone — `FailureResponse { kind: u8
@@ -68,12 +75,81 @@
 //!
 //! # What does not compile
 //!
-//! A ticket for one call handed to another call's slot — the tickets carry
-//! the call as a type parameter, so the two do not unify:
+//! A CALL SENT TO AN INTERFACE THAT DOES NOT EXPOSE IT — the first rung of
+//! the ladder (notes/evm-interfaces.org §2.5). `erc20::Transfer::Callee` is
+//! `Erc20`, and a Uniswap router is not one, so there is no `Extends` impl:
 //!
 //! ```compile_fail
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{Erc20Approve, Erc20Transfer};
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, uniswap_v3, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     // ERROR: the trait bound `UniswapV3Router: Extends<Erc20>` is not satisfied
+//!     callee: Contract<uniswap_v3::UniswapV3Router>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     BLOCK.transfers.request(c, callee, (to, amount), key_version, nonce, |_, _| env);
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles — the callee's
+//! interface is the only difference, so the rejection is the interface:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::{Private, Public};
+//! use minocrab_contracts::evm::{erc20, Kinded};
+//! use minocrab_contracts::evm_flow::{Contract, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Bytes, Ledger, LedgerRepr, Uint};
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Amount, 2>,
+//! }
+//! const BLOCK: Block = Block::new();
+//!
+//! fn send(
+//!     c: &mut Circuit3,
+//!     callee: Contract<erc20::Erc20>,
+//!     to: Bytes<20, Private>,
+//!     amount: Uint<128, Private>,
+//!     key_version: Uint<8>,
+//!     nonce: Uint<64>,
+//!     env: Amount,
+//! ) {
+//!     BLOCK.transfers.request(c, callee, (to, amount), key_version, nonce, |_, _| env);
+//! }
+//! ```
+//!
+//! A ticket for one FILING handed to another's slot — and the two filings
+//! here are the SAME Solidity call at two kinds, which is exactly the pair
+//! the deployed vault has (`transfer` as a claim and as a withdrawal):
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab_contracts::evm::{erc20, Kinded};
 //! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
@@ -84,12 +160,13 @@
 //! #[derive(Ledger)]
 //! struct Block {
 //!     signet: Signet,
-//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
 //! }
 //! const BLOCK: Block = Block::new();
 //!
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Erc20Approve>) {
-//!     // ERROR: expected `Succeeded<Erc20Transfer>`, found `Succeeded<Erc20Approve>`
+//! fn settle(c: &mut Circuit3, ticket: Succeeded<Kinded<erc20::Transfer, 2>>) {
+//!     // ERROR: expected `Succeeded<Kinded<Transfer, 1>>`,
+//!     //        found `Succeeded<Kinded<Transfer, 2>>`
 //!     BLOCK.transfers.complete(c, ticket);
 //! }
 //! ```
@@ -98,7 +175,7 @@
 //!
 //! ```
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm::{erc20, Kinded};
 //! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
@@ -109,11 +186,11 @@
 //! #[derive(Ledger)]
 //! struct Block {
 //!     signet: Signet,
-//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
 //! }
 //! const BLOCK: Block = Block::new();
 //!
-//! fn settle(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) {
+//! fn settle(c: &mut Circuit3, ticket: Succeeded<Kinded<erc20::Transfer, 1>>) {
 //!     BLOCK.transfers.complete(c, ticket);
 //! }
 //! ```
@@ -122,7 +199,7 @@
 //! from the slot's constructor, which `#[derive(Ledger)]` calls:
 //!
 //! ```compile_fail
-//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm::{erc20, Kinded};
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
@@ -133,11 +210,55 @@
 //! #[derive(Ledger)]
 //! struct Block {
 //!     signet: Signet,
-//!     // error[E0080]: `Pending<Call, Env, WORDS>` needs WORDS == …
-//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 3>,
+//!     // error[E0080]: `Pending<F, Env, WORDS>` needs WORDS == …
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 3>,
 //! }
 //! const BLOCK: Block = Block::new();
 //! const _: usize = BLOCK.transfers.record_path().depth() as usize;
+//! ```
+//!
+//! TWO SLOTS OF ONE BLOCK AT ONE RESPONSE KIND — the derive's
+//! `assert_distinct_kinds`, which now reads `Filing::KIND` through
+//! [`LedgerWidth::KINDS`]. The MPC's kind byte could not tell the two
+//! attestations apart, so it is `error[E0080]`:
+//!
+//! ```compile_fail
+//! use minocrab_contracts::evm::{erc20, Kinded};
+//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     // error[E0080]: two slots of this ledger block settle under the same
+//!     //               Signet response kind …
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
+//!     approvals: Pending<Kinded<erc20::Approve, 1>, Owned<Amount>, 2>,
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE BYTE CHANGED compiles — two filings of two
+//! calls, at two kinds:
+//!
+//! ```
+//! use minocrab_contracts::evm::{erc20, Kinded};
+//! use minocrab_contracts::evm_flow::{Owned, Pending};
+//! use minocrab_contracts::signet_flow::Signet;
+//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+//! use minocrab::Public;
+//!
+//! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+//!
+//! #[derive(Ledger)]
+//! struct Block {
+//!     signet: Signet,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
+//!     approvals: Pending<Kinded<erc20::Approve, 4>, Owned<Amount>, 2>,
+//! }
 //! ```
 //!
 //! A `Pending` slot in a block with no `Signet` field — the derive's own
@@ -145,7 +266,7 @@
 //! the nonce and the chain from:
 //!
 //! ```compile_fail
-//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm::{erc20, Kinded};
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
 //! use minocrab_std::v3::{Ledger, LedgerCounter, LedgerRepr, Uint};
 //! use minocrab::Public;
@@ -156,14 +277,14 @@
 //! struct Block {
 //!     initialized: LedgerCounter,
 //!     // ERROR: a `Pending` slot needs the block's `Signet` field …
-//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
 //! }
 //! ```
 //!
 //! TWO `Signet` fields — one contract, one MPC key, one nonce sequence:
 //!
 //! ```compile_fail
-//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm::{erc20, Kinded};
 //! use minocrab_contracts::evm_flow::{Owned, Pending};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
@@ -176,22 +297,22 @@
 //!     signet: Signet,
 //!     // ERROR: #[derive(Ledger)] wants EXACTLY ONE `Signet` field per block
 //!     other: Signet,
-//!     transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+//!     transfers: Pending<Kinded<erc20::Transfer, 1>, Owned<Amount>, 2>,
 //! }
 //! ```
 //!
-//! A callee where a recipient belongs — `Contract<C>` and `Bytes<20>` are
+//! A callee where a recipient belongs — `Contract<I>` and `Bytes<20>` are
 //! the same twenty bytes and do not unify:
 //!
 //! ```compile_fail
 //! use minocrab::v3::{Circuit3, FieldT};
 //! use minocrab::Private;
-//! use minocrab_contracts::evm::Erc20Transfer;
+//! use minocrab_contracts::evm::erc20;
 //! use minocrab_contracts::evm_flow::Contract;
 //! use minocrab_std::v3::Bytes;
 //!
-//! fn f(c: &mut Circuit3, callee: Contract<Erc20Transfer>) -> Bytes<20, Private> {
-//!     // ERROR: expected `Bytes<20>`, found `Contract<Erc20Transfer>`
+//! fn f(c: &mut Circuit3, callee: Contract<erc20::Erc20>) -> Bytes<20, Private> {
+//!     // ERROR: expected `Bytes<20>`, found `Contract<Erc20>`
 //!     callee
 //! }
 //! ```
@@ -211,7 +332,10 @@ use signet_signer_interface::{RequestId, Signature};
 
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
-use crate::evm::{build_tx, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall};
+use crate::evm::{
+    build_tx, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall, Extends, Filing,
+    Interface,
+};
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
     file_request, Attested, Outcome, RequestIdSettled, SignRequest, Signet,
@@ -238,29 +362,50 @@ impl<T: Copy + CircuitArg + CircuitBorsh<Private>> Attestable for T {}
 /// A call's attested return value, as a circuit wire.
 pub type Ret<C> = <<C as EvmCall>::Return as AbiType>::Wire<Private>;
 
+/// The CALL a [`Filing`] files — `F::Call`, spelled once so a slot's
+/// signatures read as sentences rather than as projections.
+pub type Called<F> = <F as Filing>::Call;
+
+/// The INTERFACE a filing's call must be sent to: the callee of `F`'s call.
+/// A `Contract<I>` reaches it when `I: Extends<Callee<F>>`.
+pub type Callee<F> = <Called<F> as EvmCall>::Callee;
+
 
 // ---- the callee ---------------------------------------------------------------
 
-/// THE ADDRESS OF A CONTRACT THAT ANSWERS `C` — a `Bytes<20>` that knows
-/// which call it is for.
+/// THE ADDRESS OF A CONTRACT THAT CLAIMS INTERFACE `I` — a `Bytes<20>`
+/// that knows what it answers.
 ///
-/// A callee and a recipient are both twenty bytes and mean opposite things;
-/// `Contract<Erc20Transfer>` and `Bytes<20>` do not unify, so the two cannot
-/// be swapped in a `request` call. The WIRE shape is a bare `Bytes<20>` —
-/// one argument slot, the same schema — so the marker costs nothing.
-pub struct Contract<C> {
+/// Two things it buys, at no wire cost (the shape is a bare `Bytes<20>`,
+/// one argument slot, the same schema):
+///
+/// - A callee and a recipient are both twenty bytes and mean opposite
+///   things; `Contract<Erc20>` and `Bytes<20>` do not unify, so the two
+///   cannot be swapped in a `request` call.
+/// - A call goes only where its interface does. `request` takes a
+///   `Contract<I>` with `I: Extends<Callee<F>>`, so an
+///   [`erc20::Transfer`](crate::evm::erc20::Transfer) filed against a
+///   `Contract<UniswapV3Router>` is a MISSING IMPL, and an
+///   [`erc20::Approve`](crate::evm::erc20::Approve) against a
+///   `Contract<Erc4626>` compiles because an ERC-4626 vault IS an ERC-20.
+///
+/// WHAT IT DOES NOT BUY: any check that the deployed address at the other
+/// end really is that interface. The type records the CLAIM the contract
+/// made when it built the value, which is why the callee-allow-list hazard
+/// (this module's header) is about where the address came from.
+pub struct Contract<I: Interface> {
     address: Bytes<20, Private>,
-    _call: PhantomData<fn() -> C>,
+    _interface: PhantomData<fn() -> I>,
 }
 
-impl<C> Clone for Contract<C> {
+impl<I: Interface> Clone for Contract<I> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C> Copy for Contract<C> {}
+impl<I: Interface> Copy for Contract<I> {}
 
-impl<C> Contract<C> {
+impl<I: Interface> Contract<I> {
     /// The callee from an address the contract already holds — a ledger
     /// cell's value, typically (the vault keeps its `stataToken` in one).
     ///
@@ -270,7 +415,7 @@ impl<C> Contract<C> {
     pub fn from_address<V: Vis3>(_c: &mut Circuit3, address: Bytes<20, V>) -> Self {
         Contract {
             address: Bytes::from_field_unchecked(address.field().private()),
-            _call: PhantomData,
+            _interface: PhantomData,
         }
     }
 
@@ -280,7 +425,7 @@ impl<C> Contract<C> {
     }
 }
 
-impl<C> CircuitAbi for Contract<C> {
+impl<I: Interface> CircuitAbi for Contract<I> {
     const SLOTS: usize = <Bytes<20, Private>>::SLOTS;
 
     fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
@@ -292,11 +437,11 @@ impl<C> CircuitAbi for Contract<C> {
     }
 }
 
-impl<C> CircuitArg for Contract<C> {
+impl<I: Interface> CircuitArg for Contract<I> {
     fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
         Contract {
             address: <Bytes<20, Private>>::declare(c, path),
-            _call: PhantomData,
+            _interface: PhantomData,
         }
     }
 
@@ -313,9 +458,9 @@ impl<C> CircuitArg for Contract<C> {
 macro_rules! ticket {
     ($name:ident, $doc:expr) => {
         #[doc = $doc]
-        pub struct $name<C: EvmCall>
+        pub struct $name<F: Filing>
         where
-            Ret<C>: Attestable,
+            Ret<Called<F>>: Attestable,
         {
             /// The entry being settled.
             pub request_id: RequestId<Private>,
@@ -323,34 +468,34 @@ macro_rules! ticket {
             /// little-endian; the reversal is the transaction builder's).
             pub respond: Signature<Private>,
             /// `serializedOutput`: the kind byte, then the attested value.
-            pub output: Attested<Ret<C>>,
-            _call: PhantomData<fn() -> C>,
+            pub output: Attested<Ret<Called<F>>>,
+            _filing: PhantomData<fn() -> F>,
         }
 
-        impl<C: EvmCall> CircuitAbi for $name<C>
+        impl<F: Filing> CircuitAbi for $name<F>
         where
-            Ret<C>: Attestable,
+            Ret<Called<F>>: Attestable,
         {
             const SLOTS: usize = <RequestId<Private>>::SLOTS
                 + <Signature<Private>>::SLOTS
-                + <Attested<Ret<C>>>::SLOTS;
+                + <Attested<Ret<Called<F>>>>::SLOTS;
 
             fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
                 <RequestId<Private>>::push_atoms(atoms);
                 <Signature<Private>>::push_atoms(atoms);
-                <Attested<Ret<C>>>::push_atoms(atoms);
+                <Attested<Ret<Called<F>>>>::push_atoms(atoms);
             }
 
             fn push_prims(prims: &mut Vec<Prim>) {
                 <RequestId<Private>>::push_prims(prims);
                 <Signature<Private>>::push_prims(prims);
-                <Attested<Ret<C>>>::push_prims(prims);
+                <Attested<Ret<Called<F>>>>::push_prims(prims);
             }
         }
 
-        impl<C: EvmCall> CircuitArg for $name<C>
+        impl<F: Filing> CircuitArg for $name<F>
         where
-            Ret<C>: Attestable,
+            Ret<Called<F>>: Attestable,
         {
             fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
                 $name {
@@ -358,21 +503,21 @@ macro_rules! ticket {
                     respond: <Signature<Private>>::declare(c, &path.field("respond")),
                     output: {
                         // Spelled out rather than `Attested::declare` so the
-                        // attested value's slot can carry the call's own
+                        // attested value's slot can carry the FILING's own
                         // `RETURN_FIELD` — `success`, `amountIn`, `shares`,
                         // `assets` — where the response record names it.
                         let out = path.field("serializedOutput");
                         let value = out.field("output");
-                        let value = match C::RETURN_FIELD {
+                        let value = match F::RETURN_FIELD {
                             None => value,
                             Some(name) => value.field(name),
                         };
                         Attested {
                             kind: <Uint<8>>::declare(c, &out.field("kind")),
-                            output: <Ret<C>>::declare(c, &value),
+                            output: <Ret<Called<F>>>::declare(c, &value),
                         }
                     },
-                    _call: PhantomData,
+                    _filing: PhantomData,
                 }
             }
 
@@ -392,8 +537,9 @@ ticket!(
      The claim is CHECKED, not believed: `complete` asserts the kind, the \
      signature, the record's own kind and version, and then the call's \
      [`EvmCall::succeeded`] predicate. What the ticket's TYPE buys is that a ticket \
-     for call `X` cannot be handed to a slot for call `Y`, and that a \
-     [`Failed`] cannot be handed to `complete` at all."
+     for filing `X` cannot be handed to a slot filed as `Y` — a different \
+     call, or the SAME call at another kind — and that a [`Failed`] cannot \
+     be handed to `complete` at all."
 );
 
 ticket!(
@@ -592,6 +738,13 @@ impl<E: LedgerRepr> LedgerRepr for Owned<E> {
 /// the caller's environment map) plus the block's [`Signet`] configuration,
 /// typed by the call it makes.
 ///
+/// `F` IS THE FILING, not the call: the call plus this deployment's kind
+/// byte and its name for the attested return
+/// ([`Kinded<Call, KIND>`](crate::evm::Kinded) for the one-line case). Two
+/// slots of one block may file the same Solidity function under two kinds,
+/// which is what the deployed vault does with `transfer`, and their tickets
+/// still do not unify.
+///
 /// `WORDS` is the record's calldata capacity. Stable Rust cannot write
 /// `EventRecordV2<{ <Call::Args as AbiTuple>::WORDS }>`
 /// (`generic_const_exprs`), so the number is NAMED and CHECKED — an
@@ -602,22 +755,22 @@ impl<E: LedgerRepr> LedgerRepr for Owned<E> {
 /// block's one `Signet` field and threads its offset in
 /// ([`Self::at_block_with_signet`]). That is why `request`, `complete` and
 /// `refund` take no `&SELF.signet`.
-pub struct Pending<Call, Env, const WORDS: usize = 2> {
+pub struct Pending<F: Filing, Env, const WORDS: usize = 2> {
     records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
     envs: LedgerMap<RequestId<Public>, Env>,
     signet: Signet,
-    _call: PhantomData<fn() -> Call>,
+    _filing: PhantomData<fn() -> F>,
 }
 
-impl<Call: EvmCall, Env, const WORDS: usize> Pending<Call, Env, WORDS> {
+impl<F: Filing, Env, const WORDS: usize> Pending<F, Env, WORDS> {
     /// The slot's two fields from flat index `start`, against the block's
     /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
     /// field whose type is spelled `Pending`.
     pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
         const {
             assert!(
-                WORDS == <Call::Args as AbiTuple>::WORDS,
-                "`Pending<Call, Env, WORDS>` needs WORDS == <Call::Args as \
+                WORDS == <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
+                "`Pending<F, Env, WORDS>` needs WORDS == <F::Call::Args as \
                  AbiTuple>::WORDS — the record's calldata capacity IS the \
                  call's argument-word count. Stable Rust cannot infer it \
                  (generic_const_exprs), so name the number the argument \
@@ -628,7 +781,7 @@ impl<Call: EvmCall, Env, const WORDS: usize> Pending<Call, Env, WORDS> {
             records: LedgerMap::at_block(total, start),
             envs: LedgerMap::at_block(total, start + 1),
             signet: Signet::at_block(total, signet_start),
-            _call: PhantomData,
+            _filing: PhantomData,
         }
     }
 
@@ -648,21 +801,21 @@ impl<Call: EvmCall, Env, const WORDS: usize> Pending<Call, Env, WORDS> {
 /// the type rather than a convention. The kind is still claimed in
 /// [`LedgerWidth::KINDS`], so no settling slot of the block can share it and
 /// an approve ATTESTATION is a kind nothing accepts.
-pub struct Fired<Call, const WORDS: usize = 2> {
+pub struct Fired<F: Filing, const WORDS: usize = 2> {
     records: LedgerMap<RequestId<Public>, EventRecordV2<WORDS>>,
     signet: Signet,
-    _call: PhantomData<fn() -> Call>,
+    _filing: PhantomData<fn() -> F>,
 }
 
-impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
+impl<F: Filing, const WORDS: usize> Fired<F, WORDS> {
     /// The slot's one field at flat index `start`, against the block's
     /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
     /// field whose type is spelled `Fired`.
     pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
         const {
             assert!(
-                WORDS == <Call::Args as AbiTuple>::WORDS,
-                "`Fired<Call, WORDS>` needs WORDS == <Call::Args as \
+                WORDS == <<Called<F> as EvmCall>::Args as AbiTuple>::WORDS,
+                "`Fired<F, WORDS>` needs WORDS == <F::Call::Args as \
                  AbiTuple>::WORDS — the record's calldata capacity IS the \
                  call's argument-word count. Stable Rust cannot infer it \
                  (generic_const_exprs), so name the number the argument \
@@ -672,7 +825,7 @@ impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
         Fired {
             records: LedgerMap::at_block(total, start),
             signet: Signet::at_block(total, signet_start),
-            _call: PhantomData,
+            _filing: PhantomData,
         }
     }
 
@@ -688,18 +841,23 @@ impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
     /// callee and the arguments are builders, so a ledger read emits where
     /// the circuit reads it, and `signer` answers whose key signs.
     #[allow(clippy::too_many_arguments)]
-    pub fn request_with(
+    pub fn request_with<I: Extends<Callee<F>>>(
         &self,
         c: &mut Circuit3,
-        callee: impl FnOnce(&mut Circuit3) -> Contract<Call>,
-        args: impl AbiArgs<Call::Args>,
+        callee: impl FnOnce(&mut Circuit3) -> Contract<I>,
+        args: impl AbiArgs<<Called<F> as EvmCall>::Args>,
         envelope: Envelope,
         key_version: Uint<8>,
         nonce: Uint<64>,
         signer: impl FnOnce(&mut Circuit3) -> SigningPath<Private>,
     ) -> RequestId<Public> {
-        let tx =
-            build_tx_with::<Call, WORDS>(c, |c| callee(c).address, args, envelope, nonce.field());
+        let tx = build_tx_with::<Called<F>, WORDS>(
+            c,
+            |c| callee(c).address,
+            args,
+            envelope,
+            nonce.field(),
+        );
         let path = signer(c);
         file_request(
             c,
@@ -710,30 +868,34 @@ impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
                 path,
                 tx,
             },
-            Call::KIND,
+            F::KIND,
             |_, _| {},
         )
     }
 }
 
-impl<Call: EvmCall, const WORDS: usize> LedgerWidth for Fired<Call, WORDS> {
-    const KINDS: &'static [u8] = &[Call::KIND];
+impl<F: Filing, const WORDS: usize> LedgerWidth for Fired<F, WORDS> {
+    const KINDS: &'static [u8] = &[F::KIND];
 }
 
-impl<Call: EvmCall, Env, const WORDS: usize> LedgerWidth for Pending<Call, Env, WORDS> {
+impl<F: Filing, Env, const WORDS: usize> LedgerWidth for Pending<F, Env, WORDS> {
     const WIDTH: usize = 2;
-    const KINDS: &'static [u8] = &[Call::KIND];
+    const KINDS: &'static [u8] = &[F::KIND];
 }
 
-impl<Call: EvmCall, Env: LedgerRepr, const WORDS: usize> Pending<Call, Env, WORDS>
+impl<F: Filing, Env: LedgerRepr, const WORDS: usize> Pending<F, Env, WORDS>
 where
-    Ret<Call>: Attestable,
+    Ret<Called<F>>: Attestable,
 {
-    /// FILE THE CALL. Builds `Call`'s transaction from the callee and the
-    /// argument tuple, files the signing record under `Call::KIND`, stores
-    /// the environment beside it and notifies the singleton with this slot's
-    /// own ledger path. Returns the disclosed request id, and discloses
+    /// FILE THE CALL. Builds `F::Call`'s transaction from the callee and the
+    /// argument tuple, files the signing record under `F::KIND`, stores the
+    /// environment beside it and notifies the singleton with this slot's own
+    /// ledger path. Returns the disclosed request id, and discloses
     /// `signet_flow::Requested` plus whatever `env` discloses.
+    ///
+    /// THE CALLEE IS TYPED BY ITS INTERFACE: any `Contract<I>` whose `I`
+    /// [`Extends`] the call's own [`EvmCall::Callee`] is accepted, and
+    /// nothing else is.
     ///
     /// `key_version` and `nonce` are still the CALLER'S (the prover picks
     /// the EVM nonce; the MPC's key owns the sequence). Both want a home in
@@ -742,13 +904,13 @@ where
     pub fn request(
         &self,
         c: &mut Circuit3,
-        callee: Contract<Call>,
-        args: <Call::Args as AbiTuple>::Wires<Private>,
+        callee: Contract<impl Extends<Callee<F>>>,
+        args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
         key_version: Uint<8>,
         nonce: Uint<64>,
         env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
-        let tx = build_tx::<Call, WORDS>(c, callee.address, args, nonce.field());
+        let tx = build_tx::<Called<F>, WORDS>(c, callee.address, args, nonce.field());
         let path = SigningPath::contract_path(c).private();
         file_request(
             c,
@@ -759,7 +921,7 @@ where
                 path,
                 tx,
             },
-            Call::KIND,
+            F::KIND,
             |c, request_id| {
                 // The environment is built AFTER the id exists, so a
                 // `Commit` in it binds to this request and no other.
@@ -795,18 +957,18 @@ where
     /// argument. `deposit`'s per-user path is a commitment the same circuit
     /// just derived from a witnessed secret.
     #[allow(clippy::too_many_arguments)]
-    pub fn request_with<S>(
+    pub fn request_with<S, I: Extends<Callee<F>>>(
         &self,
         c: &mut Circuit3,
-        callee: impl FnOnce(&mut Circuit3) -> Contract<Call>,
-        args: impl AbiArgs<Call::Args>,
+        callee: impl FnOnce(&mut Circuit3) -> Contract<I>,
+        args: impl AbiArgs<<Called<F> as EvmCall>::Args>,
         envelope: Envelope,
         key_version: Uint<8>,
         nonce: Uint<64>,
         signer: impl FnOnce(&mut Circuit3) -> (SigningPath<Private>, S),
         env: impl FnOnce(&mut Circuit3, RequestId<Public>, &S) -> Env,
     ) -> RequestId<Public> {
-        let tx = build_tx_with::<Call, WORDS>(
+        let tx = build_tx_with::<Called<F>, WORDS>(
             c,
             |c| callee(c).address,
             args,
@@ -823,7 +985,7 @@ where
                 path,
                 tx,
             },
-            Call::KIND,
+            F::KIND,
             |c, request_id| {
                 // The environment is built AFTER the id exists, so a
                 // `Commit` in it binds to this request and no other.
@@ -844,14 +1006,14 @@ where
     pub fn complete(
         &self,
         c: &mut Circuit3,
-        ticket: Succeeded<Call>,
-    ) -> Outcome<Env, Call::Success, WORDS> {
+        ticket: Succeeded<F>,
+    ) -> Outcome<Env, <Called<F> as EvmCall>::Success, WORDS> {
         let request_id = ticket.request_id.disclose_as::<RequestIdSettled>(c);
         let attested = ticket.output;
 
         c.region("signet flow: attestation", |c| {
             c.assert(
-                eq(attested.kind.field(), u64::from(Call::KIND)).message("Wrong response kind"),
+                eq(attested.kind.field(), u64::from(F::KIND)).message("Wrong response kind"),
             );
             let key = self.signet.mpc_response_key.read(c);
             let valid = signet::verify_respond_bidirectional_event_borsh(
@@ -868,7 +1030,7 @@ where
         });
 
         let (record, env) = self.consume(c, request_id);
-        let succeeded = Call::succeeded(c, &attested.output);
+        let succeeded = <Called<F> as EvmCall>::succeeded(c, &attested.output);
         c.assert(succeeded.message("The attested call did not succeed"));
 
         Outcome {
@@ -876,7 +1038,7 @@ where
             env,
             // The projection runs AFTER the assert, so nothing a caller can
             // read has escaped the check.
-            output: Call::map(c, attested.output),
+            output: <Called<F> as EvmCall>::map(c, attested.output),
             record,
         }
     }
@@ -891,8 +1053,8 @@ where
     pub fn refund(
         &self,
         c: &mut Circuit3,
-        ticket: Failed<Call>,
-    ) -> Outcome<Env, Ret<Call>, WORDS> {
+        ticket: Failed<F>,
+    ) -> Outcome<Env, Ret<Called<F>>, WORDS> {
         let request_id = ticket.request_id.disclose_as::<RequestIdSettled>(c);
         let attested = ticket.output;
 
@@ -930,8 +1092,8 @@ where
             // …and the kind is one of the two this slot accepts, with the
             // EXECUTED one accepted only when the call did not succeed.
             let failure_kind = eq(attested.kind.field(), u64::from(FAILURE_KIND));
-            let this_kind = eq(attested.kind.field(), u64::from(Call::KIND));
-            let succeeded = Call::succeeded(c, &attested.output);
+            let this_kind = eq(attested.kind.field(), u64::from(F::KIND));
+            let succeeded = <Called<F> as EvmCall>::succeeded(c, &attested.output);
             c.assert(
                 failure_kind
                     .or(this_kind.and(not(succeeded)))
@@ -962,7 +1124,7 @@ where
             self.records.remove(c, &request_id);
             let env = self.envs.lookup(c, &request_id);
             self.envs.remove(c, &request_id);
-            let kind_ok = c.test_eq(record.response_kind(), u64::from(Call::KIND));
+            let kind_ok = c.test_eq(record.response_kind(), u64::from(F::KIND));
             c.assert(kind_ok);
             let version_ok = c.test_eq(record.format_version(), u64::from(RECORD_FORMAT_VERSION));
             c.assert(version_ok);
@@ -971,9 +1133,9 @@ where
     }
 }
 
-impl<Call: EvmCall, E: LedgerRepr, const WORDS: usize> Pending<Call, Owned<E>, WORDS>
+impl<F: Filing, E: LedgerRepr, const WORDS: usize> Pending<F, Owned<E>, WORDS>
 where
-    Ret<Call>: Attestable,
+    Ret<Called<F>>: Attestable,
 {
     /// [`Pending::request`] with the caller's identity committed into the
     /// environment: the secret key is witnessed here and bound to the
@@ -985,8 +1147,8 @@ where
     pub fn request_owned<L: DisclosureLabel>(
         &self,
         c: &mut Circuit3,
-        callee: Contract<Call>,
-        args: <Call::Args as AbiTuple>::Wires<Private>,
+        callee: Contract<impl Extends<Callee<F>>>,
+        args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
         key_version: Uint<8>,
         nonce: Uint<64>,
         inner: impl FnOnce(&mut Circuit3, RequestId<Public>) -> E,
@@ -1008,8 +1170,8 @@ where
     pub fn refund_to_owner<L: DisclosureLabel>(
         &self,
         c: &mut Circuit3,
-        ticket: Failed<Call>,
-    ) -> (ZswapCoinPublicKey<Public>, E, Ret<Call>) {
+        ticket: Failed<F>,
+    ) -> (ZswapCoinPublicKey<Public>, E, Ret<Called<F>>) {
         let outcome = self.refund(c, ticket);
         let sk = common::witness_sk(c);
         outcome
