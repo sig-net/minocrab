@@ -74,15 +74,29 @@ pub fn deposit(
     // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
     let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
+    let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
+    let amount = deposit_request.amount.field().disclose_as::<DepositedAmount>(c);
 
-    // a Bytes<20> cell: the FAB atoms come from the slot's type
-    let vault_evm = VAULT.vault_evm_address.read(c);
-    // ... compose the transfer(vaultEvmAddress, amount) transaction ...
-
-    // requestId, freshness check, record + environment insert, the call to
-    // the signer — one `Pending` slot owns the whole suspension
-    VAULT.deposits.request(c, &VAULT.signet, SignRequest { key_version, path: caller.into(), tx },
-        |_, _| DepositEnv { depositor: caller, erc20, amount });
+    // transfer(vaultEvmAddress, amount) on the token, filed under CLAIM: the
+    // selector, the two ABI words, the calldata length, the request id, the
+    // freshness check, the record + environment insert and the call to the
+    // signer all come from the slot's type, `Pending<Deposit, DepositEnv, VAULT_WORDS>`,
+    // where `Deposit` is `erc20::Transfer` at this deployment's kind byte.
+    VAULT.deposits.request_with(
+        c,
+        |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
+        (
+            |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
+            |_c: &mut Circuit3| deposit_request.amount,
+        ),
+        // paid from the DEPOSITOR's own EVM account: the fee envelope is the
+        // caller's, and the signing path is the depositor's commitment
+        Envelope::caller(max_priority_fee_per_gas, max_fee_per_gas, gas_limit),
+        key_version,
+        evm_nonce,
+        |_c| (common::SigningPath::from(caller.private()), ()),
+        |_c, _id, ()| DepositEnv { depositor: caller, erc20, amount: Uint::from_field_unchecked(amount) },
+    );
     Discloses::of(())
 }
 ```

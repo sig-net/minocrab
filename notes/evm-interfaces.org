@@ -792,3 +792,36 @@ graph. All dev-only.
   signature, so a row whose Solidity spells =receiver= where the deployed
   contract spells =to= would still pass. The interface's own EIP text is
   the only authority for those, and reviewing a row means reading it.
+
+* 8. As built — rung G (2026-09-06)
+dmd's "put that in our vault contract and our examples". Most of G was
+LANDED BY RUNG A: the vault's seventeen circuits file =erc20::Transfer=
+(twice, under CLAIM and WITHDRAW), =erc20::Approve=,
+=uniswap_v3::ExactOutputSingle=, =erc4626::Deposit= and =erc4626::Redeem=
+through five =Filing= impls and one =Kinded= alias, on
+=Contract<Erc20>= / =Contract<Erc4626>= / =Contract<UniswapV3Router>=;
+the treasury's one call is =Kinded<erc20::Transfer, 1>=. No
+contract-local call type remains in =erc20_vault_pending.rs= or
+=treasury.rs= (grep for =FixedGas= / =erc20_call= / =Erc20TransferAs=:
+zero hits), and README's cross-chain block is =treasury.rs= verbatim
+(rung A's check, re-run at B).
+
+What G itself did: README's "Side by side" still showed the PRE-M37
+spelling of the vault's =deposit= (a hand-built =SignRequest= handed to
+=request(c, &VAULT.signet, …)=). Rewritten as an abridgement of the
+CURRENT circuit: =Contract::<Erc20>::from_address=, the two argument
+builders, =Envelope::caller= (the depositor pays), the depositor's
+signing path, =request_with= on =Pending<Deposit, DepositEnv,
+VAULT_WORDS>=. Abridged means the guards region and the =c.region=
+labels are dropped; every call that remains is spelled as the source
+spells it, so a reader diffing against =erc20_vault_pending.rs= finds
+the same names.
+
+Zero movement: G touched README.md and this note only.
+
+** Open for dmd
+- The side-by-side's Compact half shows six circuit arguments the typed
+  API cannot hide: =evmNonce= and the three fee fields are still the
+  caller's (§7 of evm-calls.org — M39's nonce / fee-policy home). When
+  M39 gives them a home the Rust half shrinks and the Compact half does
+  not; that asymmetry is the thing the side-by-side will then be showing.

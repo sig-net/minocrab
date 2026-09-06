@@ -2233,7 +2233,14 @@ calls them, and by what the fixed-width ABI layer can express.
 - [ ] F. Docs: one table in README (interface → calls → static/dynamic)
       and the per-interface =compile_fail= gates (wrong callee, wrong
       arity, a dynamic call on a static-only slot).
-- [ ] G. (dmd, 2026-09-06: "put that in our vault contract and our
+- [X] G. (2026-09-06: landed by A for the vault and treasury — five
+      =Filing= impls + =Kinded<erc20::Transfer, 1>=, no contract-local
+      call type left, zero movement; G itself rewrote README's "Side by
+      side" Rust half, which still showed the pre-M37 =SignRequest=
+      spelling, as an abridgement of the CURRENT =deposit=
+      (=Contract::<Erc20>::from_address=, argument builders,
+      =Envelope::caller=, =request_with=); notes/evm-interfaces.org §8.
+      The nonce and fee arguments stay visible until M39 homes them.) (dmd, 2026-09-06: "put that in our vault contract and our
       examples") The vault's Pending lineage and the README's treasury
       example call the LIBRARY's interfaces — =erc20::Transfer= /
       =erc20::Approve=, =erc4626::Deposit= / =Redeem=, =uniswap_v3::
