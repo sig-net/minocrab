@@ -1,0 +1,124 @@
+#+title: The decision backlog — everything waiting on dmd (2026-09-06)
+
+One line per decision: what it is, where the reasoning lives, the options,
+the recommendation, and what it unblocks. Ordered by what it unblocks.
+Nothing here is built; nothing here is blocking anything an agent can do
+without it. Tick and annotate in place; the answer goes back into the
+milestone entry it belongs to.
+
+* A. Decisions that unblock scheduled work
+- [ ] A1. THE M29 F PIN (notes/mpc-publisher.org §9 "The decision this
+  leaves"). This repo pins one midnight rev (04c9c5d); mpc pins per-crate
+  release tags at the same semvers. Options: keep our single rev / adopt
+  mpc's tags. RECOMMEND: keep the single rev — =zkir-v3= has no release
+  tag and the official compact flake pins the same rev; revisit when mpc
+  actually links =minocrab-publisher=. UNBLOCKS: M30 C (the DUST wallet)
+  and =notes/zkir.org='s pin table.
+- [ ] A2. THE M26 HOLD on the authoring path — "not before the super
+  review" (milestones.org M26, last open item). The super review is now
+  run externally (M23's closing line). Options: lift / keep. RECOMMEND:
+  lift, and build the v3 TRANSCRIPT EXECUTOR first (signet-async.org
+  §9 "BLOCKED": the instruction walk in gather mode against live
+  state) — it is the one missing piece behind two rungs. UNBLOCKS: M35
+  D's state-driving half, M35 E (generated per-slot round trips), and
+  the typed contract-testing harness in minocrab-sim.
+- [ ] A3. THE FEE ENVELOPE'S HOME (notes/evm-interfaces.org §4 adj. 5,
+  §5 q6, §6 q5; notes/nonce-admin.org §3). =FIXED_PRIORITY_FEE= /
+  =FIXED_MAX_FEE= still live in =erc20_vault= and =evm::build_tx=
+  imports them from a deployment. Options: (i) move them into the
+  library as =Envelope::fixed='s default now; (ii) leave until M39's
+  =FeePolicy= cell. RECOMMEND: (i) now (a one-commit zero-movement
+  move), and (ii)'s cell later under a ROTATABLE admin commitment rather
+  than the deployer key (nonce-admin.org §3's recommendation). UNBLOCKS:
+  the library no longer importing from a deployment; M39 C's shape.
+  NOTE: M39 B–D stay parked until your formal model, per your call.
+- [ ] A4. M38 E — dynamic ABI types (=bytes=, =string=, =T[]=). The
+  milestone says "until a consumer asks". Known would-be consumers:
+  ERC-721 =safeTransferFrom(…, bytes)= (evm-interfaces.org §6 q2), Safe
+  =execTransaction=, Multicall3. RECOMMEND: wait for a consumer; the
+  =AbiArg= bound already refuses a dynamic type at compile time.
+
+* B. API judgement calls recorded by the rungs (accept or reverse)
+- [ ] B1. Three completions KEEP their owner gate (=complete_swap= /
+  =complete_supply= / =complete_redeem= mint proceeds to the caller;
+  notes/evm-calls.org §11). Reversing means the recipient comes out of
+  the stored environment — a protocol change. RECOMMEND: accept.
+- [ ] B2. =Envelope::literal= — a public knob whose only effect is ZKIR
+  identifier numbering, kept so =swap= / =redeem= stay byte-identical
+  (evm-calls.org §11 item 5). Alternative: renumber after folding in
+  the serializer, which moves every circuit in the tree once.
+  RECOMMEND: keep for now; schedule the renumbering only alongside
+  another deliberate tree-wide movement.
+- [ ] B3. =Filing::GAS_LIMIT= override (evm-interfaces.org §2.3, §5 q1,
+  §6 q5). Two would-be consumers so far (=Permit= at the 100k default;
+  none needing an override yet). RECOMMEND: add it now — three lines,
+  zero movement, closes the question.
+- [ ] B4. =IncreaseAllowance= / =DecreaseAllowance= are NOT in
+  OpenZeppelin v5 (§5 q2). RECOMMEND: keep — the deployed tokens that
+  matter predate v5.
+- [ ] B5. =erc721::TransferFrom='s =tokenId= as =U256= not =U128= (§6
+  q1). RECOMMEND: keep U256 (hash-derived ids exist).
+- [ ] B6. Add Aave =supplyWithPermit= (static, nested-tuple signature;
+  §6 q3) — the natural friend of ERC-2612 =Permit= for an MPC-signed
+  caller. RECOMMEND: yes, one oracle row and one call type.
+- [ ] B7. A payable =request_with= / =Fired::request_with= (§5 q3). No
+  consumer. RECOMMEND: wait.
+- [ ] B8. =Unit=-return tickets are worth strictly less (UsdtLike, Aave
+  =Supply=/=Borrow=, ERC-721 transfers: "mined without reverting" only;
+  §5 q5, §6 q4). The only fix is success from the EVENT, on sig-net's
+  side (evm-calls.org §3.1 option ii). RECOMMEND: raise with sig-net;
+  nothing to decide here.
+- [ ] B9. WORDS inference (=Pending<F, Env, WORDS>= still names the word
+  count; evm-calls.org §3). A =generic-array= rewrite of
+  =EventRecordV2= would infer it and re-type every record user.
+  RECOMMEND: no.
+
+* C. The publisher (notes/mpc-publisher.org §10 "Open questions")
+- [ ] C1. Hoist the Misc envelope constants and the three event names
+  (~6 constants) into a small PUBLISHABLE crate so mpc's graph does not
+  pull the corpus crate. RECOMMEND: yes, when mpc links the crate (or
+  now — it is an hour).
+- [ ] C2. Build =Deployment= from the package's =expectedVk.json= rather
+  than from the key files, so a table/keys mismatch fails HERE.
+  RECOMMEND: yes.
+- [ ] C3. The preimage carries the BARE circuit id, not compact-js's
+  encoded key location; both resolvers accept both. RECOMMEND: keep
+  bare; flip only if mpc ever feeds a preimage to a proof server that
+  parses the encoded form only.
+
+* D. Checks, not decisions — done or delegable
+- [X] D1. =U8::RESPOND = "uint8"= and the MPC's schema vocabulary (§5
+  q4): CHECKED 2026-09-06 — the respond schema is a JSON ABI parameter
+  list (=[{"name":…,"type":…}]=, node/src/respond_bidirectional.rs's
+  fixtures), decoded on the MPC side by alloy's dynamic ABI
+  (=chain-ethereum/src/respond_bidirectional.rs=, =DynSolType=), which
+  accepts every =uintN=. No action.
+- [ ] D2. A =cargo deny= (or =cargo audit=) CI job: the tree took its
+  first sizeable crates.io graph (alloy, dev-only) in M38 D and CI has
+  no supply-chain job (evm-interfaces.org §7). RECOMMEND: yes, cheap;
+  an agent can add it.
+- [ ] D3. The oracle pins TYPES, not parameter NAMES (§6 q6; Aave
+  =Borrow='s =referralCode= between =interestRateMode= and
+  =onBehalfOf=). Names only matter for the respond schema field names,
+  which =RETURN_FIELD= owns. No action unless a consumer files an Aave
+  call and the record's field names matter to a reader.
+- [ ] D4. edsl-trim.org §B: a fuller history-narration sweep and the
+  "one spelling per idea" audit of =Wire3= / =Operand= / =impl Into=
+  forms — a judgement pass over the API surface. RECOMMEND: schedule as
+  an M36 rung; an agent can do the sweep, you review the audit.
+
+* E. Actions only you can take
+- [ ] E1. Push/close on GitHub: the M20 issue pointing at TRUST.md (M33
+  D) and closing issue #6 with the workflow link (M34 C).
+- [ ] E2. M27: the hand-back of the leakage inventory to the analysis
+  draft's authors (milestones.org M27, the vault prong).
+- [ ] E3. M27 upstream spec watch: check midnight-zkir PRs #16 / #17
+  around 2026-09-18 (notes/zkir-semantics.org §11) before acting on the
+  conditional items.
+- [ ] E4. M39 B–D: your formal model of the anti-contention design
+  (nonce-admin.org's P1–P6 are the predictions to check against
+  sig-net's Compact when it lands).
+
+* F. Still in notes/review-queue.org (review, not decision)
+The standing-instruction queue there still lists M11 stages 0/1/2/4/7 and
+M23 R1 as diff-unreviewed landings. Unchanged by this note.
