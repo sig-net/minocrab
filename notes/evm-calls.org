@@ -589,3 +589,256 @@ stranger's proof is the same proof — and
 negative control for the two-preimage selection: relabelling a failure
 attestation's kind byte leaves its signature over the three-element
 preimage, and the four-element branch rejects it.
+
+* 11. As built — rung D (2026-09-06)
+The vault's seventeen circuits re-expressed on the typed API, and what
+they replaced retired. NINE REQUEST CIRCUITS AND =claim= ARE
+BYTE-IDENTICAL (the 211-circuit dump: =diff -rq= names exactly the eight
+settles and nothing else — treasury's three, the compat port's, the
+singleton's, every other lineage's file unchanged).
+
+** Per circuit
+| circuit             | verdict                                     |
+|---------------------+---------------------------------------------|
+| =initialize=        | byte-identical (no request; untouched)      |
+| =deposit=           | byte-identical                              |
+| =claim=             | byte-identical                              |
+| =withdraw=          | byte-identical                              |
+| =swap=              | byte-identical                              |
+| =approve_router=    | byte-identical                              |
+| =approve_stata=     | byte-identical                              |
+| =supply=            | byte-identical                              |
+| =redeem=            | byte-identical                              |
+| =complete_withdraw= | MOVED (16, 35553) → (15, 25655)             |
+| =refund_withdrawal= | MOVED (16, 35547) → (16, 35605)             |
+| =refund_swap=       | MOVED (16, 35578) → (16, 35651)             |
+| =refund_supply=     | MOVED (16, 35557) → (16, 35630)             |
+| =refund_redeem=     | MOVED (16, 35562) → (16, 35635)             |
+| =complete_swap=     | rows UNCHANGED (16, 45082); +1 identifier   |
+| =complete_supply=   | rows UNCHANGED (16, 35576); +1 identifier   |
+| =complete_redeem=   | rows UNCHANGED (16, 35581); +1 identifier   |
+The last three moved in the DUMP but not in rows or interface: their
+=complete= asserts =EvmCall::succeeded=, which for a numeric return is
+=always(c)= — one =Copy= of the immediate 1 that =fold_immediate_copies=
+deletes and =drop_true_asserts= follows. The instruction stream is
+identical; every identifier after it shifts by one. (The same shift is
+the whole of the =taint_baseline= edit for =complete_swap=: =%add.128= →
+=%add.129=, same instruction 197, same finding.)
+
+=complete_withdraw= crossing k16 → k15 is the milestone's dividend: the
+refund branch it might not take is gone, and with it TWO TAINT FINDINGS
+(the branch's coin-mint limbs; =taint_lint= reported them RESOLVED and
+the baseline is regenerated).
+
+** THE DELIBERATE MOVEMENT, and one deviation from §8's plan
+§8 says all eight settles "change statement — =complete= loses its refund
+branch and its hoisted secret". That is right for =complete_withdraw=
+and WRONG for the other three completions, so they keep their owner gate.
+WHY: =complete_swap=, =complete_supply= and =complete_redeem= mint their
+proceeds to =own_public_key(c)= — the caller's. A completion anyone may
+prove is a completion anyone may take the proceeds of. What
+=complete_withdraw= had was a secret hoisted for a branch it might not
+take (Gap 2); what these three have is an owner gate that is CHECKED
+before anything else happens, which is a different thing and a
+load-bearing one. Recorded for dmd: making them anyone's needs the
+recipient to come OUT of the environment (a public key, or a commitment
+the mint can open), which is a protocol change to the stored env, not a
+refactor. The leakage rule §8 asks for still holds: no settle circuit
+consumes a secret it does not check.
+
+** The two rung-A findings, resolved
+1. =transfer= UNDER TWO KINDS. Two call types in =evm.rs=:
+   =Erc20TransferAsDeposit= (=KIND = RESPONSE_KIND_CLAIM=) and
+   =Erc20TransferAsWithdrawal= (=KIND = RESPONSE_KIND_WITHDRAW=), each
+   three lines beyond the shared facts. They are two OPERATIONS of the
+   protocol that share a Solidity function, and the kind byte is what
+   says so (§5). The records are byte-identical, and =claim='s dump
+   proves it.
+   A third fact the finding did not mention and the dump found: the
+   ticket's ARGUMENT SLOT is named after the response record's field.
+   The vault's records are ={kind, success}=, ={kind, amountIn}=,
+   ={kind, shares}=, ={kind, assets}=; the treasury's is the anonymous
+   Solidity return. So =EvmCall= gained =const RETURN_FIELD:
+   Option<&'static str>= — =None= (the default) gives
+   =serializedOutput.output=, =Some("success")= gives
+   =serializedOutput.output.success=. Without it =claim= moved by one
+   wire NAME and nothing else. =Erc20Transfer= keeps the =None= default
+   (a Solidity =transfer= return IS anonymous), which is why the two
+   vault-facing types exist rather than one.
+2. =deposit='s CALLER-CHOSEN GAS ENVELOPE. =Envelope::caller(priority,
+   max_fee, gas_limit)= beside =Envelope::fixed()=; the fixed one stays
+   the default and =build_tx= (the treasury's) is unchanged. The
+   deposit's transaction is paid from the DEPOSITOR's own EVM account,
+   so the three numbers are its arguments, and the envelope emits
+   nothing where the fixed one emits three immediates — which is
+   exactly what =deposit='s stream needs.
+
+** Three MORE shapes the byte-identity gate forced, all recorded
+3. THE SIGNING PATH IS NOT ALWAYS THE CONTRACT'S. §10 point 4 said the
+   path is "the contract's constant"; =deposit='s is
+   =SigningPath::from(depositorCommitment)= — a PER-USER path the same
+   circuit just derived from a witnessed secret. So the general request
+   takes it from a closure rather than assuming =contract_path=.
+4. THE ARGUMENTS ARE BUILDERS, not values (=trait AbiArgs=, a tuple of
+   =FnOnce(&mut Circuit3) -> Wire= per element). =AbiTuple::words= takes
+   the values, so every argument exists before the first encoder runs;
+   the corpus does not work that way. =supply= reads =vaultEvmAddress=
+   BETWEEN its two words; =approveStata= reads its CALLEE after the gas
+   constants; =approveRouter= builds its constant allowance word after
+   encoding the spender. Each argument (and the callee) is therefore
+   built immediately before it is encoded, and the emission order is the
+   deployed one. The value-taking =request= / =build_tx= stay, and the
+   treasury still uses them.
+5. A LINEAGE'S TRANSACTION SPELLING IS PART OF ITS ARTIFACT.
+   =Envelope::literal(value, calldata_is_some)=. Five of the vault's
+   seven request circuits went through an =erc20_call= helper that named
+   =value = 0=, =calldata_is_some = 1=, the word count and the selector
+   AFTER the fee envelope and the callee; =swap= and =redeem= wrote
+   their =EvmTx= out as a struct literal, which named the selector and
+   the word count FIRST and took =value= / =calldata_is_some= from a
+   zero and a one the circuit already held (a =sqrtPriceLimitX96= word,
+   a coin burn). Every one of those is a =Copy= of an immediate that
+   =fold_immediate_copies= deletes inside =Builder3::finish=, so the two
+   spellings EXECUTE IDENTICALLY and cost identical rows — but the
+   identifier counter runs over every emitted instruction including the
+   folded ones, so the surviving instructions get different NAMES, and a
+   deployed artifact is compared byte for byte.
+
+   RECORDED FOR DMD, because it is the one place this rung put something
+   in a public API that is not a fact about the circuit: an enum whose
+   only effect is identifier numbering. The alternative is to renumber
+   after folding, which would move every circuit in the tree at once —
+   a real option, but a decision about the ZKIR serializer, not about
+   this API. Without the knob, =swap= and =redeem= move by two and one
+   identifiers respectively with zero instruction change.
+
+** What was retired
+- =signet_flow::Pending= (the =Env=/=Resp= slot), =Fired=, the =Settle=
+  ticket, =Response=, =FailureResponse=, =Commit<T>= (the =&str= domain
+  at both ends), and =Pending::at_block_with_signet=, the shim rung B
+  left doc-marked for this rung.
+- =erc20_vault_pending='s seven response structs (=ClaimResponse=,
+  =WithdrawResponse=, =SwapResponse=, =Failure=, =ApproveResponse=,
+  =SupplyResponse=, =RedeemResponse=), its =FixedGas=, its =erc20_call=,
+  its two hand-written =EvmTx= literals, its hand selectors
+  (=TRANSFER_SELECTOR=, =APPROVE_SELECTOR=, =EXACT_OUTPUT_SINGLE_SELECTOR=,
+  =DEPOSIT_SELECTOR=, =REDEEM_SELECTOR= are no longer imported here) and
+  its per-word =signet::*_abi_word= calls.
+- The =RESPONSE_KIND_*= constants STAY where they are — they are the
+  wire, and the call types name them. So do =VaultEventV2= /
+  =SwapEventV2= (the serialization conformance suite is over them).
+
+** What stayed in =signet_flow.rs=, and why
+It is the WIRE — the MPC's side of the protocol, which no
+contract-facing API gets to reshape — and the typed slot is built on it:
+- =Signet=: the block's one configuration slot (signer, MPC response
+  key, request nonce, caip2 id, EVM chain id). Five ledger fields;
+  =#[derive(Ledger)]= threads its offset into every =Pending= and
+  =Fired=.
+- =file_request= (=pub(crate)=): the filing every request does — read
+  the context, assemble the record, hash the id, assert freshness, bump
+  the nonce, store, run =after_insert=, notify with the map's own path.
+  =evm_flow='s three request methods are this plus a transaction.
+- =EvmTx= / =SignRequest=: the transaction shape the record holds and
+  the request that files it. =evm::build_tx= builds the first.
+- =Attested<R>=: =serializedOutput= on the wire, and the signed preimage
+  is exactly its limbs.
+- =Outcome=: what a settle hands back.
+- The three labels and the =Requested= / =Settled= sets.
+The module went 799 → 361 lines and its header now says all of that.
+
+** =evm_flow= gained
+- =Fired<Call, WORDS>=: the request-only slot, typed by the call. One
+  ledger field, =request_with= as its only operation, =KINDS= still
+  claimed so no settling slot of the block can share the kind.
+  =#[derive(Ledger)]= threads the Signet into a field spelled =Fired=
+  too (two lines in =ledger.rs=; its two error messages name both).
+- =Pending::request_with=: builders for the callee and the arguments, an
+  =Envelope=, and a =signer= closure that runs AFTER the transaction and
+  BEFORE the filing — which is where the vault witnesses the secret its
+  refund commitment is made to, and where =deposit= names the
+  depositor's own commitment as the path. =request= and =request_owned=
+  are unchanged and still the clean surface (the treasury uses them).
+
+** The harness, re-derived
+- =model.rs=: =settle_head_inputs_padded= (the signed preimage and the
+  argument SLOTS differ when the kind is FAILURE — the slot carries
+  prover-chosen padding), and =enum Attested { Failure { padding },
+  Executed { value } }= with =refundable(flag_is_the_verdict)=.
+- =CompleteWithdrawScenario=: no mint nonce, NO WITNESSES AT ALL, no
+  mint ops; =success= is now the accept/reject axis rather than a
+  branch.
+- The four =Refund*Scenario=s carry an =Attested=; the withdrawal's is
+  refundable on =Failure= and on =Executed { value: 0 }=, the three
+  numeric ones only on =Failure= (=succeeded= is =always= there, which
+  is the deployed semantics).
+- =spec.rs=: two new =GuardId=s (=TheAttestedCallDidNotSucceed=,
+  =NotARefundableOutcome=), =spec_complete_withdraw= rewritten,
+  =NotARefundableOutcome= added ahead of the pending check in all four
+  refunds (the circuit's order: initialized → kind disjunction →
+  pending → owner).
+- =gen.rs=: =attested_flag()= (failure / executed-false /
+  executed-true, a third each) and =attested_number()=.
+- Eighteen properties green at the default and at =PROPTEST_CASES=2000
+  cargo test --release=.
+
+** Two test suites ported, one finding in the port
+=tests/signet_flow.rs='s toy contract and =tests/is_even_caller.rs='s
+MPC-integration caller were both written on =signet_flow::Pending=; both
+are now on the typed slots (the first keeps its own =CommitTag= and
+=Pending::refund= with the opening spelled out, so the non-=Owned= half
+of the API is exercised too). The drift gate — the record a slot files
+is the record =signet_sim::reader= decodes, and the id the MPC
+recomputes is over the circuit's own limbs — is untouched and green.
+
+FOUND IN THE PORT: =is_even_caller= embedded its selector as
+=c.constant(0x2a2e1320u64)= — the four bytes BIG-endian in the field
+element — where every differential-checked lineage embeds
+=Fr::from_le_bytes(selector)=. It is a test caller with no on-chain twin,
+so nothing caught it; =EvmCall::selector= gives it the checked order and
+=the_selector_is_the_one_the_mpcs_caller_asks_for= pins the four bytes.
+
+** Gates (all run on this rung)
+- THE DUMP: 211 circuits before and after; =diff -rq= names exactly
+  =erc20_vault_pending__{complete_withdraw, refund_withdrawal,
+  complete_swap, refund_swap, complete_supply, refund_supply,
+  complete_redeem, refund_redeem}.zkir= and nothing else.
+- =cargo test --release -p minocrab-contracts --test row_snapshot --test
+  interface_snapshot= — green after regenerating. The row diff is five
+  lines (the three unchanged completions do not appear); the interface
+  diff is five circuits (=complete_withdraw= loses =mintNonce= and four
+  guarded witnesses; the four refunds gain the attested-value slot).
+- =cargo test -p minocrab-contracts= — green, every suite.
+- =PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test
+  erc20_vault_pending_spec= — 18 passed.
+- =cargo test -p signet-sim= — 7 passed, 0 failed. The fixtures
+  round-trip: the record atoms did not move.
+- =cargo test --workspace= — 986 passed, 0 failed, 39 ignored, across
+  108 targets.
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7
+  as the untouched tree (pre-existing intra-doc links in
+  =events_borsh=, =hashing=, =nested=, =signet=, =signet_contract=,
+  =xcall=); zero from =evm=, =evm_flow=, =signet_flow=,
+  =erc20_vault_pending= or =treasury=.
+- =circuit_closure= — green.
+- =taint_lint= — regenerated: two findings RESOLVED on
+  =complete_withdraw=, one identifier renamed on =complete_swap=.
+- =trust_base= — regenerated (=minocrab-macros/src/ledger.rs= 401 → 410
+  lines, the =Fired= threading); TRUST.md committed.
+- THE LEAKAGE INVENTORY DOES NOT COVER THIS LINEAGE. =tests/vault/=
+  builds its circuits from =erc20_vault= (the compat port), so
+  =leakage_inventory.rs= is over the port's seventeen circuits and not
+  the Pending lineage's. Left alone, per the brief. What stands in for
+  it here: =interface_snapshot= (=complete_withdraw= has no witness
+  row), =tests/erc20_vault_pending.rs::a_completion_witnesses_nothing=
+  (its private transcript is EMPTY) and =only_the_withdrawer_refunds=.
+
+** Docs
+- README's "Cross-chain calls" section: the code block is =treasury.rs='s
+  three circuits verbatim, and the paragraph after it says the vault's
+  seventeen are on the same API and names their six call types.
+- BENCHMARK.md: a note under the API-lineage bullet with the eight
+  settles' before/after rows FROM THE SNAPSHOT, and "the bench has not
+  been re-run" left to the main session.
+- VERIFICATION.md: the lineage's row renamed off =Pending<Env, Resp>=.
