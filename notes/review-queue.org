@@ -700,6 +700,37 @@ strictness bonus). FOUND AND FIXED, four things:
    refined at the source. Fix 1's `BoundedUint::to_uint` is where our
    API can be STRICTER than Compact by emitting the check compactc omits.
 
+* [ ] Landings of 2026-09-06 (overnight, diff-unreviewed) — what to look at
+- [ ] e1b026c M37 D (the vault's seventeen circuits on the typed API):
+      the JUDGEMENT in notes/evm-calls.org §11 — three completions keep
+      their owner gate (decisions.org B1); =Envelope::literal= as a
+      public knob (B2); =AbiArgs= builders and =request_with='s
+      signing-path closure exist ONLY to keep emission order, so check
+      each vault request circuit still reads its cells where the
+      deployed artifact did (the dump gate says yes; the shapes are what
+      a reader sees).
+- [ ] d42d090 M30 A+B (=crates/minocrab-publisher=): the PURITY claim
+      (publish.rs's =ChainContext= — nothing opens a socket); the
+      dev-dependency CYCLE minocrab-contracts ⇄ minocrab-publisher (the
+      Misc constants; decisions.org C1); =NoDust= leaving the tx
+      unbalanced with =enforce_balancing= off in every gate — a gate
+      that could pass a fee-less transaction forever if rung C slips.
+- [ ] 7f4aac5 M38 A (=Interface= / =Extends= / =Filing= / =Kinded=): the
+      reflexive blanket =Extends= impl plus the library's inheritance
+      impls make =Contract::from_address= ambiguous for ERC-20 calls, so
+      every vault site names the interface (notes/evm-interfaces.org §4
+      adj. 3) — confirm that is the ergonomics you want; =Pending<F,
+      Env, WORDS = 2>= gained a DEFAULT word count (still E0080-checked).
+- [ ] 37dc5dc =()= as =CircuitArg= / =CircuitBorsh=: a zero-slot leaf;
+      the one thing to check is that a =()= inside a derived argument
+      struct cannot shift a neighbour's slot (the twin tests say no).
+- [ ] 1e51288 / 711d64a / 19dc671 / b9c5510 M38 B, C, D, F (landed by the
+      other session): the =AbiArg= / =AbiReturn= split (a =Unit= in
+      =Args= is E0277 — read the two compile_fail blocks); the PAYABLE
+      design for WETH =deposit= (evm-interfaces.org §5 — the ladder rung
+      chosen); the alloy oracle's dev-dependency graph (~20 crates,
+      dev-only; decisions.org D2); the UsdtLike ticket's meaning (B8).
+
 * [ ] M11 stage 7 (THE RECORD): three things a reviewer should read
 1. THE LAYOUT TABLE AGAINST THE MPC'S READER. notes/borsh-format.org
    §"As built — stage 7" states the record's atoms/limbs/bytes and the
