@@ -2079,7 +2079,10 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       not §0's =Public=; (iii) =Unit::word= is a BUILD-TIME PANIC where
       the ladder wants a compile error — separating =Args= from =Return=
       traits would fix it; recorded for dmd; =()= is not yet a
-      =CircuitArg=, so a =Unit=-return slot cannot form a ticket.)
+      =CircuitArg=, so a =Unit=-return slot cannot form a ticket.
+      BOTH CLOSED 2026-09-06: the =AbiArg= split in M38 B makes =Unit=
+      in =Args= E0277 and deletes the panic; =()= is a =CircuitArg= and
+      =CircuitBorsh= as of 37dc5dc.)
       =Pending<Call, Env, WORDS>= (§3): response and kind from the
       call, WORDS checked by inline const, the =Signet= block located by
       the Ledger derive (one per block or a compile error) and threaded
