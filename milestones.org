@@ -2188,7 +2188,20 @@ calls them, and by what the fixed-width ABI layer can express.
       struct args), Aave v3 Pool (=supply=, =withdraw=, =borrow=,
       =repay=), ERC-721's static calls (=transferFrom=, =approve=,
       =setApprovalForAll=).
-- [ ] D. THE FIXTURE ORACLE: every selector and every word pinned against
+- [X] D. (2026-09-06, af04d3b merged — tests/evm_alloy_oracle.rs: per
+      call a =sol!= row, signature + selector equality, and a proptest
+      over generated values that our words equal alloy's =abi_encode=;
+      six rows (the five shipped calls + an all-leaves probe, since no
+      shipped call passes a bool or bytes32 argument); three negative
+      controls (wrong width, transposed args, SwapRouter v1's
+      deadline-bearing struct db3e2198 vs our SwapRouter02 5023b4df);
+      NO DISAGREEMENT at 5000 cases per row. alloy-sol-types /
+      alloy-primitives =1.6.1 as dev-deps, the five macro crates pinned
+      back to 1.6.1 in Cargo.lock so the set is version-for-version
+      what sig-net/mpc builds. A new row is a =sol!= line + an
+      =oracle_rows!= entry. FLAGGED for dmd: parameter NAMES are not
+      checked (types only); no cargo-deny/audit job exists and the tree
+      gained ~20 dev-only crates. notes/evm-interfaces.org §7.) THE FIXTURE ORACLE: every selector and every word pinned against
       =alloy='s ABI encoder (the mpc repo already depends on alloy —
       reuse, not our own encoder as its own witness) on generated values,
       plus the vault's compactc calldata where it exists.
