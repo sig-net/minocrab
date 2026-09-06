@@ -3166,6 +3166,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sha3",
+ "signet-protocol",
  "signet-signer-interface",
  "signet-sim",
  "tokio",
@@ -3234,8 +3235,9 @@ dependencies = [
  "midnight-zkir-v3",
  "minocrab-contracts",
  "rand 0.8.7",
+ "serde_json",
  "sha2 0.11.0",
- "signet-artifacts",
+ "signet-protocol",
  "thiserror",
  "tokio",
 ]
@@ -4557,6 +4559,14 @@ dependencies = [
  "minocrab-contracts",
  "minocrab-zkir",
  "serde_json",
+ "sha2 0.11.0",
+ "signet-protocol",
+]
+
+[[package]]
+name = "signet-protocol"
+version = "0.1.0"
+dependencies = [
  "sha2 0.11.0",
 ]
 

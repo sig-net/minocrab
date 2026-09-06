@@ -51,6 +51,9 @@ anyhow.workspace = true
 # `Rng`/`CryptoRng`, so the publisher's own signatures are spelled in them.
 rand.workspace = true
 thiserror.workspace = true
+# `ManagedDir::deployment` reads the package's own `expectedVk.json` (M30 C2)
+# — the same shape `signet-artifacts` writes it with.
+serde_json.workspace = true
 
 [dev-dependencies]
 # The real circuit: `tests/real_proof.rs` keygens from `SignetContract::

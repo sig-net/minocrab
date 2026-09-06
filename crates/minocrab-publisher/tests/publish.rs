@@ -71,6 +71,69 @@ fn the_verifier_key_hashes_are_the_committed_expected_vk_table() {
     }
 }
 
+/// M30 C2's gate: `ManagedDir::deployment` reads `expectedVk.json`, so a
+/// hand-edited (or stale) entry is caught HERE, against the key file it
+/// disagrees with, named — rather than being trusted into a `Deployment` that
+/// can only ever agree with itself.
+#[test]
+fn a_corrupted_expected_vk_entry_is_caught_against_the_key_file() {
+    let root = std::env::temp_dir().join(format!(
+        "minocrab-publisher-corrupt-vk-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time moves forward")
+            .as_nanos()
+    ));
+    // A full copy of the committed managed directory's keys AND expectedVk.json
+    // — everything `deployment` reads, so the only thing this test changes is
+    // the one entry it corrupts.
+    let committed = committed_managed();
+    std::fs::create_dir_all(root.join("keys")).expect("mkdir keys");
+    for circuit in SIGNER_CIRCUITS {
+        std::fs::copy(
+            committed.verifier_key_path(circuit),
+            root.join("keys").join(format!("{circuit}.verifier")),
+        )
+        .expect("copy a committed verifier key");
+    }
+    let managed = ManagedDir::new(&root);
+
+    // Corrupt RESPOND's entry alone: flip the hash's first hex character to
+    // some OTHER valid hex digit, so the corrupted table is still well-formed
+    // JSON with a 64-hex value — the only thing wrong with it is that it no
+    // longer matches the file.
+    let real_hash = committed.verifier_key_hash(RESPOND).expect("a committed verifier key");
+    let flipped = if &real_hash[..1] == "0" { "1" } else { "0" };
+    let corrupted_hash = format!("{flipped}{}", &real_hash[1..]);
+    let json = std::fs::read_to_string(committed.expected_vk_path())
+        .expect("the committed expectedVk.json");
+    let corrupted_json = json.replacen(&real_hash, &corrupted_hash, 1);
+    assert_ne!(json, corrupted_json, "the corruption must actually change the file");
+    std::fs::write(managed.expected_vk_path(), &corrupted_json)
+        .expect("write the corrupted expectedVk.json");
+
+    let address = deploy_singleton(
+        singleton_contract_state(|c| Some(managed_verifier_key(c))),
+        Timestamp::from_secs(0),
+    )
+    .1;
+    let err = managed
+        .deployment(address, &SIGNER_CIRCUITS)
+        .expect_err("a corrupted expectedVk.json entry must be caught");
+    match err {
+        PublishError::ExpectedVkOutOfSync { circuit, json_hash, file_hash, json_path } => {
+            assert_eq!(circuit, RESPOND);
+            assert_eq!(json_hash, corrupted_hash);
+            assert_eq!(file_hash, real_hash);
+            assert_eq!(json_path, managed.expected_vk_path().display().to_string());
+        }
+        other => panic!("expected ExpectedVkOutOfSync, got: {other}"),
+    }
+
+    std::fs::remove_dir_all(&root).expect("clean up");
+}
+
 /// The committed directory carries verifier keys and NOTHING ELSE a prover
 /// needs, and the resolver says so by resolving nothing — rather than half-
 /// resolving a circuit and failing somewhere deeper in the prover.

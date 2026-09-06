@@ -183,6 +183,16 @@ fn a_respond_intent_publishes_and_verifies() {
         std::fs::write(managed.prover_key_path(RESPOND), &pk_bytes).expect("write prover");
         std::fs::write(managed.verifier_key_path(RESPOND), &vk_bytes).expect("write verifier");
         std::fs::write(managed.ir_path(RESPOND), &ir_bytes).expect("write ir");
+        // `ManagedDir::deployment` reads `expectedVk.json` (M30 C2); this
+        // directory is built fresh by keygen above rather than by
+        // `signet-artifacts::generate`, so nothing has written one yet. The
+        // hash matches the key just written by construction — step 2 already
+        // asserted `vk_bytes` IS the committed verifier key.
+        std::fs::write(
+            managed.expected_vk_path(),
+            format!("{{\"{RESPOND}\": \"{}\"}}", signet_protocol::hash_verifier_key(&vk_bytes)),
+        )
+        .expect("write expectedVk.json");
         println!(
             "respond: k={k}, rows={}, keygen {keygen_s:.3} s, prover key {:.1} MB",
             model.rows(),

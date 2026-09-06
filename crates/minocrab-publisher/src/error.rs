@@ -45,6 +45,19 @@ pub enum PublishError {
     /// (notes/mpc-publisher.org §5.2).
     #[error("{circuit}: the deployed verifier key hashes to {got}, not the expected {expected}")]
     VerifierKeyMismatch { circuit: String, expected: String, got: String },
+    /// The package's OWN `expectedVk.json` disagrees with its OWN
+    /// `.verifier` file for one circuit — a mismatch between the shipped
+    /// table and the shipped keys, caught before anything is deployed or
+    /// proved against them (`ManagedDir::deployment`, M30 C2,
+    /// notes/mpc-publisher.org §11). Distinct from
+    /// [`PublishError::VerifierKeyMismatch`], which compares against a
+    /// DEPLOYED contract's operation, not the package's own files.
+    #[error(
+        "{circuit}: {json_path} records {json_hash}, but the verifier key on disk hashes to \
+         {file_hash} — the shipped expectedVk table and the shipped keys are out of sync \
+         (rebuild the managed directory)"
+    )]
+    ExpectedVkOutOfSync { circuit: String, json_path: String, json_hash: String, file_hash: String },
     /// A file on disk did not deserialize as the type its name claims.
     #[error("{path} is not a tagged {what}: {message}")]
     Decode { path: String, what: &'static str, message: String },

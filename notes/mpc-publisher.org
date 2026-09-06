@@ -1022,16 +1022,221 @@ seam for each:
    graph, the fix is a small publishable crate carrying the Misc envelope
    constants and the three event names (they are ~6 constants), which
    minocrab-contracts, signet-artifacts and this crate would all read. Worth
-   doing now or when mpc actually links it?
+   doing now or when mpc actually links it? DONE, see §11.
 2. The =expectedVk= table currently comes from the FILES
    (=ManagedDir::deployment=), which cannot disagree with itself. The
    package's own =expectedVk.json= is the independent copy; should
    =Deployment= be built from that JSON instead, so that a mismatch between
    the shipped table and the shipped keys is caught here rather than in the
    sidecar? (M29 B's §8 note that no REAL deployed =expectedVk= exists
-   anywhere yet still holds.)
+   anywhere yet still holds.) DONE, see §11.
 3. The publisher writes the BARE circuit id into the preimage's
    =key_location=, not compact-js's encoded form. Nothing on chain sees it,
    and both resolvers accept both — but if mpc ever hands one of our
    preimages to a proof server that only parses the encoded form, that is the
    line to flip (=ContractKeyLocation::encoded_key_location=).
+
+* 11. As built — M30 C1 + C2 (2026-09-06)
+
+dmd's answer to §10's open questions 1 and 2 was "sounds good" / "yes"
+(notes/decisions.org C1/C2). Both rungs in one session.
+
+** C1: =signet-protocol=, the one publishable crate
+
+New workspace member, =crates/signet-protocol= (one line in the root
+=[workspace] members= list beside signet-artifacts', with the reason in a
+comment). One file, =src/lib.rs=, one dependency (=sha2=):
+
+#+begin_example
+misc            MISC_VERSION (1), MISC_TAG (10), MISC_SIZE (288) —
+                compactc's midnight-events.ss:71
+circuits        SIGN_BIDIRECTIONAL / RESPOND / RESPOND_BIDIRECTIONAL (the
+                Compact names), SIGNER_CIRCUITS, the three *_EVENT names,
+                event_name(circuit) -> Option<&str>
+hash_verifier_key   EXACTLY compact-js's hashVerifierKey: sha256 of the raw
+                    .verifier bytes, lowercase hex
+#+end_example
+
+Three readers, one definition each, all via =signet-protocol.workspace =
+true=:
+
+- =minocrab-contracts=' =events.rs= and =signet_contract.rs= now
+  =pub use signet_protocol::{misc::*, circuits::*}= instead of defining the
+  constants — every existing =minocrab_contracts::events::MISC_SIZE= /
+  =minocrab_contracts::signet_contract::SIGNATURE_RESPONDED_EVENT= call site
+  in the corpus's own suites keeps compiling unchanged, because the re-export
+  sits at the same path.
+- =signet-artifacts= reads =signet_protocol::circuits::{SIGN_BIDIRECTIONAL,
+  RESPOND, RESPOND_BIDIRECTIONAL}= for the on-disk names and
+  =signet_protocol::hash_verifier_key= for =expectedVk.json= — its OWN
+  =hash_verifier_key= wrapper is deleted, not re-exported, because nothing
+  outside the crate called it by that path.
+- =minocrab-publisher='s =src/call.rs= and =src/keys.rs= read the same two
+  paths directly. This is the one that mattered: =call.rs='s
+  =use minocrab_contracts::events::{MISC_SIZE, MISC_TAG, MISC_VERSION}= and
+  =use minocrab_contracts::signet_contract::{...}= are GONE, and
+  =keys.rs='s =signet_artifacts::hash_verifier_key= call is now
+  =signet_protocol::hash_verifier_key=.
+
+*** Everything else =minocrab-publisher= imported from the two crates
+
+Audited (notes/mpc-publisher.org §10 listed =events::{MISC_SIZE, MISC_TAG,
+MISC_VERSION}= and =signet_contract::{...EVENT}= from =minocrab-contracts=,
+and =hash_verifier_key= from =signet-artifacts= — nothing else). After the
+move, grepping =minocrab_contracts::=/=signet_artifacts::= in
+=crates/minocrab-publisher/src/= turns up nothing at all. The two
+=[dependencies]= entries are GONE from =minocrab-publisher/Cargo.toml=:
+
+- =signet-artifacts= is dropped entirely — nothing else in this crate ever
+  called it.
+- =minocrab-contracts= moves to =[dev-dependencies]=, versionless (the shape
+  PUBLISHING.md already prescribes for a dev-only path dependency): only
+  =tests/real_proof.rs= still needs it, for =SignetContract::respond()=
+  itself at keygen time, so the real-proving gate proves under the actual
+  circuit and not a copy of it. =tests/call_surface.rs=, =tests/publish.rs=
+  and =tests/support/mod.rs= no longer import =minocrab_contracts= either —
+  they read =signet_protocol::{misc::*, circuits::*}= directly now, so the
+  only remaining edge to the corpus crate anywhere in this crate is that one
+  dev-dependency, exercised by one =#[ignore]=d test.
+
+*** =minocrab-publisher= is publishable — with the SAME asterisk as the rest of the workspace
+
+With the corpus-crate edge gone, the manifest picked up the fields
+PUBLISHING.md's other nine crates already carry
+(=repository=/=rust-version=/=readme=/=keywords=/=categories=/=include=), a
+README.md, and copies of both license files — and =publish = false= is
+GONE (the default is =true=). It does NOT mean =cargo publish -p
+minocrab-publisher= would succeed today: every =midnight-*= dependency here
+is still the workspace's git pin (PUBLISHING.md's "Blocked: =midnight-*=
+are git dependencies"), and that blocker is external and workspace-wide —
+waiting on upstream to publish the ledger-9.1 line, not something this rung
+could or should route around (PUBLISHING.md is explicit that adding fake
+=version=+ keys to make =cargo publish= accept the manifest is the exact
+silently-different-build failure this project exists to prevent, and that
+call stands here too). What this rung removes is the ADDITIONAL,
+workspace-internal blocker: a publishable crate cannot honestly depend on
+one that is =publish = false= by policy (a corpus, never meant to ship). That
+edge is gone. =minocrab-publisher= now sits exactly where
+=minocrab-zkir=/=minocrab-ir=/etc. already sit — ready when upstream is,
+and PUBLISHING.md's publish-order list and "not published" list are the
+next place to fold it in, when someone next touches that document (not done
+here — out of this rung's stated scope, and the document already predates
+several M29/M30 crates it does not mention).
+
+** C2: =Deployment= from =expectedVk.json=, checked against the keys
+
+=ManagedDir::deployment(address, circuits)= used to build the table by
+calling =self.verifier_key_hash(circuit)= for each circuit — i.e. by hashing
+the =.verifier= files on disk. That table can never disagree with itself:
+whatever the files say IS the table. Now it:
+
+1. Reads and parses =<root>/expectedVk.json= (new: =ManagedDir::
+   expected_vk_path=, a private =expected_vk_table= using =serde_json= —
+   a new =[dependencies]= entry, the same shape =signet-artifacts= already
+   writes the file with).
+2. For each requested circuit, looks up the JSON's hash (missing ->
+   =PublishError::UnknownCircuit=, same as before) and separately computes
+   =self.verifier_key_hash(circuit)= from the =.verifier= file.
+3. If they disagree: =PublishError::ExpectedVkOutOfSync { circuit,
+   json_path, json_hash, file_hash }=, a NEW error variant (distinct from
+   =VerifierKeyMismatch=, which compares against a DEPLOYED contract's
+   operation, not the package's own files), with a message naming the
+   circuit, the JSON path and BOTH hashes:
+   #+begin_example
+   respond: crates/signet-artifacts/managed/expectedVk.json records
+   <json-hash>, but the verifier key on disk hashes to <file-hash> — the
+   shipped expectedVk table and the shipped keys are out of sync (rebuild
+   the managed directory)
+   #+end_example
+4. Only then builds the =Deployment= — from the JSON's hash, not a recompute
+   — so what a publisher carries is the SHIPPED table, checked, not a
+   table that is definitionally consistent with itself.
+
+The gate: a new test, =a_corrupted_expected_vk_entry_is_caught_against_the_key_file=
+(=tests/publish.rs=) — a temp copy of the committed managed directory's keys
+and =expectedVk.json=, one hex character of RESPOND's JSON entry flipped
+(still 64 well-formed hex, just wrong), asserts =deployment()= returns
+=ExpectedVkOutOfSync= naming =respond=, the corrupted JSON hash and the real
+file hash. =tests/real_proof.rs='s temp managed directory (built fresh by
+local keygen, never touched by =signet-artifacts::generate=) did not carry
+an =expectedVk.json= at all until this rung; it now writes one right after
+writing the key files, hashing the same =vk_bytes= it just wrote — self-
+consistent by construction, since that test's own point is proving under
+the COMMITTED key, already asserted equal to =vk_bytes= a few lines above.
+
+** Gate results, verbatim
+
+#+begin_example
+$ cargo test -p signet-artifacts -p minocrab-publisher -p signet-protocol
+... (compiling the git-pinned midnight-* line + this workspace) ...
+running 0 tests   (minocrab-publisher unit)
+test result: ok. 0 passed; 0 failed; 0 ignored
+
+running 8 tests   (tests/call_surface.rs)
+test result: ok. 8 passed; 0 failed; 0 ignored
+
+running 8 tests   (tests/publish.rs — the new corruption gate included)
+test a_corrupted_expected_vk_entry_is_caught_against_the_key_file ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored
+
+running 1 test    (tests/real_proof.rs)
+test a_respond_intent_publishes_and_verifies ... ignored, real proving:
+    run under --release, and it needs the KZG params on disk
+test result: ok. 0 passed; 0 failed; 1 ignored
+
+running 0 tests   (signet-artifacts unit, lib + bin)
+test result: ok. 0 passed; 0 failed; 0 ignored   (x2)
+
+running 1 test    (signet-artifacts tests/generated_equals_committed.rs)
+test result: ok. 1 passed; 0 failed; 0 ignored
+
+running 1 test    (signet-artifacts tests/hash_verifier_key_pin.rs)
+test result: ok. 1 passed; 0 failed; 0 ignored
+
+running 2 tests   (signet-protocol unit)
+test tests::every_signer_circuit_has_an_event_name_and_nothing_else_does ... ok
+test tests::hash_verifier_key_is_lowercase_sha256_hex ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored
+
+3 doc-test suites, 0 tests each — ok
+#+end_example
+
+Zero-movement gate (touched =minocrab-contracts=, so this ran per rule):
+
+#+begin_example
+$ MINOCRAB_ZKIR_DUMP=<dir> cargo test -p minocrab-contracts --test zkir_dump -- --ignored
+test dump_every_circuits_zkir ... ok
+$ find <dir> -type f | wc -l
+214
+$ diff -rq <dir> <main-baseline, 214 files>
+(empty — exit 0)
+#+end_example
+
+Full workspace, once, plain (not =--release=):
+
+#+begin_example
+$ cargo test --workspace
+119 test-result blocks, all "ok"; 1137 passed, 0 failed, 41 ignored total
+#+end_example
+
+#+begin_example
+$ cargo clippy --workspace --all-targets
+Finished, 0 warnings, 0 errors
+#+end_example
+
+** What was NOT done, on purpose
+
+- PUBLISHING.md untouched: it predates =signet-artifacts=,
+  =signet-signer-interface=, =signet-sim=, =signet-protocol= and
+  =minocrab-publisher= entirely (its publish-order and "not published"
+  lists only name the original nine M21 crates), so folding
+  =minocrab-publisher= into it is one edit among several the document
+  already owes and not specific to this rung.
+- =crates/minocrab-publisher/README.md= did not exist before this rung
+  (the crate was =publish = false= and PUBLISHING.md does not require one
+  for those) — written fresh here rather than "updated", matching the other
+  publishable crates' shape (name, one-paragraph pitch, the pipeline
+  diagram from =src/lib.rs='s header, the =signet-protocol= dependency
+  note, licence footer).
+- §10's open question 3 (bare vs encoded =key_location=) is untouched — out
+  of scope for C1/C2, still open.
