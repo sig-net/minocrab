@@ -393,3 +393,168 @@ inheritance twin is a normal test, per the brief.
   =Weth: Extends<Erc20>= (=deposit= / =withdraw= on a contract whose
   =transfer= a caller also wants) is the first place a shipped lineage
   plausibly will.
+
+* 7. As built — rung D (2026-09-06)
+THE FIXTURE ORACLE: =crates/minocrab-contracts/tests/evm_alloy_oracle.rs=,
+920 lines, 18 tests. Every call's signature string, four selector bytes and
+every ABI word are now pinned against ALLOY's encoder on generated values —
+the outside witness §3's D pointer asked for, so our encoder stops being
+its own witness.
+
+Rungs B and C write §5 and §6; this is §7 because it was built beside them.
+
+** What is pinned
+Six rows, each two tests (=<row>::signature_and_selector= and a proptest
+=<row>::words=):
+| row                   | our type                        | alloy's =sol!= twin                    | selector |
+|-----------------------+---------------------------------+----------------------------------------+----------|
+| =transfer=            | =erc20::Transfer=               | =transfer(address,uint256)=            | a9059cbb |
+| =approve=             | =erc20::Approve=                | =approve(address,uint256)=             | 095ea7b3 |
+| =deposit=             | =erc4626::Deposit=              | =deposit(uint256,address)=             | 6e553f65 |
+| =redeem=              | =erc4626::Redeem=               | =redeem(uint256,address,address)=      | ba087652 |
+| =exact_output_single= | =uniswap_v3::ExactOutputSingle= | the nested tuple, seven fields         | 5023b4df |
+| =all_leaves=          | =AbiLeafProbe= (test-local)     | =abiLeafProbe(address,bool,bytes32,…)= | —        |
+
+=AbiLeafProbe= exists because the five SHIPPED calls between them never
+pass a =bool= or a =bytes32= as an ARGUMENT (both appear only as returns),
+so those two encoders would otherwise meet alloy nowhere. Its argument
+tuple is all eight leaves — =(Address, Bool, Bytes32, U24, U64, U128,
+U160, U256)= — at the maximum arity =AbiTuple= implements. It is also the
+demonstration that a row is declarative: nothing in the harness knows it
+exists.
+
+Three assertions per row:
+1. =Call::signature() == solCall::SIGNATURE=,
+2. =Call::selector() == solCall::SELECTOR=,
+3. the words our =AbiType::word= encoders build FROM CIRCUIT WIRES — run
+   under =minocrab_sim::v3::simulate=, read back as bytes — equal
+   =solCall { .. }.abi_encode()[4..]= split into 32-byte words.
+
+(3) is the one that needed a harness. The values enter as circuit
+arguments (=Circuit3::arg=), the wires are rebuilt from them, and
+=AbiTuple::words= runs; the =B32= =(hi, lo)= pairs come back out through
+=disclose= / =output=. =word_bytes= reassembles the thirty-two bytes and
+then re-derives the slot pair with =vault::prims::b32_slots= and asserts
+it matches, so a bug in the READER cannot hide a bug in the encoder.
+
+NO DISAGREEMENT WAS FOUND. Every selector and every word agrees, at
+=PROPTEST_CASES=5000= per row (0.89s for the file).
+
+** How a row is added — three things, none of them harness code
+1. A =sol!= declaration of the function as ETHEREUM spells it, in the
+   interface's =sol_*= module. =uint256= wherever our word type is
+   =U64=/=U128=/=U256=: those are OUR range bounds on a 32-byte word, not
+   different Solidity types. A struct argument is a =struct= item plus a
+   function taking it.
+2. A =SampleLeaf= impl for any =AbiType= the call uses that has none yet —
+   the host-side value, its proptest strategy, the field limbs it enters
+   the circuit as, how to rebuild the wire. All eight of today's leaves
+   have one; rung B's =U8= and rung C's =U16= are one impl each.
+3. One row in the =oracle_rows!= table: a name, our call type, alloy's
+   call type, and a closure-shaped pattern building alloy's struct from
+   the destructured sample tuple.
+
+=SampleLeaf: AbiType= and =SampleArgs: AbiTuple= are the only places the
+oracle names the library's trait layer, deliberately: if rung B's
+=AbiArg=/=AbiReturn= split renames =AbiType= in argument position, the
+merge is a one-token rename in two supertrait bounds.
+
+WHY A SEPARATE SAMPLE TRAIT rather than more methods on =AbiType=: the
+sample side is test-only. The library's leaf trait says what a leaf IS on
+the wire; how to generate a plausible value of one is the fixture's
+business.
+
+** The negative controls — three, because the oracle must be able to fail
+1. =the_oracle_can_fail=: =transfer(address,uint128)= — the same name and
+   arity with one type changed — must DISAGREE on the selector. It is also
+   the argument for spelling =U64=/=U128= as =uint256= in every row: a
+   =uintN= that was our RANGE rather than Ethereum's width would move the
+   selector, and this is what that looks like.
+2. =the_word_comparison_can_fail=: the selector control says nothing about
+   the WORD loop (a harness comparing two empty lists would pass it). So
+   =deposit='s two arguments TRANSPOSED must disagree, with the right
+   order asserted EQUAL in the same test as the positive twin. Argument
+   order is the right thing to perturb: it is invisible to the selector
+   and it is exactly what an ORDERED =Args= tuple claims.
+3. =the_router_shape_is_the_one_we_declare=: Uniswap's ORIGINAL
+   =SwapRouter= has a =deadline= between =recipient= and =amountOut=; that
+   eight-field struct is =db3e2198=, a different function our seven words
+   would not fill. Ours is =SwapRouter02='s seven-field =5023b4df=. This
+   is the control that matters for the one call whose =signature()= we
+   override: =tests/evm_abi.rs= pins the extra PARENTHESES, this pins the
+   FIELD LIST — and pointing a call type at the wrong router generation is
+   a plausible mistake rather than a contrived one.
+
+Plus two deterministic coverage tests that run even at
+=PROPTEST_CASES=1=: =bool_covers_both_values= (both values, and the bool
+word read off by hand) and =every_leaf_at_its_upper_bound= (each leaf at
+the top of the range its Rust type claims).
+
+=tests/evm_abi.rs= IS UNCHANGED. Its compactc-calldata pins are the
+independent control the milestone names, and alloy does not replace them:
+one oracle is Ethereum's encoder, the other is the deployed contract's own
+artifact.
+
+** The dependency, and why the pins are exact
+=alloy-sol-types = "=1.6.1"= and =alloy-primitives = "=1.6.1"=, declared
+in =[workspace.dependencies]= and taken =.workspace = true= as
+DEV-dependencies of minocrab-contracts. Nothing shipping links either.
+
+EXACT, not carets: the value of a fixture is that it is the encoder the
+MPC ITSELF RUNS. sig-net/mpc's =Cargo.lock= resolves both at 1.6.1; a
+caret would let the oracle drift to a version no deployment uses,
+silently, on any =cargo update=.
+
+The four macro crates behind them resolved to 1.7.2 on first fetch (their
+own requirements are carets), where mpc's lock has 1.6.1. They were pinned
+back with =cargo update -p <crate> --precise 1.6.1=: =alloy-sol-macro=,
+=alloy-sol-macro-expander=, =alloy-sol-macro-input=,
+=alloy-sol-type-parser=, =syn-solidity=. The =SIGNATURE= and =SELECTOR=
+constants are the MACRO's output, so this is not cosmetic. Our alloy set
+is now version-for-version what mpc builds.
+
+=alloy-json-abi 1.6.1= and =alloy-rlp 0.3.16= come in behind them; the
+lock's other additions (=const-hex=, =ruint=, =keccak-asm=, =sha3-asm=,
+=schemars=, =secp256k1 0.31=, =serde_with=, =time=, …) are alloy's own
+graph. All dev-only.
+
+** Gate results
+- =cargo test -p minocrab-contracts --test evm_alloy_oracle=: ok, 18
+  passed, 0 failed. At =PROPTEST_CASES=5000=: ok, 18 passed, 0.89s.
+- =cargo test --workspace --no-fail-fast=: 1039 passed, 0 failed, 40
+  ignored, over 114 test binaries plus the doctests.
+- =cargo clippy --workspace --all-targets -- -D warnings=: clean.
+- ZKIR DUMP BYTE-IDENTICAL: =MINOCRAB_ZKIR_DUMP= over
+  =dump_every_circuits_zkir= before and after, 214 circuits each,
+  =diff -rq= EMPTY. Expected — rung D adds no circuit and touches no
+  =src/=; it is the sanity check that the dev-dependency changed nothing.
+- MUTATION CHECK (not committed): transposing two arguments in the
+  =redeem= row's alloy struct fails =redeem::words= on the first case.
+  The rows are live.
+- =cargo deny= / =cargo audit=: THE REPO RUNS NEITHER. =.github/workflows/=
+  (ci, docs, nightly, weekly) has no supply-chain job and there is no
+  =deny.toml=, so there was no gate to re-run. Worth knowing anyway: this
+  is the first crates.io dependency graph of any size the tree has taken
+  on (alloy pulls ~20 transitive crates), all dev-only. For dmd — a
+  =cargo deny= job is a cheap addition if that matters.
+
+** What could not be pinned, and why
+- THE RETURN TYPES. =EvmCall::Return= is what the MPC attests and narrows
+  (=AbiType::RESPOND='s =uint64= against =SOLIDITY='s =uint256=). The
+  narrowing is a Signet protocol fact, not an ABI one, and alloy has
+  nothing to say about it. =tests/evm_abi.rs= and =src/evm.rs='s unit
+  tests keep those.
+- THE TRANSACTION AROUND THE CALLDATA — nonce, fee envelope, gas limit,
+  =to=. Not ABI; =tests/evm_abi.rs='s
+  =build_tx_carries_the_declared_envelope= is where those live.
+- =Unit=. It is a RETURN type with no ABI word, so there is nothing for
+  alloy to encode; rung B is making a =Unit= in argument position a
+  compile error, which is the right instrument for it.
+- THE EMPTY ARGUMENT LIST (=()=). No shipped call has one, and =sol!= plus
+  a zero-word row would assert only that =abi_encode()= is four bytes.
+  Rung B's WETH =deposit()= / =withdraw(uint256)= is where a zero/one-word
+  row becomes worth having.
+- THE NAMES. alloy checks TYPES; a =sol!= parameter's NAME is not in the
+  signature, so a row whose Solidity spells =receiver= where the deployed
+  contract spells =to= would still pass. The interface's own EIP text is
+  the only authority for those, and reviewing a row means reading it.
