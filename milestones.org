@@ -2125,7 +2125,13 @@ Zero movement throughout: the 17 Pending-lineage circuits byte-identical.
       a signing-path closure, and =Envelope::literal= (spelling only,
       not a circuit fact — flagged for dmd). =signet_flow.rs= 799 → 362
       lines, the wire only; two taint findings resolved; README's block
-      is treasury.rs verbatim; the bench NOT re-run.) The vault's Pending lineage re-expressed on A–C: request
+      is treasury.rs verbatim; the bench NOT re-run. THE LEAKAGE
+      INVENTORY followed 2026-09-06 (tests/leakage_inventory_pending.rs,
+      notes/zkir-semantics.org §7.3): the walk shared under
+      tests/leakage/, a second frozen table over the seventeen circuits,
+      and the exit criterion ASSERTED — no settle consumes an unchecked
+      secret, =complete_withdraw= consumes no witness at all; no
+      finding.) The vault's Pending lineage re-expressed on A–C: request
       circuits, initialize, approves and claim byte-identical; the eight
       withdraw/swap/supply/redeem settles move DELIBERATELY to the
       Succeeded/Failed split (spec harness re-derived, leakage inventory
