@@ -64,7 +64,7 @@ Wait until we have a consumer
 
   Do reccomended.
   
-- [X] B3. =Filing::GAS_LIMIT= override (evm-interfaces.org §2.3, §5 q1, §6 q5). Two would-be consumers so far (=Permit= at the 100k default; none needing an override yet). RECOMMEND: add it now — three lines, zero movement, closes the question.
+- [X] B3. (DONE 2026-09-06, merged — M38 H.) =Filing::GAS_LIMIT= override (evm-interfaces.org §2.3, §5 q1, §6 q5). Two would-be consumers so far (=Permit= at the 100k default; none needing an override yet). RECOMMEND: add it now — three lines, zero movement, closes the question.
 Do it
   
 - [X] B4. =IncreaseAllowance= / =DecreaseAllowance= are NOT in OpenZeppelin v5 (§5 q2). RECOMMEND: keep — the deployed tokens that matter predate v5.
@@ -75,7 +75,7 @@ Keep
 
 Keep
 
-- [X] B6. Add Aave =supplyWithPermit= (static, nested-tuple signature; §6 q3) — the natural friend of ERC-2612 =Permit= for an MPC-signed caller. RECOMMEND: yes, one oracle row and one call type.
+- [X] B6. (DONE 2026-09-06, merged — M38 H; the signature is eight flat words, not a struct.) Add Aave =supplyWithPermit= (static, nested-tuple signature; §6 q3) — the natural friend of ERC-2612 =Permit= for an MPC-signed caller. RECOMMEND: yes, one oracle row and one call type.
 
 Yes
 

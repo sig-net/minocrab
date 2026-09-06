@@ -7,13 +7,17 @@
 //! [`Repay`] the borrower's, and the four together are what a signer like
 //! ours does with a lending position.
 //!
-//! ALL FOUR ARE STATIC-WIDTH, which is why they are here at rung C and not
-//! waiting on rung E's dynamic types. Aave's Pool takes addresses,
+//! ALL FIVE ARE STATIC-WIDTH, which is why they are here at rung C/H and
+//! not waiting on rung E's dynamic types. Aave's Pool takes addresses,
 //! `uint256` amounts and two small integers; nothing in this surface is a
-//! `bytes` or an array. (`supplyWithPermit` and `flashLoan` are not — the
-//! former carries a signature the caller could pass as three static words
-//! but Aave declares as `(uint8,bytes32,bytes32)` inside a struct, the
-//! latter takes arrays. Neither is here.)
+//! `bytes` or an array. (`flashLoan` is not — it takes arrays. It is not
+//! here.)
+//!
+//! [`SupplyWithPermit`] IS FLAT, NOT A NESTED STRUCT: `IPool.sol` declares
+//! it as eight plain parameters — rung C's own doc guessed at a
+//! `(uint8,bytes32,bytes32)` struct here, the way Uniswap's calls nest
+//! their arguments, and that guess was wrong (notes/evm-interfaces.org
+//! §10, verified against `IPool.sol` on `main`).
 //!
 //! NOT AN ERC-20 AND NOT EXTENDED BY ONE: the Pool is a market, not a
 //! token. The aTokens it mints ARE ERC-20s, but they are DIFFERENT
@@ -33,7 +37,7 @@ use minocrab::Private;
 use minocrab_std::v3::{Check, Uint};
 
 use super::erc4626;
-use super::{always, Address, EvmCall, Interface, Unit, U128, U16, U64};
+use super::{always, Address, Bytes32, EvmCall, Interface, Unit, U128, U16, U256, U64, U8};
 
 /// AAVE V3'S `Pool` — the callee marker.
 ///
@@ -76,6 +80,51 @@ impl EvmCall for Supply {
     type Callee = AaveV3Pool;
     const NAME: &'static str = "supply";
     type Args = (Address, U128, Address, U16);
+    type Return = Unit;
+    type Success = ();
+    const GAS_LIMIT: u64 = CALL_GAS;
+
+    fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+        // The constant-true assert this makes is removed by
+        // `drop_true_asserts` in `Builder3::finish`.
+        always(c)
+    }
+}
+
+/// `supplyWithPermit(address,uint256,address,uint16,uint256,uint8,bytes32,bytes32)`
+/// — `(asset, amount, onBehalfOf, referralCode, deadline, permitV, permitR,
+/// permitS)`, NO RETURN. EIGHT static words, the maximum arity this
+/// library's `AbiTuple` implements.
+///
+/// [`Supply`] AND AN ERC-2612 [`Permit`](super::erc20::Permit) IN ONE
+/// TRANSACTION: the underlying's `approve` is folded into the signature
+/// the depositor already produced off-chain, which is exactly the
+/// position an MPC-signed caller is in — rung C's own open question 3
+/// asked for this and left it out because §2.4's table did not list it
+/// (notes/evm-interfaces.org §6 q3, §10).
+///
+/// THE SIGNATURE IS FLAT: `IPool.sol` declares eight plain parameters,
+/// `permitV` / `permitR` / `permitS` among them — NOT the
+/// `(uint8,bytes32,bytes32)` nested struct rung C's own doc guessed at,
+/// which was the Uniswap shape read onto the wrong function (verified
+/// against `aave-dao/aave-v3-origin`'s `src/contracts/interfaces/IPool.sol`
+/// on `main`, 2026-09-06 — notes/evm-interfaces.org §10).
+///
+/// `amount` and `referralCode` are [`Supply`]'s own types — the same
+/// lending amount and the same always-zero program selector. `deadline` is
+/// a [`U256`], following [`erc20::Permit`](super::erc20::Permit)'s own
+/// `deadline` field rather than the amount-shaped [`U128`]: both spell
+/// `uint256`, and this is the same permit signature's field, not a new
+/// one. `permitV` / `permitR` / `permitS` are `erc20::Permit`'s `v` / `r` /
+/// `s`, unchanged.
+///
+/// NO RETURN AT ALL, for [`Supply`]'s reason: `supplyWithPermit` is `void`.
+pub struct SupplyWithPermit;
+
+impl EvmCall for SupplyWithPermit {
+    type Callee = AaveV3Pool;
+    const NAME: &'static str = "supplyWithPermit";
+    type Args = (Address, U128, Address, U16, U256, U8, Bytes32, Bytes32);
     type Return = Unit;
     type Success = ();
     const GAS_LIMIT: u64 = CALL_GAS;

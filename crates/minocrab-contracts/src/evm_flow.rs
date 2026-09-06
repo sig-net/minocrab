@@ -514,8 +514,8 @@ use signet_signer_interface::{RequestId, Signature};
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
 use crate::evm::{
-    build_tx, build_tx_payable, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope, EvmCall,
-    Extends, Filing, Interface, Payable,
+    build_tx_filed, build_tx_payable_filed, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope,
+    EvmCall, Extends, Filing, Interface, Payable,
 };
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
@@ -1038,6 +1038,7 @@ impl<F: Filing, const WORDS: usize> Fired<F, WORDS> {
             args,
             envelope,
             nonce.field(),
+            F::GAS_LIMIT,
         );
         let path = signer(c);
         file_request(
@@ -1091,7 +1092,7 @@ where
         nonce: Uint<64>,
         env: impl FnOnce(&mut Circuit3, RequestId<Public>) -> Env,
     ) -> RequestId<Public> {
-        let tx = build_tx::<Called<F>, WORDS>(c, callee.address, args, nonce.field());
+        let tx = build_tx_filed::<F, WORDS>(c, callee.address, args, nonce.field());
         self.file(c, tx, key_version, env)
     }
 
@@ -1130,13 +1131,7 @@ where
     where
         Called<F>: Payable,
     {
-        let tx = build_tx_payable::<Called<F>, WORDS>(
-            c,
-            callee.address,
-            args,
-            value,
-            nonce.field(),
-        );
+        let tx = build_tx_payable_filed::<F, WORDS>(c, callee.address, args, value, nonce.field());
         self.file(c, tx, key_version, env)
     }
 
@@ -1213,6 +1208,7 @@ where
             args,
             envelope,
             nonce.field(),
+            F::GAS_LIMIT,
         );
         let (path, carried) = signer(c);
         file_request(

@@ -952,6 +952,19 @@ pub trait Filing: 'static {
     /// circuit's argument schema, so a caller built against the deployed
     /// record keeps working.
     const RETURN_FIELD: Option<&'static str> = None;
+
+    /// THE GAS LIMIT THIS SLOT FILES WITH, if it differs from the call's own
+    /// default ([`EvmCall::GAS_LIMIT`]).
+    ///
+    /// A gas limit is a fact about the FUNCTION by default (§2.3) — but a
+    /// deployment sometimes knows more than the library's per-function
+    /// number does (a route through a proxy, a token with an unusually
+    /// expensive hook), and that knowledge is the SLOT's, not the call's. A
+    /// `Filing` that leaves this at the default emits exactly what
+    /// [`EvmCall::GAS_LIMIT`] does — no filing needed one until this rung,
+    /// which is why every filing before it still takes the default
+    /// (notes/evm-interfaces.org §10).
+    const GAS_LIMIT: u64 = <Self::Call as EvmCall>::GAS_LIMIT;
 }
 
 /// THE ONE-LINE FILING: this call, at this kind, with the anonymous return.
@@ -1203,6 +1216,35 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
     args: <C::Args as AbiTuple>::Wires<Private>,
     nonce: Wire3<FieldT, Private>,
 ) -> EvmTx<WORDS> {
+    build_tx_at::<C, WORDS>(c, callee, args, nonce, C::GAS_LIMIT)
+}
+
+/// [`build_tx`], but the fee envelope's gas limit is [`Filing::GAS_LIMIT`]
+/// rather than the call's own default — what
+/// [`Pending::request`](crate::evm_flow::Pending::request) builds a
+/// `Pending<F, …>` slot's transaction from (notes/evm-interfaces.org §10).
+///
+/// `Filing::GAS_LIMIT`'s default is `Self::Call::GAS_LIMIT`, so an
+/// unoverridden filing emits exactly what [`build_tx`] does — ZERO
+/// MOVEMENT for every filing that does not name this const.
+pub fn build_tx_filed<F: Filing, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    args: <<F::Call as EvmCall>::Args as AbiTuple>::Wires<Private>,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS> {
+    build_tx_at::<F::Call, WORDS>(c, callee, args, nonce, F::GAS_LIMIT)
+}
+
+/// The shared body of [`build_tx`] and [`build_tx_filed`]: `gas_limit` is
+/// the only thing that differs between the two callers.
+fn build_tx_at<C: EvmCall, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    args: <C::Args as AbiTuple>::Wires<Private>,
+    nonce: Wire3<FieldT, Private>,
+    gas_limit: u64,
+) -> EvmTx<WORDS> {
     const {
         assert!(
             WORDS == <C::Args as AbiTuple>::WORDS,
@@ -1214,7 +1256,7 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
     };
 
     let words = <C::Args as AbiTuple>::words(c, args);
-    finish_tx::<C, WORDS>(c, words, Envelope::fixed(), |_| callee, nonce)
+    finish_tx::<C, WORDS>(c, words, Envelope::fixed(), |_| callee, nonce, gas_limit)
 }
 
 /// [`build_tx`] FOR A CALL THAT CARRIES ETHER — the transaction's `value`
@@ -1231,6 +1273,35 @@ pub fn build_tx_payable<C: Payable, const WORDS: usize>(
     value: Uint<128, Private>,
     nonce: Wire3<FieldT, Private>,
 ) -> EvmTx<WORDS> {
+    build_tx_payable_at::<C, WORDS>(c, callee, args, value, nonce, C::GAS_LIMIT)
+}
+
+/// [`build_tx_filed`] for a [`Payable`] call —
+/// [`Pending::request_payable`](crate::evm_flow::Pending::request_payable)'s
+/// counterpart to [`build_tx_payable`], reading the slot's
+/// [`Filing::GAS_LIMIT`] instead of the call's.
+pub fn build_tx_payable_filed<F: Filing, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    args: <<F::Call as EvmCall>::Args as AbiTuple>::Wires<Private>,
+    value: Uint<128, Private>,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS>
+where
+    F::Call: Payable,
+{
+    build_tx_payable_at::<F::Call, WORDS>(c, callee, args, value, nonce, F::GAS_LIMIT)
+}
+
+/// The shared body of [`build_tx_payable`] and [`build_tx_payable_filed`].
+fn build_tx_payable_at<C: Payable, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    args: <C::Args as AbiTuple>::Wires<Private>,
+    value: Uint<128, Private>,
+    nonce: Wire3<FieldT, Private>,
+    gas_limit: u64,
+) -> EvmTx<WORDS> {
     const {
         assert!(
             WORDS == <C::Args as AbiTuple>::WORDS,
@@ -1242,7 +1313,14 @@ pub fn build_tx_payable<C: Payable, const WORDS: usize>(
     };
 
     let words = <C::Args as AbiTuple>::words(c, args);
-    finish_tx::<C, WORDS>(c, words, Envelope::fixed().ether(value), |_| callee, nonce)
+    finish_tx::<C, WORDS>(
+        c,
+        words,
+        Envelope::fixed().ether(value),
+        |_| callee,
+        nonce,
+        gas_limit,
+    )
 }
 
 /// WHO PAYS, AND HOW THE TRANSACTION'S CONSTANTS ARE SPELLED — everything
@@ -1371,13 +1449,18 @@ impl Envelope {
         }
     }
 
-    /// The three fee fields, in wire order.
-    fn fee_wires<C: EvmCall>(fees: Fees, c: &mut Circuit3) -> [Wire3<FieldT, Private>; 3] {
+    /// The three fee fields, in wire order. `gas_limit` is the [`Fees::Fixed`]
+    /// case's immediate — [`build_tx`] and [`build_tx_payable`] pass the
+    /// call's own [`EvmCall::GAS_LIMIT`]; [`build_tx_filed`] and
+    /// [`build_tx_payable_filed`] pass the slot's [`Filing::GAS_LIMIT`]
+    /// instead (notes/evm-interfaces.org §10). [`Fees::Caller`] ignores it —
+    /// its own wire is already the caller's number.
+    fn fee_wires(fees: Fees, gas_limit: u64, c: &mut Circuit3) -> [Wire3<FieldT, Private>; 3] {
         match fees {
             Fees::Fixed => {
                 let priority_fee = c.constant(FIXED_PRIORITY_FEE);
                 let max_fee = c.constant(FIXED_MAX_FEE);
-                let gas_limit = c.constant(C::GAS_LIMIT);
+                let gas_limit = c.constant(gas_limit);
                 [
                     priority_fee.private(),
                     max_fee.private(),
@@ -1406,12 +1489,21 @@ impl Envelope {
 /// then the envelope, then the callee, then the transaction's own four
 /// constants. A request circuit that reads `vaultEvmAddress` between its two
 /// words, or its callee cell after the gas constants, keeps its stream.
+///
+/// `gas_limit` is the [`Envelope::fixed`] case's immediate — [`build_tx`]'s
+/// callers pass [`EvmCall::GAS_LIMIT`], and
+/// [`Pending::request_with`](crate::evm_flow::Pending::request_with) /
+/// [`Fired::request_with`](crate::evm_flow::Fired::request_with) pass the
+/// slot's [`Filing::GAS_LIMIT`] instead (notes/evm-interfaces.org §10). An
+/// [`Envelope::caller`] envelope ignores it — its own wire is already the
+/// caller's number.
 pub fn build_tx_with<C: EvmCall, const WORDS: usize>(
     c: &mut Circuit3,
     callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
     args: impl AbiArgs<C::Args>,
     envelope: Envelope,
     nonce: Wire3<FieldT, Private>,
+    gas_limit: u64,
 ) -> EvmTx<WORDS> {
     const {
         assert!(
@@ -1424,7 +1516,7 @@ pub fn build_tx_with<C: EvmCall, const WORDS: usize>(
     };
 
     let words = args.words(c);
-    finish_tx::<C, WORDS>(c, words, envelope, callee, nonce)
+    finish_tx::<C, WORDS>(c, words, envelope, callee, nonce, gas_limit)
 }
 
 /// The shared tail of [`build_tx`] and [`build_tx_with`]: envelope, callee,
@@ -1435,6 +1527,7 @@ fn finish_tx<C: EvmCall, const WORDS: usize>(
     envelope: Envelope,
     callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
     nonce: Wire3<FieldT, Private>,
+    gas_limit: u64,
 ) -> EvmTx<WORDS> {
     let words: [B32<Private>; WORDS] = match words.try_into() {
         Ok(words) => words,
@@ -1452,7 +1545,7 @@ fn finish_tx<C: EvmCall, const WORDS: usize>(
     let ([priority_fee, max_fee, gas_limit], to, value, calldata_is_some, no_words, selector) =
         match tail {
             Tail::Named { value } => {
-                let fees = Envelope::fee_wires::<C>(fees, c);
+                let fees = Envelope::fee_wires(fees, gas_limit, c);
                 let to = callee(c).field();
                 // `None` is every non-payable call: the immediate zero,
                 // named exactly where it has always been named.
@@ -1469,7 +1562,7 @@ fn finish_tx<C: EvmCall, const WORDS: usize>(
                 let selector = c.constant(selector_imm()).private();
                 let no_words = c.constant(WORDS as u64).private();
                 let to = callee(c).field();
-                let fees = Envelope::fee_wires::<C>(fees, c);
+                let fees = Envelope::fee_wires(fees, gas_limit, c);
                 let value = value.unwrap_or_else(|| c.constant(0u64).private());
                 (fees, to, value, calldata_is_some, no_words, selector)
             }

@@ -161,6 +161,18 @@ mod sol_aave_v3 {
             address onBehalfOf,
             uint16 referralCode
         ) external;
+        // FLAT, not a nested struct — verified against `IPool.sol` on
+        // `aave-dao/aave-v3-origin`'s `main` (notes/evm-interfaces.org §10).
+        function supplyWithPermit(
+            address asset,
+            uint256 amount,
+            address onBehalfOf,
+            uint16 referralCode,
+            uint256 deadline,
+            uint8 permitV,
+            bytes32 permitR,
+            bytes32 permitS
+        ) external;
         function withdraw(address asset, uint256 amount, address to)
             external returns (uint256);
         function borrow(
@@ -1046,6 +1058,27 @@ oracle_rows! {
         amount: SolU256::from(amount),
         onBehalfOf: SolAddress::from(on_behalf_of),
         referralCode: referral,
+    };
+
+    /// Aave v3 `supplyWithPermit(address,uint256,address,uint16,uint256,
+    /// uint8,bytes32,bytes32)` — [`Supply`](aave_v3::Supply) and
+    /// [`Permit`](erc20::Permit) folded into one call (M38 rung H,
+    /// notes/evm-interfaces.org §10). EIGHT static words — the maximum
+    /// arity this library's `AbiTuple` implements — and FLAT, not the
+    /// nested `(uint8,bytes32,bytes32)` struct rung C's own doc guessed:
+    /// `IPool.sol` declares eight plain parameters, which is what
+    /// `sol_aave_v3::supplyWithPermitCall` above also declares, so a wrong
+    /// guess here would show as a selector disagreement.
+    aave_supply_with_permit: aave_v3::SupplyWithPermit => sol_aave_v3::supplyWithPermitCall,
+    |(asset, amount, on_behalf_of, referral, deadline, v, r, s)| sol_aave_v3::supplyWithPermitCall {
+        asset: SolAddress::from(asset),
+        amount: SolU256::from(amount),
+        onBehalfOf: SolAddress::from(on_behalf_of),
+        referralCode: referral,
+        deadline: SolU256::from_be_bytes(deadline),
+        permitV: v,
+        permitR: FixedBytes::<32>::from(r),
+        permitS: FixedBytes::<32>::from(s),
     };
 
     /// Aave v3 `withdraw(address,uint256,address)` — 69328dec. Note the

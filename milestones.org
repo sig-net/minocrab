@@ -2304,8 +2304,15 @@ calls them, and by what the fixed-width ABI layer can express.
       =Contract<UniswapV3Router>= — no contract-local call types remain;
       README's cross-chain section and the side-by-side show the library
       spelling; zero movement on the vault's request circuits.
-- [ ] H. (dmd, 2026-09-06, decisions.org B3 "Do it" / B6 "Yes"; IN
-      FLIGHT) =Filing::GAS_LIMIT= — a defaulted override on the slot's
+- [X] H. (2026-09-06, fd6cd70 + af03e23 merged — notes/evm-interfaces.org
+      §10: =Filing::GAS_LIMIT= defaults to the call's and the request
+      path reads the FILING's (=build_tx_filed= / =build_tx_payable_filed=,
+      the gas limit threaded as a value through =finish_tx=); Aave's
+      =supplyWithPermit= is EIGHT FLAT WORDS per =IPool.sol= on
+      aave-dao/aave-v3-origin, not the nested permit struct §6 q3 guessed
+      — the library's widest call now; alloy row agrees; 713 passed,
+      clippy clean, 214-circuit dump byte-identical.) (dmd, 2026-09-06,
+      decisions.org B3 "Do it" / B6 "Yes") =Filing::GAS_LIMIT= — a defaulted override on the slot's
       filing (default = the call's), read by the request path; and Aave
       v3 =supplyWithPermit= (signature verified against Aave's source,
       alloy oracle row, filed once through =Pending=). Zero movement.
