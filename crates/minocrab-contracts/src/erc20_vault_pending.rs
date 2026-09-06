@@ -1,30 +1,63 @@
-//! The erc20-vault on [`crate::signet_flow`] — M35 rung C: the vault with
-//! every Sig Network suspension owned by a [`Pending`] slot instead of
-//! spelled out per circuit. (It was written as the twin of the
-//! `erc20_vault_modern` fork; that fork and its two parents were retired
-//! in M28 — notes/vault-refresh.org §0 — and this lineage is the one place
+//! The erc20-vault on the TYPED EVM-CALL API — M37 rung D: every Sig
+//! Network suspension owned by an [`crate::evm_flow::Pending`] slot whose
+//! type is the CALL it makes. (It was written as the twin of the
+//! `erc20_vault_modern` fork; that fork and its two parents were retired in
+//! M28 — notes/vault-refresh.org §0 — and this lineage is the one place
 //! their constructions live on.)
 //!
 //! WHAT THIS LINEAGE IS. A NEW DEPLOYMENT LAYOUT, not a byte-twin: its
-//! ledger block declares seventeen fields (so compactc-style segmentation
+//! ledger block declares twenty-two fields (so compactc-style segmentation
 //! is live — every path is two elements), its request records and
 //! environments sit in `Pending` slots, and its settle circuits take one
-//! `Settle` ticket each. It has no compactc twin to differential against;
-//! the spec harness's shared model is the oracle for it, as for the opt
-//! lineage (that extension is tracked in M35 C).
+//! typed TICKET each. It has no compactc twin to differential against; the
+//! spec harness's shared model is the oracle for it, as for the opt lineage.
 //!
-//! WHAT MOVED OUT OF THE CIRCUITS, and where it went
-//! (notes/signet-async.org §7's table, realised):
+//! WHAT MOVED OUT OF THE CIRCUITS, and where it went:
 //!
-//! | invariant                        | now                                   |
-//! |----------------------------------|---------------------------------------|
-//! | response kind byte               | `Response::KIND` on four types        |
-//! | record format version            | inside `settle`                       |
-//! | notification depth + path bytes  | derived from the slot                 |
-//! | request map / env map / nonce    | one `Pending` slot + one `Signet`     |
-//! | amount, token for settle         | typed `Env` fields                    |
-//! | verify → kind → lookup → remove  | one `settle` / `settle_failed`        |
-//! | refund commitment hash + gate    | `Commit::to` / `Commit::open`         |
+//! | invariant                        | now                                     |
+//! |----------------------------------|-----------------------------------------|
+//! | the four-byte selector           | `EvmCall::selector` (keccak, build time)|
+//! | the ABI words and the word count | `AbiType::word` + `AbiTuple` (E0080)    |
+//! | response kind byte               | `EvmCall::KIND` on the call type        |
+//! | the attested value's field name  | `EvmCall::RETURN_FIELD`                 |
+//! | the fee envelope and gas limit   | `Envelope` + `EvmCall::GAS_LIMIT`       |
+//! | record format version            | inside `complete` / `refund`            |
+//! | notification depth + path bytes  | derived from the slot                   |
+//! | request map / env map / nonce    | one `Pending` slot + one `Signet`       |
+//! | `&VAULT.signet`                  | `#[derive(Ledger)]`                     |
+//! | amount, token for settle         | typed `Env` fields                      |
+//! | verify → kind → lookup → remove  | one `complete` / `refund`               |
+//! | refund commitment hash + gate    | `Owned` + `request_owned` / `refund_to_owner` |
+//! | "a `false` must not complete"    | `EvmCall::succeeded`, asserted          |
+//!
+//! THE OUTCOME PICKS THE CIRCUIT (M37 rung D, notes/evm-calls.org §3). The
+//! two tickets are symmetric and neither stands in for the other:
+//!
+//! - `complete_withdraw` takes a `Succeeded<Erc20TransferAsWithdrawal>`, and
+//!   `Pending::complete` asserts the call's own success predicate — for an
+//!   ERC-20 `transfer` that is the attested flag. So a `transfer` that MINED
+//!   AND RETURNED `false` cannot complete, whoever presents it. It is also
+//!   ANYONE'S: no secret is witnessed, and there is nothing to mint (the
+//!   tokens left the vault's EVM account).
+//! - `refund_withdrawal` takes a `Failed<…>` and accepts BOTH non-successes
+//!   — the MPC's failure kind (reverted, never mined, or an undecodable
+//!   return) and the executed-`false` — opening the owner commitment with a
+//!   fresh witness before it re-mints.
+//!
+//! The deployed lineage put the executed-`false` case in a `when(!succeeded)`
+//! branch INSIDE `completeWithdraw`, hoisting a secret witness for a branch
+//! it might not take. That is Gap 2; this is its repair, and the API has no
+//! method that lets it be written again.
+//!
+//! WHY THE OTHER THREE COMPLETIONS ARE STILL THE OWNER'S. `complete_swap`,
+//! `complete_supply` and `complete_redeem` mint their proceeds to
+//! `own_public_key` — the caller's. Making them anyone's would make the
+//! proceeds anyone's, so each still opens its stored commitment with a fresh
+//! witness. That is a CHECKED consumption of a secret, not the hoisted one
+//! Gap 2 is about; nothing in them runs before the check. (Their `refund_*`
+//! twins take a `Failed` ticket whose executed branch is unreachable: the
+//! attested value is a NUMBER, so `EvmCall::succeeded` is `always` and only
+//! the MPC's failure kind refunds — the deployed semantics exactly.)
 //!
 //! THE IDENTITY COMMITMENT follows upstream's protocol move (`0d9c1660`):
 //! `userCommitment` is `upgradeFromTransient(transientHash([pad, sk]))`,
@@ -34,22 +67,16 @@
 //!
 //! WHAT STAYED, deliberately: the initialization gate, the deployer gate,
 //! the business guards, the coin burns and mints, and every authorization
-//! with a FRESH witness (`witness_sk` in `claim`, `complete_withdraw`,
-//! `complete_swap`, both refunds).
+//! with a FRESH witness (`witness_sk` in `claim`, the three owner-gated
+//! completions, and every refund).
 //!
-//! ONE DEVIATION IN CIRCUIT COUNT: `refund` routed a failure over BOTH
-//! request maps in one circuit with guarded lookups; a `Pending` slot
-//! settles its own entries, so there are two refund circuits here
-//! (`refund_withdrawal`, `refund_swap`), each a plain `settle_failed`. Ten
-//! circuits, not nine. And `approveRouter` files into a [`Fired`] slot: a
-//! request-only shape with no settle method at all.
-//!
-//! THE LENDING EXTENSION (`approveStata`, and supply/redeem via the stataUSDC
-//! wrapper — upstream's Aave flows) followed the same rules once the ten
-//! circuits above existed: `supplies`/`redeems` are two more `Pending` slots,
-//! each with its own request circuit and a `settle` / `settle_failed` pair,
-//! and `approveStata` is a second [`Fired`] request reusing `RESPONSE_KIND_APPROVE`.
-//! Seventeen circuits in total now, on twenty-two ledger fields.
+//! ONE DEVIATION IN CIRCUIT COUNT from the deployed contract: `refund`
+//! routed a failure over BOTH request maps in one circuit with guarded
+//! lookups; a `Pending` slot settles its own entries, so there is one refund
+//! circuit per flow here. Seventeen circuits in total, on twenty-two ledger
+//! fields; `approveRouter` and `approveStata` file into a
+//! [`crate::evm_flow::Fired`] slot, a request-only shape with no settle
+//! method at all.
 
 use core::cell::Cell;
 
@@ -97,23 +124,32 @@ pub const RESPONSE_KINDS: u32 = 7;
 /// The discriminant is what makes cross-circuit attestation replay
 /// STRUCTURALLY impossible: the kind is inside the signed preimage, so two
 /// settle circuits' digests differ for the same request id and outcome, and
-/// each circuit asserts its own kind ([`Response::KIND`]).
+/// each circuit asserts its own kind (`EvmCall::KIND`, checked by
+/// `Pending::complete`).
 ///
-/// | kind | name | recorded by | settled by | ABI types | response |
-/// |------|------|-------------|------------|-----------|----------|
-/// | 0 | CLAIM | `deposit` | `claim` | `[bool success]` | [`ClaimResponse`] |
-/// | 1 | WITHDRAW | `withdraw` | `completeWithdraw` | `[bool success]` | [`WithdrawResponse`] |
-/// | 2 | SWAP | `swap` | `completeSwap` | `[uint256 amountIn]` | [`SwapResponse`] |
-/// | 3 | FAILURE | — | `refund_*` | — (never executed) | [`Failure`] |
-/// | 4 | APPROVE | `approveRouter` | — | `[bool success]` | [`ApproveResponse`] |
-/// | 5 | SUPPLY | `supply` | `complete_supply` | `[uint256 shares]` | [`SupplyResponse`] |
-/// | 6 | REDEEM | `redeem` | `complete_redeem` | `[uint256 assets]` | [`RedeemResponse`] |
+/// Since M37 rung D the CALL TYPE names the kind, so this table's last
+/// column is a type in [`crate::evm`] rather than a response struct here:
+///
+/// | kind | name | recorded by | settled by | attested | call type |
+/// |------|------|-------------|------------|----------|-----------|
+/// | 0 | CLAIM | `deposit` | `claim` | `bool success` | [`Erc20TransferAsDeposit`] |
+/// | 1 | WITHDRAW | `withdraw` | `complete_withdraw` | `bool success` | [`Erc20TransferAsWithdrawal`] |
+/// | 2 | SWAP | `swap` | `complete_swap` | `uint64 amountIn` | [`ExactOutputSingle`] |
+/// | 3 | FAILURE | — | `refund_*` | — | `evm_flow::FAILURE_KIND` |
+/// | 4 | APPROVE | `approve_router`, `approve_stata` | — | `bool` | [`Erc20Approve`] |
+/// | 5 | SUPPLY | `supply` | `complete_supply` | `uint64 shares` | [`Erc4626Deposit`] |
+/// | 6 | REDEEM | `redeem` | `complete_redeem` | `uint64 assets` | [`Erc4626Redeem`] |
 ///
 /// FAILURE is response-only (an outcome, not a request) and APPROVE is
 /// request-only (fire-and-forget); giving the approve request its own kind
 /// is what makes an approve RESPONSE a kind no settle circuit accepts.
-/// `approveStata` reuses the APPROVE kind and [`ApproveResponse`] — it is
-/// request-only, like `approveRouter`.
+/// `approveStata` reuses the APPROVE kind — it is request-only, like
+/// `approveRouter`.
+///
+/// THE RUNG-A FINDING is why the first two rows name two types for one
+/// Solidity function: `transfer(address,uint256)` is filed under two kinds,
+/// because a deposit's inbound transfer and a withdrawal's outbound one are
+/// two OPERATIONS of the protocol, and the kind byte is what says so.
 pub const RESPONSE_KIND_CLAIM: u32 = 0;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_WITHDRAW: u32 = 1;

@@ -25,7 +25,7 @@
 //!   fields a contract declares once; `#[derive(Ledger)]` threads its offset
 //!   into every `Pending` and `Fired` slot, which is why a typed request
 //!   takes no `&SELF.signet`.
-//! - [`file_request`] — the filing every request does, whatever the slot:
+//! - `file_request` — the filing every request does, whatever the slot:
 //!   read the context, assemble the record, hash its id, assert freshness,
 //!   bump the nonce, store it, store the environment beside it, notify the
 //!   singleton with the record map's own path. `evm_flow`'s three request
@@ -170,10 +170,10 @@ impl<R: CircuitBorsh<Private>> CircuitBorsh<Private> for Attested<R> {
 
 /// The block's ONE Signet configuration: five consecutive ledger fields a
 /// contract declares once (`signet: Signet` in its `#[derive(Ledger)]`
-/// block) and every [`Pending`] slot reads through.
+/// block) and every `Pending` slot reads through.
 ///
-/// Holding these together is what lets [`Pending::request`] take the sender,
-/// chain id, caip2 id and nonce from CONTEXT and [`Pending::settle`] the MPC
+/// Holding these together is what lets `Pending::request` take the sender,
+/// chain id, caip2 id and nonce from CONTEXT and `Pending::settle` the MPC
 /// key — none of them is an argument a circuit can pass wrongly. The
 /// `signer` cell is `sealed` (written at deployment, never by a circuit).
 pub struct Signet {
@@ -234,7 +234,7 @@ impl LedgerWidth for Signet {
 
 /// The EVM transaction a request asks the MPC to sign, WITHOUT its chain
 /// id: that is the block's ([`Signet::evm_chain_id`]), read by
-/// [`Pending::request`], so a request cannot name another chain than the
+/// `Pending::request`, so a request cannot name another chain than the
 /// one the contract is configured for.
 pub struct EvmTx<const WORDS: usize> {
     pub nonce: Wire3<FieldT, Private>,
@@ -266,7 +266,7 @@ label! {
     pub RequestIdSettled = "settle request id";
 }
 
-/// Everything [`Pending::request`] discloses — the label set a request
+/// Everything `Pending::request` discloses — the label set a request
 /// circuit declares, as one type.
 pub type Requested = (
     RequestIdFiled,
@@ -275,7 +275,7 @@ pub type Requested = (
     XcallCommitment,
 );
 
-/// Everything [`Pending::settle`] discloses.
+/// Everything `Pending::settle` discloses.
 pub type Settled = (RequestIdSettled,);
 
 /// What a settle hands back: the consumed entry, typed.

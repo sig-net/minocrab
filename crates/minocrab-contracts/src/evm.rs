@@ -505,11 +505,9 @@ abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 /// # use minocrab_std::v3::{Bytes, Uint};
 /// let mut c = Circuit3::new();
 /// let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
+/// let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
 /// let words = AbiArgs::<(Address, U128)>::words(
-///     (
-///         |_c: &mut Circuit3| to,
-///         |c: &mut Circuit3| Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount")),
-///     ),
+///     (|_c: &mut Circuit3| to, |_c: &mut Circuit3| amount),
 ///     &mut c,
 /// );
 /// assert_eq!(words.len(), 2);
@@ -737,7 +735,7 @@ impl EvmCall for Erc20TransferAsDeposit {
 /// `transfer` AS A WITHDRAWAL — [`Erc20Transfer`] at the vault protocol's
 /// WITHDRAW kind, with the deployed record's own name for the flag.
 ///
-/// The only difference from [`Erc20Transfer`] is [`EvmCall::RETURN_NAME`]:
+/// The only difference from [`Erc20Transfer`] is [`EvmCall::RETURN_FIELD`]:
 /// the vault's `WithdrawResponse` calls the attested flag `success`, and a
 /// settle circuit's argument slot is named after it. A Solidity `transfer`
 /// return is anonymous, which is why the plain [`Erc20Transfer`] keeps the

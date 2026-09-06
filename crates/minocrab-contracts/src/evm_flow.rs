@@ -687,6 +687,7 @@ impl<Call: EvmCall, const WORDS: usize> Fired<Call, WORDS> {
     /// The shape is [`Pending::request_with`]'s minus the environment: the
     /// callee and the arguments are builders, so a ledger read emits where
     /// the circuit reads it, and `signer` answers whose key signs.
+    #[allow(clippy::too_many_arguments)]
     pub fn request_with(
         &self,
         c: &mut Circuit3,
