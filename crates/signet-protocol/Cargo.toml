@@ -1,0 +1,29 @@
+[package]
+name = "signet-protocol"
+# M30 rung C1 (notes/mpc-publisher.org §11): what the Signet singleton and
+# the MPC that reads it must agree on, in the smallest PUBLISHABLE crate that
+# can carry it — so that `minocrab-publisher` (which `sig-net/mpc` links) does
+# not pull the corpus crate (`minocrab-contracts`, `publish = false`) into
+# mpc's dependency graph. The one definition of the Misc envelope constants,
+# the three signer circuit names and their event names, and compact-js's
+# `hashVerifierKey`. notes/interface-crates.org names this crate as the home
+# for the record types / request id / ECDSA split out of
+# minocrab-contracts/src/signet.rs; those are still to come.
+description = "The Signet singleton's protocol facts: the Misc envelope, the signer circuits and their event names, and compact-js's hashVerifierKey"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["midnight", "signet", "mpc", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# `hash_verifier_key` is sha256 over the raw `.verifier` bytes and nothing
+# else; the one dependency this crate has.
+sha2.workspace = true

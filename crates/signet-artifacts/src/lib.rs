@@ -36,19 +36,22 @@ use std::process::Command;
 
 use minocrab::v3::Compiled3;
 use sha2::{Digest, Sha256};
+use signet_protocol::circuits::{RESPOND, RESPOND_BIDIRECTIONAL, SIGN_BIDIRECTIONAL};
+use signet_protocol::hash_verifier_key;
 
 /// A signer circuit: its on-disk (Compact) name and how to build it.
 pub type Circuit = (&'static str, fn() -> Compiled3);
 
 /// The three Signet signer circuits, named the way compactc's artifacts and
-/// the sidecar's `expectedVk`/`RESPOND_CIRCUITS` name them — see
-/// `crates/minocrab-contracts/src/signet_contract.rs`.
+/// the sidecar's `expectedVk`/`RESPOND_CIRCUITS` name them
+/// (`signet_protocol::circuits`), each paired with the circuit that builds it
+/// (`crates/minocrab-contracts/src/signet_contract.rs`).
 pub fn circuits() -> Vec<Circuit> {
-    use minocrab_contracts::signet_contract;
+    use minocrab_contracts::signet_contract::SignetContract;
     vec![
-        ("signBidirectional", signet_contract::SignetContract::sign_bidirectional as fn() -> Compiled3),
-        ("respond", signet_contract::SignetContract::respond as fn() -> Compiled3),
-        ("respondBidirectional", signet_contract::SignetContract::respond_bidirectional as fn() -> Compiled3),
+        (SIGN_BIDIRECTIONAL, SignetContract::sign_bidirectional as fn() -> Compiled3),
+        (RESPOND, SignetContract::respond as fn() -> Compiled3),
+        (RESPOND_BIDIRECTIONAL, SignetContract::respond_bidirectional as fn() -> Compiled3),
     ]
 }
 
@@ -76,8 +79,11 @@ pub fn zkir_v3_available() -> Option<PathBuf> {
     ok.then_some(bin)
 }
 
-/// sha256(bytes) as lowercase hex. Shared by [`hash_verifier_key`] and the
-/// manifest, which are the same computation on different files.
+/// sha256(bytes) as lowercase hex, for the manifest. The SAME computation as
+/// `signet_protocol::hash_verifier_key` (compact-js's `hashVerifierKey`,
+/// defined there since M30 C1, pinned under node by
+/// `tests/hash_verifier_key_pin.rs`) on different files; spelled through
+/// `sha2` here so the manifest does not read as a verifier-key hash.
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut out = String::with_capacity(64);
@@ -85,15 +91,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
         out.push_str(&format!("{byte:02x}"));
     }
     out
-}
-
-/// EXACTLY `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
-/// (`ContractKeyLocation.js`: `createHash('sha256').update(bytes).digest
-/// ('hex')`, read on the raw file bytes `prover.ts`'s `keyMaterial` reads
-/// with `readFile` — no framing, no prefix). See notes/mpc-publisher.org §8
-/// for the file/line and the pin.
-pub fn hash_verifier_key(bytes: &[u8]) -> String {
-    sha256_hex(bytes)
 }
 
 /// One line of `MANIFEST.sha256`: `<hex>  <path relative to out-dir>`, the

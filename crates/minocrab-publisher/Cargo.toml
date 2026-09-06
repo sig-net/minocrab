@@ -2,33 +2,36 @@
 name = "minocrab-publisher"
 # M30: the pure core of the MPC's Midnight publisher — the piece
 # `sig-net/mpc`'s TypeScript sidecar exists to provide (notes/mpc-publisher.org
-# §2). `publish = false` for one reason only: it depends on
-# `minocrab-contracts`, which is itself `publish = false` (a corpus, not a
-# library), for the ONE definition of the Misc envelope and the three signer
-# event names. Hoisting those constants into a publishable crate is the open
-# question notes/mpc-publisher.org §10 records; mpc consumes this crate by git
-# path either way.
-publish = false
+# §2). Since M30 C1 this crate reads the Misc envelope and the three signer
+# event names from `signet-protocol` (publishable) rather than
+# `minocrab-contracts` (a corpus, `publish = false`) — the ONLY remaining edge
+# to that crate is a dev-dependency (tests/real_proof.rs, which keygens from
+# the real circuit). So the same blocker the rest of the workspace already
+# carries applies here and nowhere further: PUBLISHING.md's git-dependency
+# block on the `midnight-*` line (upstream has not published the ledger-9.1
+# line to crates.io yet). `publish` is left at its default (true) rather than
+# pinned false, matching the other nine crates PUBLISHING.md already tracks
+# as ready-when-upstream-is.
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
 description = "The MPC publisher's pure core: build/prove/sign/seal a Signet respond intent (M30)"
+keywords = ["midnight", "signet", "mpc", "zero-knowledge"]
+categories = ["cryptography::cryptocurrencies"]
+include = ["src/**/*.rs", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [lints]
 workspace = true
 
 [dependencies]
-# The contract's own ABI facts: the 288-byte Misc envelope (`events`) and the
-# three signer event names (`signet_contract`). Reused rather than restated —
-# a publisher that spells the layout out a second time is a second reading of
-# the thing it is supposed to be faithful to (notes/mpc-publisher.org §9 C).
-minocrab-contracts = { path = "../minocrab-contracts" }
-# `hash_verifier_key` — the ONE definition of compact-js's `hashVerifierKey`
-# in this workspace, pinned against the real JS under node by M29 B. The
-# managed directory this crate resolves keys out of is the one that crate
-# writes, so the hash a `Deployment` carries and the hash `expectedVk.json`
-# records come from the same function.
-signet-artifacts = { path = "../signet-artifacts" }
+# The Misc envelope constants, the three signer circuit/event names, and
+# `hash_verifier_key` — signet-protocol is the ONE definition of all three,
+# read by the contract that emits these events and the artifact pipeline that
+# hashes the keys, same as here (notes/mpc-publisher.org §11).
+signet-protocol.workspace = true
 midnight-base-crypto.workspace = true
 midnight-coin-structure.workspace = true
 midnight-ledger.workspace = true
@@ -50,6 +53,13 @@ rand.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# The real circuit: `tests/real_proof.rs` keygens from `SignetContract::
+# respond()` itself, so the gate proves under the SAME IR the corpus builds,
+# not a copy of it. This is the one remaining edge to the corpus crate, and it
+# is versionless (no `version =` here) precisely so a publish strips it: a
+# published `minocrab-publisher` ships no test suite at all (PUBLISHING.md),
+# so no downstream build ever needs this to resolve.
+minocrab-contracts = { path = "../minocrab-contracts" }
 # `Transaction::prove` and `IrSource::keygen` are async; the gates drive them
 # on a multi-thread runtime, as the proving path does in production. `libc` is
 # `getrusage(RUSAGE_SELF)` for peak RSS — the same measurement

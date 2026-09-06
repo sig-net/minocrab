@@ -19,6 +19,11 @@ workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-contracts = { path = "../minocrab-contracts" }
 minocrab-zkir = { path = "../minocrab-zkir" }
+# The circuit names the files are called by, and `hash_verifier_key` — the
+# function `expectedVk.json` is written with — are DEFINED there (M30 C1);
+# the publisher reads the same definition when it checks the table.
+signet-protocol.workspace = true
+# The manifest's sha256 lines.
 sha2.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

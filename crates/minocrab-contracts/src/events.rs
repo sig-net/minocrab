@@ -31,10 +31,10 @@ pub const CALL_COUNT: u8 = 0;
 pub const LAST_AMOUNT: u8 = 1;
 pub const BALANCES: u8 = 2;
 
-/// The Misc event constants (compiler/midnight-events.ss:71).
-pub const MISC_VERSION: u32 = 1;
-pub const MISC_TAG: u8 = 10;
-pub const MISC_SIZE: usize = 288;
+/// The Misc event constants (compiler/midnight-events.ss:71) — DEFINED in
+/// `signet-protocol` (M30 C1), the publishable crate the publisher reads them
+/// from; re-exported here so the suites keep their spelling.
+pub use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
 /// The event name of the `i`-th emit.
 pub fn event_name(i: usize) -> String {

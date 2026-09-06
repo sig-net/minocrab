@@ -82,10 +82,10 @@ impl ManagedDir {
     }
 
     /// `hashVerifierKey(<circuit>.verifier)` — sha256 of the raw file bytes as
-    /// lowercase hex, via `signet_artifacts::hash_verifier_key`, which M29 B
+    /// lowercase hex, via `signet_protocol::hash_verifier_key`, which M29 B
     /// pinned against compact-js's own function under node.
     pub fn verifier_key_hash(&self, circuit: &str) -> Result<String, PublishError> {
-        Ok(signet_artifacts::hash_verifier_key(&self.verifier_key_bytes(circuit)?))
+        Ok(signet_protocol::hash_verifier_key(&self.verifier_key_bytes(circuit)?))
     }
 
     /// The [`Deployment`] a contract at `address` would have if it carried

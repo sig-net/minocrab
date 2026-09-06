@@ -12,14 +12,14 @@ use midnight_ledger::semantics::TransactionResult;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::curve::Fr;
 use midnight_transient_crypto::proofs::{KeyLocation, ProvingKeyMaterial, Resolver, VerifierKey};
-use minocrab_contracts::events::MISC_SIZE;
-use minocrab_contracts::signet_contract::SIGNATURE_RESPONDED_EVENT;
 use minocrab_publisher::call::{ContractKeyLocation, RESPOND, SIGNER_CIRCUITS};
 use minocrab_publisher::intent::calls_of;
 use minocrab_publisher::publish::{build, seal, sign, FundingKeys};
 use minocrab_publisher::{ManagedDir, PublishError};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use signet_protocol::circuits::SIGNATURE_RESPONDED_EVENT;
+use signet_protocol::misc::MISC_SIZE;
 
 mod support;
 
@@ -53,7 +53,7 @@ fn managed_verifier_key(circuit: &str) -> VerifierKey {
 // ---- the managed directory -------------------------------------------------
 
 /// The hashes the crate derives from the committed verifier keys are the ones
-/// `expectedVk.json` records — one function, `signet_artifacts::
+/// `expectedVk.json` records — one function, `signet_protocol::
 /// hash_verifier_key`, feeding both the artifact table and a publisher's
 /// `Deployment`.
 #[test]

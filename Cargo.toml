@@ -20,6 +20,11 @@ members = [
     # M29 rung A/B: the managed artifact pipeline for the Signet signer
     # circuits (zkir/keys/expectedVk the MPC sidecar reads unchanged).
     "crates/signet-artifacts",
+    # M30 C1: the Signet protocol facts (Misc envelope, signer circuit and
+    # event names, hashVerifierKey) — the one publishable crate the contract,
+    # the artifact pipeline and the publisher all read, so mpc's graph never
+    # pulls the corpus crate.
+    "crates/signet-protocol",
     # M30: the MPC publisher's pure core — build/prove/sign/seal a respond
     # intent, with no node I/O, for sig-net/mpc to link behind IntentClient.
     "crates/minocrab-publisher",
@@ -53,6 +58,7 @@ minocrab-ledger = { path = "crates/minocrab-ledger", version = "0.1.0" }
 minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }
 minocrab-std = { path = "crates/minocrab-std", version = "0.1.0" }
 minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
+signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 
 # --- upstream -------------------------------------------------------------
 # ZKIR v2 — Midnight's own IR definition; we re-export rather than redefine.

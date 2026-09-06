@@ -25,12 +25,15 @@ use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
 use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, Uint, B32};
 use signet_signer_interface::{AffinePoint, RequestId, SignBidirectionalEventNotification};
 
-use crate::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
 
-/// The three event names, `pad(32, …)`.
-pub const SIGN_BIDIRECTIONAL_EVENT: &str = "SignBidirectionalEvent";
-pub const SIGNATURE_RESPONDED_EVENT: &str = "SignatureRespondedEvent";
-pub const RESPOND_BIDIRECTIONAL_EVENT: &str = "RespondBidirectionalEvent";
+/// The three event names, `pad(32, …)` — DEFINED in `signet-protocol`
+/// (M30 C1), where the publisher that BUILDS these envelopes reads them; the
+/// contract that EMITS them reads the same definition. Re-exported so the
+/// suites keep their spelling.
+pub use signet_protocol::circuits::{
+    RESPOND_BIDIRECTIONAL_EVENT, SIGNATURE_RESPONDED_EVENT, SIGN_BIDIRECTIONAL_EVENT,
+};
 
 // Every argument of these three circuits goes into the event payload, so
 // the declarations below ARE the parameter lists — which is exactly what a

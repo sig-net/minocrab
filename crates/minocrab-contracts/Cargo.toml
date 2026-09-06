@@ -24,6 +24,11 @@ signet-signer-interface = { path = "../signet-signer-interface" }
 # xcall target, and nothing needs to — the crate was produced from its
 # compiled artifact by minocrab-interface-gen.
 xcall-target-interface = { path = "../xcall-target-interface" }
+# M30 C1: the Misc envelope constants and the signer event names are DEFINED
+# there, so the contract that emits the events and the publisher that builds
+# them read one definition — and the publisher no longer depends on this
+# crate (see the dev-dependency below for the direction that remains).
+signet-protocol.workspace = true
 # M37 rung A: `EvmCall::selector()` is the first four bytes of
 # `keccak256("name(argtypes)")`, hashed HERE — in Rust, at circuit-build time
 # — and embedded as an immediate. Nothing in-circuit hashes keccak (in-circuit
@@ -35,10 +40,10 @@ sha3.workspace = true
 signet-sim = { path = "../signet-sim" }
 # M30 rung A: the singleton's construction path is LIBRARY code now — the
 # publisher's `call` module — and these suites build their preimages through
-# it, so what they gate is what a publisher produces. A dev-dependency cycle
-# (the publisher depends on this crate for the Misc envelope and the event
-# names), which cargo allows for exactly this reason and which the
-# minocrab-std ↔ minocrab-sim pair already relies on.
+# it, so what they gate is what a publisher produces. Since M30 C1 the edge
+# runs ONE way: the publisher reads its constants from signet-protocol and
+# depends on this crate only as a dev-dependency of its own (keygen from the
+# circuit in tests/real_proof.rs), so the cycle cargo allowed is gone.
 minocrab-publisher = { path = "../minocrab-publisher" }
 # The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated
 # cross-check calls minocrab-std's schema module, which is feature-gated so
