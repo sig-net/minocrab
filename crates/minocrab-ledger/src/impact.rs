@@ -177,29 +177,23 @@ pub fn field_key(index: u8) -> AlignedValue {
 /// `idx` by ONE constant `bytes<1>` key.
 ///
 /// Two things are spelled this way, and they are the same instruction: a
-/// top-level ledger FIELD ([`idx_field`] / [`idxp_field`]) and a POSITION
-/// inside an ADT's `Array` — `List` is `[head, tail, length]`, `MerkleTree`
-/// is `[tree, next-index]`, `HistoricMerkleTree` adds `[.., history]`, and
-/// every descent into one is `(align i 1)` in compactc's vm-code
-/// (notes/ledger-adts.org §1).
+/// top-level ledger FIELD (`idx_one(false, false, field)` to read, uncached
+/// and not remembering the path; `idx_one(false, true, field)` to reach one
+/// that will be written back) and a POSITION inside an ADT's `Array` —
+/// `List` is `[head, tail, length]`, `MerkleTree` is `[tree, next-index]`,
+/// `HistoricMerkleTree` adds `[.., history]`, and every descent into one is
+/// `(align i 1)` in compactc's vm-code (notes/ledger-adts.org §1). The one
+/// spelling for both, per crate: production call sites (this crate's own
+/// `ops.rs`/`reads.rs`, and `minocrab-std`'s one `cached = true` site) all
+/// write the three arguments out rather than reach for a named wrapper —
+/// see notes/edsl-trim.org §D, finding 2, which removed the two this
+/// crate used to carry (`idx_field`, `idxp_field`).
 pub fn idx_one(cached: bool, push_path: bool, index: u8) -> ImpactOp {
     ImpactOp::constant(&Op::Idx {
         cached,
         push_path,
         path: vec![Key::Value(field_key(index))].into(),
     })
-}
-
-/// `idxp [field]`: uncached path-remembering fetch of a top-level field
-/// (the shape compactc emits to reach any field it will write back).
-pub fn idxp_field(index: u8) -> ImpactOp {
-    idx_one(false, true, index)
-}
-
-/// `idx [field]`: uncached fetch of a top-level field WITHOUT remembering
-/// the path — the read shape (nothing is written back).
-pub fn idx_field(index: u8) -> ImpactOp {
-    idx_one(false, false, index)
 }
 
 /// `dup n`.

@@ -1400,13 +1400,26 @@ impl Circuit3 {
     /// records [`DisclosureKind::DisclosedUntyped`], which no declaration
     /// accepts (external review §4.5: a string that spells a declared label
     /// must not pass for it); this one records [`DisclosureKind::Disclosed`].
-    pub fn disclose_as<L: DisclosureLabel, T: IrTy>(&mut self, w: Wire3<T, Private>) -> Wire3<T, Public> {
+    ///
+    /// Crate-private: the public spelling for a single wire is
+    /// [`Disclose::disclose_as`] (the value is the receiver, not this
+    /// method's argument — see that trait's doc for why). This is the
+    /// primitive it delegates to, kept
+    /// around because [`Circuit3::disclose_all_as`] and
+    /// [`Circuit3::disclose_slice_as`] — the multi-wire primitives
+    /// `minocrab-std`'s composite `Disclose` impls call directly — need a
+    /// one-wire base case too (notes/edsl-trim.org §D, finding 1).
+    pub(crate) fn disclose_as<L: DisclosureLabel, T: IrTy>(
+        &mut self,
+        w: Wire3<T, Private>,
+    ) -> Wire3<T, Public> {
         let [out] = self.disclose_all_as::<L, T, 1>([w]);
         out
     }
 
     /// [`Circuit3::disclose_all`] under a label type — see
-    /// [`Circuit3::disclose_as`].
+    /// `Circuit3::disclose_as` (crate-private: the public spelling for one
+    /// wire is [`Disclose::disclose_as`]).
     pub fn disclose_all_as<L: DisclosureLabel, T: IrTy, const N: usize>(
         &mut self,
         wires: [Wire3<T, Private>; N],
@@ -1416,7 +1429,8 @@ impl Circuit3 {
     }
 
     /// [`Circuit3::disclose_slice`] under a label type — see
-    /// [`Circuit3::disclose_as`].
+    /// `Circuit3::disclose_as` (crate-private: the public spelling for one
+    /// wire is [`Disclose::disclose_as`]).
     pub fn disclose_slice_as<L: DisclosureLabel, T: IrTy>(
         &mut self,
         wires: &[Wire3<T, Private>],

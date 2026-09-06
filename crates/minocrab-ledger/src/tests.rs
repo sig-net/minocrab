@@ -573,7 +573,7 @@ fn read_shape_constants_match_corpus_golden() {
     assert_eq!(imms(&dup(0)), vec![Fr::from(0x30u64)]);
     assert_eq!(imms(&dup(2)), vec![Fr::from(0x32u64)]);
     assert_eq!(
-        imms(&idx_field(6)),
+        imms(&idx_one(false, false, 6)),
         vec![Fr::from(0x50u64), 1u64.into(), 1u64.into(), 6u64.into()]
     );
     assert_eq!(
