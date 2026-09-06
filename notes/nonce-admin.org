@@ -30,6 +30,40 @@ VERDICT: a liveness problem for the requester, not a security one. The
 batch (§4) removes the race; nothing needs to trust the nonce more than
 it does today.
 
+** 1.1 CORRECTION (dmd, 2026-09-06): outstanding nonces ARE a security issue
+"A properly designed contract should never have transactions that hang,
+because they take up space and are a DOS vector." The verdict above
+looked only at the requester's own loss and missed the SHARED resource:
+a transaction that never mines — a too-high nonce, a fee below the
+market — sits in the queue and in the MPC's pending set, blocks every
+later nonce on that signing path, and any user can create one at will.
+That is a denial-of-service against the contract, so the nonce is NOT
+"untrusted and safely so".
+THE RULE (dmd): in a contract, THE USER CANNOT PICK THEIR OWN NONCE AND
+GAS PRICE. Users can ONLY create VALID requests: the contract assigns
+the nonce (the flush, §4) and the contract sets the fee (the policy
+cell, §3, or the constants until it exists). Every request circuit that
+takes =evm_nonce= as a prover-chosen input — the deployed vault, the
+Pending lineage today — is what §4 replaces, not a shape to keep beside
+it. Queue clearing is the BREAK GLASS, not a user facility: an
+administrator clears (unsticks, §5) when, for example, the gas price
+moves so far that flushed transactions can no longer mine at the fee
+they were signed with; only the administrator ever chooses a nonce or a
+fee, and only for that.
+CONSEQUENCES for the build (M39 C): =Queued::insert= takes neither a
+nonce nor a fee; =flush= reads the fee from the contract, never from an
+argument; the =Blank= replacement (§5) is the one place a nonce and a
+fee are arguments, and it is administrator-gated; a contract exposing
+an unbatched =Pending::request= with a user nonce is a design smell to
+retire once =Queued= lands, not a supported second path. §1's three
+bullets stay as the account of WHY a wrong nonce cannot steal, which is
+still true; they no longer justify letting a user choose one.
+STATUS (dmd, 2026-09-06): sig-net is going to fix the user-chosen nonce
+in their Compact; this note and M39 C run AHEAD of that to explore the
+design space, so the batch built here is a prediction of their shape,
+not a port of it. Prediction P9 (added to §7): their request circuit no
+longer takes a nonce or a fee from the prover.
+
 * 2. The Signet request counter: load-bearing for FRESHNESS, not as a shared number
 =signetRequestNonce= is read (=popeq=) and incremented in every request
 and is an element of the record, hence of the request id. It is what
@@ -97,6 +131,12 @@ rows. The administrator: the deployer key the vault already gates
 (=Commit<AdminKey, AdminTag>= opened with a fresh witness, the same
 construction as =Owned=) is the better one, because deployer keys are
 cold. DECISION FOR DMD; the note recommends the rotatable commitment.
+DECIDED (dmd, 2026-09-06, decisions.org A3): WAIT — the constants stay
+in =erc20_vault= until this cell exists, and then the fee material moves
+into a generic EVM TRANSACTION layer: ERC-20 token > EVM transaction >
+sig transaction, with clean boundaries. The admin choice (deployer key
+vs rotatable commitment) is still open; batching (§4) is built first,
+with the request counter kept for now.
 
 * 4. BATCH: write-only insert, one flush
 The shape dmd described: a request circuit does not choose a nonce; it
@@ -171,3 +211,205 @@ the reqId, so the requester must be present at flush OR the env carries
 the commitment from insert. P5 unstick is a fixed-shape tx to self with
 caller-supplied fees and nonce, gated on the deployer. P6 the fee policy
 is either absent (fees stay constants) or a cell the deployer writes.
+P9 (§1.1): the user-chosen nonce and fee are gone from their request
+circuit; whatever assigns the nonce is contract state read once.
+
+* 8. As built — M39 C, the BATCH (2026-09-06)
+Built on branch =worktree-agent-a03968f430b67dadf=, two commits: the
+=Queued= slot and its test contract, then signet-sim's batch (rung D).
+The ADMIN half of rung C (=FeePolicy= cell, =set_fee_policy=, =unstick=)
+is NOT built — dmd asked for the batch now.
+
+** The surface
+=crates/minocrab-contracts/src/evm_flow.rs=, beside =Pending=:
+#+begin_src rust
+pub struct Queued<F: Filing, Env, const WORDS: usize, const N: usize>
+// six ledger fields: a whole `Pending<F, Env, WORDS>` (records, envs),
+// then queue, next_handle, last_nonce, flushed_upto.
+
+fn insert(c, callee: Contract<impl Extends<Callee<F>>>, args, key_version,
+          env: impl FnOnce(&mut Circuit3, Handle) -> Env) -> Handle
+fn insert_owned::<L>(c, callee, args, key_version, inner) -> Handle
+fn flush(c) -> [RequestId<Public>; N]
+fn complete(c, Succeeded<F>)  // Pending's, delegated
+fn refund(c, Failed<F>)       // Pending's, delegated
+fn refund_to_owner::<L>(c, Failed<F>)  // opens against the HANDLE
+#+end_src
+plus =Handle= (the queue key, a =Uint<64, Public>= newtype),
+=PreRecord<WORDS>= (callee ‖ key version ‖ words, a limb vector like
+=EventRecordV2=), =QueueEntry<Env, WORDS>= (pre-record + env in one map
+value), =HandleOwned<E>= (=Owned='s twin, carrying the handle),
+=CommitBinding= (what a =Commit= binds to: =RequestId= or =Handle=),
+=Inserted= (the insert's disclosure label set), and
+=evm::build_tx_from_words= (=build_tx= from stored words). The =Ledger=
+derive learned one more slot spelling (=Pending= | =Fired= | =Queued=).
+
+NO NONCE AND NO FEE ARGUMENT ANYWHERE ON THE REQUEST SIDE (§1.1, dmd's
+binding rule): =insert= takes callee, args and key version; =flush=
+takes nothing at all. =Queued= REPLACES the Pending lineage's
+prover-chosen =evm_nonce=; it is not a second path beside it, and the
+note says so here so that a later reader does not read the two as
+alternatives.
+
+** The six defaults: four held, two changed
+1. HELD — =Queued= is "=Pending= plus a queue", literally: it OWNS a
+   =Pending= and delegates the settle side to it, so there is no second
+   implementation of =complete=/=refund= and no copy of the record maps.
+2. CHANGED — THE HANDLE IS THE SLOT'S OWN INSERT COUNTER, not the Signet
+   request counter. The code proved the default wrong: =flush= files
+   through =file_request=, which READS AND INCREMENTS the Signet counter
+   once per record. If handles were Signet-counter values, a flush of N
+   would consume N of them, and the handles either side of a flush would
+   not be contiguous — =flushed_upto+1 ..= +N= would name keys that were
+   never queue keys. So =Queued= owns =next_handle=. The requester's
+   handle is still "a counter value, FIFO for free", and the insert's one
+   shared read is still exactly the contention dmd chose to keep; it is a
+   different cell from the one the record's freshness field comes from.
+3. HELD — =flush(c)= pulls =flushed_upto+1 ..= flushed_upto+N=, asserts
+   each present ("Queued request not found"), reads =last_nonce= once,
+   numbers them =last+1 … last+N=, files N records through the SAME
+   =file_request= (same record version, same id rule, env moved from the
+   handle key to the reqId key, N notifications), then advances both
+   counters by N. Partial flush not in this cut. Fees: =Envelope::fixed=,
+   through =Queued::envelope= — one private method, the fee-policy seam.
+4. HELD, AND CHECKED — =complete= / =refund= are =Pending='s, and
+   =tests/evm_batch.rs::the_settle_side_is_byte_identical_to_pendings=
+   serializes the ZKIR of a queued =complete= and of an unbatched twin's
+   at the same field offsets and asserts the strings are equal. They are.
+   The OWNER gate is the one thing that could not be identical: see
+   "the refund path" below.
+5. HELD — flush is permissionless: no gate, no witness of its own (its
+   three witnesses per entry are the cross-call's cc-rand and entry-point
+   limbs), no admin block, no unstick, no fee cell.
+6. HELD — zero movement: =MINOCRAB_ZKIR_DUMP= over the 214 dumped
+   circuits diffs EMPTY against main's baseline.
+
+** THE N-CROSS-CALLS FINDING: nothing blocks N notifications from one circuit
+Asked to check whether the xcall machinery and the singleton's
+=signBidirectional= allow N calls from one circuit. THEY DO, and the
+codebase already knew: =minocrab-ledger/src/calls.rs= documents
+"=xcall='s =callTwice= calls the same target twice in one circuit and
+compactc reads the cell twice", which is why a =Callee::Field= read is
+deliberately UNCACHED per call site. Each call claims its own
+=(address, entry point, commitment)= through =kernel_claim_contract_call=
+and discloses its own =XcallEntryPointHash= / =XcallCommitment=; nothing
+in the interface, the ledger ops or the singleton is per-transaction
+one-shot. Measured, not assumed:
+=a_flush_notifies_the_singleton_once_per_entry= asserts exactly N
+communications commitments, N entry-point hashes, N request ids, N
+records and N freshness asserts in the flush at N = 1, 2, 4. The
+singleton side is unchanged: N =signBidirectional= calls are N ordinary
+calls, and signet-sim answers all N off one caller state (rung D).
+
+** The refund path as built
+=H(sk, handle)= at insert, opened against the handle at settle:
+- =CommitBinding= is a new trait with two impls — =RequestId<Public>=
+  (pushes hi, lo, exactly what =Commit= pushed before, so every existing
+  commitment is bit-for-bit unchanged) and =Handle= (pushes its one
+  field limb). =Commit::to= / =open= are generic over it. The only cost
+  at the call sites was a =, _= in the turbofish.
+- =HandleOwned<E> { handle, owner, inner }= is stored in the queue at
+  insert and moved verbatim into the =Pending= env map at flush, so the
+  settle side HAS the handle without the requester being present at the
+  flush and without a second lookup.
+- =Queued::refund_to_owner= is =Pending::refund= then
+  =owner.open(c, &sk, env.handle, "Not the owner")=. This is the ONE
+  place default 4 could not be byte-identical, and it is byte-identical
+  in everything but the two limbs hashed into the commitment.
+- The requester finds their request id by reading the assigned nonce off
+  the flushed record, as §4 said; nothing in the circuit needs it.
+
+** Row and k table (test-only contract, so no snapshot rows — reported)
+| circuit          |  k | rows  | impact | public_inputs | witnesses | digests |
+|------------------+----+-------+--------+---------------+-----------+---------|
+| insert (N=1,2,4) | 10 |   813 |     16 |             2 |         2 |       1 |
+| flush N=1        | 10 |   987 |     67 |            22 |         3 |       2 |
+| flush N=2        | 11 |  1914 |    122 |            42 |         6 |       4 |
+| flush N=4        | 12 |  3766 |    232 |            82 |        12 |       8 |
+| complete         | 15 | 25613 |     24 |            37 |         0 |       1 |
+| refund           | 15 | 26010 |     24 |            37 |         4 |       3 |
+An insert costs the same at every N — it does not know the batch it will
+be flushed in — and is a fifth of the filing it defers. A flush is AFFINE
+in N and the constant term is the whole claim: 12 Impact instructions
+(=flushed_upto= read, =last_nonce= read, two increments, three
+instructions each) and 2 public inputs, whatever N is; 55 Impact
+instructions and 20 public inputs per entry. Rows are affine to within
+two (an immediate =+1= range-checks a hair cheaper than =+3=). A settle
+is unchanged at ~26k rows, which is the ECDSA verification and nothing
+of ours — and the completion witnesses NOTHING (0 private inputs), which
+is Gap 2's repair inherited whole: a queued completion, like a pending
+one, hoists no secret for a branch it may not take.
+
+** Gate results (verbatim)
+- =cargo test -p minocrab-contracts --test evm_batch= → "test result: ok.
+  19 passed; 0 failed" (10 hand-written, 9 generated disclosure tests).
+- =cargo test -p minocrab-contracts --doc evm_flow= → "test result: ok.
+  20 passed; 0 failed; 1 ignored" — including the two new =compile_fail=
+  gates and their positive twins: a ticket of another =Filing= handed to
+  =Queued::complete= (type mismatch), and =N = 0= (=error[E0080]= from
+  the constructor's inline const, "needs N >= 1").
+- =cargo test --workspace= → green (no FAILED, no error). One file had to
+  be regenerated: TRUST.md's line-count table (the derive grew six lines),
+  =MINOCRAB_TRUST_BASE=1 cargo test -p minocrab-contracts --test trust_base=.
+- =cargo clippy --workspace --all-targets= → "Finished `dev` profile",
+  no warnings.
+- THE DUMP GATE: =MINOCRAB_ZKIR_DUMP=… cargo test -p minocrab-contracts
+  --test zkir_dump -- --ignored= → "test result: ok. 1 passed", 214
+  files, =diff -rq= against main's baseline → EMPTY.
+- =cargo test -p signet-sim= → "test result: ok. 8 passed; 0 failed",
+  including rung D's =the_sim_answers_a_batch_at_consecutive_nonces=.
+- THE LEAKAGE WALK RUNS OVER THE BATCH, generically —
+  =leakage::inventory(name, &compiled, None, LITERALS)= takes any
+  =Compiled3=, so no harness work was needed. The new FLUSH line, which
+  is the "a flush publishes N records at once" inventory line M39 B will
+  want for the ported lineage:
+  : == flush_four | inputs 0 () | witnesses 12 (guarded 0) | public_inputs 82 (guarded 0) | impact 232 (guarded 0) wires 996 | digests transient_hash 8 | outputs 0
+  and the insert's:
+  : == insert_two | inputs 4 (keyVersion.0,token.1,to.2,amount.3) | witnesses 2 (guarded 0) | public_inputs 2 (guarded 0) | impact 16 (guarded 0) wires 62 | digests transient_hash 1 | outputs 0
+  Not FROZEN: this is a test-only contract, and the two frozen tables
+  belong to the two deployed lineages. The gate that is asserted is the
+  tables' own: no impact op carries an unlabelled witness-dependent wire,
+  on any of the five circuits walked.
+
+** The adversarial properties, and how far they are gated
+There is still NO Rust executor that produces a v3 circuit's public
+transcript from ledger state (notes/signet-async.org §9's BLOCKED note;
+the M26 harness item dmd holds), so "this transaction is rejected" cannot
+be run end to end for a new contract without writing a second 3.8k-line
+hand model. What IS gated, on the emitted stream:
+- flush with fewer than N queued fails — N "Queued request not found"
+  asserts, one per window slot, at N = 1, 2, 4 (=a_flush_requires_every_
+  entry_of_its_window=).
+- a stale flush fails / a double flush of the same window fails — the two
+  counter =popeq=s are there and are read once each
+  (=the_flush_touches_the_two_counters_once_each=); a second flush of a
+  flushed window finds =flushed_upto= moved AND the entries removed.
+- settle before flush fails — the record map's "Request not found" assert
+  is in both settles (=a_settle_needs_a_flushed_record=).
+- wrong-handle refund fails — the "Not the owner" assert is in the refund
+  and, deliberately, in NO completion (=a_refund_opens_the_requesters_
+  commitment=).
+- nonces consecutive from last_nonce, ids unique, N distinct
+  attestations — signet-sim, rung D, on records of exactly the shape the
+  flush files.
+The one claim NOT gated anywhere: "the ids are equal to what =Pending=
+would mint for the same record". It is true BY CONSTRUCTION (the same
+=file_request= over the same =EvmTx=), and the settle side's
+byte-identity is checked, but no test files the same call both ways and
+compares ids, because minting one needs the executor.
+
+** What is left
+- PARTIAL FLUSH (a flush of fewer than N when the queue is short). Not in
+  this cut; a contract wanting smaller batches declares a second slot.
+  The obvious shape is a guarded per-entry block, which costs the
+  =when=-scope discipline on every op of the entry.
+- THE ADMIN BLOCK: =FeePolicy= cell, =set_fee_policy=, the administrator
+  commitment (§3 recommends the rotatable one; dmd decides).
+- UNSTICK (§5), and with it queue clearing as the BREAK GLASS (§1.1) —
+  the only place a nonce and a fee are ever arguments.
+- THE FEE CELL read at flush, through the =Queued::envelope= seam.
+- The u64 edge: =last_nonce + N= is field arithmetic over a counter read;
+  at =u64::MAX= the circuit would accept what the ledger's counter would
+  not, which is §8-item-19's recorded overflow finding in its new home.
+- M39 B's port, when sig-net's Compact lands: P9 (§7) is now checkable
+  against this build as well as against their contract.

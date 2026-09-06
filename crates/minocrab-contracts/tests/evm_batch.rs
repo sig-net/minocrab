@@ -388,6 +388,16 @@ fn the_settle_side_is_byte_identical_to_pendings() {
 /// and checks it; the assert that fails for a wrong handle (or a wrong
 /// secret) is there, and it is the same one `Pending::refund_to_owner`
 /// carries under its request id.
+/// A SETTLE BEFORE THE FLUSH HAS NOTHING TO CONSUME. The record a settle
+/// looks up is written by the flush and by nothing else, so an attestation
+/// presented for a request that is still in the queue fails on the record
+/// map's own membership assert — `Pending`'s, inherited whole.
+#[test]
+fn a_settle_needs_a_flushed_record() {
+    assert_eq!(asserts_saying(&complete_two(), "Request not found"), 1);
+    assert_eq!(asserts_saying(&refund_two(), "Request not found"), 1);
+}
+
 #[test]
 fn a_refund_opens_the_requesters_commitment() {
     let compiled = refund_two();
@@ -413,6 +423,7 @@ fn the_leakage_walk_runs_over_the_batch() {
         ("flush_one", flush_one()),
         ("flush_two", flush_two()),
         ("flush_four", flush_four()),
+        ("complete_two", complete_two()),
         ("refund_two", refund_two()),
     ] {
         let lines = leakage::inventory(name, &compiled, None, LITERALS);
