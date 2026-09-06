@@ -55,8 +55,14 @@ pub struct Contract<I: Interface> { address: Bytes<20, Private>, … }
 Extends<Call::Callee>=. A =transfer= filed against a
 =Contract<UniswapV3Router>= is a missing trait impl (the ladder's first
 rung); a =Contract<Erc4626>= takes both =erc4626::Deposit= and
-=erc20::Approve=, which is exactly the vault's stata token
-(=approve_stata= approves an ERC-20 allowance ON the ERC-4626 vault).
+=erc20::Approve= (an ERC-4626 vault is an ERC-20 share token).
+CORRECTED at rung A (§4, adjustment 4): the vault does NOT exercise this
+— =approve_stata= files =approve(stataToken, …)= ON =stata_underlying=,
+the underlying ERC-20, with the stata token as the SPENDER argument; its
+=Contract<Erc4626>= sites are =supply= / =redeem= with =erc4626::= calls
+only. Inheritance is declared and tested (=evm_abi::
+an_erc4626_vault_takes_an_erc20_call=) and its first shipped consumer is
+rung B's =Weth: Extends<Erc20>=.
 Coherence: =Extends= has a blanket reflexive impl, so a library
 =impl Extends<Erc20> for Erc4626= is fine (distinct types), and a
 downstream crate may write =impl Extends<Erc20> for MyToken= for its own
@@ -199,3 +205,191 @@ interface. =erc20::Transfer= reads as the wire name it hashes to.
   =type Transfer = Kinded<erc20::Transfer, 1>= ARE rung G's "no
   contract-local call types remain" — landed by A, re-checked by G
   with the README side-by-side.
+
+* 4. As built — rung A (2026-09-06)
+The interface marker, the filing, and the five M37 calls re-homed into
+=evm/{erc20,erc4626,uniswap_v3}.rs=. ZERO MOVEMENT: the 214-circuit dump
+is byte-identical, =diff -rq= EMPTY, and =row_snapshot= /
+=interface_snapshot= are unchanged and green without regeneration.
+
+** The public surface as it landed
+=crates/minocrab-contracts/src/evm.rs= (1222 lines) gains, beside M37's
+=AbiType= / =AbiTuple= / =AbiArgs= / =EvmCall= / =Envelope= / =build_tx*=:
+#+begin_src rust
+pub trait Interface: 'static {}
+pub trait Extends<Base: Interface>: Interface {}
+impl<I: Interface> Extends<I> for I {}          // reflexive
+
+pub trait Filing: 'static {
+    type Call: EvmCall;
+    const KIND: u8;
+    const RETURN_FIELD: Option<&'static str> = None;
+}
+pub struct Kinded<Call, const KIND: u8>(PhantomData<fn() -> Call>);
+impl<Call: EvmCall + 'static, const KIND: u8> Filing for Kinded<Call, KIND>;
+
+pub mod erc20;        // Erc20;      Transfer, Approve;      CALL_GAS = 100_000
+pub mod erc4626;      // Erc4626: Extends<Erc20>;  Deposit, Redeem;  CALL_GAS = 500_000
+pub mod uniswap_v3;   // UniswapV3Router;  ExactOutputSingle;  SWAP_GAS = 700_000
+#+end_src
+=EvmCall= gains =type Callee: Interface= and LOSES =const KIND= and
+=const RETURN_FIELD=. =GAS_LIMIT= stays (§2.3).
+
+=evm_flow.rs= (1184 lines):
+- =pub type Called<F> = <F as Filing>::Call= and
+  =pub type Callee<F> = <Called<F> as EvmCall>::Callee= — two aliases the
+  design did not name, added because every slot signature would otherwise
+  read =<<F as Filing>::Call as EvmCall>::Args= three times a line.
+- =pub struct Contract<I: Interface>= (was =Contract<C>=), same one-slot
+  wire shape.
+- =pub struct Succeeded<F: Filing>= / =Failed<F: Filing>=, with the
+  argument-slot name now =F::RETURN_FIELD=.
+- =pub struct Pending<F: Filing, Env, const WORDS: usize = 2>= and
+  =pub struct Fired<F: Filing, const WORDS: usize = 2>=; =LedgerWidth::
+  KINDS= is =&[F::KIND]=; the =WORDS= inline-const assert reads
+  =<<Called<F> as EvmCall>::Args as AbiTuple>::WORDS=.
+- =request(callee: Contract<impl Extends<Callee<F>>>, ..)=,
+  =request_owned::<L>(callee: Contract<impl Extends<Callee<F>>>, ..)=,
+  =request_with<S, I: Extends<Callee<F>>>(callee: impl FnOnce(..) ->
+  Contract<I>, ..)= (and =Fired::request_with<I: Extends<Callee<F>>>=).
+
+=treasury.rs=: =pub type Transfer = Kinded<erc20::Transfer, 1>=;
+=token: Contract<Erc20>=; slot and both tickets are =Transfer=.
+=erc20_vault_pending.rs=: five =Filing= impls (=Deposit=, =Withdrawal=,
+=Swap=, =Supply=, =Redeem=) plus =pub type Approval = Kinded<erc20::
+Approve, { RESPONSE_KIND_APPROVE as u8 }>=; seven =Contract::<I>::
+from_address= sites naming =Erc20= / =Erc4626= / =UniswapV3Router=.
+
+** Six places the design needed adjusting, and why
+1. =Kinded='s impl needs =Call: EvmCall + 'static=, not just
+   =Call: EvmCall=. =Filing: 'static= (§2.2) forces
+   =Kinded<Call, KIND>: 'static=, which for
+   =PhantomData<fn() -> Call>= means =Call: 'static=. Put on the IMPL
+   rather than as a supertrait of =EvmCall=, so no existing call type's
+   declaration changed.
+2. =request_owned::<L>= COULD NOT TAKE =I= AS A NAMED PARAMETER. Rust
+   has no partial turbofish: =request_owned::<OwnerCommitment>= with
+   =<L, I>= is "method takes 2 generic arguments but 1 was supplied", so
+   every call site would have had to spell the interface too. Fixed by
+   taking the callee as ARGUMENT-POSITION =impl Trait= —
+   =callee: Contract<impl Extends<Callee<F>>>= — which is an ANONYMOUS
+   parameter and therefore not turbofishable, leaving =::<L>= naming
+   exactly one thing. Done for =request= as well (same shape, a value
+   callee). =request_with= keeps a named =I=: its callee is a CLOSURE
+   returning =Contract<I>=, and =impl Trait= is not allowed in the return
+   type of an =Fn= bound.
+3. =Contract::from_address= NO LONGER INFERS ITS INTERFACE for an
+   ERC-20 call, and every vault call site names it. With the reflexive
+   blanket impl AND =impl Extends<Erc20> for Erc4626=, the bound
+   =I: Extends<Erc20>= has TWO candidate impls, so =I= is ambiguous where
+   nothing else pins it. That is not a defect: it is the type asking the
+   author to say what the address claims, which is exactly the claim the
+   callee-allow-list hazard is about. (=Extends<UniswapV3Router>= and
+   =Extends<Erc4626>= have one candidate each and would infer; naming all
+   seven keeps the lineage uniform.)
+4. §2.1's INHERITANCE EXAMPLE IS A MIS-READING OF THE VAULT, and rung A
+   does not exercise inheritance in a shipped circuit. §2.1 says
+   "=approve_stata= approves an ERC-20 allowance ON the ERC-4626 vault".
+   It does not: =approve_stata= files =approve(stataToken, 2^128-1)= ON
+   =stata_underlying= — the callee is the UNDERLYING ERC-20 and the stata
+   token is the SPENDER ARGUMENT, so the wrapper may pull the underlying
+   during a supply. The vault's =Contract<Erc4626>= sites are =supply=
+   and =redeem=, both filing =erc4626::= calls. So the vault has NO
+   =erc20::= call on a =Contract<Erc4626>=, and the positive inheritance
+   twin is a test rather than a lineage
+   (=evm_abi::an_erc4626_vault_takes_an_erc20_call=, plus
+   =the_interface_marker_costs_no_instruction=, which builds the same
+   =approve= transaction through =Contract<Erc20>= and
+   =Contract<Erc4626>= and asserts the ZKIR is equal). The inheritance
+   itself is real and declared; it is waiting for a consumer.
+5. THE GAS CONSTANTS MOVED THE OTHER WAY ROUND from what §2.3 implies.
+   The library modules now DEFINE =erc20::CALL_GAS = 100_000=,
+   =erc4626::CALL_GAS = 500_000=, =uniswap_v3::SWAP_GAS = 700_000=, and
+   =erc20_vault='s =ERC20_CALL_GAS= / =LENDING_GAS= / =SWAP_GAS= are
+   one-line aliases of them — a generic module must not import a
+   deployment's constants. Same numbers, one definition;
+   =evm::tests::the_gas_defaults_are_the_vaults= pins the equality, and
+   the compat lineage's hand-written circuits keep spelling the names
+   they always did. NOT MOVED: =FIXED_PRIORITY_FEE= / =FIXED_MAX_FEE=,
+   which =evm::build_tx= still imports from =erc20_vault=. They are the
+   fee ENVELOPE (a deployment policy, §2.3's own framing), not a
+   per-function default. Recorded for dmd: either they follow the gas
+   limits into the library as "the default envelope", or the envelope
+   becomes wholly the caller's. Not decided here.
+6. THE DUPLICATE-KIND MESSAGE WAS STALE. =assert_distinct_kinds= said
+   "Give each =Response= type of the block a distinct =KIND=" — the
+   =Response= types were retired in M37 D. It now says "Give each slot's
+   =Filing= a distinct =KIND=". Message text only; the check is
+   unchanged, and the ledger derive still emits
+   =assert_distinct_kinds(&[<T as LedgerWidth>::KINDS, ..])= over the
+   fields in declaration order (the derive's own test now asserts that
+   list verbatim, not just that the call is present).
+
+** One deviation from the brief's do-not-touch list
+=tests/signet_flow.rs= HAD TO CHANGE. It is an M37 rung-D test (not the
+publisher agent's), and it was the only other user of
+=Erc20TransferAsDeposit= / =Erc20TransferAsWithdrawal=, which rung A
+DELETES rather than aliases. The edit is the minimum: two local =Filing=
+impls (=ToyDeposit= at kind 0, =ToyWithdrawal= at kind 1, both with
+=RETURN_FIELD = Some("success")=, which is what the two deleted call
+types carried), the slot and ticket spellings, and one
+=Contract::<Erc20>::from_address=. Nothing else in the file moved, and
+=tests/support/signet_call.rs= and the other =tests/signet_*.rs= are
+untouched.
+
+** The compile_fail ladder (§2.5), and what each error actually is
+All in =evm_flow='s module docs, each with a POSITIVE TWIN that is the
+same code with the one change reverted. Verified by hand, by compiling
+each as a real test file and reading rustc:
+| gate | rustc says |
+|------+------------|
+| (i) =erc20::Transfer= on a =Contract<UniswapV3Router>= | =error[E0277]: the trait bound `UniswapV3Router: Extends<Erc20>` is not satisfied= |
+| (ii) =Succeeded<Kinded<erc20::Transfer, 2>>= to a slot filed at 1 | =error[E0308]: mismatched types … expected `1`, found `2`= |
+| (iii) =Pending<Kinded<erc20::Transfer, 1>, .., 3>= | =error[E0080]: evaluation panicked: `Pending<F, Env, WORDS>` needs WORDS == <F::Call::Args as AbiTuple>::WORDS — …= |
+| (iv) two slots at kind 1 | =error[E0080]: evaluation panicked: two slots of this ledger block settle under the same Signet response kind: … Give each slot's `Filing` a distinct `KIND`.= |
+(i) is a MISSING TRAIT IMPL and (ii) DISTINCT TYPES — the top two rungs
+of the project's compile-errors-over-panics preference, which is what the
+interface layer buys over M37's =Contract<Call>=. The positive
+inheritance twin is a normal test, per the brief.
+
+** Gate results
+- ZERO MOVEMENT: =MINOCRAB_ZKIR_DUMP= before (untouched HEAD 5265db4) and
+  after: 214 circuits each, =diff -rq= EMPTY. Run twice — once after the
+  library/lineage change and once after the doc and message edits.
+- =cargo test --release -p minocrab-contracts --test row_snapshot --test
+  interface_snapshot= — 2 passed + 1 ignored in each; UNCHANGED, nothing
+  regenerated (=git status= shows neither snapshot file touched, nor
+  =taint_baseline.txt=).
+- =cargo test -p minocrab-contracts= — 47 test targets, all green; doc
+  tests 23 passed, 1 ignored (10 =compile_fail= + 3 positive twins in
+  =evm_flow=, up from 7 total on the untouched tree).
+- =cargo test --workspace= — 108 targets, 1001 passed, 0 failed, 39
+  ignored.
+- =cargo test -p minocrab-macros= — 61 passed (the derive's kinds test
+  strengthened, not added).
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7 as
+  the untouched tree (=events_borsh=, =hashing=, =nested=, =signet=,
+  =signet_contract=, =xcall= ×2); ZERO from =evm.rs=, =evm/*=,
+  =evm_flow.rs=, =treasury.rs= or =erc20_vault_pending.rs=.
+- =circuit_closure=, =taint_lint=, =trust_base= — green. =TRUST.md=
+  regenerated: two rows move (=minocrab-std/src/v3/ledger.rs= 1998 → 2003
+  for the message and the doc paragraph, =minocrab-macros/src/ledger.rs=
+  410 → 424 for the strengthened test) and the total 25093 → 25112.
+- README's cross-chain block re-verified as =treasury.rs= VERBATIM: 92
+  non-blank lines, each present in =src/treasury.rs= in the same order.
+  Rung D left no script, so one was written for this rung and run —
+  it is a five-minute check, not a committed gate (recorded here so the
+  next rung does not reinvent it): extract the =```rust= block under
+  "## Cross-chain calls", walk its lines against =treasury.rs= keeping a
+  cursor, fail on any line not found at or after the cursor.
+
+** What could not be done
+- NOTHING IN §2 WAS SKIPPED, but two things are recorded rather than
+  decided: the fee-envelope constants' home (adjustment 5) and a
+  =Filing::GAS_LIMIT= override, which §2.3 already defers to "if a
+  consumer asks" and no consumer has.
+- The vault does not exercise inheritance (adjustment 4). Rung B's
+  =Weth: Extends<Erc20>= (=deposit= / =withdraw= on a contract whose
+  =transfer= a caller also wants) is the first place a shipped lineage
+  plausibly will.

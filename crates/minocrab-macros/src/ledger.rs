@@ -170,7 +170,10 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         // No two slots of one block settle under the same Signet response
-        // kind (E0080 if they do).
+        // kind (E0080 if they do). A Signet slot's `KINDS` is a one-element
+        // list holding its `evm::Filing::KIND` — the DEPLOYMENT's protocol
+        // byte, which since M38 rung A is named by the slot's filing rather
+        // than by the library call it files.
         const _: () = ::minocrab_std::v3::assert_distinct_kinds(&[
             #( <#types as #width>::KINDS ),*
         ]);
@@ -367,6 +370,17 @@ mod tests {
         assert!(expanded.contains("signer : < LedgerField > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
         assert!(expanded.contains("initialized : < LedgerCounter > :: at_block (__TOTAL , 0usize + < LedgerMap < B32 < Public > , VaultRecord > as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH + < LedgerField as :: minocrab_std :: v3 :: LedgerWidth > :: WIDTH)"), "{expanded}");
         assert!(expanded.contains("assert_distinct_kinds"), "{expanded}");
+        // …over EVERY field's `KINDS`, in declaration order: that is where
+        // a `Pending`/`Fired` slot's `Filing::KIND` reaches the check.
+        assert!(
+            expanded.contains(
+                "assert_distinct_kinds (& [< LedgerMap < B32 < Public > , VaultRecord > as \
+                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS , < LedgerField as \
+                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS , < LedgerCounter as \
+                 :: minocrab_std :: v3 :: LedgerWidth > :: KINDS])"
+            ),
+            "{expanded}"
+        );
     }
 
     /// …and a SIXTEEN-field block is laid out by `at_block` over the

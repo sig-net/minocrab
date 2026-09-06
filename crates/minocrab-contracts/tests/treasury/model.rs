@@ -15,7 +15,7 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault::{REFUND_PAD, TRANSFER_SELECTOR, VAULT_PATH};
-use minocrab_contracts::evm::EvmCall;
+use minocrab_contracts::evm::Filing;
 use minocrab_contracts::evm_flow::FAILURE_KIND;
 use minocrab_contracts::signet::RECORD_FORMAT_VERSION;
 use minocrab_zkir::v3::IrValue;
@@ -35,9 +35,10 @@ pub const EVM_CHAIN_ID: u8 = 4;
 pub const TRANSFERS_RECORDS: u8 = 5;
 pub const TRANSFERS_ENVS: u8 = 6;
 
-/// The kind an `Erc20Transfer` request files and settles under.
+/// The kind a `treasury::Transfer` request files and settles under —
+/// the FILING's byte, not the call's (M38 rung A).
 pub const TRANSFER_KIND: u8 =
-    <minocrab_contracts::evm::Erc20Transfer as EvmCall>::KIND;
+    <minocrab_contracts::treasury::Transfer as Filing>::KIND;
 
 /// The circuit's own `kernel.self()`.
 pub const SELF_ADDR: [u8; 32] = {
@@ -193,7 +194,7 @@ pub fn owner_commit_of(sk: &[u8; 32], request_id: &[u8; 32]) -> [u8; 32] {
 
 // ---- the V2 signing record ----------------------------------------------------
 
-/// The `transfer(to, amount)` record `send` files — `Erc20Transfer`'s
+/// The `transfer(to, amount)` record `send` files — `erc20::Transfer`'s
 /// selector, gas limit and fee envelope, spelled out here so the model does
 /// not read them off the type it is checking.
 #[derive(Clone, Debug)]

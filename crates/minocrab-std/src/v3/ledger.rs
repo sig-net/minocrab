@@ -642,6 +642,11 @@ pub trait LedgerWidth {
     /// Consecutive ledger fields this slot occupies.
     const WIDTH: usize = 1;
     /// Response kinds this slot settles under (empty for ordinary slots).
+    ///
+    /// A Signet slot reads it off the FILING it is typed by
+    /// (`evm::Filing::KIND`), which is where a deployment's protocol byte
+    /// lives; [`assert_distinct_kinds`] is what stops two slots of one block
+    /// claiming the same one.
     const KINDS: &'static [u8] = &[];
 }
 
@@ -662,8 +667,8 @@ pub const fn assert_distinct_kinds(kinds: &[&[u8]]) {
                         kinds[i][a] != kinds[j][b],
                         "two slots of this ledger block settle under the same \
                          Signet response kind: the MPC's kind byte could not \
-                         tell their attestations apart. Give each `Response` \
-                         type of the block a distinct `KIND`."
+                         tell their attestations apart. Give each slot's \
+                         `Filing` a distinct `KIND`."
                     );
                     b += 1;
                 }

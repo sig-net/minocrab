@@ -16,16 +16,16 @@
 //!
 //! | not written                       | comes from                     |
 //! |-----------------------------------|--------------------------------|
-//! | `a9059cbb`                        | `Erc20Transfer::selector()`    |
+//! | `a9059cbb`                        | `erc20::Transfer::selector()`  |
 //! | the two ABI words, the word count | `AbiTuple` (checked, E0080)    |
 //! | the response type and its schema  | `Attested<Bool>` at the kind   |
-//! | the gas envelope and limit        | `build_tx` + `Erc20Transfer`   |
+//! | the gas envelope and limit        | `build_tx` + `erc20::Transfer` |
 //! | the signing path                  | `SigningPath::contract_path`   |
 //! | the notification depth and path   | the slot's own ledger path     |
 //! | the record format version         | `Pending::complete` / `refund` |
 //! | `&TREASURY.signet`                | `#[derive(Ledger)]`            |
 //! | the owner commitment and its gate | `Owned` + `request_owned`      |
-//! | "a `false` must not complete"     | `Erc20Transfer::Outcome`       |
+//! | "a `false` must not complete"     | `erc20::Transfer::succeeded`   |
 //!
 //! WHAT IS STILL WRITTEN, on purpose (notes/evm-calls.org §5): the labels,
 //! the `Discloses` tuple, and the two values §7 has yet to find a home for —
@@ -44,9 +44,23 @@ use minocrab_std::v3::{
     contract, label, Bytes, Disclose, Discloses, Ledger, LedgerRepr, Uint,
 };
 
-use crate::evm::Erc20Transfer;
+use crate::evm::erc20::{self, Erc20};
+use crate::evm::Kinded;
 use crate::evm_flow::{Contract, Failed, Owned, Pending, Succeeded};
 use crate::signet_flow::{Requested, Settled, Signet};
+
+/// HOW THIS TREASURY FILES ITS ONE CALL: the library's
+/// [`erc20::Transfer`] under response kind 1.
+///
+/// The kind is the treasury's own choice — a kind is per DEPLOYMENT, and
+/// this one happens to pick the byte the vault uses for a withdrawal. The
+/// return field is the anonymous default, because a Solidity `transfer`'s
+/// return IS anonymous, so a settle circuit's argument slot is
+/// `serializedOutput.output`.
+///
+/// One name, written once: the slot, both tickets and both settle
+/// signatures are all `Transfer` (notes/evm-interfaces.org §2.2).
+pub type Transfer = Kinded<erc20::Transfer, 1>;
 
 /// What `refund` needs back: how much was sent.
 ///
@@ -69,7 +83,7 @@ pub struct Treasury {
     pub signet: Signet,
     /// Every `transfer` this treasury has in flight, with the caller
     /// committed into each environment.
-    pub transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+    pub transfers: Pending<Transfer, Owned<Amount>, 2>,
 }
 
 /// The contract's ledger handle.
@@ -94,7 +108,7 @@ impl Treasury {
         c: &mut Circuit3,
         evm_nonce: Uint<64>,
         key_version: Uint<8>,
-        token: Contract<Erc20Transfer>,
+        token: Contract<Erc20>,
         to: Bytes<20>,
         amount: Uint<64>,
     ) -> Discloses<(SentAmount, OwnerCommitment, Requested)> {
@@ -118,11 +132,11 @@ impl Treasury {
     ///
     /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
     /// witness in the circuit at all. And the attested `false` case cannot
-    /// reach here: `Erc20Transfer`'s return is `Bool`, and its
+    /// reach here: `erc20::Transfer`'s return is `Bool`, and its
     /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
     /// nothing in this body has to remember to look.
     #[circuit]
-    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<Settled> {
+    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
         let _amount = outcome.env.inner.amount;
         Discloses::of(())
@@ -138,7 +152,7 @@ impl Treasury {
     #[circuit]
     pub fn refund(
         c: &mut Circuit3,
-        ticket: Failed<Erc20Transfer>,
+        ticket: Failed<Transfer>,
     ) -> Discloses<(Settled, RefundRecipient)> {
         // The attested flag comes back too — `false` for a mined call that
         // moved nothing, and prover-chosen padding when the MPC attested

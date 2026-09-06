@@ -19,7 +19,7 @@
 //!    through `Address::word` serialize to byte-identical ZKIR. (The
 //!    209-circuit dump says the same thing at scale; this says it in one
 //!    assertion a reader can hold.)
-//! 4. `build_tx`. `build_tx::<Erc20Transfer, 2>` emits the same stream as
+//! 4. `build_tx`. `build_tx::<erc20::Transfer, 2>` emits the same stream as
 //!    `erc20_vault_pending::erc20_call` — whose twenty lines are copied in
 //!    here as `reference::erc20_call`, since rung A does not rewire the
 //!    vault and the comparison has to be against what the vault does today.
@@ -34,10 +34,10 @@ use minocrab_contracts::erc20_vault::{
     FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
 };
 use minocrab_contracts::evm::{
-    always, build_tx, AbiType, Address, Bool, Bytes32, Erc20Approve, Erc20Transfer,
-    Erc4626Deposit,
-    Erc4626Redeem, EvmCall, ExactOutputSingle, U128, U24, U256, U64,
+    always, build_tx, erc20, erc4626, uniswap_v3, AbiType, Address, Bool, Bytes32, EvmCall,
+    Extends, Interface, Kinded, U128, U24, U256, U64,
 };
+use minocrab_contracts::evm_flow::Contract;
 use minocrab_contracts::signet::{self, EvmCalldata};
 use minocrab_contracts::signet_flow::EvmTx;
 use minocrab_sim::v3::simulate;
@@ -101,27 +101,27 @@ fn run_word(
 #[test]
 fn selectors_are_the_vaults() {
     assert_eq!(
-        Erc20Transfer::selector(),
+        erc20::Transfer::selector(),
         TRANSFER_SELECTOR,
         "transfer(address,uint256)"
     );
     assert_eq!(
-        Erc20Approve::selector(),
+        erc20::Approve::selector(),
         APPROVE_SELECTOR,
         "approve(address,uint256)"
     );
     assert_eq!(
-        ExactOutputSingle::selector(),
+        uniswap_v3::ExactOutputSingle::selector(),
         EXACT_OUTPUT_SINGLE_SELECTOR,
         "exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))"
     );
     assert_eq!(
-        Erc4626Deposit::selector(),
+        erc4626::Deposit::selector(),
         DEPOSIT_SELECTOR,
         "deposit(uint256,address)"
     );
     assert_eq!(
-        Erc4626Redeem::selector(),
+        erc4626::Redeem::selector(),
         REDEEM_SELECTOR,
         "redeem(uint256,address,address)"
     );
@@ -137,11 +137,11 @@ fn selectors_are_the_vaults() {
 fn the_hash_is_not_circular() {
     struct BalanceOf;
     impl EvmCall for BalanceOf {
+        type Callee = erc20::Erc20;
         const NAME: &'static str = "balanceOf";
         type Args = (Address,);
         type Return = U256;
         type Success = B32<Private>;
-        const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 30_000;
 
         fn succeeded(c: &mut Circuit3, _out: &B32<Private>) -> Check<Private> {
@@ -158,11 +158,11 @@ fn the_hash_is_not_circular() {
 fn the_struct_wrapping_changes_the_selector() {
     struct Flat;
     impl EvmCall for Flat {
+        type Callee = uniswap_v3::UniswapV3Router;
         const NAME: &'static str = "exactOutputSingle";
-        type Args = <ExactOutputSingle as EvmCall>::Args;
+        type Args = <uniswap_v3::ExactOutputSingle as EvmCall>::Args;
         type Return = U64;
         type Success = Uint<64, Private>;
-        const KIND: u8 = 0;
         const GAS_LIMIT: u64 = 0;
         // no `signature()` override — the flat join
 
@@ -413,7 +413,7 @@ fn publish_tx(c: &mut Circuit3, tx: EvmTx<2>) {
     }
 }
 
-/// `build_tx::<Erc20Transfer, 2>` IS `erc20_call` with the selector, the
+/// `build_tx::<erc20::Transfer, 2>` IS `erc20_call` with the selector, the
 /// word count and the gas limit read off the type instead of typed out.
 #[test]
 fn build_tx_is_the_vaults_erc20_call() {
@@ -422,7 +422,7 @@ fn build_tx_is_the_vaults_erc20_call() {
         let dest = c.arg::<FieldT>("dest");
         let amount = c.arg::<FieldT>("amount");
         let nonce = c.arg::<FieldT>("nonce");
-        let tx = build_tx::<Erc20Transfer, 2>(
+        let tx = build_tx::<erc20::Transfer, 2>(
             c,
             Bytes::<20, Private>::from_field_unchecked(to),
             (
@@ -455,7 +455,7 @@ fn build_tx_carries_the_declared_envelope() {
     let dest = c.arg::<FieldT>("dest");
     let amount = c.arg::<FieldT>("amount");
     let nonce = c.arg::<FieldT>("nonce");
-    let tx = build_tx::<Erc20Transfer, 2>(
+    let tx = build_tx::<erc20::Transfer, 2>(
         &mut c,
         Bytes::<20, Private>::from_field_unchecked(to),
         (
@@ -569,22 +569,25 @@ fn is_true_on_a_wire_is_not_folded() {
 /// THE FIVE CALL TYPES' VERDICTS, as declared: the two ERC-20 calls read the
 /// returned flag, the three numeric ones treat execution as success. A table
 /// rather than a sentence, because the wrong entry here IS the
-/// spurious-completion hole (notes/evm-calls.org §3) — an `Erc20Transfer`
+/// spurious-completion hole (notes/evm-calls.org §3) — an `erc20::Transfer`
 /// whose `succeeded` emitted nothing would let an attested `false` complete.
+///
+/// The verdict is the CALL's, not the filing's: it is the same predicate
+/// whichever kind a deployment files the call under (M38 rung A §2.3).
 #[test]
 fn a_flag_return_is_checked_and_a_number_is_not() {
     let flag = zkir(|c| {
         let w = c.arg::<FieldT>("ok");
         let ok = BoolWire::<Private>::from_field_checked(c, w);
-        let check = <Erc20Transfer as EvmCall>::succeeded(c, &ok);
+        let check = <erc20::Transfer as EvmCall>::succeeded(c, &ok);
         c.assert(check);
     });
-    assert!(flag.contains("\"assert\""), "Erc20Transfer::succeeded emitted no assert");
+    assert!(flag.contains("\"assert\""), "erc20::Transfer::succeeded emitted no assert");
 
     let approve = zkir(|c| {
         let w = c.arg::<FieldT>("ok");
         let ok = BoolWire::<Private>::from_field_checked(c, w);
-        let check = <Erc20Approve as EvmCall>::succeeded(c, &ok);
+        let check = <erc20::Approve as EvmCall>::succeeded(c, &ok);
         c.assert(check);
     });
     assert_eq!(approve, flag, "the two ERC-20 calls disagree on their verdict");
@@ -593,9 +596,9 @@ fn a_flag_return_is_checked_and_a_number_is_not() {
         let executed = zkir(|c| {
             let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
             let check = match name {
-                "deposit" => <Erc4626Deposit as EvmCall>::succeeded(c, &n),
-                "redeem" => <Erc4626Redeem as EvmCall>::succeeded(c, &n),
-                _ => <ExactOutputSingle as EvmCall>::succeeded(c, &n),
+                "deposit" => <erc4626::Deposit as EvmCall>::succeeded(c, &n),
+                "redeem" => <erc4626::Redeem as EvmCall>::succeeded(c, &n),
+                _ => <uniswap_v3::ExactOutputSingle as EvmCall>::succeeded(c, &n),
             };
             c.assert(check);
         });
@@ -618,11 +621,11 @@ fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
     // The projection of a flag IS `()` — a TYPE equality, which is the
     // whole claim: this line does not compile if `Success` is anything else.
     #[allow(clippy::let_unit_value)]
-    let projected: <Erc20Transfer as EvmCall>::Success = <Erc20Transfer as EvmCall>::map(&mut c, ok);
+    let projected: <erc20::Transfer as EvmCall>::Success = <erc20::Transfer as EvmCall>::map(&mut c, ok);
     let _: () = projected;
 
     let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
-    let kept: <Erc4626Deposit as EvmCall>::Success = <Erc4626Deposit as EvmCall>::map(&mut c, n);
+    let kept: <erc4626::Deposit as EvmCall>::Success = <erc4626::Deposit as EvmCall>::map(&mut c, n);
     assert_eq!(
         format!("{:?}", kept.field().val()),
         format!("{:?}", n.field().val()),
@@ -634,7 +637,109 @@ fn a_checked_flag_maps_to_nothing_and_a_number_maps_to_itself() {
     });
     let after = zkir(|c| {
         let n = Uint::<64, Private>::from_field_unchecked(c.arg::<FieldT>("n"));
-        let _ = <Erc4626Deposit as EvmCall>::map(c, n);
+        let _ = <erc4626::Deposit as EvmCall>::map(c, n);
     });
     assert_eq!(before, after, "the identity projection emitted an instruction");
+}
+
+
+// ---- 5. the interface layer (M38 rung A) --------------------------------------
+
+/// EVERY LIBRARY CALL NAMES ITS INTERFACE, and the two markers that are one
+/// interface's calls agree — a `transfer` and an `approve` go to the same
+/// kind of address, a swap does not.
+///
+/// The claim is a TYPE equality, so this test does not compile if a call's
+/// `Callee` changes; the compile_fail twins in `evm_flow`'s module docs are
+/// the other direction (a call filed against the wrong interface).
+#[test]
+fn each_call_names_the_interface_that_exposes_it() {
+    fn callee_is<C: EvmCall<Callee = I>, I: Interface>() {}
+
+    callee_is::<erc20::Transfer, erc20::Erc20>();
+    callee_is::<erc20::Approve, erc20::Erc20>();
+    callee_is::<erc4626::Deposit, erc4626::Erc4626>();
+    callee_is::<erc4626::Redeem, erc4626::Erc4626>();
+    callee_is::<uniswap_v3::ExactOutputSingle, uniswap_v3::UniswapV3Router>();
+}
+
+/// THE POSITIVE INHERITANCE TWIN (notes/evm-interfaces.org §2.5): an
+/// ERC-4626 vault IS an ERC-20, so an `erc20::Approve` may be filed against
+/// a `Contract<Erc4626>` — the shape a deployment approving an allowance ON
+/// a wrapper needs.
+///
+/// `reaches` is the bound `Pending::request` puts on its callee, isolated:
+/// it compiles exactly when `I: Extends<C::Callee>` holds. The three
+/// NEGATIVE directions are compile_fail doctests, because a test that does
+/// not compile is not a test.
+#[test]
+fn an_erc4626_vault_takes_an_erc20_call() {
+    fn reaches<C: EvmCall, I: Extends<C::Callee>>() {}
+
+    // Reflexive: every interface takes its own calls.
+    reaches::<erc20::Transfer, erc20::Erc20>();
+    reaches::<erc4626::Deposit, erc4626::Erc4626>();
+    reaches::<uniswap_v3::ExactOutputSingle, uniswap_v3::UniswapV3Router>();
+
+    // INHERITED: the shares of an ERC-4626 vault are an ERC-20.
+    reaches::<erc20::Approve, erc4626::Erc4626>();
+    reaches::<erc20::Transfer, erc4626::Erc4626>();
+}
+
+/// …AND IT IS THE SAME CIRCUIT. A callee is twenty bytes whatever it claims,
+/// so building the transaction through a `Contract<Erc4626>` emits the
+/// instruction stream a `Contract<Erc20>` emits — the marker is a type-level
+/// claim with no wire cost.
+#[test]
+fn the_interface_marker_costs_no_instruction() {
+    fn approve_through<I: Extends<erc20::Erc20>>() -> String {
+        zkir(|c| {
+            let callee = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("callee"));
+            let callee = Contract::<I>::from_address(c, callee);
+            let spender = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("spender"));
+            let allowance = B32::<Private> {
+                hi: c.arg::<FieldT>("hi"),
+                lo: c.arg::<FieldT>("lo"),
+            };
+            let nonce = c.arg::<FieldT>("nonce");
+            let tx = build_tx::<erc20::Approve, 2>(
+                c,
+                callee.address(),
+                (spender, allowance),
+                nonce,
+            );
+            publish_tx(c, tx);
+        })
+    }
+
+    assert_eq!(
+        approve_through::<erc20::Erc20>(),
+        approve_through::<erc4626::Erc4626>(),
+        "the callee's interface changed the circuit"
+    );
+}
+
+/// THE FILING CARRIES THE DEPLOYMENT'S TWO FACTS, and the CALL carries none
+/// of them: the same `erc20::Transfer` is filed at two kinds by the vault
+/// (a claim and a withdrawal) and at a third choice by the treasury.
+#[test]
+fn one_call_files_under_many_kinds() {
+    use minocrab_contracts::erc20_vault_pending::{Deposit, Withdrawal};
+    use minocrab_contracts::erc20_vault_pending::{RESPONSE_KIND_CLAIM, RESPONSE_KIND_WITHDRAW};
+    use minocrab_contracts::evm::Filing;
+
+    fn files<F: Filing<Call = C>, C: EvmCall>() {}
+
+    files::<Deposit, erc20::Transfer>();
+    files::<Withdrawal, erc20::Transfer>();
+    files::<minocrab_contracts::treasury::Transfer, erc20::Transfer>();
+
+    assert_eq!(u32::from(Deposit::KIND), RESPONSE_KIND_CLAIM);
+    assert_eq!(Deposit::RETURN_FIELD, Some("success"));
+    assert_eq!(u32::from(Withdrawal::KIND), RESPONSE_KIND_WITHDRAW);
+    assert_eq!(Withdrawal::RETURN_FIELD, Some("success"));
+
+    // The off-the-shelf filing: a kind, and the anonymous Solidity return.
+    assert_eq!(<Kinded<erc20::Transfer, 7> as Filing>::KIND, 7);
+    assert_eq!(<Kinded<erc20::Transfer, 7> as Filing>::RETURN_FIELD, None);
 }

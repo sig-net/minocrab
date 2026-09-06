@@ -18,8 +18,8 @@
 //! |----------------------------------|-----------------------------------------|
 //! | the four-byte selector           | `EvmCall::selector` (keccak, build time)|
 //! | the ABI words and the word count | `AbiType::word` + `AbiTuple` (E0080)    |
-//! | response kind byte               | `EvmCall::KIND` on the call type        |
-//! | the attested value's field name  | `EvmCall::RETURN_FIELD`                 |
+//! | response kind byte               | `Filing::KIND` on the slot's filing     |
+//! | the attested value's field name  | `Filing::RETURN_FIELD`                  |
 //! | the fee envelope and gas limit   | `Envelope` + `EvmCall::GAS_LIMIT`       |
 //! | record format version            | inside `complete` / `refund`            |
 //! | notification depth + path bytes  | derived from the slot                   |
@@ -33,7 +33,7 @@
 //! THE OUTCOME PICKS THE CIRCUIT (M37 rung D, notes/evm-calls.org §3). The
 //! two tickets are symmetric and neither stands in for the other:
 //!
-//! - `complete_withdraw` takes a `Succeeded<Erc20TransferAsWithdrawal>`, and
+//! - `complete_withdraw` takes a `Succeeded<Withdrawal>`, and
 //!   `Pending::complete` asserts the call's own success predicate — for an
 //!   ERC-20 `transfer` that is the attested flag. So a `transfer` that MINED
 //!   AND RETURNED `false` cannot complete, whoever presents it. It is also
@@ -91,10 +91,10 @@ use minocrab_std::v3::{
 
 use crate::common;
 use crate::erc20_vault::{REDEEM_WORDS, SUPPLY_WORDS, SWAP_WORDS, VAULT_WORDS};
-use crate::evm::{
-    Envelope, Erc20Approve, Erc20TransferAsDeposit, Erc20TransferAsWithdrawal, Erc4626Deposit,
-    Erc4626Redeem, ExactOutputSingle,
-};
+use crate::evm::erc20::Erc20;
+use crate::evm::erc4626::Erc4626;
+use crate::evm::uniswap_v3::UniswapV3Router;
+use crate::evm::{erc20, erc4626, uniswap_v3, Envelope, Filing, Kinded};
 use crate::evm_flow::{Commit, Contract, Failed, Fired, Owned, Pending, Succeeded};
 use crate::signet;
 use crate::signet_flow::{Requested, Settled, Signet};
@@ -130,15 +130,15 @@ pub const RESPONSE_KINDS: u32 = 7;
 /// Since M37 rung D the CALL TYPE names the kind, so this table's last
 /// column is a type in [`crate::evm`] rather than a response struct here:
 ///
-/// | kind | name | recorded by | settled by | attested | call type |
-/// |------|------|-------------|------------|----------|-----------|
-/// | 0 | CLAIM | `deposit` | `claim` | `bool success` | [`Erc20TransferAsDeposit`] |
-/// | 1 | WITHDRAW | `withdraw` | `complete_withdraw` | `bool success` | [`Erc20TransferAsWithdrawal`] |
-/// | 2 | SWAP | `swap` | `complete_swap` | `uint64 amountIn` | [`ExactOutputSingle`] |
+/// | kind | name | recorded by | settled by | attested | filing → call |
+/// |------|------|-------------|------------|----------|---------------|
+/// | 0 | CLAIM | `deposit` | `claim` | `bool success` | [`Deposit`] → `erc20::Transfer` |
+/// | 1 | WITHDRAW | `withdraw` | `complete_withdraw` | `bool success` | [`Withdrawal`] → `erc20::Transfer` |
+/// | 2 | SWAP | `swap` | `complete_swap` | `uint64 amountIn` | [`Swap`] → `uniswap_v3::ExactOutputSingle` |
 /// | 3 | FAILURE | — | `refund_*` | — | `evm_flow::FAILURE_KIND` |
-/// | 4 | APPROVE | `approve_router`, `approve_stata` | — | `bool` | [`Erc20Approve`] |
-/// | 5 | SUPPLY | `supply` | `complete_supply` | `uint64 shares` | [`Erc4626Deposit`] |
-/// | 6 | REDEEM | `redeem` | `complete_redeem` | `uint64 assets` | [`Erc4626Redeem`] |
+/// | 4 | APPROVE | `approve_router`, `approve_stata` | — | `bool` | [`Approval`] → `erc20::Approve` |
+/// | 5 | SUPPLY | `supply` | `complete_supply` | `uint64 shares` | [`Supply`] → `erc4626::Deposit` |
+/// | 6 | REDEEM | `redeem` | `complete_redeem` | `uint64 assets` | [`Redeem`] → `erc4626::Redeem` |
 ///
 /// FAILURE is response-only (an outcome, not a request) and APPROVE is
 /// request-only (fire-and-forget); giving the approve request its own kind
@@ -146,10 +146,13 @@ pub const RESPONSE_KINDS: u32 = 7;
 /// `approveStata` reuses the APPROVE kind — it is request-only, like
 /// `approveRouter`.
 ///
-/// THE RUNG-A FINDING is why the first two rows name two types for one
-/// Solidity function: `transfer(address,uint256)` is filed under two kinds,
-/// because a deposit's inbound transfer and a withdrawal's outbound one are
-/// two OPERATIONS of the protocol, and the kind byte is what says so.
+/// THE FIRST TWO ROWS ARE ONE SOLIDITY FUNCTION FILED TWICE:
+/// `transfer(address,uint256)` under two kinds, because a deposit's inbound
+/// transfer and a withdrawal's outbound one are two OPERATIONS of the
+/// protocol and the kind byte is what says so. Since M38 rung A that is one
+/// LIBRARY call ([`erc20::Transfer`]) and two FILINGS of it ([`Deposit`],
+/// [`Withdrawal`]) rather than two call types — the kind and the record's
+/// field name are the deployment's, and this module is the deployment.
 pub const RESPONSE_KIND_CLAIM: u32 = 0;
 /// See [`RESPONSE_KIND_CLAIM`].
 pub const RESPONSE_KIND_WITHDRAW: u32 = 1;
@@ -169,10 +172,75 @@ pub const RESPONSE_KIND_REDEEM: u32 = 6;
 // THE RESPONSE TYPES ARE GONE (M37 rung D). `ClaimResponse`,
 // `WithdrawResponse`, `SwapResponse`, `Failure`, `ApproveResponse`,
 // `SupplyResponse` and `RedeemResponse` each existed to carry one kind byte
-// and one attested field; both now come off the CALL type
-// (`EvmCall::KIND` and `EvmCall::Return`, with `EvmCall::RETURN_NAME`
-// keeping the deployed record's own name for the field). The kind
-// CONSTANTS above stay — they are the wire, and the call types name them.
+// and one attested field. Since M38 rung A the kind byte and the field name
+// are this lineage's own `Filing` impls below, and the attested TYPE is the
+// library call's `EvmCall::Return`. The kind CONSTANTS above stay — they are
+// the wire, and the filings name them.
+
+// ---- the filings: how THIS deployment files the library's calls ------------------------
+
+/// `erc20::Transfer` AS A DEPOSIT'S INBOUND TRANSFER — the depositor's own
+/// account paying tokens in, filed under CLAIM, with the deployed record's
+/// name for the flag.
+///
+/// The record is `{ kind, success }`, so `claim`'s ticket reads
+/// `serializedOutput.output.success`. A Solidity `transfer` return is
+/// anonymous; this name is the DEPLOYMENT's, which is exactly why it lives
+/// here and not on [`erc20::Transfer`].
+pub struct Deposit;
+
+impl Filing for Deposit {
+    type Call = erc20::Transfer;
+    const KIND: u8 = RESPONSE_KIND_CLAIM as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+}
+
+/// `erc20::Transfer` AS A WITHDRAWAL — the vault's outbound transfer, filed
+/// under WITHDRAW. Same Solidity function as [`Deposit`], same record shape,
+/// different protocol operation.
+pub struct Withdrawal;
+
+impl Filing for Withdrawal {
+    type Call = erc20::Transfer;
+    const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+}
+
+/// `uniswap_v3::ExactOutputSingle` under SWAP; the record is
+/// `{ kind, amountIn }`.
+pub struct Swap;
+
+impl Filing for Swap {
+    type Call = uniswap_v3::ExactOutputSingle;
+    const KIND: u8 = RESPONSE_KIND_SWAP as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("amountIn");
+}
+
+/// `erc4626::Deposit` on the stata wrapper, under SUPPLY; the record is
+/// `{ kind, shares }`.
+pub struct Supply;
+
+impl Filing for Supply {
+    type Call = erc4626::Deposit;
+    const KIND: u8 = RESPONSE_KIND_SUPPLY as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("shares");
+}
+
+/// `erc4626::Redeem` on the stata wrapper, under REDEEM; the record is
+/// `{ kind, assets }`.
+pub struct Redeem;
+
+impl Filing for Redeem {
+    type Call = erc4626::Redeem;
+    const KIND: u8 = RESPONSE_KIND_REDEEM as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("assets");
+}
+
+/// `erc20::Approve` under APPROVE — the ONE filing with nothing to say
+/// beyond its kind, so it is the off-the-shelf [`Kinded`] rather than an
+/// impl: the slot is [`Fired`], nothing settles it, and no record names an
+/// attested value.
+pub type Approval = Kinded<erc20::Approve, { RESPONSE_KIND_APPROVE as u8 }>;
 
 /// What `claim` needs back: who may claim, which token, how much.
 ///
@@ -238,15 +306,15 @@ pub struct Vault {
     pub uniswap_router: LedgerCell<Bytes<20, Public>>,
     /// signer, mpcResponseKey, requestNonce, caip2Id, evmChainId.
     pub signet: Signet,
-    pub deposits: Pending<Erc20TransferAsDeposit, DepositEnv, VAULT_WORDS>,
-    pub withdrawals: Pending<Erc20TransferAsWithdrawal, Owned<WithdrawEnv>, VAULT_WORDS>,
-    pub swaps: Pending<ExactOutputSingle, Owned<SwapEnv>, SWAP_WORDS>,
+    pub deposits: Pending<Deposit, DepositEnv, VAULT_WORDS>,
+    pub withdrawals: Pending<Withdrawal, Owned<WithdrawEnv>, VAULT_WORDS>,
+    pub swaps: Pending<Swap, Owned<SwapEnv>, SWAP_WORDS>,
     /// Request-only: no settle exists for it.
-    pub approvals: Fired<Erc20Approve, VAULT_WORDS>,
+    pub approvals: Fired<Approval, VAULT_WORDS>,
     pub stata_underlying: LedgerCell<Bytes<20, Public>>,
     pub stata_token: LedgerCell<Bytes<20, Public>>,
-    pub supplies: Pending<Erc4626Deposit, Owned<SupplyEnv>, SUPPLY_WORDS>,
-    pub redeems: Pending<Erc4626Redeem, Owned<RedeemEnv>, REDEEM_WORDS>,
+    pub supplies: Pending<Supply, Owned<SupplyEnv>, SUPPLY_WORDS>,
+    pub redeems: Pending<Redeem, Owned<RedeemEnv>, REDEEM_WORDS>,
 }
 
 pub const VAULT: Vault = Vault::new();
@@ -508,7 +576,7 @@ impl Vault {
         let amount = deposit_request.amount.field().disclose_as::<DepositedAmount>(c);
         VAULT.deposits.request_with(
             c,
-            |c| Contract::from_address(c, deposit_request.erc20_address),
+            |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
             (
                 |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
                 |_c: &mut Circuit3| deposit_request.amount,
@@ -532,7 +600,7 @@ impl Vault {
     #[circuit]
     pub fn claim(
         c: &mut Circuit3,
-        ticket: Succeeded<Erc20TransferAsDeposit>,
+        ticket: Succeeded<Deposit>,
         mint_nonce: CoinNonce<Private>,
         recipient: Maybe<
             Either<
@@ -552,7 +620,7 @@ impl Vault {
     )> {
         let one = c.constant(1u64);
         assert_initialized(c);
-        // `complete` asserts `Erc20TransferAsDeposit::succeeded` — `is_true`
+        // `complete` asserts `erc20::Transfer::succeeded` — `is_true`
         // on the attested flag — so the MPC's attested `false` cannot reach
         // the mint below, and nothing in this body has to remember to look.
         let outcome = VAULT.deposits.complete(c, ticket);
@@ -629,7 +697,7 @@ impl Vault {
 
         VAULT.withdrawals.request_with(
             c,
-            |c| Contract::from_address(c, erc20),
+            |c| Contract::<Erc20>::from_address(c, erc20),
             (
                 |_c: &mut Circuit3| withdraw_request.dest_evm_address,
                 |_c: &mut Circuit3| withdraw_request.amount,
@@ -668,7 +736,7 @@ impl Vault {
     #[circuit]
     pub fn complete_withdraw(
         c: &mut Circuit3,
-        ticket: Succeeded<Erc20TransferAsWithdrawal>,
+        ticket: Succeeded<Withdrawal>,
     ) -> Discloses<Settled> {
         assert_initialized(c);
         VAULT.withdrawals.complete(c, ticket);
@@ -685,7 +753,7 @@ impl Vault {
     #[circuit]
     pub fn refund_withdrawal(
         c: &mut Circuit3,
-        ticket: Failed<Erc20TransferAsWithdrawal>,
+        ticket: Failed<Withdrawal>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
         assert_initialized(c);
@@ -745,7 +813,7 @@ impl Vault {
             c,
             |c| {
                 let router = VAULT.uniswap_router.read(c);
-                Contract::from_address(c, router)
+                Contract::<UniswapV3Router>::from_address(c, router)
             },
             (
                 |_c: &mut Circuit3| Bytes::from_field_unchecked(token_in.field().private()),
@@ -794,7 +862,7 @@ impl Vault {
     #[circuit]
     pub fn complete_swap(
         c: &mut Circuit3,
-        ticket: Succeeded<ExactOutputSingle>,
+        ticket: Succeeded<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SwapRecipient, SwapMintNonce, AttestedAmountIn)> {
         assert_initialized(c);
@@ -836,13 +904,13 @@ impl Vault {
 
     /// `refundSwap(ticket, mintNonce)`: the swap DID NOT SUCCEED — for this
     /// call that is the MPC's failure kind alone, because
-    /// `ExactOutputSingle::succeeded` is `always` (the attested `amountIn` IS
+    /// `uniswap_v3::ExactOutputSingle::succeeded` is `always` (the `amountIn` IS
     /// the outcome; there is no failure flag to read). Re-mint the
     /// surrendered amountInMaximum of tokenIn to the swapper.
     #[circuit]
     pub fn refund_swap(
         c: &mut Circuit3,
-        ticket: Failed<ExactOutputSingle>,
+        ticket: Failed<Swap>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
         assert_initialized(c);
@@ -879,7 +947,7 @@ impl Vault {
         let erc20 = erc20_address.disclose_as::<ApprovedErc20>(c);
         VAULT.approvals.request_with(
             c,
-            |c| Contract::from_address(c, erc20),
+            |c| Contract::<Erc20>::from_address(c, erc20),
             (
                 |c: &mut Circuit3| cell_address(c, &VAULT.uniswap_router),
                 |c: &mut Circuit3| unlimited_allowance_word(c),
@@ -906,8 +974,11 @@ impl Vault {
         VAULT.approvals.request_with(
             c,
             |c| {
+                // THE CALLEE IS THE UNDERLYING ERC-20, and the stata
+                // token is the SPENDER argument: this approval lets the
+                // wrapper pull the underlying during a supply.
                 let underlying = VAULT.stata_underlying.read(c);
-                Contract::from_address(c, underlying)
+                Contract::<Erc20>::from_address(c, underlying)
             },
             (
                 |c: &mut Circuit3| cell_address(c, &VAULT.stata_token),
@@ -958,7 +1029,7 @@ impl Vault {
             c,
             |c| {
                 let stata = VAULT.stata_token.read(c);
-                Contract::from_address(c, stata)
+                Contract::<Erc4626>::from_address(c, stata)
             },
             (
                 |_c: &mut Circuit3| amount,
@@ -988,7 +1059,7 @@ impl Vault {
     #[circuit]
     pub fn complete_supply(
         c: &mut Circuit3,
-        ticket: Succeeded<Erc4626Deposit>,
+        ticket: Succeeded<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, SupplyRecipient, SupplyMintNonce, AttestedShares)> {
         assert_initialized(c);
@@ -1015,7 +1086,7 @@ impl Vault {
     #[circuit]
     pub fn refund_supply(
         c: &mut Circuit3,
-        ticket: Failed<Erc4626Deposit>,
+        ticket: Failed<Supply>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
         assert_initialized(c);
@@ -1070,7 +1141,7 @@ impl Vault {
         let vault_evm: Cell<Option<Bytes<20, Private>>> = Cell::new(None);
         VAULT.redeems.request_with(
             c,
-            |_c| Contract::from_address(_c, stata_token),
+            |_c| Contract::<Erc4626>::from_address(_c, stata_token),
             (
                 |_c: &mut Circuit3| shares,
                 |c: &mut Circuit3| {
@@ -1110,7 +1181,7 @@ impl Vault {
     #[circuit]
     pub fn complete_redeem(
         c: &mut Circuit3,
-        ticket: Succeeded<Erc4626Redeem>,
+        ticket: Succeeded<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RedeemRecipient, RedeemMintNonce, AttestedAssets)> {
         assert_initialized(c);
@@ -1137,7 +1208,7 @@ impl Vault {
     #[circuit]
     pub fn refund_redeem(
         c: &mut Circuit3,
-        ticket: Failed<Erc4626Redeem>,
+        ticket: Failed<Redeem>,
         mint_nonce: CoinNonce<Private>,
     ) -> Discloses<(Settled, RefundRecipient, RefundMintNonce)> {
         assert_initialized(c);
