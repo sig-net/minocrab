@@ -628,6 +628,210 @@ rung D's two negative controls).
    imports them. Rung B added a THIRD kind of caller (a payable one) and
    the envelope's home is still not decided.
 
+* 6. As built — rung C (2026-09-06)
+ERC-4626 in full, =SwapRouter02='s =exactInputSingle=, Aave v3's =Pool=,
+and ERC-721's three static calls. Eight interfaces ship now. ZERO
+MOVEMENT: the 214-circuit dump is byte-identical, =diff -rq= EMPTY, NO
+FILE ADDED to the dump — the new contract is test-only, as rung B's was.
+Every selector below was verified twice: computed by =EvmCall::selector()=
+from our signature string, and against =alloy='s own =sol!= =SELECTOR=.
+THE ORACLE AGREED WITH THE BRIEF ON ALL THIRTEEN; nothing had to be
+corrected.
+
+** Every call this rung added
+| call | signature | selector | words | return | succeeded |
+|------+-----------+----------+-------+--------+-----------|
+| =erc4626::Mint= | =mint(uint256,address)= | =94bf804d= | 2 | =U64= | =always= |
+| =erc4626::Withdraw= | =withdraw(uint256,address,address)= | =b460af94= | 3 | =U64= | =always= |
+| =uniswap_v3::ExactInputSingle= | =exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))= | =04e45aaf= | 7 | =U64= | =always= |
+| =aave_v3::Supply= | =supply(address,uint256,address,uint16)= | =617ba037= | 4 | =Unit= | =always= |
+| =aave_v3::Withdraw= | =withdraw(address,uint256,address)= | =69328dec= | 3 | =U64= | =always= |
+| =aave_v3::Borrow= | =borrow(address,uint256,uint256,uint16,address)= | =a415bcad= | 5 | =Unit= | =always= |
+| =aave_v3::Repay= | =repay(address,uint256,uint256,address)= | =573ade81= | 4 | =U64= | =always= |
+| =erc721::TransferFrom= | =transferFrom(address,address,uint256)= | =23b872dd= | 3 | =Unit= | =always= |
+| =erc721::Approve= | =approve(address,uint256)= | =095ea7b3= | 2 | =Unit= | =always= |
+| =erc721::SetApprovalForAll= | =setApprovalForAll(address,bool)= | =a22cb465= | 2 | =Unit= | =always= |
+Interfaces: =Erc4626: Extends<Erc20>= (unchanged from rung A);
+=UniswapV3Router=, =AaveV3Pool= and =Erc721= each extend nothing and are
+extended by nothing.
+Gas, following rung B's alias rule so there is no second magic number:
+=aave_v3::CALL_GAS = erc4626::CALL_GAS= (500,000 — a lending supply and an
+ERC-4626 deposit are the same work, and the vault's =LENDING_GAS= already
+names that number for a stata token that wraps exactly this pool);
+=erc721::CALL_GAS = erc20::CALL_GAS= (100,000 — an NFT transfer writes an
+owner, clears an approval and emits).
+
+** THE SwapRouter02 DECISION, said out loud
+=UniswapV3Router= IS =SwapRouter02=, and the module doc now says so in the
+first line rather than leaving it implicit in rung A's "Uniswap V3's
+=SwapRouter=". There are two deployed generations and they are NOT
+interchangeable:
+| generation | =exactInputSingle= | =exactOutputSingle= | struct |
+|------------+--------------------+---------------------+--------|
+| original =SwapRouter= | =414bf389= | =db3e2198= | EIGHT fields, with =deadline= |
+| =SwapRouter02= (ours) | =04e45aaf= | =5023b4df= | SEVEN fields, no =deadline= |
+The shipped =ExactOutputSingle= was already =5023b4df= (the vault's
+deployed calldata), so the input side had to match it. =414bf389= is the
+selector most Uniswap documentation on the internet shows, which is why
+this is a live hazard rather than a contrived one — and NO TYPE CATCHES
+IT, because both routers are addresses claiming =UniswapV3Router=. What
+catches it is =evm_alloy_oracle::the_router_shape_is_the_one_we_declare=,
+extended this rung to pin both directions of both generations, plus a
+=assert_ne!= that the two directions are different functions despite
+identical argument types.
+
+** =U16=, the tenth leaf
+=uint16= / =uint16=, =Uint<16, V>=, =numeric_word= — the same shape as
+=U8= and =U24=, differing only in the range the Rust type claims and in
+the SPELLING, which is the whole point: =supply(address,uint256,address,
+uint16)= and =supply(address,uint256,address,uint256)= are different
+functions. Its consumer is Aave's =referralCode=, which every integrator
+passes zero for and which is still a word on the wire. =SampleLeaf for
+U16= in the oracle samples 0, 1, =u16::MAX= and the whole range.
+
+** Deviations from §2 / §3, and why
+1. §3's C pointer says "=borrow= / =repay= carry =interestRateMode:
+   uint256=" and they do — but it is a =U128= on our side, not a =U64=.
+   Both spell =uint256= so the selector is identical; =U128= is the width
+   every other amount-shaped argument in the library has, and the value is
+   1 or 2 (and stable-rate borrowing has been disabled market-wide since
+   2023, so it is 2). Recorded because a reader may expect the narrow type
+   the two values would fit: Aave declares it =uint256= and narrowing OUR
+   spelling would move the selector.
+2. =erc721='s =tokenId= IS A =U256=, NOT A =U128=. An NFT id is not an
+   amount: ENS names are ids derived by hashing and plenty of collections
+   mint from a hash or a packed struct, so the honest width is the full
+   256 bits — which on our side means an ALREADY-ENCODED word (=B32=), the
+   same treatment =erc20::Approve='s unlimited allowance gets. The cost is
+   that a caller builds a =B32= rather than passing a =Uint=; the benefit
+   is that a full-width id is expressible at all. Both spell =uint256=, so
+   =erc721::TransferFrom= and =erc20::TransferFrom= still hash to the same
+   four bytes — which is the point of the next item.
+3. §2.4's module table lists =erc4626::{Deposit, Mint, Withdraw, Redeem}=
+   and that is exactly what landed; the doc now presents them as TWO PAIRS
+   (the fixed side is the first argument, the floating side is the
+   =uint256= return) because that is the only thing a reader needs to
+   choose between =deposit= and =mint=.
+4. =erc4626.rs='s module doc CARRIED RUNG A's MIS-READING. It still said
+   the inheritance was "load-bearing" for the vault's =approveStata=,
+   which §4 adjustment 4 corrected in the notes but not in the code. Fixed
+   in passing: it now points at =Weth= as the first shipped consumer.
+   Docs only, no ZKIR movement.
+5. THE ORACLE HAD A DANGLING INTRA-DOC LINK. Rung B's =sol_usdt= doc says
+   "see [[usdt_selectors_are_the_erc20_ones]]" and that test was never
+   written (rustdoc does not lint test targets, so nothing caught it). It
+   is written now, and its ERC-721 counterpart beside it — both assert our
+   selectors AND alloy's two independent declarations agree.
+
+** The ERC-721 gate, and what rustc actually says
+The shared selectors are the reason =Erc721= is a marker of its own. The
+compile_fail pair is in =evm::erc721='s module docs, with a positive twin
+(one block, two slots, each filed against its own callee) that COMPILES
+AND RUNS as a doctest:
+| direction | rustc says |
+|-----------+------------|
+| =erc20::TransferFrom= on a =Contract<Erc721>= | =error[E0277]: the trait bound `Erc721: Extends<Erc20>` is not satisfied= |
+| =erc721::TransferFrom= on a =Contract<Erc20>= | =error[E0277]: the trait bound `Erc20: Extends<Erc721>` is not satisfied= |
+Both are MISSING TRAIT IMPLS — the top rung of the hard rule's ladder.
+The hazards they stop are the two halves of evm-calls.org §3.1: declaring
+an NFT transfer as the ERC-20 one asks the MPC to decode a =bool= out of
+empty return data (terminal extraction failure → the FAILURE kind → a
+refund for a transfer that MOVED THE TOKEN), and declaring an ERC-20
+transfer as the NFT one throws the flag away (a token that returned
+=false= completes as a success).
+
+** =tests/evm_defi_calls.rs= — the working contract
+Four slots on four different callee markers in ONE block, each settled by
+both tickets: =Kinded<erc4626::Mint, 1>= (2 words, owner-gated refund),
+=Kinded<uniswap_v3::ExactInputSingle, 2>= (7 words — the WIDEST record the
+library files, and the =WORDS= inline-const assert has to agree with
+=AbiTuple::WORDS= for it), =Kinded<aave_v3::Supply, 3>= (4 words, the
+first =U16= any slot puts on the wire, as a circuit ARGUMENT rather than a
+constant) and =Kinded<erc721::SetApprovalForAll, 4>= (2 words, the only
+shipped call passing a =bool= as an argument). Two return shapes settle
+side by side: a narrowed =uint256= for the mint and the swap, =()= for the
+supply and the approval.
+TEST-ONLY, for rung B's reason (§5): a =src/= contract joins
+=tests/support::circuits()= and would add rows to =row_snapshot= and
+=interface_snapshot=, which this rung must not regenerate. The dump is
+still 214 files.
+Two argument structs (=SwapRequest=, =SupplyRequest=, both
+=#[derive(CircuitArg)]=) because a swap and a supply have more arguments
+than a circuit signature wants to carry — the shape =erc20_vault='s own
+=SwapRequest= already uses.
+
+** Gate results
+- ZERO MOVEMENT: =MINOCRAB_ZKIR_DUMP= on the untouched HEAD (417320e) and
+  after the rung: 214 files each, =diff -rq= EMPTY (exit 0, no output).
+  NO FILE WAS ADDED and none modified.
+- =cargo test --workspace --no-fail-fast= — 116 result lines, 1130 passed,
+  0 failed, 40 ignored (115 / 1090 / 0 / 40 at rung B).
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7 as
+  the untouched tree (=events_borsh=, =hashing=, =nested=, =signet=,
+  =signet_contract=, =xcall= ×2); ZERO from =evm.rs=, =evm/*= or
+  =evm_flow.rs=. (Two "redundant explicit link target" warnings from
+  =erc721.rs='s table were introduced and removed before the commit.)
+- =cargo test --release -p minocrab-contracts --test row_snapshot --test
+  interface_snapshot= — 2 passed + 1 ignored in each; NOTHING REGENERATED
+  (=git status= showed neither snapshot file nor =taint_baseline.txt=
+  touched at any point).
+- =circuit_closure=, =taint_lint=, =trust_base= — green.
+  =MINOCRAB_TRUST_BASE=1 … --test trust_base= rewrote nothing: rung C
+  touches neither =minocrab-std= nor =minocrab-macros=, so =TRUST.md= is
+  unchanged and current.
+- =tests/evm_alloy_oracle.rs= 58 passed (36 at rung B) — ten new rows at
+  signature+selector and at words, the =U16= =SampleLeaf=, the router
+  control extended, and the two selector-sharing tests. At
+  =PROPTEST_CASES=5000= under =--release=: 58 passed, 0.83s. NO
+  DISAGREEMENT with alloy on any signature, selector or word.
+- =tests/evm_defi_calls.rs= 15 passed. =tests/evm_abi.rs= 29 and
+  =tests/evm_no_return.rs= 10, both UNCHANGED.
+- Doc tests: the crate's 39 passed + 1 ignored (36 + 1 at rung B) — the
+  three new gates are =erc721='s compile_fail pair and its positive twin.
+- README's cross-chain block re-verified as =treasury.rs= VERBATIM by rung
+  A's procedure (§4): 91 block lines, 87 non-blank, each found in
+  =src/treasury.rs= at or after a moving cursor. =treasury.rs= itself is
+  untouched this rung.
+
+** Open questions for dmd
+1. =erc721::TransferFrom='s =tokenId= as a =U256= (deviation 2) is the one
+   API choice here a reasonable person could take the other way. A
+   =U128= would let a caller pass a =Uint<128>= and cover every sequential
+   collection; it would silently exclude ENS and every hash-derived id.
+   Chosen: correctness over convenience. If dmd would rather have the
+   convenient one, it is a one-line change plus an oracle row edit.
+2. NO =safeTransferFrom=. Both overloads are ERC-721's real transfer path
+   (the three-argument one is static; the four-argument one takes a
+   =bytes data=, which is rung E), and shipping only half of a pair whose
+   whole point is the receiver hook seemed worse than shipping neither.
+   Recorded so rung E knows it inherits the decision.
+3. AAVE'S =supplyWithPermit= IS NOT HERE and would be the natural friend
+   of rung B's ERC-2612 =Permit= — supply and approve in one transaction,
+   which is exactly the position an MPC-signed caller is in. Aave declares
+   the signature as a struct =(uint8,bytes32,bytes32)=, so it is a nested
+   tuple like Uniswap's rather than a flat list; static either way. Left
+   out because §2.4's table did not list it, not because it is hard.
+4. FOUR CALLS NOW RETURN =Unit= WHERE A REAL CONFIRMATION EXISTS ON CHAIN.
+   =aave_v3::Supply= and =Borrow= and both =erc721= transfers succeed
+   silently, so a =Succeeded= ticket says only "mined without reverting"
+   — rung B's open question 5 about =UsdtLike=, now with four more
+   consumers. For Aave and ERC-721 the callee genuinely returns nothing
+   (unlike USDT, which is a deviation from its own standard), so the
+   ticket is honest; it is just worth less than a numeric one. Success
+   from the EVENT is still the only fix and still sig-net's side.
+5. Carried, unchanged: the fee-envelope constants' home
+   (=FIXED_PRIORITY_FEE= / =FIXED_MAX_FEE= still in =erc20_vault=) and a
+   =Filing::GAS_LIMIT= override. Rung C added seven more calls taking the
+   library default and none needing an override, so the second is still
+   waiting on a consumer.
+6. THE PARAMETER NAMES ARE STILL UNCHECKED (rung D's own caveat). It bites
+   hardest here: =aave_v3::Borrow= has =referralCode= BETWEEN
+   =interestRateMode= and =onBehalfOf=, which is an order no other call in
+   the library has, and alloy would not notice if our row named them
+   differently — only the TYPES are pinned. The Aave docs are the only
+   authority, and the rows were read against them by hand.
+
 * 7. As built — rung D (2026-09-06)
 THE FIXTURE ORACLE: =crates/minocrab-contracts/tests/evm_alloy_oracle.rs=,
 920 lines, 18 tests. Every call's signature string, four selector bytes and
