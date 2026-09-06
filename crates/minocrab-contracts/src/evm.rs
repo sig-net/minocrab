@@ -184,8 +184,8 @@ use sha3::{Digest as _, Keccak256};
 
 use crate::erc20_vault::{ERC20_CALL_GAS, FIXED_MAX_FEE, FIXED_PRIORITY_FEE, LENDING_GAS, SWAP_GAS};
 use crate::erc20_vault_pending::{
-    RESPONSE_KIND_APPROVE, RESPONSE_KIND_REDEEM, RESPONSE_KIND_SUPPLY, RESPONSE_KIND_SWAP,
-    RESPONSE_KIND_WITHDRAW,
+    RESPONSE_KIND_APPROVE, RESPONSE_KIND_CLAIM, RESPONSE_KIND_REDEEM, RESPONSE_KIND_SUPPLY,
+    RESPONSE_KIND_SWAP, RESPONSE_KIND_WITHDRAW,
 };
 use crate::signet::{reverse_bytes32, EvmCalldata};
 use crate::signet_flow::EvmTx;
@@ -481,6 +481,80 @@ abi_tuple!(6; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5);
 abi_tuple!(7; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6);
 abi_tuple!(8; A => 0, B => 1, C => 2, D => 3, E => 4, F => 5, G => 6, H => 7);
 
+// ---- the arguments, built one at a time ---------------------------------------
+
+/// THE ARGUMENTS OF A CALL, BUILT ONE AT A TIME — a tuple of closures, one
+/// per element of [`EvmCall::Args`], each run immediately before its own word
+/// is encoded.
+///
+/// [`AbiTuple::words`] takes the VALUES, which means every argument exists
+/// before the first encoder runs. That is the right shape for a caller whose
+/// arguments are already in hand, and the wrong one for a caller whose second
+/// argument comes from a ledger read: the read would emit before the first
+/// argument's word instead of between the two, and the deployed lineages'
+/// instruction streams have it between (the vault's `supply` reads
+/// `vaultEvmAddress` after encoding `amount`, and `approveStata` builds its
+/// constant allowance word after encoding the spender). So
+/// [`crate::evm_flow::Pending::request_with`] takes BUILDERS, and the order
+/// they emit in is the order the words come out.
+///
+/// ```
+/// # use minocrab::v3::{Circuit3, FieldT};
+/// # use minocrab::Private;
+/// # use minocrab_contracts::evm::{AbiArgs, Address, U128};
+/// # use minocrab_std::v3::{Bytes, Uint};
+/// let mut c = Circuit3::new();
+/// let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
+/// let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
+/// let words = AbiArgs::<(Address, U128)>::words(
+///     (|_c: &mut Circuit3| to, |_c: &mut Circuit3| amount),
+///     &mut c,
+/// );
+/// assert_eq!(words.len(), 2);
+/// ```
+pub trait AbiArgs<T: AbiTuple> {
+    /// The words, in argument order, each argument built just before it is
+    /// encoded. The length is always `T::WORDS`.
+    fn words(self, c: &mut Circuit3) -> Vec<B32<Private>>;
+}
+
+impl AbiArgs<()> for () {
+    fn words(self, _c: &mut Circuit3) -> Vec<B32<Private>> {
+        Vec::new()
+    }
+}
+
+macro_rules! abi_args {
+    ($($t:ident / $f:ident => $idx:tt),+) => {
+        impl<$($t: AbiType,)+ $($f: FnOnce(&mut Circuit3) -> <$t as AbiType>::Wire<Private>,)+>
+            AbiArgs<($($t,)+)> for ($($f,)+)
+        {
+            fn words(self, c: &mut Circuit3) -> Vec<B32<Private>> {
+                // Build, encode, move on: the emission order a request
+                // circuit's ledger reads interleave with.
+                vec![$({
+                    let w = (self.$idx)(c);
+                    <$t as AbiType>::word(c, &w)
+                }),+]
+            }
+        }
+    };
+}
+
+abi_args!(A / FA => 0);
+abi_args!(A / FA => 0, B / FB => 1);
+abi_args!(A / FA => 0, B / FB => 1, C / FC => 2);
+abi_args!(A / FA => 0, B / FB => 1, C / FC => 2, D / FD => 3);
+abi_args!(A / FA => 0, B / FB => 1, C / FC => 2, D / FD => 3, E / FE => 4);
+abi_args!(A / FA => 0, B / FB => 1, C / FC => 2, D / FD => 3, E / FE => 4, F / FF => 5);
+abi_args!(
+    A / FA => 0, B / FB => 1, C / FC => 2, D / FD => 3, E / FE => 4, F / FF => 5, G / FG => 6
+);
+abi_args!(
+    A / FA => 0, B / FB => 1, C / FC => 2, D / FD => 3, E / FE => 4, F / FF => 5, G / FG => 6,
+    H / FH => 7
+);
+
 // ---- the call ----------------------------------------------------------------
 
 /// A named EVM function call: what it is called, what it takes, what it
@@ -503,6 +577,22 @@ pub trait EvmCall {
     /// The protocol kind byte the response carries — explicit, a wire
     /// commitment, and the one thing the type layer will not guess.
     const KIND: u8;
+
+    /// WHAT THE ATTESTED RETURN VALUE IS CALLED inside the response record,
+    /// if the record names it at all.
+    ///
+    /// `None` (the default) is the ANONYMOUS return a Solidity signature
+    /// actually declares — `transfer(address,uint256) returns (bool)` names
+    /// nothing — and a settle circuit's argument slot is then
+    /// `serializedOutput.output`. `Some("success")` is a record that wraps
+    /// the value in a named field, as the deployed vault's own responses do
+    /// (`{ kind, success }`, `{ kind, amountIn }`, `{ kind, shares }`,
+    /// `{ kind, assets }`), and the slot is `serializedOutput.output.success`.
+    ///
+    /// It is a WIRE fact, not a cosmetic one: the name is part of the
+    /// circuit's argument schema, so a caller built against the deployed
+    /// record keeps working.
+    const RETURN_FIELD: Option<&'static str> = None;
 
     /// The gas LIMIT (not a price; the fee envelope is [`build_tx`]'s).
     const GAS_LIMIT: u64;
@@ -613,6 +703,59 @@ impl EvmCall for Erc20Transfer {
     }
 }
 
+/// `transfer` AS A DEPOSIT — the same Solidity function as
+/// [`Erc20Transfer`], filed under the vault protocol's CLAIM kind and with
+/// its response field named.
+///
+/// THE RUNG-A FINDING, resolved (notes/evm-calls.org §9, §11): a call type
+/// carries exactly one [`EvmCall::KIND`], and the deployed vault files
+/// `transfer(address,uint256)` under two — CLAIM for the depositor's
+/// inbound transfer, WITHDRAW for the vault's outbound one. They are two
+/// OPERATIONS of the protocol that happen to share a Solidity function, and
+/// the kind byte is what says so (§5: "the kind byte … stays explicit, on
+/// purpose"), so they are two types. Everything but the kind and the return
+/// name is [`Erc20Transfer`]'s, spelled again rather than inherited, because
+/// three lines of facts read better than a wrapper.
+pub struct Erc20TransferAsDeposit;
+
+impl EvmCall for Erc20TransferAsDeposit {
+    const NAME: &'static str = "transfer";
+    type Args = (Address, U128);
+    type Return = Bool;
+    type Success = ();
+    const KIND: u8 = RESPONSE_KIND_CLAIM as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
+
+    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+        is_true(*ok)
+    }
+}
+
+/// `transfer` AS A WITHDRAWAL — [`Erc20Transfer`] at the vault protocol's
+/// WITHDRAW kind, with the deployed record's own name for the flag.
+///
+/// The only difference from [`Erc20Transfer`] is [`EvmCall::RETURN_FIELD`]:
+/// the vault's `WithdrawResponse` calls the attested flag `success`, and a
+/// settle circuit's argument slot is named after it. A Solidity `transfer`
+/// return is anonymous, which is why the plain [`Erc20Transfer`] keeps the
+/// `"output"` default.
+pub struct Erc20TransferAsWithdrawal;
+
+impl EvmCall for Erc20TransferAsWithdrawal {
+    const NAME: &'static str = "transfer";
+    type Args = (Address, U128);
+    type Return = Bool;
+    type Success = ();
+    const KIND: u8 = RESPONSE_KIND_WITHDRAW as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("success");
+    const GAS_LIMIT: u64 = ERC20_CALL_GAS;
+
+    fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+        is_true(*ok)
+    }
+}
+
 /// `approve(address,uint256) -> bool` — selector `095ea7b3`.
 ///
 /// The allowance is a [`U256`] (an already-encoded word) because that is
@@ -652,6 +795,7 @@ impl EvmCall for ExactOutputSingle {
     type Return = U64;
     type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_SWAP as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("amountIn");
     const GAS_LIMIT: u64 = SWAP_GAS;
 
     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
@@ -676,6 +820,7 @@ impl EvmCall for Erc4626Deposit {
     type Return = U64;
     type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_SUPPLY as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("shares");
     const GAS_LIMIT: u64 = LENDING_GAS;
 
     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
@@ -696,6 +841,7 @@ impl EvmCall for Erc4626Redeem {
     type Return = U64;
     type Success = Uint<64, Private>;
     const KIND: u8 = RESPONSE_KIND_REDEEM as u8;
+    const RETURN_FIELD: Option<&'static str> = Some("assets");
     const GAS_LIMIT: u64 = LENDING_GAS;
 
     fn succeeded(c: &mut Circuit3, _out: &Uint<64, Private>) -> Check<Private> {
@@ -792,32 +938,225 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
     };
 
     let words = <C::Args as AbiTuple>::words(c, args);
-    let words: [B32<Private>; WORDS] = match words.try_into() {
-        Ok(words) => words,
-        // Unreachable: the const assert above pins WORDS to the tuple's
-        // count, and `AbiTuple::words` yields exactly that many.
-        Err(_) => unreachable!("AbiTuple::words yields <C::Args>::WORDS words"),
+    finish_tx::<C, WORDS>(c, words, Envelope::fixed(), |_| callee, nonce)
+}
+
+/// WHO PAYS, AND HOW THE TRANSACTION'S CONSTANTS ARE SPELLED — everything
+/// about the request that is neither the callee, the arguments nor the nonce.
+///
+/// Two independent answers, in one value because they are the two things a
+/// [`build_tx_with`] caller ever has to say:
+///
+/// - THE FEES ([`Envelope::fixed`] / [`Envelope::caller`]). The fixed
+///   envelope is the contract's own constant one — 1 gwei priority, 30 gwei
+///   cap (`erc20_vault::FIXED_PRIORITY_FEE` / `FIXED_MAX_FEE`) and
+///   [`EvmCall::GAS_LIMIT`]. The caller's envelope is the shape the vault's
+///   `deposit` has: the transaction is paid from the DEPOSITOR's own EVM
+///   account, so the depositor picks all three, and they are circuit
+///   arguments (notes/evm-calls.org §9's second rung-A finding; §7 is the
+///   conversation about giving them an administrator-set home instead).
+/// - THE SPELLING ([`Envelope::literal`]). See that method.
+pub struct Envelope {
+    fees: Fees,
+    tail: Tail,
+}
+
+enum Fees {
+    Fixed,
+    Caller {
+        max_priority_fee_per_gas: Uint<128, Private>,
+        max_fee_per_gas: Uint<128, Private>,
+        gas_limit: Uint<64, Private>,
+    },
+}
+
+enum Tail {
+    Named,
+    Literal {
+        value: Option<Wire3<FieldT, Private>>,
+        calldata_is_some: Wire3<FieldT, Private>,
+    },
+}
+
+impl Envelope {
+    /// The contract's own fee envelope: 1 gwei priority, 30 gwei cap, the
+    /// call's [`EvmCall::GAS_LIMIT`].
+    pub fn fixed() -> Self {
+        Envelope {
+            fees: Fees::Fixed,
+            tail: Tail::Named,
+        }
+    }
+
+    /// THE CALLER'S fee envelope — all three numbers as circuit arguments,
+    /// for a transaction paid from the caller's own EVM account rather than
+    /// the contract's.
+    pub fn caller(
+        max_priority_fee_per_gas: Uint<128, Private>,
+        max_fee_per_gas: Uint<128, Private>,
+        gas_limit: Uint<64, Private>,
+    ) -> Self {
+        Envelope {
+            fees: Fees::Caller {
+                max_priority_fee_per_gas,
+                max_fee_per_gas,
+                gas_limit,
+            },
+            tail: Tail::Named,
+        }
+    }
+
+    /// THE HAND-WRITTEN SPELLING of the transaction's constant fields, for a
+    /// circuit whose artifact must not move.
+    ///
+    /// `value = 0` (a token call carries no ether) and `calldata_is_some = 1`
+    /// (there is always calldata) are constants of every call this API
+    /// builds, and by default [`build_tx_with`] NAMES them, after the fee
+    /// envelope and the callee and before the word count and the selector —
+    /// the order the vault's `erc20_call` helper named them in, and the order
+    /// five of its seven request circuits emit.
+    ///
+    /// The other two — `swap` and `redeem` — spell their `EvmTx` out as a
+    /// struct literal, which named the selector and the word count FIRST and
+    /// took `value` and `calldata_is_some` from a zero and a one the circuit
+    /// already held (for a `sqrtPriceLimitX96` word and a coin burn). This
+    /// selects that spelling: selector, word count, callee, fees, then
+    /// `value` only if it is not supplied.
+    ///
+    /// IT CHANGES NO INSTRUCTION. Every one of these is a `Copy` of an
+    /// immediate, and `minocrab_ir::v3::passes::fold_immediate_copies` folds
+    /// each into its consumers and deletes it inside `Builder3::finish`, so
+    /// the two spellings execute identically and cost identical rows. What
+    /// they do not share is the SEQUENTIAL NAMES the surviving instructions
+    /// get, because the counter runs over every emitted instruction including
+    /// the folded ones. A deployed artifact is compared byte for byte, so a
+    /// lineage that spells its transaction the second way keeps saying so.
+    /// (notes/evm-calls.org §11 — recorded for dmd: the alternative is to
+    /// renumber after folding, which would move every circuit in the tree.)
+    pub fn literal(
+        self,
+        value: Option<Wire3<FieldT, Private>>,
+        calldata_is_some: Wire3<FieldT, Private>,
+    ) -> Self {
+        Envelope {
+            fees: self.fees,
+            tail: Tail::Literal {
+                value,
+                calldata_is_some,
+            },
+        }
+    }
+
+    /// The three fee fields, in wire order.
+    fn fee_wires<C: EvmCall>(fees: Fees, c: &mut Circuit3) -> [Wire3<FieldT, Private>; 3] {
+        match fees {
+            Fees::Fixed => {
+                let priority_fee = c.constant(FIXED_PRIORITY_FEE);
+                let max_fee = c.constant(FIXED_MAX_FEE);
+                let gas_limit = c.constant(C::GAS_LIMIT);
+                [
+                    priority_fee.private(),
+                    max_fee.private(),
+                    gas_limit.private(),
+                ]
+            }
+            Fees::Caller {
+                max_priority_fee_per_gas,
+                max_fee_per_gas,
+                gas_limit,
+            } => [
+                max_priority_fee_per_gas.field(),
+                max_fee_per_gas.field(),
+                gas_limit.field(),
+            ],
+        }
+    }
+}
+
+/// [`build_tx`] for a caller who has to control WHEN each piece emits: the
+/// arguments as builders ([`AbiArgs`]), the fee envelope, and the callee as a
+/// builder too.
+///
+/// The emission order is the deployed vault's, and that is the whole point of
+/// the shape: each argument is built and encoded before the next is built,
+/// then the envelope, then the callee, then the transaction's own four
+/// constants. A request circuit that reads `vaultEvmAddress` between its two
+/// words, or its callee cell after the gas constants, keeps its stream.
+pub fn build_tx_with<C: EvmCall, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
+    args: impl AbiArgs<C::Args>,
+    envelope: Envelope,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS> {
+    const {
+        assert!(
+            WORDS == <C::Args as AbiTuple>::WORDS,
+            "`build_tx_with::<C, WORDS>` needs WORDS == <C::Args as AbiTuple>::WORDS — \
+             the record's calldata capacity IS the argument list's word count. \
+             Stable Rust cannot infer it (generic_const_exprs), so name the \
+             number the tuple actually encodes to."
+        )
     };
 
-    let priority_fee = c.constant(FIXED_PRIORITY_FEE);
-    let max_fee = c.constant(FIXED_MAX_FEE);
-    let gas_limit = c.constant(C::GAS_LIMIT);
+    let words = args.words(c);
+    finish_tx::<C, WORDS>(c, words, envelope, callee, nonce)
+}
 
-    let zero = c.constant(0u64).private();
-    let one = c.constant(1u64).private();
-    let no_words = c.constant(WORDS as u64).private();
-    let selector = c
-        .constant(Fr::from_le_bytes(&C::selector()).expect("four bytes fit a field element"))
-        .private();
+/// The shared tail of [`build_tx`] and [`build_tx_with`]: envelope, callee,
+/// then `value = 0`, `calldata_is_some = 1`, the word count and the selector.
+fn finish_tx<C: EvmCall, const WORDS: usize>(
+    c: &mut Circuit3,
+    words: Vec<B32<Private>>,
+    envelope: Envelope,
+    callee: impl FnOnce(&mut Circuit3) -> Bytes<20, Private>,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS> {
+    let words: [B32<Private>; WORDS] = match words.try_into() {
+        Ok(words) => words,
+        // Unreachable: the const asserts above pin WORDS to the tuple's
+        // count, and both word builders yield exactly that many.
+        Err(_) => unreachable!("the argument list yields <C::Args>::WORDS words"),
+    };
+
+    let selector_imm =
+        || Fr::from_le_bytes(&C::selector()).expect("four bytes fit a field element");
+    let Envelope { fees, tail } = envelope;
+
+    // The two spellings differ only in the ORDER these immediates are named
+    // and in which of them the caller already holds — see `Envelope::literal`.
+    let ([priority_fee, max_fee, gas_limit], to, value, calldata_is_some, no_words, selector) =
+        match tail {
+            Tail::Named => {
+                let fees = Envelope::fee_wires::<C>(fees, c);
+                let to = callee(c).field();
+                let value = c.constant(0u64).private();
+                let calldata_is_some = c.constant(1u64).private();
+                let no_words = c.constant(WORDS as u64).private();
+                let selector = c.constant(selector_imm()).private();
+                (fees, to, value, calldata_is_some, no_words, selector)
+            }
+            Tail::Literal {
+                value,
+                calldata_is_some,
+            } => {
+                let selector = c.constant(selector_imm()).private();
+                let no_words = c.constant(WORDS as u64).private();
+                let to = callee(c).field();
+                let fees = Envelope::fee_wires::<C>(fees, c);
+                let value = value.unwrap_or_else(|| c.constant(0u64).private());
+                (fees, to, value, calldata_is_some, no_words, selector)
+            }
+        };
 
     EvmTx {
         nonce,
-        max_priority_fee_per_gas: priority_fee.private(),
-        max_fee_per_gas: max_fee.private(),
-        gas_limit: gas_limit.private(),
-        to: callee.field(),
-        value: zero,
-        calldata_is_some: one,
+        max_priority_fee_per_gas: priority_fee,
+        max_fee_per_gas: max_fee,
+        gas_limit,
+        to,
+        value,
+        calldata_is_some,
         calldata: EvmCalldata {
             selector,
             no_words,

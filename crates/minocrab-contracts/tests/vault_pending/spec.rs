@@ -56,6 +56,13 @@ pub enum GuardId {
     NotTheSupplier,
     RedeemNotFound,
     NotTheRedeemer,
+    // M37 rung D: the Succeeded / Failed split
+    /// `complete` was handed an attestation the call's `succeeded`
+    /// predicate says is not a success.
+    TheAttestedCallDidNotSucceed,
+    /// `refund` was handed neither the MPC's failure kind nor an
+    /// executed-but-unsuccessful attestation.
+    NotARefundableOutcome,
 }
 
 /// One declared state change or ledger claim.
@@ -316,6 +323,9 @@ pub fn spec_start_withdraw(s: &StartWithdrawScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
+/// M37 rung D: ANYONE'S, and successes only. The executed-`false` branch
+/// that used to live here — with its hoisted secret witness — is
+/// `refund_withdrawal`'s now.
 pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     if s.w.env.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
@@ -323,20 +333,21 @@ pub fn spec_complete_withdraw(s: &CompleteWithdrawScenario) -> Outcome {
     if !s.settle.pending {
         return Outcome::Reject(GuardId::WithdrawalNotFound);
     }
+    if !s.success {
+        return Outcome::Reject(GuardId::TheAttestedCallDidNotSucceed);
+    }
     let rid = s.w.request_id();
-    if s.refunding() && refund_commit_of(&s.settle.sk(&s.w.sk), &rid) != s.w.refund_commitment() {
-        return Outcome::Reject(GuardId::NotTheWithdrawer);
-    }
-    let mut effects = consume_effects(WITHDRAWALS_RECORDS, WITHDRAWALS_ENVS, rid);
-    if s.refunding() {
-        effects.extend(mint_effects(&s.w.erc20, s.w.amount_u64(), &s.settle.mint_nonce, &s.settle.own_pk, &s.w.env.self_addr));
-    }
-    Outcome::Accept(effects)
+    Outcome::Accept(consume_effects(WITHDRAWALS_RECORDS, WITHDRAWALS_ENVS, rid))
 }
 
+/// M37 rung D: BOTH non-successes — the MPC's failure kind and a mined
+/// `transfer` that returned `false`.
 pub fn spec_refund_withdrawal(s: &RefundWithdrawalScenario) -> Outcome {
     if s.w.env.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
+    }
+    if !s.refundable() {
+        return Outcome::Reject(GuardId::NotARefundableOutcome);
     }
     if !s.settle.pending {
         return Outcome::Reject(GuardId::WithdrawalNotFound);
@@ -414,9 +425,14 @@ pub fn spec_complete_swap(s: &CompleteSwapScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
+/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_swap(s: &RefundSwapScenario) -> Outcome {
     if s.s.env.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
+    }
+    if !s.refundable() {
+        return Outcome::Reject(GuardId::NotARefundableOutcome);
     }
     if !s.settle.pending {
         return Outcome::Reject(GuardId::SwapNotFound);
@@ -478,9 +494,14 @@ pub fn spec_complete_supply(s: &CompleteSupplyScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
+/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_supply(s: &RefundSupplyScenario) -> Outcome {
     if s.s.env.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
+    }
+    if !s.refundable() {
+        return Outcome::Reject(GuardId::NotARefundableOutcome);
     }
     if !s.settle.pending {
         return Outcome::Reject(GuardId::SupplyNotFound);
@@ -542,9 +563,14 @@ pub fn spec_complete_redeem(s: &CompleteRedeemScenario) -> Outcome {
     Outcome::Accept(effects)
 }
 
+/// M37 rung D: the ticket is `Failed`, but this call's `succeeded` is
+/// `always`, so only the MPC's failure kind is refundable.
 pub fn spec_refund_redeem(s: &RefundRedeemScenario) -> Outcome {
     if s.s.env.initialized < 1 {
         return Outcome::Reject(GuardId::NotInitialized);
+    }
+    if !s.refundable() {
+        return Outcome::Reject(GuardId::NotARefundableOutcome);
     }
     if !s.settle.pending {
         return Outcome::Reject(GuardId::RedeemNotFound);

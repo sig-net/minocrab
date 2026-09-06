@@ -88,7 +88,7 @@ pub fn deposit(
 ```
 
 - The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
-- The direct port of the same contract is PI-equal to compactc's own artifact on every circuit — same typed schema, same PI vector on a shared preimage ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)) — and is what the property harness and the adversarial sweeps run ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)); the `Pending` lineage above is gated on its block layout, its cost against the port, and the round trip through the MPC's own reader ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs), [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs)). See [Cross-chain calls](#cross-chain-calls) for the round trip.
+- The direct port of the same contract is PI-equal to compactc's own artifact on every circuit — same typed schema, same PI vector on a shared preimage ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)) — and is what the property harness and the adversarial sweeps run ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)); the `Pending` lineage above is gated on its block layout, its cost against the port, an eighteen-property spec harness, and the round trip through the MPC's own reader ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs), [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs)). See [Cross-chain calls](#cross-chain-calls) for the round trip.
 
 ## Feature by feature
 
@@ -310,73 +310,103 @@ Limit: the circuit binds neither the entry point nor the argument types unless i
 
 ## Cross-chain calls
 
-A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **settle** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the MPC attests that the transaction never executed. `Pending<Env, Resp>` ([signet_flow.rs](crates/minocrab-contracts/src/signet_flow.rs)) makes the two halves one typed value.
+A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **complete** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)), so the selector, the ABI words, the word count, the response type, the gas envelope, the signing path and the notification path are all derived from the one thing the author writes down.
 
-A minimal, illustrative shape — a treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account. Anyone may complete the request once the MPC has attested the result (there is nothing to protect: the attestation is the MPC's signature); only the original sender may take the refund when the MPC attests that the transfer never ran, because the refund is theirs:
+Here is a whole treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account — [treasury.rs](crates/minocrab-contracts/src/treasury.rs), compiled and tested, not a sketch:
 
 ```rust
-/// What the MPC attests back: the ERC-20 call's `bool` return. The kind
-/// byte is the type's: a slot of `Pending<_, TransferReceipt>` settles
-/// under it and nothing else.
-#[derive(CircuitBorsh)]
-pub struct TransferReceipt { pub ok: Bool }
-impl Response for TransferReceipt { const KIND: u8 = 7; }
-
-/// What crosses the suspension: a commitment to the sender's key bound to
-/// this request, and the amount to give back if the transfer never ran.
-/// Only `Public` fields and `Commit<_>` unify here.
-#[derive(LedgerRepr)]
-pub struct TransferEnv { pub sender: Commit<SecretKey<Private>>, pub amount: Uint<64, Public> }
-
+/// Seven ledger fields from two declarations: the Signet configuration
+/// (signer, MPC key, request nonce, caip2 id, chain id) and the transfer
+/// slot's record and environment maps.
 #[derive(Ledger)]
 pub struct Treasury {
-    pub signet: Signet,                                      // signer, MPC key, nonce, chain ids
-    pub transfers: Pending<TransferEnv, TransferReceipt, 2>, // 2 ABI words: to, amount
+    /// The block's one Sig Network configuration. `#[derive(Ledger)]` finds
+    /// it by name and threads its offset into `transfers`.
+    pub signet: Signet,
+    /// Every `transfer` this treasury has in flight, with the caller
+    /// committed into each environment.
+    pub transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
 }
 
-/// Transaction 1: file `token.transfer(to, amount)` and notify the singleton.
-#[circuit]
-pub fn send(c: &mut Circuit3, evm_nonce: Uint<64>, token: EvmAddress, to: EvmAddress, amount: Uint<64>)
-    -> Discloses<(SentAmount, Requested)>
-{
-    let words = [signet::evm_address_abi_word(c, to), signet::numeric_abi_word(c, amount.field())];
-    let tx = erc20_call(c, &TRANSFER_SELECTOR, token, words, evm_nonce, FixedGas::<100_000>::wires(c));
-    let sk = witness_sk(c);
-    let amount = amount.disclose_as::<SentAmount>(c);
-    TREASURY.transfers.request(c, &TREASURY.signet, SignRequest { key_version, path: treasury_path, tx },
-        |c, id| TransferEnv { sender: Commit::to::<SenderCommitment>(c, PAD, &sk, id), amount });
-    Discloses::of(())
-}
+#[contract]
+impl Treasury {
+    /// `send(evmNonce, keyVersion, token, to, amount)` — file
+    /// `token.transfer(to, amount)`, remembering the amount and the caller.
+    #[circuit]
+    pub fn send(
+        c: &mut Circuit3,
+        evm_nonce: Uint<64>,
+        key_version: Uint<8>,
+        token: Contract<Erc20Transfer>,
+        to: Bytes<20>,
+        amount: Uint<64>,
+    ) -> Discloses<(SentAmount, OwnerCommitment, Requested)> {
+        let sent = amount.field().disclose_as::<SentAmount>(c);
+        // `Uint<64> -> Uint<128>` is free: the ABI word is 32 bytes either
+        // way and the Rust type states the range the contract accepts.
+        TREASURY.transfers.request_owned::<OwnerCommitment>(
+            c,
+            token,
+            (to, amount.widen::<128>()),
+            key_version,
+            evm_nonce,
+            |_, _| Amount {
+                amount: Uint::from_field_unchecked(sent),
+            },
+        );
+        Discloses::of(())
+    }
 
-/// Transaction 2: the MPC attested the return value. Anyone may complete —
-/// the ticket carries the MPC's signature, and that is the whole gate.
-#[circuit]
-pub fn complete(c: &mut Circuit3, ticket: Settle<TransferEnv, TransferReceipt>) -> Discloses<(Settled, Transferred)> {
-    let outcome = TREASURY.transfers.settle(c, &TREASURY.signet, ticket); // kind, signature, record + env, removal
-    let _ok = outcome.output.ok.disclose_as::<Transferred>(c);
-    Discloses::of(())
-}
+    /// `complete(ticket)` — the transfer executed AND returned `true`.
+    ///
+    /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
+    /// witness in the circuit at all. And the attested `false` case cannot
+    /// reach here: `Erc20Transfer`'s return is `Bool`, and its
+    /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
+    /// nothing in this body has to remember to look.
+    #[circuit]
+    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<Settled> {
+        let outcome = TREASURY.transfers.complete(c, ticket);
+        let _amount = outcome.env.inner.amount;
+        Discloses::of(())
+    }
 
-/// Transaction 2': the MPC attested "never executed". Only the original
-/// sender may refund: a fresh witness must open the commitment stored on request.
-#[circuit]
-pub fn refund(c: &mut Circuit3, ticket: Settle<TransferEnv, Failure>) -> Discloses<(Settled, RefundRecipient)> {
-    let outcome = TREASURY.transfers.settle_failed(c, &TREASURY.signet, ticket);
-    let sk = witness_sk(c);
-    outcome.env.sender.open(c, PAD, &sk, outcome.request_id, "not the sender");
-    let me = own_public_key(c).disclose_as::<RefundRecipient>(c);
-    // ... re-mint outcome.env.amount to `me`
-    Discloses::of(())
+    /// `refund(ticket)` — the transfer did not succeed, either way it can
+    /// fail: the MPC's failure kind, or a mined call that returned `false`.
+    ///
+    /// ONLY THE ORIGINAL CALLER: `refund_to_owner` witnesses a fresh secret
+    /// and opens the environment's commitment against it. A real treasury
+    /// re-mints `amount` to `owner` here; this example stops at naming them,
+    /// so the circuit is the API and nothing else.
+    #[circuit]
+    pub fn refund(
+        c: &mut Circuit3,
+        ticket: Failed<Erc20Transfer>,
+    ) -> Discloses<(Settled, RefundRecipient)> {
+        // The attested flag comes back too — `false` for a mined call that
+        // moved nothing, and prover-chosen padding when the MPC attested
+        // its failure kind. A treasury has no use for it; naming it `_`
+        // says so where dropping it silently would not.
+        let (_owner, Amount { amount: _amount }, _flag) = TREASURY
+            .transfers
+            .refund_to_owner::<RefundRecipient>(c, ticket);
+        Discloses::of(())
+    }
 }
 ```
 
-What the type does for the author:
+`Erc20Transfer` is the call, and it is where the wire facts live — `transfer`, `(address, uint256)`, a `bool` return, the protocol kind byte, a gas limit, and the rule by which the return says it worked (for an ERC-20 `transfer`, the returned flag itself). The vault's SEVENTEEN circuits are on the same API: `deposit`, `claim`, `withdraw`, `swap`, `supply`, `redeem`, the two approvals and their eight settles are `Pending<Call, Env, WORDS>` slots over `Erc20TransferAsDeposit`, `Erc20TransferAsWithdrawal`, `Erc20Approve`, `ExactOutputSingle`, `Erc4626Deposit` and `Erc4626Redeem` ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
 
-- **Mis-pairing does not compile.** A `Settle<TransferEnv, TransferReceipt>` ticket settles `transfers` and no other slot; `Settle<TransferEnv, Failure>` is the only thing `settle_failed` accepts. The kind check, the version check, the signature check and the removal are inside `settle`, so none can be forgotten.
-- **The secret never crosses in the clear.** `Commit::to` stores a Poseidon commitment bound to the request id; `open` on the refund side takes a fresh witness. Completion needs no secret, so it asks for none — a circuit that consumed a witness it never checked would be the deployed vault's Gap 2 ([notes/zkir-semantics.org §7.1](notes/zkir-semantics.org)).
-- **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte is the response type's; the record format version is the API's.
+What the types do for the author:
 
-The full flows — burning a shielded coin on request, minting the attested amount on settle, refunding on failure — are the vault's supply, redeem, swap, deposit and withdraw circuits in [erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs); [signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, the settles at k16 within 70 rows of the port ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
+- **Mis-pairing does not compile.** A `Succeeded<Erc20Transfer>` settles the `transfers` slot and no other; a `Failed` cannot be handed to `complete` at all; the argument tuple in the wrong order is a type error rather than a transaction that sends tokens to an address made out of an amount; a `WORDS` that is not the argument list's word count is `error[E0080]` with a prescriptive message. The kind check, the version check, the signature check and the removal are inside `complete` and `refund`, so none can be forgotten.
+- **The outcome picks the circuit.** `complete` asserts the call's own success rule, so an ERC-20 `transfer` that MINED AND RETURNED `false` cannot complete, whoever presents it; `refund` takes both non-successes — the MPC's failure kind and the executed-`false`. Putting the second case in a branch inside the completion is the deployed vault's Gap 2, and there is no method on this API that writes it.
+- **The secret never crosses in the clear, and a completion never touches one.** `Owned` stores a Poseidon commitment to the caller's key bound to the request id; `refund_to_owner` opens it with a fresh witness. `complete_withdraw`'s private transcript is empty and its interface has no witness row — a stranger's proof is the same proof.
+- **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte and the response field name are the call type's; the record format version is the API's; the `&SELF.signet` argument is the derive's.
+
+One hazard the types cannot see, carried in the module docs: the MPC resolves a request as FAILED when the return data does not decode, so a non-conforming ERC-20 that returns nothing (USDT and friends) produces an attested failure for a transfer that moved the tokens. Until the callee's return shape is declared per token, a contract on this API needs a callee allow-list — which the vault has in effect through its configured ERC-20 addresses.
+
+The full flows — burning a shielded coin on request, minting the attested amount on completion, refunding on failure — are the vault's circuits; [signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, and `complete_withdraw` at k15 / 25,655 where the deployed shape (which carried a refund branch it might not take) needed k16 / 35,553 ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
 
 ## Porting kit
 
