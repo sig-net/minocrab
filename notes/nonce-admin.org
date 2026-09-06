@@ -97,6 +97,12 @@ rows. The administrator: the deployer key the vault already gates
 (=Commit<AdminKey, AdminTag>= opened with a fresh witness, the same
 construction as =Owned=) is the better one, because deployer keys are
 cold. DECISION FOR DMD; the note recommends the rotatable commitment.
+DECIDED (dmd, 2026-09-06, decisions.org A3): WAIT — the constants stay
+in =erc20_vault= until this cell exists, and then the fee material moves
+into a generic EVM TRANSACTION layer: ERC-20 token > EVM transaction >
+sig transaction, with clean boundaries. The admin choice (deployer key
+vs rotatable commitment) is still open; batching (§4) is built first,
+with the request counter kept for now.
 
 * 4. BATCH: write-only insert, one flush
 The shape dmd described: a request circuit does not choose a nonce; it

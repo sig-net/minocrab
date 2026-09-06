@@ -692,6 +692,7 @@ ships with (Cargo.toml's comment on the =midnight-zkir-v3= entry), and
 =zkir-v3= has no release tag to move to. dmd's call; recorded here rather
 than taken unilaterally, and =notes/zkir.org='s pin table is left
 untouched until it is made.
+DECIDED (dmd, 2026-09-06, decisions.org A1): keep the single rev.
 
 ** Files
 

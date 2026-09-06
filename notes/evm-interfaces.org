@@ -8,6 +8,19 @@ Built on M37's =AbiType= / =EvmCall= / =Pending<Call, Env, WORDS>= layer
 (notes/evm-calls.org §1–§3, as built §9–§11). This note is the design
 of record for M38; the as-built sections follow per rung.
 
+* 0.1 Decisions of record (dmd, 2026-09-06, notes/decisions.org)
+B1 the three completions keep their owner gate (evm-calls.org §11):
+ACCEPTED. B2 =Envelope::literal= stays until another deliberate
+tree-wide movement: ACCEPTED. B3 =Filing::GAS_LIMIT= override: BUILD
+(§10). B4 Increase/DecreaseAllowance stay. B5 =tokenId= stays =U256=.
+B6 Aave =supplyWithPermit=: BUILD (§10). B7 payable =request_with=:
+wait for a consumer. B8 =Unit=-return tickets: a terse, verified
+write-up of the cases where "mined without reverting" is not enough
+goes to the MPC team (notes/event-attestation-cases.org). B9 WORDS
+inference: no. A3 the fee envelope: wait, then a generic EVM
+transaction layer (notes/nonce-admin.org §3). A4 dynamic ABI types
+(rung E): wait for a consumer. D3 parameter names unchecked: no action.
+
 * 1. What M37 D left on the call type that is NOT a fact about the call
 After rung D (evm-calls.org §11) =EvmCall= carries eight things. Six are
 facts about the Solidity function and belong to a LIBRARY call type:

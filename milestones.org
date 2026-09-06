@@ -1107,11 +1107,13 @@ note in a drawer:
       6,611-line private support), a from-scratch template/tutorial, and
       the keygen/deploy binding. Explicitly deferred by dmd (2026-08-28):
       not before the super review. NOTE 2026-09-04: M23's closing line
-      records that the super review is now run by an external party;
-      whether that satisfies the hold is dmd's call — an agent can
-      build this item once it is lifted (best-effort shape: distil the
-      vault's =tests/support= into a typed harness first, the tutorial
-      second, the deploy binding after M29 D/E exist).
+      records that the super review is now run by an external party.
+      HOLD LIFTED (dmd, 2026-09-06, decisions.org A2: "Remove the super
+      review"). IN FLIGHT 2026-09-06: the v3 transcript executor first
+      (notes/signet-async.org §9's BLOCKED paragraph — the one piece
+      behind M35 D/E and this item), then the typed harness distilled
+      from the vault's =tests/support=; the tutorial and the deploy
+      binding (after M29 D/E) follow.
 - [X] (2026-09-05, 7dc65fd: six files — impact / ops / reads / kernel /
       calls / tests — lib.rs = crate doc + re-exports (103 lines); dump
       byte-identical on 209 circuits, re-run on main at merge;
@@ -1121,7 +1123,7 @@ note in a drawer:
       construction (the dump gate).
 Exit criteria: =when_private= lands with its gates or is refused in writing
 with a measured reason; the authoring-path items are scheduled into their
-own milestone after the super review.
+own milestone (the hold lifted 2026-09-06; see the item above).
 
 * M28 — The sig-net protocol refresh: Poseidon hashing, the renamed 17-circuit vault, and the lending flows (dmd, 2026-08-30; rewritten 2026-09-05)
 WHAT UPSTREAM SHIPPED (corpus refreshed on branch =sig-refresh=, 2026-09-05:
@@ -1386,6 +1388,10 @@ them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
       (=Intent::sign=) and =seal=. Pure over (contract state, ledger
       parameters, funding keys, dust state); no node I/O, so every step
       is unit-testable on the M29 D fixtures.
+- [X] F' (2026-09-06, decisions.org A1): THE PIN — keep this repo's
+      single midnight rev (04c9c5d); do not adopt mpc's per-crate release
+      tags (=zkir-v3= has no tag; the official compact flake pins the same
+      rev). notes/mpc-publisher.org §9 "The decision this leaves" closed.
 - [ ] C. DUST wallet: =DustLocalState= replayed from ledger =Event=s,
       persisted and REBUILDABLE from genesis (untrusted source, §5);
       =Transaction::balance= → dust spend → =DustActions=;
@@ -1668,7 +1674,7 @@ Decisions of record (dmd, 2026-09-05):
       the stataUSDC wrapper): seventeen circuits on a twenty-two-field
       block, each new circuit costed against =erc20_vault='s (compat
       port) twin rather than modern, which never had them.
-- [-] D. (2026-09-05: the responder half DONE as =crates/signet-sim=; the state-driving half BLOCKED on the v3 transcript executor dmd holds in M26 — §9) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
+- [-] D. (2026-09-05: the responder half DONE as =crates/signet-sim=; the state-driving half was BLOCKED on the v3 transcript executor — UNBLOCKED 2026-09-06 by decisions.org A2, executor + this half IN FLIGHT — §9) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
       (singleton event, caller ledger state, =EvmOutcome=) →
       attestation; ONE root key with the real =derive_epsilon_midnight=
       so =initialize='s response key is derived, not arbitrary; the
@@ -1683,7 +1689,7 @@ Decisions of record (dmd, 2026-09-05):
       post → respond → settle under plain =cargo test=; real proofs +
       =LedgerState= + =Transaction::apply= (the cross-contract call and
       the singleton's event for real) under =--release=, on M29 D/E.
-- [ ] E. (BLOCKED 2026-09-05 on the same executor as D; the drift gate and the adversarial refusals exist at the attestation level) Tests that come with the type: for every =Pending= slot in a
+- [ ] E. (was BLOCKED 2026-09-05 on the same executor as D — UNBLOCKED 2026-09-06, IN FLIGHT behind D; the drift gate and the adversarial refusals exist at the attestation level) Tests that come with the type: for every =Pending= slot in a
       contract, a GENERATED round trip (request → sim → settle accepts)
       plus the adversarial suite (each responder → the expected guard)
       plus an unread-field sweep over the ticket (every field read by
@@ -1746,6 +1752,17 @@ nothing here changes an artifact.
       point a human reads first, ≤ one screen, pointing at the three
       files that matter; =cargo doc --no-deps= warning-free; M33's
       inventory updated to the trimmed tree.
+- [ ] D. (dmd, 2026-09-06, decisions.org D4: "let's trim so ideally
+      there's generally only one 'correct' way to do something"; IN
+      FLIGHT) The one-spelling-per-idea audit M36 B left: every public
+      operation spellable more than one way (=Wire3= / =Operand= / =impl
+      Into= forms, free-function vs method twins, composition helpers,
+      duplicate re-export paths) tabled in notes/edsl-trim.org §D with
+      call-site counts and ONE recommended spelling; the others removed
+      and every call site migrated; two forms that differ in disclosure
+      semantics are two ideas and stay. Zero movement (dump gate),
+      workspace green, docs warning-free; the "kept, for dmd" list is
+      what dmd reviews.
 Exit criteria: v2 gone or explicitly load-bearing per the table; all
 gates green and byte-identical; semver-checks clean on the stable
 tier; the READMEs and M33 inventory reflect the trimmed tree.
@@ -2276,6 +2293,16 @@ calls them, and by what the fixed-width ABI layer can express.
       =Contract<UniswapV3Router>= — no contract-local call types remain;
       README's cross-chain section and the side-by-side show the library
       spelling; zero movement on the vault's request circuits.
+- [ ] H. (dmd, 2026-09-06, decisions.org B3 "Do it" / B6 "Yes"; IN
+      FLIGHT) =Filing::GAS_LIMIT= — a defaulted override on the slot's
+      filing (default = the call's), read by the request path; and Aave
+      v3 =supplyWithPermit= (signature verified against Aave's source,
+      alloy oracle row, filed once through =Pending=). Zero movement.
+      DECIDED WITH THEM: B1 the three completions keep their owner gate;
+      B2 =Envelope::literal= stays until another tree-wide movement; B4
+      Increase/DecreaseAllowance stay (pre-OZ-v5 tokens); B5 =tokenId=
+      stays =U256=; B7 no payable =request_with= until a consumer; B9 no
+      WORDS inference. E: WAIT for a consumer (A4).
 Exit criteria: A–D and G green, zero movement on shipped circuits, every
 selector alloy-pinned; E and F as far as a consumer needs.
 
@@ -2332,7 +2359,23 @@ something the requester owns.
       / setFeePolicy), the reference model and spec harness extended,
       the leakage inventory re-frozen (a flush publishes N records at
       once — its inventory line is new).
-- [ ] C. THE TYPED EXPRESSION: =Queued<Call, Env, WORDS>= beside
+DECIDED (dmd, 2026-09-06, decisions.org A3): the fee envelope WAITS —
+=FIXED_PRIORITY_FEE= / =FIXED_MAX_FEE= stay where they are until this
+milestone homes them, and then they move into a GENERIC EVM TRANSACTION
+layer, not into the library's ERC-20 default: the hierarchy is ERC-20
+token > EVM transaction > sig transaction, with clean boundaries between
+the three (the token layer knows calldata and gas limit; the EVM
+transaction layer knows nonce, fees and value; the sig layer knows the
+record, the notification and the key). Also (2026-09-06): the BATCH half
+of C is built NOW with the Signet request counter KEPT ("even though it's
+a contention source" — dmd designs its replacement later); the Admin
+block, unstick and the =FeePolicy= cell stay parked with B and D.
+- [-] C. (2026-09-06: the =Queued= batch half IN FLIGHT — counter kept,
+      queue keyed by the counter value (FIFO), refund commitment bound
+      to the HANDLE =H(sk, handle)= at insert and carried into the
+      record's env at flush, exactly-N flush, settle = Pending's settle
+      unchanged, fees from the constants; the Admin half parked.)
+      THE TYPED EXPRESSION: =Queued<Call, Env, WORDS>= beside
       =Pending= (=insert= write-only, =flush(N)= reads the nonce once and
       files N records, settle as =Pending=), an =Admin= block (=FeePolicy=
       cell, the administrator gate) with =set_fee_policy= and =unstick=
