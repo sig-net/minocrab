@@ -102,10 +102,11 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     // every other field's is. Threading it is what lets `request` /
     // `complete` / `refund` take no `&SELF.signet` argument.
     let signets: Vec<usize> = (0..fields.len()).filter(|i| named_as(types[*i], "Signet")).collect();
-    // `Pending` and `Fired` alike: both are `evm_flow` slots that read the
-    // block's Signet configuration, and neither takes a `&SELF.signet`.
+    // `Pending`, `Fired` and `Queued` alike: all three are `evm_flow` slots
+    // that read the block's Signet configuration, and none takes a
+    // `&SELF.signet`.
     let pendings: Vec<usize> = (0..fields.len())
-        .filter(|i| named_as(types[*i], "Pending") || named_as(types[*i], "Fired"))
+        .filter(|i| is_signet_slot(types[*i]))
         .collect();
     if signets.len() > 1 {
         let second = fields.iter().nth(signets[1]).expect("index from this list");
@@ -140,10 +141,7 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
         let ty = &field.ty;
         let before = &types[..i];
         let start = quote!(0usize #( + <#before as #width>::WIDTH )*);
-        match (
-            &signet_start,
-            named_as(ty, "Pending") || named_as(ty, "Fired"),
-        ) {
+        match (&signet_start, is_signet_slot(ty)) {
             (Some(signet_start), true) => {
                 quote!(#ident: <#ty>::at_block_with_signet(__TOTAL, #start, #signet_start))
             }
@@ -178,6 +176,14 @@ pub fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
             #( <#types as #width>::KINDS ),*
         ]);
     })
+}
+
+/// Is this field one of the `evm_flow` slots built against the block's
+/// `Signet` — `Pending`, `Fired` or `Queued`?
+///
+/// Spelling, like [`named_as`]: the derive sees tokens, not resolutions.
+fn is_signet_slot(ty: &syn::Type) -> bool {
+    named_as(ty, "Pending") || named_as(ty, "Fired") || named_as(ty, "Queued")
 }
 
 /// Is this type SPELLED `name` — is the last segment of its path that

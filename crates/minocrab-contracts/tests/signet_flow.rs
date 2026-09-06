@@ -171,7 +171,7 @@ fn withdraw(
         },
         |c, id, sk| WithdrawEnv {
             amount: Uint::from_field_unchecked(amount_pub),
-            withdrawer: Commit::to::<WithdrawerCommitment>(c, sk, id),
+            withdrawer: Commit::to::<WithdrawerCommitment, _>(c, sk, id),
         },
     );
     Discloses::of(())

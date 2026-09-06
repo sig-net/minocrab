@@ -2404,18 +2404,43 @@ record, the notification and the key). Also (2026-09-06): the BATCH half
 of C is built NOW with the Signet request counter KEPT ("even though it's
 a contention source" — dmd designs its replacement later); the Admin
 block, unstick and the =FeePolicy= cell stay parked with B and D.
-- [-] C. (2026-09-06: the =Queued= batch half IN FLIGHT — counter kept,
-      queue keyed by the counter value (FIFO), refund commitment bound
-      to the HANDLE =H(sk, handle)= at insert and carried into the
-      record's env at flush, exactly-N flush, settle = Pending's settle
-      unchanged, fees from the constants; the Admin half parked.)
+- [-] C. THE BATCH HALF BUILT (2026-09-06, 71bdce8..ddf95b8 merged —
+      notes/nonce-admin.org §8, tests/evm_batch.rs): =Queued<F, Env,
+      WORDS, N>= beside =Pending= — a whole =Pending= plus queue, insert
+      counter, =last_nonce=, =flushed_upto=; =insert= takes NO nonce and
+      NO fee (§1.1) and reads ONE shared counter — the slot's OWN insert
+      counter, not the Signet request counter, because =flush= files
+      through =file_request= which reads and increments the Signet
+      counter per record, so Signet-counter handles are not contiguous
+      across a flush (the one default that changed; dmd's kept counter
+      is read exactly where Pending reads it); =flush= takes no
+      arguments, reads =last_nonce= ONCE, files N records and notifies
+      the singleton N times from one circuit (nothing blocks N calls —
+      calls.rs's =callTwice=; measured N = 1, 2, 4: flush ops 12 + 55N);
+      the refund commitment binds to the HANDLE; the settle side IS
+      Pending's — the ZKIR strings are equal by test; two compile_fail
+      gates (another Filing's ticket; N = 0 is E0080); 214-circuit dump
+      EMPTY. Insert k10/813 rows at every N; flush k10/987, k11/1914,
+      k12/3766 at N = 1, 2, 4. UNGATED: "ids equal what Pending would
+      mint" is by construction (same =file_request=), no test files one
+      call both ways — needs the executor; adversarial properties are
+      gated on the emitted stream, not driven. STILL OPEN: the =Admin=
+      block (=FeePolicy= cell, =set_fee_policy=, =unstick=), the partial
+      flush, and retiring the vault's prover-chosen =evm_nonce= onto
+      =Queued= once sig-net's shape lands.)
       THE TYPED EXPRESSION: =Queued<Call, Env, WORDS>= beside
       =Pending= (=insert= write-only, =flush(N)= reads the nonce once and
       files N records, settle as =Pending=), an =Admin= block (=FeePolicy=
       cell, the administrator gate) with =set_fee_policy= and =unstick=
       circuits, both OPTIONAL — a contract without the block compiles to
       the M37 shape unchanged (zero movement on the treasury and vault).
-- [ ] D. The MPC side's reading: signet-sim's responder handles a batch
+- [-] D. (2026-09-06, f27afb5 merged: signet-sim's responder answers a
+      BATCH — N sign events from one Midnight transaction over one caller
+      state, N distinct ids, every attestation under the derived response
+      key, nonces consecutive in filing order. The replacement at an
+      already-issued nonce waits for =unstick=; no Lean run records exist
+      on the sim side to feed; the state-driving half stays on the
+      executor.) The MPC side's reading: signet-sim's responder handles a batch
       (N sign events in one transaction, consecutive nonces) and a
       replacement at an already-issued nonce; the run records for the
       Lean gate include a flush.

@@ -505,17 +505,17 @@ use minocrab::{Private, Public};
 use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
-    eq, is_true, not, own_public_key, repr_limbs, ArgPath, Bytes, CircuitAbi, CircuitArg, Disclose,
-    DisclosureLabel, FieldPath, LedgerMap, LedgerRepr, LedgerWidth, Prim, Uint, Vis3,
-    ZswapCoinPublicKey, B32,
+    eq, is_true, label, not, own_public_key, repr_limbs, ArgPath, Bytes, CircuitAbi, CircuitArg,
+    Disclose, DisclosureLabel, FieldPath, LedgerCounter, LedgerMap, LedgerRepr, LedgerWidth, Prim,
+    Uint, Vis3, ZswapCoinPublicKey, B32,
 };
 use signet_signer_interface::{RequestId, Signature};
 
 use crate::common::{self, SecretKey, SigningPath};
 use crate::erc20_vault::REFUND_PAD;
 use crate::evm::{
-    build_tx_filed, build_tx_payable_filed, build_tx_with, AbiArgs, AbiTuple, AbiType, Envelope,
-    EvmCall, Extends, Filing, Interface, Payable,
+    build_tx_filed, build_tx_from_words, build_tx_payable_filed, build_tx_with, AbiArgs, AbiTuple,
+    AbiType, Envelope, EvmCall, Extends, Filing, Interface, Payable,
 };
 use crate::signet::{self, EventRecordV2, Secp256k1SigLimbs, RECORD_FORMAT_VERSION};
 use crate::signet_flow::{
@@ -785,7 +785,7 @@ impl CommitTag for OwnerTag {
 ///
 /// fn f(c: &mut Circuit3, id: signet_signer_interface::RequestId<minocrab::Public>) {
 ///     let sk = witness_sk(c);
-///     let made: Commit<SecretKey<Private>, Owner> = Commit::to::<Digest>(c, &sk, id);
+///     let made: Commit<SecretKey<Private>, Owner> = Commit::to::<Digest, _>(c, &sk, id);
 ///     // ERROR: expected `Commit<_, Beneficiary>`, found `Commit<_, Owner>`
 ///     let opened: Commit<SecretKey<Private>, Beneficiary> = made;
 ///     opened.open(c, &sk, id, "nope");
@@ -803,15 +803,46 @@ impl<T, Tag> Clone for Commit<T, Tag> {
 }
 impl<T, Tag> Copy for Commit<T, Tag> {}
 
+/// WHAT A COMMITMENT IS BOUND TO — the value hashed in after the pad and the
+/// committed value, so that one owner's two commitments differ.
+///
+/// [`RequestId`] is the binding a [`Pending`] request has, and the only one
+/// there was until the batch: the id exists at filing time, so the
+/// commitment can name it. A [`Queued`] request has no id when it is made
+/// (the record, hence the id, is created at FLUSH — notes/nonce-admin.org
+/// §4(ii)), so it binds to its [`Handle`] instead: the queue key the
+/// requester keeps, fresh per request because the handle counter only ever
+/// goes up.
+///
+/// The trait exists so that neither binding can be spelled where the other
+/// belongs and still hash the same: each pushes its OWN limbs, and the two
+/// are different types.
+pub trait CommitBinding {
+    /// The limbs this binding contributes to the commitment's preimage.
+    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>);
+}
+
+impl CommitBinding for RequestId<Public> {
+    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>) {
+        let id = self.bytes();
+        inputs.push(id.hi.private());
+        inputs.push(id.lo.private());
+    }
+}
+
+impl CommitBinding for Handle {
+    fn push_binding(&self, inputs: &mut Vec<Wire3<FieldT, Private>>) {
+        inputs.push(self.value().field().private());
+    }
+}
+
 impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
-    fn digest_of(c: &mut Circuit3, value: &T, request_id: RequestId<Public>) -> B32<Private> {
+    fn digest_of<B: CommitBinding>(c: &mut Circuit3, value: &T, bind: B) -> B32<Private> {
         c.region("signet flow: commitment", |c| {
             let pad = B32::pad(c, Tag::PAD);
             let mut inputs = vec![pad.hi.private(), pad.lo.private()];
             value.push_slots(&mut inputs);
-            let id = request_id.bytes();
-            inputs.push(id.hi.private());
-            inputs.push(id.lo.private());
+            bind.push_binding(&mut inputs);
             let f = c.transient_hash(&inputs);
             let (hi, lo) = c.div_mod_power_of_two(f, 248);
             B32 { hi, lo }
@@ -821,12 +852,12 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
     /// Commit to `value` for this request, disclosing the digest under `L`
     /// (it is stored, so it is public — the label names it in the disclosure
     /// inventory).
-    pub fn to<L: DisclosureLabel>(
+    pub fn to<L: DisclosureLabel, B: CommitBinding>(
         c: &mut Circuit3,
         value: &T,
-        request_id: RequestId<Public>,
+        bind: B,
     ) -> Self {
-        let digest = Self::digest_of(c, value, request_id).disclose_as::<L>(c);
+        let digest = Self::digest_of(c, value, bind).disclose_as::<L>(c);
         Commit {
             digest,
             _t: PhantomData,
@@ -835,14 +866,14 @@ impl<T: CircuitArg, Tag: CommitTag> Commit<T, Tag> {
 
     /// Assert that `value` (a FRESH witness on the settle side) is what this
     /// commitment was made to, for this request.
-    pub fn open(
+    pub fn open<B: CommitBinding>(
         &self,
         c: &mut Circuit3,
         value: &T,
-        request_id: RequestId<Public>,
+        bind: B,
         message: &'static str,
     ) {
-        let recomputed = Self::digest_of(c, value, request_id);
+        let recomputed = Self::digest_of(c, value, bind);
         let stored = self.digest.private();
         c.assert(
             eq(recomputed.hi, stored.hi)
@@ -1390,7 +1421,7 @@ where
     ) -> RequestId<Public> {
         let sk = common::witness_sk(c);
         self.request(c, callee, args, key_version, nonce, |c, request_id| Owned {
-            owner: Commit::to::<L>(c, &sk, request_id),
+            owner: Commit::to::<L, _>(c, &sk, request_id),
             inner: inner(c, request_id),
         })
     }
@@ -1415,5 +1446,591 @@ where
             .open(c, &sk, outcome.request_id, "Not the owner");
         let owner = own_public_key(c).disclose_as::<L>(c);
         (owner, outcome.env.inner, outcome.output)
+    }
+}
+
+// ---- the batch: a request that does not choose its nonce ------------------------
+
+label! {
+    /// The pre-record an insert files: the callee, the key version and the
+    /// calldata words the flush will build a transaction from. Stored, so
+    /// public — and no more public than a `Pending` request's calldata,
+    /// which is disclosed into the record in the same way, one transaction
+    /// later.
+    pub QueuedRecordFiled = "queued pre-record";
+}
+
+/// Everything [`Queued::insert`] discloses, as one type — the label set an
+/// insert circuit declares, [`crate::signet_flow::Requested`]'s twin for the
+/// write-side half of a batched request. There is no notification and no
+/// request id yet, so the record and the two cross-call labels are not in it.
+pub type Inserted = (QueuedRecordFiled,);
+
+/// THE QUEUE KEY, and what the requester keeps: the value of the slot's
+/// insert counter when their request went in.
+///
+/// FIFO for free (the counter only goes up, and a flush takes the lowest N
+/// still unflushed), and unique for the queue's lifetime, which is what lets
+/// a refund commitment bind to it ([`CommitBinding`]) before any request id
+/// exists.
+///
+/// It is NOT a request id and does not unify with one: an attestation
+/// settles a `RequestId`, and the requester learns theirs by reading the
+/// nonce off the flushed record (notes/nonce-admin.org §4).
+#[derive(Clone, Copy)]
+pub struct Handle(Uint<64, Public>);
+
+impl Handle {
+    /// The counter value this handle is.
+    pub fn value(self) -> Uint<64, Public> {
+        self.0
+    }
+}
+
+impl LedgerRepr for Handle {
+    fn atoms() -> Vec<minocrab::AlignmentAtom> {
+        <Uint<64, Public> as LedgerRepr>::atoms()
+    }
+
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        LedgerRepr::push_limbs(&self.0, c, limbs)
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        Handle(<Uint<64, Public> as LedgerRepr>::from_limbs(limbs))
+    }
+}
+
+/// THE TRANSACTION MINUS ITS NONCE — what an insert files and a flush turns
+/// into a record.
+///
+/// Three fields, and they are exactly the three a flush cannot derive from
+/// the call type: the callee, the key version, and the encoded ABI words.
+/// Everything else in the transaction is the CONTRACT'S — the selector, the
+/// word count and the gas limit from [`EvmCall`], the fee envelope from the
+/// contract (notes/nonce-admin.org §1.1: a requester picks neither a nonce
+/// nor a fee, because an unminable transaction is a denial of service on
+/// every later nonce of the path), the chain ids from the [`Signet`] block,
+/// and the nonce from the flush.
+pub struct PreRecord<const WORDS: usize>(Vec<Wire3<FieldT, Public>>);
+
+impl<const WORDS: usize> PreRecord<WORDS> {
+    /// One limb for the callee, one for the key version, two per word.
+    pub const LIMBS: usize = 2 + 2 * WORDS;
+
+    /// Assemble and DISCLOSE the pre-record: it is about to be stored, so
+    /// every limb is public, and the label names them in the inventory.
+    fn file(
+        c: &mut Circuit3,
+        callee: Bytes<20, Private>,
+        key_version: Uint<8>,
+        words: &[B32<Private>],
+    ) -> Self {
+        let mut limbs = vec![callee.field(), key_version.field()];
+        for word in words {
+            limbs.push(word.hi);
+            limbs.push(word.lo);
+        }
+        PreRecord(limbs.disclose_as::<QueuedRecordFiled>(c))
+    }
+
+    fn callee(&self) -> Bytes<20, Private> {
+        Bytes::from_field_unchecked(self.0[0].private())
+    }
+
+    fn key_version(&self) -> Uint<8> {
+        Uint::from_field_unchecked(self.0[1].private())
+    }
+
+    fn words(&self) -> [B32<Private>; WORDS] {
+        core::array::from_fn(|i| B32 {
+            hi: self.0[2 + 2 * i].private(),
+            lo: self.0[3 + 2 * i].private(),
+        })
+    }
+}
+
+impl<const WORDS: usize> LedgerRepr for PreRecord<WORDS> {
+    fn atoms() -> Vec<minocrab::AlignmentAtom> {
+        let mut atoms = <Bytes<20, Public> as LedgerRepr>::atoms();
+        atoms.extend(<Uint<8, Public> as LedgerRepr>::atoms());
+        for _ in 0..WORDS {
+            atoms.extend(<B32<Public> as LedgerRepr>::atoms());
+        }
+        atoms
+    }
+
+    fn push_limbs(&self, _c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        limbs.extend_from_slice(&self.0);
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        assert_eq!(
+            limbs.len(),
+            Self::LIMBS,
+            "a {WORDS}-word pre-record takes {} limbs",
+            Self::LIMBS
+        );
+        PreRecord(limbs)
+    }
+}
+
+/// ONE QUEUE ENTRY: the pre-record and the environment, in one map value.
+///
+/// They are stored together because they are inserted together, flushed
+/// together and removed together — one `insert`, one `lookup`, one `remove`
+/// rather than three of each, and no state in which a pre-record has lost
+/// its environment.
+pub struct QueueEntry<Env, const WORDS: usize> {
+    /// The transaction minus its nonce.
+    pub pre: PreRecord<WORDS>,
+    /// What the settle side will need, moved verbatim into the `Pending`
+    /// environment map under the request id at flush.
+    pub env: Env,
+}
+
+impl<Env: LedgerRepr, const WORDS: usize> LedgerRepr for QueueEntry<Env, WORDS> {
+    fn atoms() -> Vec<minocrab::AlignmentAtom> {
+        let mut atoms = <PreRecord<WORDS> as LedgerRepr>::atoms();
+        atoms.extend(Env::atoms());
+        atoms
+    }
+
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        LedgerRepr::push_limbs(&self.pre, c, limbs);
+        LedgerRepr::push_limbs(&self.env, c, limbs);
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        let mut limbs = limbs.into_iter();
+        let pre = <PreRecord<WORDS> as LedgerRepr>::from_limbs(
+            limbs.by_ref().take(PreRecord::<WORDS>::LIMBS).collect(),
+        );
+        QueueEntry {
+            pre,
+            env: Env::from_limbs(limbs.collect()),
+        }
+    }
+}
+
+/// [`Owned`] FOR A QUEUED REQUEST: the commitment binds to the HANDLE,
+/// because there is no request id when the request is made.
+///
+/// The handle is stored beside the commitment for one reason: the settle
+/// side has only the request id, and the commitment does not open under it.
+/// Carrying the handle in the environment is what lets a refund happen with
+/// the requester never present at the flush (notes/nonce-admin.org §4(ii)).
+pub struct HandleOwned<E> {
+    /// The queue key this request was filed under.
+    pub handle: Handle,
+    /// The requester, as a commitment bound to that handle.
+    pub owner: Commit<SecretKey<Private>, OwnerTag>,
+    /// Whatever else the settle side needs.
+    pub inner: E,
+}
+
+impl<E: LedgerRepr> LedgerRepr for HandleOwned<E> {
+    fn atoms() -> Vec<minocrab::AlignmentAtom> {
+        let mut atoms = <Handle as LedgerRepr>::atoms();
+        atoms.extend(<Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::atoms());
+        atoms.extend(E::atoms());
+        atoms
+    }
+
+    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        LedgerRepr::push_limbs(&self.handle, c, limbs);
+        LedgerRepr::push_limbs(&self.owner, c, limbs);
+        LedgerRepr::push_limbs(&self.inner, c, limbs);
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, Public>>) -> Self {
+        let mut limbs = limbs.into_iter();
+        let handle =
+            <Handle as LedgerRepr>::from_limbs(limbs.by_ref().take(repr_limbs::<Handle>()).collect());
+        let owner = <Commit<SecretKey<Private>, OwnerTag> as LedgerRepr>::from_limbs(
+            limbs
+                .by_ref()
+                .take(repr_limbs::<Commit<SecretKey<Private>, OwnerTag>>())
+                .collect(),
+        );
+        HandleOwned {
+            handle,
+            owner,
+            inner: E::from_limbs(limbs.collect()),
+        }
+    }
+}
+
+/// A BATCHED EVM CALL: [`Pending`] plus a queue, so that no requester ever
+/// picks a nonce.
+///
+/// Six ledger fields — a `Pending`'s two, then the queue, the insert
+/// counter, the last nonce assigned and the last handle flushed — and two
+/// operations in place of `Pending::request`:
+///
+/// - [`Queued::insert`] files the transaction MINUS its nonce under a
+///   [`Handle`] and stores the environment with it. It takes no nonce and no
+///   fee: a requester who could choose either could file a transaction that
+///   never mines, which blocks every later nonce on the contract's signing
+///   path (notes/nonce-admin.org §1.1). It reads one shared cell, the insert
+///   counter, which is the one contention point this cut keeps.
+/// - [`Queued::flush`] takes exactly `N` entries — `flushed_upto + 1 ..=
+///   flushed_upto + N`, and the circuit REQUIRES they are all there — reads
+///   the last nonce ONCE, numbers them `last + 1 … last + N`, and files `N`
+///   records exactly as `Pending::request` files one: same record, same id,
+///   same notification, `N` times in one transaction. Anyone may prove it;
+///   a flush whose state moved under it simply fails and is re-proven
+///   (notes/nonce-admin.org §4(iii)).
+///
+/// The settle side IS `Pending`'s — [`Queued::complete`] and
+/// [`Queued::refund`] are the same circuit bodies over the same two maps,
+/// because a record made at flush is a `Pending` record. The one difference
+/// is the owner gate: [`Queued::refund_to_owner`] opens a commitment bound
+/// to the HANDLE, not to the request id, since the id did not exist when the
+/// requester made it.
+///
+/// `N` is a const parameter because the flush's cost grows with it: `N`
+/// record hashes and `N` notifications in one circuit. A contract that wants
+/// smaller batches declares a second slot with a smaller `N`; a partial
+/// flush is deliberately not in this cut.
+///
+/// WHAT IS NOT HERE, and is named so that its absence is a decision rather
+/// than an oversight: the administrator's fee-policy cell (the envelope is
+/// the contract's fixed one — [`Self::envelope`] is the seam), the
+/// administrator's `unstick`, and any way to clear the queue.
+///
+/// # What does not compile
+///
+/// A TICKET FOR ANOTHER FILING. `Queued`'s settle side is `Pending`'s, so
+/// it inherits the property: the same Solidity call filed under another kind
+/// is another type, and its ticket does not unify.
+///
+/// ```compile_fail
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_contracts::evm::{erc20, Kinded};
+/// use minocrab_contracts::evm_flow::{Queued, Succeeded};
+/// use minocrab_contracts::signet_flow::Signet;
+/// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+///
+/// #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+///
+/// #[derive(Ledger)]
+/// struct Block {
+///     signet: Signet,
+///     transfers: Queued<Kinded<erc20::Transfer, 1>, Amount, 2, 2>,
+///     approvals: Queued<Kinded<erc20::Approve, 2>, Amount, 2, 2>,
+/// }
+/// const BLOCK: Block = Block::new();
+///
+/// fn settle(c: &mut Circuit3, ticket: Succeeded<Kinded<erc20::Approve, 2>>) {
+///     // ERROR: expected `Succeeded<Kinded<Transfer, 1>>`,
+///     //        found `Succeeded<Kinded<Approve, 2>>`
+///     BLOCK.transfers.complete(c, ticket);
+/// }
+/// ```
+///
+/// THE SAME CODE WITH THE TICKET MATCHED TO ITS SLOT compiles:
+///
+/// ```
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_contracts::evm::{erc20, Kinded};
+/// use minocrab_contracts::evm_flow::{Queued, Succeeded};
+/// use minocrab_contracts::signet_flow::Signet;
+/// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+///
+/// #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+///
+/// #[derive(Ledger)]
+/// struct Block {
+///     signet: Signet,
+///     transfers: Queued<Kinded<erc20::Transfer, 1>, Amount, 2, 2>,
+///     approvals: Queued<Kinded<erc20::Approve, 2>, Amount, 2, 2>,
+/// }
+/// const BLOCK: Block = Block::new();
+///
+/// fn settle(c: &mut Circuit3, ticket: Succeeded<Kinded<erc20::Approve, 2>>) {
+///     BLOCK.approvals.complete(c, ticket);
+/// }
+/// ```
+///
+/// A BATCH OF NOTHING — `N = 0` is an `error[E0080]` from the constructor's
+/// inline `const`, not a contract that deploys and flushes nothing:
+///
+/// ```compile_fail
+/// use minocrab::Public;
+/// use minocrab_contracts::evm::{erc20, Kinded};
+/// use minocrab_contracts::evm_flow::Queued;
+/// use minocrab_contracts::signet_flow::Signet;
+/// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+///
+/// #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+///
+/// #[derive(Ledger)]
+/// struct Block {
+///     signet: Signet,
+///     // ERROR: evaluation panicked: `Queued<F, Env, WORDS, N>` needs N >= 1
+///     transfers: Queued<Kinded<erc20::Transfer, 1>, Amount, 2, 0>,
+/// }
+/// const BLOCK: Block = Block::new();
+/// ```
+///
+/// and the same declaration at `N = 1` compiles:
+///
+/// ```
+/// use minocrab::Public;
+/// use minocrab_contracts::evm::{erc20, Kinded};
+/// use minocrab_contracts::evm_flow::Queued;
+/// use minocrab_contracts::signet_flow::Signet;
+/// use minocrab_std::v3::{Ledger, LedgerRepr, Uint};
+///
+/// #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }
+///
+/// #[derive(Ledger)]
+/// struct Block {
+///     signet: Signet,
+///     transfers: Queued<Kinded<erc20::Transfer, 1>, Amount, 2, 1>,
+/// }
+/// const BLOCK: Block = Block::new();
+/// ```
+pub struct Queued<F: Filing, Env, const WORDS: usize, const N: usize> {
+    /// The records and environments a flush files into — a whole `Pending`,
+    /// so its settle side is not a copy of one.
+    pending: Pending<F, Env, WORDS>,
+    /// Handle → the pre-record and its environment.
+    queue: LedgerMap<Handle, QueueEntry<Env, WORDS>>,
+    /// The next handle an insert takes; the queue's write end.
+    next_handle: LedgerCounter,
+    /// The last EVM nonce this slot has assigned.
+    last_nonce: LedgerCounter,
+    /// The highest handle a flush has taken; the queue's read end.
+    flushed_upto: LedgerCounter,
+}
+
+impl<F: Filing, Env, const WORDS: usize, const N: usize> Queued<F, Env, WORDS, N> {
+    /// The slot's six fields from flat index `start`, against the block's
+    /// `Signet` at `signet_start` — what `#[derive(Ledger)]` emits for a
+    /// field whose type is spelled `Queued`.
+    pub const fn at_block_with_signet(total: usize, start: usize, signet_start: usize) -> Self {
+        const {
+            assert!(
+                N > 0,
+                "`Queued<F, Env, WORDS, N>` needs N >= 1: a flush of zero \
+                 entries reads the nonce, files nothing and advances \
+                 nothing. Name the batch size this slot flushes; a contract \
+                 that wants two sizes declares two slots."
+            );
+            assert!(
+                N <= u32::MAX as usize,
+                "`Queued<F, Env, WORDS, N>` needs N <= u32::MAX: the flush \
+                 advances two ledger counters by N, and an Impact counter \
+                 increment takes a u32."
+            );
+        }
+        Queued {
+            pending: Pending::at_block_with_signet(total, start, signet_start),
+            queue: LedgerMap::at_block(total, start + 2),
+            next_handle: LedgerCounter::at_block(total, start + 3),
+            last_nonce: LedgerCounter::at_block(total, start + 4),
+            flushed_upto: LedgerCounter::at_block(total, start + 5),
+        }
+    }
+
+    /// The record map's ledger path: the notification's `depth ‖ path`.
+    pub const fn record_path(&self) -> FieldPath {
+        self.pending.record_path()
+    }
+
+    /// THE FEE SEAM. The envelope every flushed transaction carries, which
+    /// today is the contract's fixed one (1 gwei priority, 30 gwei cap, the
+    /// call's `GAS_LIMIT`) and tomorrow is an administrator's policy cell
+    /// read here (notes/nonce-admin.org §3; dmd's decision A3 defers the
+    /// cell, not the seam). It is deliberately NOT a parameter of `flush`:
+    /// the contract sets the fee, never a caller.
+    fn envelope(&self) -> Envelope {
+        Envelope::fixed()
+    }
+}
+
+impl<F: Filing, Env, const WORDS: usize, const N: usize> LedgerWidth for Queued<F, Env, WORDS, N> {
+    const WIDTH: usize = 6;
+    const KINDS: &'static [u8] = &[F::KIND];
+}
+
+impl<F: Filing, Env: LedgerRepr, const WORDS: usize, const N: usize> Queued<F, Env, WORDS, N>
+where
+    Ret<Called<F>>: Attestable,
+{
+    /// QUEUE THE CALL. Encodes `F::Call`'s argument words, files them with
+    /// the callee and the key version under a fresh [`Handle`], stores the
+    /// environment in the same entry, and advances the insert counter.
+    /// Returns the handle, and discloses [`Inserted`] plus whatever `env`
+    /// discloses.
+    ///
+    /// NO NONCE AND NO FEE ARGUMENT, by decision (notes/nonce-admin.org
+    /// §1.1): both are the contract's, assigned at [`Self::flush`]. Nothing
+    /// is hashed here and nothing is notified — the MPC learns of the call
+    /// when the flush files its record.
+    ///
+    /// THE CALLEE IS TYPED BY ITS INTERFACE, exactly as
+    /// [`Pending::request`]: any `Contract<I>` whose `I` [`Extends`] the
+    /// call's own [`EvmCall::Callee`], and nothing else.
+    pub fn insert(
+        &self,
+        c: &mut Circuit3,
+        callee: Contract<impl Extends<Callee<F>>>,
+        args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
+        key_version: Uint<8>,
+        env: impl FnOnce(&mut Circuit3, Handle) -> Env,
+    ) -> Handle {
+        let handle = Handle(self.next_handle.read(c));
+        let words = <<Called<F> as EvmCall>::Args as AbiTuple>::words(c, args);
+        let pre = PreRecord::<WORDS>::file(c, callee.address(), key_version, &words);
+        c.region("evm batch: insert", |c| {
+            let exists = self.queue.member(c, &handle);
+            c.assert(not(is_true(exists)).message("Queue handle already taken"));
+            // The environment is built AFTER the handle exists, so a
+            // `Commit` in it binds to this request and no other.
+            let env = env(c, handle);
+            self.queue.insert(c, &handle, &QueueEntry { pre, env });
+            self.next_handle.increment(c, 1);
+        });
+        handle
+    }
+
+    /// FLUSH THE BATCH: take the `N` oldest queued entries, number them from
+    /// the last nonce this slot assigned, and file `N` records.
+    ///
+    /// What it reads: `flushed_upto` and `last_nonce`, ONCE each — the two
+    /// shared reads the whole design exists to reduce to. What it requires:
+    /// that all `N` entries are present, which is an assert per entry and
+    /// therefore a failed proof for a flush of a short queue. What it
+    /// writes: `N` records, `N` environments, `N` removals from the queue,
+    /// and the two counters advanced by `N`.
+    ///
+    /// Each entry goes through the same `file_request` a [`Pending::request`]
+    /// uses, so a flushed record, its id and its notification are what an
+    /// unbatched request of the same call would have produced with that
+    /// nonce — which is why the settle side needs nothing new.
+    ///
+    /// PERMISSIONLESS: no gate, no witness, no secret. A flush whose state
+    /// moved between proving and submission fails on its own `popeq`s and is
+    /// re-proven by anyone.
+    pub fn flush(&self, c: &mut Circuit3) -> [RequestId<Public>; N] {
+        let base = self.flushed_upto.read(c);
+        let last = self.last_nonce.read(c);
+        let mut ids = Vec::with_capacity(N);
+        for i in 0..N {
+            let step = (i + 1) as u64;
+            let handle = Handle(Uint::from_field_unchecked(c.add(base.field(), step)));
+            let entry = c.region("evm batch: pull", |c| {
+                let found = self.queue.member(c, &handle);
+                c.assert(is_true(found).message("Queued request not found"));
+                let entry = self.queue.lookup(c, &handle);
+                self.queue.remove(c, &handle);
+                entry
+            });
+            let QueueEntry { pre, env } = entry;
+            let nonce = c.add(last.field(), step).private();
+            let tx = build_tx_from_words::<Called<F>, WORDS>(
+                c,
+                pre.callee(),
+                pre.words(),
+                self.envelope(),
+                nonce,
+                F::GAS_LIMIT,
+            );
+            let path = SigningPath::contract_path(c).private();
+            let id = file_request(
+                c,
+                &self.pending.signet,
+                &self.pending.records,
+                SignRequest {
+                    key_version: pre.key_version(),
+                    path,
+                    tx,
+                },
+                F::KIND,
+                |c, request_id| {
+                    // The environment moves from the handle's key to the
+                    // request id's, unchanged.
+                    self.pending.envs.insert(c, &request_id, &env);
+                },
+            );
+            ids.push(id);
+        }
+        self.last_nonce.increment(c, N as u32);
+        self.flushed_upto.increment(c, N as u32);
+        match <[RequestId<Public>; N]>::try_from(ids) {
+            Ok(ids) => ids,
+            // Unreachable: the loop pushes exactly one id per iteration.
+            Err(_) => unreachable!("a flush files one record per queued entry"),
+        }
+    }
+
+    /// SETTLE A SUCCESS — [`Pending::complete`], unchanged, over this slot's
+    /// own record and environment maps. A record made at flush IS a
+    /// `Pending` record.
+    pub fn complete(
+        &self,
+        c: &mut Circuit3,
+        ticket: Succeeded<F>,
+    ) -> Outcome<Env, <Called<F> as EvmCall>::Success, WORDS> {
+        self.pending.complete(c, ticket)
+    }
+
+    /// SETTLE A NON-SUCCESS — [`Pending::refund`], unchanged.
+    pub fn refund(&self, c: &mut Circuit3, ticket: Failed<F>) -> Outcome<Env, Ret<Called<F>>, WORDS> {
+        self.pending.refund(c, ticket)
+    }
+}
+
+impl<F: Filing, E: LedgerRepr, const WORDS: usize, const N: usize>
+    Queued<F, HandleOwned<E>, WORDS, N>
+where
+    Ret<Called<F>>: Attestable,
+{
+    /// [`Queued::insert`] with the requester's identity committed into the
+    /// environment, bound to the HANDLE — the queued twin of
+    /// [`Pending::request_owned`].
+    ///
+    /// `L` labels the commitment in the disclosure inventory (it is stored,
+    /// so it is public).
+    pub fn insert_owned<L: DisclosureLabel>(
+        &self,
+        c: &mut Circuit3,
+        callee: Contract<impl Extends<Callee<F>>>,
+        args: <<Called<F> as EvmCall>::Args as AbiTuple>::Wires<Private>,
+        key_version: Uint<8>,
+        inner: impl FnOnce(&mut Circuit3, Handle) -> E,
+    ) -> Handle {
+        let sk = common::witness_sk(c);
+        self.insert(c, callee, args, key_version, |c, handle| HandleOwned {
+            handle,
+            owner: Commit::to::<L, _>(c, &sk, handle),
+            inner: inner(c, handle),
+        })
+    }
+
+    /// [`Pending::refund_to_owner`] FOR A QUEUED REQUEST: the stored
+    /// commitment is opened against the stored HANDLE, so the requester
+    /// refunds with the value they held before the flush and never had to be
+    /// present at it.
+    ///
+    /// `L` labels the public key the proceeds go to. There is deliberately
+    /// no `complete` counterpart, for `Pending`'s reason: a completion never
+    /// opens the commitment and never witnesses a secret.
+    pub fn refund_to_owner<L: DisclosureLabel>(
+        &self,
+        c: &mut Circuit3,
+        ticket: Failed<F>,
+    ) -> (ZswapCoinPublicKey<Public>, E, Ret<Called<F>>) {
+        let outcome = self.pending.refund(c, ticket);
+        let sk = common::witness_sk(c);
+        let env = outcome.env;
+        env.owner.open(c, &sk, env.handle, "Not the owner");
+        let owner = own_public_key(c).disclose_as::<L>(c);
+        (owner, env.inner, outcome.output)
     }
 }
