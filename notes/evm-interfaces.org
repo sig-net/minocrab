@@ -55,8 +55,14 @@ pub struct Contract<I: Interface> { address: Bytes<20, Private>, … }
 Extends<Call::Callee>=. A =transfer= filed against a
 =Contract<UniswapV3Router>= is a missing trait impl (the ladder's first
 rung); a =Contract<Erc4626>= takes both =erc4626::Deposit= and
-=erc20::Approve=, which is exactly the vault's stata token
-(=approve_stata= approves an ERC-20 allowance ON the ERC-4626 vault).
+=erc20::Approve= (an ERC-4626 vault is an ERC-20 share token).
+CORRECTED at rung A (§4, adjustment 4): the vault does NOT exercise this
+— =approve_stata= files =approve(stataToken, …)= ON =stata_underlying=,
+the underlying ERC-20, with the stata token as the SPENDER argument; its
+=Contract<Erc4626>= sites are =supply= / =redeem= with =erc4626::= calls
+only. Inheritance is declared and tested (=evm_abi::
+an_erc4626_vault_takes_an_erc20_call=) and its first shipped consumer is
+rung B's =Weth: Extends<Erc20>=.
 Coherence: =Extends= has a blanket reflexive impl, so a library
 =impl Extends<Erc20> for Erc4626= is fine (distinct types), and a
 downstream crate may write =impl Extends<Erc20> for MyToken= for its own
