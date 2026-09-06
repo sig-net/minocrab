@@ -2332,7 +2332,10 @@ also =popeq=s the Signet request counter, a second shared read that races
 the same way — a contention-free insert must drop it or key the queue by
 something the requester owns.
 - [X] A. (2026-09-06: notes/nonce-admin.org §0–§7 — the nonce is
-      untrusted and safely so (liveness, not security); the request
+      untrusted and safely so (liveness, not security) — CORRECTED by
+      dmd the same day, §1.1: a hanging transaction is a DOS vector, so
+      THE USER CANNOT PICK THEIR OWN NONCE OR GAS PRICE; the contract
+      assigns both, queue clearing is the administrator's break glass; the request
       counter is load-bearing for FRESHNESS and replaceable by requester
       randomness + a self-keyed membership check; the fee policy cell
       under a rotatable admin commitment (recommended, dmd decides); the

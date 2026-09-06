@@ -30,6 +30,35 @@ VERDICT: a liveness problem for the requester, not a security one. The
 batch (§4) removes the race; nothing needs to trust the nonce more than
 it does today.
 
+** 1.1 CORRECTION (dmd, 2026-09-06): outstanding nonces ARE a security issue
+"A properly designed contract should never have transactions that hang,
+because they take up space and are a DOS vector." The verdict above
+looked only at the requester's own loss and missed the SHARED resource:
+a transaction that never mines — a too-high nonce, a fee below the
+market — sits in the queue and in the MPC's pending set, blocks every
+later nonce on that signing path, and any user can create one at will.
+That is a denial-of-service against the contract, so the nonce is NOT
+"untrusted and safely so".
+THE RULE (dmd): in a contract, THE USER CANNOT PICK THEIR OWN NONCE AND
+GAS PRICE. Users can ONLY create VALID requests: the contract assigns
+the nonce (the flush, §4) and the contract sets the fee (the policy
+cell, §3, or the constants until it exists). Every request circuit that
+takes =evm_nonce= as a prover-chosen input — the deployed vault, the
+Pending lineage today — is what §4 replaces, not a shape to keep beside
+it. Queue clearing is the BREAK GLASS, not a user facility: an
+administrator clears (unsticks, §5) when, for example, the gas price
+moves so far that flushed transactions can no longer mine at the fee
+they were signed with; only the administrator ever chooses a nonce or a
+fee, and only for that.
+CONSEQUENCES for the build (M39 C): =Queued::insert= takes neither a
+nonce nor a fee; =flush= reads the fee from the contract, never from an
+argument; the =Blank= replacement (§5) is the one place a nonce and a
+fee are arguments, and it is administrator-gated; a contract exposing
+an unbatched =Pending::request= with a user nonce is a design smell to
+retire once =Queued= lands, not a supported second path. §1's three
+bullets stay as the account of WHY a wrong nonce cannot steal, which is
+still true; they no longer justify letting a user choose one.
+
 * 2. The Signet request counter: load-bearing for FRESHNESS, not as a shared number
 =signetRequestNonce= is read (=popeq=) and incremented in every request
 and is an element of the record, hence of the request id. It is what
