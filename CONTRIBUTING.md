@@ -86,6 +86,15 @@ taxonomy applies to any firing. Two that deserve their own sentence:
   governed by the callee's deployed artifact, so a reported break means
   the wire moved. Stop, and read `tests/artifact_agreement.rs` in the
   crate it names; regenerate nothing until you know why.
+- **The supply-chain job** (`cargo deny check`, the `deny` CI job,
+  `deny.toml`) is SUPPLY CHAIN: a firing advisory means a real RUSTSEC
+  finding on something we depend on (fix or, if genuinely inapplicable,
+  add a reasoned entry to `[advisories.ignore]` — never a bare skip); a
+  firing license or source means a new dependency (or transitive one)
+  outside the tree's actual license/source posture — extend the allow
+  list only after confirming the license/host by hand, never widen it
+  with a wildcard. [notes/supply-chain.org](notes/supply-chain.org) has
+  the full rationale and every current ignore's reason.
 
 ## Divergence ledgers
 

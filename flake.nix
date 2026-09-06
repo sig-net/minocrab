@@ -96,6 +96,9 @@
             # (`cargo semver-checks`, the `interface-wire-compat-semver` CI
             # job). A tool, not packaging — the nix-light-touch rule.
             pkgs.cargo-semver-checks
+            # M38 D2: the supply-chain gate (`cargo deny check`, the `deny:`
+            # CI job) — advisories/licenses/bans/sources per deny.toml.
+            pkgs.cargo-deny
             compactc
             # M11 stage 10: the published TypeScript decoder in spec/ts/ and
             # its vector-driven tests. BINARIES ONLY, as ever — node runs the
