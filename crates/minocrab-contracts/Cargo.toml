@@ -81,6 +81,11 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 proptest.workspace = true
+# THE ABI ORACLE (M38 rung D): tests/evm_alloy_oracle.rs declares each call
+# a second time with `sol!` and asserts our selector and our encoded words
+# against alloy's. See the workspace manifest for why the pins are exact.
+alloy-sol-types.workspace = true
+alloy-primitives.workspace = true
 # The M29 E real-proving gate (tests/signet_real_proof.rs) only. Declared
 # here rather than in `[workspace.dependencies]` for the same reason
 # crates/minocrab-bench declares them: two test/bench crates want them and
