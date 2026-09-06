@@ -849,3 +849,141 @@ reused by every circuit that calls them:
 - Row-cost measurement is rung C's own
   (=erc20_vault_pending.rs::the_lending_flows_cost_no_more_than_the_compat_port=
   et al.) and unaffected by this rung; not re-measured here.
+
+* 10. As built — the executor and the state-driven round trip (2026-09-06)
+
+dmd lifted the M26 hold (decisions.org A2). The one missing piece it named
+— the v3 TRANSCRIPT EXECUTOR — is built, and the round trip is chained on
+real state as far as the protocol lets it go.
+
+** The executor: notes/executor.org
+
+Its own note, because it is a new layer: =minocrab_sim::v3::exec=, the
+second arrow (=state → preimage=) beside =simulate='s
+(=preimage → accept/reject=). Read that note for the design; the summary a
+reader of this file needs:
+
+- REUSED unchanged from midnight-ledger =04c9c5d9=: =ResultModeGather= /
+  =GatherEvent= (onchain-vm =result_mode.rs=), =run_program= (=vm.rs=) and
+  =QueryContext::query= (onchain-runtime =context.rs=) — the Impact VM
+  itself, generic in the result mode — and =Op::translate= (=ops.rs:405=),
+  Midnight's own gather → verify join. Nothing in the executor interprets
+  an =Op=. The ZKIR walk is =simulate='s, in a second mode, so the verifier
+  and the producer cannot drift.
+- WRITTEN, because the survey found nothing that does it: =decode_program=,
+  the inverse of =Op::field_repr=. Upstream ENCODES an op stream into field
+  elements — a circuit's =public_transcript_inputs= IS that encoding — but
+  never decodes one, because in production the ops travel beside the proof
+  rather than inside it. There is no gather-mode driver in Rust either: the
+  Gather half is wasm-exposed for the JS runtime, the Verify half is native,
+  and the loop joining them lives in the TypeScript compact-runtime.
+  =zswap::verify::with_outputs= is the right SHAPE for the join but is
+  feature-gated and =filter_invalid=s the program first, so it is mirrored,
+  not called.
+- The driver is a fixpoint on =public_transcript_outputs=, because a read's
+  gates compile before the ops that justify them and a read's value can
+  decide whether a later block is emitted at all. It terminates because op
+  emission depends only on EARLIER reads, so every round fixes at least one
+  more.
+
+GATE, verbatim (=cargo test -p minocrab-contracts --test executor_vault=):
+
+: test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.30s
+
+Seventeen circuits of the Pending lineage; per generated case the executor's
+op stream equals the hand model's op for op (each =popeq='s expected
+=AlignedValue= included), both public halves and the communications
+commitment match, =IrSource::check= accepts the produced preimage, and the
+post-state equals the model's. The negative control: a case the spec rejects
+is =ExecError::Rejected= at an =Assert=; a case the ledger will not apply (a
+counter at =u64::MAX=) is refused by the model's own =exec::run= identically.
+
+The decoder's own gate, beside the encoder it inverts
+(=cargo test -p minocrab-ledger --test impact_roundtrip=):
+
+: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+Zero movement: =MINOCRAB_ZKIR_DUMP= over 214 files, diffed against the main
+baseline, EMPTY. Workspace green, clippy clean.
+
+** Rung D's state-driving half, as far as it goes
+
+=crates/minocrab-contracts/tests/signet_round_trip.rs=:
+
+: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+- =the_mpc_resolves_the_record_the_request_circuit_filed= — the deposit
+  circuit runs against a real pre-state, the executor derives its transcript
+  FROM that state, the Impact VM applies it, the notification is built from
+  the slot's OWN declared path (=VAULT.deposits.record_path()=, what the
+  artifact-agreement gate pins against the compiled contract-info), and
+  =SigNetSim= walks the POST state by that path, decodes the record, and
+  recomputes its id. Nothing is handed to the responder: every byte it reads
+  was written into a =StateValue= by a circuit. §9's drift gate — which
+  decodes a HAND-BUILT cell — now also holds against a state the eDSL
+  produced.
+- The adversarial responders, each on the reader's own drop reason: unfiled
+  id (=Absent=), a path one field off, a depth outside one to four and an
+  unsupported version (=Notification=, failing closed before the walk
+  touches state), a different root (same bytes, different signature, and a
+  response key the vault did not store), and a replay — which the responder,
+  being PURE, answers identically. Nothing in the MPC stops a replay;
+  =consume='s =remove= does, which is why it is not idempotent.
+- =NeverExecuted= attests the failure kind alone, as
+  =node/respond_bidirectional.rs= builds it.
+
+** THE FINDING that stops the last link (2026-09-06, for dmd)
+
+*The digest a typed =Pending= settle verifies is not the digest the MPC
+signs.* Pinned as an assertion, not worked around:
+=the_typed_settle_digest_is_not_the_digest_the_mpc_signs=.
+
+- =signet::calculate_attestation_digest_borsh= — what =Pending::settle= uses
+  (M11 stage 5's form) — hashes =[requestId.hi, requestId.lo]= then ONE
+  FIELD ELEMENT PER BORSH LEAF: the kind byte is one limb, the payload
+  another.
+- The MPC's =compact-hashing::compute_response_hash= — translated verbatim
+  in =signet_sim::hashing= and pinned by the MPC's own golden vectors —
+  hashes =[requestId.hi, requestId.lo]= then the serialized output as a BYTE
+  STRING in FAB's 31-byte packing. For the vault's two-byte output
+  (=kind ‖ borsh(bool)=) that is ONE limb carrying both bytes:
+  =Fr::from_le_bytes([kind, payload])=. The test asserts that rule as its
+  third value, so the finding is not just "they differ".
+- WHY IT USED TO AGREE: under keccak / persistentHash the preimage is the
+  BINARY representation, where "one leaf per field" and "one packed byte
+  string" are the same bytes — which is exactly what borsh-format.org §1
+  established ("the attestation digest (= borsh of ={[u8;32], [u8;N]}=)").
+  M28's protocol move to =transientHash= broke it: Poseidon does not hash
+  bytes, it hashes LIMBS, and the two limb splits differ.
+- The UNTYPED =calculate_attestation_digest::<_, LEN_OUTPUT>= (the compat
+  and modern lineages') still agrees, because it takes the serialized output
+  as a single =BytesN= value, whose FAB limbs are the same 31-byte packing.
+- So this is specific to the typed path, and the doc comment on
+  =calculate_attestation_digest_borsh= ("one field element per leaf, so the
+  digest is Poseidon over exactly the limbs the MPC hashes") is a claim that
+  was true before M28 and is false after it.
+- borsh-format.org's open item 7 asked to "confirm the attestation digest
+  (stage 5) and the requestId (stage 7) preimages can move independently in
+  the MPC's code". This is the answer arriving from the other direction: the
+  requestId preimage moved and the two lineages of digest moved apart.
+
+dmd's call: either the typed digest packs the serialized output as one
+=BytesN= before hashing (a circuit change, and the row cost of the packing),
+or the MPC's =compute_response_hash= gains a typed form (a coordinated
+release, like the stage-7 record). Until one lands, =request → post →
+respond= chains and =respond → settle= cannot.
+
+** What is still open after this rung
+
+- Rung E (generated per-slot round trips) has its missing piece now but is
+  NOT built: a generated round trip whose settle half cannot accept an
+  attestation would be pinning the wrong thing. It should land with, or just
+  after, the digest decision.
+- M26's typed contract-testing harness likewise: the executor supplies the
+  transcripts, nothing has been distilled out of =tests/support= yet.
+- The =--release= speed (real proofs + =LedgerState= + =Transaction::apply=)
+  is a constructor away — =Executed::preimage= is what
+  =support/signet_call.rs= takes — but is not wired.
+- The executor is SINGLE-CALL: the xcall to the singleton is not executed,
+  because the callee's transcript needs its own =execute= against its own
+  state. =partition_transcripts= upstream is where a two-call version lands.
