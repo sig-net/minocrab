@@ -12,8 +12,8 @@
 //!
 //! | this module | ERC-20's | selector |
 //! |-------------|----------|----------|
-//! | [`TransferFrom`] `(from, to, tokenId)` | [`erc20::TransferFrom`](super::erc20::TransferFrom) `(from, to, amount)` | `23b872dd` |
-//! | [`Approve`] `(to, tokenId)` | [`erc20::Approve`](super::erc20::Approve) `(spender, amount)` | `095ea7b3` |
+//! | [`TransferFrom`] `(from, to, tokenId)` | [`erc20::TransferFrom`] `(from, to, amount)` | `23b872dd` |
+//! | [`Approve`] `(to, tokenId)` | [`erc20::Approve`] `(spender, amount)` | `095ea7b3` |
 //!
 //! Both pairs spell `(address,address,uint256)` and `(address,uint256)`, so
 //! the calldata a caller files is IDENTICAL and no amount of care about the
@@ -147,11 +147,11 @@
 //! ) {
 //!     BLOCK.coins.request(
 //!         c, token, (from, to, amount), key_version, nonce,
-//!         |_, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
+//!         |c, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
 //!     );
 //!     BLOCK.nfts.request(
 //!         c, nft, (from, to, token_id), key_version, nonce,
-//!         |_, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
+//!         |c, _| Amount { amount: Uint::from_field_unchecked(c.constant(0)) },
 //!     );
 //! }
 //! ```
