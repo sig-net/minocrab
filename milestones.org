@@ -1109,11 +1109,12 @@ note in a drawer:
       not before the super review. NOTE 2026-09-04: M23's closing line
       records that the super review is now run by an external party.
       HOLD LIFTED (dmd, 2026-09-06, decisions.org A2: "Remove the super
-      review"). IN FLIGHT 2026-09-06: the v3 transcript executor first
-      (notes/signet-async.org §9's BLOCKED paragraph — the one piece
-      behind M35 D/E and this item), then the typed harness distilled
-      from the vault's =tests/support=; the tutorial and the deploy
-      binding (after M29 D/E) follow.
+      review"). 2026-09-06: the piece it was waiting on is BUILT —
+      =minocrab_sim::v3::exec=, notes/executor.org, gated against the
+      vault harness on seventeen circuits (M35 D). The typed harness
+      itself is NOT distilled yet: =tests/support= and
+      =tests/vault_pending= still carry the hand model; the tutorial and
+      the deploy binding (after M29 D/E) untouched. Next: distil.
 - [X] (2026-09-05, 7dc65fd: six files — impact / ops / reads / kernel /
       calls / tests — lib.rs = crate doc + re-exports (103 lines); dump
       byte-identical on 209 circuits, re-run on main at merge;
@@ -1687,7 +1688,29 @@ Decisions of record (dmd, 2026-09-05):
       the stataUSDC wrapper): seventeen circuits on a twenty-two-field
       block, each new circuit costed against =erc20_vault='s (compat
       port) twin rather than modern, which never had them.
-- [-] D. (2026-09-05: the responder half DONE as =crates/signet-sim=; the state-driving half was BLOCKED on the v3 transcript executor — UNBLOCKED 2026-09-06 by decisions.org A2, executor + this half IN FLIGHT — §9) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
+- [X] D. (2026-09-05: the responder half as =crates/signet-sim=;
+      2026-09-06, aca5aab..52da264 merged: the state-driving half DONE
+      on the v3 TRANSCRIPT EXECUTOR — =minocrab_sim::v3::exec=,
+      notes/executor.org: Midnight's =ResultModeGather= / =run_program= /
+      =QueryContext::query= / =Op::translate= reused unchanged, the ZKIR
+      walk is =simulate='s refactored into =simulate_with(ir, preimage,
+      Mode)= so verifier and producer cannot drift; written because
+      upstream lacks it: =decode_program= (the inverse of
+      =Op::field_repr=) and the gather-mode driver, a fixpoint on
+      =public_transcript_outputs=. GATE: on all 17 vault circuits the
+      executor's op stream equals the hand model's op for op, both
+      public halves and the comm commitment match, =IrSource::check=
+      accepts, post-state equal, negative control refused identically
+      (tests/executor_vault.rs, 18 green). Six Pending pairs chain
+      request → Impact-VM post-state → settle with nothing crossing but
+      a =StateValue=; =SigNetSim= resolves the record the request circuit
+      filed by walking the post-state (tests/signet_round_trip.rs, 14
+      green). FINDING FOR DMD, notes/signet-async.org §10: the typed
+      settle's attestation digest is NOT the MPC's under Poseidon (one
+      limb per Borsh leaf vs the output packed as one 31-byte-limb byte
+      string) — pinned by a test that fails when reconciled. Not wired:
+      the =--release= speed (a constructor away); the executor is
+      single-call, the xcall to the singleton is not executed. — §9/§10) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
       (singleton event, caller ledger state, =EvmOutcome=) →
       attestation; ONE root key with the real =derive_epsilon_midnight=
       so =initialize='s response key is derived, not arbitrary; the
@@ -1702,7 +1725,7 @@ Decisions of record (dmd, 2026-09-05):
       post → respond → settle under plain =cargo test=; real proofs +
       =LedgerState= + =Transaction::apply= (the cross-contract call and
       the singleton's event for real) under =--release=, on M29 D/E.
-- [ ] E. (was BLOCKED 2026-09-05 on the same executor as D — UNBLOCKED 2026-09-06, IN FLIGHT behind D; the drift gate and the adversarial refusals exist at the attestation level) Tests that come with the type: for every =Pending= slot in a
+- [ ] E. (2026-09-06: UNBLOCKED — the executor exists — and deliberately NOT built: a generated round trip whose settle cannot accept a simulated attestation would pin the wrong thing; land it with, or just after, §10's attestation-digest decision. The unread-field sweep over the ticket is unaffected and can go first.) Tests that come with the type: for every =Pending= slot in a
       contract, a GENERATED round trip (request → sim → settle accepts)
       plus the adversarial suite (each responder → the expected guard)
       plus an unread-field sweep over the ticket (every field read by

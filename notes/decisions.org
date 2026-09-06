@@ -21,7 +21,7 @@ milestone entry it belongs to.
   
 Use the single rev
 
-- [X] A2. THE M26 HOLD on the authoring path — "not before the super
+- [X] A2. (Hold lifted; the executor BUILT and merged 2026-09-06 — M35 D done, M35 E waits on the attestation-digest finding in signet-async.org §10, M26's harness distillation next.) THE M26 HOLD on the authoring path — "not before the super
   review" (milestones.org M26, last open item). The super review is now
   run externally (M23's closing line). Options: lift / keep. RECOMMEND:
   lift, and build the v3 TRANSCRIPT EXECUTOR first (signet-async.org
