@@ -34,8 +34,9 @@ use minocrab_contracts::erc20_vault::{
     FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
 };
 use minocrab_contracts::evm::{
-    always, build_tx, build_tx_payable, erc20, erc4626, uniswap_v3, usdt, weth, AbiArg, AbiTuple,
-    AbiType, Address, Bool, Bytes32, EvmCall, Extends, Interface, Kinded, U128, U24, U256, U64, U8,
+    always, build_tx, build_tx_filed, build_tx_payable, erc20, erc4626, uniswap_v3, usdt, weth,
+    AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32, EvmCall, Extends, Filing, Interface,
+    Kinded, U128, U24, U256, U64, U8,
 };
 use minocrab_contracts::evm_flow::Contract;
 use minocrab_contracts::signet::{self, EvmCalldata};
@@ -503,6 +504,70 @@ fn build_tx_carries_the_declared_envelope() {
     let (hi1, lo1) = b32_slots(&abi_num_word(amount));
     assert_eq!((native(9), native(10)), (hi0, lo0), "word 0 = the recipient");
     assert_eq!((native(11), native(12)), (hi1, lo1), "word 1 = the amount");
+}
+
+/// A FILING MAY OVERRIDE [`EvmCall::GAS_LIMIT`] (M38 rung H,
+/// notes/evm-interfaces.org §10). `Filing::GAS_LIMIT`'s default is the
+/// call's own — every filing before this rung takes it, so ZERO MOVEMENT
+/// holds for them — but a filing that names its own const changes the
+/// immediate `build_tx_filed` bakes in, and `build_tx_filed` is exactly
+/// what `Pending::request` and `Pending::request_payable` call.
+#[test]
+fn build_tx_filed_reads_the_filings_gas_limit_override() {
+    /// `erc20::Transfer` filed at a limit the CALL does not claim — the
+    /// deployment knows something the per-function default does not.
+    struct OverriddenTransfer;
+    impl Filing for OverriddenTransfer {
+        type Call = erc20::Transfer;
+        const KIND: u8 = 1;
+        const GAS_LIMIT: u64 = 250_000;
+    }
+    assert_ne!(
+        OverriddenTransfer::GAS_LIMIT,
+        erc20::Transfer::GAS_LIMIT,
+        "the override has to actually differ for this test to prove anything"
+    );
+
+    let mut c = Circuit3::new();
+    let to = c.arg::<FieldT>("to");
+    let dest = c.arg::<FieldT>("dest");
+    let amount = c.arg::<FieldT>("amount");
+    let nonce = c.arg::<FieldT>("nonce");
+    let tx = build_tx_filed::<OverriddenTransfer, 2>(
+        &mut c,
+        Bytes::<20, Private>::from_field_unchecked(to),
+        (
+            Bytes::<20, Private>::from_field_unchecked(dest),
+            Uint::<128, Private>::from_field_unchecked(amount),
+        ),
+        nonce,
+    );
+    publish_tx(&mut c, tx);
+    let compiled = c.finish(false);
+
+    let addr: [u8; 20] = [0x11; 20];
+    let callee: [u8; 20] = [0x22; 20];
+    let amount: u128 = 42;
+    let run = simulate(
+        &compiled.ir,
+        &preimage(&[
+            b20(&callee),
+            b20(&addr),
+            u128_limb(amount),
+            Fr::from(7u64),
+        ]),
+    )
+    .expect("build_tx_filed accepts");
+
+    let native = |i: usize| match &run.outputs[i] {
+        IrValue::Native(f) => *f,
+        other => panic!("output {i} is not native: {other:?}"),
+    };
+    assert_eq!(
+        native(3),
+        Fr::from(OverriddenTransfer::GAS_LIMIT),
+        "the filed record carries the SLOT's gas limit, not erc20::Transfer's"
+    );
 }
 
 // ---- the outcome predicate ----------------------------------------------------
