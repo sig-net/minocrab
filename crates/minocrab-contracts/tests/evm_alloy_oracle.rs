@@ -36,7 +36,8 @@
 //! 2. A [`SampleLeaf`] impl for any `AbiType` the call uses that has none
 //!    yet — the host-side value, its proptest strategy, the field limbs it
 //!    enters the circuit as, and how to rebuild the wire from them. All
-//!    eight of today's leaves already have one.
+//!    NINE of today's leaves already have one (`U8` joined at M38 rung B,
+//!    for ERC-2612 `permit`'s `v`).
 //! 3. One row in the [`oracle_rows!`] invocation:
 //!
 //!    ```text
@@ -64,8 +65,8 @@ use alloy_sol_types::SolCall;
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
 use minocrab_contracts::evm::{
-    erc20, erc4626, uniswap_v3, AbiTuple, AbiType, Address, Bool, Bytes32, EvmCall, U128,
-    U160 as OurU160, U24 as OurU24, U256 as OurU256, U64,
+    erc20, erc4626, uniswap_v3, usdt, weth, AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32,
+    EvmCall, U128, U160 as OurU160, U24 as OurU24, U256 as OurU256, U64, U8 as OurU8,
 };
 use minocrab_sim::v3::simulate;
 use minocrab_std::v3::{is_true, Bool as BoolWire, Bytes, Check, Uint, B32};
@@ -83,12 +84,54 @@ use vault::prims::{b20, b32_slots, u128_limb};
 
 // ---- the Solidity side: each interface as Ethereum spells it ------------------
 
-/// ERC-20, from the EIP. `uint256` for both amounts — our `U128` (transfer)
-/// and `U256` (approve) are range claims on the same 32-byte word.
+/// ERC-20, from the EIP — plus the two OpenZeppelin allowance deltas and
+/// ERC-2612's `permit`, which are not in EIP-20 but are on the tokens that
+/// matter. `uint256` for every amount: our `U128` (transfer) and `U256`
+/// (approve) are range claims on the same 32-byte word.
 mod sol_erc20 {
     alloy_sol_types::sol! {
         function transfer(address to, uint256 amount) external returns (bool);
         function approve(address spender, uint256 amount) external returns (bool);
+        function transferFrom(address from, address to, uint256 amount)
+            external returns (bool);
+        function increaseAllowance(address spender, uint256 addedValue)
+            external returns (bool);
+        function decreaseAllowance(address spender, uint256 subtractedValue)
+            external returns (bool);
+        function permit(
+            address owner,
+            address spender,
+            uint256 value,
+            uint256 deadline,
+            uint8 v,
+            bytes32 r,
+            bytes32 s
+        ) external;
+    }
+}
+
+/// WETH9, as the deployed contract declares it. `deposit()` is PAYABLE and
+/// takes no arguments — the ether is the argument — and neither call
+/// returns anything.
+mod sol_weth {
+    alloy_sol_types::sol! {
+        function deposit() external payable;
+        function withdraw(uint256 wad) external;
+    }
+}
+
+/// THE NON-CONFORMING TOKENS, declared as they really are: the same three
+/// functions with NO RETURN.
+///
+/// A Solidity signature does not mention the return type, so alloy hashes
+/// these to the ERC-20 selectors above — which is precisely the fact that
+/// makes `UsdtLike` a TYPE distinction rather than a wire one, and having
+/// alloy say so is worth a row (see [`usdt_selectors_are_the_erc20_ones`]).
+mod sol_usdt {
+    alloy_sol_types::sol! {
+        function transfer(address to, uint256 amount) external;
+        function approve(address spender, uint256 amount) external;
+        function transferFrom(address from, address to, uint256 amount) external;
     }
 }
 
@@ -123,11 +166,15 @@ mod sol_uniswap_v3 {
     }
 }
 
-/// EVERY LEAF IN ONE CALL. The five shipped calls between them never pass a
-/// `bool` or a `bytes32` as an ARGUMENT (both appear only as returns), so
-/// this synthetic function is where those two encoders meet alloy. It is
-/// also the demonstration that a row costs a `sol!` line and a table entry:
-/// nothing below it is call-specific.
+/// EVERY LEAF IN ONE CALL. Rung A's five shipped calls between them never
+/// passed a `bool` or a `bytes32` as an ARGUMENT (both appeared only as
+/// returns), so this synthetic function is where those two encoders meet
+/// alloy. It is also the demonstration that a row costs a `sol!` line and a
+/// table entry: nothing below it is call-specific.
+///
+/// The NINTH leaf, `U8`, is deliberately not here: rung B's ERC-2612
+/// `permit` passes one for real, so it is checked by a shipped call rather
+/// than by a synthetic one, and `bytes32` now is too (permit's `r` and `s`).
 mod sol_probe {
     alloy_sol_types::sol! {
         function abiLeafProbe(
@@ -208,10 +255,15 @@ impl EvmCall for AbiLeafProbe {
 /// HOW A LEAF IS SAMPLED — the four facts the oracle needs about an
 /// [`AbiType`] that a circuit is going to be handed a value of.
 ///
-/// Deliberately a SEPARATE trait from `AbiType` rather than more methods on
-/// it: the sample side is test-only, and the library's leaf trait stays what
-/// it is.
-trait SampleLeaf: AbiType {
+/// Deliberately a SEPARATE trait from `AbiArg` rather than more methods on
+/// it: the sample side is test-only, and the library's leaf traits stay what
+/// they are.
+///
+/// The supertrait is [`AbiArg`] and not `AbiType` (M38 rung B): `AbiType` is
+/// the RETURN position's bound and `AbiArg` the ARGUMENT position's, and
+/// only arguments are sampled — there is no word to encode for `Unit`, and
+/// `SampleArgs`'s `AbiTuple` supertrait would not hold for it anyway.
+trait SampleLeaf: AbiArg {
     /// The host-side value — what the alloy call struct is built from.
     /// `'static` because a proptest `BoxedStrategy` is.
     type Value: std::fmt::Debug + Clone + 'static;
@@ -319,6 +371,28 @@ impl SampleLeaf for OurU24 {
 
     fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<24, Private> {
         Uint::<24, Private>::from_field_unchecked(args[0])
+    }
+}
+
+/// `uint8` — ERC-2612 `permit`'s signature parity byte. 27 and 28 are the
+/// only values a real signature carries (EIP-155 chains add a chain-derived
+/// pair), so both get their own arm beside the whole-range sampler: the
+/// encoder is the same reversal for any of them, and this is the leaf where
+/// a wrong `SOLIDITY` spelling would move a selector.
+impl SampleLeaf for OurU8 {
+    type Value = u8;
+    const SLOTS: usize = 1;
+
+    fn strategy() -> BoxedStrategy<u8> {
+        prop_oneof![Just(0u8), Just(27u8), Just(28u8), Just(u8::MAX), any::<u8>()].boxed()
+    }
+
+    fn limbs(v: &u8) -> Vec<Fr> {
+        vec![Fr::from(u64::from(*v))]
+    }
+
+    fn wire(args: &[Wire3<FieldT, Private>]) -> Uint<8, Private> {
+        Uint::<8, Private>::from_field_unchecked(args[0])
     }
 }
 
@@ -450,6 +524,28 @@ trait SampleArgs: AbiTuple {
 
     /// The wires, rebuilt from that argument list.
     fn wires(args: &[Wire3<FieldT, Private>]) -> Self::Wires<Private>;
+}
+
+/// THE EMPTY ARGUMENT LIST — WETH's `deposit()`, whose only argument is the
+/// ether in the transaction's `value` field and whose calldata is therefore
+/// four selector bytes and nothing else.
+///
+/// Worth having as a row rather than assuming: `abi_encode()` on a
+/// no-argument call is exactly the selector, and this is the one case where
+/// our word count and alloy's could disagree by being empty for different
+/// reasons.
+impl SampleArgs for () {
+    type Values = ();
+
+    fn strategy() -> BoxedStrategy<()> {
+        Just(()).boxed()
+    }
+
+    fn limbs(_v: &()) -> Vec<Fr> {
+        Vec::new()
+    }
+
+    fn wires(_args: &[Wire3<FieldT, Private>]) {}
 }
 
 macro_rules! sample_args {
@@ -727,6 +823,81 @@ oracle_rows! {
                 sqrtPriceLimitX96: U160::from_be_slice(&price),
             },
         };
+
+    /// `transferFrom(address,address,uint256)` — 23b872dd.
+    transfer_from: erc20::TransferFrom => sol_erc20::transferFromCall,
+    |(from, to, amount)| sol_erc20::transferFromCall {
+        from: SolAddress::from(from),
+        to: SolAddress::from(to),
+        amount: SolU256::from(amount),
+    };
+
+    /// `increaseAllowance(address,uint256)` — 39509351. OpenZeppelin's, not
+    /// EIP-20's; alloy does not care whose it is, it hashes the signature.
+    increase_allowance: erc20::IncreaseAllowance => sol_erc20::increaseAllowanceCall,
+    |(spender, added)| sol_erc20::increaseAllowanceCall {
+        spender: SolAddress::from(spender),
+        addedValue: SolU256::from(added),
+    };
+
+    /// `decreaseAllowance(address,uint256)` — a457c2d7.
+    decrease_allowance: erc20::DecreaseAllowance => sol_erc20::decreaseAllowanceCall,
+    |(spender, subtracted)| sol_erc20::decreaseAllowanceCall {
+        spender: SolAddress::from(spender),
+        subtractedValue: SolU256::from(subtracted),
+    };
+
+    /// ERC-2612 `permit(address,address,uint256,uint256,uint8,bytes32,bytes32)`
+    /// — d505accf. SEVEN static words and the library's only `uint8`: if our
+    /// `U8` spelled itself `uint256` the selector would be something else
+    /// entirely, and this row is where that shows.
+    permit: erc20::Permit => sol_erc20::permitCall,
+    |(owner, spender, value, deadline, v, r, s)| sol_erc20::permitCall {
+        owner: SolAddress::from(owner),
+        spender: SolAddress::from(spender),
+        value: SolU256::from_be_bytes(value),
+        deadline: SolU256::from_be_bytes(deadline),
+        v,
+        r: FixedBytes::<32>::from(r),
+        s: FixedBytes::<32>::from(s),
+    };
+
+    /// `deposit()` — d0e30db0. THE ZERO-ARGUMENT ROW: alloy's `abi_encode()`
+    /// is four bytes, our word list is empty, and the two agree on nothing
+    /// being there. (The ether it carries is the transaction's `value`
+    /// field, which is not calldata and so not alloy's business.)
+    weth_deposit: weth::Deposit => sol_weth::depositCall,
+    |()| sol_weth::depositCall {};
+
+    /// `withdraw(uint256)` — 2e1a7d4d.
+    weth_withdraw: weth::Withdraw => sol_weth::withdrawCall,
+    |(wad,)| sol_weth::withdrawCall {
+        wad: SolU256::from(wad),
+    };
+
+    /// USDT's `transfer(address,uint256)` — a9059cbb, the ERC-20 selector.
+    /// The calldata is byte-identical to `transfer` above; only the declared
+    /// RETURN differs, and a signature does not carry one.
+    usdt_transfer: usdt::Transfer => sol_usdt::transferCall,
+    |(to, amount)| sol_usdt::transferCall {
+        to: SolAddress::from(to),
+        amount: SolU256::from(amount),
+    };
+
+    /// USDT's `approve(address,uint256)` — 095ea7b3.
+    usdt_approve: usdt::Approve => sol_usdt::approveCall,
+    |(spender, allowance)| sol_usdt::approveCall {
+        spender: SolAddress::from(spender),
+        amount: SolU256::from_be_bytes(allowance),
+    };
+
+    /// USDT's `transferFrom(address,address,uint256)` — 23b872dd.
+    usdt_transfer_from: usdt::TransferFrom => sol_usdt::transferFromCall,
+    |(from, to, amount)| sol_usdt::transferFromCall {
+        from: SolAddress::from(from),
+        to: SolAddress::from(to),
+        amount: SolU256::from(amount),
+    };
 
     /// ALL EIGHT LEAVES AT ONCE — including the `bool` and the `bytes32`
     /// that no shipped call passes as an argument.

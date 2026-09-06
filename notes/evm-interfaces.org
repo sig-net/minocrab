@@ -394,6 +394,240 @@ inheritance twin is a normal test, per the brief.
   =transfer= a caller also wants) is the first place a shipped lineage
   plausibly will.
 
+* 5. As built — rung B (2026-09-06)
+ERC-20 in full, WETH (the first shipped =Extends=), =UsdtLike= as a
+sibling, and the two things M37 recorded for dmd both closed: a =Unit= in
+an argument tuple is now =error[E0277]= rather than a build-time panic,
+and a =Unit=-return call forms real tickets. ZERO MOVEMENT: the
+214-circuit dump is byte-identical, =diff -rq= EMPTY; no snapshot was
+regenerated, because the new contract is TEST-ONLY.
+
+** The surface as it landed
+=crates/minocrab-contracts/src/evm.rs=:
+#+begin_src rust
+pub trait AbiType { const SOLIDITY; const RESPOND; type Wire<V: Vis3>; }   // the RETURN bound
+pub trait AbiArg: AbiType { fn word<V: Vis3>(c, &Self::Wire<V>) -> B32<V>; } // the ARGUMENT bound
+pub struct U8;                    // uint8 / uint8, Uint<8, V>, numeric_word
+pub trait Payable: EvmCall {}     // may carry ether
+pub fn build_tx_payable<C: Payable, const WORDS: usize>(c, callee, args, value: Uint<128, Private>, nonce)
+pub mod usdt;  pub mod weth;
+#+end_src
+=AbiTuple= / =AbiArgs= are now over =AbiArg=; =EvmCall::Return= keeps its
+=AbiType= bound; =Unit= implements =AbiType= and NOT =AbiArg=.
+=evm_flow.rs= gains =Pending::request_payable(c, callee, args, value,
+key_version, nonce, env) where Called<F>: Payable=, and a private
+=Pending::file= that is =request='s old tail, shared by the two.
+
+Every call type in the library after this rung, with the signature it
+hashes and the selector it hashes TO. All six new selectors are COMPUTED
+by =EvmCall::selector()= in the tests, re-hashed there from the signature
+string, and — since rung D merged — checked against =alloy='s own
+=SolCall::SELECTOR=. All six agreed with the brief's list; nothing had to
+be corrected.
+| call | signature | selector | return | succeeded |
+|------+-----------+----------+--------+-----------|
+| =erc20::Transfer= | =transfer(address,uint256)= | =a9059cbb= | =Bool= | =is_true= |
+| =erc20::Approve= | =approve(address,uint256)= | =095ea7b3= | =Bool= | =is_true= |
+| =erc20::TransferFrom= | =transferFrom(address,address,uint256)= | =23b872dd= | =Bool= | =is_true= |
+| =erc20::IncreaseAllowance= | =increaseAllowance(address,uint256)= | =39509351= | =Bool= | =is_true= |
+| =erc20::DecreaseAllowance= | =decreaseAllowance(address,uint256)= | =a457c2d7= | =Bool= | =is_true= |
+| =erc20::Permit= | =permit(address,address,uint256,uint256,uint8,bytes32,bytes32)= | =d505accf= | =Unit= | =always= |
+| =weth::Deposit= (PAYABLE) | =deposit()= | =d0e30db0= | =Unit= | =always= |
+| =weth::Withdraw= | =withdraw(uint256)= | =2e1a7d4d= | =Unit= | =always= |
+| =usdt::Transfer= | =transfer(address,uint256)= | =a9059cbb= | =Unit= | =always= |
+| =usdt::Approve= | =approve(address,uint256)= | =095ea7b3= | =Unit= | =always= |
+| =usdt::TransferFrom= | =transferFrom(address,address,uint256)= | =23b872dd= | =Unit= | =always= |
+| =erc4626::Deposit= | =deposit(uint256,address)= | =6e553f65= | =U64= | =always= |
+| =erc4626::Redeem= | =redeem(uint256,address,address)= | =ba087652= | =U64= | =always= |
+| =uniswap_v3::ExactOutputSingle= | =exactOutputSingle((address,…,uint160))= | =5023b4df= | =U64= | =always= |
+Argument words: =Permit= 7, =weth::Deposit= 0, =weth::Withdraw= 1,
+=TransferFrom= 3, the allowance deltas 2. The =usdt::= three are
+BYTE-IDENTICAL CALLDATA to their =erc20::= twins — same selector, same
+words — and differ only in =Return=, which is the whole design.
+Interfaces: =Weth: Extends<Erc20>=; =UsdtLike= extends nothing and is
+extended by nothing.
+Gas: =weth::CALL_GAS= and =usdt::CALL_GAS= are both =erc20::CALL_GAS=
+(100,000), aliased rather than re-typed — no second magic number.
+
+** The Args/Return split (M37 finding iii, first part)
+DECIDED: split the TRAIT, not the type. =AbiType= keeps the spelling and
+the wire and IS the return position's bound; a new =AbiArg: AbiType=
+carries =word= and is the argument position's. =AbiTuple='s element bound
+rose to =AbiArg=, so =(Unit,)= has no =AbiTuple= impl.
+
+DEVIATION FROM THE BRIEF, which asked for =AbiArg= AND =EvmCall::Return:
+AbiReturn=. An =AbiReturn= implemented by =Unit= and the word types would
+have exactly =AbiType='s membership — a second name for the same set, and
+one more bound on every call type for nothing. The split that pays is the
+other one: moving =word= OFF the trait =Unit= implements DELETES the
+panic rather than leaving it unreachable, which is what §10 item 3 asked
+for. =Unit= now has no =word= at all.
+
+rustc, verified by compiling it (not predicted):
+=error[E0277]: the trait bound `Unit: AbiArg` is not satisfied=. It fires
+for =type Args = (Unit,)= and for =(Address, Unit)= — both are
+=compile_fail= doctests in =evm.rs=, with the positive twin (the same
+call with the =Unit= left as the =Return=, where it belongs).
+
+ZERO MOVEMENT, as the dump says: =word= is the same function reached
+through a different trait, and the macro bodies call =<$t as
+AbiArg>::word= where they called =<$t as AbiType>::word=.
+
+** The payable design, and why that rung of the ladder
+DECIDED: a marker trait =pub trait Payable: EvmCall {}= plus
+=build_tx_payable= / =Pending::request_payable=, both bounded by it.
+=weth::Deposit= is the only impl. Rejected alternatives, in the order the
+brief offered them:
+- =EvmCall::PAYABLE: bool= — a const cannot gate a method; the best it
+  reaches is an inline-const assert inside the request, which is rung
+  THREE of the ladder where rung one is available for the same work.
+- =Envelope::with_value(Uint<128>)= — the fatal problem is not the
+  spelling, it is that AN ENVELOPE DOES NOT KNOW ITS CALL. =Envelope= is
+  built at the call site and handed to =request_with=, which pins the
+  call afterwards, so a =with_value= on it cannot be bounded by anything
+  about the call: a =with_value::<weth::Deposit>= turbofish would
+  type-check and then be handed to a =transfer=. Making =Envelope=
+  generic (=Envelope<C>=) would tie it, at the price of a type parameter
+  on every existing signature and call site in the vault lineage — for no
+  safety a bound on the REQUEST does not already give.
+- A DISTINCT METHOD is what landed, because the request is the one place
+  where the call, the callee and the amount are all in scope. It is also
+  purely additive: no existing signature changed, so zero movement is a
+  property of the diff rather than only a measurement.
+Mechanically: =Tail::Named= gained =value: Option<Wire3<FieldT,
+Private>>=, and =finish_tx= does =value.unwrap_or_else(|| c.constant(0))=
+at exactly the point it used to emit the constant. =None= is every
+non-payable call, so the immediate is named where it always was — which
+is why the vault's seventeen and the treasury's three do not move.
+=Envelope::ether= is PRIVATE; =build_tx_payable= is its only caller.
+The converse is deliberately NOT enforced: a payable call may go through
+the ordinary =request= (a =deposit= with no ether), which is what
+Solidity means by payable.
+rustc: =error[E0277]: the trait bound `erc20::Transfer: Payable` is not
+satisfied= — a =compile_fail= doctest at BOTH layers (=build_tx_payable=
+in =evm=, =request_payable= in =evm_flow=), each with the WETH twin.
+
+** =UsdtLike=, and the tickets a =Unit= return forms
+=usdt::{Transfer, Approve, TransferFrom}= with =Return = Unit= and
+=succeeded = always=, on a marker that neither extends =Erc20= nor is
+extended by it. Both directions are =compile_fail= doctests in
+=evm_flow= (=Erc20: Extends<UsdtLike>= and =UsdtLike: Extends<Erc20>=,
+both "not satisfied"), with a positive twin filing each callee against
+its own slot in one block.
+=tests/evm_no_return.rs= is the working contract: a
+=Pending<Kinded<usdt::Transfer, 1>, Owned<Amount>, 2>= with =send_tether=
+/ =complete_tether= / =refund_tether=, plus WETH's
+=Pending<Kinded<weth::Deposit, 2>, Amount, 0>= (=wrap=, =complete_wrap=)
+and =Pending<Kinded<weth::Withdraw, 3>, Amount, 1>= (=unwrap=).
+=complete= compiles with a =()= attested value and the settle body binds
+it as =let () = outcome.output=; =refund_to_owner= destructures the same
+=()=. That needed =()= to be a =CircuitArg= and a =CircuitBorsh=
+(37dc5dc, M37 finding iii's second part) and is its first user.
+=WORDS = 0= WORKS: =EventRecordV2<0>= builds, the block lays out, and
+=weth::Deposit= files with an empty calldata word array.
+
+DEVIATION FROM §2.4: =UsdtLike= is in =evm/usdt.rs=, not in
+=evm/erc20.rs= as the module table says. Forced by the naming rule the
+same table sets — a call type is named after its Solidity function, and
+=Transfer= / =Approve= / =TransferFrom= would collide with =erc20='s in
+one module. Two modules, one per interface, is what the rest of the
+layout already does.
+
+DEVIATION FROM THE BRIEF's "a small one under =src/= like treasury.rs, or
+a test-only contract": TEST-ONLY was chosen. A =src/= contract joins
+=tests/support::circuits()=, which would add rows to =row_snapshot= and
+=interface_snapshot= — and the brief forbids regenerating either. A
+test-only =#[circuit]= block (the shape =tests/nested_typed.rs= and
+=tests/signet_flow.rs= already use) exercises every one of the same API
+surfaces, so the DUMP IS STILL 214 FILES and no snapshot moved. Recorded
+because a shipped WETH/USDT example under =src/= is a reasonable thing
+for rung G to want, and then the snapshot rows follow treasury's path.
+
+** Rung D's oracle, extended (merged main, cfc5965)
+Rung D landed while this rung was in flight, so =main= was merged in and
+NINE ROWS ADDED to =tests/evm_alloy_oracle.rs= — every call rung B
+introduced, each pinned against =alloy='s own =sol!= encoder for
+signature, selector and every ABI word on generated values. The harness
+needed three additions and no restructuring:
+- =trait SampleLeaf: AbiArg= (was =AbiType=) — the one-token consequence
+  of the split, since =SampleArgs='s =AbiTuple= supertrait is over
+  =AbiArg= now.
+- =impl SampleArgs for ()= — the ZERO-ARGUMENT row. alloy's
+  =abi_encode()= for =deposit()= is four selector bytes; our word list is
+  empty; the row is where the two agree that nothing is there.
+- =impl SampleLeaf for U8= — permit's =v=, sampled at 0, 27, 28, 255 and
+  across the range.
+The three =usdt::= rows declare their =sol!= twins with NO RETURN, so
+alloy independently confirms that a Solidity signature does not carry the
+return type and that the sibling interface is a TYPE distinction rather
+than a wire one. 36 oracle tests pass, up from 18 (fifteen rows at
+signature+selector and at words, plus the six standalone checks including
+rung D's two negative controls).
+
+** Gate results
+- ZERO MOVEMENT: =MINOCRAB_ZKIR_DUMP= on the untouched HEAD (37dc5dc) and
+  after the rung: 214 files each, =diff -rq= EMPTY (exit 0, no output).
+  Re-run AFTER merging main: still 214, still EMPTY. NO FILE WAS ADDED to
+  the dump — the new contract is test-only.
+- =cargo test --workspace= — 115 targets, 1090 passed, 0 failed, 40
+  ignored (114 / 1054 / 0 / 40 before the merge brought rung D's oracle).
+- =cargo clippy --workspace --all-targets -- -D warnings= — clean, before
+  and after the merge.
+- =cargo doc -p minocrab-contracts --no-deps= — 7 warnings, the SAME 7 as
+  the untouched tree (=events_borsh=, =hashing=, =nested=, =signet=,
+  =signet_contract=, =xcall= ×2); ZERO from =evm.rs=, =evm/*= or
+  =evm_flow.rs=, and every intra-doc link added this rung resolves.
+- =cargo test --release -p minocrab-contracts --test row_snapshot --test
+  interface_snapshot= — 2 passed + 1 ignored in each; NOTHING
+  REGENERATED (=git status= shows neither snapshot file nor
+  =taint_baseline.txt= touched).
+- =circuit_closure=, =taint_lint=, =trust_base= — green.
+  =MINOCRAB_TRUST_BASE=1 … --test trust_base= rewrote nothing: rung B
+  touches neither =minocrab-std= nor =minocrab-macros=, so =TRUST.md= is
+  unchanged and current.
+- Doc tests: the crate's 36 passed + 1 ignored (23 + 1 at rung A). In
+  =evm.rs= and =evm_flow.rs= alone: 20 =compile_fail= gates and 14
+  positive examples, up from 10 + 3.
+- =tests/evm_abi.rs= 29 tests, =tests/evm_no_return.rs= 10,
+  =tests/evm_alloy_oracle.rs= 36.
+- README's cross-chain block re-verified as =treasury.rs= VERBATIM by
+  rung A's procedure (§4): 87 non-blank block lines, each found in
+  =src/treasury.rs= at or after a moving cursor. =treasury.rs= itself is
+  untouched this rung.
+
+** Open questions for dmd
+1. =Permit::GAS_LIMIT= is =erc20::CALL_GAS= (100,000) — a DEFAULT, not a
+   measurement. A permit is an ecrecover plus two storage writes (~50-60k
+   in the wild), so 100,000 is safe and wasteful in the same way the
+   vault's own numbers are. This is the second consumer to want
+   =Filing::GAS_LIMIT= (§2.3 defers it "if a consumer asks"); still not
+   built.
+2. =IncreaseAllowance= / =DecreaseAllowance= ARE NOT IN OpenZeppelin v5 —
+   OZ removed them. Shipping them is a bet that the deployed tokens that
+   matter predate v5. If dmd would rather the library carry only what a
+   current OZ token exposes, they come out and =Approve= stands alone.
+3. NO PAYABLE VARIANT OF =request_with= OR =Fired::request_with=. The
+   builder-shaped request (ledger reads interleaved with argument words)
+   and the fire-and-forget slot both take an =Envelope=, and adding ether
+   there is the =Envelope<C>= change rejected above. No consumer yet; a
+   WETH deposit whose amount comes from a ledger read would be one.
+4. =U8::RESPOND= is =uint8= and NOTHING RETURNS ONE — the type is
+   argument-only in practice (permit's =v=). It is declared for symmetry;
+   if the MPC's schema vocabulary does not have =uint8=, this is where it
+   would show, and the alloy oracle will not catch it (it pins selectors
+   and words, not the respond schema — rung D's own §7 says so).
+5. A =Succeeded= ticket on a =UsdtLike= call is worth strictly less than
+   one on an =Erc20= call: it says "mined without reverting" and nothing
+   more, because the callee sent nothing more. A token that failed
+   silently WITHOUT reverting would complete. No declaration can recover
+   a bit the callee never sent; success from the =Transfer= EVENT is the
+   only fix, and it is a change on sig-net's side (evm-calls.org §3.1
+   option (ii)).
+6. Carried from rung A, unchanged: =FIXED_PRIORITY_FEE= /
+   =FIXED_MAX_FEE= still live in =erc20_vault= and =evm::build_tx=
+   imports them. Rung B added a THIRD kind of caller (a payable one) and
+   the envelope's home is still not decided.
+
 * 7. As built — rung D (2026-09-06)
 THE FIXTURE ORACLE: =crates/minocrab-contracts/tests/evm_alloy_oracle.rs=,
 920 lines, 18 tests. Every call's signature string, four selector bytes and

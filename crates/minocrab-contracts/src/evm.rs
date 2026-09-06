@@ -10,14 +10,17 @@
 //! Three layers:
 //!
 //! 1. [`AbiType`] — one Rust unit type per Solidity leaf ([`Address`],
-//!    [`Bool`], [`Bytes32`], [`U24`], [`U64`], [`U128`], [`U160`],
-//!    [`U256`]). It carries the leaf's spelling in a selector signature
+//!    [`Bool`], [`Bytes32`], [`U8`], [`U24`], [`U64`], [`U128`], [`U160`],
+//!    [`U256`]), plus [`Unit`] for a callee that returns NOTHING. It
+//!    carries the leaf's spelling in a selector signature
 //!    ([`AbiType::SOLIDITY`]), its spelling in the attested-output schema
-//!    the MPC narrows to ([`AbiType::RESPOND`]), the CIRCUIT VALUE that
-//!    stands for it ([`AbiType::Wire`]) and the encoder from that value to
-//!    a canonical 32-byte ABI word ([`AbiType::word`]).
+//!    the MPC narrows to ([`AbiType::RESPOND`]) and the CIRCUIT VALUE that
+//!    stands for it ([`AbiType::Wire`]). [`AbiArg`] adds the encoder from
+//!    that value to a canonical 32-byte ABI word ([`AbiArg::word`]) and is
+//!    implemented by every leaf EXCEPT `Unit` — which is how "an argument
+//!    that returns nothing" stops being expressible (M38 rung B).
 //! 2. [`AbiTuple`] — the argument list, for `()` and 1- to 8-tuples of
-//!    `AbiType`s. It knows the WORD COUNT, the comma-joined signature and
+//!    `AbiArg`s. It knows the WORD COUNT, the comma-joined signature and
 //!    how to encode a tuple of wires into words, in order.
 //! 3. [`EvmCall`] — the call: a name, an argument tuple, a return type, the
 //!    [`Interface`] that exposes it and a gas limit. [`EvmCall::selector`]
@@ -26,7 +29,9 @@
 //!    hashes keccak in-circuit; in-circuit hashing stays Poseidon throughout
 //!    (dmd, 2026-09-05: *"Do we actually need a const fn Keccak? Why not
 //!    just run it when we run the eDSL?"* — we do not). The library's calls
-//!    live one module per interface: [`erc20`], [`erc4626`], [`uniswap_v3`].
+//!    live one module per interface: [`erc20`], [`erc4626`],
+//!    [`uniswap_v3`], [`weth`] and [`usdt`]. [`Payable`] marks the one that
+//!    carries ether.
 //! 4. [`Filing`] — HOW ONE SLOT FILES ONE CALL: the response kind byte and
 //!    the deployed record's name for the attested return. Those are facts
 //!    about a DEPLOYMENT's protocol, not about the Solidity function (the
@@ -134,6 +139,83 @@
 //! }
 //! ```
 //!
+//! A [`Unit`] IN AN ARGUMENT TUPLE — "this callee returns nothing" is a
+//! RETURN, and it has no ABI word, so it is an [`AbiType`] and not an
+//! [`AbiArg`] and a tuple containing it is not an [`AbiTuple`] (M38 rung B;
+//! until then this type-checked and reached a build-time panic inside
+//! `Unit::word`, notes/evm-calls.org §10 item 3):
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, erc20, EvmCall, Unit};
+//! use minocrab_std::v3::Check;
+//!
+//! struct Nothing;
+//! impl EvmCall for Nothing {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "nothing";
+//!     // error[E0277]: the trait bound `Unit: AbiArg` is not satisfied
+//!     type Args = (Unit,);
+//!     type Return = Unit;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 21_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! ```
+//!
+//! …and in any position, not just alone — a trailing `Unit` beside real
+//! arguments is the shape a "this one returns nothing" note would take if
+//! it were written in the wrong place:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, Unit};
+//! use minocrab_std::v3::Check;
+//!
+//! struct Nothing;
+//! impl EvmCall for Nothing {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "nothing";
+//!     // error[E0277]: the trait bound `Unit: AbiArg` is not satisfied
+//!     type Args = (Address, Unit);
+//!     type Return = Unit;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 21_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE `Unit` LEFT IN THE ONE PLACE IT BELONGS compiles
+//! — as the RETURN, which is what a call to a callee that answers nothing
+//! actually has (ERC-2612 `permit`, WETH `deposit`, a USDT `transfer`):
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, erc20, Address, EvmCall, Unit};
+//! use minocrab_std::v3::Check;
+//!
+//! struct Nothing;
+//! impl EvmCall for Nothing {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "nothing";
+//!     type Args = (Address,);
+//!     type Return = Unit;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 21_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! assert_eq!(Nothing::signature(), "nothing(address)");
+//! ```
+//!
 //! A projection the return value cannot produce — `()` is [`FromReturn`]
 //! for a `Bool` return and for nothing else, so a numeric call cannot
 //! quietly throw its answer away:
@@ -183,6 +265,130 @@
 //! assert_eq!(Balance::signature(), "balanceOf(address)");
 //! assert_eq!(Balance::selector(), [0x70, 0xa0, 0x82, 0x31]);
 //! ```
+//!
+//! A `Unit` IN AN ARGUMENT TUPLE. [`Unit`] is the leaf that means "this
+//! callee returns NOTHING"; an argument that is nothing has no 32-byte word
+//! to encode, so it is an [`AbiType`] and not an [`AbiArg`], and
+//! [`AbiTuple`] is over `AbiArg`:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{erc20, Address, Bool, EvmCall, Unit};
+//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//!
+//! struct Poke;
+//! impl EvmCall for Poke {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "poke";
+//!     // ERROR: the trait bound `Unit: AbiArg` is not satisfied
+//!     type Args = (Address, Unit);
+//!     type Return = Bool;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!         is_true(*ok)
+//!     }
+//! }
+//! ```
+//!
+//! …and alone, where the tuple is nothing else:
+//!
+//! ```compile_fail
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{erc20, Bool, EvmCall, Unit};
+//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//!
+//! struct Poke;
+//! impl EvmCall for Poke {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "poke";
+//!     // ERROR: the trait bound `Unit: AbiArg` is not satisfied
+//!     type Args = (Unit,);
+//!     type Return = Bool;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!         is_true(*ok)
+//!     }
+//! }
+//! ```
+//!
+//! THE SAME CODE WITH THE ONE CHANGE REVERTED compiles — and `Unit` in the
+//! position it IS for, the RETURN, compiles beside it. That pair is the
+//! whole of the split: one leaf, legal in one position and rejected in the
+//! other, with no runtime check anywhere:
+//!
+//! ```
+//! use minocrab::v3::Circuit3;
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{always, erc20, Address, Bool, EvmCall, Unit};
+//! use minocrab_std::v3::{is_true, Bool as BoolWire, Check};
+//!
+//! struct Poke;
+//! impl EvmCall for Poke {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "poke";
+//!     type Args = (Address,);
+//!     type Return = Bool;
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(_c: &mut Circuit3, ok: &BoolWire<Private>) -> Check<Private> {
+//!         is_true(*ok)
+//!     }
+//! }
+//!
+//! struct Shout;
+//! impl EvmCall for Shout {
+//!     type Callee = erc20::Erc20;
+//!     const NAME: &'static str = "shout";
+//!     type Args = (Address,);
+//!     type Return = Unit;               // the position `Unit` is FOR
+//!     type Success = ();
+//!     const GAS_LIMIT: u64 = 50_000;
+//!     fn succeeded(c: &mut Circuit3, _out: &()) -> Check<Private> {
+//!         always(c)
+//!     }
+//! }
+//! assert_eq!(Shout::signature(), "shout(address)");
+//! ```
+//!
+//! ETHER ON A CALL THAT CANNOT TAKE IT. [`build_tx_payable`] is the only
+//! way a non-zero `value` reaches an [`EvmTx`], and its `C: Payable` bound
+//! is a missing impl for every call but WETH's `deposit()`:
+//!
+//! ```compile_fail
+//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{build_tx_payable, erc20};
+//! use minocrab_std::v3::{Bytes, Uint};
+//!
+//! let mut c = Circuit3::new();
+//! let to = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("to"));
+//! let amount = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("amount"));
+//! let value = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("value"));
+//! let nonce = c.arg::<FieldT>("nonce");
+//! let token = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("token"));
+//! // ERROR: the trait bound `erc20::Transfer: Payable` is not satisfied
+//! let tx = build_tx_payable::<erc20::Transfer, 2>(&mut c, token, (to, amount), value, nonce);
+//! ```
+//!
+//! THE SAME CODE FOR THE CALL THAT IS PAYABLE — `weth::Deposit`, whose
+//! ether IS its argument, so the tuple is empty and the word count is zero:
+//!
+//! ```
+//! use minocrab::v3::{Circuit3, FieldT};
+//! use minocrab::Private;
+//! use minocrab_contracts::evm::{build_tx_payable, weth};
+//! use minocrab_std::v3::{Bytes, Uint};
+//!
+//! let mut c = Circuit3::new();
+//! let value = Uint::<128, Private>::from_field_unchecked(c.arg::<FieldT>("value"));
+//! let nonce = c.arg::<FieldT>("nonce");
+//! let weth9 = Bytes::<20, Private>::from_field_unchecked(c.arg::<FieldT>("weth"));
+//! let tx = build_tx_payable::<weth::Deposit, 0>(&mut c, weth9, (), value, nonce);
+//! ```
 
 use core::marker::PhantomData;
 
@@ -198,6 +404,8 @@ use crate::signet_flow::EvmTx;
 pub mod erc20;
 pub mod erc4626;
 pub mod uniswap_v3;
+pub mod usdt;
+pub mod weth;
 
 // ---- the encoders (moved from `signet`, unchanged) ---------------------------
 
@@ -240,11 +448,16 @@ pub fn numeric_word<V: Vis3>(c: &mut Circuit3, value: Wire3<FieldT, V>) -> B32<V
 
 // ---- the ABI type layer ------------------------------------------------------
 
-/// One Solidity leaf: how it is SPELLED, what CIRCUIT VALUE stands for it,
-/// and how that value becomes a canonical 32-byte ABI word.
+/// One Solidity leaf: how it is SPELLED and what CIRCUIT VALUE stands for
+/// it.
 ///
 /// The implementors are unit types ([`Address`], [`Bool`], …), never
-/// instantiated: they exist to be named in an [`EvmCall::Args`] tuple.
+/// instantiated: they exist to be named in an [`EvmCall::Args`] tuple or as
+/// an [`EvmCall::Return`].
+///
+/// THE WORD IS NOT HERE. Encoding a value into a 32-byte ABI word is
+/// [`AbiArg`]'s, because the one leaf that is a return and not an argument
+/// — [`Unit`], "this callee returns nothing" — has no word to encode.
 pub trait AbiType {
     /// The spelling inside the selector signature — what
     /// `keccak256("transfer(address,uint256)")` sees. `U64`, `U128` and
@@ -261,7 +474,25 @@ pub trait AbiType {
 
     /// The circuit value that stands for this leaf.
     type Wire<V: Vis3>;
+}
 
+/// A LEAF THAT CAN STAND IN AN ARGUMENT LIST — an [`AbiType`] that HAS an
+/// ABI word, which is every one of them except [`Unit`].
+///
+/// THE ARGS/RETURN SPLIT (M38 rung B). [`AbiType`] is the RETURN position's
+/// bound: a call may return a `bool`, a number, or NOTHING AT ALL, and
+/// [`Unit`] is that nothing. This trait is the ARGUMENT position's: an
+/// argument is a value that becomes a 32-byte word, and `Unit` has no word
+/// to become. So [`AbiTuple`] is over `AbiArg` and `Unit` has no impl,
+/// which makes `type Args = (Unit,)` a MISSING TRAIT IMPL —
+/// `error[E0277]`, the first rung of the project's ladder — where until
+/// this rung it type-checked and reached a build-time panic inside
+/// `Unit::word` (notes/evm-calls.org §10 item 3, recorded for dmd).
+///
+/// The encoder lives here rather than on [`AbiType`] so that `Unit` does
+/// not implement it at all: there is no unreachable body and no panic to
+/// keep prescriptive.
+pub trait AbiArg: AbiType {
     /// The canonical big-endian ABI word for a value of this leaf.
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V>;
 }
@@ -273,7 +504,9 @@ impl AbiType for Address {
     const SOLIDITY: &'static str = "address";
     const RESPOND: &'static str = "address";
     type Wire<V: Vis3> = Bytes<20, V>;
+}
 
+impl AbiArg for Address {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         address_word(c, w.field())
     }
@@ -286,7 +519,9 @@ impl AbiType for Bool {
     const SOLIDITY: &'static str = "bool";
     const RESPOND: &'static str = "bool";
     type Wire<V: Vis3> = BoolWire<V>;
+}
 
+impl AbiArg for Bool {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
@@ -300,7 +535,9 @@ impl AbiType for Bytes32 {
     const SOLIDITY: &'static str = "bytes32";
     const RESPOND: &'static str = "bytes32";
     type Wire<V: Vis3> = B32<V>;
+}
 
+impl AbiArg for Bytes32 {
     fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
@@ -320,25 +557,40 @@ impl AbiType for Bytes32 {
 /// with nothing to say, executing IS succeeding and there is no flag to be
 /// fooled by.
 ///
-/// A RETURN TYPE ONLY. It has no ABI word, and [`Self::word`] says so
-/// rather than encoding a zero: a `Unit` in an argument tuple is a mistake,
-/// and one that would otherwise put a silent zero word on the wire.
-/// (Recorded for dmd: a build-time panic where the hard rule prefers a
-/// compile error — making it one needs `Args` and `Return` to be separate
-/// traits, which re-types every call. notes/evm-calls.org §10.)
+/// A RETURN TYPE ONLY, and the type system says so: `Unit` is an
+/// [`AbiType`] and NOT an [`AbiArg`], so it can be named as an
+/// [`EvmCall::Return`] and cannot be named in an [`EvmCall::Args`] tuple.
+///
+/// `type Args = (Unit,)` is `error[E0277]` — "the trait bound `Unit:
+/// AbiArg` is not satisfied" (the module docs carry the gate). Until M38
+/// rung B it type-checked and put a build-time panic inside `Unit::word`
+/// where the hard rule prefers a compile error — notes/evm-calls.org §10
+/// item 3, recorded for dmd and now closed.
 pub struct Unit;
 
 impl AbiType for Unit {
     const SOLIDITY: &'static str = "";
     const RESPOND: &'static str = "";
     type Wire<V: Vis3> = ();
+}
 
-    fn word<V: Vis3>(_c: &mut Circuit3, _w: &Self::Wire<V>) -> B32<V> {
-        panic!(
-            "`Unit` has no ABI word: it is an EvmCall::Return for a callee that \
-             returns nothing, never an EvmCall::Args element. Drop it from the \
-             argument tuple."
-        )
+/// Solidity `uint8` — ERC-2612 `permit`'s signature parity byte `v`, the
+/// narrowest integer the library passes.
+///
+/// The encoding is [`numeric_word`], exactly as [`U24`] and [`U64`]: a
+/// 32-byte word is a 32-byte word, and the Rust type states the RANGE the
+/// wire claims (`Uint<8>`) rather than a different encoder.
+pub struct U8;
+
+impl AbiType for U8 {
+    const SOLIDITY: &'static str = "uint8";
+    const RESPOND: &'static str = "uint8";
+    type Wire<V: Vis3> = Uint<8, V>;
+}
+
+impl AbiArg for U8 {
+    fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
+        numeric_word(c, w.field())
     }
 }
 
@@ -350,7 +602,9 @@ impl AbiType for U24 {
     const SOLIDITY: &'static str = "uint24";
     const RESPOND: &'static str = "uint24";
     type Wire<V: Vis3> = Uint<24, V>;
+}
 
+impl AbiArg for U24 {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
@@ -365,7 +619,9 @@ impl AbiType for U64 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint64";
     type Wire<V: Vis3> = Uint<64, V>;
+}
 
+impl AbiArg for U64 {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
@@ -383,7 +639,9 @@ impl AbiType for U128 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint128";
     type Wire<V: Vis3> = Uint<128, V>;
+}
 
+impl AbiArg for U128 {
     fn word<V: Vis3>(c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         numeric_word(c, w.field())
     }
@@ -401,7 +659,9 @@ impl AbiType for U160 {
     const SOLIDITY: &'static str = "uint160";
     const RESPOND: &'static str = "uint160";
     type Wire<V: Vis3> = B32<V>;
+}
 
+impl AbiArg for U160 {
     fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
@@ -419,7 +679,9 @@ impl AbiType for U256 {
     const SOLIDITY: &'static str = "uint256";
     const RESPOND: &'static str = "uint256";
     type Wire<V: Vis3> = B32<V>;
+}
 
+impl AbiArg for U256 {
     fn word<V: Vis3>(_c: &mut Circuit3, w: &Self::Wire<V>) -> B32<V> {
         *w
     }
@@ -427,7 +689,10 @@ impl AbiType for U256 {
 
 // ---- the argument list -------------------------------------------------------
 
-/// An [`EvmCall`]'s argument list: `()` or a 1- to 8-tuple of [`AbiType`]s.
+/// An [`EvmCall`]'s argument list: `()` or a 1- to 8-tuple of [`AbiArg`]s.
+///
+/// [`AbiArg`] and not [`AbiType`]: [`Unit`] is a return and not an
+/// argument, so a tuple containing it has no `AbiTuple` impl.
 ///
 /// Implemented by a declarative `macro_rules!` over the arities — tooling
 /// walks into it (notes/evm-calls.org §6: *"macros that don't completely
@@ -465,7 +730,7 @@ impl AbiTuple for () {
 
 macro_rules! abi_tuple {
     ($n:literal; $($t:ident => $idx:tt),+) => {
-        impl<$($t: AbiType),+> AbiTuple for ($($t,)+) {
+        impl<$($t: AbiArg),+> AbiTuple for ($($t,)+) {
             const WORDS: usize = $n;
             type Wires<V: Vis3> = ($(<$t as AbiType>::Wire<V>,)+);
 
@@ -475,7 +740,7 @@ macro_rules! abi_tuple {
 
             fn words<V: Vis3>(c: &mut Circuit3, wires: Self::Wires<V>) -> Vec<B32<V>> {
                 // Left to right, which is argument order, which is word order.
-                vec![$(<$t as AbiType>::word(c, &wires.$idx)),+]
+                vec![$(<$t as AbiArg>::word(c, &wires.$idx)),+]
             }
         }
     };
@@ -535,7 +800,7 @@ impl AbiArgs<()> for () {
 
 macro_rules! abi_args {
     ($($t:ident / $f:ident => $idx:tt),+) => {
-        impl<$($t: AbiType,)+ $($f: FnOnce(&mut Circuit3) -> <$t as AbiType>::Wire<Private>,)+>
+        impl<$($t: AbiArg,)+ $($f: FnOnce(&mut Circuit3) -> <$t as AbiType>::Wire<Private>,)+>
             AbiArgs<($($t,)+)> for ($($f,)+)
         {
             fn words(self, c: &mut Circuit3) -> Vec<B32<Private>> {
@@ -543,7 +808,7 @@ macro_rules! abi_args {
                 // circuit's ledger reads interleave with.
                 vec![$({
                     let w = (self.$idx)(c);
-                    <$t as AbiType>::word(c, &w)
+                    <$t as AbiArg>::word(c, &w)
                 }),+]
             }
         }
@@ -814,6 +1079,30 @@ pub trait EvmCall {
     }
 }
 
+// ---- ether ---------------------------------------------------------------------
+
+/// A PAYABLE FUNCTION — one that may be called WITH ETHER ATTACHED.
+///
+/// Every other call this library builds fixes the transaction's `value`
+/// field at zero: a token call moves tokens, not ether. WETH's `deposit()`
+/// is the exception — the ether IS the argument, and a `deposit` with
+/// `value = 0` wraps nothing.
+///
+/// A MARKER, not a field, because that is the top rung of the project's
+/// ladder (CLAUDE.md: missing impl > distinct types > inline-const assert >
+/// panic). [`build_tx_payable`] and
+/// [`Pending::request_payable`](crate::evm_flow::Pending::request_payable)
+/// are the only ways to put a non-zero `value` on the wire and both are
+/// bounded by this trait, so handing ether to an [`erc20::Transfer`] is
+/// `error[E0277]` — "the trait bound `Transfer: Payable` is not satisfied"
+/// — rather than an amount that silently goes nowhere. Nothing about a non-payable call changes: it has
+/// no impl, no extra field and no extra instruction.
+///
+/// The converse is NOT enforced and is not a mistake: a payable call may be
+/// made through the ordinary [`build_tx`], which is a call with no ether —
+/// which is what Solidity means by payable.
+pub trait Payable: EvmCall {}
+
 // ---- did it work? ------------------------------------------------------------
 
 /// A `Check` that is CONSTANTLY TRUE — the [`EvmCall::succeeded`] of a call
@@ -904,6 +1193,34 @@ pub fn build_tx<C: EvmCall, const WORDS: usize>(
     finish_tx::<C, WORDS>(c, words, Envelope::fixed(), |_| callee, nonce)
 }
 
+/// [`build_tx`] FOR A CALL THAT CARRIES ETHER — the transaction's `value`
+/// field is a real amount rather than the constant zero.
+///
+/// `C: Payable` is the whole gate: WETH's `deposit()` has the impl and an
+/// ERC-20 `transfer` does not, so an amount cannot be attached to a call
+/// that would ignore it. Everything else is [`build_tx`] — the same
+/// envelope, the same emission order, the same const-checked `WORDS`.
+pub fn build_tx_payable<C: Payable, const WORDS: usize>(
+    c: &mut Circuit3,
+    callee: Bytes<20, Private>,
+    args: <C::Args as AbiTuple>::Wires<Private>,
+    value: Uint<128, Private>,
+    nonce: Wire3<FieldT, Private>,
+) -> EvmTx<WORDS> {
+    const {
+        assert!(
+            WORDS == <C::Args as AbiTuple>::WORDS,
+            "`build_tx_payable::<C, WORDS>` needs WORDS == <C::Args as AbiTuple>::WORDS \
+             — the record's calldata capacity IS the argument list's word count. \
+             Stable Rust cannot infer it (generic_const_exprs), so name the \
+             number the tuple actually encodes to."
+        )
+    };
+
+    let words = <C::Args as AbiTuple>::words(c, args);
+    finish_tx::<C, WORDS>(c, words, Envelope::fixed().ether(value), |_| callee, nonce)
+}
+
 /// WHO PAYS, AND HOW THE TRANSACTION'S CONSTANTS ARE SPELLED — everything
 /// about the request that is neither the callee, the arguments nor the nonce.
 ///
@@ -934,7 +1251,12 @@ enum Fees {
 }
 
 enum Tail {
-    Named,
+    Named {
+        /// The ether the transaction carries, for a [`Payable`] call.
+        /// `None` — every non-payable call — is the constant zero, named
+        /// where it has always been named.
+        value: Option<Wire3<FieldT, Private>>,
+    },
     Literal {
         value: Option<Wire3<FieldT, Private>>,
         calldata_is_some: Wire3<FieldT, Private>,
@@ -947,7 +1269,7 @@ impl Envelope {
     pub fn fixed() -> Self {
         Envelope {
             fees: Fees::Fixed,
-            tail: Tail::Named,
+            tail: Tail::Named { value: None },
         }
     }
 
@@ -965,15 +1287,16 @@ impl Envelope {
                 max_fee_per_gas,
                 gas_limit,
             },
-            tail: Tail::Named,
+            tail: Tail::Named { value: None },
         }
     }
 
     /// THE HAND-WRITTEN SPELLING of the transaction's constant fields, for a
     /// circuit whose artifact must not move.
     ///
-    /// `value = 0` (a token call carries no ether) and `calldata_is_some = 1`
-    /// (there is always calldata) are constants of every call this API
+    /// `value = 0` (a token call carries no ether — [`build_tx_payable`] is
+    /// the one exception) and `calldata_is_some = 1` (there is always
+    /// calldata) are constants of every call this API
     /// builds, and by default [`build_tx_with`] NAMES them, after the fee
     /// envelope and the callee and before the word count and the selector —
     /// the order the vault's `erc20_call` helper named them in, and the order
@@ -1006,6 +1329,20 @@ impl Envelope {
             tail: Tail::Literal {
                 value,
                 calldata_is_some,
+            },
+        }
+    }
+
+    /// THE ETHER — private, and reachable only through
+    /// [`build_tx_payable`], whose `C: Payable` bound is the gate. A public
+    /// `with_value` on this type could not name the call it will build, so
+    /// it could not tell a WETH `deposit` from a `transfer`; the bound goes
+    /// where the call is known instead (notes/evm-interfaces.org §5).
+    fn ether(self, value: Uint<128, Private>) -> Self {
+        Envelope {
+            fees: self.fees,
+            tail: Tail::Named {
+                value: Some(value.field()),
             },
         }
     }
@@ -1090,10 +1427,12 @@ fn finish_tx<C: EvmCall, const WORDS: usize>(
     // and in which of them the caller already holds — see `Envelope::literal`.
     let ([priority_fee, max_fee, gas_limit], to, value, calldata_is_some, no_words, selector) =
         match tail {
-            Tail::Named => {
+            Tail::Named { value } => {
                 let fees = Envelope::fee_wires::<C>(fees, c);
                 let to = callee(c).field();
-                let value = c.constant(0u64).private();
+                // `None` is every non-payable call: the immediate zero,
+                // named exactly where it has always been named.
+                let value = value.unwrap_or_else(|| c.constant(0u64).private());
                 let calldata_is_some = c.constant(1u64).private();
                 let no_words = c.constant(WORDS as u64).private();
                 let selector = c.constant(selector_imm()).private();
