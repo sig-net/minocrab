@@ -38,6 +38,15 @@ midnight-zkir-v3.workspace = true
 midnight-transient-crypto.workspace = true
 midnight-base-crypto.workspace = true
 midnight-curves.workspace = true
+# The EXECUTOR (`v3::exec`, `unstable` only): Midnight's own Impact VM, run
+# in `ResultModeGather` against a live `StateValue`. Optional so the stable
+# tier — the measurement API and the `minocrab` CLI — does not grow a ledger
+# dependency. See notes/executor.org.
+midnight-onchain-vm = { workspace = true, optional = true }
+midnight-onchain-state = { workspace = true, optional = true }
+midnight-onchain-runtime = { workspace = true, optional = true }
+midnight-coin-structure = { workspace = true, optional = true }
+midnight-storage = { workspace = true, optional = true }
 group.workspace = true
 sha2.workspace = true
 sha3.workspace = true
@@ -51,7 +60,13 @@ thiserror.workspace = true
 # promise; the stable surface is the measurement API — `cost`, `profile`,
 # `assert_max_k`, `rowcost` — and the `minocrab` CLI. In-workspace crates
 # enable this.
-unstable = []
+unstable = [
+    "dep:midnight-onchain-vm",
+    "dep:midnight-onchain-state",
+    "dep:midnight-onchain-runtime",
+    "dep:midnight-coin-structure",
+    "dep:midnight-storage",
+]
 
 [dev-dependencies]
 # Enable the internal tier for this crate's own tests and examples.

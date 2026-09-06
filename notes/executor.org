@@ -1,0 +1,247 @@
+#+title: The v3 transcript executor — a circuit's transcript from ledger state
+# Written 2026-09-06 (M35 rung 1, the piece decisions.org A2 named).
+# Linked from notes/signet-async.org §10.
+
+* 1. What it is, and why it is a new layer
+
+=minocrab_sim::v3::simulate= VERIFIES a complete =ProofPreimage=: when the
+walk reaches a =public_input= gate — the wires a ledger read witnesses — it
+takes the value from =preimage.public_transcript_outputs=. Something else
+had to put it there. Until now the only supplier in the workspace was a
+hand-written reference model: the vault harness's =tests/vault_pending=
+(3.8k lines) writes every read's answer down beside the op stream, and
+=preimage_of= derives both public halves from that.
+
+That is enough to check ONE call. It is not enough to chain two, because a
+settle's reads must see the post-state a request left, and a hand model
+cannot produce a post-state it did not already know. Every blocked item —
+M35 D's state-driving half, M35 E's generated per-slot round trips, M26's
+typed contract-testing harness — was blocked on the same missing direction:
+
+: preimage --(simulate)--> accept / reject          existed
+: state    --(execute )--> preimage                 did not
+
+=minocrab_sim::v3::exec= is the second arrow. It sits at L5 with the rest of
+the harness layer (=minocrab-sim=), behind the =unstable= feature, with the
+ledger crates as OPTIONAL dependencies so the published measurement API and
+the =minocrab= CLI do not grow a ledger dependency.
+
+* 2. The reuse survey (midnight-ledger 04c9c5d9, 2026-09-06)
+
+Searched before writing anything, per the house rule. What exists upstream:
+
+| item                                     | where                                   | used |
+|------------------------------------------+-----------------------------------------+------|
+| =ResultModeGather= / =GatherEvent=        | onchain-vm =result_mode.rs:76,82=        | yes  |
+| =run_program=                             | onchain-vm =vm.rs:292=                   | yes  |
+| =QueryContext::query::<M>=                | onchain-runtime =context.rs:923=         | yes  |
+| =ContractStateExt::query= (gather only)   | onchain-runtime =contract_state_ext.rs=  | no¹  |
+| =Op::translate=                           | onchain-vm =ops.rs:405=                  | yes  |
+| =zswap::verify::with_outputs=             | zswap =verify.rs:78=                     | no²  |
+| =PreTranscript=, =ContractCallPrototype=  | ledger =construct.rs:494,706=            | no³  |
+| =IrSource::preprocess=                    | zkir-v3 =ir_vm.rs:185=                   | yes⁴ |
+
+1. Builds its own default =QueryContext= over a =ContractState=; we need the
+   caller's own address and to keep the context between calls, so
+   =QueryContext::query= directly.
+2. The right shape — zip a gather program with a value stream through
+   =translate= — but it is behind the =proof-verifying= feature and runs
+   =filter_invalid= over the program first, which would silently drop ops
+   from a transcript we are trying to reproduce byte for byte. Mirrored, not
+   called.
+3. Both are =ResultModeVerify= only: they consume an op stream whose read
+   results are ALREADY known. They are the consumers of what the executor
+   produces, not producers themselves. (M30's publisher already uses them.)
+4. Not directly — =preprocess= is =pub(crate)=. =minocrab_sim::v3::simulate=
+   is its mechanical port, and the executor runs THAT, in a second mode.
+
+WHAT DOES NOT EXIST UPSTREAM, and had to be written:
+
+- *No decoder for =Op::field_repr=.* Upstream encodes an op stream into
+  field elements — that is precisely what a circuit's
+  =public_transcript_inputs= IS — but never decodes one, because in
+  production the ops travel BESIDE the proof (in the =Transcript=) rather
+  than inside it. A ZKIR circuit carries only the elements. Recovering the
+  ops from them is the one genuinely new piece.
+- *No gather-mode driver.* The Gather half is exposed through
+  =onchain-runtime-wasm= (which hard-wires =ResultModeGather= for every
+  entry point it publishes) and the Verify half is native; the loop that
+  joins them — gather against state, then rebuild a verify-mode transcript —
+  lives in the TypeScript compact-runtime, not in this repo. =Op::translate=
+  and =with_outputs= are its building blocks and are only ever called with
+  values computed some other way.
+
+* 3. The decoder
+
+=exec::decode_program= (and =decode_prefix=, its partial twin) is the exact
+inverse of =Op::field_repr= (onchain-vm =ops.rs:461=), which is what
+=minocrab-ledger='s =ImpactOp= builders emit. One arm per branch:
+
+- opcodes =0x00..0x1a=, =0x30|n= dup, =0x40|n= swap, =0x50..0x8f= idx
+  (cached/push_path in the high nibble, =len−1= in the low), =0x90|n= /
+  =0xa0|n= ins, =0xff= ckpt;
+- =Popeq='s result is left as =()= — its limbs in the element stream are the
+  circuit's own =public_input= wires, which is what a gather pass is FOR —
+  but its ALIGNMENT HEADER is constant, so the width to skip and the FAB
+  shape to check against the state are both known;
+- =Push= decodes a whole =StateValue= (=Null=, =Cell=, =Map=, =Array=,
+  =BoundedMerkleTree= — blank trees only; a pushed tree with entries is
+  refused by name, and nothing emits one);
+- a run of zeros is ONE =Noop=, which is unambiguous because
+  =assert_normalized= forbids adjacent =Noop=s;
+- =AlignmentSegment::Option= is refused: =minocrab-ledger= emits atom
+  segments only, and in-circuit decoding of option segments is a hard
+  =unimplemented!()= in zkir-v3 anyway.
+
+The one discrepancy worth recording: =minocrab-ledger='s =atom_limbs= gives
+=bytes<0>= ONE limb (=.max(1)=) where upstream's =Alignment::field_len=
+gives it zero. The decoder uses UPSTREAM's rule, because =parse_field_repr=
+does. No shape in the workspace has a =bytes<0>= atom.
+
+GATE: =crates/minocrab-ledger/tests/impact_roundtrip.rs= — one fixture per
+=field_repr= branch, decoded singly and as one concatenated stream, plus the
+crate's own builders (=cell_read=, =counter_increment=, =cell_write=,
+=map_insert=, =map_remove=, =map_reset=, =set_insert=, =list_push_front=,
+=counter_reset=). It lives beside the encoder so a branch added upstream
+shows up as a gap rather than as a silent mis-decode.
+
+* 4. Why a fixpoint, and why that terminates
+
+A ledger read compiles to its =public_input= gates FIRST and the op stream
+that justifies them SECOND — the gates are embedded in the closing =popeq=
+(reduce-to-zkir.ss:620-633, and =reads::mint_read= mirrors it). Worse, a
+read's value can decide whether a later block is emitted at all: an =Impact=
+under a guard the read produced is simply absent when the guard is off. So
+there is no single forward pass. The transcript the circuit asks for depends
+on the answers, and the answers depend on the transcript.
+
+The loop is the obvious one, and it is a fixpoint on the
+=public_transcript_outputs= vector:
+
+1. run the ZKIR walk against the current guess (starting EMPTY — a read past
+   the end of the guess reads zeros);
+2. decode the accumulated =Impact= inputs into an op program;
+3. run that program against the live state in =ResultModeGather=;
+4. the gathered read values ARE the next guess; settle when it stops moving.
+
+TERMINATION. Op emission depends only on EARLIER reads, so if the guess is a
+correct PREFIX of the true outputs (the empty guess trivially is), every op
+emitted before the first read the guess got wrong is already correct. Each
+round therefore resolves at least one more read, and the loop is bounded by
+the number of reads (=MAX_ROUNDS= = 64; the vault's widest circuit converges
+in three). This is why every step keeps its prefix rather than failing:
+
+- the decoder returns what it could decode (=decode_prefix=);
+- =gather= falls back to the LONGEST prefix of the program that runs, found
+  by binary search — failure is monotone in the prefix length — using
+  =run_program= directly rather than =QueryContext::query=, so a prefix need
+  not leave the three-element stack =query= insists on;
+- the walk itself records instruction failures instead of aborting (below).
+
+A round that settles while still incomplete is STUCK, and the executor then
+reports the reason it stopped short rather than a fixpoint that is not one.
+
+* 5. =Mode::Gather=: the same walk, told what may be provisional
+
+=simulate= and the executor run the SAME instruction walk —
+=simulate_with(ir, preimage, Mode)= — so the verifier and the producer
+cannot drift. =Mode::Gather= changes five things, all of them about the fact
+that a value in flight may be an answer the fixpoint has not found yet:
+
+1. =public_transcript_outputs= is a GUESS: a read past its end reads zeros
+   rather than failing.
+2. =Impact= inputs are ACCUMULATED (=Run3::public_transcript_inputs=) rather
+   than checked against the preimage — they are the run's output.
+3. An instruction that FAILS is recorded (=Run3::walk_failures=) and the
+   transcript truncated there, rather than aborting the run. Five zeros are
+   not a curve point; a garbage limb is not 64-bit. The prefix stands.
+4. A failed =Assert= is recorded (=Run3::assert_failures=) and ALSO
+   truncates: a circuit that rejects has NO transcript past the rejection —
+   everything after it is unconstrained, and emitting it would put values in
+   the op stream that no state could justify. A settled run whose first
+   failure is an assert IS the rejection, and =execute= reports it as
+   =ExecError::Rejected= before anything else.
+5. The communications commitment spans the circuit's OUTPUTS, so the
+   executor computes it at the end from the settled run rather than checking
+   a supplied one.
+
+Under =Mode::Verify= nothing changes: the first =Err= is still the
+function's, and the dump gate plus the whole differential suite say so.
+
+The one place order matters inside the walk: an =Impact='s operands are all
+resolved BEFORE any is published, because one op is one =Impact=
+instruction, and half an op in the transcript would not decode.
+
+* 6. The API
+
+#+begin_src rust
+pub fn context(state: StateValue<InMemoryDB>, address: [u8; 32]) -> QueryContext<InMemoryDB>;
+
+pub struct Call<'a> { inputs, private_transcript, binding_input, comm_rand, key_location }
+
+pub fn execute(ir: &IrSource, call: &Call<'_>, ctx: &QueryContext<InMemoryDB>)
+    -> Result<Executed, ExecError>;
+
+pub struct Executed {
+    pub preimage: ProofPreimage,     // ready for IrSource::check or a prover
+    pub ops: Vec<Op<ResultModeVerify, InMemoryDB>>,  // the transcript's program
+    pub reads: Vec<AlignedValue>,    // each read's value, in read order
+    pub post: StateValue<InMemoryDB>,
+    pub effects: Effects<InMemoryDB>,
+    pub run: Run3,
+    pub rounds: usize,
+}
+#+end_src
+
+The errors are the interesting part, because they are the executor's ANSWERS
+as much as its failures:
+
+- =Rejected { at }= — the circuit refuses this state; =at= is the =Assert=.
+- =NotApplied { why }= — the transcript settled and the circuit is
+  satisfied, but the LEDGER will not apply it (a counter already at its
+  maximum). This is the =counter_would_overflow= carve-out
+  =erc20_vault_pending_spec.rs= makes, arrived at from the other side.
+- =ReadAlignment { index, expected, actual }= — the circuit reads the field
+  at a different FAB shape than the state holds it.
+- =Decode=, =Vm=, =Diverged= — the fixpoint could not settle, with the
+  reason it stopped.
+
+* 7. The gate
+
+=crates/minocrab-contracts/tests/executor_vault.rs=, eighteen properties over
+the seventeen circuits of the =erc20_vault_pending= lineage, against the
+vault harness as ORACLE. Two completely independent routes to the same
+bytes: the executor reads the answers out of a =StateValue=; the hand model
+writes them down. Per generated case, when the spec accepts:
+
+1. =Executed::ops= equals the model's =ops()= OP FOR OP, each =popeq='s
+   expected =AlignedValue= included;
+2. =public_transcript_inputs=, =public_transcript_outputs= and the
+   communications commitment of the produced preimage equal the model's;
+3. =IrSource::check= accepts the produced preimage — the executor did not
+   merely agree with the model, it produced something upstream will prove;
+4. =Executed::post= equals =exec::run(pre, ops)=, so calls chain.
+
+And when it does not: a case the spec rejects is =Rejected= at an =Assert=,
+and a case the ledger will not apply is refused by the model's own
+=exec::run= identically. That negative half is what stops the gate being
+satisfiable by an executor that always agrees.
+
+Zero movement: the 214-file =MINOCRAB_ZKIR_DUMP= is byte-identical to main.
+
+* 8. What it unblocks, and what is still open
+
+Unblocked and taken: M35 D's state-driving half up to the attestation
+(notes/signet-async.org §10).
+
+Not taken yet:
+- M35 E, the generated per-slot round trip, and M26's typed harness. Both
+  now have their missing piece; neither is built.
+- =--release= speed (real proofs + =LedgerState= + =Transaction::apply=):
+  =Executed::preimage= is exactly what =support/signet_call.rs= wants, so
+  the seam is a constructor away, but nothing wires it.
+- The executor is single-call. Cross-contract calls (the singleton's
+  =signBidirectional=) are NOT executed: the xcall's arguments ride the
+  communications commitment, and the callee's own transcript would need its
+  own =execute= against its own state. =partition_transcripts= upstream is
+  where that would land.

@@ -84,6 +84,7 @@ const ROWS: &[Row] = &[
     // ---- L5: the simulator ---------------------------------------------------------------
     Row { path: "minocrab-sim/src/lib.rs", warrant: READING, hides: "nothing beyond the Profile types (129 lines)" },
     Row { path: "minocrab-sim/src/v3.rs", warrant: "cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — spec-harness link 4 and every differential; v3_end_to_end. It is never trusted alone", hides: "a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job)" },
+    Row { path: "minocrab-sim/src/v3/exec.rs", warrant: "executor_vault (the transcript it derives from state equals the vault harness's hand model, op for op, on seventeen circuits) + IrSource::check on every preimage it produces; impact_roundtrip (the decoder is the exact inverse of minocrab-ledger's encoder, one fixture per Op::field_repr branch). Test-side only: nothing a deployed circuit links", hides: "a mis-decoded Impact op — a transcript that gathers a read from the wrong slot, agreeing with nothing (caught by the harness) unless the hand model is wrong the same way" },
     Row { path: "minocrab-sim/src/v3/rowcost.rs", warrant: "calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim", hides: "a mis-priced primitive — a wrong k estimate, never a wrong circuit" },
     Row { path: "minocrab-sim/src/bin/minocrab.rs", warrant: READING, hides: "nothing a proof depends on (the CLI)" },
 ];
