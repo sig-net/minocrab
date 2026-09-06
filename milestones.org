@@ -2276,6 +2276,20 @@ calls them, and by what the fixed-width ABI layer can express.
       =Contract<UniswapV3Router>= — no contract-local call types remain;
       README's cross-chain section and the side-by-side show the library
       spelling; zero movement on the vault's request circuits.
+- [X] H. (2026-09-06: not on the original list — closes two of B/C's own
+      open questions rather than carrying them to M39.
+      =Filing::GAS_LIMIT=, defaulting to =EvmCall::GAS_LIMIT= so an
+      unoverridden filing is unchanged, read by new =build_tx_filed= /
+      =build_tx_payable_filed= (=Pending::request= / =request_payable=)
+      and threaded as an explicit immediate through =build_tx_with= /
+      =Envelope::fee_wires= (=Pending= / =Fired='s =request_with=).
+      =aave_v3::SupplyWithPermit= — EIGHT flat words, =IPool.sol= on
+      =aave-dao/aave-v3-origin='s =main=, checked directly against the
+      source: rung C's own doc had guessed a nested
+      =(uint8,bytes32,bytes32)= struct on Uniswap's pattern, and the
+      guess was wrong. =cargo test -p minocrab-contracts= 713 passed 0
+      failed, clippy clean, 214-circuit dump byte-identical to
+      baseline. notes/evm-interfaces.org §10.)
 Exit criteria: A–D and G green, zero movement on shipped circuits, every
 selector alloy-pinned; E and F as far as a consumer needs.
 

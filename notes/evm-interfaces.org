@@ -602,6 +602,7 @@ rung D's two negative controls).
    vault's own numbers are. This is the second consumer to want
    =Filing::GAS_LIMIT= (§2.3 defers it "if a consumer asks"); still not
    built.
+   DONE, see §10.
 2. =IncreaseAllowance= / =DecreaseAllowance= ARE NOT IN OpenZeppelin v5 —
    OZ removed them. Shipping them is a bet that the deployed tokens that
    matter predate v5. If dmd would rather the library carry only what a
@@ -812,6 +813,7 @@ than a circuit signature wants to carry — the shape =erc20_vault='s own
    the signature as a struct =(uint8,bytes32,bytes32)=, so it is a nested
    tuple like Uniswap's rather than a flat list; static either way. Left
    out because §2.4's table did not list it, not because it is hard.
+   DONE, see §10 — the guess about the struct was WRONG (it is flat).
 4. FOUR CALLS NOW RETURN =Unit= WHERE A REAL CONFIRMATION EXISTS ON CHAIN.
    =aave_v3::Supply= and =Borrow= and both =erc721= transfers succeed
    silently, so a =Succeeded= ticket says only "mined without reverting"
@@ -825,6 +827,8 @@ than a circuit signature wants to carry — the shape =erc20_vault='s own
    =Filing::GAS_LIMIT= override. Rung C added seven more calls taking the
    library default and none needing an override, so the second is still
    waiting on a consumer.
+   =Filing::GAS_LIMIT= DONE, see §10 (the fee-envelope constants' home is
+   still open — unrelated to this override).
 6. THE PARAMETER NAMES ARE STILL UNCHECKED (rung D's own caveat). It bites
    hardest here: =aave_v3::Borrow= has =referralCode= BETWEEN
    =interestRateMode= and =onBehalfOf=, which is an order no other call in
@@ -1063,3 +1067,115 @@ callee, wrong arity, a dynamic call on a static-only slot)".
   response field name are the call type's" → the FILING's (rung A moved
   them).
 Zero movement: README.md and this note only.
+
+* 10. As built — rung H (2026-09-06)
+Not on the milestone's original A–G list: two of the open questions
+rungs B and C left for dmd (§5 q1, §6 q3), closed now rather than
+carried to M39.
+
+** =Filing::GAS_LIMIT= (§5 q1, §6 q5)
+A gas limit was a fact about the CALL only (=EvmCall::GAS_LIMIT=) — a
+DEFAULT, tuned for the common deployment, not a measurement of any one
+address. §5 q1 asked for an override the day a deployment's own number
+disagreed (a proxy hop, a token with an expensive hook); §6 q5 recorded
+the same question still waiting on a consumer. Built as a second
+associated const on =Filing= itself:
+#+begin_src rust
+const GAS_LIMIT: u64 = <Self::Call as EvmCall>::GAS_LIMIT;
+#+end_src
+— defaulting to the call's own number, so a =Filing= that does not name
+it is unchanged. =build_tx= / =build_tx_payable= keep reading
+=EvmCall::GAS_LIMIT= (nothing outside a =Filing= has one to read);
+=build_tx_filed= / =build_tx_payable_filed= are their =Filing=-keyed
+twins, reading =F::GAS_LIMIT= instead, and =Pending::request= /
+=request_payable= now call THOSE rather than the =EvmCall= pair.
+=build_tx_with= / =Pending::request_with= and =Fired::request_with=
+already took an =Envelope=, the true seam for a caller-chosen fee — they
+now also take =gas_limit: u64= as an explicit immediate rather than
+reading a type parameter, so =Fired::request_with= (which is generic
+over =Called<F>: EvmCall=, not over =F: Filing=, because it is filed
+against a CALLEE known only at the point of firing) can still pass
+=F::GAS_LIMIT= without a new bound. =Envelope::fee_wires= dropped its
+=C: EvmCall= parameter for a plain =gas_limit: u64= — one function body,
+four callers, each passing the number that fact belongs to.
+=erc20_vault= and =treasury= name no override, so both are Zero movement
+by construction — no filing built before this rung takes anything but
+the default, which is what the test below exists to prove:
+=evm_abi.rs='s =build_tx_filed_reads_the_filings_gas_limit_override=
+files an =erc20::Transfer= under a =Filing= that overrides
+=GAS_LIMIT= to 250,000 and reads the built transaction's gas-limit word
+back as the OVERRIDE, not =erc20::Transfer::GAS_LIMIT='s 100,000.
+
+** Aave's =supplyWithPermit= (§6 q3)
+§6 q3 left it out because §2.4's table did not list it and guessed at
+its shape from Uniswap's pattern: a nested
+=(uint8,bytes32,bytes32)= permit struct. THE GUESS WAS WRONG. Checked
+against =aave-dao/aave-v3-origin='s =src/contracts/interfaces/IPool.sol=
+on =main= (2026-09-06):
+#+begin_src solidity
+function supplyWithPermit(
+  address asset,
+  uint256 amount,
+  address onBehalfOf,
+  uint16 referralCode,
+  uint256 deadline,
+  uint8 permitV,
+  bytes32 permitR,
+  bytes32 permitS
+) external;
+#+end_src
+EIGHT flat parameters, no struct at all — Uniswap nests; Aave does not.
+Built as =aave_v3::SupplyWithPermit=, =Args = (Address, U128, Address,
+U16, U256, U8, Bytes32, Bytes32)=, =Return = Unit=, at the library's
+maximum arity (=AbiTuple= implements up to eight). =amount= and
+=referralCode= are =Supply='s own types; =deadline= follows
+=erc20::Permit='s own =deadline= field (=U256=, not the amount-shaped
+=U128=, because it is the SAME permit signature's field); =permitV= /
+=permitR= / =permitS= are =Permit='s =v= / =r= / =s=, unchanged.
+=tests/evm_defi_calls.rs= adds =supply_with_permit_to_pool= /
+=complete_supply_with_permit= / =refund_supply_with_permit= under a
+fifth =Pending= slot (kind 5, record path =[13]=) — the widest record
+the vault-adjacent test files, one word past the seven-word swap, and
+the eight-word-cost assertion in
+=the_circuits_build_at_a_finite_cost= checks that ordering explicitly.
+=tests/evm_alloy_oracle.rs= adds =aave_supply_with_permit= against a
+=sol!= declaration matching =IPool.sol= verbatim: had the flat/nested
+guess been wrong the OTHER way, alloy's encoder would disagree with
+ours on every word, which is exactly the check a wrong reconstruction
+from a table entry cannot give itself. README's interface table and
+prose both gain the call.
+
+** Gates
+=cargo test -p minocrab-contracts=: 713 passed, 0 failed, across every
+test binary in the crate (unit, doctests, and every integration test
+file). =cargo clippy -p minocrab-contracts --all-targets=: clean, no
+warnings. The 214-circuit ZKIR dump
+(=MINOCRAB_ZKIR_DUMP=<dir> cargo test -p minocrab-contracts --test
+zkir_dump -- --ignored=) is BYTE-IDENTICAL to the pre-rung baseline
+(=diff -rq= empty, same 214 files) — the new circuits are test-only
+(=tests/evm_defi_calls.rs=), so the shipped 214 never move, and the new
+=Filing::GAS_LIMIT= const changes nothing for any filing that does not
+name it.
+
+Zero movement: the shipped 214-circuit dump. Touched:
+=crates/minocrab-contracts/src/evm.rs= (=Filing::GAS_LIMIT=,
+=build_tx_filed=, =build_tx_payable_filed=, =fee_wires='s signature),
+=crates/minocrab-contracts/src/evm_flow.rs= (=Pending= /
+=Fired='s request methods), =crates/minocrab-contracts/src/evm/
+aave_v3.rs= (=SupplyWithPermit=), =crates/minocrab-contracts/tests/
+{evm_abi,evm_alloy_oracle,evm_defi_calls}.rs=, README.md, this note.
+
+** Open for dmd
+- The fee-envelope constants' home (=FIXED_PRIORITY_FEE= /
+  =FIXED_MAX_FEE= still in =erc20_vault=) is UNRELATED to this rung's
+  =GAS_LIMIT= override and still open — carried from §5/§6, and from
+  M37 A/G before them.
+- =Filing::GAS_LIMIT= is read by =request= / =request_payable= /
+  =request_with=, i.e. every filing path — a =Fired= slot that never
+  overrides it is unaffected, but nothing stops a future =Filing= from
+  naming an implausible limit (too low to reach the callee's real cost,
+  too high to be worth signing); nothing checks it against the call's
+  own default at compile time. An inline-const bound (E0080) comparing
+  =Self::GAS_LIMIT= to =Self::Call::GAS_LIMIT= within some multiple
+  could catch the "too low" half; there is no principled bound for "too
+  high" beyond taste.

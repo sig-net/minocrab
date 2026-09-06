@@ -2,7 +2,9 @@
 //! `SwapRouter02` `exactInputSingle`, an Aave v3 `supply` and an ERC-721
 //! `setApprovalForAll`, each filed against a `Contract<I>` of its own
 //! interface and each settled by both tickets (M38 rung C,
-//! notes/evm-interfaces.org §6).
+//! notes/evm-interfaces.org §6) — plus rung H's Aave `supplyWithPermit`,
+//! the EIGHT-WORD slot at the library's maximum arity
+//! (notes/evm-interfaces.org §10).
 //!
 //! What the four have between them that no earlier test did:
 //!
@@ -33,7 +35,7 @@
 //! mean anything.
 
 use minocrab::v3::Circuit3;
-use minocrab::Public;
+use minocrab::{Private, Public};
 use minocrab_contracts::evm::{aave_v3, erc4626, erc721, uniswap_v3, Kinded};
 use minocrab_contracts::evm_flow::{Contract, Failed, Owned, Pending, Succeeded};
 use minocrab_contracts::signet_flow::{Requested, Settled, Signet};
@@ -53,6 +55,9 @@ type SwapIn = Kinded<uniswap_v3::ExactInputSingle, 2>;
 type SupplyToPool = Kinded<aave_v3::Supply, 3>;
 /// `setApprovalForAll(operator, approved)` on an NFT, filed under kind 4.
 type ApproveOperator = Kinded<erc721::SetApprovalForAll, 4>;
+/// `supplyWithPermit(asset, amount, onBehalfOf, referralCode, deadline,
+/// permitV, permitR, permitS)` on Aave v3's `Pool`, filed under kind 5.
+type SupplyPermitToPool = Kinded<aave_v3::SupplyWithPermit, 5>;
 
 /// What a settle needs back.
 #[derive(LedgerRepr)]
@@ -60,7 +65,7 @@ struct Amount {
     amount: Uint<64, Public>,
 }
 
-/// Six Signet fields and four slots, two fields each.
+/// Six Signet fields and five slots, two fields each.
 #[derive(Ledger)]
 struct Positions {
     signet: Signet,
@@ -68,6 +73,7 @@ struct Positions {
     swaps: Pending<SwapIn, Amount, 7>,
     supplies: Pending<SupplyToPool, Amount, 4>,
     operators: Pending<ApproveOperator, Amount, 2>,
+    supplies_with_permit: Pending<SupplyPermitToPool, Amount, 8>,
 }
 
 const POSITIONS: Positions = Positions::new();
@@ -107,6 +113,24 @@ struct SupplyRequest {
     amount: Uint<128>,
     on_behalf_of: Bytes<20>,
     referral_code: Uint<16>,
+}
+
+/// [`SupplyRequest`] plus an ERC-2612 permit signature: `deadline` is a
+/// [`B32`] because [`U256`](minocrab_contracts::evm::U256)'s wire IS the
+/// already-encoded word (the same reason [`SwapRequest`]'s
+/// `sqrtPriceLimitX96` needs no encoder), and `permit_r` / `permit_s` are
+/// the two `bytes32` halves of the signature the caller relays without
+/// computing anything about.
+#[derive(CircuitArg)]
+struct SupplyWithPermitRequest {
+    asset: Bytes<20>,
+    amount: Uint<128>,
+    on_behalf_of: Bytes<20>,
+    referral_code: Uint<16>,
+    deadline: B32<Private>,
+    permit_v: Uint<8>,
+    permit_r: B32<Private>,
+    permit_s: B32<Private>,
 }
 
 // ---- the circuits -------------------------------------------------------------
@@ -267,6 +291,66 @@ fn refund_supply(c: &mut Circuit3, ticket: Failed<SupplyToPool>) -> Discloses<Se
     Discloses::of(())
 }
 
+/// LEND WITH A PERMIT: `pool.supplyWithPermit(asset, amount, onBehalfOf,
+/// referralCode, deadline, permitV, permitR, permitS)` — `aave_v3::Supply` and an
+/// ERC-2612 signature in one request, EIGHT words wide (M38 rung H,
+/// notes/evm-interfaces.org §10).
+#[circuit]
+fn supply_with_permit_to_pool(
+    c: &mut Circuit3,
+    evm_nonce: Uint<64>,
+    key_version: Uint<8>,
+    pool: Contract<aave_v3::AaveV3Pool>,
+    supply: SupplyWithPermitRequest,
+) -> Discloses<(Supplied, Requested)> {
+    let supplied = supply.amount.field().disclose_as::<Supplied>(c);
+    POSITIONS.supplies_with_permit.request(
+        c,
+        pool,
+        (
+            supply.asset,
+            supply.amount,
+            supply.on_behalf_of,
+            supply.referral_code,
+            supply.deadline,
+            supply.permit_v,
+            supply.permit_r,
+            supply.permit_s,
+        ),
+        key_version,
+        evm_nonce,
+        |_, _| Amount {
+            amount: Uint::from_field_unchecked(supplied),
+        },
+    );
+    Discloses::of(())
+}
+
+/// SETTLE THE PERMITTED SUPPLY. Like `aave_v3::Supply`'s, `supplyWithPermit` is
+/// `void`, so the attested value is `()` and mined IS succeeded.
+#[circuit]
+fn complete_supply_with_permit(
+    c: &mut Circuit3,
+    ticket: Succeeded<SupplyPermitToPool>,
+) -> Discloses<Settled> {
+    let outcome = POSITIONS.supplies_with_permit.complete(c, ticket);
+    let _amount = outcome.env.amount;
+    let () = outcome.output;
+    Discloses::of(())
+}
+
+/// REFUND THE PERMITTED SUPPLY — with `succeeded = always`, the only
+/// refundable outcome is the MPC's own failure kind (a bad signature, an
+/// expired deadline, or an unhealthy position all revert on-chain).
+#[circuit]
+fn refund_supply_with_permit(
+    c: &mut Circuit3,
+    ticket: Failed<SupplyPermitToPool>,
+) -> Discloses<Settled> {
+    let _outcome = POSITIONS.supplies_with_permit.refund(c, ticket);
+    Discloses::of(())
+}
+
 /// GRANT (OR REVOKE) AN NFT OPERATOR: `nft.setApprovalForAll(operator,
 /// approved)` — a `bool` in ARGUMENT position, on an interface that is not
 /// an `Erc20` and will not be handed one.
@@ -321,6 +405,8 @@ fn the_block_is_laid_out_by_slot() {
     assert_eq!(POSITIONS.supplies.record_path().as_slice(), &[9]);
     assert_eq!(POSITIONS.operators.record_path().as_slice(), &[11]);
     assert_eq!(POSITIONS.operators.record_path().depth(), 1);
+    assert_eq!(POSITIONS.supplies_with_permit.record_path().as_slice(), &[13]);
+    assert_eq!(POSITIONS.supplies_with_permit.record_path().depth(), 1);
 }
 
 /// Every circuit builds at a finite cost, and a settle costs what a
@@ -331,34 +417,61 @@ fn the_circuits_build_at_a_finite_cost() {
     let (k_swap, rows_swap) = cost(&swap_in().ir);
     let (k_supply, rows_supply) = cost(&supply_to_pool().ir);
     let (k_operator, rows_operator) = cost(&approve_operator().ir);
+    let (k_supply_permit, rows_supply_permit) = cost(&supply_with_permit_to_pool().ir);
 
     let (k_mint_done, rows_mint_done) = cost(&complete_mint().ir);
     let (k_swap_done, _) = cost(&complete_swap().ir);
     let (k_supply_done, _) = cost(&complete_supply().ir);
     let (k_operator_done, _) = cost(&complete_operator().ir);
+    let (k_supply_permit_done, _) = cost(&complete_supply_with_permit().ir);
 
     let (k_mint_ref, _) = cost(&refund_mint().ir);
     let (k_swap_ref, _) = cost(&refund_swap().ir);
     let (k_supply_ref, _) = cost(&refund_supply().ir);
     let (k_operator_ref, _) = cost(&refund_operator().ir);
+    let (k_supply_permit_ref, _) = cost(&refund_supply_with_permit().ir);
 
-    assert!(rows_mint > 0 && rows_swap > 0 && rows_supply > 0 && rows_operator > 0);
+    assert!(
+        rows_mint > 0
+            && rows_swap > 0
+            && rows_supply > 0
+            && rows_operator > 0
+            && rows_supply_permit > 0
+    );
     assert!(rows_mint_done > rows_mint, "{rows_mint_done} {rows_mint}");
     // The seven-word swap is the widest record the library files, so it
     // costs more rows to hash than the two-word mint.
     assert!(rows_swap > rows_mint, "{rows_swap} {rows_mint}");
+    // The eight-word supplyWithPermit is the widest record of ALL, one word
+    // past the swap.
+    assert!(
+        rows_supply_permit > rows_swap,
+        "{rows_supply_permit} {rows_swap}"
+    );
 
     assert!(
-        k_mint <= 14 && k_swap <= 14 && k_supply <= 14 && k_operator <= 14,
-        "{k_mint} {k_swap} {k_supply} {k_operator}"
+        k_mint <= 14
+            && k_swap <= 14
+            && k_supply <= 14
+            && k_operator <= 14
+            && k_supply_permit <= 14,
+        "{k_mint} {k_swap} {k_supply} {k_operator} {k_supply_permit}"
     );
     assert!(
-        k_mint_done <= 15 && k_swap_done <= 15 && k_supply_done <= 15 && k_operator_done <= 15,
-        "{k_mint_done} {k_swap_done} {k_supply_done} {k_operator_done}"
+        k_mint_done <= 15
+            && k_swap_done <= 15
+            && k_supply_done <= 15
+            && k_operator_done <= 15
+            && k_supply_permit_done <= 15,
+        "{k_mint_done} {k_swap_done} {k_supply_done} {k_operator_done} {k_supply_permit_done}"
     );
     assert!(
-        k_mint_ref <= 15 && k_swap_ref <= 15 && k_supply_ref <= 15 && k_operator_ref <= 15,
-        "{k_mint_ref} {k_swap_ref} {k_supply_ref} {k_operator_ref}"
+        k_mint_ref <= 15
+            && k_swap_ref <= 15
+            && k_supply_ref <= 15
+            && k_operator_ref <= 15
+            && k_supply_permit_ref <= 15,
+        "{k_mint_ref} {k_swap_ref} {k_supply_ref} {k_operator_ref} {k_supply_permit_ref}"
     );
 }
 
@@ -378,6 +491,7 @@ fn each_call_reaches_its_own_interface() {
     reaches::<erc4626::Withdraw, erc4626::Erc4626>();
     reaches::<uniswap_v3::ExactInputSingle, uniswap_v3::UniswapV3Router>();
     reaches::<aave_v3::Supply, aave_v3::AaveV3Pool>();
+    reaches::<aave_v3::SupplyWithPermit, aave_v3::AaveV3Pool>();
     reaches::<aave_v3::Borrow, aave_v3::AaveV3Pool>();
     reaches::<aave_v3::Repay, aave_v3::AaveV3Pool>();
     reaches::<erc721::SetApprovalForAll, erc721::Erc721>();
