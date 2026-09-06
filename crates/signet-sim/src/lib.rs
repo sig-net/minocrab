@@ -387,4 +387,98 @@ mod tests {
         let root2 = root_of(StateValue::Map(map2));
         assert!(matches!(sim.respond(&payload(id, caller, &[1]), &root2, EvmOutcome::NeverExecuted), Err(Refusal::Dropped { reason: "rid-mismatch", .. })));
     }
+
+    /// A BATCH, AS THE MPC SEES IT (M39 rung D): N sign events from ONE
+    /// Midnight transaction, over one caller state, at CONSECUTIVE EVM
+    /// nonces.
+    ///
+    /// What `evm_flow::Queued::flush` files is exactly this: N records in
+    /// the slot's one record map, each built by the same `file_request` an
+    /// unbatched request uses, differing in the contract's request nonce
+    /// (the counter is read and bumped once per filing) and in the EVM nonce
+    /// (`last_nonce + 1 … + N`, assigned by the contract, never by a
+    /// requester). The MPC's side of that is N notifications naming N ids
+    /// against one state — and it answers each one, because nothing in the
+    /// reader is per-transaction.
+    ///
+    /// The batch's whole point is checked here rather than assumed: the
+    /// nonces the MPC will submit under are consecutive and in filing order,
+    /// so no two of them race for the same one and none of them leaves a gap.
+    #[test]
+    fn the_sim_answers_a_batch_at_consecutive_nonces() {
+        const N: u64 = 4;
+        const LAST_NONCE: u64 = 41;
+        const FIRST_REQUEST_NONCE: u64 = 7;
+
+        let batch: Vec<SignBidirectionalRecordV2> = (0..N)
+            .map(|i| {
+                let mut record = sample_v2();
+                // One `file_request` per entry: the contract's request
+                // counter is read and incremented once each…
+                record.request_nonce = FIRST_REQUEST_NONCE + i;
+                // …and the EVM nonce is the flush's assignment.
+                record.tx_params.nonce = LAST_NONCE + 1 + i;
+                record
+            })
+            .collect();
+
+        // One map, one state: a flush writes all N into the slot's record
+        // map in one transaction.
+        let mut map: HashMap<AlignedValue, StateValue<DefaultDB>, DefaultDB> = HashMap::new();
+        let mut ids = Vec::new();
+        for record in &batch {
+            let cell = v2_cell(record);
+            let StateValue::Cell(aligned) = &cell else { unreachable!() };
+            let id = hashing::compute_request_id(aligned);
+            map = map.insert(AlignedValue::from(id), cell.clone());
+            ids.push(id);
+        }
+        let root = root_of(StateValue::Map(map));
+
+        // N distinct ids: the request nonce is what makes two otherwise
+        // identical requests distinct, and the EVM nonce is in the record
+        // too, so a batch of identical calls still hashes N ways.
+        let mut distinct = ids.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), ids.len(), "N filings, N ids");
+
+        let caller = [0x11u8; 32];
+        let mut sim = SigNetSim::from_seed(b"root", 3);
+        let mut nonces = Vec::new();
+        for (i, id) in ids.iter().enumerate() {
+            let att = sim
+                .respond(
+                    &payload(*id, caller, &[1]),
+                    &root,
+                    EvmOutcome::Executed { body: vec![1] },
+                )
+                .expect("every notification of the batch resolves");
+            assert_eq!(att.request_id, *id);
+            assert_eq!(att.output, vec![0, 1], "kind byte then body");
+            let digest = SigNetSim::attestation_digest(id, &att.output);
+            assert!(
+                sign::verify(&digest, &att.signature, &sim.response_key(1, &caller)),
+                "attestation {i} verifies under the caller's response key"
+            );
+            nonces.push(att.record.tx_params.nonce);
+        }
+
+        // The transactions the MPC will sign and submit: consecutive, in
+        // filing order, starting one past the last nonce the slot assigned.
+        assert_eq!(nonces, (LAST_NONCE + 1..=LAST_NONCE + N).collect::<Vec<_>>());
+
+        // …and the batch is a window, not a set: an id the flush did not
+        // file is absent from the same state.
+        let mut unfiled = ids[0];
+        unfiled[0] ^= 1;
+        assert!(matches!(
+            sim.respond(
+                &payload(unfiled, caller, &[1]),
+                &root,
+                EvmOutcome::NeverExecuted
+            ),
+            Err(Refusal::Absent)
+        ));
+    }
 }
