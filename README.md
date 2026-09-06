@@ -315,6 +315,19 @@ A Sig Network cross-chain call is one operation split across two Midnight transa
 Here is a whole treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account — [treasury.rs](crates/minocrab-contracts/src/treasury.rs), compiled and tested, not a sketch:
 
 ```rust
+/// HOW THIS TREASURY FILES ITS ONE CALL: the library's
+/// [`erc20::Transfer`] under response kind 1.
+///
+/// The kind is the treasury's own choice — a kind is per DEPLOYMENT, and
+/// this one happens to pick the byte the vault uses for a withdrawal. The
+/// return field is the anonymous default, because a Solidity `transfer`'s
+/// return IS anonymous, so a settle circuit's argument slot is
+/// `serializedOutput.output`.
+///
+/// One name, written once: the slot, both tickets and both settle
+/// signatures are all `Transfer` (notes/evm-interfaces.org §2.2).
+pub type Transfer = Kinded<erc20::Transfer, 1>;
+
 /// Seven ledger fields from two declarations: the Signet configuration
 /// (signer, MPC key, request nonce, caip2 id, chain id) and the transfer
 /// slot's record and environment maps.
@@ -325,7 +338,7 @@ pub struct Treasury {
     pub signet: Signet,
     /// Every `transfer` this treasury has in flight, with the caller
     /// committed into each environment.
-    pub transfers: Pending<Erc20Transfer, Owned<Amount>, 2>,
+    pub transfers: Pending<Transfer, Owned<Amount>, 2>,
 }
 
 #[contract]
@@ -337,7 +350,7 @@ impl Treasury {
         c: &mut Circuit3,
         evm_nonce: Uint<64>,
         key_version: Uint<8>,
-        token: Contract<Erc20Transfer>,
+        token: Contract<Erc20>,
         to: Bytes<20>,
         amount: Uint<64>,
     ) -> Discloses<(SentAmount, OwnerCommitment, Requested)> {
@@ -361,11 +374,11 @@ impl Treasury {
     ///
     /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
     /// witness in the circuit at all. And the attested `false` case cannot
-    /// reach here: `Erc20Transfer`'s return is `Bool`, and its
+    /// reach here: `erc20::Transfer`'s return is `Bool`, and its
     /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
     /// nothing in this body has to remember to look.
     #[circuit]
-    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Erc20Transfer>) -> Discloses<Settled> {
+    pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
         let _amount = outcome.env.inner.amount;
         Discloses::of(())
@@ -381,7 +394,7 @@ impl Treasury {
     #[circuit]
     pub fn refund(
         c: &mut Circuit3,
-        ticket: Failed<Erc20Transfer>,
+        ticket: Failed<Transfer>,
     ) -> Discloses<(Settled, RefundRecipient)> {
         // The attested flag comes back too — `false` for a mined call that
         // moved nothing, and prover-chosen padding when the MPC attested
@@ -395,11 +408,14 @@ impl Treasury {
 }
 ```
 
-`Erc20Transfer` is the call, and it is where the wire facts live — `transfer`, `(address, uint256)`, a `bool` return, the protocol kind byte, a gas limit, and the rule by which the return says it worked (for an ERC-20 `transfer`, the returned flag itself). The vault's SEVENTEEN circuits are on the same API: `deposit`, `claim`, `withdraw`, `swap`, `supply`, `redeem`, the two approvals and their eight settles are `Pending<Call, Env, WORDS>` slots over `Erc20TransferAsDeposit`, `Erc20TransferAsWithdrawal`, `Erc20Approve`, `ExactOutputSingle`, `Erc4626Deposit` and `Erc4626Redeem` ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
+`erc20::Transfer` is the CALL, and it is where the facts about the Solidity function live — `transfer`, `(address, uint256)`, a `bool` return, the interface that exposes it (`Erc20`), a gas limit, and the rule by which the return says it worked (for an ERC-20 `transfer`, the returned flag itself). It is library code: one module per interface ([erc20.rs](crates/minocrab-contracts/src/evm/erc20.rs), [erc4626.rs](crates/minocrab-contracts/src/evm/erc4626.rs), [uniswap_v3.rs](crates/minocrab-contracts/src/evm/uniswap_v3.rs)), and a contract calling a deployment of its own declares its callee marker in one line.
+
+`Transfer` — the type alias above it — is the FILING: the same call plus the two things that are facts about a DEPLOYMENT's protocol rather than about `transfer`, namely the response kind byte and the name the deployed record gives the attested return. The vault files the very same `erc20::Transfer` under two kinds, because a deposit's inbound transfer and a withdrawal's outbound one are two operations that share a Solidity function. Its SEVENTEEN circuits are on this API: `deposit`, `claim`, `withdraw`, `swap`, `supply`, `redeem`, the two approvals and their eight settles are `Pending<Filing, Env, WORDS>` slots over the filings `Deposit`, `Withdrawal`, `Swap`, `Supply`, `Redeem` and `Approval` — `erc20::Transfer` twice, `erc20::Approve`, `uniswap_v3::ExactOutputSingle`, `erc4626::Deposit` and `erc4626::Redeem` ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
 
 What the types do for the author:
 
-- **Mis-pairing does not compile.** A `Succeeded<Erc20Transfer>` settles the `transfers` slot and no other; a `Failed` cannot be handed to `complete` at all; the argument tuple in the wrong order is a type error rather than a transaction that sends tokens to an address made out of an amount; a `WORDS` that is not the argument list's word count is `error[E0080]` with a prescriptive message. The kind check, the version check, the signature check and the removal are inside `complete` and `refund`, so none can be forgotten.
+- **Mis-pairing does not compile.** A `Succeeded<Transfer>` settles the `transfers` slot and no other — not even a ticket for the same Solidity call filed at another kind; a `Failed` cannot be handed to `complete` at all; the argument tuple in the wrong order is a type error rather than a transaction that sends tokens to an address made out of an amount; a `WORDS` that is not the argument list's word count is `error[E0080]` with a prescriptive message; two slots of one block at one response kind is `error[E0080]` too. The kind check, the version check, the signature check and the removal are inside `complete` and `refund`, so none can be forgotten.
+- **A call goes only where its interface does.** `send` takes a `Contract<Erc20>`, not twenty loose bytes, and `request` accepts a callee only when its interface `Extends` the call's own — so an `erc20::Transfer` filed against a `Contract<UniswapV3Router>` is a missing trait impl, while an `erc20::Approve` against a `Contract<Erc4626>` compiles, because an ERC-4626 vault IS an ERC-20. The marker costs no instruction: a callee is twenty bytes whatever it claims.
 - **The outcome picks the circuit.** `complete` asserts the call's own success rule, so an ERC-20 `transfer` that MINED AND RETURNED `false` cannot complete, whoever presents it; `refund` takes both non-successes — the MPC's failure kind and the executed-`false`. Putting the second case in a branch inside the completion is the deployed vault's Gap 2, and there is no method on this API that writes it.
 - **The secret never crosses in the clear, and a completion never touches one.** `Owned` stores a Poseidon commitment to the caller's key bound to the request id; `refund_to_owner` opens it with a fresh witness. `complete_withdraw`'s private transcript is empty and its interface has no witness row — a stranger's proof is the same proof.
 - **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte and the response field name are the call type's; the record format version is the API's; the `&SELF.signet` argument is the derive's.
