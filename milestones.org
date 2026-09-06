@@ -2202,7 +2202,20 @@ calls them, and by what the fixed-width ABI layer can express.
       =permit= (7 static words — gasless approval, the MPC-signed flow's
       natural friend), and WETH =deposit= / =withdraw=; the no-return
       variants (=UsdtLike=) as a sibling interface with =Return = Unit=.
-- [ ] C. ERC-4626 in full (=deposit=, =mint=, =withdraw=, =redeem=),
+- [X] C. (2026-09-06, fa2c3de..67cd78a merged — evm/erc4626.rs =Mint= /
+      =Withdraw= beside Deposit/Redeem; uniswap_v3 =ExactInputSingle= in
+      SwapRouter02's seven-field shape (04e45aaf; the original router's
+      eight-field 414bf389 pinned as a negative control — the shipped
+      =ExactOutputSingle= is SwapRouter02's too); evm/aave_v3.rs
+      =AaveV3Pool= with Supply/Withdraw/Borrow/Repay and the =U16= leaf;
+      evm/erc721.rs =Erc721= (not an Erc20) with TransferFrom/Approve
+      (ERC-20's selectors, =Unit= returns — the callee type is what
+      keeps them apart) and SetApprovalForAll; ten oracle rows, all
+      agreeing with alloy; tests/evm_defi_calls.rs files one call per
+      module through =Pending=; 214-circuit dump byte-identical,
+      snapshots untouched, workspace 1130 passed. Choices for dmd in
+      §6: =tokenId= as =U256=, Aave's =interestRateMode= as =U128=,
+      no =safeTransferFrom= (rung E), no =supplyWithPermit=.) ERC-4626 in full (=deposit=, =mint=, =withdraw=, =redeem=),
       Uniswap V3 router (=exactInputSingle=, =exactOutputSingle= — static
       struct args), Aave v3 Pool (=supply=, =withdraw=, =borrow=,
       =repay=), ERC-721's static calls (=transferFrom=, =approve=,
