@@ -1392,6 +1392,19 @@ them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
       single midnight rev (04c9c5d); do not adopt mpc's per-crate release
       tags (=zkir-v3= has no tag; the official compact flake pins the same
       rev). notes/mpc-publisher.org §9 "The decision this leaves" closed.
+- [X] C1+C2. (2026-09-06, f52e5e3 + b83ffed merged — crates/signet-protocol:
+      the Misc envelope, the signer circuit/event names and hashVerifierKey,
+      the one publishable crate that minocrab-contracts, signet-artifacts
+      and minocrab-publisher all read; minocrab-publisher drops
+      signet-artifacts entirely, minocrab-contracts becomes a
+      dev-dependency (real_proof.rs's keygen only), =publish = false=
+      gone — what remains is the workspace-wide midnight git-dependency
+      blocker, unchanged; =ManagedDir::deployment= builds from
+      expectedVk.json and checks each entry against the key file's hash,
+      =PublishError::ExpectedVkOutOfSync= naming both hashes; zero
+      movement, workspace 1137 passed, clippy clean;
+      notes/mpc-publisher.org §11. PUBLISHING.md still predates the
+      signet-* crates — owed, flagged in §11.)
 - [ ] C. DUST wallet: =DustLocalState= replayed from ledger =Event=s,
       persisted and REBUILDABLE from genesis (untrusted source, §5);
       =Transaction::balance= → dust spend → =DustActions=;

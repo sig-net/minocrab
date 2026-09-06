@@ -92,11 +92,11 @@ OK, can you write up (as tersely as possible) some concrete examples where what 
   No
 
 * C. The publisher (notes/mpc-publisher.org §10 "Open questions")
-- [X] C1. Hoist the Misc envelope constants and the three event names (~6 constants) into a small PUBLISHABLE crate so mpc's graph does not pull the corpus crate. RECOMMEND: yes, when mpc links the crate (or now — it is an hour).
+- [X] C1. (DONE 2026-09-06, merged — crates/signet-protocol; M30 C1.) Hoist the Misc envelope constants and the three event names (~6 constants) into a small PUBLISHABLE crate so mpc's graph does not pull the corpus crate. RECOMMEND: yes, when mpc links the crate (or now — it is an hour).
 
   Sounds good
   
-- [X] C2. Build =Deployment= from the package's =expectedVk.json= rather than from the key files, so a table/keys mismatch fails HERE. RECOMMEND: yes.
+- [X] C2. (DONE 2026-09-06, merged — M30 C2.) Build =Deployment= from the package's =expectedVk.json= rather than from the key files, so a table/keys mismatch fails HERE. RECOMMEND: yes.
 
 Yes
 
