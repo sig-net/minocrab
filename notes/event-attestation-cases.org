@@ -1,0 +1,96 @@
+#+title: Cases needing event/log attestation, not just receipt+return-data
+dmd's ask (decisions.org B8): terse, concrete, verified cases where
+receipt-status + return-data attestation isn't enough, for the MPC team.
+Every claim below was checked against verified source (Etherscan/Blockscout,
+address+file+function quoted) or a live =eth_call= on mainnet, 2026-09-06.
+
+* 1. What the MPC attests today (sig-net/mpc @ =b940f0a7c6700dfbbf8e3a2a4af3aaffb052d354=)
+=chain-signatures/chain-ethereum/src/execution_watcher.rs=,
+=execution_confirmed_event= (L310-379): =receipt_succeeded = receipt.status()=
+(L318); if false, =ExecutionOutcome::Failed= (L368-370), no other data
+touched. If true, output comes from =debug_traceTransaction=, not the
+receipt (=fetch_extraction_inputs=, L245-271) and is ABI-decoded against
+the request's schema in =respond_bidirectional.rs=, =build_serialized_output=
+(L123-161) via alloy =DynSolType::abi_decode= (=from_call_result=, L77-107,
+decode at L88-90). A decode error is always =ExtractionFailure::Terminal=
+(L300) -> =ExecutionOutcome::Failed= (L355-364) — indistinguishable from a
+revert to anything reading the attested outcome.
+- Schema expects =bool=, trace returns no bytes (=TraceOutput::NoReturnData=):
+  =build_serialized_output= L147-149 hits
+  =bail!("contract-call trace has no return data for non-empty output schema")=
+  -> Terminal -> Failed. CONFIRMED.
+- Schema expects =bool=, trace returns empty bytes (=TraceOutput::Output(vec![])=):
+  falls to L140 =from_call_result=, alloy's =abi_decode= on an empty buffer
+  for a 1-word tuple errors -> Terminal -> Failed. Same outcome, same path.
+- Nothing in this file or =respond_bidirectional.rs= reads =receipt.logs=.
+  =event_parsing.rs='s =logs=/=topic0= handling (grepped) is for the MPC's
+  OWN =SignatureRequested=/=SignatureResponded= contract events, unrelated
+  to the callee's logs. No log/event data is attested today, for any call.
+
+* 2. Cases verified to survive
+| Contract / address | Function | What the return says | What happened | Truth is in | Consequence |
+|---+---+---+---+---+---|
+| Tether USDT =0xdAC17F958D2ee523a2206206994597C13D831ec7= (=TetherToken.sol=, Solidity 0.4.18) | =transfer=/=transferFrom= (L122, L167) | nothing — functions declare no =returns= at all | tokens moved: =balances[_to] += sendAmount=, =Transfer= emitted (L134) | =Transfer(from,to,sendAmount)= event | =bool= schema + empty data -> Terminal -> *Failed* -> spurious refund of a transfer that MOVED tokens |
+| same, =setParams= (L425-433) — dormant fee | =basisPointsRate=/=maximumFee= public vars | admin-settable, =require(newBasisPoints<20)=, =require(newMaxFee<50)=, capped ~0.19%% / 49 USDT | LIVE =eth_call= 2026-09-06: both =basisPointsRate()= and =maximumFee()= = 0 | fee, if ever turned on, is netted into the SAME =Transfer= event's =sendAmount=, not a separate signal | today: no effect. if activated: amount received != argument, and the return-data problem above already means no attestation sees this either |
+| BNB (legacy ERC20) =0xB8c77482e45F1F44dE1745F52C74426C631bDD52= (Solidity 0.4.12) | =transfer= (L77) | no =returns= clause | every failure path (`_to==0`, `_value<=0`, insufficient balance, overflow) is `throw` (L78-81) — reverts, no silent-false path found | n/a (all failures revert) | confirms case 3 generalizes: another top-20-by-holders no-return ERC-20, all-revert |
+| OMG (OmiseGO) =0xd26114cd6EE289AccF82350c8d8487fedB8A0C07= (=OMGToken=) | =transfer=/=transferFrom= (L93, L141) | no =returns= clause | =SafeMath.sub= uses =assert= (reverts on underflow), =whenNotPaused= throws when paused — no silent-false path found | n/a (all failures revert) | same as BNB; *searched, did not find*, a no-return token that fails WITHOUT reverting — flag as open if MPC team wants exhaustive coverage |
+| Lido stETH =0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84= (=StETH.sol=), =transfer= (L196) | returns =bool=; `_transfer` (L428-431) converts amount->shares (rounds down) then moves shares | actual balance delta can be <= 1 wei less than the argument | NOT the =Transfer= event: =_emitTransferEvents= is called with the ORIGINAL argument (L430), not the shares-recomputed amount — the event also lies by <= 1 wei | =TransferShares= event or a =balanceOf= delta | correctness note, not a hazard: even "read the event" is wrong here by up to 1 wei; severity is dust-level |
+| BAYC =0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D=, =mintApe= (L1970) | =public payable=, no =returns= | mints via =_safeMint(msg.sender, mintIndex)= in a loop | =Transfer(0x0, to, mintIndex)= event (OZ =ERC721._mint=, no return either — checked openzeppelin-contracts v5.0.2 =ERC721.sol= L267/284) | =Transfer= event, `from == 0x0` | tokenId unknowable from receipt alone; generalizes to essentially every ERC-721 mint (OZ's =_mint=/=_safeMint= are void by design) |
+| UniswapV2Router02 =0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D=, =swapExactTokensForTokensSupportingFeeOnTransferTokens= (L339) | no =returns= (sibling =swapExactTokensForTokens=, L224, DOES return =amounts[]=) | router computes =balanceBefore=/=balanceAfter= internally (L349-353) but returns nothing | pair's =Swap= event, or a =balanceOf(to)= delta | amount actually received is unknowable from the attestation; =Succeeded= says only "mined, output >= amountOutMin was true internally" |
+| Gnosis Safe (singleton) =0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552=, =execTransaction= (L122) | returns REAL =bool success= (not empty data) | inner call failure does NOT revert the outer tx (unless =safeTxGas==0 && gasPrice==0=, L180) | =ExecutionFailure=/=ExecutionSuccess= event carries the same =(txHash,payment)=, nothing extra | *already covered* — this decodes fine as =Bool=, =is_true= closes it exactly like case 2. Listed to show the boundary, not a new gap |
+| Multicall3 =0xcA11bde05977b3631167028862bE2a173976CA11=, =aggregate3= (L98) | returns =Result[]{bool success; bytes returnData}[]= — real, non-empty, structured | a per-call =allowFailure=true= failure shows up as =success=false= in the array; only reverts if =allowFailure=false= (L106-119) | the return value itself, per-call | *likely already covered* PROVIDED the MPC's ABI schema vocabulary can express array-of-tuple — UNVERIFIED against the schema parser, see \S4 |
+| Optimism L1StandardBridge =0xB37a11AadF167B2F0b8dD85372De4bC66CD4A891= (impl of proxy =0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1=), =depositERC20= (L172) | no =returns= | =ERC20DepositInitiated= event (L333) carries token/from/to/amount — no id/nonce field at all | the event (there is no id to return even in principle here) | which L2 mint corresponds to this L1 tx is unknowable without watching for the event + the L2 side independently |
+| Across =Ethereum_SpokePool= =0x456Ac26E5ec083EE9889eBa0d1a0A582502B8e84= (proxy =0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5=), =depositV3= (L611) | no =returns= | =depositId = numberOfDeposits++= assigned inside =deposit()=, only emitted in =FundsDeposited= | the event; contract's own NatSpec (=unsafeDeposit= doc, L648) says the id "emitted in the resultant FundsDeposited event" is how fills are matched | a destination-chain settle needs this id and cannot get it from receipt+return-data |
+| Arbitrum Inbox =0x7C058ad1D0Ee415f7e7f30e62DB1BCf568470a10= (proxy =0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f=), =createRetryableTicket= (L261) | returns =uint256= (the ticket/seqNum) directly | — | the return value | *covered* — no event needed, contrast case |
+| Circle CCTP v1 TokenMessenger =0xBd3fa81B58Ba92a82136038B25aDec7066af3155=, =depositForBurn= (L2700) | returns =uint64 _nonce= directly | — | the return value | *covered* — no event needed, contrast case |
+
+* 3. Dropped (did not survive verification)
+- *PAXG* =0x45804880De22913dAFE09f4980848ECE6EcbAf78=: proxy -> impl
+  =0x7da4c5d9eCa180A03765a6d27196F2A0380fa543= -> imports
+  =PaxosTokenV2.sol=. Its =_transfer= (L455-464) does a plain
+  =balances[from]-=value; balances[to]+=value=, reverts on insufficient
+  funds/frozen, NO fee code path exists. Not a fee-on-transfer token in its
+  current implementation. DROPPED.
+- *ZRX* (considered as a "no-return token that fails silently" candidate,
+  not in the original list): =0xE41d2489571d322189246DaFA5ebDe1F4699F498=,
+  =transfer= (L60-67) DOES return =bool= and returns =false= without
+  reverting on insufficient balance — but that's a real, decodable =bool=,
+  i.e. exactly case 2 (already closed by =is_true=), not a new gap.
+  Mentioned only because the search for "no-return AND silent-fail" (BNB,
+  OMG) came up empty and this was the closest near-miss.
+- Aave v3 =Pool.supply()= (=0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2=
+  proxy, impl =0x728a138A4823392C2EFA55e028d434F526fE03CF=,
+  =SupplyLogic.executeSupply=, L40-89): void return confirmed, but checked
+  the mint math — =IAToken.mint= is called with =scaledAmount= computed
+  from =params.amount= (the caller's declared amount), NOT the actual
+  =safeTransferFrom= delta (L62-67). So "mined without reverting" IS
+  sufficient — PROVIDED the reserve isn't a fee-on-transfer token, which is
+  a governance/listing invariant Aave enforces off-chain, not something
+  this function checks. Not dropped as a candidate, but confirmed as
+  *not currently a gap* — matches evm-interfaces.org \S6 open question 4's
+  own conclusion; recorded here as verified rather than asserted.
+
+* 4. Could not verify
+- Whether the MPC's respond/output schema format (the JSON =[{name,type}]=
+  list feeding =parse_output_schema_fields=) can express a dynamic
+  array-of-tuples (=Result[]= for Multicall3's =aggregate3=). This needs
+  reading the schema parser and whatever consumes =respond_serialization_schema=
+  on the signing side, which is out of scope here. If it can't, aggregate3
+  degrades to the same "mined without reverting" problem as the void-return
+  cases despite having a fully informative return type in principle.
+
+* 5. What the attestation would need to carry (options, not a decision)
+For the void-return and misleading-return cases above, the fix is some form
+of log attestation layered on the existing receipt+return-data path: (a)
+the MPC decodes a caller-declared =(address, topic0, ABI type)= against the
+matching log(s) in the receipt exactly the way it decodes return data today
+— reuses the existing schema/Terminal-failure machinery, just points it at
+=receipt.logs= instead of the trace output, and is the smallest change; (b)
+the MPC attests raw filtered logs (address+topic0 match, full data) and lets
+the requester's own circuit decode/interpret them, trading MPC-side schema
+work for more data crossing the wire; (c) a receipt-logs inclusion proof
+(Merkle proof against the block's receipts root) that lets the destination
+verify a specific log was actually emitted without the MPC being a trust
+point for the decode at all, at the cost of proof size/verification work on
+our side. All three still need the MPC to fetch and expose =receipt.logs=,
+which today (\S1) it does not do anywhere in this path.
