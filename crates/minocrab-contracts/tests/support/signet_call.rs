@@ -1,4 +1,5 @@
-//! A Signet singleton call BUILT THE WAY THE LEDGER BUILDS IT (M29 rung C).
+//! A Signet singleton call BUILT THE WAY THE LEDGER BUILDS IT (M29 rung C),
+//! now through `minocrab-publisher` (M30 rung A).
 //!
 //! Every proof preimage the singleton's tests use comes from here, and this
 //! module never assembles one by hand. The path is the production path:
@@ -18,46 +19,49 @@
 //! ```
 //!
 //! That is exactly what `sig-net/mpc`'s TypeScript sidecar does through the
-//! ledger-v9 WASM bindings (`midnight-publisher-ts/src/intent.ts`), and what
-//! a Rust publisher will do directly (M30). So the preimage the differential
-//! hands to compactc's artifact and to ours is byte for byte the one
-//! production produces — not a second, hand-rolled reading of the same rule.
+//! ledger-v9 WASM bindings (`midnight-publisher-ts/src/intent.ts`). Since
+//! M30 rung A it is also LIBRARY code — `minocrab_publisher::call` — rather
+//! than test code, so the preimage under test is the one the Rust publisher
+//! produces, not a look-alike. What is left in this file is only what is
+//! test-only: the fixed randomness, the fixed address, the deployment
+//! helpers, and the limb arithmetic the construction gate checks the
+//! ledger's own field vector against.
 //!
 //! The one thing NOT taken from the ledger is the Impact program itself
-//! ([`log_ops`]): in production it comes from compactc's generated JS
-//! executor. `tests/signet_ledger_apply.rs` closes that gap against
-//! `sig-net/mpc`'s captured on-chain transactions.
+//! (`minocrab_publisher::call::log_ops`): in production it comes from
+//! compactc's generated JS executor. `tests/signet_ledger_apply.rs` closes
+//! that gap against `sig-net/mpc`'s captured on-chain transactions.
 
-use std::borrow::Cow;
-
-use midnight_base_crypto::fab::{
-    AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom,
-};
+use midnight_base_crypto::fab::AlignedValue;
+use midnight_base_crypto::hash::HashOutput;
 use midnight_base_crypto::time::{Duration, Timestamp};
 use midnight_coin_structure::contract::ContractAddress;
-use midnight_base_crypto::hash::HashOutput;
-use midnight_ledger::construct::{
-    communication_commitment, partition_transcripts, ContractCallPrototype, PreTranscript,
-};
+use midnight_ledger::construct::ContractCallPrototype;
 use midnight_ledger::semantics::{TransactionContext, TransactionResult};
 use midnight_ledger::structure::{
     ContractAction, ContractDeploy, Intent, LedgerState, ProofPreimageMarker,
     ProofPreimageVersioned, Signature, Transaction, INITIAL_PARAMETERS,
 };
 use midnight_ledger::verify::WellFormedStrictness;
-use midnight_onchain_runtime::context::{BlockContext, QueryContext};
-use midnight_onchain_state::state::{ChargedState, ContractOperation, ContractState, StateValue};
+use midnight_onchain_runtime::context::BlockContext;
+use midnight_onchain_state::state::{ContractState, StateValue};
 use midnight_onchain_vm::ops::Op;
 use midnight_onchain_vm::result_mode::ResultModeVerify;
-use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::Array;
 use midnight_transient_crypto::commitment::PedersenRandomness;
-use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, VerifierKey};
+use midnight_transient_crypto::proofs::{ProofPreimage, VerifierKey};
 use minocrab::Fr;
-use minocrab_contracts::events::{MISC_SIZE, MISC_TAG, MISC_VERSION};
+use minocrab_publisher::call::EcdsaSignature;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+
+// The FAB primitives, the Impact program, the empty contract state, the
+// operation constructor and the prototype builder all live in the publisher
+// crate now; re-exported under their old names so the suites that import them
+// from `support::signet_call` read unchanged.
+pub use minocrab_publisher::call::{empty_state, log_ops, operation, SIGNER_CIRCUITS};
+pub use minocrab_publisher::fab::{bytesn_value, cell, scalar_input};
 
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 pub type PreimageIntent = Intent<Signature, ProofPreimageMarker, PedersenRandomness, InMemoryDB>;
@@ -65,7 +69,8 @@ pub type PreimageIntent = Intent<Signature, ProofPreimageMarker, PedersenRandomn
 /// The communication-commitment randomness every singleton call in the test
 /// suite is built with. FIXED, not sampled: the benchmark harness reads the
 /// preimages these tests dump (`support::dump_preimage`), so a preimage has
-/// to be reproducible across runs.
+/// to be reproducible across runs. A publisher samples it per call, which is
+/// why the library takes it as an argument.
 pub const COMM_RAND: u64 = 0x516_e37;
 
 /// The seed for the intent's binding randomness, for the same reason.
@@ -81,20 +86,7 @@ pub fn singleton_address() -> ContractAddress {
     ContractAddress(HashOutput(SINGLETON_ADDRESS_BYTES))
 }
 
-// ---- FAB primitives --------------------------------------------------------
-
-/// A `Bytes<n>` aligned value.
-pub fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
-    AlignedValue::new(
-        Value(vec![ValueAtom(bytes.to_vec()).normalize()]),
-        Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes { length: n })]),
-    )
-    .expect("a Bytes<n> atom accepts n bytes")
-}
-
-pub fn cell(av: AlignedValue) -> StateValue<InMemoryDB> {
-    StateValue::Cell(Sp::new(av))
-}
+// ---- limb arithmetic, the construction gate's second reading ---------------
 
 /// A `Bytes<32>`'s two FAB slots: hi = byte 31, lo = bytes 0..31 LE.
 pub fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
@@ -115,93 +107,31 @@ pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
         .collect()
 }
 
-/// A flat `[Field; n]` aligned value over `limbs`.
-///
-/// The ledger reads a call's `input` ONLY through
-/// `AlignedValue::value_only_field_repr` — for the proof preimage's `inputs`
-/// (via `ValueReprAlignedValue::field_vec`) and for the communication
-/// commitment. The alignment itself never reaches the transaction. So an
-/// argument list whose typed alignment is `[Bytes<32>, Bytes<1>, …]` and
-/// this flat one produce the SAME preimage; `tests/signet_construction.rs`
-/// asserts that byte for byte rather than leaving it asserted here in prose.
-pub fn scalar_input(limbs: &[Fr]) -> AlignedValue {
-    AlignedValue::new(
-        Value(limbs.iter().map(|f| ValueAtom(f.as_le_bytes().to_vec()).normalize()).collect()),
-        Alignment(limbs.iter().map(|_| AlignmentSegment::Atom(AlignmentAtom::Field)).collect()),
-    )
-    .expect("a Field atom accepts a field element's LE bytes")
-}
-
 // ---- the call --------------------------------------------------------------
 
-/// The singleton's Impact program: one Misc event, `Push` + `Log`.
+/// One singleton call, as a [`ContractCallPrototype`] —
+/// `minocrab_publisher::call::call_prototype` with this suite's fixed
+/// randomness and `INITIAL_PARAMETERS`.
 ///
-/// In production compactc's generated JS executor emits these two ops; here
-/// they are written out. `tests/signet_ledger_apply.rs` checks them against
-/// the ops in `sig-net/mpc`'s captured on-chain respond transactions.
-pub fn log_ops(misc_bytes: &[u8]) -> Vec<VmOp> {
-    vec![
-        Op::Push {
-            storage: false,
-            value: StateValue::Array(
-                vec![
-                    cell(bytesn_value(4, &MISC_VERSION.to_le_bytes())),
-                    cell(bytesn_value(1, &[MISC_TAG])),
-                    cell(bytesn_value(MISC_SIZE as u32, misc_bytes)),
-                ]
-                .into(),
-            ),
-        },
-        Op::Log,
-    ]
-}
-
-/// The singleton's state as the tests deploy it: no ledger fields (the three
-/// signer circuits are stateless), one operation per circuit.
-pub fn empty_state() -> ChargedState<InMemoryDB> {
-    ChargedState::new(StateValue::Array(Array::new()))
-}
-
-/// `ContractOperation` for a circuit under a verifier key (`None` where the
-/// gate does not verify proofs).
-pub fn operation(vk: Option<VerifierKey>) -> ContractOperation {
-    ContractOperation::new(vk, None)
-}
-
-/// One singleton call, as a [`ContractCallPrototype`]: the ledger runs the
-/// program to build the transcript ([`partition_transcripts`], which is what
-/// decides the guaranteed/fallible split, the gas heuristic and the
-/// transcript version), and the prototype carries the arguments beside it.
+/// The parameters are the publisher's argument, not its constant (M30 A);
+/// `INITIAL_PARAMETERS` is what these gates have always partitioned against
+/// and what their pinned preimages carry, so it is spelled out HERE, once.
 pub fn call_prototype(
     entry_point: &str,
     address: ContractAddress,
     input: AlignedValue,
     misc_bytes: &[u8],
 ) -> ContractCallPrototype<InMemoryDB> {
-    let rand = Fr::from(COMM_RAND);
-    let output: AlignedValue = ().into();
-    let comm = communication_commitment(input.clone(), output.clone(), rand);
-    let transcripts = partition_transcripts(
-        &[PreTranscript {
-            context: QueryContext::new(empty_state(), address),
-            program: log_ops(misc_bytes),
-            comm_comm: Some(comm),
-        }],
-        &INITIAL_PARAMETERS,
-    )
-    .expect("the singleton's Push+Log program partitions");
-    ContractCallPrototype {
+    minocrab_publisher::call::call_prototype(
+        entry_point,
         address,
-        entry_point: entry_point.as_bytes().into(),
-        op: operation(None),
-        guaranteed_public_transcript: transcripts[0].0.clone(),
-        fallible_public_transcript: transcripts[0].1.clone(),
-        private_transcript_outputs: vec![],
+        &empty_state(),
+        &INITIAL_PARAMETERS,
         input,
-        output,
-        communication_commitment_rand: rand,
-        key_location: KeyLocation(Cow::Owned(entry_point.to_string())),
-    }
+        misc_bytes,
+        Fr::from(COMM_RAND),
+    )
+    .expect("the singleton's Push+Log program partitions")
 }
 
 /// The prototypes as one [`Intent`] — `Intent::new` folds each through
@@ -254,7 +184,6 @@ pub fn call_preimage(entry_point: &str, input: AlignedValue, misc_bytes: &[u8]) 
     }
 }
 
-
 // ---- deploying the singleton and applying a call ---------------------------
 
 /// One of the COMMITTED managed verifier keys (M29 rung A:
@@ -274,12 +203,6 @@ pub fn managed_verifier_key(circuit: &str) -> VerifierKey {
     midnight_serialize::tagged_deserialize(&mut &bytes[..])
         .unwrap_or_else(|e| panic!("{} is a tagged VerifierKey: {e}", path.display()))
 }
-
-/// The three signer circuits' COMPACT names — what the sidecar's
-/// `expectedVk` table and `RESPOND_CIRCUITS` key by, what the managed
-/// directory names its files, and what the captured on-chain transactions
-/// carry as entry points.
-pub const SIGNER_CIRCUITS: [&str; 3] = ["signBidirectional", "respond", "respondBidirectional"];
 
 /// The singleton as this repo would deploy it: NO ledger fields (all three
 /// signer circuits are stateless), one operation per circuit under whatever
@@ -349,9 +272,10 @@ pub fn deploy_singleton(
     (after, address)
 }
 
-/// The 288-byte Misc envelope of a respond-shaped event:
-/// `pad(32, name)` ‖ requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1)
-/// ‖ zeros(127).
+/// The 288-byte Misc envelope of a respond-shaped event —
+/// `minocrab_publisher::call::respond_misc`, with the signature's four fields
+/// spread out the way this suite's call sites (and its tamper twins) hold
+/// them.
 pub fn respond_misc(
     name: &str,
     request_id: &[u8; 32],
@@ -360,14 +284,7 @@ pub fn respond_misc(
     s: &[u8; 32],
     recovery_id: u8,
 ) -> Vec<u8> {
-    let mut bytes = vec![0u8; MISC_SIZE];
-    bytes[..name.len()].copy_from_slice(name.as_bytes());
-    bytes[32..64].copy_from_slice(request_id);
-    bytes[64..96].copy_from_slice(big_r_x);
-    bytes[96..128].copy_from_slice(big_r_y);
-    bytes[128..160].copy_from_slice(s);
-    bytes[160] = recovery_id;
-    bytes
+    minocrab_publisher::call::respond_misc(name, request_id, &signature(big_r_x, big_r_y, s, recovery_id))
 }
 
 /// A respond call's arguments with their COMPACT alignment: four
@@ -379,11 +296,14 @@ pub fn respond_input(
     s: &[u8; 32],
     recovery_id: u8,
 ) -> AlignedValue {
-    AlignedValue::concat([
-        &bytesn_value(32, request_id),
-        &bytesn_value(32, big_r_x),
-        &bytesn_value(32, big_r_y),
-        &bytesn_value(32, s),
-        &bytesn_value(1, &[recovery_id]),
-    ])
+    minocrab_publisher::call::respond_input(request_id, &signature(big_r_x, big_r_y, s, recovery_id))
+}
+
+fn signature(
+    big_r_x: &[u8; 32],
+    big_r_y: &[u8; 32],
+    s: &[u8; 32],
+    recovery_id: u8,
+) -> EcdsaSignature {
+    EcdsaSignature { big_r_x: *big_r_x, big_r_y: *big_r_y, s: *s, recovery_id }
 }

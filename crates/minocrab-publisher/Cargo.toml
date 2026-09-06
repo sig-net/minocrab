@@ -1,0 +1,37 @@
+[package]
+name = "minocrab-publisher"
+# M30: the pure core of the MPC's Midnight publisher — the piece
+# `sig-net/mpc`'s TypeScript sidecar exists to provide (notes/mpc-publisher.org
+# §2). `publish = false` for one reason only: it depends on
+# `minocrab-contracts`, which is itself `publish = false` (a corpus, not a
+# library), for the ONE definition of the Misc envelope and the three signer
+# event names. Hoisting those constants into a publishable crate is the open
+# question notes/mpc-publisher.org §10 records; mpc consumes this crate by git
+# path either way.
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The MPC publisher's pure core: build/prove/sign/seal a Signet respond intent (M30)"
+
+[lints]
+workspace = true
+
+[dependencies]
+# The contract's own ABI facts: the 288-byte Misc envelope (`events`) and the
+# three signer event names (`signet_contract`). Reused rather than restated —
+# a publisher that spells the layout out a second time is a second reading of
+# the thing it is supposed to be faithful to (notes/mpc-publisher.org §9 C).
+minocrab-contracts = { path = "../minocrab-contracts" }
+midnight-base-crypto.workspace = true
+midnight-coin-structure.workspace = true
+midnight-ledger.workspace = true
+midnight-onchain-runtime.workspace = true
+midnight-onchain-state.workspace = true
+midnight-onchain-vm.workspace = true
+midnight-storage.workspace = true
+midnight-transient-crypto.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
