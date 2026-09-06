@@ -443,7 +443,7 @@ pub fn file_request_ops(
     o
 }
 
-/// The op stream `Pending::consume` (`settle` / `settle_failed`) emits for
+/// The op stream `Pending::consume` (shared by `complete` and `refund`) emits for
 /// EVERY settle circuit, in order: the MPC key read, `records.member`,
 /// `records.lookup`, `records.remove`, `envs.lookup`, `envs.remove`.
 ///
