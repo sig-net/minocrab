@@ -700,6 +700,45 @@ strictness bonus). FOUND AND FIXED, four things:
    refined at the source. Fix 1's `BoundedUint::to_uint` is where our
    API can be STRICTER than Compact by emitting the check compactc omits.
 
+* [ ] Landings of 2026-09-06, evening (the decision backlog cleared) — what to look at
+Seven merges from dmd's inline answers in notes/decisions.org, each
+built by a worktree agent, gate-checked on main (dump byte-identical on
+214 circuits against the pre-day baseline, workspace green, clippy
+clean), diffs unread in-session. In the order a reviewer should take
+them:
+- [ ] aca5aab..52da264 THE EXECUTOR (=minocrab_sim::v3::exec=,
+      notes/executor.org): a NEW LAYER — the second arrow, state →
+      preimage. Read the fixpoint driver's termination argument
+      (emission depends only on earlier reads) and =decode_program=,
+      the one piece written rather than reused (the inverse of
+      =Op::field_repr=); check that =simulate_with(ir, preimage, Mode)=
+      really is the same walk in both modes. Then THE FINDING in
+      signet-async.org §10: the typed settle's Poseidon digest ≠ the
+      MPC's — confirm the limb split reading against
+      =compute_response_hash= before choosing the fix.
+- [ ] 71bdce8..ddf95b8 THE BATCH (=Queued<F, Env, WORDS, N>=,
+      nonce-admin.org §8): the handle is the slot's OWN insert counter
+      (why: =file_request= consumes the Signet counter per record at
+      flush); the settle side is Pending's by a ZKIR-string equality
+      test; the adversarial properties are gated on the emitted stream,
+      NOT driven — the executor now exists, so a driven version is the
+      next test to write. Confirm no request-side argument is a nonce
+      or a fee (§1.1's rule).
+- [ ] f52e5e3 / b83ffed =signet-protocol= + =Deployment= from
+      expectedVk.json: the hoist is a pure move (dump says so); the
+      check's error names both hashes — read that it cannot pass on a
+      missing entry.
+- [ ] fd6cd70 / af03e23 =Filing::GAS_LIMIT= threaded as a VALUE through
+      =finish_tx= (a small signature change on the whole request path)
+      and =supplyWithPermit= as eight flat words — the alloy row is the
+      witness.
+- [ ] 86eb66c / 51f1703 the one-spelling removals (M36 D) — tiny; what
+      a reviewer adds is a verdict on the "kept, for dmd" list in
+      edsl-trim.org §D.
+- [ ] 17ea484 cargo-deny: the three ignored advisories' reasons.
+- [ ] 10cb19d notes/event-attestation-cases.org — a document, not code;
+      dmd hands it to the MPC team, so its citations are the review.
+
 * [ ] Landings of 2026-09-06 (overnight, diff-unreviewed) — what to look at
 - [ ] e1b026c M37 D (the vault's seventeen circuits on the typed API):
       the JUDGEMENT in notes/evm-calls.org §11 — three completions keep
