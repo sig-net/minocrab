@@ -33,6 +33,9 @@ use std::collections::HashMap;
 pub mod rowcost;
 
 #[cfg(feature = "unstable")]
+pub mod exec;
+
+#[cfg(feature = "unstable")]
 use group::Group;
 #[cfg(feature = "unstable")]
 use midnight_base_crypto::repr::BinaryHashRepr;
@@ -139,6 +142,39 @@ pub struct Run3 {
     pub consumed_public: usize,
     /// Instruction execution counts by opcode.
     pub op_counts: BTreeMap<&'static str, u32>,
+    /// The `Impact` public inputs the run ACCUMULATED, in order — the
+    /// preimage's `public_transcript_inputs` as the circuit computes them
+    /// (guarded-off blocks contribute nothing). Under [`simulate`] this is
+    /// equal to `preimage.public_transcript_inputs` by construction, since
+    /// each element is checked as it accumulates; under [`Mode::Gather`] it
+    /// is the run's OUTPUT — the Impact op stream the circuit asks for.
+    pub public_transcript_inputs: Vec<Fr>,
+    /// Instruction indices whose `Assert` failed. Always empty under
+    /// [`simulate`], which returns `Err` on the first one; under
+    /// [`Mode::Gather`] asserts are recorded rather than fatal, because a
+    /// gather pass runs against a provisional transcript.
+    pub assert_failures: Vec<usize>,
+    /// Instructions that FAILED outright under [`Mode::Gather`] — a value
+    /// the fixpoint has not resolved yet is not a valid value of its type.
+    /// Always empty under [`simulate`]. A non-empty list means
+    /// [`Run3::public_transcript_inputs`] is a prefix, not the whole
+    /// transcript.
+    pub walk_failures: Vec<(usize, String)>,
+}
+
+#[cfg(feature = "unstable")]
+/// How [`simulate_with`] treats the preimage's public halves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// The reference semantics: every transcript is checked and consumed
+    /// exactly, a failed assert aborts. This is [`simulate`].
+    Verify,
+    /// The executor's pass (`v3::exec`): `public_transcript_outputs` is a
+    /// PROVISIONAL guess — short reads yield zeros, `Impact` inputs are
+    /// accumulated rather than checked, the two public halves need not be
+    /// consumed exactly, and a failed assert is recorded, not fatal. The
+    /// private transcript and the arguments are still exact.
+    Gather,
 }
 
 /// Opcode name of a v3 instruction (for metrics and error messages).
@@ -333,7 +369,11 @@ fn operand_bits(
             return Err(fail(at, op, "excessive bit bound"));
         }
         if bits[n as usize..].iter().any(|b| *b) {
-            return Err(fail(at, op, format!("bit bound failed: {val:?} is not {n}-bit")));
+            return Err(fail(
+                at,
+                op,
+                format!("bit bound failed: {val:?} is not {n}-bit"),
+            ));
         }
         bits.truncate(n as usize);
     }
@@ -342,8 +382,9 @@ fn operand_bits(
 
 #[cfg(feature = "unstable")]
 fn from_bits(bits: impl DoubleEndedIterator<Item = bool>) -> Fr {
-    bits.rev()
-        .fold(Fr::from(0u64), |acc, bit| acc * Fr::from(2u64) + Fr::from(bit as u64))
+    bits.rev().fold(Fr::from(0u64), |acc, bit| {
+        acc * Fr::from(2u64) + Fr::from(bit as u64)
+    })
 }
 
 #[cfg(feature = "unstable")]
@@ -399,7 +440,10 @@ pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPrei
     assert_eq!(our_run.pi_skips, their_run.pi_skips, "pi_skips differ");
     assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
 
-    assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
+    assert_eq!(
+        ours.check(pi).expect("upstream accepts ours"),
+        our_run.pi_skips
+    );
     assert_eq!(
         theirs.check(pi).expect("upstream accepts theirs"),
         their_run.pi_skips
@@ -413,7 +457,24 @@ pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPrei
 /// `preimage.inputs` is the circuit's *encoded* argument list: each argument
 /// occupies `IrType::encoded_len` consecutive raw `Fr` elements.
 pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Error> {
+    simulate_with(ir, preimage, Mode::Verify)
+}
+
+#[cfg(feature = "unstable")]
+/// [`simulate`], with the treatment of the public transcript halves chosen
+/// by `mode` — the one walk both the verifier and the executor run, so the
+/// two cannot drift.
+pub fn simulate_with(
+    ir: &IrSource,
+    preimage: &ProofPreimage,
+    mode: Mode,
+) -> Result<Run3, Sim3Error> {
+    let gather = mode == Mode::Gather;
     let mut memory: HashMap<Identifier, IrValue> = HashMap::new();
+    let mut public_transcript_inputs: Vec<Fr> = Vec::new();
+    let mut assert_failures: Vec<usize> = Vec::new();
+    let mut walk_failures: Vec<(usize, String)> = Vec::new();
+    let mut transcript_truncated = false;
 
     // Decode the flattened argument list per the input schema (ir_vm.rs:191-211).
     let mut idx = 0usize;
@@ -441,14 +502,18 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
     // communications commitment (ir_vm.rs:213-221).
     let mut pis: Vec<Fr> = vec![preimage.binding_input];
     if ir.do_communications_commitment {
-        pis.push(
-            preimage
-                .communications_commitment
-                .ok_or_else(|| {
-                    Sim3Error::CommCommitment("expected communications commitment".into())
-                })?
-                .0,
-        );
+        // Under `Mode::Gather` the commitment spans the circuit's OUTPUTS,
+        // which this pass is still computing; the executor fills it in once
+        // they are known, so an absent one is not an error here.
+        match preimage.communications_commitment {
+            Some((c, _)) => pis.push(c),
+            None if gather => pis.push(Fr::from(0u64)),
+            None => {
+                return Err(Sim3Error::CommCommitment(
+                    "expected communications commitment".into(),
+                ))
+            }
+        }
     }
     let mut pi_skips: Vec<Option<usize>> = Vec::new();
     let mut public_transcript_inputs_idx = 0usize;
@@ -460,6 +525,15 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
     for (at, ins) in ir.instructions.iter().enumerate() {
         let op = op_name(ins);
         *op_counts.entry(op).or_default() += 1;
+        // Under `Mode::Gather` every value in flight may be provisional —
+        // a read the fixpoint has not resolved yet — so an instruction can
+        // fail on garbage that the next round replaces. Such a failure is
+        // RECORDED and the walk goes on, but nothing further is appended to
+        // the transcript: what has accumulated so far is a correct PREFIX
+        // (op emission depends only on earlier reads), and a prefix is
+        // exactly what the fixpoint needs to make progress. Under
+        // `Mode::Verify` the closure's first `Err` is the function's.
+        let mut step = || -> Result<(), Sim3Error> {
         match ins {
             // ir_vm.rs:287-299
             I::Encode { input, outputs } => {
@@ -525,7 +599,18 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
             // ir_vm.rs:337-341
             I::Assert { cond } => {
                 if !operand_bool(&memory, cond, at, op)? {
-                    return Err(fail(at, op, "failed direct assertion"));
+                    if !gather {
+                        return Err(fail(at, op, "failed direct assertion"));
+                    }
+                    // A circuit that rejects has NO transcript past the
+                    // rejection: everything after a failed assert is
+                    // unconstrained, and emitting it would put values in
+                    // the op stream that no state could justify. Recording
+                    // the index and truncating leaves a prefix the fixpoint
+                    // can still settle on, and a settled run whose first
+                    // failure is an assert is a REJECTION, not an error.
+                    assert_failures.push(at);
+                    transcript_truncated = true;
                 }
             }
             // ir_vm.rs:342-347
@@ -549,16 +634,46 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                     }
                     _ => {
                         let w = val_t.encoded_len();
-                        let raw = take_raw(
-                            &preimage.public_transcript_outputs,
-                            public_transcript_outputs_idx,
-                            w,
-                            at,
-                            op,
-                            "public transcript outputs",
-                        )?;
+                        // Under `Mode::Gather` the outputs half is the
+                        // provisional guess the fixpoint is refining; a
+                        // read past its end reads zeros (the value the
+                        // NEXT iteration replaces), rather than failing.
+                        let padded: Vec<Fr>;
+                        let raw = if gather
+                            && public_transcript_outputs_idx + w
+                                > preimage.public_transcript_outputs.len()
+                        {
+                            padded = (0..w)
+                                .map(|i| {
+                                    preimage
+                                        .public_transcript_outputs
+                                        .get(public_transcript_outputs_idx + i)
+                                        .copied()
+                                        .unwrap_or_else(|| Fr::from(0u64))
+                                })
+                                .collect();
+                            &padded[..]
+                        } else {
+                            take_raw(
+                                &preimage.public_transcript_outputs,
+                                public_transcript_outputs_idx,
+                                w,
+                                at,
+                                op,
+                                "public transcript outputs",
+                            )?
+                        };
                         public_transcript_outputs_idx += w;
-                        decode_offcircuit(raw, val_t).map_err(|e| fail(at, op, format!("{e}")))?
+                        match decode_offcircuit(raw, val_t) {
+                            Ok(v) => v,
+                            // A provisional guess is not a valid value of
+                            // every type — five zeros are not a curve
+                            // point. Under `Mode::Gather` the type's
+                            // default stands in until the round that reads
+                            // the real one.
+                            Err(_) if gather => default_ir_value(val_t),
+                            Err(e) => return Err(fail(at, op, format!("{e}"))),
+                        }
                     }
                 };
                 memory.insert(output.clone(), val);
@@ -640,10 +755,13 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                     .rev()
                     .zip(max_bits[..FR_BITS].iter().rev())
                     .map(|(ab, max)| ab.cmp(max))
-                    .fold(
-                        std::cmp::Ordering::Equal,
-                        |prefix, local| if prefix.is_eq() { local } else { prefix },
-                    );
+                    .fold(std::cmp::Ordering::Equal, |prefix, local| {
+                        if prefix.is_eq() {
+                            local
+                        } else {
+                            prefix
+                        }
+                    });
                 if cmp.is_gt() {
                     return Err(fail(at, op, "reconstituted element overflows field"));
                 }
@@ -691,7 +809,11 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                     .map(|i| operand_fr(&memory, i, at, op))
                     .collect::<Result<Vec<Fr>, _>>()?;
                 let value = alignment.parse_field_repr(&inputs).ok_or_else(|| {
-                    fail(at, op, format!("inputs did not match alignment: {inputs:?}"))
+                    fail(
+                        at,
+                        op,
+                        format!("inputs did not match alignment: {inputs:?}"),
+                    )
                 })?;
                 let mut repr = Vec::new();
                 ValueReprAlignedValue(value).binary_repr(&mut repr);
@@ -714,13 +836,25 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                     }
                     pi_skips.push(Some(count));
                 } else {
-                    for input in inputs {
-                        let x = operand_fr(&memory, input, at, op)?;
+                    // Resolve every input BEFORE publishing any: an op is
+                    // one Impact instruction, and half an op in the
+                    // transcript would not decode. (Verify mode never gets
+                    // here with an unresolvable operand.)
+                    let values = inputs
+                        .iter()
+                        .map(|input| operand_fr(&memory, input, at, op))
+                        .collect::<Result<Vec<Fr>, _>>()?;
+                    for x in values {
                         pis.push(x);
+                        if !transcript_truncated {
+                            public_transcript_inputs.push(x);
+                        }
                         public_transcript_inputs_idx += 1;
                     }
                     pi_skips.push(None);
-                    for i in 0..count {
+                    // Under `Mode::Gather` there is nothing to check
+                    // against: the accumulated values ARE the transcript.
+                    for i in 0..if gather { 0 } else { count } {
                         let idx = public_transcript_inputs_idx - count + i;
                         let expected = preimage.public_transcript_inputs.get(idx).copied();
                         let computed = Some(pis[pis.len() - count + i]);
@@ -757,9 +891,7 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                 let s = operand(&memory, scalar, at, op)?;
                 let p = match ir_type_of(&s) {
                     IrType::JubjubScalar => IrValue::JubjubPoint(JubjubSubgroup::generator()),
-                    IrType::Secp256k1Scalar => {
-                        IrValue::Secp256k1Point(k256::K256::generator())
-                    }
+                    IrType::Secp256k1Scalar => IrValue::Secp256k1Point(k256::K256::generator()),
                     t => {
                         return Err(fail(
                             at,
@@ -801,8 +933,7 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                 output,
             } => {
                 let bytes = operand(&memory, bytes, at, op)?;
-                let bytes: [u8; 32] =
-                    bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+                let bytes: [u8; 32] = bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
                 let x = from_bytes32_offcircuit(val_t, &bytes)
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), x);
@@ -880,13 +1011,25 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
                 }
             }
         }
+        Ok(())
+        };
+        match step() {
+            Ok(()) => {}
+            Err(e) if gather => {
+                walk_failures.push((at, e.to_string()));
+                transcript_truncated = true;
+            }
+            Err(e) => return Err(e),
+        }
     }
 
-    // Every transcript must be consumed exactly (ir_vm.rs:648-661).
-    if preimage.public_transcript_inputs.len() != public_transcript_inputs_idx
-        || preimage.public_transcript_outputs.len() != public_transcript_outputs_idx
-        || preimage.private_transcript.len() != private_transcript_idx
-    {
+    // Every transcript must be consumed exactly (ir_vm.rs:648-661). Under
+    // `Mode::Gather` only the private half is exact: the public halves are
+    // the run's own output and its provisional input.
+    let public_halves_consumed = gather
+        || (preimage.public_transcript_inputs.len() == public_transcript_inputs_idx
+            && preimage.public_transcript_outputs.len() == public_transcript_outputs_idx);
+    if !public_halves_consumed || preimage.private_transcript.len() != private_transcript_idx {
         return Err(Sim3Error::Transcript(format!(
             "public inputs {}/{}, public outputs {}/{}, private {}/{}",
             public_transcript_inputs_idx,
@@ -903,7 +1046,7 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
     // in-circuit twin at ir_vm.rs:1184-1199 rebuilds the same list from
     // memory, skipping absent inputs — off-circuit every declared input was
     // decoded into memory above, so the lists coincide.)
-    if ir.do_communications_commitment {
+    if ir.do_communications_commitment && !gather {
         let comm_comm = preimage.communications_commitment.ok_or_else(|| {
             Sim3Error::CommCommitment("expected communications randomness".into())
         })?;
@@ -935,6 +1078,9 @@ pub fn simulate(ir: &IrSource, preimage: &ProofPreimage) -> Result<Run3, Sim3Err
         consumed_private: private_transcript_idx,
         consumed_public: public_transcript_outputs_idx,
         op_counts,
+        public_transcript_inputs,
+        assert_failures,
+        walk_failures,
     })
 }
 

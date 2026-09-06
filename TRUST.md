@@ -64,11 +64,12 @@ suite warrants; this says where the suites stop.
 | `minocrab-macros/src/ledger_repr.rs` | 152 | v3_ledger `derived_repr` (atoms and limb round trip); the erc20_vault_pending lineage's slots | an environment's limbs split at the wrong boundaries on read-back |
 | `minocrab-macros/src/contract.rs` | 229 | circuit_closure (every #[circuit] is listed) + the derived sets feeding both snapshots | a circuit missing from its contract's set |
 | `minocrab-sim/src/lib.rs` | 129 | **READING** | nothing beyond the Profile types (129 lines) |
-| `minocrab-sim/src/v3.rs` | 1169 | cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — spec-harness link 4 and every differential; v3_end_to_end. It is never trusted alone | a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job) |
+| `minocrab-sim/src/v3.rs` | 1315 | cross-checked against Midnight's reference VM (`IrSource::check`) on every accepted run — spec-harness link 4 and every differential; v3_end_to_end. It is never trusted alone | a simulator accepting what the reference VM rejects (caught) — or both agreeing on a wrong statement (out of scope here; the differentials' job) |
+| `minocrab-sim/src/v3/exec.rs` | 763 | executor_vault (the transcript it derives from state equals the vault harness's hand model, op for op, on seventeen circuits) + IrSource::check on every preimage it produces; impact_roundtrip (the decoder is the exact inverse of minocrab-ledger's encoder, one fixture per Op::field_repr branch). Test-side only: nothing a deployed circuit links | a mis-decoded Impact op — a transcript that gathers a read from the wrong slot, agreeing with nothing (caught by the harness) unless the hand model is wrong the same way |
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-25154 lines in the seven crates; 10567 of them in files whose warrant is READING in whole or in part (the rows in bold).
+26063 lines in the seven crates; 10567 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget
