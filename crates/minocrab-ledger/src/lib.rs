@@ -60,9 +60,8 @@ pub use calls::{
     EntryPoint, XcallCommitment, XcallEntryPointHash, XcallResult,
 };
 pub use impact::{
-    atom_limbs, default_value, dup, field_key, idx_field, idx_key, idx_key_cached, idx_one,
-    idx_path, idxp_field, push_array, push_cell, swap, ImpactOp, LedgerElem, LedgerKey,
-    LedgerValue, VmOp,
+    atom_limbs, default_value, dup, field_key, idx_key, idx_key_cached, idx_one, idx_path,
+    push_array, push_cell, swap, ImpactOp, LedgerElem, LedgerKey, LedgerValue, VmOp,
 };
 pub use kernel::{
     kernel_balance, kernel_block_time, kernel_claim_contract_call,

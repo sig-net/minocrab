@@ -249,7 +249,7 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
             &mut c,
             &[
                 minocrab_ledger::dup(0),
-                minocrab_ledger::idx_field(7),
+                minocrab_ledger::idx_one(false, false, 7),
                 minocrab_ledger::popeq(false, &value),
             ],
         );
