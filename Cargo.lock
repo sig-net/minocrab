@@ -2275,6 +2275,7 @@ dependencies = [
  "minocrab-abi",
  "minocrab-ir",
  "minocrab-ledger",
+ "minocrab-publisher",
  "minocrab-sim",
  "minocrab-std",
  "minocrab-zkir",
@@ -2332,6 +2333,30 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.47",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "minocrab-publisher"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-ledger-v9",
+ "midnight-onchain-runtime",
+ "midnight-onchain-state",
+ "midnight-onchain-vm",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 3.0.0",
+ "midnight-zkir-v3",
+ "minocrab-contracts",
+ "rand 0.8.7",
+ "sha2 0.11.0",
+ "signet-artifacts",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

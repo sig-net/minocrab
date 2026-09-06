@@ -33,6 +33,13 @@ sha3.workspace = true
 
 [dev-dependencies]
 signet-sim = { path = "../signet-sim" }
+# M30 rung A: the singleton's construction path is LIBRARY code now — the
+# publisher's `call` module — and these suites build their preimages through
+# it, so what they gate is what a publisher produces. A dev-dependency cycle
+# (the publisher depends on this crate for the Misc envelope and the event
+# names), which cargo allows for exactly this reason and which the
+# minocrab-std ↔ minocrab-sim pair already relies on.
+minocrab-publisher = { path = "../minocrab-publisher" }
 # The Borsh SCHEMA walk (M11 stage 3): `#[borsh(spec = …)]`'s generated
 # cross-check calls minocrab-std's schema module, which is feature-gated so
 # that only TEST builds link borsh. Resolver 2 keeps this out of the lib build.

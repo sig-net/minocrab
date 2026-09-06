@@ -1357,12 +1357,30 @@ shipping the params in the image (notes/mpc-publisher.org §2). The
 gap is the DUST fee wallet: every primitive exists in
 =midnight_ledger::dust= but no Rust wallet has been written around
 them. Estimate ≈1,800 production lines in mpc, ≈4,500 deleted (§7).
-- [ ] A. Public surface here: one function per respond circuit taking
+- [X] A. (2026-09-06, a8f4b02 — crates/minocrab-publisher/src/call.rs:
+      =respond= / =respond_bidirectional= / =sign_bidirectional= →
+      =SignerCall { circuit, input: AlignedValue, ops, misc, key_location }=
+      with =SignerCall::prototype(state, parameters, comm_rand)=;
+      =ContractKeyLocation= is compact-js's encoded spelling in Rust;
+      tests/support/signet_call.rs reduced to a wrapper keeping the
+      test-only constants; the M29 C/D/E gates green on the same
+      preimages; notes/mpc-publisher.org §10.) Public surface here: one function per respond circuit taking
       =(request_id, signature)= and returning the =ContractCallPrototype=
       inputs (args as =AlignedValue=, transcript ops, key location) —
       the M29 C path made a library; disclosure manifest unchanged;
       =Discloses= gate still generated.
-- [ ] B. =minocrab-publisher= crate (name open): build → =Intent= with
+- [X] B. (2026-09-06, 9d79178 merged — the crate: intent.rs, keys.rs
+      (ManagedDir + disk Resolver), prove.rs (=InProcessProver=,
+      =SignerResolver= = managed keys then the ledger's DustResolver),
+      dust.rs (=trait DustBalancer= + =NoDust=: THE RUNG-C SEAM, leaves
+      the tx unbalanced), publish.rs (=ChainContext= carries the CHAIN's
+      =LedgerParameters=, not INITIAL_PARAMETERS; =FundingKeys=; four
+      steps + pipeline). Real-proof gate: build+prove+sign+seal 0.12 s,
+      well_formed with proofs verified, peak RSS 66 MB (M29 E: 83 MB with
+      three keys). tests/publish.rs applies our call over M29 D's
+      captured respond-tx-161 and matches its 288 Misc bytes. Workspace
+      1002 passed. =publish = false= (depends on minocrab-contracts) —
+      three questions for dmd in §10.) =minocrab-publisher= crate (name open): build → =Intent= with
       TTL; prove → in-process =ProvingProvider= with a disk =Resolver=
       for our keys and =DustResolver= for the fee proof; sign
       (=Intent::sign=) and =seal=. Pure over (contract state, ledger

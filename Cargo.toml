@@ -20,6 +20,9 @@ members = [
     # M29 rung A/B: the managed artifact pipeline for the Signet signer
     # circuits (zkir/keys/expectedVk the MPC sidecar reads unchanged).
     "crates/signet-artifacts",
+    # M30: the MPC publisher's pure core — build/prove/sign/seal a respond
+    # intent, with no node I/O, for sig-net/mpc to link behind IntentClient.
+    "crates/minocrab-publisher",
 ]
 
 [workspace.package]
