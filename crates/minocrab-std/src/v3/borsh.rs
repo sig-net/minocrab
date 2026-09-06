@@ -1063,6 +1063,31 @@ impl<const K: u32, V: Vis3> CircuitBorsh<V> for Tag<K, V> {
     }
 }
 
+// ---- leaves: the unit -----------------------------------------------------------------
+
+/// Compact's `[]` value (Rust's `()`): a ZERO-WIDTH Borsh encoding — the
+/// attested value of a call that returns nothing (notes/evm-calls.org §10,
+/// item 3, second paragraph). `borsh::to_vec(&())` is the empty byte string,
+/// so `LEN` is 0 and every method describes zero bytes: nothing to limb,
+/// nothing to pack, nothing to constrain, nothing to read.
+///
+/// Paired with [`CircuitArg for ()`](super::CircuitArg), this is what lets a
+/// `Pending` over a `Unit`-returning call form a ticket — `()` is now both
+/// halves [`CircuitBorshArg`] asks for.
+impl<V: Vis3> CircuitBorsh<V> for () {
+    const LEN: usize = 0;
+
+    fn push_limbs(&self, _limbs: &mut Limbs<V>) {}
+
+    fn push_segments(&self, _out: &mut Serializer<V>) {}
+
+    fn constrain_canonical(&self, _c: &mut Circuit3) {}
+
+    fn read<R: BorshReader<V>>(_c: &mut Circuit3, _r: &mut R) -> Self {}
+
+    fn push_layout(_path: &LayoutPath, _offset: &mut usize, _out: &mut Vec<FieldSpec>) {}
+}
+
 // ---- composites ----------------------------------------------------------------------
 
 /// Borsh `[T; K]`: the elements back to back, nothing between them.

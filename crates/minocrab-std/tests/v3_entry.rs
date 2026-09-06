@@ -352,6 +352,149 @@ fn a_point_is_one_slot_and_five_atoms() {
     assert_eq!(<Secp256k1Point as CircuitAbi>::prims(), vec![Prim::Point]);
 }
 
+// ---- the unit leaf costs nothing (notes/evm-calls.org §10, item 3) ---------
+
+/// [`Request`] with an extra `()` field spliced in: same slots, same atoms,
+/// same prims as [`Request`] — a unit argument is a zero-slot argument.
+struct RequestWithMarker {
+    erc20_address: Bytes<20>,
+    marker: (),
+    amount: Uint<128>,
+}
+
+impl CircuitAbi for RequestWithMarker {
+    const SLOTS: usize = <Bytes<20> as CircuitAbi>::SLOTS
+        + <() as CircuitAbi>::SLOTS
+        + <Uint<128> as CircuitAbi>::SLOTS;
+
+    fn push_atoms(atoms: &mut Vec<AlignmentAtom>) {
+        <Bytes<20> as CircuitAbi>::push_atoms(atoms);
+        <() as CircuitAbi>::push_atoms(atoms);
+        <Uint<128> as CircuitAbi>::push_atoms(atoms);
+    }
+
+    fn push_prims(prims: &mut Vec<Prim>) {
+        <Bytes<20> as CircuitAbi>::push_prims(prims);
+        <() as CircuitAbi>::push_prims(prims);
+        <Uint<128> as CircuitAbi>::push_prims(prims);
+    }
+}
+
+impl CircuitArg for RequestWithMarker {
+    fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
+        RequestWithMarker {
+            erc20_address: CircuitArg::declare(c, &path.field("erc20Address")),
+            marker: CircuitArg::declare(c, &path.field("marker")),
+            amount: CircuitArg::declare(c, &path.field("amount")),
+        }
+    }
+
+    // The unit field's own `push_slots` is a no-op, but the call is kept
+    // here to exercise the trait method over a real `()`-typed field rather
+    // than assuming its absence — clippy sees a unit-typed receiver either
+    // way, which is the point being tested.
+    #[allow(clippy::unit_arg)]
+    fn push_slots(&self, slots: &mut Vec<Wire3<FieldT, Private>>) {
+        self.erc20_address.push_slots(slots);
+        self.marker.push_slots(slots);
+        self.amount.push_slots(slots);
+    }
+}
+
+/// The same two fields as [`RequestWithMarker`]/[`Request`], as a whole
+/// argument list rather than a nested one, so [`entry`] can build a circuit
+/// over it.
+struct ArgsWithUnit {
+    erc20_address: Bytes<20>,
+    marker: (),
+    amount: Uint<128>,
+}
+
+impl CircuitArgs for ArgsWithUnit {
+    const SLOTS: usize = <Bytes<20> as CircuitAbi>::SLOTS
+        + <() as CircuitAbi>::SLOTS
+        + <Uint<128> as CircuitAbi>::SLOTS;
+
+    fn declare(c: &mut Circuit3) -> Self {
+        ArgsWithUnit {
+            erc20_address: CircuitArg::declare(c, &ArgPath::root("erc20Address")),
+            marker: CircuitArg::declare(c, &ArgPath::root("marker")),
+            amount: CircuitArg::declare(c, &ArgPath::root("amount")),
+        }
+    }
+
+    #[allow(clippy::unit_arg)]
+    fn constrain(&self, c: &mut Circuit3) {
+        self.erc20_address.constrain(c);
+        CircuitArg::constrain(&self.marker, c);
+        self.amount.constrain(c);
+    }
+
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        <Bytes<20> as CircuitAbi>::push_atoms(&mut atoms);
+        <() as CircuitAbi>::push_atoms(&mut atoms);
+        <Uint<128> as CircuitAbi>::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
+struct ArgsWithoutUnit {
+    erc20_address: Bytes<20>,
+    amount: Uint<128>,
+}
+
+impl CircuitArgs for ArgsWithoutUnit {
+    const SLOTS: usize = <Bytes<20> as CircuitAbi>::SLOTS + <Uint<128> as CircuitAbi>::SLOTS;
+
+    fn declare(c: &mut Circuit3) -> Self {
+        ArgsWithoutUnit {
+            erc20_address: CircuitArg::declare(c, &ArgPath::root("erc20Address")),
+            amount: CircuitArg::declare(c, &ArgPath::root("amount")),
+        }
+    }
+
+    fn constrain(&self, c: &mut Circuit3) {
+        self.erc20_address.constrain(c);
+        self.amount.constrain(c);
+    }
+
+    fn atoms() -> Vec<AlignmentAtom> {
+        let mut atoms = Vec::new();
+        <Bytes<20> as CircuitAbi>::push_atoms(&mut atoms);
+        <Uint<128> as CircuitAbi>::push_atoms(&mut atoms);
+        atoms
+    }
+}
+
+#[test]
+fn a_unit_field_costs_no_slot_atom_or_prim() {
+    assert_eq!(<() as CircuitAbi>::SLOTS, 0);
+    assert!(<() as CircuitAbi>::atoms().is_empty());
+    assert!(<() as CircuitAbi>::prims().is_empty());
+
+    // Nested inside a struct: same schema as the marker-less twin.
+    assert_eq!(RequestWithMarker::SLOTS, Request::SLOTS);
+    assert_eq!(RequestWithMarker::atoms(), Request::atoms());
+    assert_eq!(RequestWithMarker::prims(), Request::prims());
+
+    // As a whole argument list: same schema, and byte-identical ZKIR — the
+    // marker declares nothing, so it leaves no trace in the instruction
+    // stream or the argument labels.
+    assert_eq!(ArgsWithUnit::SLOTS, ArgsWithoutUnit::SLOTS);
+    assert_eq!(ArgsWithUnit::atoms(), ArgsWithoutUnit::atoms());
+
+    let with_marker = entry(|c, a: ArgsWithUnit| {
+        let x = c.add(a.erc20_address.field(), a.amount.field());
+        c.assert_bits(x, 161);
+    });
+    let without_marker = entry(|c, a: ArgsWithoutUnit| {
+        let x = c.add(a.erc20_address.field(), a.amount.field());
+        c.assert_bits(x, 161);
+    });
+    assert_eq!(zkir(&with_marker), zkir(&without_marker));
+}
+
 // ---- the laws entry() enforces ---------------------------------------------
 
 struct WrongSlots(Uint<64>);
