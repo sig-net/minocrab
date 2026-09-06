@@ -1,0 +1,93 @@
+# The supply-chain gate (M38 D2, notes/decisions.org, notes/supply-chain.org).
+# Run as `nix develop -c cargo deny check` — CI's `deny:` job in
+# .github/workflows/ci.yml runs the same command.
+#
+# The full field reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# The tree's actual footprint: CI builds ubuntu-latest (x86_64-linux) and
+# flake.nix's compactcTarget map is the set of hosts dmd develops on
+# (aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux). Restricting
+# to these keeps the graph — and the duplicate-version count below — to
+# what actually ships, rather than every crate any Rust target could pull
+# in (Windows/UEFI-only crates such as `windows-*`, `jni`, `r-efi` never
+# build here and would otherwise inflate both bans and licenses).
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+# This section is considered when running `cargo deny check advisories`.
+[advisories]
+ignore = [
+    # Transitive via the pinned midnight-ledger git rev (midnight-zk-stdlib
+    # -> midnight-transient-crypto -> ... ), not a dependency we chose: an
+    # "unmaintained" notice, not a vulnerability. Also a direct
+    # workspace dependency (Cargo.toml's borsh-format conformance oracle,
+    # dev-only) pinned to the SAME 2.0.1 midnight's own lock resolves to,
+    # so there is nothing to bump independently. Revisit when midnight-ledger
+    # moves off it.
+    { id = "RUSTSEC-2025-0141", reason = "bincode 2.0.1 unmaintained (team disbanded, not a CVE); pulled in transitively by the pinned midnight-ledger rev and matched by our own dev-only borsh-format oracle dependency. No safe upgrade exists upstream." },
+    # Transitive via alloy-primitives/midnight-curves's proc-macro graph
+    # (M38 D's alloy oracle, dev-only). An "unmaintained" notice (repo
+    # archived), not a vulnerability, and not a crate we depend on directly.
+    { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained (repo archived by its author, not a CVE); transitive dependency of alloy/midnight-curves, dev-only. No direct dependency to swap to `pastey` ourselves." },
+    # Not a RUSTSEC advisory ID — a yanked-version notice for a transitive
+    # crate (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto, via
+    # the pinned midnight-ledger rev). Recorded rather than left to warn
+    # silently; nothing we can bump without moving the ledger pin.
+    { crate = "chacha20@0.10.1", reason = "yanked version, pulled in transitively by the pinned midnight-ledger rev (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto). Not a dependency we chose or can bump independently." },
+]
+
+# This section is considered when running `cargo deny check licenses`.
+[licenses]
+# The actual set present in the tree today (from `cargo deny list` restricted
+# to the targets above), nothing added speculatively. See notes/supply-chain.org
+# for the crate-by-crate breakdown of the less common ones.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# Our own workspace crates (unpublished path/git members) and the interface
+# crates aren't on crates.io yet; nothing to license-check about them beyond
+# `license = "MIT OR Apache-2.0"` already in [workspace.package].
+ignore = true
+
+# This section is considered when running `cargo deny check bans`.
+[bans]
+# The tree already carries duplicate versions of 27 crates on the targets
+# above (the two midnight-curves/midnight-zk-stdlib generations, syn
+# 0.11/1/2/3, etc. — notes/supply-chain.org has the full list from a real
+# run). None are a supply-chain risk on their own; `warn` reports them
+# without failing CI. Ratchet to `deny` + `skip`/`skip-tree` entries if
+# that count starts climbing without reason.
+multiple-versions = "warn"
+wildcards = "allow"
+
+# This section is considered when running `cargo deny check sources`.
+[sources]
+# Anything not explicitly allowed below is a hard failure — this is the
+# check meant to catch an accidental git/registry dependency from an
+# untrusted host.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# By URL, not by GitHub org: the workspace's git dependencies AND the
+# [patch.crates-io] block (Cargo.toml) both pin
+# midnightntwrk/midnight-ledger only.
+allow-git = ["https://github.com/midnightntwrk/midnight-ledger"]

@@ -57,6 +57,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
+  # The supply-chain gate (M38 D2, notes/supply-chain.org, notes/decisions.org
+  # D2): advisories (RUSTSEC vulnerabilities/unmaintained/yanked), licenses,
+  # banned/duplicate crates and untrusted dependency sources, per deny.toml.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop -c cargo deny check
+
   # WIRE COMPATIBILITY of the interface crates: their surface is governed by
   # the callee's deployed artifact, so a semver break here is a wire-compat
   # event, not a style one — stop and read tests/artifact_agreement.rs
