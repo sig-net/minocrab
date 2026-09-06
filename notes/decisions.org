@@ -83,7 +83,7 @@ Yes
   
 Wait
   
-- [-] B8. =Unit=-return tickets are worth strictly less (UsdtLike, Aave =Supply=/=Borrow=, ERC-721 transfers: "mined without reverting" only; §5 q5, §6 q4). The only fix is success from the EVENT, on sig-net's side (evm-calls.org §3.1 option ii). RECOMMEND: raise with sig-net; nothing to decide here.
+- [X] B8. (DONE 2026-09-06: notes/event-attestation-cases.org — 12 cases verified against source, PAXG dropped, Aave supply confirmed sufficient today, Multicall3's schema expressibility left unverified; hand to the MPC team.) =Unit=-return tickets are worth strictly less (UsdtLike, Aave =Supply=/=Borrow=, ERC-721 transfers: "mined without reverting" only; §5 q5, §6 q4). The only fix is success from the EVENT, on sig-net's side (evm-calls.org §3.1 option ii). RECOMMEND: raise with sig-net; nothing to decide here.
 
 OK, can you write up (as tersely as possible) some concrete examples where what we have isn't good enough, and we need attestations on events? Aim for commonly used specific cases and verify hard that they're the case. I'll hand that over to the MPC team.
   
