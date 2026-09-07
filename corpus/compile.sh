@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Compile every .compact under corpus/src/ with the pinned compactc
-# (nix build .#compactc at the repo root provides ../result/bin/compactc).
+# Compile every .compact under corpus/src/ with the pinned compactc: the
+# one on PATH when the flake devshell is active (`nix develop`, direnv —
+# what CI's weekly job runs under), else `nix build .#compactc` at the
+# repo root, which provides ../result/bin/compactc. $COMPACTC overrides.
 # Keeps zkir/ + compiler/ outputs under corpus/zkir/, skips proving keys,
 # discards the JS runtime output. Never stops on failure; results land in
 # corpus/compile-report.tsv. Optional $1 limits to one source name.
 set -uo pipefail
 cd "$(dirname "$0")"
 
-COMPACTC="${COMPACTC:-../result/bin/compactc}"
+if [[ -z "${COMPACTC:-}" ]]; then
+  COMPACTC="$(command -v compactc || true)"
+  COMPACTC="${COMPACTC:-../result/bin/compactc}"
+fi
 if [[ ! -x "$COMPACTC" ]]; then
-  echo "ERROR: compactc not found at $COMPACTC (run: nix build .#compactc)" >&2
+  echo "ERROR: compactc not found at $COMPACTC (enter the devshell, or run: nix build .#compactc)" >&2
   exit 1
 fi
+echo "compactc: $COMPACTC ($("$COMPACTC" --version 2>/dev/null | head -1))" >&2
 
 FILTER="${1:-}"
 REPORT="compile-report.tsv"
@@ -37,7 +43,12 @@ while IFS=$'\t' read -r pkg target; do
   for ((i = 0; i < depth; i++)); do prefix="../$prefix"; done
   ln -sfn "${prefix}src/$target" ".compact-path/$pkg"
 done
-export COMPACT_PATH="$(pwd)/.compact-path"
+# RELATIVE too, for the same reason: compactc writes COMPACT_PATH-resolved
+# sources into index.js.map (its `sourceRoot` / `sources`), and the
+# contract-manifest.json we commit carries that file's hash — an absolute
+# path here made every cross-package artifact depend on the checkout's
+# location, so the weekly determinism job could not pass from CI's path.
+export COMPACT_PATH=".compact-path"
 
 # keep other sources' lines when filtering
 if [[ -n "$FILTER" && -f "$REPORT" ]]; then

@@ -340,6 +340,21 @@ en_US collation ignores =.= and =_=), and =corpus/update.sh= reformatted
 =sources.json= is stored in jq's own formatting, so a corpus bump's diff is
 the revs and the artifacts.
 
+A third, found 2026-09-07 when the =weekly= corpus-determinism job was
+seen to have failed on BOTH of its runs (2026-08-31, 2026-09-07) and never
+passed: =compile.sh= looked for compactc at =../result/bin/compactc= while
+the job runs under =nix develop=, where compactc is on PATH (fixed: PATH
+first, the =nix build= result as the fallback); and, underneath that, the
+absolute =COMPACT_PATH= the script exported was written by compactc into
+=index.js.map='s =sourceRoot=, whose hash =contract-manifest.json= records
+— so the three cross-package artifacts (erc20-vault, test-caller-contract,
+test-caller-contract-20-field) depended on the CHECKOUT'S PATH and could
+never agree between a laptop and CI (their committed manifests were 42
+bytes off a recompile from this checkout). =COMPACT_PATH= is now relative
+(=.compact-path=, resolved against =corpus/=), the three manifests were
+regenerated once, and a recompile from a second worktree at another path
+is byte-identical. Nothing in the crates reads the manifest's js.map hash.
+
 ** =target/= grows without bound, and a bump is when it bites (2026-08-16)
 
 A bump rebuilds the world, and cargo NEVER prunes =target/=: every fingerprint
