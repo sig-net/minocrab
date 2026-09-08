@@ -134,21 +134,20 @@ pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Di
 pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* ... */ }
 ```
 
-**Fixed-length loop** — plain Rust, unrolled by rustc, the bound a const generic. Compact has `for` over a range or vector plus `map`/`fold` and nothing else; `while`, `break`, early return, iterator adapters and host-side data structures are Rust's alone. Neither side can loop on a wire: ZKIR has no loop instruction.
+**Loop** — plain Rust over any slice, `Vec` or iterator, unrolled by rustc. Compact has `for` over a range or vector plus `map`/`fold` and nothing else; `while`, `break`, early return, iterator adapters and host-side data structures are Rust's alone. Neither side can loop on a wire: ZKIR has no loop instruction, so the length is fixed once the circuit is built.
 
 ```compact
-circuit sum<#N>(v: Vector<N, Uint<8>>): Uint<16> {
-  const total = fold((acc: Field, x: Uint<8>) => acc + (x as Field), 0 as Field, v);
-  return total as Uint<16>;
+circuit sum<#N>(v: Vector<N, Uint<64>>): Uint<64> {
+  return fold((acc: Uint<64>, x: Uint<64>) => (acc + x) as Uint<64>, 0 as Uint<64>, v);
 }
 ```
 ```rust
-fn sum<const N: usize>(c: &mut Circuit3, v: [Uint<8>; N]) -> Uint<16> {
+fn sum(c: &mut Circuit3, v: &[Uint<64>]) -> Uint<64> {
     let mut acc = c.constant(0u64).private();
-    for x in v {
+    for &x in v {
         acc = c.add(acc, x.field());
     }
-    Uint::from_field_checked(c, acc)   // the one range check, stated
+    Uint::from_field_checked(c, acc)   // one range check; Compact's `as` emits one per step
 }
 ```
 
