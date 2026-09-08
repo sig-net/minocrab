@@ -221,15 +221,6 @@ const x = cond ? a : b;
 let x = c.when_value(cond, |c| a).otherwise(b);
 ```
 
-**Guarded read** — a guarded-off read yields the type's default and skips the transcript (upstream VM semantics). You must say which you meant: `.or_default()` costs nothing, `.or(alt)` is a select, `.assert_read()` one assert. `when` is the one spelling of a conditional.
-
-```compact
-if (cond) { const record = eventMap.lookup(requestId); /* ... */ }
-```
-```rust
-let record = c.when(cond, |c| VAULT.event_map.lookup(c, &request_id)).or_default();
-```
-
 **Bounded integer** — compares at compactc's width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type; `narrow` emits a range check at the seam, ~BITS/4 rows, stated.
 
 ```compact
@@ -277,7 +268,7 @@ c.persistent_hash(alignment, &[a, b]);
 borsh::persistent_hash(c, &value)   // digest of the canonical Borsh encoding
 ```
 
-Subtraction and guarded read add safety on top of the platform's own: the underflow guard cannot be forgotten, and a possibly-default value cannot be consumed without saying what the default means. Every such addition costs zero rows or a stated number, never a hidden one.
+Subtraction adds safety on top of the platform's own: the underflow guard cannot be forgotten. Every such addition costs zero rows or a stated number, never a hidden one.
 
 ## Cross-contract calls
 
