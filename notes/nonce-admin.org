@@ -473,3 +473,87 @@ the block compiles to the M37 shape unchanged (zero movement on the
 treasury and vault is the gate). The fee constants leave =erc20_vault=
 only when the vault's paths move onto =Queued= (P9).
 
+
+* 10. Their PRs landed as drafts (2026-09-08): §7's predictions scored
+sig-net/midnight-examples PRs #58 (per-caller deposit nonce), #59 (admin
+gas params + adminReplaceEvmNonce), #61 (queue + per-kind drains) and
+#62 (HistoricMerkleTree allocator). #61 and #62 are ALTERNATIVES; one
+merges. Read from the Compact diffs, not the descriptions.
+
+** What each does
+- #58 =depositRequestNonces: Map<Bytes<32>, Counter>= keyed by the
+  caller's commitment; =startDeposit= reads and bumps ITS caller's slot,
+  never =signetRequestNonce=. Per-caller monotone = replay protection
+  with a per-key read, contention-free across callers. The vault-signed
+  flows keep the global counter (until #61/#62).
+- #59 =vaultMaxFeePerGas=, =vaultMaxPriorityFeePerGas= cells and a
+  per-kind =vaultGasLimits= struct, written by =setGasParams= gated on
+  =userCommitment(callerSecretKey()) == deployer=; =adminReplaceEvmNonce=
+  is our §5 =Blank= exactly (self, zero value, no calldata, 21000 gas,
+  explicit nonce, ledger fees, deployer-gated, reads =signetRequestNonce=
+  for its own id). Ceiling 30 → 150 gwei.
+- #61 =start*= burns the coin and inserts into
+  =pendingVaultRequests: Map<Bytes<32>, PendingVaultRequest>= keyed by
+  =refundCommitment(sk, coin.nonce)= — a member check on the requester's
+  OWN key, so the insert reads nothing shared. =drain{Withdraws,Swaps,
+  Supplies,Redeems}<#N>= (N = 5) each read =signetRequestNonce= once as
+  =base=, number slot i =base + i=, advance by N regardless; read and bump
+  =vaultEvmNonce= (a new Counter) once PER DRAINED ENTRY so the EVM
+  sequence has no gaps; skip keys not present or of another kind. The
+  refund commitment is bound at insert to the coin nonce (the binder),
+  copied into the settle view at drain. Drains serialise on their two
+  shared reads; they say so.
+- #62 =request*= burns the coin, parks params under the same
+  =refundCommitment= key and =slots.insert(key)= into
+  =HistoricMerkleTree<24, Bytes<32>>= (no popeq: write at first_free,
+  append the root). =assign*= (permissionless) presents the Merkle path:
+  =checkRoot= against the append-only root history, =path.leaf == key=,
+  folds the =goes_left= bits into the index, sets =evmNonce = evmNonceBase
+  + index= and =requestNonce = index=, bumps =issuedSlots= (Counter, no
+  popeq), tombstones the entry as =consumed=. Nothing in either phase
+  reads a value another user's transaction changes, so both phases apply
+  in parallel. Costs: ~100 bytes of state per request forever; a parked
+  request nobody assigns is an EVM-nonce GAP (anyone may assign it — the
+  params and the tree are public — and #59's replace covers the rest);
+  two transactions per request; a depth-24 path check per assign.
+
+** Scorecard
+| P  | prediction                                   | #61                                | #62                          |
+|----+----------------------------------------------+------------------------------------+------------------------------|
+| P1 | insert reads the request counter             | NO — own-key member check          | NO — tree insert, no read    |
+| P2 | queue is a List, pushFront                   | NO — Map keyed by refund commitment| NO — Map + HistoricMerkleTree|
+| P3 | flush reads one nonce cell, += N             | request counter yes; EVM per entry | no flush; index IS the nonce |
+| P4 | refund commitment bound at insert            | YES, to the coin nonce             | YES, same key                |
+| P5 | unstick = blank to self, deployer-gated      | YES (#59), exact                   | YES (#59) + issuedSlots bound|
+| P6 | fee cell the deployer writes                 | YES (#59), plus per-kind limits    | same                         |
+| P7 | id derived from the assigned nonce           | NO — base + slot from the counter  | YES — index is both          |
+| P8 | deposit keeps a counter or gains a spent set | per-CALLER counter (#58)           | same                         |
+| P9 | user nonce and fee gone from request         | YES                                | YES                          |
+
+** Against Queued as built (§8)
+- Their INSERT is better than ours: keyed by the refund commitment, it
+  reads only its own key. Ours reads and bumps =next_handle= — one shared
+  read per insert, so two inserts against one state still exclude each
+  other (§8 default 2). The fix is theirs: key the queue by the handle
+  the requester already has (=Commit<sk, binder>=), drop =next_handle=;
+  the flush then takes the keys as an argument, as #61's drains do.
+- Their DRAIN is ours: one read of the request counter, one EVM-nonce
+  base, N records, N notifications, kind-homogeneous, permissionless.
+  Two differences: they advance the EVM counter per drained entry (no
+  gaps on skips) where ours asserts every handle present; and their
+  request id is =counter + slot= where §9 (T4) has ours moving to the
+  flush-assigned nonce — #62's index rule is that idea in a different
+  container.
+- #62 is the design our §2.1 said did not exist: a monotone, contract-
+  assigned number obtained WITHOUT a shared read, because the ledger
+  assigns the position and the proof READS it from a path checked
+  against a history of roots. It has no batch width and no flush
+  contention; it pays state per request and a second transaction. If it
+  merges, the compat port (M39 B) is a =HistoricMerkleTree= allocator,
+  and =Queued= should grow a sibling — =Allocated<Call, Env, WORDS>= —
+  with =request= / =assign= instead of =insert= / =flush=.
+- #59's admin is the deployer key, not a rotatable commitment (T5 chose
+  rotatable for ours); its gas LIMITS live in the ledger per kind where
+  ours keep them on the call type. Ours is the stricter of the two for
+  the limit (a call's gas is a property of the call); theirs lets the
+  operator move it without a redeploy.
