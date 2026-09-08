@@ -138,7 +138,7 @@ pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* 
 
 ```compact
 circuit sum<#N>(v: Vector<N, Uint<64>>): Uint<64> {
-  return fold((acc: Uint<64>, x: Uint<64>) => (acc + x) as Uint<64>, 0 as Uint<64>, v);
+  return fold((acc: Field, x: Uint<64>) => acc + (x as Field), 0 as Field, v) as Uint<64>;
 }
 ```
 ```rust
@@ -147,7 +147,7 @@ fn sum(c: &mut Circuit3, v: &[Uint<64>]) -> Uint<64> {
     for &x in v {
         acc = c.add(acc, x.field());
     }
-    Uint::from_field_checked(c, acc)   // one range check; Compact's `as` emits one per step
+    Uint::from_field_checked(c, acc)
 }
 ```
 
