@@ -557,3 +557,65 @@ merges. Read from the Compact diffs, not the descriptions.
   ours keep them on the call type. Ours is the stricter of the two for
   the limit (a call's gas is a property of the call); theirs lets the
   operator move it without a redeploy.
+
+** 10.1 Contention audit of the four PRs (2026-09-08), from the compiled Impact
+METHOD: each PR compiled with the pinned compactc 0.34.0 (=--skip-zk
+--feature-zkir-v3=); =tools/compact-reads.py= walks the generated
+=index.js= and names every =popeq= per circuit. A =popeq= is a read
+CHECKED at apply time (onchain-vm/src/vm.rs: "cached is deprecated, it
+has no effect"), so two proofs against one state both apply only if
+neither reads what the other writes. =Counter.increment=, =Map.insert=,
+=HistoricMerkleTree.insert= emit no popeq — CONFIRMED in the output, not
+taken from the PR text (#62 =parkRequest= reads only =initialised= and
+its own =pendingParams= key).
+
+#58: =startDeposit= reads =depositRequestNonces[caller]= (member +
+lookup) — per caller. Contention-free across callers; the same caller's
+two deposits against one state still exclude each other (inherent to a
+per-caller monotone). Every other flow unchanged: global counter.
+#59: adds three admin-cell reads to every vault-signed request and to
+=adminReplaceEvmNonce=. One-off contention: a =setGasParams= invalidates
+every in-flight proof of those circuits — which is when the admin is
+raising fees during a spike, exactly when in-flight requests exist. The
+counter contention is otherwise #58's.
+#61:
+- =startWithdraw= / =startSwap= / =startSupply= / =startRedeem=: NO shared
+  read. =initialised=, =kernel.self=, own =pendingVaultRequests= key, the
+  stata constants. Contention-free. ✓
+- =drain{Withdraws,Swaps,Supplies,Redeems}=: =signetRequestNonce= AND
+  =vaultEvmNonce= (the latter once per drained entry, each a popeq), plus
+  member+lookup on each key. ALL FOUR KINDS SERIALISE AGAINST EACH OTHER,
+  not only within a kind; two drains with an overlapping key also lose
+  the second on the key's member read.
+- =approveStata= / =approveRouter=: NOT queued; read BOTH counters; gated
+  only on =initialised= — PERMISSIONLESS. Anyone proving an approve races
+  every drain, and a drain proven a block earlier is void once an approve
+  lands. Cheap griefing of the drain path; the fix is to queue the
+  approves too (which #62 did).
+- =adminReplaceEvmNonce= reads =signetRequestNonce=: the break-glass
+  proof is invalidated by every drain and approve that lands while the
+  admin is proving. Retry-until-lucky under exactly the load the break
+  glass exists for.
+- Fee cells: as #59.
+#62:
+- =request*= (all six, approves included): =initialised=, own key.
+  Contention-free. ✓  =assign*=: fee cells [admin], constants, own
+  =pendingParams= key, =slots= root-history member (a set that only
+  grows, so a stale root still passes), =evmNonceBase= (written once at
+  initialise). NO shared counter anywhere in the user path. ✓
+- =adminReplaceEvmNonce= reads =issuedSlots=, which EVERY =assign*=
+  increments — the same break-glass liveness hole as #61, and here it is
+  gratuitous: the guard ("nonce not issued yet") can be proven from the
+  tree instead (a path for leaf =nonce − evmNonceBase= against the root
+  history, contention-free), or the admin can be trusted with its own
+  break glass and the read dropped. Only reader of =issuedSlots=.
+- Fee cells: as #59. The cost is an EVM-nonce GAP for a parked request
+  nobody assigns (anyone may; the MPC must tolerate out-of-order
+  assigns), ~100 bytes of state per request forever, and two Midnight
+  transactions per request.
+VERDICT: #62 has no user-path contention at all; #61 moves it from the
+request to the drain and leaves the approves and the admin outside;
+both share the admin-cell one-off and the admin break-glass read. Our
+=Queued= (§8) sits between: insert reads =next_handle= (worse than both
+their inserts), flush reads two counters (= #61's drain). The
+=Allocated= sibling (§10) is what removes it.
