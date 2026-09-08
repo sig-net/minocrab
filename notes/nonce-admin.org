@@ -413,3 +413,63 @@ compares ids, because minting one needs the executor.
   not, which is §8-item-19's recorded overflow finding in its new home.
 - M39 B's port, when sig-net's Compact lands: P9 (§7) is now checkable
   against this build as well as against their contract.
+
+* 9. dmd's calls of 2026-09-07 (decisions.org T3, T4, T5)
+T3, the handle: ACCEPTED — =Queued='s handle stays the slot's own insert
+counter.
+
+T4, the request counter's replacement — dmd: "Number the requests the
+same way as the nonce (let me know if this is impossible)". IT IS
+POSSIBLE for every batched request, and it is §2.1's own answer read
+back: the record a flush files ALREADY carries the flush-assigned EVM
+nonce (=tx_params.nonce=) beside the signing path, and the request id is
+the Poseidon of the whole record, so =(path, nonce)= inside the preimage
+gives every batched id lifetime uniqueness with NO shared counter — the
+nonce is monotone for the key's lifetime and assigned by the contract
+from one read per flush. The change is therefore a REMOVAL, not a new
+mechanism: =flush= files its N records through a =file_request= variant
+that does not read or bump =signet.request_nonce=; the record's
+=request_nonce= field is filled with the flush-assigned number (the same
+last+k the EVM nonce gets, or a per-slot request counter read once at
+flush beside =last_nonce= — the former needs no new cell and is what
+"the same way as the nonce" says), so the WIRE FORMAT of the record and
+the MPC's id recompute are untouched: the reader hashes the record's
+bytes and never checks the field against a counter. Contention moves
+from the global Signet counter to the slot's =last_nonce=, which the
+flush reads anyway — flushes of different slots stop contending with
+each other. Uniqueness across slots: two slots on different signing
+paths differ in =path=; two slots on the SAME path would share a nonce
+sequence only if they shared =last_nonce=, which they do not — so the
+rule is one =Queued= per signing path, an assert at build time (the
+contract-level slot walk M32 gave us can check it). The unstick
+replacement at an already-issued nonce is a DIFFERENT record (a =Blank=
+to self, no calldata), so a different id.
+THE CAVEAT (§2.1's "where that does not reach"): a request whose EVM
+nonce the contract does NOT assign — the vault's =deposit=, signing
+from the user's own key, and any unbatched =Pending::request= — has no
+contract-assigned monotone number to hash, so it KEEPS the Signet
+counter (one job: replay protection) or gains the spent-id set. Nothing
+impossible, then; one path stays as it is until it moves onto =Queued=.
+BUILD: with the Admin rung (below), since both touch =flush= and the
+record's filing; P7 (§7) becomes a prediction about OUR shape as well.
+
+T5, the administrator and the fee material — dmd: the ROTATABLE admin
+commitment (§3's recommendation), and nonce, fees and value "should sit
+on the base EVM transaction layer because everything needs it". So the
+A3 hierarchy is now placed: the ERC-20 (interface) layer knows calldata
+and the gas LIMIT (=EvmCall= / =Filing::GAS_LIMIT=, as built); the EVM
+TRANSACTION layer — a type of its own, =EvmTx= or the existing
+=EvmType2TxParams= promoted — owns =nonce=, =max_priority_fee=,
+=max_fee= and =value=, and is where the =FeePolicy= cell is READ (at
+flush, through the =Queued::envelope= seam) and where =unstick='s
+explicit nonce and fee are the administrator's arguments; the sig layer
+owns the record, the notification and the key. THE ADMIN BLOCK, to
+build: =Admin { commitment: Commit<AdminKey, AdminTag>, fee_policy:
+FeePolicy }= (rotatable: =rotate_admin= opens the old commitment with a
+fresh witness and writes the new, the =Owned= construction), =set_fee_
+policy= gated on it, =unstick= gated on it filing a =Blank= at an
+explicit nonce with an explicit envelope; OPTIONAL — a contract without
+the block compiles to the M37 shape unchanged (zero movement on the
+treasury and vault is the gate). The fee constants leave =erc20_vault=
+only when the vault's paths move onto =Queued= (P9).
+

@@ -13,7 +13,7 @@ milestone entry it belongs to.
 * TODO for dmd (2026-09-06 evening, after the backlog above was cleared)
 Everything below is yours to decide, review or do; nothing an agent can
 take without you. Ordered by what it unblocks.
-- [ ] T1. THE ATTESTATION DIGEST (notes/signet-async.org §10; the pinned
+- [X] T1. THE ATTESTATION DIGEST (notes/signet-async.org §10; the pinned
   test =the_typed_settle_digest_is_not_the_digest_the_mpc_signs=). Under
   Poseidon the typed =Pending= settle hashes one limb per Borsh leaf; the
   MPC hashes the output packed as one 31-byte-limb byte string. Options:
@@ -21,21 +21,26 @@ take without you. Ordered by what it unblocks.
   unilateral, RECOMMENDED; (ii) a typed =compute_response_hash= on the
   MPC side, coordinated release. UNBLOCKS: M35 E (generated round trips),
   and the typed lineage's deployability at all.
+  dmd 2026-09-07: "Yes" — (i), pack in-circuit. DONE the same day: =calculate_attestation_digest_borsh= (and =Pending::refund='s two candidates, through =attestation_transient_hash_borsh=) pack the output as one byte string via =Serializer::finish_limbs=; the models mirror it; =signet_round_trip.rs= settles the deposit/claim pair against the sim's OWN attestation and refuses a rogue root's. notes/signet-async.org §10.1.
 - [ ] T2. HAND OVER notes/event-attestation-cases.org to the MPC team.
   Ask them one question it could not answer: can the respond schema
   express an array of tuples (Multicall3's =aggregate3= return)?
-- [ ] T3. THE BATCH'S CHANGED DEFAULT (notes/nonce-admin.org §8): the
+  dmd 2026-09-07: "I'll do that" — with dmd.
+- [X] T3. THE BATCH'S CHANGED DEFAULT (notes/nonce-admin.org §8): the
   handle is the slot's OWN insert counter, not the Signet request
   counter, because the flush consumes the Signet counter once per
   record. Accept, or say what you would rather key the queue by.
+  dmd 2026-09-07: "that's fine" — accepted; the handle stays the slot's own insert counter.
 - [ ] T4. THE REQUEST COUNTER'S REPLACEMENT — you said you would design
   it (§1.1/§2.1). The batch is built around the counter staying; the
   spent-id set (§2.1) is the recorded alternative for unbatched paths.
-- [ ] T5. THE ADMIN HALF OF M39 C, two calls before an agent builds it:
+  dmd 2026-09-07: "Number the requests the same way as the nonce (let me know if this is impossible)". POSSIBLE for every batched request, and cheap — nonce-admin.org §9 has the reading and the one caveat (the unbatched, user-keyed paths keep the counter or gain the spent set); the build goes with the Admin rung.
+- [X] T5. THE ADMIN HALF OF M39 C, two calls before an agent builds it:
   the administrator is the deployer key or a ROTATABLE commitment (§3
   recommends rotatable); and the shape of the generic EVM-transaction
   layer the fee material moves into (your A3 answer: ERC-20 token > EVM
   transaction > sig transaction — say where nonce, fees and value sit).
+  dmd 2026-09-07: the ROTATABLE admin commitment; nonce, fees and value sit on the BASE EVM-transaction layer "because everything needs it". Recorded in nonce-admin.org §9; the build is the next M39 C rung (an agent can take it).
 - [ ] T6. REVIEW the "kept, for dmd" list in notes/edsl-trim.org §D —
   the one-spelling audit removed two forms and kept the rest with
   reasons; a verdict on each closes M36.
@@ -47,6 +52,7 @@ take without you. Ordered by what it unblocks.
 - [ ] T9. Still open from E above: push/close the GitHub items (E1),
   the M27 hand-back (E2), the upstream ZKIR spec watch ~2026-09-18
   (E3), the M39 formal model (E4).
+  dmd 2026-09-07: "close what you can" — E1 DONE: issue #6 closed with the workflow link, issue #11 filed pointing at TRUST.md. E2, E4 are dmd's; E3 waits for the date.
 Agent work waiting on none of this (already queued in milestones.org):
 M26's harness distillation from tests/support on the executor; M35 E's
 unread-field sweep; PUBLISHING.md's update for the signet-* crates;
@@ -165,7 +171,7 @@ Yes
   Yup do that, let's trim so ideally there's generally only one "correct" way to do something.
 
 * E. Actions only you can take
-- [ ] E1. Push/close on GitHub: the M20 issue pointing at TRUST.md (M33
+- [X] E1. (2026-09-07: #6 closed, #11 filed.) Push/close on GitHub: the M20 issue pointing at TRUST.md (M33
   D) and closing issue #6 with the workflow link (M34 C).
 - [ ] E2. M27: the hand-back of the leakage inventory to the analysis
   draft's authors (milestones.org M27, the vault prong).
