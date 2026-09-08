@@ -135,6 +135,18 @@ impl SigNetSim {
         kdf::public_key_to_address(&kdf::derive_key(self.root_public_key(), epsilon))
     }
 
+    /// A point's affine coordinates, big-endian, for a caller that stores
+    /// the response key in ledger state (`initialize`, or a test building
+    /// the pre-state a settle reads its key from). `None` for the identity,
+    /// which no derived key is.
+    pub fn point_coordinates(point: &AffinePoint) -> Option<([u8; 32], [u8; 32])> {
+        use k256::elliptic_curve::sec1::ToEncodedPoint;
+        let encoded = point.to_encoded_point(false);
+        let x: [u8; 32] = (**encoded.x()?).try_into().ok()?;
+        let y: [u8; 32] = (**encoded.y()?).try_into().ok()?;
+        Some((x, y))
+    }
+
     /// The attestation digest — [`hashing::compute_response_hash`].
     pub fn attestation_digest(request_id: &[u8; 32], output: &[u8]) -> [u8; 32] {
         hashing::compute_response_hash(request_id, output)

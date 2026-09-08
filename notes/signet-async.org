@@ -990,6 +990,35 @@ or the MPC's =compute_response_hash= gains a typed form (a coordinated
 release, like the stage-7 record). Until one lands, =request → post →
 respond= chains and =respond → settle= cannot.
 
+** 10.1 THE FINDING RESOLVED (2026-09-07, decisions.org T1: dmd "Yes")
+Option (i), unilateral: the typed digest packs the serialized output as
+ONE byte string before hashing. =calculate_attestation_digest_borsh= now
+runs the output through =Serializer::push_segments= and a new
+=Serializer::finish_limbs= (the =finish_dyn= body, allowed below 32 bytes,
+where the =Bytes<N>= envelope does not exist and the string is one limb)
+and hashes =[id.hi, id.lo]= then those limbs — exactly the untyped
+=calculate_attestation_digest='s preimage, and the MPC's. =Pending::
+refund= hashed its two candidate preimages by hand with =Limbs= (one limb
+per leaf), so it now goes through =attestation_transient_hash_borsh=, the
+pre-upgrade half of the same function, and selects as before. The
+Serializer's injectivity precondition (every leaf range-constrained) is
+discharged by the ticket being a circuit ARGUMENT. Cost: constant-weight
+mul/add per leaf; no shipped output straddles a 31-byte limb.
+The hand models (=tests/vault_pending/model.rs=, =tests/treasury/
+model.rs=) pack the same way — one leaf below thirty bytes is
+=kind + 256·leaf= whatever its declared width, with an assert that keeps
+the single-leaf assumption honest — and the pinned test is now
+=the_typed_settle_digest_is_the_digest_the_mpc_signs=: model = MPC rule =
+packed spelling, for a =Bool=, a =U64= and the failure kind.
+THE LAST LINK CLOSED: =deposit_then_claim_settles_the_sims_attestation=
+stores the sim's DERIVED response key in the vault's pre-state (the
+model's =Env= takes an explicit point; =SigNetSim::point_coordinates=),
+files the deposit into real state, has the sim read that state and sign,
+and runs the claim circuit on the executor with the sim's signature in
+the ticket's slots: accepted; a rogue root's signature over the same
+bytes is =ExecError::Rejected=. Nothing crosses but a =StateValue= and
+the attestation. M35 E is unblocked in fact as well as in principle.
+
 ** What is still open after this rung
 
 - Rung E (generated per-slot round trips) has its missing piece now but is

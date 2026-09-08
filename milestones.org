@@ -1725,7 +1725,7 @@ Decisions of record (dmd, 2026-09-05):
       post → respond → settle under plain =cargo test=; real proofs +
       =LedgerState= + =Transaction::apply= (the cross-contract call and
       the singleton's event for real) under =--release=, on M29 D/E.
-- [ ] E. (2026-09-06: UNBLOCKED — the executor exists — and deliberately NOT built: a generated round trip whose settle cannot accept a simulated attestation would pin the wrong thing; land it with, or just after, §10's attestation-digest decision. The unread-field sweep over the ticket is unaffected and can go first.) Tests that come with the type: for every =Pending= slot in a
+- [ ] E. (2026-09-07: the digest is FIXED — decisions.org T1, signet-async.org §10.1 — and the deposit/claim pair settles against the sim's own attestation in tests/signet_round_trip.rs; the generated per-slot round trips and the adversarial suite are now buildable as specified. 2026-09-06: UNBLOCKED — the executor exists — and deliberately NOT built: a generated round trip whose settle cannot accept a simulated attestation would pin the wrong thing; land it with, or just after, §10's attestation-digest decision. The unread-field sweep over the ticket is unaffected and can go first.) Tests that come with the type: for every =Pending= slot in a
       contract, a GENERATED round trip (request → sim → settle accepts)
       plus the adversarial suite (each responder → the expected guard)
       plus an unread-field sweep over the ticket (every field read by

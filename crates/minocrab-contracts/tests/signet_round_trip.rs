@@ -25,15 +25,18 @@
 //! The adversarial responders live here too, each hitting the reader's own
 //! drop reason by name.
 //!
-//! WHAT IS NOT HERE, and why: the last link, `respond → settle`, does not
-//! close. `the_typed_settle_digest_is_not_the_digest_the_mpc_signs` pins
-//! why, in one assertion — it is a protocol disagreement, not a gap in this
-//! file. See notes/signet-async.org §10.
+//! The last link, `respond → settle`, closed on 2026-09-07 (decisions.org
+//! T1): the typed settle's digest now packs the output the way the MPC's
+//! `compute_response_hash` does — `the_typed_settle_digest_is_the_digest_the_
+//! mpc_signs` pins the agreement, and the chained pairs below settle against
+//! the sim's own attestation. See notes/signet-async.org §10.
 
 use midnight_onchain_state::state::StateValue;
 use midnight_transient_crypto::proofs::Zkir;
 use minocrab::Fr;
-use minocrab_contracts::erc20_vault_pending::{self as pending, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE};
+use minocrab_contracts::erc20_vault_pending::{
+    self as pending, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_SWAP,
+};
 use minocrab_sim::v3::exec::{self, Call};
 use signet_sim::reader::MISC_PAYLOAD_LEN;
 use signet_sim::{EvmOutcome, Refusal, Responder, SigNetSim};
@@ -234,54 +237,57 @@ fn a_replay_produces_the_identical_attestation() {
 
 // ---- the link that does not close -------------------------------------------
 
-/// THE FINDING (2026-09-06, for dmd): the digest a typed `Pending` settle
-/// verifies is NOT the digest the MPC signs, since the protocol moved to
-/// Poseidon.
+/// THE LAST LINK, CLOSED (2026-09-07, decisions.org T1): the digest a typed
+/// `Pending` settle verifies IS the digest the MPC signs.
 ///
-/// `signet::calculate_attestation_digest_borsh` — what `Pending::settle`
-/// uses — hashes `[requestId.hi, requestId.lo]` then ONE FIELD ELEMENT PER
-/// BORSH LEAF: the kind byte is one limb, the payload another. The MPC's
-/// `compact-hashing::compute_response_hash` (translated verbatim in
-/// `signet_sim::hashing`, pinned by the MPC's own golden vectors) hashes
-/// `[requestId.hi, requestId.lo]` then the serialized output as a BYTE
-/// STRING in FAB's 31-byte packing — for the vault's two-byte output, ONE
-/// limb carrying both bytes.
+/// `signet::calculate_attestation_digest_borsh` — what `Pending::complete`
+/// and `refund` use — hashes `[requestId.hi, requestId.lo]` then the
+/// serialized output `kind ‖ borsh(output)` PACKED as one byte string in
+/// FAB's 31-byte limbing. The MPC's `compact-hashing::compute_response_hash`
+/// (translated verbatim in `signet_sim::hashing`, pinned by the MPC's own
+/// golden vectors) hashes exactly that.
 ///
-/// Under the OLD construction the two agreed: keccak/persistentHash hash the
-/// BINARY representation, where "one leaf per field" and "one packed byte
-/// string" are the same bytes — which is what notes/borsh-format.org §1
-/// established ("the attestation digest (= borsh of {[u8;32], [u8;N]})").
-/// Poseidon does not hash bytes; it hashes limbs, and the two limb splits
-/// differ. The non-typed `calculate_attestation_digest::<_, LEN_OUTPUT>`
-/// still agrees, because it takes the output as a single `BytesN` value.
-///
-/// This test asserts the disagreement rather than papering over it, so the
-/// day the digest is fixed it fails and says so.
+/// Until 2026-09-07 the typed digest hashed ONE FIELD ELEMENT PER BORSH LEAF
+/// (the kind byte one limb, the payload another) — which agreed with the MPC
+/// under keccak / persistentHash, where the hash is over BYTES, and stopped
+/// agreeing when M28 moved the protocol to `transientHash`: Poseidon hashes
+/// limbs, and the two limb splits differ. This test pinned the disagreement
+/// (`the_typed_settle_digest_is_not_the_digest_the_mpc_signs`); now it pins
+/// the agreement, for the vault's two output shapes, against BOTH the MPC's
+/// rule on bytes and the hand model's packed-limb spelling of it.
 #[test]
-fn the_typed_settle_digest_is_not_the_digest_the_mpc_signs() {
+fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
     let rid = [0x5au8; 32];
+    let (hi, lo) = b32_slots(&rid);
+
+    // A `Bool` output: two bytes, one limb.
     let kind = RESPONSE_KIND_CLAIM as u8;
     let success = 1u8;
-
-    // What the circuit verifies (the model mirrors it; the spec harness
-    // holds the two together).
-    let per_leaf = attestation_digest_v2(&rid, kind, &[Fr::from(u64::from(success))]);
-    // What the MPC signs.
+    let model = attestation_digest_v2(&rid, kind, &[Fr::from(u64::from(success))]);
     let mpc = signet_sim::hashing::compute_response_hash(&rid, &[kind, success]);
-    // …and the rule that produces it: the two bytes as ONE packed limb.
-    let (hi, lo) = b32_slots(&rid);
-    let packed = transient_upgrade(&[
-        hi,
-        lo,
-        Fr::from(u64::from(kind) + (u64::from(success) << 8)),
-    ]);
-
+    let packed = transient_upgrade(&[hi, lo, Fr::from(u64::from(kind) + (u64::from(success) << 8))]);
     assert_eq!(packed, mpc, "the MPC's rule is FAB's 31-byte packing of the output");
-    assert_ne!(
-        per_leaf, mpc,
-        "if this now holds, the typed digest has been reconciled with the MPC — \
-         re-read notes/signet-async.org §10 and close the round trip"
-    );
+    assert_eq!(model, mpc, "the hand model packs the way the MPC does");
+
+    // A `U64` output: nine bytes, still one limb, the leaf above the kind.
+    let kind = RESPONSE_KIND_SWAP as u8;
+    let amount_in = 0x0102_0304_0506_0708u64;
+    let mut bytes = vec![kind];
+    bytes.extend_from_slice(&amount_in.to_le_bytes());
+    let model = attestation_digest_v2(&rid, kind, &[Fr::from(amount_in)]);
+    let mpc = signet_sim::hashing::compute_response_hash(&rid, &bytes);
+    assert_eq!(model, mpc, "a U64 leaf packs little-endian above the kind byte");
+
+    // The MPC's failure kind: the kind byte alone.
+    let kind = RESPONSE_KIND_FAILURE as u8;
+    let model = attestation_digest_v2(&rid, kind, &[]);
+    let mpc = signet_sim::hashing::compute_response_hash(&rid, &[kind]);
+    assert_eq!(model, mpc, "a failure attests the kind alone");
+
+    // And what the CIRCUIT hashes is the model's: `tests/vault_pending`'s
+    // spec harness holds the two together on every settle, and
+    // `the_pairs_chain_through_state` below settles against the sim's
+    // attestation.
 }
 
 // ---- the pairs, chained through state ---------------------------------------
@@ -332,6 +338,72 @@ fn chain(
     settle_ir
         .check(&settled.preimage)
         .expect("the reference VM accepts the chained settle");
+}
+
+/// THE LAST LINK: `request → post → respond → settle`, with NOTHING supplied
+/// by the model but the scenario. The vault's stored response key is the
+/// sim's derived one, the deposit files into real state, the sim reads that
+/// state and signs, and the claim circuit — run by the executor against the
+/// same state — accepts the sim's signature. The model's own signature
+/// (under a key the sim does not hold) is replaced slot for slot.
+#[test]
+fn deposit_then_claim_settles_the_sims_attestation() {
+    let mut sim = SigNetSim::from_seed(b"minocrab round trip", RESPONSE_KIND_FAILURE as u8);
+    let mut c = ClaimScenario::new();
+    let self_addr = c.d.env.self_addr;
+    let key = sim.response_key(u32::from(c.d.key_version), &self_addr);
+    c.d.env.mpc_key_xy = Some(SigNetSim::point_coordinates(&key).expect("a derived key is not the identity"));
+
+    let post = {
+        let pi = c.d.preimage();
+        post_state_of(
+            &pending::Vault::deposit().ir,
+            &pi.inputs,
+            &pi.private_transcript,
+            pi.communications_commitment.expect("a request commits").1,
+            &c.d.pre_state(),
+            &self_addr,
+        )
+    };
+    let payload = notification(&c.d.request_id(), &self_addr, &deposits_path());
+    let attestation = sim
+        .respond(&payload, &post, EvmOutcome::Executed { body: vec![1u8] })
+        .expect("the MPC resolves the filed record");
+    assert_eq!(attestation.output, vec![RESPONSE_KIND_CLAIM as u8, 1u8]);
+
+    let settle = |signature: &signet_sim::sign::Signature| {
+        let sig = signature.circuit_input();
+        let (rx_hi, rx_lo) = b32_slots(&sig.big_r_x);
+        let (s_hi, s_lo) = b32_slots(&sig.s);
+        // `settle_head_inputs`' slot order: requestId, bigR.x, bigR.y, s,
+        // recoveryId, then the attested output.
+        let mut inputs = c.inputs();
+        inputs[2] = rx_hi;
+        inputs[3] = rx_lo;
+        inputs[6] = s_hi;
+        inputs[7] = s_lo;
+        let witnesses = c.witnesses();
+        let mut call = Call::new(&inputs, &witnesses);
+        if let Some((_, rand)) = c.preimage().communications_commitment {
+            call = call.with_comm_rand(rand);
+        }
+        let ctx = exec::context(post.clone(), self_addr);
+        exec::execute(&pending::Vault::claim().ir, &call, &ctx).map(|_| ())
+    };
+
+    settle(&attestation.signature).expect("the claim circuit accepts the sim's attestation");
+
+    // A cluster with a different root signs the same bytes under a key the
+    // vault did not store: refused at the signature check, nothing else.
+    let mut rogue = SigNetSim::from_seed(b"a different cluster", RESPONSE_KIND_FAILURE as u8);
+    let forged = rogue
+        .respond(&payload, &post, EvmOutcome::Executed { body: vec![1u8] })
+        .expect("the rogue reads the same record");
+    assert_eq!(forged.output, attestation.output);
+    assert!(
+        matches!(settle(&forged.signature), Err(exec::ExecError::Rejected { .. })),
+        "a signature under another root is rejected"
+    );
 }
 
 #[test]

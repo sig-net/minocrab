@@ -17,11 +17,11 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Public};
-use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
+use minocrab_std::v3::borsh::CircuitBorsh;
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
     pow2_const, secp256k1_ecdsa_verify, BytesN, ContractAddress, LedgerRepr,
-    Secp256k1EcdsaSignature, Vis3, B32,
+    Secp256k1EcdsaSignature, Serializer, Vis3, B32,
 };
 
 use super::common::{Caip2Id, SigningPath};
@@ -803,34 +803,62 @@ pub fn verify_attestation_signature<V: Vis3>(
 ///
 /// The preimage is `borsh({ request_id: [u8; 32], output: T })`: a Borsh
 /// struct is the concatenation of its fields, so this is the request id's 32
-/// bytes followed by `borsh(output)`, and the alignment is the two values'
-/// atoms back to back. That is exactly the shape
-/// [`calculate_attestation_digest`] hashes today (stage 0 proved the deployed
-/// preimage IS canonical Borsh for `{[u8; 32], [u8; N]}`); what changes is
-/// that the second field is now a DECLARED type — a kind byte and its
-/// payload — instead of an opaque byte string.
+/// bytes followed by `borsh(output)`. What is hashed is Poseidon over LIMBS,
+/// and the limbs are the MPC's (`compact-hashing::compute_response_hash`,
+/// `signet_sim::hashing`): the id's `[hi, lo]` slot pair, then the serialized
+/// output PACKED AS ONE BYTE STRING in FAB's 31-byte limbing, slot order —
+/// exactly what [`calculate_attestation_digest`] takes as `output_limbs`.
 ///
-/// FREE: describing the preimage emits no instruction ([`limbs_of`] is
-/// bookkeeping over wires that already exist). The atom widths ARE the
-/// Borsh widths, one field element per leaf, so the digest is Poseidon over
-/// exactly the limbs the MPC hashes.
+/// NOT one limb per Borsh leaf. That was this function's first form
+/// (`limbs_of(output).transient_hash`), which agreed with the MPC under
+/// keccak / persistentHash — where the hash is over BYTES and the two limb
+/// splits are the same bytes — and stopped agreeing when M28 moved the
+/// protocol to `transientHash`: Poseidon absorbs field elements, so a kind
+/// byte and a payload as two limbs is a different preimage from the two
+/// bytes as one limb. notes/signet-async.org §10; decided by dmd 2026-09-07
+/// (decisions.org T1): pack in-circuit, unilaterally.
+///
+/// COST: the M7 segment packing (`Serializer::finish_limbs`) — constant-weight
+/// mul/add per leaf, one `div_mod` only where a leaf straddles a 31-byte
+/// boundary, which no shipped output does. The Serializer's precondition —
+/// every leaf already range-constrained, or the packing is not injective —
+/// is discharged by the caller: the output is a circuit ARGUMENT
+/// (`Succeeded` / `Failed` tickets), constrained at entry by
+/// `CircuitArg::constrain`, and `Pending::complete` asserts its kind besides.
 pub fn calculate_attestation_digest_borsh<V: Vis3, T: CircuitBorsh<V>>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     output: &T,
 ) -> B32<V> {
     c.region("signet: attestation digest (transientHash)", |c| {
-        let mut limbs = Limbs::<V>::new();
-        request_id.push_limbs(&mut limbs);
-        output.push_limbs(&mut limbs);
-        assert_eq!(
-            limbs.len(),
-            <B32<V> as CircuitBorsh<V>>::LEN + T::LEN,
-            "the attestation preimage is the request id followed by the output"
-        );
-        let f = limbs.transient_hash(c);
+        let f = attestation_transient_hash_borsh(c, request_id, output);
         upgrade_from_transient(c, f)
     })
+}
+
+/// [`calculate_attestation_digest_borsh`] BEFORE the `upgradeFromTransient`
+/// — the raw Poseidon output — for a settle that hashes more than one
+/// candidate preimage and selects between them before upgrading
+/// (`Pending::refund`: the MPC's failure output is the kind byte alone, the
+/// call's own output is the kind byte and the return value). Same limbs as
+/// the digest: `[id.hi, id.lo]` then the output packed as one byte string.
+pub fn attestation_transient_hash_borsh<V: Vis3, T: CircuitBorsh<V>>(
+    c: &mut Circuit3,
+    request_id: &RequestId<V>,
+    output: &T,
+) -> Wire3<FieldT, V> {
+    let mut out = Serializer::new();
+    output.push_segments(&mut out);
+    let packed = out.finish_limbs(c, T::LEN);
+    assert_eq!(
+        packed.len(),
+        T::LEN.div_ceil(31),
+        "the packed output is {} bytes in FAB slot order",
+        T::LEN
+    );
+    let mut limbs = vec![request_id.bytes().hi, request_id.bytes().lo];
+    limbs.extend(packed);
+    c.transient_hash(&limbs)
 }
 
 /// [`verify_respond_bidirectional_event`] over a TYPED Borsh output — M11

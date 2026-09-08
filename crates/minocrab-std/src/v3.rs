@@ -1809,9 +1809,33 @@ impl<V: Vis3> Serializer<V> {
     /// constant. Public because [`hash::transient_hash`] has exactly that:
     /// its length is `T::LEN`, an associated const of a generic parameter,
     /// which Rust cannot pass as a const-generic argument.
+    ///
+    /// `len > 31`, as [`BytesNDyn`] requires; a short string is one limb,
+    /// which [`Self::finish_limbs`] hands back without the `Bytes<N>`
+    /// envelope.
     pub fn finish_dyn(self, c: &mut Circuit3, len: usize) -> BytesNDyn<V> {
+        let limbs = self.finish_limbs(c, len);
+        BytesNDyn::new(len, limbs)
+    }
+
+    /// Zero-pad to `len` bytes and re-limb, handing back the limbs in FAB
+    /// SLOT ORDER (`limbs[0]` the leftover, most-significant chunk) for ANY
+    /// `len`: one limb of `len` bytes when `len <= 31` — the `Bytes<N>`
+    /// envelope does not exist below 32 (`B32` and a single limb do), so
+    /// this is the form a short packed string takes — and
+    /// [`bytes_limbs`]`(len)` limbs above. Empty for `len == 0`.
+    ///
+    /// The Signet attestation digest is the caller: the serialized output
+    /// (a kind byte and the attested value) is a few bytes, and the MPC
+    /// hashes it as one packed limb.
+    pub fn finish_limbs(self, c: &mut Circuit3, len: usize) -> Vec<Wire3<FieldT, V>> {
         let total: usize = self.segments.iter().map(|s| s.len).sum();
         assert!(total <= len, "serialized size exceeds Bytes<{len}>");
+        let lens: Vec<usize> = match len {
+            0 => Vec::new(),
+            1..=31 => vec![len],
+            _ => limb_lens(len),
+        };
         // The constrained mode's whole content: the precondition, emitted —
         // in string order, before anything consumes a segment.
         if self.constrained {
@@ -1830,7 +1854,7 @@ impl<V: Vis3> Serializer<V> {
 
         // Fill output limbs least-significant first; missing tail
         // segments mean the remaining limbs are the zero pad.
-        let le_lens: Vec<usize> = limb_lens(len).into_iter().rev().collect();
+        let le_lens: Vec<usize> = lens.into_iter().rev().collect();
         let mut le_limbs = Vec::with_capacity(le_lens.len());
         for out_len in le_lens {
             let mut acc: Option<Wire3<FieldT, V>> = None;
@@ -1865,7 +1889,7 @@ impl<V: Vis3> Serializer<V> {
         }
         let mut limbs = le_limbs;
         limbs.reverse();
-        BytesNDyn::new(len, limbs)
+        limbs
     }
 }
 

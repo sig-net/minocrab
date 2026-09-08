@@ -502,7 +502,7 @@ use core::marker::PhantomData;
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_std::v3::borsh::{CircuitBorsh, Limbs};
+use minocrab_std::v3::borsh::CircuitBorsh;
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
     eq, is_true, label, not, own_public_key, repr_limbs, ArgPath, Bytes, CircuitAbi, CircuitArg,
@@ -1330,15 +1330,13 @@ where
             // output is the kind byte and the return value.
             let is_failure = c.test_eq(attested.kind.field(), u64::from(FAILURE_KIND));
 
-            let mut executed = Limbs::<Private>::new();
-            request_id.private().push_limbs(&mut executed);
-            attested.push_limbs(&mut executed);
-            let executed_digest = executed.transient_hash(c);
-
-            let mut failed = Limbs::<Private>::new();
-            request_id.private().push_limbs(&mut failed);
-            attested.kind.push_limbs(&mut failed);
-            let failed_digest = failed.transient_hash(c);
+            // Each preimage packed the way the MPC packs it — one byte
+            // string, `signet::calculate_attestation_digest_borsh`'s rule
+            // (2026-09-07, decisions.org T1) — hashed before the upgrade so
+            // the select happens on the raw Poseidon output.
+            let rid = request_id.private();
+            let executed_digest = signet::attestation_transient_hash_borsh(c, &rid, &attested);
+            let failed_digest = signet::attestation_transient_hash_borsh(c, &rid, &attested.kind);
 
             let digest = c.cond_select(is_failure, failed_digest, executed_digest);
             let digest = upgrade_from_transient(c, digest);

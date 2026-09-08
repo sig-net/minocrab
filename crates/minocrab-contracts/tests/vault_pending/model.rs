@@ -98,6 +98,11 @@ pub struct Env {
     pub signer_addr: [u8; 32],
     /// The MPC response key's secret scalar seed.
     pub key_seed: u64,
+    /// The MPC response key as a POINT, big-endian affine coordinates,
+    /// overriding `key_seed` when set: the key a `SigNetSim` derives for
+    /// this contract, whose secret the model does not hold — the settle
+    /// then verifies the sim's signature, not one the model made.
+    pub mpc_key_xy: Option<([u8; 32], [u8; 32])>,
     pub request_nonce: u64,
     pub caip2: [u8; 32],
     pub chain_id: u64,
@@ -125,6 +130,7 @@ impl Env {
             self_addr: SELF_ADDR,
             signer_addr: tagged32(b"signet-addr", 0x32),
             key_seed: 0xf00d_face,
+            mpc_key_xy: None,
             request_nonce: 4,
             caip2,
             chain_id: 11_155_111,
@@ -133,6 +139,12 @@ impl Env {
     }
 
     pub fn mpc_key(&self) -> IrValue {
+        if let Some((x, y)) = self.mpc_key_xy {
+            let x = k256::Fp::from_bytes(&x.into()).expect("a coordinate below the field modulus");
+            let y = k256::Fp::from_bytes(&y.into()).expect("a coordinate below the field modulus");
+            let point = k256::K256Affine::from_xy(x, y).expect("a point on secp256k1");
+            return IrValue::Secp256k1Point(k256::K256::from(point));
+        }
         let generator = IrValue::Secp256k1Point(k256::K256::generator());
         ec_mul_offcircuit(&generator, &scalar(self.key_seed)).unwrap()
     }
@@ -468,13 +480,26 @@ pub fn consume_ops(
 }
 
 /// `calculateAttestationDigestBorsh(requestId, Attested{kind, output})` —
-/// Poseidon over `[id.hi, id.lo, kind, output_limbs…]`, upgraded (`hi`
-/// forced to 0 — this one IS `upgradeFromTransient`, unlike `Commit`).
+/// Poseidon over `[id.hi, id.lo, packed]`, upgraded (`hi` forced to 0 —
+/// this one IS `upgradeFromTransient`, unlike `Commit`), where `packed` is
+/// the serialized output `kind ‖ borsh(output)` as ONE byte string in FAB's
+/// 31-byte little-endian limbing — the MPC's `compute_response_hash` rule
+/// (`signet_sim::hashing`), which `signet_round_trip.rs` pins this against.
+///
+/// The vault's outputs are one leaf of at most eight bytes (a `Bool` or a
+/// `U64`), so the string is at most nine bytes and one limb: the kind byte
+/// in the low position and the leaf's little-endian bytes above it, i.e.
+/// `kind + 256·leaf` — the same value whatever the leaf's declared width,
+/// which is why this model needs no width. A wider or multi-leaf output
+/// would need the leaves' widths to pack; the assert keeps that honest.
 pub fn attestation_digest_v2(request_id: &[u8; 32], kind: u8, output_limbs: &[Fr]) -> [u8; 32] {
     let (hi, lo) = b32_slots(request_id);
-    let mut limbs = vec![hi, lo, Fr::from(u64::from(kind))];
-    limbs.extend_from_slice(output_limbs);
-    transient_upgrade(&limbs)
+    assert!(output_limbs.len() <= 1, "the vault model packs a single leaf");
+    let packed = match output_limbs.first() {
+        None => Fr::from(u64::from(kind)),
+        Some(leaf) => Fr::from(u64::from(kind)) + *leaf * Fr::from(256u64),
+    };
+    transient_upgrade(&[hi, lo, packed])
 }
 
 /// The settle ticket's leading argument slots (`requestId`, `respond`,

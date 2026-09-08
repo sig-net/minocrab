@@ -295,16 +295,24 @@ pub fn call_witnesses(env: &Env, cc_rand: Fr) -> Vec<Fr> {
     vec![cc_rand, ep_hi, ep_lo]
 }
 
-/// `calculateAttestationDigestBorsh(requestId, Attested { kind, output })`.
+/// `calculateAttestationDigestBorsh(requestId, Attested { kind, output })`:
+/// Poseidon over `[id.hi, id.lo, packed]` where `packed` is the serialized
+/// output `kind ‖ borsh(output)` as ONE byte string in FAB's 31-byte
+/// little-endian limbing — the MPC's `compute_response_hash` rule
+/// (2026-09-07, decisions.org T1; `tests/vault_pending/model.rs` spells out
+/// why one leaf below thirty bytes packs as `kind + 256·leaf`).
 ///
 /// `output_limbs` is EMPTY for the MPC's failure output — the kind byte is
 /// the whole of it — and one limb for an executed `transfer`. That
 /// difference is why `Pending::refund` hashes twice.
 pub fn attestation_digest(request_id: &[u8; 32], kind: u8, output_limbs: &[Fr]) -> [u8; 32] {
     let (hi, lo) = b32_slots(request_id);
-    let mut limbs = vec![hi, lo, Fr::from(u64::from(kind))];
-    limbs.extend_from_slice(output_limbs);
-    transient_upgrade(&limbs)
+    assert!(output_limbs.len() <= 1, "the treasury's transfer returns one Bool leaf");
+    let packed = match output_limbs.first() {
+        None => Fr::from(u64::from(kind)),
+        Some(leaf) => Fr::from(u64::from(kind)) + *leaf * Fr::from(256u64),
+    };
+    transient_upgrade(&[hi, lo, packed])
 }
 
 /// A ticket's argument slots: `requestId`, `respond`, `serializedOutput` —
