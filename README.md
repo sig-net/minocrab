@@ -1,25 +1,25 @@
 # MinoCrab
 
-Rust eDSL for Midnight contracts, which can be used instead of Compact.
+Rust eDSL for Midnight contracts, usable instead of Compact.
 
 This whole project is vibe coded. If you use it for Midnight applications that do stuff with money, your users will likely lose it, and neither you nor I will know why.
 
-That being said this is a direct port of the Compact compiler and has millions of tests checking compliance. If you are evaluating this stack seriously, start with these two documents:
+That said, it is a direct port of the Compact compiler with millions of tests checking compliance. Evaluating it seriously? Start with:
 
-- [VERIFICATION.md](VERIFICATION.md) — the steps we take to ensure that this compiler behaves correctly.
-- [BENCHMARK.md](BENCHMARK.md) — the performance of this eDSL on the seventeen-circuit vault, proving the identical statement as compactc: every request circuit a `k` level or three lower (prove −44..−81%), the ECDSA-floored settles at parity, the singleton −95..−97%.
- 
+- [VERIFICATION.md](VERIFICATION.md) — how we check that this compiler behaves correctly.
+- [BENCHMARK.md](BENCHMARK.md) — the seventeen-circuit vault against compactc, proving the identical statement: request circuits one to three `k` levels lower (prove −44..−81%), the ECDSA-floored settles at parity, the singleton −95..−97%.
+
 ## Why use this
 
-**Catch many more errors at compile time.** A `Wire<Private>` cannot reach a public output unless you `disclose(w, label)` and name the label in the circuit's signature; a generated test enforces the signature, which caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard ([`sub`](crates/minocrab-std/src/v3.rs)). A guarded-off read must say what its default means ([`Guarded<T>`](crates/minocrab/src/v3.rs)). A literal outside its operand's bound doesn't build. Argument types are the range constraints: `Uint<64>` *is* `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
+**More errors caught at compile time.** A `Wire<Private>` cannot reach a public output without `disclose(w, label)`, and the label must appear in the circuit's signature; a generated test enforces that and caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard. A guarded-off read must say what its default means. A literal outside its operand's bound doesn't build. Argument types *are* the range constraints: `Uint<64>` is `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
 
-**Use Rust testing, benchmarking and verification tools.** Circuits compile natively and run under `cargo test` for faster CI ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a property harness against a Rust spec affordable — seventeen properties, five links per case, each accepted run replayed through Midnight's reference VM, the pinned ledger and compactc's own artifact ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)) — plus adversarial sweeps that found real bugs ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs)) and a leakage inventory generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's own artifacts ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 209 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The benchmark reproduces from a clean checkout with a per-region cost profiler and calibrated primitive costs ([BENCHMARK.md](BENCHMARK.md), [cryptocost.rs](crates/minocrab-sim/examples/cryptocost.rs)).
+**Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a property harness against a Rust spec affordable, every accepted run replayed through Midnight's reference VM ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)), plus adversarial sweeps that found real bugs ([erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs)) and a leakage inventory generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 209 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)).
 
-**Low level circuit generation.** MinoCrab emits ZKIR directly, so you can do low level optimisations: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Measured against compactc on the same contracts and the same statement: rows −12..−86% on the vault, prove time −44..−81% wherever a circuit is not floored by protocol-pinned crypto ([BENCHMARK.md](BENCHMARK.md)).
+**Direct ZKIR emission.** Low-level instruction selection: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Rows −12..−86% on the vault, prove time −44..−81% wherever a circuit is not floored by protocol-pinned crypto ([BENCHMARK.md](BENCHMARK.md)).
 
-**Use standard serialisation formats — or write your own.** Records are a [Borsh](https://borsh.io) subset: a published, stable spec with implementations in many languages, so both ends of the wire are auditable separately. Compact's FAB encoding can still be used for compatibility, and Compact contract interfaces can be imported. All just a standard `Serialize` implementation.
+**Standard serialisation, or your own.** Records are a [Borsh](https://borsh.io) subset: a published spec with implementations in many languages, so both ends of the wire are auditable separately. Compact's FAB encoding stays for compatibility, and Compact contract interfaces can be imported. All a standard `Serialize` implementation.
 
-**It's all just Rust.** A mature toolchain: cargo, crates.io, rust-analyzer, `#[test]`, modules and visibility. Circuit families are const generics, monomorphized by rustc ([notes/const-generics.org](notes/const-generics.org)). A deployed contract imports as a typed crate and is checked against the callee's compiled artifact ([interface-gen](crates/minocrab-interface-gen)). You even have macros if that's your cup of tea.
+**It's all just Rust.** cargo, crates.io, rust-analyzer, `#[test]`, modules and visibility. Circuit families are const generics, monomorphized by rustc ([notes/const-generics.org](notes/const-generics.org)). A deployed contract imports as a typed crate, checked against the callee's compiled artifact ([interface-gen](crates/minocrab-interface-gen)). Macros too, if that's your cup of tea.
 
 ## Side by side
 
@@ -48,10 +48,9 @@ export circuit deposit(
 }
 ```
 
-The same circuit, abridged from `crates/minocrab-contracts/src/erc20_vault_pending.rs` (the vault on the typed Sig Network API; the instruction-for-instruction port of the Compact source is `erc20_vault.rs`):
+The same circuit on the typed Sig Network API, abridged from [erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs) (the instruction-for-instruction port is `erc20_vault.rs`):
 
 ```rust
-/// `struct DepositRequest { erc20Address: Bytes<20>, amount: Uint<128> }`
 #[derive(CircuitArg)]
 struct DepositRequest {
     erc20_address: Bytes<20>,
@@ -68,20 +67,16 @@ pub fn deposit(
     key_version: Uint<8>,
     deposit_request: DepositRequest,
 ) -> Discloses<(DepositorCommitment, DepositedErc20, DepositedAmount, Requested)> {
-    // assert(amount > 0) — the width is the argument type's, not typed here
     c.assert(deposit_request.amount.gt(0u64));
 
-    // const caller = disclose(userCommitment(callerSecretKey()))
     let sk = common::witness_sk(c);
     let caller = common::commitment_transient(c, &sk).disclose_as::<DepositorCommitment>(c);
     let erc20 = deposit_request.erc20_address.disclose_as::<DepositedErc20>(c);
     let amount = deposit_request.amount.field().disclose_as::<DepositedAmount>(c);
 
-    // transfer(vaultEvmAddress, amount) on the token, filed under CLAIM: the
-    // selector, the two ABI words, the calldata length, the request id, the
-    // freshness check, the record + environment insert and the call to the
-    // signer all come from the slot's type, `Pending<Deposit, DepositEnv, VAULT_WORDS>`,
-    // where `Deposit` is `erc20::Transfer` at this deployment's kind byte.
+    // transfer(vaultEvmAddress, amount) on the token. The selector, ABI words,
+    // request id, freshness check, record insert and signer call all come from
+    // the slot's type, `Pending<Deposit, DepositEnv, VAULT_WORDS>`.
     VAULT.deposits.request_with(
         c,
         |c| Contract::<Erc20>::from_address(c, deposit_request.erc20_address),
@@ -89,8 +84,6 @@ pub fn deposit(
             |c: &mut Circuit3| cell_address(c, &VAULT.vault_evm_address),
             |_c: &mut Circuit3| deposit_request.amount,
         ),
-        // paid from the DEPOSITOR's own EVM account: the fee envelope is the
-        // caller's, and the signing path is the depositor's commitment
         Envelope::caller(max_priority_fee_per_gas, max_fee_per_gas, gas_limit),
         key_version,
         evm_nonce,
@@ -101,8 +94,7 @@ pub fn deposit(
 }
 ```
 
-- The return type is the disclosure manifest, and a generated test fails if the circuit discloses anything not in it — that is how the four vault circuits were caught publishing a cross-contract call's entry-point hash undeclared ([disclose.rs](crates/minocrab/src/v3/disclose.rs))
-- The direct port of the same contract is PI-equal to compactc's own artifact on every circuit — same typed schema, same PI vector on a shared preimage ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)) — and is what the property harness and the adversarial sweeps run ([erc20_vault_spec.rs](crates/minocrab-contracts/tests/erc20_vault_spec.rs)); the `Pending` lineage above is gated on its block layout, its cost against the port, an eighteen-property spec harness, and the round trip through the MPC's own reader ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs), [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs)). See [Cross-chain calls](#cross-chain-calls) for the round trip.
+The return type is the disclosure manifest; a generated test fails if the circuit discloses anything not in it. The direct port is PI-equal to compactc's artifact on every circuit ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the `Pending` version is gated on its block layout, its cost against the port, an eighteen-property spec harness and a round trip through the MPC's own reader ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs), [signet_flow.rs](crates/minocrab-contracts/tests/signet_flow.rs)).
 
 ## Feature by feature
 
@@ -132,7 +124,7 @@ export circuit deposit(evmNonce: Uint<64>, gasLimit: Uint<64>): [] { /* ... */ }
 pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Discloses<()> { /* ... */ }
 ```
 
-**Cost budget** — `max_k` declares the circuit's ceiling in `k` (log2 of the proving-table rows, which is what sets the proving key, the prover's RAM and the wall clock); a generated test prices the circuit with Midnight's own cost model and fails when it goes over. Compact has no equivalent. Needs `minocrab-sim` as a dev-dependency.
+**Cost budget** — `max_k` is the circuit's ceiling in `k` (log2 of the proving-table rows: proving key, prover RAM, wall clock). A generated test prices the circuit with Midnight's own cost model and fails when it goes over. Compact has no equivalent.
 
 ```compact
 // no equivalent: cost is discovered by compiling and looking
@@ -140,6 +132,24 @@ pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) -> Di
 ```rust
 #[circuit(max_k = 14)]
 pub fn deposit(c: &mut Circuit3, evm_nonce: Uint<64>, gas_limit: Uint<64>) { /* ... */ }
+```
+
+**Fixed-length loop** — plain Rust, unrolled by rustc, the bound a const generic. Compact has `for` over a range or vector plus `map`/`fold` and nothing else; `while`, `break`, early return, iterator adapters and host-side data structures are Rust's alone. Neither side can loop on a wire: ZKIR has no loop instruction.
+
+```compact
+circuit sum<#N>(v: Vector<N, Uint<8>>): Uint<16> {
+  const total = fold((acc: Field, x: Uint<8>) => acc + (x as Field), 0 as Field, v);
+  return total as Uint<16>;
+}
+```
+```rust
+fn sum<const N: usize>(c: &mut Circuit3, v: [Uint<8>; N]) -> Uint<16> {
+    let mut acc = c.constant(0u64).private();
+    for x in v {
+        acc = c.add(acc, x.field());
+    }
+    Uint::from_field_checked(c, acc)   // the one range check, stated
+}
 ```
 
 **Assert** — the comparison width comes from the operand's type, never typed at the call site.
@@ -151,7 +161,7 @@ assert(depositRequest.amount > 0 as Uint<128>, "Amount must be positive");
 c.assert(deposit_request.amount.gt(0u64).message("Amount must be positive"));
 ```
 
-**Subtraction** — Compact's compiler inserts `assert(a >= b)` before every `-`; `sub`/`sub_with` emit the same guard, in the same order, at the same width — proven by porting the vault's own subtraction and finding the ZKIR byte-identical against compactc's artifact. The raw `c.add(a, c.neg(b))` still exists for the instruction-mirroring ports, but it is now the unusual spelling.
+**Subtraction** — compactc inserts `assert(a >= b)` before every `-`; `sub` emits the same guard, in the same order, at the same width, byte-identical against compactc's artifact.
 
 ```compact
 const change = amountInMaximum - amountIn;
@@ -160,7 +170,7 @@ const change = amountInMaximum - amountIn;
 let change = amount_in_max.sub(c, amount_in);
 ```
 
-**Disclose** — the label must appear in the circuit's return type, or a generated set-equality test fails.
+**Disclose** — the label must appear in the circuit's return type, or a generated test fails.
 
 ```compact
 const caller = disclose(userCommitment(callerSecretKey()));
@@ -183,7 +193,7 @@ struct Vault { vault_evm_address: LedgerCell<Bytes<20, Public>>, /* ... */ }
 let addr = VAULT.vault_evm_address.read(c);
 ```
 
-**Ledger map** — one Impact op per method, with `c` visible because a ledger operation is a cost.
+**Ledger map** — one Impact op per method, `c` visible because a ledger operation is a cost.
 
 ```compact
 signBidirectionalEventMap.insert(requestId, disclose(request));
@@ -194,7 +204,7 @@ VAULT.sign_bidirectional_event_map.insert(c, &request_id, &record);
 let exists = VAULT.sign_bidirectional_event_map.member(c, &request_id);
 ```
 
-**Conditional effects** — reads, witnesses *and* assertions inside the scope inherit the guard; none of them name it.
+**Conditional effects** — reads, witnesses and assertions inside the scope inherit the guard.
 
 ```compact
 if (cond) { /* ... */ }
@@ -203,7 +213,7 @@ if (cond) { /* ... */ }
 c.when(cond, |c| { /* ... */ });
 ```
 
-**Conditional value** — returns `Selected<T>`, a `#[must_use]` that says every arm was paid for.
+**Conditional value** — returns a `#[must_use]` `Selected<T>`: every arm was paid for.
 
 ```compact
 const x = cond ? a : b;
@@ -212,7 +222,7 @@ const x = cond ? a : b;
 let x = c.when_value(cond, |c| a).otherwise(b);
 ```
 
-**Guarded read** — a guarded-off read yields the type's default and skips the transcript (upstream VM semantics). The scope hands the read back and makes you say which you meant: `.or_default()` costs nothing, `.or(alt)` is the hand-written select, `.assert_read()` is one assert. There is no per-operation guard parameter: `when` is the one spelling of a conditional.
+**Guarded read** — a guarded-off read yields the type's default and skips the transcript (upstream VM semantics). You must say which you meant: `.or_default()` costs nothing, `.or(alt)` is a select, `.assert_read()` one assert. `when` is the one spelling of a conditional.
 
 ```compact
 if (cond) { const record = eventMap.lookup(requestId); /* ... */ }
@@ -221,17 +231,17 @@ if (cond) { const record = eventMap.lookup(requestId); /* ... */ }
 let record = c.when(cond, |c| VAULT.event_map.lookup(c, &request_id)).or_default();
 ```
 
-**Bounded integer** — compares at compactc's own width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type, and `narrow` additionally emits a range check at the narrowing seam — an extra guard beyond what the platform requires, stated at ~BITS/4 rows.
+**Bounded integer** — compares at compactc's width; a literal above the bound is rejected at build time; `add`/`mul` carry the result bound in the type; `narrow` emits a range check at the seam, ~BITS/4 rows, stated.
 
 ```compact
 const requestNonce = signetRequestNonce as Uint<64>;   // Uint<0..n> arithmetic tracked by the compiler
 ```
 ```rust
 let sum = a.add::<499, 200>(c, b);   // BoundedUint<300> + BoundedUint<200> -> BoundedUint<499>
-let small = sum.narrow::<8>(c);      // the CHECKED downcast: ~BITS/4 rows, stated
+let small = sum.narrow::<8>(c);      // the CHECKED downcast
 ```
 
-**Cross-contract call** — an `#[interface]`-generated typed method; the callee's disclosures must be named in *your* declaration, which is how four undeclared disclosures were caught.
+**Cross-contract call** — an `#[interface]`-generated typed method; the callee's disclosures must be named in *your* declaration.
 
 ```compact
 SignetSigner.signBidirectional(requestId, notification);
@@ -268,11 +278,7 @@ c.persistent_hash(alignment, &[a, b]);
 borsh::persistent_hash(c, &value)   // digest of the canonical Borsh encoding
 ```
 
-The two entries worth reading twice are **subtraction** and **guarded read**:
-they carry additional safety features on top of the platform's own — the
-underflow guard cannot be forgotten, and a possibly-default value cannot be
-consumed without saying what the default means. Every such addition costs
-zero rows or a stated number, never a hidden one.
+Subtraction and guarded read add safety on top of the platform's own: the underflow guard cannot be forgotten, and a possibly-default value cannot be consumed without saying what the default means. Every such addition costs zero rows or a stated number, never a hidden one.
 
 ## Cross-contract calls
 
@@ -303,62 +309,34 @@ pub trait SignetSigner {
 }
 ```
 
-- Last call line is the whole desugar: argument flattening, result-limb witnesses and constraints, communications commitment, effects claim
-- Entry-point hashes derived from method names via upstream's own derivation; commitment layout from declaration order
-- Every parameter is `Public` — passing a value cross-contract discloses it, so forgetting `disclose()` is a compile error
+- The call line is the whole desugar: argument flattening, result-limb witnesses, communications commitment, effects claim
+- Entry-point hashes and commitment layout follow upstream's own derivation
+- Every parameter is `Public`: passing a value cross-contract discloses it, so a forgotten `disclose()` is a compile error
 - No address in the crate: `at_field(index)` names a sealed ledger cell, `at(address)` takes one as data
-- Each crate commits the callee's artifact plus a hash pin and checks slots, constraints and the compiled `.zkir` prefix against it; a mutation suite proves the checks bite:
+- Each crate commits the callee's artifact plus a hash pin and checks slots, constraints and the compiled `.zkir` prefix against it; a mutation suite proves the checks bite, including a forged circuit with a correct manifest
 
-```text
----- mutation::a_reordered_argument_list_is_caught ----
-  - `signBidirectional` argument slots: artifact [uint<8>, uint<32>, uint<248>, …]
-    != interface [uint<8>, uint<248>, uint<8>, uint<32>, …]
-
----- mutation::the_zkir_catches_a_widened_constraint ----
-  - signBidirectional.zkir slot 2: constraint bits:16 != the interface's bits:8
-```
-
-The second forges only the compiled circuit — `contract-info.json` and the pin stay correct — and is caught by reading the instruction stream the prover executes.
-
-Limit: the circuit binds neither the entry point nor the argument types unless it asks to. `callOnce` and `callEmit` compile to byte-identical ZKIR under different entry points, asserted by a test; what protects the verifier there is the ledger's `(address, entry point, commitment)` match. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode — every typed call in that circuit then constrains the entry-point hash to the declared circuit's (two `constrain_eq`), pinned by `xcall::call_once_bound`. Argument types stay unbound.
+Limit: the circuit binds neither the entry point nor the argument types unless asked. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode: every typed call then constrains the entry-point hash to the declared circuit's. Argument types stay unbound.
 
 ## Cross-chain calls
 
-A Sig Network cross-chain call is one operation split across two Midnight transactions with an MPC round trip in between: a **request** circuit files the EVM transaction it wants signed and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it on the EVM chain and attests the call's output back; a **complete** circuit verifies that attestation and finishes the operation, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)), so the selector, the ABI words, the word count, the response type, the gas envelope, the signing path and the notification path are all derived from the one thing the author writes down.
+A Sig Network cross-chain call is one operation across two Midnight transactions with an MPC round trip between: a **request** circuit files the EVM transaction and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it and attests the output back; a **complete** circuit verifies the attestation and finishes, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)): selector, ABI words, response type, gas envelope, signing path and notification path all derive from the one thing the author writes down.
 
-Here is a whole treasury that asks the MPC to send an ERC-20 `transfer(to, amount)` from its derived EVM account — [treasury.rs](crates/minocrab-contracts/src/treasury.rs), compiled and tested, not a sketch:
+A whole treasury that sends an ERC-20 `transfer(to, amount)` from its derived EVM account, compiled and tested ([treasury.rs](crates/minocrab-contracts/src/treasury.rs)):
 
 ```rust
-/// HOW THIS TREASURY FILES ITS ONE CALL: the library's
-/// [`erc20::Transfer`] under response kind 1.
-///
-/// The kind is the treasury's own choice — a kind is per DEPLOYMENT, and
-/// this one happens to pick the byte the vault uses for a withdrawal. The
-/// return field is the anonymous default, because a Solidity `transfer`'s
-/// return IS anonymous, so a settle circuit's argument slot is
-/// `serializedOutput.output`.
-///
-/// One name, written once: the slot, both tickets and both settle
-/// signatures are all `Transfer` (notes/evm-interfaces.org §2.2).
+/// The library's `erc20::Transfer`, filed under response kind 1.
 pub type Transfer = Kinded<erc20::Transfer, 1>;
 
-/// Seven ledger fields from two declarations: the Signet configuration
-/// (signer, MPC key, request nonce, caip2 id, chain id) and the transfer
-/// slot's record and environment maps.
 #[derive(Ledger)]
 pub struct Treasury {
-    /// The block's one Sig Network configuration. `#[derive(Ledger)]` finds
-    /// it by name and threads its offset into `transfers`.
+    /// Signer, MPC key, request nonce, caip2 id, chain id.
     pub signet: Signet,
-    /// Every `transfer` this treasury has in flight, with the caller
-    /// committed into each environment.
+    /// Every in-flight transfer, the caller committed into each environment.
     pub transfers: Pending<Transfer, Owned<Amount>, 2>,
 }
 
 #[contract]
 impl Treasury {
-    /// `send(evmNonce, keyVersion, token, to, amount)` — file
-    /// `token.transfer(to, amount)`, remembering the amount and the caller.
     #[circuit]
     pub fn send(
         c: &mut Circuit3,
@@ -369,28 +347,20 @@ impl Treasury {
         amount: Uint<64>,
     ) -> Discloses<(SentAmount, OwnerCommitment, Requested)> {
         let sent = amount.field().disclose_as::<SentAmount>(c);
-        // `Uint<64> -> Uint<128>` is free: the ABI word is 32 bytes either
-        // way and the Rust type states the range the contract accepts.
         TREASURY.transfers.request_owned::<OwnerCommitment>(
             c,
             token,
             (to, amount.widen::<128>()),
             key_version,
             evm_nonce,
-            |_, _| Amount {
-                amount: Uint::from_field_unchecked(sent),
-            },
+            |_, _| Amount { amount: Uint::from_field_unchecked(sent) },
         );
         Discloses::of(())
     }
 
-    /// `complete(ticket)` — the transfer executed AND returned `true`.
-    ///
-    /// ANYONE MAY CALL THIS: the attestation is the gate, and there is no
-    /// witness in the circuit at all. And the attested `false` case cannot
-    /// reach here: `erc20::Transfer`'s return is `Bool`, and its
-    /// `EvmCall::succeeded` is that flag, which `complete` asserts — so
-    /// nothing in this body has to remember to look.
+    /// Anyone may call: the attestation is the gate. A mined `transfer`
+    /// that returned `false` cannot reach here — `complete` asserts the
+    /// call's own success rule.
     #[circuit]
     pub fn complete(c: &mut Circuit3, ticket: Succeeded<Transfer>) -> Discloses<Settled> {
         let outcome = TREASURY.transfers.complete(c, ticket);
@@ -398,31 +368,17 @@ impl Treasury {
         Discloses::of(())
     }
 
-    /// `refund(ticket)` — the transfer did not succeed, either way it can
-    /// fail: the MPC's failure kind, or a mined call that returned `false`.
-    ///
-    /// ONLY THE ORIGINAL CALLER: `refund_to_owner` witnesses a fresh secret
-    /// and opens the environment's commitment against it. A real treasury
-    /// re-mints `amount` to `owner` here; this example stops at naming them,
-    /// so the circuit is the API and nothing else.
+    /// Only the original caller: a fresh witness opens the commitment.
     #[circuit]
-    pub fn refund(
-        c: &mut Circuit3,
-        ticket: Failed<Transfer>,
-    ) -> Discloses<(Settled, RefundRecipient)> {
-        // The attested flag comes back too — `false` for a mined call that
-        // moved nothing, and prover-chosen padding when the MPC attested
-        // its failure kind. A treasury has no use for it; naming it `_`
-        // says so where dropping it silently would not.
-        let (_owner, Amount { amount: _amount }, _flag) = TREASURY
-            .transfers
-            .refund_to_owner::<RefundRecipient>(c, ticket);
+    pub fn refund(c: &mut Circuit3, ticket: Failed<Transfer>) -> Discloses<(Settled, RefundRecipient)> {
+        let (_owner, Amount { amount: _amount }, _flag) =
+            TREASURY.transfers.refund_to_owner::<RefundRecipient>(c, ticket);
         Discloses::of(())
     }
 }
 ```
 
-`erc20::Transfer` is the CALL, and it is where the facts about the Solidity function live — `transfer`, `(address, uint256)`, a `bool` return, the interface that exposes it (`Erc20`), a gas limit, and the rule by which the return says it worked (for an ERC-20 `transfer`, the returned flag itself). It is library code: one module per interface ([erc20.rs](crates/minocrab-contracts/src/evm/erc20.rs), [weth.rs](crates/minocrab-contracts/src/evm/weth.rs), [usdt.rs](crates/minocrab-contracts/src/evm/usdt.rs), [erc4626.rs](crates/minocrab-contracts/src/evm/erc4626.rs), [erc721.rs](crates/minocrab-contracts/src/evm/erc721.rs), [uniswap_v3.rs](crates/minocrab-contracts/src/evm/uniswap_v3.rs), [aave_v3.rs](crates/minocrab-contracts/src/evm/aave_v3.rs)), and a contract calling a deployment of its own declares its callee marker in one line. Eight interfaces ship today: `Erc20` (`transfer`, `approve`, `transferFrom`, OpenZeppelin's `increaseAllowance` / `decreaseAllowance`, and ERC-2612's gasless `permit`), `Weth` — which IS an `Erc20`, so one address takes both surfaces — with the payable `deposit()` that carries real ether and `withdraw`, `Erc4626` (`deposit`, `mint`, `withdraw`, `redeem` — the four are two pairs, each fixing one side and returning the other), `UniswapV3Router`, which IS `SwapRouter02` (`exactInputSingle`, `exactOutputSingle`, both the seven-field struct without the original router's `deadline`), `AaveV3Pool` (`supply`, `supplyWithPermit`, `withdraw`, `borrow`, `repay`), `Erc721` (`transferFrom`, `approve`, `setApprovalForAll`), and `UsdtLike`, a deliberate SIBLING of `Erc20` for the non-conforming tokens whose `transfer` returns nothing — declaring one of those as an `Erc20` is what would refund a transfer that moved the money, and it does not compile. `Erc721` is a sibling for the same reason and it is the sharper case: its `transferFrom` and `approve` hash to ERC-20's *exact* selectors on byte-identical calldata and return nothing at all, so the callee's interface is the only thing that can tell the two apart — and both directions of that confusion are compile errors.
+`erc20::Transfer` is the CALL: the Solidity facts (`transfer`, `(address, uint256)`, a `bool` return, the `Erc20` interface, a gas limit, the success rule). One module per interface under [evm/](crates/minocrab-contracts/src/evm). `Transfer` above is the FILING: the same call plus a deployment's response kind byte and the record's return name. The vault files `erc20::Transfer` under two kinds, deposit and withdrawal, and its seventeen circuits are all on this API ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
 
 | Interface | Calls | Words | Return |
 |---|---|---|---|
@@ -436,33 +392,28 @@ impl Treasury {
 | | `supplyWithPermit` | 8 static | none |
 | `Erc721` (sibling of `Erc20`) | `transferFrom`, `approve`, `setApprovalForAll` | 2–3 static | none |
 
-Every row is STATIC: the calldata width is a constant of the call, which is what lets the ledger record be fixed-width. Dynamic ABI types (`bytes`, `string`, `T[]`, and with them ERC-721's `safeTransferFrom`, ERC-1155, Safe and Multicall3) are not in the library until a consumer asks. Every selector and every word in the table is pinned against alloy's own encoder on generated values ([evm_alloy_oracle.rs](crates/minocrab-contracts/tests/evm_alloy_oracle.rs)) and, where the deployed vault has one, against compactc's calldata ([evm_abi.rs](crates/minocrab-contracts/tests/evm_abi.rs)).
+Every row is STATIC, which is what lets the ledger record be fixed-width; dynamic ABI types (`bytes`, `string`, `T[]`) wait for a consumer. Every selector and word is pinned against alloy's encoder ([evm_alloy_oracle.rs](crates/minocrab-contracts/tests/evm_alloy_oracle.rs)) and, where the deployed vault has one, against compactc's calldata ([evm_abi.rs](crates/minocrab-contracts/tests/evm_abi.rs)). `UsdtLike` and `Erc721` are deliberate siblings of `Erc20`: their calls hash to the same selectors on the same calldata but return nothing, so the callee's interface is the only thing that tells them apart, and both directions of that confusion are compile errors.
 
-The mis-uses the library refuses are doc-tests that must fail to compile — twenty-two of them, each beside the rule it enforces: a call on an address that does not claim its interface (`erc20::Transfer` on a `Contract<UniswapV3Router>`), a `UsdtLike` or `Erc721` call on an `Erc20` address and the reverse (the flag would be discarded, or invented), a ticket presented to a slot filed at another kind, two slots of one block filed at the same kind (`E0080` from the ledger derive), a slot whose `WORDS` is not the call's word count (`E0080`), `Unit` in an argument tuple, ether on a call that is not payable, an argument tuple in the wrong order for the call, and a commitment opened under another tag ([evm.rs](crates/minocrab-contracts/src/evm.rs), [evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs), [erc721.rs](crates/minocrab-contracts/src/evm/erc721.rs)).
+What the types do:
 
-`Transfer` — the type alias above it — is the FILING: the same call plus the two things that are facts about a DEPLOYMENT's protocol rather than about `transfer`, namely the response kind byte and the name the deployed record gives the attested return. The vault files the very same `erc20::Transfer` under two kinds, because a deposit's inbound transfer and a withdrawal's outbound one are two operations that share a Solidity function. Its SEVENTEEN circuits are on this API: `deposit`, `claim`, `withdraw`, `swap`, `supply`, `redeem`, the two approvals and their eight settles are `Pending<Filing, Env, WORDS>` slots over the filings `Deposit`, `Withdrawal`, `Swap`, `Supply`, `Redeem` and `Approval` — `erc20::Transfer` twice, `erc20::Approve`, `uniswap_v3::ExactOutputSingle`, `erc4626::Deposit` and `erc4626::Redeem` ([erc20_vault_pending.rs](crates/minocrab-contracts/src/erc20_vault_pending.rs)).
+- **Mis-pairing does not compile.** A `Succeeded<Transfer>` settles the `transfers` slot and no other; a `Failed` cannot be handed to `complete`; an argument tuple in the wrong order is a type error; a `WORDS` that is not the call's word count, or two slots of one block at one kind, is `error[E0080]`. Twenty-two such refusals are doc-tests that must fail to compile.
+- **A call goes only where its interface does.** `request` accepts a callee only when its interface `Extends` the call's own: `erc20::Transfer` on a `Contract<UniswapV3Router>` is a missing impl; `erc20::Approve` on a `Contract<Erc4626>` compiles. The marker costs no instruction.
+- **The outcome picks the circuit.** `complete` asserts the call's success rule; `refund` takes both non-successes. The deployed vault's Gap 2 (a refund branch inside the completion) has no method on this API.
+- **The secret never crosses in the clear.** `Owned` stores a Poseidon commitment to the caller's key bound to the request id; `refund_to_owner` opens it with a fresh witness. Completions have no witness row.
+- **Nothing is hand-synced with the MPC.** Ledger path, kind byte, response field name and record version all come from the types.
 
-What the types do for the author:
+One hazard the types cannot see: the MPC resolves a request as FAILED when the return data does not decode, so a non-conforming ERC-20 returning nothing produces an attested failure for a transfer that moved the tokens. Until the callee's return shape is declared per token, a contract on this API needs a callee allow-list.
 
-- **Mis-pairing does not compile.** A `Succeeded<Transfer>` settles the `transfers` slot and no other — not even a ticket for the same Solidity call filed at another kind; a `Failed` cannot be handed to `complete` at all; the argument tuple in the wrong order is a type error rather than a transaction that sends tokens to an address made out of an amount; a `WORDS` that is not the argument list's word count is `error[E0080]` with a prescriptive message; two slots of one block at one response kind is `error[E0080]` too. The kind check, the version check, the signature check and the removal are inside `complete` and `refund`, so none can be forgotten.
-- **A call goes only where its interface does.** `send` takes a `Contract<Erc20>`, not twenty loose bytes, and `request` accepts a callee only when its interface `Extends` the call's own — so an `erc20::Transfer` filed against a `Contract<UniswapV3Router>` is a missing trait impl, while an `erc20::Approve` against a `Contract<Erc4626>` compiles, because an ERC-4626 vault IS an ERC-20. The marker costs no instruction: a callee is twenty bytes whatever it claims.
-- **The outcome picks the circuit.** `complete` asserts the call's own success rule, so an ERC-20 `transfer` that MINED AND RETURNED `false` cannot complete, whoever presents it; `refund` takes both non-successes — the MPC's failure kind and the executed-`false`. Putting the second case in a branch inside the completion is the deployed vault's Gap 2, and there is no method on this API that writes it.
-- **The secret never crosses in the clear, and a completion never touches one.** `Owned` stores a Poseidon commitment to the caller's key bound to the request id; `refund_to_owner` opens it with a fresh witness. `complete_withdraw`'s private transcript is empty and its interface has no witness row — a stranger's proof is the same proof.
-- **Nothing is hand-synced with the MPC.** The notification's ledger path is read off the slot; the kind byte and the response field name are the filing's; the record format version is the API's; the `&SELF.signet` argument is the derive's.
-
-One hazard the types cannot see, carried in the module docs: the MPC resolves a request as FAILED when the return data does not decode, so a non-conforming ERC-20 that returns nothing (USDT and friends) produces an attested failure for a transfer that moved the tokens. Until the callee's return shape is declared per token, a contract on this API needs a callee allow-list — which the vault has in effect through its configured ERC-20 addresses.
-
-The full flows — burning a shielded coin on request, minting the attested amount on completion, refunding on failure — are the vault's circuits; [signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. The cost is the same shape as compactc's for the same operation and lower where the API does less work: `supply` at k14 / 11,474 rows against the port's k15 / 23,038, and `complete_withdraw` at k15 / 25,655 where the deployed shape (which carried a refund branch it might not take) needed k16 / 35,553 ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs) pins every pair).
+[signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. Costs are the same shape as compactc's and lower where the API does less: `supply` k14 / 11,474 rows against the port's k15 / 23,038; `complete_withdraw` k15 / 25,655 against the deployed k16 / 35,553 ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs)).
 
 ## Porting kit
 
-- `corpus/` is 673 pinned `.compact` sources and the 814 ZKIR circuits (315 contracts) the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
-- Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not against your reading of the source
-- The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ because of our optimiser. Guard rejections and tampered inputs must agree too.
+- `corpus/` is 673 pinned `.compact` sources and the 814 ZKIR circuits the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
+- Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not your reading of the source
+- The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ. Guard rejections and tampered inputs must agree too.
 
 ```rust
 fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage) {
-    // ... typed input schema, field by field
     assert_eq!(types(ours), types(theirs), "input schemas differ");
     assert_eq!(ours.outputs, theirs.outputs, "output schemas differ");
 
@@ -472,14 +423,11 @@ fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPreimage
     assert_eq!(our_run.pis, their_run.pis, "PI vectors differ");
 
     assert_eq!(ours.check(pi).expect("upstream accepts ours"), our_run.pi_skips);
-    assert_eq!(
-        theirs.check(pi).expect("upstream accepts theirs"),
-        their_run.pi_skips
-    );
+    assert_eq!(theirs.check(pi).expect("upstream accepts theirs"), their_run.pi_skips);
 }
 ```
 
-Every ported circuit is wired this way ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs), [differential_baseline.rs](crates/minocrab-ledger/tests/differential_baseline.rs), [differential_tiny.rs](crates/minocrab-std/tests/differential_tiny.rs), [differential_schnorr.rs](crates/minocrab-std/tests/differential_schnorr.rs)). New ports add a scenario builder and one call.
+Every ported circuit is wired this way ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs), [differential_baseline.rs](crates/minocrab-ledger/tests/differential_baseline.rs), [adts_differential.rs](crates/minocrab-contracts/tests/adts_differential.rs), [bounded_differential.rs](crates/minocrab-contracts/tests/bounded_differential.rs)). New ports add a scenario builder and one call.
 
 ```
 cargo test --workspace --release
@@ -487,7 +435,7 @@ cargo test --workspace --release
 
 ## Performance
 
-One session, 2026-09-05, Apple Silicon, pinned toolchain. Port `mc` vs compactc `cc` on the **identical statement** (same schema, same shared preimage, equal public-input streams, proven per circuit by the differential suite); prove = median of 3, RSS = peak of a fresh subprocess.
+2026-09-05, Apple Silicon, pinned toolchain. Port `mc` vs compactc `cc` on the **identical statement**; prove = median of 3, RSS = peak of a fresh subprocess.
 
 | circuit | k mc/cc | prove mc | prove cc | RAM mc | RAM cc |
 |---|---|---|---|---|---|
@@ -500,18 +448,18 @@ One session, 2026-09-05, Apple Silicon, pinned toolchain. Port `mc` vs compactc 
 | completeSwap | 16 / 16 | 4.28s | 4.36s | 1.6GB | 1.6GB |
 | initialise | 10 / 10 | 0.14s | 0.14s | 49MB | 49MB |
 
-- The Signet singleton — the contract every cross-chain call goes through — proves in **3–4% of compactc's time** at 5–6 `k` levels lower: −97.5% rows on all three circuits
-- Every vault request circuit crosses at least one `k` boundary: the 2-word requests (`approveStata`, `approveRouter`, `startDeposit`) drop three levels (k14 → k11, prove −80%); `startSwap` and `startRedeem` drop one (prove −44..−46%)
-- Wins come from instruction selection around the protocol's hashes: one `div_mod` at a byte boundary and a native `reverse_bytes` per ABI word where compactc lowers every `Bytes<20>` / `Uint<128>` word through per-byte `div_mod` / `reconstitute_field` chains (~640 rows a word)
-- The nine settle circuits cut 12–16% of rows but the secp256k1 verify (~24,450 rows) floors both sides at k16, so their prove time is flat — the port never costs more than compactc, and `initialise` is identical row for row
-- All 40 cells, methodology, per-region profiles and the honest limits: [BENCHMARK.md](BENCHMARK.md)
+- The Signet singleton proves in **3–4% of compactc's time**, 5–6 `k` levels lower
+- Every vault request circuit crosses at least one `k` boundary; the 2-word requests drop three
+- Wins come from instruction selection around the protocol's hashes: one `div_mod` at a byte boundary and a native `reverse_bytes` per ABI word, where compactc spends ~640 rows a word on per-byte chains
+- The nine settle circuits cut 12–16% of rows, but secp256k1 verify (~24,450 rows) floors both sides at k16; the port never costs more than compactc
+- All 40 cells, methodology and the honest limits: [BENCHMARK.md](BENCHMARK.md)
 
 ## What Compact has and MinoCrab does not
 
-Only real gaps. Candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
+Only real gaps; candidates that failed the check are in [notes/readme-research.org](notes/readme-research.org).
 
-- Nested **coin arms** — `insertCoin` / `pushFrontCoin` reached *through* a nested path, e.g. `ms.lookup(k).insertCoin(coin, r)`. Nesting itself landed at M22: `TREASURY.balances.at_key(c, &user).lookup(c, &token)` chains to any depth, over every shape Compact accepts — `Map<K, Map<..>>`, `Map<K, List<V>>`, `Map<K, Set<T>>`, `Map<K, Counter>` and both Merkle trees — with all thirty circuits byte-equal to compactc. (`Map` is the only nestable ADT, and that is *compactc's* kind-checker, not ours: `Set<List<T>>` is its own compile error.) What is missing is only the coin arms at depth: the lowering has them and the `dup` reach is pinned as a function of path length, but no fixture circuit compiles one, so the typed methods stop at declared slots ([the investigation](notes/coin-arms-nested-adts.org)).
-- A machine-checked semantics *of the source language's static plumbing*. Compact's in-tree Agda spec machine-checks its syntax representation, typing-rule skeletons and constructor coverage; MinoCrab has no counterpart of that skeleton. Read closely, the spec's semantic content stops there — its arithmetic bound computation is a `TODO` stub, its subtyping a `postulate`-backed placeholder, `disclose` typing-transparent, nothing on ZKIR — while MinoCrab's machine-checked layer runs the other way: Lean models warrant the optimisation passes (reflected as `VerifiedPass`), the numeric bound asserts (sound *and* minimal) and the disclose gate, on top of the differential and property warrant. Both sides' coverage, measured against each other honestly: [VERIFICATION.md](VERIFICATION.md) §5 and [notes/lean-port.org](notes/lean-port.org) §6.
+- Nested **coin arms**: `insertCoin` / `pushFrontCoin` reached *through* a nested path, e.g. `ms.lookup(k).insertCoin(coin, r)`. Nesting itself works to any depth over every shape Compact accepts, byte-equal to compactc on thirty circuits; only the coin arms at depth are missing, because no fixture circuit compiles one ([notes/coin-arms-nested-adts.org](notes/coin-arms-nested-adts.org)).
+- A machine-checked skeleton of the *source language's* static plumbing. Compact's Agda spec checks its syntax representation and typing-rule skeletons and stops there (bound computation a `TODO`, subtyping a `postulate`). MinoCrab's machine-checked layer runs the other way: Lean models warrant the optimisation passes, the numeric bound asserts and the disclose gate. Both measured against each other: [VERIFICATION.md](VERIFICATION.md) §5, [notes/lean-port.org](notes/lean-port.org) §6.
 
 ## Layout
 
@@ -539,45 +487,32 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-## Crates
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet, because every `midnight-*` dependency is pinned to a git rev the registry does not carry ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now.
 
-Nine of those are library crates meant for crates.io: `minocrab-zkir`, `minocrab-ir`, `minocrab`, `minocrab-macros`, `minocrab-std`, `minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-interface-gen`. A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. The rest — the corpus rewrite, the bench harness and the two example interface crates — are `publish = false`.
-
-Nothing is published yet: crates.io rejects git dependencies, and every `midnight-*` crate is pinned to a rev the registry does not carry. The plan is to wait for upstream to publish that line. [PUBLISHING.md](PUBLISHING.md) states the blocker, the publish order, and why no fake version keys were added to sneak past it.
-
-## Deeper
-
-`plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
+Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 
 ## Using MinoCrab as a library
 
-MinoCrab is a library first — like the [GHC API](https://hackage.haskell.org/package/ghc), it exposes its innards so you build your own tooling *on* it without forking. Two audiences:
+Like the [GHC API](https://hackage.haskell.org/package/ghc), MinoCrab exposes its innards so you build tooling *on* it without forking. Rust users get `minocrab_sim::v3::profile()` in a `#[test]`, criterion, the row snapshot as a regression gate. Non-Rust users get the `minocrab` CLI in `minocrab-sim`: `minocrab rows <file.zkir>...` and `minocrab diff <a> <b>` report `(k, rows)` over any ZKIR file, MinoCrab's or compactc's.
 
-- **Rust users** depend on the crates and reach for ordinary Rust performance tooling — `minocrab_sim::v3::profile()` in a `#[test]`, `cargo bench` / criterion, the row snapshot as a regression gate. No bespoke wrapper.
-- **Non-Rust users** get a light, compiler-agnostic CLI (the `minocrab` bin in `minocrab-sim`): `minocrab rows <file.zkir>...` and `minocrab diff <a> <b>` report `(k, rows)` over any ZKIR file — MinoCrab's *or* compactc's — so you can see gate counts without writing MinoCrab.
-
-Consume it today as a **git dependency** (crates.io is blocked on upstream — see [PUBLISHING.md](PUBLISHING.md)). The API is **tiered**: a small, stable-*ish* public surface, kept small deliberately while users are few, and an internals tier that may move.
-
-**Stability tiers**, concretely (v1 of the boundary — each crate's docs open with its own tier statement):
+**Stability tiers** (each crate's docs open with its own tier statement):
 
 | tier | what | where |
 |---|---|---|
 | **stable** | the v3 eDSL authoring core (`Circuit3` + its instruction methods, `Wire3`/`AnyWire3`, the typed leaves, the FAB alignment types, `Compiled3`/`IrSource`) | `minocrab`, `minocrab-std` |
 | **stable** | the `Pass` trait + reference passes, the taint lint | `minocrab_ir::v3::{passes, taint}` |
 | **stable** | the measurement API: `cost`, `profile`, `assert_max_k`, the calibrated `rowcost` tables, the `minocrab` CLI | `minocrab-sim` |
-| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs — gated behind an `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
+| **internal** | the raw `Builder3`/`Val` layers, the simulator VMs, behind the `unstable` cargo feature | `minocrab-ir`, `minocrab-sim` |
 | **internal** | the Impact ledger-op layer, the interface generator | `minocrab-ledger`, `minocrab-interface-gen` |
 
-The `unstable` gate is a hard wall exactly where it matters most: a **pass or lint crate depending on `minocrab-ir` alone** never sees the internals. Graphs that include the full eDSL activate the feature transitively (cargo feature unification), so there the tier lives in the docs and the semver commitment rather than the compiler. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise — the line widens by decision, never by accident.
+The `unstable` gate is a hard wall for a pass or lint crate depending on `minocrab-ir` alone. The wider contract-authoring surface (ledger declarations, kernel, Borsh, disclosure vocabulary) is *not yet* under the stability promise; the line widens by decision, never by accident.
 
-**Three ways to extend it à la carte, no fork:**
+**Three ways to extend it, no fork:**
 
-1. **Write a super-optimised gadget** — a crate depending on `minocrab-std` that builds a circuit fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is the highest-ceiling extension point: the real performance in MinoCrab comes from *typed-layer instruction selection* (native `ReverseBytes`, in-chip keccak packing, `div_mod` byte shifts, guarded read-as-zero), which needs the type information the eDSL has and type-erased ZKIR does not. Prove it equivalent to a reference with the differential / spec harness.
+1. **A super-optimised gadget**: a crate on `minocrab-std` that builds a fragment (a keccak, a Merkle path, an ABI encoder) in fewer rows than the stdlib's. This is where the speed is: typed-layer instruction selection needs the type information ZKIR has erased. Prove it equivalent with the differential or spec harness.
+2. **An optimisation pass**: implement `minocrab_ir::v3::passes::Pass`, a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`, and compose with `passes::run_pipeline`. Passes see type-erased ZKIR, so they are the uniform-transform tail. `Pass::run` returns a `PassReport` whose `warnings` flag anything that could move the public-input stream; read it. Built-in passes carry machine-checked proofs (Kani-bounded, then Lean, `crates/minocrab-ir/lean/`), reflected as the `VerifiedPass` marker `run_pipeline_verified` requires; cite yours with `lean_proof!`.
+3. **Measure**: `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
 
-2. **Write an optimisation pass** — implement `minocrab_ir::v3::passes::Pass` (a pure, total `Vec<Instruction> -> (Vec<Instruction>, Vec<String>)`), compose passes as an ordinary `Vec<Box<dyn Pass>>` through `passes::run_pipeline`, and run built-ins by name with `passes::by_name`. Passes see *type-erased* ZKIR, so they are the uniform-transform tail (guards, constants, range constraints) — real, but not where the speed is. **The report is your safety net**: `Pass::run` always returns a `PassReport` whose `warnings` flag anything dangerous — dropping an instruction can move the public-input / witness stream, which is the correctness oracle. A *valid* optimisation can still warn; read it and verify. The built-in passes carry machine-checked "preserves meaning" proofs (Kani-bounded, then Lean unbounded — `crates/minocrab-ir/lean/`), reflected as the `VerifiedPass` marker `passes::run_pipeline_verified` requires; passes are pure/total exactly so a proof can target them — write yours the same way, and cite your own proof with `lean_proof!` if you write one.
+Good passes or circuits: publish on cargo, or open a PR if they beat the stdlib. Lean proofs of equivalence are preferred and may be merged automatically.
 
-3. **Measure** — `minocrab_sim::v3::{cost, profile}` give `(k, rows)` and a region-attributed breakdown; the calibrated primitive-cost tables (`minocrab-sim/examples/`) price individual gadgets.
-
-If you find a good optimisation pass, or circuit, either put it up on cargo, or open a PR if it improves on something in the stdlib. Improvements with lean proofs of equivalence are preferred and may even be merged automatically.
-
-The optimisation levers that cut gate counts are catalogued for gadget authors in [OPTIMIZATION.md](OPTIMIZATION.md) (the measured record behind them is in [notes/benchmark.org](notes/benchmark.org), [notes/vault-optimization.org](notes/vault-optimization.org) and [notes/manager-port.org](notes/manager-port.org)); the library design of record is [notes/library-api.org](notes/library-api.org).
+The levers that cut gate counts are catalogued in [OPTIMIZATION.md](OPTIMIZATION.md); the library design of record is [notes/library-api.org](notes/library-api.org).
