@@ -619,3 +619,7 @@ both share the admin-cell one-off and the admin break-glass read. Our
 =Queued= (§8) sits between: insert reads =next_handle= (worse than both
 their inserts), flush reads two counters (= #61's drain). The
 =Allocated= sibling (§10) is what removes it.
+The audit as a shareable document: https://claude.ai/code/artifact/5febe6ea-df65-4731-bc19-a9691d3e7aba
+(private until shared from its page). The PR heads are checked out at
+~/midnight-examples-pr{58,59,61,62}; recompile with =compactc --skip-zk
+--feature-zkir-v3= and =COMPACT_PATH= at ~/midnight-examples/node_modules.
