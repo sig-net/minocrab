@@ -43,8 +43,34 @@ fn check<S: Scenario>(circuit: Circuit, s: &S) {
     let ops = s.ops();
     vault::exec::run(&pre, &s.self_addr(), &ops)
         .unwrap_or_else(|e| panic!("{}: the reference VM rejects the model's run: {e}", circuit.zkir_name()));
+    // A transcript the VM accepts must also fit the guaranteed section.
+    if !OVER_GUARANTEED_BUDGET.contains(&circuit) {
+        vault::exec::guaranteed_only(&pre, &s.self_addr(), &ops)
+            .unwrap_or_else(|e| panic!("{}: {e}", circuit.zkir_name()));
+    }
     matches(circuit, &s.preimage());
 }
+
+/// MEASURED OVER BUDGET (2026-11-19, ledger 9.1.0.1's initial parameters,
+/// these scenarios' pre-states): the ledger's partitioner demotes each of
+/// these WHOLE to the fallible section in at least one scenario here, from
+/// 59 ops (`startWithdraw`, `completeWithdraw`) to 298 (`flushQueue` over
+/// every action). Named so the gate stays green while they are; an eleventh
+/// demotion fails. Demotion depends on the pre-state as well as the op
+/// count, so a circuit absent from this list is within budget on these
+/// scenarios, not on every state.
+const OVER_GUARANTEED_BUDGET: [Circuit; 10] = [
+    Circuit::FlushQueue,
+    Circuit::StartWithdraw,
+    Circuit::StartSwap,
+    Circuit::StartSupply,
+    Circuit::StartRedeem,
+    Circuit::CompleteDeposit,
+    Circuit::CompleteWithdraw,
+    Circuit::CompleteSwap,
+    Circuit::CompleteSupply,
+    Circuit::CompleteRedeem,
+];
 
 fn ours(circuit: Circuit) -> IrSource {
     circuit.ir()
