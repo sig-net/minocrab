@@ -8,6 +8,8 @@ use std::ops::Deref;
 use midnight_base_crypto::fab::AlignedValue;
 use midnight_coin_structure::contract::ContractAddress;
 use midnight_base_crypto::hash::HashOutput;
+use midnight_ledger::construct::{partition_transcripts, PreTranscript};
+use midnight_ledger::structure::INITIAL_PARAMETERS;
 use midnight_onchain_runtime::context::{Effects, QueryContext, QueryResults};
 use midnight_onchain_state::state::{ChargedState, StateValue};
 use midnight_onchain_vm::cost_model::INITIAL_COST_MODEL;
@@ -158,6 +160,38 @@ pub fn run(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<Execute
 }
 
 /// See `tests/vault/exec.rs::assert_normalized`.
+/// THE GUARANTEED-SECTION GATE (Sig's fallibility model 1): the ledger's own
+/// partitioner, run on this call alone under the initial parameters, must
+/// put the WHOLE transcript in the guaranteed section. Otherwise the
+/// transaction builder demotes the call to the fallible section with no
+/// error (`partition_transcripts`, ledger/src/construct.rs: "If none pass,
+/// 0 make it into the guaranteed section") and Sig will not sign for it.
+///
+/// Optimistic by one term: a real transaction also charges the claimed
+/// signer call's cost against the same budget, and only the root is here.
+pub fn guaranteed_only(pre: &PreState, self_addr: &[u8; 32], ops: &[VmOp]) -> Result<(), String> {
+    let context = QueryContext::new(
+        ChargedState::new(pre.state()),
+        ContractAddress(HashOutput(*self_addr)),
+    );
+    let call = PreTranscript {
+        context,
+        program: ops.to_vec(),
+        comm_comm: None,
+    };
+    let parts = partition_transcripts(&[call], &INITIAL_PARAMETERS).map_err(|e| format!("{e:?}"))?;
+    match &parts[0] {
+        (_, None) => Ok(()),
+        (guaranteed, Some(fallible)) => Err(format!(
+            "the ledger's partitioner would demote this call: {} of {} ops fit the guaranteed \
+             section and {} would be FALLIBLE — Sig signs guaranteed calls only",
+            guaranteed.as_ref().map(|g| Vec::from(&g.program).len()).unwrap_or(0),
+            ops.len(),
+            Vec::from(&fallible.program).len(),
+        )),
+    }
+}
+
 pub fn assert_normalized(ops: &[VmOp]) -> Result<(), String> {
     for (i, w) in ops.windows(2).enumerate() {
         if matches!((&w[0], &w[1]), (Op::Noop { .. }, Op::Noop { .. })) {
