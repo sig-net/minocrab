@@ -950,6 +950,35 @@ impl<const N: usize> Bytes<N, Public> {
     }
 }
 
+/// Compact's `Bytes<0>`: a value with NO slots and one zero-length FAB atom.
+///
+/// It exists because the Signet V1 vocabulary (`@sig-net/midnight` 0.24)
+/// pins a record field to it (`respondSerializationSchema: Bytes<0>`) and a
+/// circuit argument may be one (`serializedOutput: Bytes<0>`, the empty
+/// output of a failed or unviable attestation). compactc gives it zero input
+/// slots and zero limbs — the atom is in the alignment, nothing is in the
+/// value — so a one-limb [`Bytes<N>`] cannot stand for it: it is its own type.
+#[derive(Clone, Copy)]
+pub struct Bytes0<V: Vis3 = Private>(std::marker::PhantomData<fn() -> V>);
+
+impl<V: Vis3> Default for Bytes0<V> {
+    fn default() -> Self {
+        Bytes0(std::marker::PhantomData)
+    }
+}
+
+impl<V: Vis3> Bytes0<V> {
+    /// The one value there is.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same (absent) value at the other visibility.
+    pub fn private(self) -> Bytes0<Private> {
+        Bytes0::default()
+    }
+}
+
 /// A Compact-level `Bytes<32>`: the `[hi, lo]` native slot pair (hi = byte
 /// 31, lo = bytes 0..30 little-endian).
 #[derive(Clone, Copy)]

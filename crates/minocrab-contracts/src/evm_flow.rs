@@ -513,7 +513,6 @@ use minocrab::v3::Val;
 use signet_signer_interface::{RequestId, Signature};
 
 use crate::common::{self, SecretKey, SigningPath};
-use crate::erc20_vault::REFUND_PAD;
 use crate::evm::{
     build_tx_filed, build_tx_from_words, build_tx_payable_filed, build_tx_with, AbiArgs, AbiTuple,
     AbiType, Envelope, EvmCall, Extends, Filing, Interface, Payable,
@@ -755,7 +754,7 @@ pub trait CommitTag {
 pub struct OwnerTag;
 
 impl CommitTag for OwnerTag {
-    const PAD: &'static str = REFUND_PAD;
+    const PAD: &'static str = "vault:refund:";
 }
 
 /// A commitment to a private value, stored in an environment and OPENED on

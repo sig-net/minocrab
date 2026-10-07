@@ -397,7 +397,6 @@ use minocrab::{Fr, Private};
 use minocrab_std::v3::{is_true, pow2_const, Bool as BoolWire, Bytes, Check, Uint, Vis3, B32};
 use sha3::{Digest as _, Keccak256};
 
-use crate::erc20_vault::{FIXED_MAX_FEE, FIXED_PRIORITY_FEE};
 use crate::signet::{reverse_bytes32, EvmCalldata};
 use crate::signet_flow::EvmTx;
 
@@ -408,6 +407,13 @@ pub mod erc721;
 pub mod uniswap_v3;
 pub mod usdt;
 pub mod weth;
+
+/// The CONTRACT-FIXED fee envelope the typed-call lineage files under
+/// (`Envelope::Fixed`): the priority fee and fee cap the seventeen-circuit
+/// vault pinned in its source (1 gwei / 30 gwei). The flush-pattern vault
+/// (M44) keeps its envelope in ledger cells instead, so these live here now.
+pub const FIXED_PRIORITY_FEE: u64 = 1_000_000_000;
+pub const FIXED_MAX_FEE: u64 = 30_000_000_000;
 
 // ---- the encoders (moved from `signet`, unchanged) ---------------------------
 
@@ -1682,7 +1688,7 @@ mod tests {
     /// aliases of them, so no request circuit's gas immediate can move.
     #[test]
     fn the_gas_defaults_are_the_vaults() {
-        use crate::erc20_vault::{ERC20_CALL_GAS, LENDING_GAS, SWAP_GAS};
+        use crate::evm::{erc20::CALL_GAS as ERC20_CALL_GAS, erc4626::CALL_GAS as LENDING_GAS, uniswap_v3::SWAP_GAS};
 
         assert_eq!(erc20::Transfer::GAS_LIMIT, ERC20_CALL_GAS);
         assert_eq!(erc20::Approve::GAS_LIMIT, ERC20_CALL_GAS);
