@@ -11,7 +11,7 @@ use minocrab::Fr;
 
 use super::exec::{self, Executed, PreState};
 use super::model::*;
-use super::prims::{b32_slots, bytesn_value, coin_commitment_of, evolved_nonce, user_commitment};
+use super::prims::{b32_slots, bytesn_value, coin_commitment_of, evolved_nonce};
 
 /// Which assertion rejected — named after the Compact-style message the
 /// circuit's own `.message(...)` carries (or, for `signet_flow`'s shared
@@ -173,7 +173,7 @@ pub fn spec_initialize(s: &InitializeScenario) -> Outcome {
     if s.env.initialized != 0 {
         return Outcome::Reject(GuardId::AlreadyInitialized);
     }
-    if user_commitment(&s.sk) != s.env.deployer() {
+    if pending_user_commitment(&s.sk) != s.env.deployer() {
         return Outcome::Reject(GuardId::NotTheDeployer);
     }
     if s.chain_id == 0 {
@@ -272,7 +272,7 @@ pub fn spec_claim(s: &ClaimScenario) -> Outcome {
     if !s.success {
         return Outcome::Reject(GuardId::TheMpcAttestedAFailure);
     }
-    if user_commitment(&s.settle.sk(&s.d.sk)) != s.d.commitment() {
+    if pending_user_commitment(&s.settle.sk(&s.d.sk)) != s.d.commitment() {
         return Outcome::Reject(GuardId::NotTheDepositor);
     }
     let rid = s.d.request_id();

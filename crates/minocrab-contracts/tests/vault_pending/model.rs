@@ -22,9 +22,11 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault::{
-    APPROVE_SELECTOR, DEPOSIT_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR, LENDING_GAS, REDEEM_SELECTOR,
-    REDEEM_WORDS, REFUND_PAD, SUPPLY_WORDS, SWAP_WORDS, TRANSFER_SELECTOR, VAULT_PATH, VAULT_WORDS,
+    APPROVE_SELECTOR, DEPOSIT_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR, REDEEM_SELECTOR,
+    REDEEM_WORDS, SUPPLY_WORDS, SWAP_WORDS, TRANSFER_SELECTOR, USER_PAD, VAULT_PATH, VAULT_WORDS,
 };
+use minocrab_contracts::evm::erc4626::CALL_GAS as LENDING_GAS;
+use minocrab_contracts::evm_flow::REFUND_PAD;
 use minocrab_contracts::erc20_vault_pending::{
     RESPONSE_KIND_APPROVE, RESPONSE_KIND_CLAIM, RESPONSE_KIND_FAILURE, RESPONSE_KIND_REDEEM,
     RESPONSE_KIND_SUPPLY, RESPONSE_KIND_SWAP, RESPONSE_KIND_WITHDRAW, VAULT_TOKEN_TAG,
@@ -74,6 +76,19 @@ pub const SELF_ADDR: [u8; 32] = {
     a[31] = 0x31;
     a
 };
+
+/// `userCommitment(sk)` for THIS lineage — `upgradeFromTransient(
+/// transientHash([pad(32, "vault:user:"), sk]))`, the `fff3421c` order
+/// `common::commitment_transient` keeps. The compat port's shared
+/// `prims::user_commitment` moved to secret-first (`[sk, pad]`) with
+/// upstream's flush pattern at `375071b`; the `Pending` lineage is our own
+/// design and still calls `commitment_transient`, so it keeps the pad-first
+/// construction. `USER_PAD` is the one shared constant.
+pub fn pending_user_commitment(sk: &[u8; 32]) -> [u8; 32] {
+    let (p_hi, p_lo) = b32_slots(&pad32(USER_PAD));
+    let (sk_hi, sk_lo) = b32_slots(sk);
+    transient_upgrade(&[p_hi, p_lo, sk_hi, sk_lo])
+}
 
 /// A `[u8; 32]` from a short tag and a distinguishing top byte.
 pub fn tagged32(tag: &[u8], top: u8) -> [u8; 32] {
@@ -153,11 +168,10 @@ impl Env {
         point_av(&self.mpc_key())
     }
 
-    /// `userCommitment(deployer_sk)` — the `deployer` cell (the SAME
-    /// Poseidon construction the compat lineage's `user_commitment` is:
-    /// `USER_PAD` is one shared constant).
+    /// `userCommitment(deployer_sk)` — the `deployer` cell, in this
+    /// lineage's pad-first order (see `pending_user_commitment`).
     pub fn deployer(&self) -> [u8; 32] {
-        user_commitment(&self.deployer_sk)
+        pending_user_commitment(&self.deployer_sk)
     }
 
     pub fn pre_state(&self) -> PreState {
@@ -952,7 +966,7 @@ impl StartDepositScenario {
     }
 
     pub fn commitment(&self) -> [u8; 32] {
-        user_commitment(&self.sk)
+        pending_user_commitment(&self.sk)
     }
 
     pub fn amount_u64(&self) -> u64 {

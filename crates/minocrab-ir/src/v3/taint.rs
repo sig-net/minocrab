@@ -50,6 +50,19 @@
 //! - Guard recognition is SYNTACTIC: only an immediate non-zero Impact guard
 //!   counts as unconditional. A variable guard that is provably always 1
 //!   still leaves its read unmarked (over-fires, never under-fires).
+//! - The `guard` on `PublicInput`/`PrivateInput` is NOT a second warrant.
+//!   In-circuit that arm ignores it entirely (zkir-v3 ir_vm.rs:978-1004
+//!   resolves the wire out of the preprocessed witness memory, `guard: _`),
+//!   so a `public_input … guard: %g` is exactly as free as an unguarded one;
+//!   the "a skipped read yields 0, also in range" reading describes the
+//!   OFF-circuit `run`/preprocess semantics (the witness GENERATOR), not a
+//!   constraint. Pinned by `a_guarded_read_under_a_guarded_popeq_stays_free`
+//!   and written up in notes/taint-lint.org §8.
+//! - An ASSERT is not a bound source in any rule: the lint propagates
+//!   through producers only. `Uint::sub_with`'s `assert(a ≥ b);
+//!   add(a, neg(b))` therefore fires even with both operands
+//!   range-constrained, guarded or not
+//!   (`a_subtraction_proven_non_negative_still_fires`, §8).
 //! - popeq ONLY. Wires embedded in pushes (`push`/`pushs` cell contents) and
 //!   dynamic `idx` keys also flow to the transcript, but their in-range
 //!   argument is different (transaction well-formedness, not a read of
@@ -1069,6 +1082,83 @@ mod tests {
             hash,
         ];
         assert_eq!(audit(&header_wire).len(), 1);
+    }
+
+    /// A GUARDED `public_input` under a guarded popeq — the compat vault's
+    /// `complete_*` shape (M44, notes/taint-lint.org §8) — still fires.
+    ///
+    /// The point is that the `guard` on `PublicInput` is NOT a second
+    /// warrant: in-circuit the arm IGNORES it (`I::PublicInput { guard: _ }`
+    /// resolves the wire straight out of the preprocessed witness memory,
+    /// zkir-v3 ir_vm.rs:978-1004), so a guarded read is exactly as free as
+    /// an unguarded one. Only the Impact binds anything, and under a
+    /// variable guard it pushes `select(guard, x, 0)` (ir_vm.rs:869-882) —
+    /// zero when the guard is false, which the transcript comparison
+    /// accepts for ANY `x`. The "a skipped read yields 0, also in range"
+    /// reading is the OFF-circuit `run`/preprocess semantics
+    /// (minocrab-sim/src/v3.rs, the `PublicInput` arm's
+    /// `default_ir_value(val_t)`), i.e. the witness GENERATOR, not a
+    /// constraint a malicious prover is held to.
+    #[test]
+    fn a_guarded_read_under_a_guarded_popeq_stays_free() {
+        let guarded_pi = Instruction::PublicInput {
+            guard: Some(var("g")),
+            val_t: IrType::Native,
+            output: id("pi"),
+        };
+        let stream = vec![
+            guarded_pi.clone(),
+            popeq_u64(var("g"), "pi"),
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&stream).len(), 1);
+        // The same read under an UNCONDITIONAL popeq is bounded — so what
+        // the test above pins is the guard, not the guarded-ness of the
+        // `public_input` gate.
+        let unconditional = vec![
+            guarded_pi,
+            popeq_u64(imm(1), "pi"),
+            keccak(vec![bytes_atom(8)], vec![var("pi")]),
+        ];
+        assert_eq!(audit(&unconditional), vec![]);
+    }
+
+    /// `Uint::<BITS>::sub_with`'s lowering — `assert(a ≥ b); add(a, neg(b))`
+    /// (minocrab-std/src/v3.rs, `sub_with`) — fires even with both operands
+    /// range-constrained and the guard unconditional.
+    ///
+    /// Recorded deliberately (notes/taint-lint.org §8): `Neg` wraps, so pass
+    /// B drops it, and an `Assert` is not a bound source in ANY rule — the
+    /// lint propagates through producers only. The non-negativity of the
+    /// difference is therefore invisible to it, which is why the whole
+    /// `%add.*` residue of the baseline (kernel_tokens, manager,
+    /// erc20_vault{,_pending}) is one class awaiting a ruling rather than a
+    /// guarded-versus-unguarded distinction.
+    #[test]
+    fn a_subtraction_proven_non_negative_still_fires() {
+        let stream = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 128 },
+            Instruction::ConstrainBits { val: var("b"), bits: 128 },
+            Instruction::LessThan { a: var("a"), b: var("b"), bits: 128, output: id("lt") },
+            Instruction::Not { a: var("lt"), output: id("ge") },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(16)], vec![var("d")]),
+        ];
+        let findings = audit(&stream);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].detail.contains("not provably bounded"));
+        // The SUM of the same two operands is bounded, by the exact interval
+        // arithmetic: 2·(2^128−1) needs 129 bits, so it fires on a 16-byte
+        // atom for a different and correct reason.
+        let summed = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 64 },
+            Instruction::ConstrainBits { val: var("b"), bits: 64 },
+            Instruction::Add { a: var("a"), b: var("b"), output: id("s") },
+            keccak(vec![bytes_atom(16)], vec![var("s")]),
+        ];
+        assert_eq!(audit(&summed), vec![]);
     }
 }
 
