@@ -51,30 +51,209 @@ in  swapRouter: Scalar<BLS12-381>
 in  stataUnderlyingAddr: Scalar<BLS12-381>
 in  stataTokenAddr: Scalar<BLS12-381>
 in  chainId: Scalar<BLS12-381>
-in  chainCaip2Id_hi: Scalar<BLS12-381>
-in  chainCaip2Id_lo: Scalar<BLS12-381>
 in  responseKey: Point<Secp256k1>
+in  responseKeyVersion: Scalar<BLS12-381>
+in  evmHeight: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::approve_stata",
+        "erc20_vault::set_gas_params",
         "\
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
+in  newMaxFeePerGas: Scalar<BLS12-381>
+in  newMaxPriorityFeePerGas: Scalar<BLS12-381>
+in  newWithdrawGasLimit: Scalar<BLS12-381>
+in  newApproveGasLimit: Scalar<BLS12-381>
+in  newSwapGasLimit: Scalar<BLS12-381>
+in  newSupplyGasLimit: Scalar<BLS12-381>
+in  newRedeemGasLimit: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::approve_router",
+        "erc20_vault::add_allowed_token",
         "\
 in  erc20Address: Scalar<BLS12-381>
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::flush_queue",
+        "\
+in  slots_0_channel: Scalar<BLS12-381>
+in  slots_0_inIndex: Scalar<BLS12-381>
+in  slots_0_requestId_hi: Scalar<BLS12-381>
+in  slots_0_requestId_lo: Scalar<BLS12-381>
+in  slots_1_channel: Scalar<BLS12-381>
+in  slots_1_inIndex: Scalar<BLS12-381>
+in  slots_1_requestId_hi: Scalar<BLS12-381>
+in  slots_1_requestId_lo: Scalar<BLS12-381>
+in  slots_2_channel: Scalar<BLS12-381>
+in  slots_2_inIndex: Scalar<BLS12-381>
+in  slots_2_requestId_hi: Scalar<BLS12-381>
+in  slots_2_requestId_lo: Scalar<BLS12-381>
+in  slots_3_channel: Scalar<BLS12-381>
+in  slots_3_inIndex: Scalar<BLS12-381>
+in  slots_3_requestId_hi: Scalar<BLS12-381>
+in  slots_3_requestId_lo: Scalar<BLS12-381>
+in  slots_4_channel: Scalar<BLS12-381>
+in  slots_4_inIndex: Scalar<BLS12-381>
+in  slots_4_requestId_hi: Scalar<BLS12-381>
+in  slots_4_requestId_lo: Scalar<BLS12-381>
+in  slots_5_channel: Scalar<BLS12-381>
+in  slots_5_inIndex: Scalar<BLS12-381>
+in  slots_5_requestId_hi: Scalar<BLS12-381>
+in  slots_5_requestId_lo: Scalar<BLS12-381>
+in  slots_6_channel: Scalar<BLS12-381>
+in  slots_6_inIndex: Scalar<BLS12-381>
+in  slots_6_requestId_hi: Scalar<BLS12-381>
+in  slots_6_requestId_lo: Scalar<BLS12-381>
+in  slots_7_channel: Scalar<BLS12-381>
+in  slots_7_inIndex: Scalar<BLS12-381>
+in  slots_7_requestId_hi: Scalar<BLS12-381>
+in  slots_7_requestId_lo: Scalar<BLS12-381>
+in  slots_8_channel: Scalar<BLS12-381>
+in  slots_8_inIndex: Scalar<BLS12-381>
+in  slots_8_requestId_hi: Scalar<BLS12-381>
+in  slots_8_requestId_lo: Scalar<BLS12-381>
+in  slots_9_channel: Scalar<BLS12-381>
+in  slots_9_inIndex: Scalar<BLS12-381>
+in  slots_9_requestId_hi: Scalar<BLS12-381>
+in  slots_9_requestId_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::queue_attestation0",
+        "\
+in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
+in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::queue_attestation1",
+        "\
+in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
+in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::queue_attestation32",
+        "\
+in  respondBidirectionalEvent_requestId_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
+in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_x_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_bigR_y_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_s_lo: Scalar<BLS12-381>
+in  respondBidirectionalEvent_signature_recoveryId: Scalar<BLS12-381>
+in  serializedOutput_hi: Scalar<BLS12-381>
+in  serializedOutput_lo: Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_replace_nonce",
+        "\
+in  inIndex: Scalar<BLS12-381>
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  action: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_replace_nonce",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_replace_nonce",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_approve_router",
+        "\
+in  inIndex: Scalar<BLS12-381>
+in  erc20Address: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::start_approve_stata",
+        "\
+in  inIndex: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_approve",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::complete_approve",
+        "\
+in  requestId_hi: Scalar<BLS12-381>
+in  requestId_lo: Scalar<BLS12-381>
+in  serializedOutput: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -82,15 +261,24 @@ wit Scalar<BLS12-381>
     (
         "erc20_vault::start_deposit",
         "\
+in  inIndex: Scalar<BLS12-381>
 in  evmNonce: Scalar<BLS12-381>
-in  gasLimit: Scalar<BLS12-381>
-in  maxFeePerGas: Scalar<BLS12-381>
-in  maxPriorityFeePerGas: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
+in  gas_gasLimit: Scalar<BLS12-381>
+in  gas_maxFeePerGas: Scalar<BLS12-381>
+in  gas_maxPriorityFeePerGas: Scalar<BLS12-381>
 in  depositRequest_erc20Address: Scalar<BLS12-381>
 in  depositRequest_amount: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_deposit",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -101,13 +289,6 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
 in  serializedOutput: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
@@ -126,8 +307,7 @@ wit Scalar<BLS12-381> (guarded)
     (
         "erc20_vault::start_withdraw",
         "\
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
+in  inIndex: Scalar<BLS12-381>
 in  withdrawRequest_erc20Address: Scalar<BLS12-381>
 in  withdrawRequest_amount: Scalar<BLS12-381>
 in  withdrawRequest_destEvmAddress: Scalar<BLS12-381>
@@ -138,6 +318,13 @@ in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_withdraw",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -148,13 +335,6 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
 in  serializedOutput: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
@@ -162,36 +342,14 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381> (guarded)
 wit Scalar<BLS12-381> (guarded)
-",
-    ),
-    (
-        "erc20_vault::refund_withdraw",
-        "\
-in  requestId_hi: Scalar<BLS12-381>
-in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-in  mintNonce_hi: Scalar<BLS12-381>
-in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
         "erc20_vault::start_swap",
         "\
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
-in  swapRequest_tokenIn: Scalar<BLS12-381>
-in  swapRequest_tokenOut: Scalar<BLS12-381>
+in  inIndex: Scalar<BLS12-381>
+in  swapRequest_erc20AddressIn: Scalar<BLS12-381>
+in  swapRequest_erc20AddressOut: Scalar<BLS12-381>
 in  swapRequest_fee: Scalar<BLS12-381>
 in  swapRequest_amountOut: Scalar<BLS12-381>
 in  swapRequest_amountInMaximum: Scalar<BLS12-381>
@@ -202,6 +360,13 @@ in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_swap",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -212,14 +377,8 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_hi: Scalar<BLS12-381>
+in  serializedOutput_lo: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 in  changeNonce_hi: Scalar<BLS12-381>
@@ -231,32 +390,10 @@ wit Scalar<BLS12-381>
 ",
     ),
     (
-        "erc20_vault::refund_swap",
-        "\
-in  requestId_hi: Scalar<BLS12-381>
-in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-in  mintNonce_hi: Scalar<BLS12-381>
-in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-",
-    ),
-    (
         "erc20_vault::start_supply",
         "\
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
-in  amount: Scalar<BLS12-381>
+in  inIndex: Scalar<BLS12-381>
+in  supplyRequest_amount: Scalar<BLS12-381>
 in  coin_nonce_hi: Scalar<BLS12-381>
 in  coin_nonce_lo: Scalar<BLS12-381>
 in  coin_color_hi: Scalar<BLS12-381>
@@ -264,6 +401,13 @@ in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_supply",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -274,35 +418,8 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-in  mintNonce_hi: Scalar<BLS12-381>
-in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::refund_supply",
-        "\
-in  requestId_hi: Scalar<BLS12-381>
-in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_hi: Scalar<BLS12-381>
+in  serializedOutput_lo: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -314,9 +431,8 @@ wit Scalar<BLS12-381>
     (
         "erc20_vault::start_redeem",
         "\
-in  evmNonce: Scalar<BLS12-381>
-in  keyVersion: Scalar<BLS12-381>
-in  shares: Scalar<BLS12-381>
+in  inIndex: Scalar<BLS12-381>
+in  redeemRequest_shares: Scalar<BLS12-381>
 in  coin_nonce_hi: Scalar<BLS12-381>
 in  coin_nonce_lo: Scalar<BLS12-381>
 in  coin_color_hi: Scalar<BLS12-381>
@@ -324,6 +440,13 @@ in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "erc20_vault::send_redeem",
+        "\
+in  outIndex_hi: Scalar<BLS12-381>
+in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -334,35 +457,8 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
-in  mintNonce_hi: Scalar<BLS12-381>
-in  mintNonce_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-",
-    ),
-    (
-        "erc20_vault::refund_redeem",
-        "\
-in  requestId_hi: Scalar<BLS12-381>
-in  requestId_lo: Scalar<BLS12-381>
-in  respond_bigR_x_hi: Scalar<BLS12-381>
-in  respond_bigR_x_lo: Scalar<BLS12-381>
-in  respond_bigR_y_hi: Scalar<BLS12-381>
-in  respond_bigR_y_lo: Scalar<BLS12-381>
-in  respond_s_hi: Scalar<BLS12-381>
-in  respond_s_lo: Scalar<BLS12-381>
-in  respond_recoveryId: Scalar<BLS12-381>
-in  serializedOutput: Scalar<BLS12-381>
+in  serializedOutput_hi: Scalar<BLS12-381>
+in  serializedOutput_lo: Scalar<BLS12-381>
 in  mintNonce_hi: Scalar<BLS12-381>
 in  mintNonce_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>

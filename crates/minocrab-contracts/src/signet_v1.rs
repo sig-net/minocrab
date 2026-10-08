@@ -356,6 +356,37 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: Sch
     execution_dest: Caip2Id<V>,
     output_schema: &[u8],
 ) -> SignBidirectionalEventV1<V, WORDS, S> {
+    construct_sign_bidirectional_event_v1_with(c, key_version, sender, path, tx_params, execution_dest, output_schema, true)
+}
+
+/// [`construct_sign_bidirectional_event_v1`] for a path that is a CONSTANT
+/// of the contract (its own `pad(32, …)`): the reserved-path assert is over
+/// two constants, which compactc folds away, so it is not emitted here
+/// either — the circuits' leakage surfaces stay twins. A path derived from
+/// an input (a deposit's depositor commitment) takes the checking form.
+pub fn construct_sign_bidirectional_event_v1_const_path<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit3,
+    key_version: Wire3<FieldT, V>,
+    sender: ContractAddress<V>,
+    path: SigningPath<V>,
+    tx_params: EvmType2TxParams<V, WORDS>,
+    execution_dest: Caip2Id<V>,
+    output_schema: &[u8],
+) -> SignBidirectionalEventV1<V, WORDS, S> {
+    construct_sign_bidirectional_event_v1_with(c, key_version, sender, path, tx_params, execution_dest, output_schema, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn construct_sign_bidirectional_event_v1_with<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
+    c: &mut Circuit3,
+    key_version: Wire3<FieldT, V>,
+    sender: ContractAddress<V>,
+    path: SigningPath<V>,
+    tx_params: EvmType2TxParams<V, WORDS>,
+    execution_dest: Caip2Id<V>,
+    output_schema: &[u8],
+    check_path: bool,
+) -> SignBidirectionalEventV1<V, WORDS, S> {
     c.region("signet v1: event assembly", |c| {
         let zero = V::from_public(c.constant(0u64));
         let one = V::from_public(c.constant(1u64));
@@ -366,13 +397,15 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: Sch
         c.assert_with(at_least_one, Some("keyVersion must be >= 1"));
 
         // assert(path != pad(32, "midnight response key")).
-        let reserved = B32::pad(c, RESPONSE_KEY_PATH);
-        let p = path.bytes();
-        let hi_eq = c.test_eq(p.hi, V::from_public(reserved.hi));
-        let lo_eq = c.test_eq(p.lo, V::from_public(reserved.lo));
-        let both = c.mul(hi_eq, lo_eq);
-        let distinct = c.not(both);
-        c.assert_with(distinct, Some("path is reserved for the MPC response key"));
+        if check_path {
+            let reserved = B32::pad(c, RESPONSE_KEY_PATH);
+            let p = path.bytes();
+            let hi_eq = c.test_eq(p.hi, V::from_public(reserved.hi));
+            let lo_eq = c.test_eq(p.lo, V::from_public(reserved.lo));
+            let both = c.mul(hi_eq, lo_eq);
+            let distinct = c.not(both);
+            c.assert_with(distinct, Some("path is reserved for the MPC response key"));
+        }
 
         let params = BytesN::from_limbs(vec![zero; BytesN::<V, PARAMS_LEN>::LIMBS]);
         let output_deserialization_schema = S::literal(c, output_schema);
@@ -404,9 +437,16 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: Sch
 /// An ABSENT calldata enters as `is_some = false`, a zero selector and a zero
 /// word count (the source's `calldata.is_some ? … : default`), so the word
 /// slots of a `none<EvmCalldata<n>>` are read and skipped, as in compactc.
+///
+/// `words_used` is the calldata's word count when the CIRCUIT knows it (a
+/// literal `noWords` in the source, `0` for `none<EvmCalldata>`): compactc
+/// folds the fold's `acc < noWords` against a literal, hashing exactly those
+/// words and no select; `None` is the runtime fold, one `less_than` and one
+/// select per capacity slot.
 pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis3, const WORDS: usize>(
     c: &mut Circuit3,
     tx: &EvmType2TxParams<V, WORDS>,
+    words_used: Option<usize>,
 ) -> B32<V> {
     c.region("signet v1: tx params digest (transientHash)", |c| {
         let zero = V::from_public(c.constant(0u64));
@@ -438,11 +478,21 @@ pub fn calculate_evm_type2_tx_params_digest_v1<V: Vis3, const WORDS: usize>(
         ]);
 
         let word_tag = V::from_public(c.constant(hash_domain::EVM_TYPE2_TX_WORD));
-        for (i, word) in tx.calldata.words.iter().enumerate() {
-            let index = V::from_public(c.constant(i as u64));
-            let used = c.less_than(index, no_words, 16);
-            let chained = c.transient_hash(&[word_tag, acc, word.hi, word.lo]);
-            acc = c.cond_select(used, chained, acc);
+        match words_used {
+            Some(n) => {
+                assert!(n <= WORDS, "{n} used words in a {WORDS}-word calldata");
+                for word in &tx.calldata.words[..n] {
+                    acc = c.transient_hash(&[word_tag, acc, word.hi, word.lo]);
+                }
+            }
+            None => {
+                for (i, word) in tx.calldata.words.iter().enumerate() {
+                    let index = V::from_public(c.constant(i as u64));
+                    let used = c.less_than(index, no_words, 16);
+                    let chained = c.transient_hash(&[word_tag, acc, word.hi, word.lo]);
+                    acc = c.cond_select(used, chained, acc);
+                }
+            }
         }
         upgrade_from_transient(c, acc)
     })
@@ -492,8 +542,9 @@ pub fn calculate_request_id_v1<V: Vis3>(c: &mut Circuit3, p: &RequestIdPreimageV
 pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaBytes<V>>(
     c: &mut Circuit3,
     request: &SignBidirectionalEventV1<V, WORDS, S>,
+    words_used: Option<usize>,
 ) -> RequestId<V> {
-    let tx_params_digest = calculate_evm_type2_tx_params_digest_v1(c, &request.tx_params);
+    let tx_params_digest = calculate_evm_type2_tx_params_digest_v1(c, &request.tx_params, words_used);
     calculate_request_id_v1(
         c,
         &RequestIdPreimageV1 {

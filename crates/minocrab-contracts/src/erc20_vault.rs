@@ -700,6 +700,8 @@ fn send_request<const WORDS: usize, SP, SR, A>(
     request_map: &LedgerMap<RequestId<Public>, EventRecordV1<WORDS, SR>>,
     output_schema: &[u8],
     build: impl FnOnce(&mut Circuit3, &RequestBufferEntry, &A) -> (signet_v1::EvmType2TxParams<Private, WORDS>, SigningPath<Private>),
+    words_used: usize,
+    path_is_const: bool,
 ) where
     SP: SchemaBytes<Private>,
     SR: SchemaBytes<Public>,
@@ -721,9 +723,15 @@ fn send_request<const WORDS: usize, SP, SR, A>(
     let key_version = VAULT.mpc_key_version.read(c).stale(c);
     let sender = kernel::self_address(c).private();
     let dest = signet_v1::ethereum_caip2_id::<Private>(c);
-    let request: signet_v1::SignBidirectionalEventV1<Private, WORDS, SP> =
-        signet_v1::construct_sign_bidirectional_event_v1(c, key_version.field().private(), sender, path, tx, dest, output_schema);
-    let request_id = signet_v1::calculate_evm_type2_request_id_v1(c, &request).disclose_as::<RequestIdDisclosed>(c);
+    // The reserved-path assert is folded for the vault's own constant path,
+    // as compactc folds it; the calldata word count is a literal in every send.
+    let kv = key_version.field().private();
+    let request: signet_v1::SignBidirectionalEventV1<Private, WORDS, SP> = if path_is_const {
+        signet_v1::construct_sign_bidirectional_event_v1_const_path(c, kv, sender, path, tx, dest, output_schema)
+    } else {
+        signet_v1::construct_sign_bidirectional_event_v1(c, kv, sender, path, tx, dest, output_schema)
+    };
+    let request_id = signet_v1::calculate_evm_type2_request_id_v1(c, &request, Some(words_used)).disclose_as::<RequestIdDisclosed>(c);
 
     c.region("record: freshness and insert", |c| {
         let sent = request_map.member(c, &request_id);
@@ -1250,6 +1258,8 @@ impl Vault {
                 );
                 (tx, SigningPath::vault_path(c).private())
             },
+            0,
+            true,
         );
         Discloses::of(())
     }
@@ -1329,6 +1339,8 @@ impl Vault {
                 let tx = tx_params(c, entry, &args.gas, |_c| to, calldata, true);
                 (tx, SigningPath::vault_path(c).private())
             },
+            VAULT_WORDS,
+            true,
         );
         Discloses::of(())
     }
@@ -1441,6 +1453,8 @@ impl Vault {
                 let tx = tx_params(c, entry, &args.gas, |_c| to, calldata, true);
                 (tx, SigningPath::from(args.path.private()))
             },
+            VAULT_WORDS,
+            false,
         );
         Discloses::of(())
     }
@@ -1597,6 +1611,8 @@ impl Vault {
                 let tx = tx_params(c, entry, &args.gas, |_c| to, calldata, true);
                 (tx, SigningPath::vault_path(c).private())
             },
+            VAULT_WORDS,
+            true,
         );
         Discloses::of(())
     }
@@ -1748,6 +1764,8 @@ impl Vault {
                 );
                 (tx, SigningPath::vault_path(c).private())
             },
+            SWAP_WORDS,
+            true,
         );
         Discloses::of(())
     }
@@ -1884,6 +1902,8 @@ impl Vault {
                 );
                 (tx, SigningPath::vault_path(c).private())
             },
+            SUPPLY_WORDS,
+            true,
         );
         Discloses::of(())
     }
@@ -2016,6 +2036,8 @@ impl Vault {
                 );
                 (tx, SigningPath::vault_path(c).private())
             },
+            REDEEM_WORDS,
+            true,
         );
         Discloses::of(())
     }
