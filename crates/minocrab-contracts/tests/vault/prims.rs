@@ -136,6 +136,12 @@ pub fn vault_color(erc20: &[u8; 20], self_addr: &[u8; 32]) -> [u8; 32] {
     fab_sha256(vec![atom(32), atom(32), atom(32)], &[t_hi, t_lo, d_hi, d_lo, s_hi, s_lo])
 }
 
+/// The `fff3421c` request id the Pending lineage's V2 records keep: Poseidon
+/// over the WHOLE record's FAB limbs in slot order, upgraded.
+pub fn request_id_of(limbs: &[Fr]) -> [u8; 32] {
+    transient_upgrade(limbs)
+}
+
 /// `calculateEvmType2TxParamsDigestV1(txParams)` for an empty access list:
 /// the tagged head over the scalar fields and the calldata's presence,
 /// selector and word count, then each used word chained on.

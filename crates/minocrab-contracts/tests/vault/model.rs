@@ -2096,3 +2096,37 @@ impl CompleteScenario {
         self.sent.attested_state(&self.attestation.record(&self.sent.request_id()))
     }
 }
+
+// ---- the scenario interface ----------------------------------------------------------------
+
+/// What every scenario offers the suites: its op stream, the pre-state the
+/// stream is valid against, and the preimage the two imply.
+pub trait Scenario {
+    fn ops(&self) -> Vec<VmOp>;
+    fn pre_state(&self) -> PreState;
+    fn preimage(&self) -> ProofPreimage;
+    /// The contract's own address, for the executor.
+    fn self_addr(&self) -> [u8; 32];
+}
+
+macro_rules! scenario {
+    ($($ty:ty => $($env:ident).+),* $(,)?) => {$(
+        impl Scenario for $ty {
+            fn ops(&self) -> Vec<VmOp> { <$ty>::ops(self) }
+            fn pre_state(&self) -> PreState { <$ty>::pre_state(self) }
+            fn preimage(&self) -> ProofPreimage { <$ty>::preimage(self) }
+            fn self_addr(&self) -> [u8; 32] { self.$($env).+.self_addr }
+        }
+    )*};
+}
+
+scenario! {
+    InitialiseScenario => env,
+    SetGasParamsScenario => env,
+    AddAllowedTokenScenario => env,
+    StartScenario => sent.env,
+    SendScenario => sent.env,
+    QueueAttestationScenario => sent.env,
+    FlushScenario => env,
+    CompleteScenario => sent.env,
+}

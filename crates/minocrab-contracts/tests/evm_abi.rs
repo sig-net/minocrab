@@ -30,9 +30,11 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Fr, Private};
 use minocrab_contracts::erc20_vault::{
-    APPROVE_SELECTOR, DEPOSIT_SELECTOR, ERC20_CALL_GAS, EXACT_OUTPUT_SINGLE_SELECTOR,
-    FIXED_MAX_FEE, FIXED_PRIORITY_FEE, REDEEM_SELECTOR, TRANSFER_SELECTOR,
+    APPROVE_SELECTOR, DEPOSIT_SELECTOR, EXACT_OUTPUT_SINGLE_SELECTOR, REDEEM_SELECTOR,
+    TRANSFER_SELECTOR,
 };
+use minocrab_contracts::evm::erc20::CALL_GAS as ERC20_CALL_GAS;
+use minocrab_contracts::evm::{FIXED_MAX_FEE, FIXED_PRIORITY_FEE};
 use minocrab_contracts::evm::{
     always, build_tx, build_tx_filed, build_tx_payable, erc20, erc4626, uniswap_v3, usdt, weth,
     AbiArg, AbiTuple, AbiType, Address, Bool, Bytes32, EvmCall, Extends, Filing, Interface,

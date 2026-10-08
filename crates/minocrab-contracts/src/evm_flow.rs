@@ -522,6 +522,11 @@ use crate::signet_flow::{
     file_request, Attested, EvmTx, Outcome, RequestIdSettled, SignRequest, Signet,
 };
 
+/// The refund commitment's domain pad, `pad(32, "vault:refund:")` — the
+/// seventeen-circuit vault's `refundCommitment` tag, which `Owned` keeps
+/// (the flush-pattern vault has no refund commitment: M44).
+pub const REFUND_PAD: &str = "vault:refund:";
+
 /// THE MPC'S FAILURE KIND — byte 0 of the fixed output it attests when a
 /// request reverted, never mined, or came back undecodable
 /// (spec/borsh-subset.md §5, kind 3).
@@ -754,7 +759,7 @@ pub trait CommitTag {
 pub struct OwnerTag;
 
 impl CommitTag for OwnerTag {
-    const PAD: &'static str = "vault:refund:";
+    const PAD: &'static str = REFUND_PAD;
 }
 
 /// A commitment to a private value, stored in an environment and OPENED on

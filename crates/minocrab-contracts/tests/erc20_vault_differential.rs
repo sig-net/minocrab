@@ -34,6 +34,18 @@ fn matches(circuit: Circuit, pi: &ProofPreimage) {
     assert_call_compatible(&circuit.ir(), circuit.corpus(), pi);
 }
 
+/// [`matches`], and the model's op stream REPLAYED through Midnight's
+/// reference VM against the scenario's pre-state: every `popeq` the model
+/// claims is checked against a real state tree, so the pre-state the
+/// differential pins is real rather than asserted.
+fn check<S: Scenario>(circuit: Circuit, s: &S) {
+    let pre = s.pre_state();
+    let ops = s.ops();
+    vault::exec::run(&pre, &s.self_addr(), &ops)
+        .unwrap_or_else(|e| panic!("{}: the reference VM rejects the model's run: {e}", circuit.zkir_name()));
+    matches(circuit, &s.preimage());
+}
+
 fn ours(circuit: Circuit) -> IrSource {
     circuit.ir()
 }
@@ -46,7 +58,7 @@ fn sweep(circuit: Circuit, pi: &ProofPreimage) {
 
 #[test]
 fn initialise_matches_corpus() {
-    matches(Circuit::Initialise, &InitialiseScenario::new().preimage());
+    check(Circuit::Initialise, &InitialiseScenario::new());
 }
 
 #[test]
@@ -85,7 +97,7 @@ fn initialise_rejects_tampering() {
 
 #[test]
 fn set_gas_params_matches_corpus() {
-    matches(Circuit::SetGasParams, &SetGasParamsScenario::new().preimage());
+    check(Circuit::SetGasParams, &SetGasParamsScenario::new());
 }
 
 #[test]
@@ -121,7 +133,7 @@ fn set_gas_params_rejects_tampering() {
 
 #[test]
 fn add_allowed_token_matches_corpus() {
-    matches(Circuit::AddAllowedToken, &AddAllowedTokenScenario::new().preimage());
+    check(Circuit::AddAllowedToken, &AddAllowedTokenScenario::new());
 }
 
 #[test]
@@ -143,40 +155,48 @@ fn add_allowed_token_rejects_tampering() {
 
 #[test]
 fn flush_queue_matches_corpus() {
-    matches(Circuit::FlushQueue, &FlushScenario::new().preimage());
+    check(Circuit::FlushQueue, &FlushScenario::new());
 }
 
 #[test]
 fn flush_queue_empty_matches_corpus() {
     let mut s = FlushScenario::new();
     s.slots = vec![Slot::Empty; minocrab_contracts::erc20_vault::FLUSH_SLOTS];
-    matches(Circuit::FlushQueue, &s.preimage());
+    check(Circuit::FlushQueue, &s);
+}
+
+/// A sent request distinct from the canonical one: another index, another
+/// nonce, so another flushed index and another request id.
+fn distinct(mut s: Sent, salt: u64) -> Sent {
+    s.in_index += salt;
+    s.evm_nonce += salt;
+    s
 }
 
 #[test]
 fn flush_queue_every_action_matches_corpus() {
     // Five vault-signed requests take five consecutive nonces, a deposit
     // keeps the caller's, and three attestations fold their heights in
-    // (one of them lower than the running globalLastSeen).
+    // (one of them lower than the running globalLastSeen). The attestation
+    // slots' requests are SENT ones at other nonces, so their flushed
+    // indices do not collide with the request slots' (the reference VM
+    // caught the collision when they were the same canonical requests).
     let mut s = FlushScenario::new();
     let mut low = Attestation::failed();
     low.block_height = 1;
     s.slots = vec![
         Slot::Request(Sent::withdraw()),
         Slot::Request(Sent::swap()),
-        Slot::Attestation(Sent::supply(), Attestation::executed_u256(40_000)),
+        Slot::Attestation(distinct(Sent::supply(), 100), Attestation::executed_u256(40_000)),
         Slot::Request(Sent::supply()),
         Slot::Request(Sent::redeem()),
         Slot::Request(Sent::approve_router()),
         Slot::Request(Sent::deposit()),
-        Slot::Attestation(Sent::withdraw(), Attestation::executed_bool(true)),
-        Slot::Attestation(Sent::redeem(), low),
+        Slot::Attestation(distinct(Sent::withdraw(), 200), Attestation::executed_bool(true)),
+        Slot::Attestation(distinct(Sent::redeem(), 300), low),
         Slot::Empty,
     ];
-    // The two attestation slots' requests need distinct ids from the request
-    // slots' entries: they are the same canonical requests, SENT, while the
-    // request slots are QUEUED — different maps, no collision.
-    matches(Circuit::FlushQueue, &s.preimage());
+    check(Circuit::FlushQueue, &s);
 }
 
 #[test]
@@ -187,28 +207,28 @@ fn flush_queue_rejects_tampering() {
 #[test]
 fn queue_attestation0_matches_corpus() {
     let s = QueueAttestationScenario::of(Sent::withdraw(), Attestation::failed());
-    matches(Circuit::QueueAttestation0, &s.preimage());
+    check(Circuit::QueueAttestation0, &s);
     let s = QueueAttestationScenario::of(Sent::approve_router(), Attestation::unviable());
-    matches(Circuit::QueueAttestation0, &s.preimage());
+    check(Circuit::QueueAttestation0, &s);
     let replaced = Sent::withdraw();
     let s = QueueAttestationScenario::of(Sent::replace_nonce(&replaced), Attestation::executed_empty());
-    matches(Circuit::QueueAttestation0, &s.preimage());
+    check(Circuit::QueueAttestation0, &s);
 }
 
 #[test]
 fn queue_attestation1_matches_corpus() {
     let s = QueueAttestationScenario::of(Sent::deposit(), Attestation::executed_bool(true));
-    matches(Circuit::QueueAttestation1, &s.preimage());
+    check(Circuit::QueueAttestation1, &s);
     let s = QueueAttestationScenario::of(Sent::withdraw(), Attestation::executed_bool(false));
-    matches(Circuit::QueueAttestation1, &s.preimage());
+    check(Circuit::QueueAttestation1, &s);
 }
 
 #[test]
 fn queue_attestation32_matches_corpus() {
     let s = QueueAttestationScenario::of(Sent::swap(), Attestation::executed_u256(5_500));
-    matches(Circuit::QueueAttestation32, &s.preimage());
+    check(Circuit::QueueAttestation32, &s);
     let s = QueueAttestationScenario::of(Sent::supply(), Attestation::executed_u256(41_000));
-    matches(Circuit::QueueAttestation32, &s.preimage());
+    check(Circuit::QueueAttestation32, &s);
 }
 
 #[test]
@@ -270,7 +290,7 @@ fn start_guard_failures(circuit: Circuit, fresh: fn() -> StartScenario) {
 
 #[test]
 fn start_deposit_matches_corpus() {
-    matches(Circuit::StartDeposit, &StartScenario::deposit().preimage());
+    check(Circuit::StartDeposit, &StartScenario::deposit());
 }
 
 #[test]
@@ -300,7 +320,7 @@ fn start_deposit_rejects_tampering() {
 
 #[test]
 fn start_withdraw_matches_corpus() {
-    matches(Circuit::StartWithdraw, &StartScenario::withdraw().preimage());
+    check(Circuit::StartWithdraw, &StartScenario::withdraw());
 }
 
 #[test]
@@ -328,7 +348,7 @@ fn start_withdraw_rejects_tampering() {
 
 #[test]
 fn start_swap_matches_corpus() {
-    matches(Circuit::StartSwap, &StartScenario::swap().preimage());
+    check(Circuit::StartSwap, &StartScenario::swap());
 }
 
 #[test]
@@ -351,7 +371,7 @@ fn start_swap_rejects_tampering() {
 
 #[test]
 fn start_supply_matches_corpus() {
-    matches(Circuit::StartSupply, &StartScenario::supply().preimage());
+    check(Circuit::StartSupply, &StartScenario::supply());
 }
 
 #[test]
@@ -369,7 +389,7 @@ fn start_supply_rejects_tampering() {
 
 #[test]
 fn start_redeem_matches_corpus() {
-    matches(Circuit::StartRedeem, &StartScenario::redeem().preimage());
+    check(Circuit::StartRedeem, &StartScenario::redeem());
 }
 
 #[test]
@@ -387,12 +407,12 @@ fn start_redeem_rejects_tampering() {
 
 #[test]
 fn start_approve_router_matches_corpus() {
-    matches(Circuit::StartApproveRouter, &StartScenario::approve_router().preimage());
+    check(Circuit::StartApproveRouter, &StartScenario::approve_router());
 }
 
 #[test]
 fn start_approve_stata_matches_corpus() {
-    matches(Circuit::StartApproveStata, &StartScenario::approve_stata().preimage());
+    check(Circuit::StartApproveStata, &StartScenario::approve_stata());
 }
 
 #[test]
@@ -415,19 +435,19 @@ fn start_approve_rejects_tampering() {
 
 #[test]
 fn start_replace_nonce_matches_corpus() {
-    matches(Circuit::StartReplaceNonce, &StartScenario::replace_nonce().preimage());
+    check(Circuit::StartReplaceNonce, &StartScenario::replace_nonce());
     // Every vault-signed action's map is one arm of sentVaultNonce.
     for replaced in [Sent::approve_router(), Sent::swap(), Sent::supply(), Sent::redeem()] {
         let mut s = StartScenario::of(Sent::replace_nonce(&replaced));
         s.replaced = Some(Box::new(replaced));
-        matches(Circuit::StartReplaceNonce, &s.preimage());
+        check(Circuit::StartReplaceNonce, &s);
     }
     // A replacement of a replacement.
     let first = Sent::replace_nonce(&Sent::withdraw());
     let mut s = StartScenario::of(Sent::replace_nonce(&first));
     s.sent.in_index = 0xee;
     s.replaced = Some(Box::new(first));
-    matches(Circuit::StartReplaceNonce, &s.preimage());
+    check(Circuit::StartReplaceNonce, &s);
 }
 
 #[test]
@@ -464,7 +484,7 @@ fn send_guard_failures(circuit: Circuit, sent: fn() -> Sent) {
 
 #[test]
 fn send_deposit_matches_corpus() {
-    matches(Circuit::SendDeposit, &SendScenario::of(Sent::deposit()).preimage());
+    check(Circuit::SendDeposit, &SendScenario::of(Sent::deposit()));
 }
 
 #[test]
@@ -485,7 +505,7 @@ fn send_deposit_rejects_tampering() {
 
 #[test]
 fn send_withdraw_matches_corpus() {
-    matches(Circuit::SendWithdraw, &SendScenario::of(Sent::withdraw()).preimage());
+    check(Circuit::SendWithdraw, &SendScenario::of(Sent::withdraw()));
 }
 
 #[test]
@@ -500,7 +520,7 @@ fn send_withdraw_rejects_tampering() {
 
 #[test]
 fn send_swap_matches_corpus() {
-    matches(Circuit::SendSwap, &SendScenario::of(Sent::swap()).preimage());
+    check(Circuit::SendSwap, &SendScenario::of(Sent::swap()));
 }
 
 #[test]
@@ -515,7 +535,7 @@ fn send_swap_rejects_tampering() {
 
 #[test]
 fn send_supply_matches_corpus() {
-    matches(Circuit::SendSupply, &SendScenario::of(Sent::supply()).preimage());
+    check(Circuit::SendSupply, &SendScenario::of(Sent::supply()));
 }
 
 #[test]
@@ -530,7 +550,7 @@ fn send_supply_rejects_tampering() {
 
 #[test]
 fn send_redeem_matches_corpus() {
-    matches(Circuit::SendRedeem, &SendScenario::of(Sent::redeem()).preimage());
+    check(Circuit::SendRedeem, &SendScenario::of(Sent::redeem()));
 }
 
 #[test]
@@ -545,8 +565,8 @@ fn send_redeem_rejects_tampering() {
 
 #[test]
 fn send_approve_matches_corpus() {
-    matches(Circuit::SendApprove, &SendScenario::of(Sent::approve_router()).preimage());
-    matches(Circuit::SendApprove, &SendScenario::of(Sent::approve_stata()).preimage());
+    check(Circuit::SendApprove, &SendScenario::of(Sent::approve_router()));
+    check(Circuit::SendApprove, &SendScenario::of(Sent::approve_stata()));
 }
 
 #[test]
@@ -561,7 +581,7 @@ fn send_approve_rejects_tampering() {
 
 #[test]
 fn send_replace_nonce_matches_corpus() {
-    matches(Circuit::SendReplaceNonce, &SendScenario::of(Sent::replace_nonce(&Sent::withdraw())).preimage());
+    check(Circuit::SendReplaceNonce, &SendScenario::of(Sent::replace_nonce(&Sent::withdraw())));
 }
 
 #[test]
@@ -615,22 +635,22 @@ fn complete_guard_failures(circuit: Circuit, fresh: fn() -> CompleteScenario) {
 
 #[test]
 fn complete_deposit_matches_corpus() {
-    matches(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(true)).preimage());
+    check(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(true)));
     // A transfer that returned false mints nothing.
-    matches(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(false)).preimage());
+    check(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(false)));
     // Failed and unviable close the request.
-    matches(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::failed()).preimage());
-    matches(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::unviable()).preimage());
+    check(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::failed()));
+    check(Circuit::CompleteDeposit, &CompleteScenario::of(Sent::deposit(), Attestation::unviable()));
     // The three recipient shapes.
     let mut s = CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(true));
     s.recipient = ClaimRecipient::None(s.own_pk);
-    matches(Circuit::CompleteDeposit, &s.preimage());
+    check(Circuit::CompleteDeposit, &s);
     let mut s = CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(true));
     s.recipient = ClaimRecipient::Contract(tagged32(b"other-contract", 0x77));
-    matches(Circuit::CompleteDeposit, &s.preimage());
+    check(Circuit::CompleteDeposit, &s);
     let mut s = CompleteScenario::of(Sent::deposit(), Attestation::executed_bool(true));
     s.recipient = ClaimRecipient::Contract(SELF_ADDR);
-    matches(Circuit::CompleteDeposit, &s.preimage());
+    check(Circuit::CompleteDeposit, &s);
 }
 
 #[test]
@@ -646,10 +666,10 @@ fn complete_deposit_rejects_tampering() {
 
 #[test]
 fn complete_withdraw_matches_corpus() {
-    matches(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(true)).preimage());
-    matches(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(false)).preimage());
-    matches(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::failed()).preimage());
-    matches(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::unviable()).preimage());
+    check(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(true)));
+    check(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(false)));
+    check(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::failed()));
+    check(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::unviable()));
 }
 
 #[test]
@@ -665,11 +685,11 @@ fn complete_withdraw_rejects_tampering() {
 
 #[test]
 fn complete_swap_matches_corpus() {
-    matches(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::executed_u256(5_500)).preimage());
+    check(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::executed_u256(5_500)));
     // An exact spend mints a zero-value change coin.
-    matches(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::executed_u256(6_000)).preimage());
-    matches(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::failed()).preimage());
-    matches(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::unviable()).preimage());
+    check(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::executed_u256(6_000)));
+    check(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::failed()));
+    check(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::unviable()));
 }
 
 #[test]
@@ -697,8 +717,8 @@ fn complete_swap_rejects_tampering() {
 
 #[test]
 fn complete_supply_matches_corpus() {
-    matches(Circuit::CompleteSupply, &CompleteScenario::of(Sent::supply(), Attestation::executed_u256(41_500)).preimage());
-    matches(Circuit::CompleteSupply, &CompleteScenario::of(Sent::supply(), Attestation::failed()).preimage());
+    check(Circuit::CompleteSupply, &CompleteScenario::of(Sent::supply(), Attestation::executed_u256(41_500)));
+    check(Circuit::CompleteSupply, &CompleteScenario::of(Sent::supply(), Attestation::failed()));
 }
 
 #[test]
@@ -716,8 +736,8 @@ fn complete_supply_rejects_tampering() {
 
 #[test]
 fn complete_redeem_matches_corpus() {
-    matches(Circuit::CompleteRedeem, &CompleteScenario::of(Sent::redeem(), Attestation::executed_u256(42_500)).preimage());
-    matches(Circuit::CompleteRedeem, &CompleteScenario::of(Sent::redeem(), Attestation::unviable()).preimage());
+    check(Circuit::CompleteRedeem, &CompleteScenario::of(Sent::redeem(), Attestation::executed_u256(42_500)));
+    check(Circuit::CompleteRedeem, &CompleteScenario::of(Sent::redeem(), Attestation::unviable()));
 }
 
 #[test]
@@ -732,8 +752,8 @@ fn complete_redeem_rejects_tampering() {
 
 #[test]
 fn complete_approve_matches_corpus() {
-    matches(Circuit::CompleteApprove, &CompleteScenario::of(Sent::approve_router(), Attestation::executed_bool(true)).preimage());
-    matches(Circuit::CompleteApprove, &CompleteScenario::of(Sent::approve_stata(), Attestation::failed()).preimage());
+    check(Circuit::CompleteApprove, &CompleteScenario::of(Sent::approve_router(), Attestation::executed_bool(true)));
+    check(Circuit::CompleteApprove, &CompleteScenario::of(Sent::approve_stata(), Attestation::failed()));
 }
 
 #[test]
@@ -749,8 +769,8 @@ fn complete_approve_rejects_tampering() {
 #[test]
 fn complete_replace_nonce_matches_corpus() {
     let replaced = Sent::withdraw();
-    matches(Circuit::CompleteReplaceNonce, &CompleteScenario::of(Sent::replace_nonce(&replaced), Attestation::executed_empty()).preimage());
-    matches(Circuit::CompleteReplaceNonce, &CompleteScenario::of(Sent::replace_nonce(&replaced), Attestation::unviable()).preimage());
+    check(Circuit::CompleteReplaceNonce, &CompleteScenario::of(Sent::replace_nonce(&replaced), Attestation::executed_empty()));
+    check(Circuit::CompleteReplaceNonce, &CompleteScenario::of(Sent::replace_nonce(&replaced), Attestation::unviable()));
 }
 
 #[test]

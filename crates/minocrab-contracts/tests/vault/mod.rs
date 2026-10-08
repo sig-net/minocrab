@@ -8,6 +8,7 @@
 
 pub mod artifact;
 pub mod exec;
+pub mod gen;
 pub mod model;
 pub mod ops;
 pub mod prims;
