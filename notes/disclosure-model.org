@@ -1,0 +1,157 @@
+#+title: Disclosing data to an individual: what a MinoCrab contract can and cannot promise
+
+Exploration opened 2026-10-11 at dmd's request, on branch =disclosure-explore= (worktree =~/minocrab-disclosure=), off =main= at fd16216. NOT a milestone: nothing here is on the critical path, and nothing here is load-bearing for M44. The executable half is =crates/minocrab-contracts/src/disclosure.rs= and =crates/minocrab-contracts/tests/disclosure.rs= (8 tests, green).
+
+The question as dmd put it: can a smart contract disclose data to an individual person — some encryption their key can decrypt privately — in the spirit of DAML's privacy model, not its implementation, but its ability to make sure people can see data within their purview?
+
+* 0. Driving it
+
+#+begin_src sh
+cd ~/minocrab-disclosure
+cargo test -p minocrab-contracts --test disclosure                     # the 8 gates
+cargo test -p minocrab-contracts --test disclosure -- --nocapture      # + the row table and region profile
+#+end_src
+
+Three files. =crates/minocrab-contracts/src/disclosure.rs= is the contract and the primitive; =crates/minocrab-contracts/tests/disclosure.rs= is the gates AND the native wallet (the recipient's side, in plain Rust); this note is the argument. The one dependency added is =group= as a dev-dependency, for =JubjubSubgroup::generator()=.
+
+Nothing is committed to =main= and nothing is pushed. §8 is the ordered list of what to do next; §6's last paragraph is the one deliberate soundness hole, left visible.
+
+* 1. The short answer
+
+Yes to the cryptography, no to the architecture, and the gap between those two is the whole interesting part.
+
+A MinoCrab contract can, today, with primitives already in the eDSL, compute in-circuit a ciphertext that only the holder of a named Jubjub secret key can open, and PROVE that the ciphertext is a well-formed encryption of the very value the circuit committed to elsewhere, addressed to the very key the ledger has registered for that account. The recipient opens it with no proof, no circuit and no transaction — one scalar multiplication and two SHA-256s over a ledger read. =tests/disclosure.rs::the_recipient_recovers_the_value_and_nobody_else_does= is that claim, executed: the wallet side is native Rust against Midnight's own off-circuit helpers, so the two implementations agree about Midnight rather than about each other.
+
+What cannot be had is the part of DAML's model that is not cryptographic at all. DAML hides data by NOT TRANSMITTING IT. Midnight hides data by transmitting ciphertext to everyone, permanently. Those are different enough that four of DAML's guarantees do not survive the translation, and one of them (§3, forward secrecy) is strictly worse here than a comment about "encryption" would suggest.
+
+* 2. What DAML actually gives you, and which half of it is crypto
+
+Stated from knowledge, NOT verified against a Canton source tree — dmd should correct anything here before it is quoted outward.
+
+A DAML template names =signatory= and =observer= parties; their union is the contract's stakeholders. A choice names =controller= parties. The ledger model says a party learns about exactly the contracts it is a stakeholder of, plus what it is divulged by being an informee of a transaction that used some other contract. Canton implements this by splitting a transaction into VIEWS and delivering each view only to its informees; a participant that is not an informee of a view receives a blinded hash, not a payload. There is encryption in there — view payloads go through the sequencer encrypted to the informee participants — but the sequencer is an operated service with retention policy, not a permanent public replicated log, and a non-informee never holds the key and never holds the blob either.
+
+So DAML's privacy decomposes into four separate promises, and they are worth separating because they translate differently:
+
+1. CONFIDENTIALITY. A non-stakeholder cannot read the payload. Cryptographic, and it translates.
+2. METADATA PRIVACY. A non-stakeholder cannot see that the contract exists, who its stakeholders are, or how many there are. Architectural. Does not translate; see §4.
+3. EXCLUSIVITY. The set of parties who can read is exactly the stakeholder set. Architectural, and unprovable here; see §6.
+4. AUTHORITY. Only signatories can create, only controllers can exercise. Translates, in a different shape; see §6.
+
+Plus one thing DAML does NOT give that Midnight gives for free: every reader sees the same ledger, so there is no projection-consistency question at all.
+
+* 3. The row table
+
+| DAML guarantee                                  | here                                                        | verdict                   |
+|-------------------------------------------------+-------------------------------------------------------------+---------------------------|
+| stakeholder reads the payload                   | ECDH memo to a registered Jubjub key, opened natively       | works, tested             |
+| payload bound to what the transaction committed | the ciphertext is computed in-circuit from the same wire    | works, and BETTER         |
+| non-stakeholder cannot read it                  | IND-CPA under ODH, 2^-120 hiding slack at =Uint<128>=       | works, cryptographic      |
+| only signatories can create                     | assert a signature or knowledge of a secret in-circuit      | expressible, not a primitive |
+| all stakeholders see the same thing             | one global ledger                                           | free                      |
+| non-stakeholder cannot see the contract EXISTS  | every memo is a public ledger row                           | NO                        |
+| non-stakeholder cannot see WHO the parties are  | the registry read publishes the recipient (§4)              | mitigable, not free       |
+| exactly the stakeholders can read               | the sender may encrypt to extra keys; non-disclosure is unprovable | NO, fundamentally  |
+| recipient is guaranteed to receive it           | well-formedness is provable, delivery and liveness are not  | NO                        |
+| a key compromise in 2031 reveals nothing from 2026 | every ciphertext is permanently public                   | NO, and WORSE than DAML   |
+
+The last row deserves its own paragraph because it is the one a reader is most likely to get wrong. In Canton, a participant that was never an informee never held the blob; compromising its keys years later yields nothing about transactions it was not party to. Here, the ciphertext is in permanent public chain state, so a leaked =ek= retroactively opens every memo ever addressed to it, and an adversary can harvest now and decrypt later — including after a cryptographically relevant quantum computer, since Jubjub ECDH is not post-quantum. Key rotation per epoch limits the blast radius of a future compromise but does not help the harvested past, and the recipient must keep old keys to re-read their own history, so there is no forward secrecy to be had without giving up readability. THE HONEST CLAIM IS CONFIDENTIALITY, NOT FORWARD SECRECY.
+
+* 4. What the ledger publishes, and the three ways to publish less
+
+As built:
+
+#+begin_src text
+export ledger keys:  Map<Bytes<32>, (Field, Field)>;  // account -> encode(pk)
+export ledger memos: List<(Field, Field, Field)>;     // encode(E) ‖ ct
+#+end_src
+
+=memos= is ONE global append-only list, deliberately, not a per-recipient =Map<account, List<..>>= as OpenZeppelin's confidential token uses. A per-recipient map publishes who received a disclosure and how many and when — exactly the metadata DAML's view projection withholds. A single list publishes only that a disclosure happened, and costs the recipient a trial-decryption scan: one =ec_mul= and two SHA-256s per memo, off-chain. That is the Zcash model and it scales to millions of memos per scan only with Zcash's own trick, a one-byte VIEW TAG published in the clear, cutting 255/256 of the work at the price of bucketing recipients 256 ways.
+
+The leak that remains, and it is a real one: =disclose_to= reads =keys[account]= to bind the supplied point to the registered one, and A MAP LOOKUP'S KEY IS AN IMPACT OPERAND. There is no private map read in Impact — the key goes into the public transcript. So the circuit publishes which account is being disclosed to, and the typed declaration says so (=RegisteredAccount=). Three ways out, none free:
+
+1. DROP THE REGISTRY READ. Have the sender witness the recipient's key instead of reading it. The recipient disappears from the transcript, and so does the binding: nothing then stops a sender from addressing a memo to themselves and calling it a disclosure to Alice. Trades guarantee (3) for guarantee (2).
+2. ONE-TIME ADDRESSES. Derive a per-call recipient key from a shared secret and a diversifier, so no stored key is ever read and no two memos to the same person look related. This is Sapling/Orchard, and it is the real answer; it costs another curve operation and a scanning protocol.
+3. COMMIT ON-CHAIN, DELIVER OFF-CHAIN. Publish only a commitment to the value and hand the opening to the recipient over any channel. Cheapest, leaks least, and no permanent ciphertext to harvest — which makes it the design CLOSEST to DAML, since DAML also does not put payloads in a shared log. The on-chain part proves consistency; delivery is somebody else's problem, as it is in Canton.
+
+(3) is underrated and should be the baseline anyone compares against. The reason to do (1) or (2) instead is that they need no off-chain channel at all.
+
+* 5. The sharpest edge: =e= must be fresh AND secret
+
+=mask = KDF(pk^e)= is a ONE-TIME PAD KEY, and it has two preconditions the circuit cannot check.
+
+UNIQUE. A repeated =e= to the same recipient repeats the mask, and subtracting the two ciphertexts recovers both plaintexts.
+
+SECRET. =pk= is public. Anyone who learns =e= recomputes =S = pk^e=, hence the mask, and opens the ciphertext. So a unique but PREDICTABLE =e= — a counter, a block height, a public nonce — breaks confidentiality completely, for every memo, retroactively. This is strictly stronger than exponential ElGamal's requirement, where reuse merely leaks plaintext equality.
+
+A circuit sees a field element. It cannot tell a high-entropy witness from =block_height + 1=. =ephemeral_scalar= expands a =Bytes<32>= seed with a tag, which gives uniqueness across siblings in one call for free, and gives nothing at all about entropy or secrecy. THE SEED MUST BE A WITNESS THE SENDER'S WALLET GENERATES FROM A CSPRNG AND NEVER PUBLISHES. If an exploration of this ever reaches a real deployment, this is the line to put in front of a reviewer first, because it is the one where a plausible-looking implementation is completely broken and every test still passes.
+
+* 6. What the circuit proves, versus what it merely does
+
+PROVES: the memo is a well-formed hashed-ElGamal encryption, under a non-degenerate ephemeral key, of a value the circuit range-constrained to 128 bits, to the public key the ledger has registered for the named account. A sender cannot address a memo to a key of their choosing and have it counted as a disclosure to that account — =a_memo_cannot_be_addressed_to_an_unregistered_key= is that, failing on the binding's =constrain_eq=.
+
+MERELY DOES: delivery. Nothing makes the recipient's wallet scan, nothing makes the sender's transaction land, and a recipient who loses their key loses their history. DAML's model has an operator and a protocol behind delivery; a ZK contract has neither.
+
+CANNOT DO AT ALL: exclusivity. The sender can encrypt the same value to a second key in the same transaction or a later one, and no proof system can establish that they did not — non-disclosure is not a statement about the transcript. If exclusivity matters, it has to come from the sender being the only party who could know the value (a commitment they alone opened), not from the disclosure mechanism.
+
+AUTHORITY, which is DAML's other half: expressible, and this repo already has the pieces. A =controller= is "assert, in-circuit, that the caller holds a secret / produced a signature" — =secp256k1_ecdsa_verify= and =own_public_key= are both in =minocrab-std=. What is missing versus DAML is that authority there is a LEDGER-MODEL concept checked uniformly, and here it is an assertion each circuit has to remember to write. That asymmetry is worth a note of its own if the exploration continues.
+
+ONE SOUNDNESS HOLE LEFT OPEN ON PURPOSE: =register= does not prove possession of =ek=. Whoever registers an account first owns it, and can register a key they do not control, or register someone else's account under their own key — after which "disclosures to Alice" go to them. The fix is cheap and is rung 1 in §8: witness =ek=, assert =ec_mul_generator(ek) == pk=. It is left undone so the hole is visible rather than papered over.
+
+* 7. Cost, measured
+
+=tests/disclosure.rs::the_row_and_k_table=, this worktree, 2026-10-11:
+
+| circuit    |  k |  rows |
+|------------+----+-------|
+| register   |  8 |   157 |
+| discloseTo | 14 | 12796 |
+
+Region attribution of =discloseTo=: 64.7% =ecdh derive shared= (~8049 rows — the two unavoidable scalar multiplications, =E = g^e= and =S = pk^e=, at roughly 4k each), 31.9% top level (the Impact ops, the =Uint<128>= range constraint, the registry binding), 3.2% randomness expansion, and the two SHA-256 hashes essentially free. SO A DISCLOSURE IS A CURVE COST, NOT A HASH COST, which is the opposite of most circuits in this repo.
+
+=the_marginal_cost_of_an_extra_recipient= measures the marginal recipient at 8290 rows. That is TWO curve operations, because =encrypt= recomputes =E = g^e= per recipient; one ephemeral can serve all of them (=E= once, then =S_i = pk_i^e=), so a multi-recipient primitive would pay about half. It is deliberately not written that way yet — hoisting the ephemeral out of =derive_shared= puts it outside the guarded primitive, which is exactly the factoring mistake §9 is about.
+
+The number that matters for the DAML comparison: AN OBSERVER IS FREE IN DAML AND COSTS ~4–8k ROWS HERE. A contract with a handful of auditors is fine; one with a stakeholder list that grows with its users is not, and would want a different shape entirely (a shared key the contract rotates, or (3) from §4).
+
+* 8. The rungs, in order
+
+1. PROOF OF KEY POSSESSION AT =register=. Witness =ek=, assert =ec_mul_generator(ek) == pk=. One curve operation and two =test_eq=. Closes §6's open hole; without it "their key" does not mean anything.
+2. A VIEW TAG. One clear byte of the KDF output per memo, cutting the recipient's scan by 255/256. Costs nothing in-circuit and buckets recipients 256 ways; the trade is worth writing down before choosing.
+3. ONE-TIME ADDRESSES. §4's option (2) — the real fix for recipient privacy, and the biggest single piece of work here.
+4. A MULTI-RECIPIENT PRIMITIVE that hoists the ephemeral while keeping the weak-input guards inside the only function that can produce a shared secret. §7's factor of two, done without reintroducing §9's mistake.
+5. =fieldKdf=, if anything ever needs to disclose a value wider than =Uint<128>= — a record, a hash, a commitment. RFC 9380 =hash_to_field= with an MGF1 expander. §9 says why this is not optional.
+6. WIDER PAYLOADS. Either n field pads (cheap, n more =add=s, same DH) or a witness-side AEAD with an in-circuit commitment binding it (very cheap in rows, and the binding is what keeps it honest). The corpus has precedent for the latter: =zerocash= declares =witness context$encrypt(pk: Opaque<"Uint8Array">)= with =ledger ciphertexts: List<Opaque<"Uint8Array">>= (notes/opaque-bridging.org §1). THE CATCH, and it is the whole reason the in-circuit path exists: a witness-side ciphertext is NOT bound to the value the circuit committed to, so a malicious sender can publish garbage and the proof still verifies — a stakeholder can be denied their view, silently.
+7. AUTHORITY AS A LIBRARY SHAPE rather than a per-circuit assertion, if the DAML comparison is to go anywhere.
+
+* 9. Upstream is fixing two things, and we should not re-make either
+
+Both are OPEN PRs on =OpenZeppelin/compact-contracts=, read 2026-10-11, neither merged — so the vendored corpus copy AND upstream =main= still have both.
+
+** #1110, "derive ElGamal's mask through Ecdh" (3/3)
+
+=EcdhMask.encrypt= and =ElGamal.encryptPoint= each carried their own Diffie-Hellman step and their own copy of the two weak-input guards, so the guards could drift apart. The fix routes both through one =Ecdh.deriveShared=.
+
+=disclosure.rs= takes the lesson further than Compact can. =derive_shared= is the only DH, and it returns a =SharedSecret= whose inner field is private to the module, so there is NO WAY to obtain a shared secret without passing the guards — a second encryption path would have nothing to hand =kdf=. In Compact the factoring is a convention a contributor can bypass by writing their own =ecMul=, which is precisely how the duplication arose; here it is a type error. This is the =compile errors over panics= rule applied to a cryptographic invariant, and it is a nice datapoint for TRUST.md.
+
+** #913, "hash to field and a uniform EcdhMask pad" (2/3) — the one that is a real leak
+
+=ct = m + kdf(S)= with =kdf(S) < 2^248= NEVER WRAPS. So a plaintext that reaches bit 248 publishes its top bits in the clear, and not statistically — TOTALLY. =mask < 2^248= cannot carry into bit 248, so bit 248 of the ciphertext IS bit 248 of the plaintext, for every pad, from a single observation. =the_248_bit_pad_cannot_hide_a_wide_value= demonstrates exactly that over 32 real KDF outputs, and demonstrates the other side too: at =Uint<128>= the same observation determines nothing, because bit 248 of the plaintext is zero whatever it is.
+
+OZ's own =encrypt= is safe — its =value= is a =Uint<128>=, hidden with ~2^-120 slack — but the module is described as masking "a single field element" and its =decrypt= returns a =Field=, which invites a field-sized plaintext into a pad that cannot hide one. Their fix is =fieldKdf=.
+
+WHERE WE STAND: safe by the TYPE and not by the comment. =encrypt= takes =Uint<128>=, range-constrained in-circuit, and there is deliberately no =encrypt_field= to reach for. That is the whole mitigation, and it is why rung 5 is a prerequisite for rung 6 rather than a nice-to-have.
+
+* 10. MinoCrab-specific findings, collected
+
+(a) A =JubjubPoint= is =Cell=-ONLY in a ledger slot. Its limbs come out of an =encode= instruction and ZKIR has no in-circuit inverse, so =LedgerRepr::from_limbs= cannot rebuild one and =LedgerMap<_, JubjubPoint>= does not exist. The way round is to store the two =encode= limbs as plain fields (=PointLimbs=), have the sender supply the typed point as an argument, and bind the two. Off-circuit =decode_offcircuit= reverses it, which is all a wallet needs. This is why OZ's =Map<Bytes<32>, List<EcdhMask_Ciphertext>>= has no direct translation.
+
+(b) THE VENDORED OZ CRYPTO MODULES DO NOT COMPILE under the pinned compactc, and our note on that was wrong until it was checked. =corpus/compile-report.tsv=: =EcdhMask.compact line 148 char 22: no compatible function named ecMulGenerator is in scope … supplied (Field), declared (JubjubScalar)=. The vendored rev (5f3ecd4, v0.3.0-alpha.2) passes a =Field=; compactc 0.34.0 wants a =JubjubScalar=. Upstream =main= (v0.4.0-alpha.6) has since changed the signature, so this is OUR CORPUS BEING STALE, not upstream being broken. Worth a =corpus/update.sh= run. Consequence for us: there is no compiled artifact, so no differential — the native wallet in the test suite is the oracle instead, and it is arguably a better one, being a different implementation path rather than the same compiler twice.
+
+(c) ZKIR HAS =jubjub_scalar_from_native=, which REDUCES mod ℓ. Compact does not expose it, which is why OZ reaches for =degradeToTransient(persistentHash(..))= — truncate to 248 bits, which is under ℓ, so always in range. =ephemeral_scalar= keeps the truncation in front of the reduction so a seed yields bit-for-bit the same scalar OZ's module yields, and the reduction makes range-correctness stop depending on 248 happening to be below ℓ.
+
+(d) POINT EQUALITY must go through =encode= and two =test_eq=. =test_eq= is a field-and-=Bytes<32>= instruction; a point is neither.
+
+(e) THE JUBJUB IDENTITY IS AFFINE =(0, 1)=, so the weak-input guard can compare against two immediates instead of spending =ecMulGenerator(0)= on a compile-time-known value as Compact must. Measured saving 657 rows (13453 → 12796), k unchanged at 14 — less than a general scalar multiplication, because the cost model already knew the operand was zero. Pinned by =the_identity_point_encodes_to_zero_one=, so the constant is a test and not a belief.
+
+(f) THE NATIVE PER-RECIPIENT CHANNEL EXISTS AND A CONTRACT MAY NOT USE IT. A zswap =Output= carries =ciphertext: Option<Sp<CoinCiphertext>>=, built as =CoinCiphertext::new(rng, coin, epk)= to the recipient's encryption key — Midnight already has a per-recipient encrypted channel in consensus. But =MalformedOffer::ContractSentCiphertext= ("contract was sent an output with a ciphertext") makes a contract-addressed output carrying one MALFORMED, and the payload is a =CoinInfo= regardless, not arbitrary data. So the chain's own channel is user-to-user value transfer only, and a contract wanting to disclose to a person has to build §1's path. This is the single most useful thing to know before starting.
+
+(g) =PointLimbs::disclose_as= produces TWO disclosure records under one label, not one record of two wires, because =disclose= is per-wire. Anything reading =Compiled3::disclosures= by label has to collect all matching records. Cost a debugging round in =tests/disclosure.rs=; worth knowing for any multi-wire typed disclosure.
