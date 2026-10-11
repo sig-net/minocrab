@@ -1642,7 +1642,7 @@ impl<V: Vis3, const N: usize> BytesN<V, N> {
     /// order (byte 0 first), packed into FAB slot order.
     pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
         assert_eq!(bytes.len(), N, "Bytes<{N}> literal length");
-        Self::from_limbs(literal_limbs(c, bytes))
+        Self::from_limbs(bytes_literal_limbs(c, bytes))
     }
 
     /// Constrain a `Bytes<N>` entering the circuit (8·leftover bits, then
@@ -1719,7 +1719,7 @@ impl<V: Vis3> BytesNDyn<V> {
     /// order (byte 0 first), packed into FAB slot order; `len` is the
     /// literal's own length.
     pub fn literal(c: &mut Circuit3, bytes: &[u8]) -> BytesNDyn<V> {
-        BytesNDyn::new(bytes.len(), literal_limbs(c, bytes))
+        BytesNDyn::new(bytes.len(), bytes_literal_limbs(c, bytes))
     }
 
     /// Constrain a `Bytes<len>` entering the circuit (8·leftover bits,
@@ -1733,7 +1733,12 @@ impl<V: Vis3> BytesNDyn<V> {
 
 /// The constant limbs of a byte-string literal (byte 0 first in), FAB slot
 /// order out.
-fn literal_limbs<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Vec<Wire3<FieldT, V>> {
+///
+/// Public because the limbing rule has to live in ONE place and a
+/// `Bytes<N>`-shaped type outside this module needs it: the Signet record's
+/// output-deserialization schema is a byte literal of any width at all
+/// (`signet_v1::SchemaLiteral`), below and above the 31-byte limb.
+pub fn bytes_literal_limbs<V: Vis3>(c: &mut Circuit3, bytes: &[u8]) -> Vec<Wire3<FieldT, V>> {
     let mut limbs: Vec<Wire3<FieldT, V>> = bytes
         .chunks(31)
         .map(|chunk| V::from_public(c.constant(Fr::from_le_bytes(chunk).expect("≤31 bytes fit"))))

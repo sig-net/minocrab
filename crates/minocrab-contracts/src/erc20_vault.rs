@@ -1157,12 +1157,18 @@ impl Vault {
     /// RespondBidirectionalEventV1, serializedOutput: Bytes<0>): []` — a
     /// verified attestation with an EMPTY output (a failed or unviable
     /// execution, or an executed nonce replacement), queued for the flush.
+    ///
+    /// IT DISCLOSES NO OUTPUT, and says so: at `LEN = 0` the limb vector is
+    /// empty, so `queue_attestation`'s `disclose_as::<SerializedOutput>`
+    /// discloses nothing at all. Declaring the label anyway would claim an
+    /// audit surface this circuit does not have — the width-1 and width-32
+    /// twins below are where it is real.
     #[circuit]
     pub fn queue_attestation0(
         c: &mut Circuit3,
         #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEvent<Private>,
         serialized_output: Bytes0,
-    ) -> Discloses<(Attestation, SerializedOutput)> {
+    ) -> Discloses<(Attestation,)> {
         let _ = serialized_output;
         queue_attestation::<0>(c, &event, &[]);
         Discloses::of(())

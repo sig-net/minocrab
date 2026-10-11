@@ -43,7 +43,10 @@
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public};
 use minocrab_std::v3::hash::upgrade_from_transient;
-use minocrab_std::v3::{BoundedUint, Bytes, BytesN, ContractAddress, LedgerRepr, Uint, Vis3, B32};
+use minocrab_std::v3::{
+    bytes_limbs, bytes_literal_limbs, BoundedUint, Bytes, BytesN, ContractAddress, LedgerRepr,
+    Uint, Vis3, B32,
+};
 use signet_signer_interface::RespondBidirectionalEvent;
 
 use crate::common::{Caip2Id, SigningPath};
@@ -150,6 +153,126 @@ impl<V: Vis3, const N: usize> SchemaBytes<V> for BytesN<V, N> {
 
     fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
         BytesN::from_limbs(limbs)
+    }
+}
+
+/// A SCHEMA LITERAL OF ANY WIDTH — one FAB atom of `N` bytes, `bytes_limbs(N)`
+/// limbs, whatever `N` is.
+///
+/// The compat port picks [`Bytes`] below 31 bytes and [`BytesN`] above it by
+/// hand, because each of its five records names its own schema once. The
+/// TYPED API cannot: a [`OutputSchema`] is declared from a byte string by a
+/// macro, which has no way to branch a type on `BYTES.len()`. So this type
+/// spans both sides of the limb boundary and the branch disappears. The
+/// limbing rule itself is still `minocrab_std`'s one copy
+/// ([`bytes_literal_limbs`]), so a `SchemaLiteral<V, 34>` and a
+/// `BytesN<V, 34>` are the same limbs under the same atom — the typed API's
+/// records are byte-identical to the compat port's.
+#[derive(Clone)]
+pub struct SchemaLiteral<V: Vis3, const N: usize> {
+    /// Invariant: `limbs.len() == bytes_limbs(N)`, leftover chunk first.
+    limbs: Vec<Wire3<FieldT, V>>,
+}
+
+impl<V: Vis3, const N: usize> SchemaBytes<V> for SchemaLiteral<V, N> {
+    const LEN: usize = N;
+    const LIMBS: usize = bytes_limbs(N);
+
+    fn limbs(&self) -> Vec<Wire3<FieldT, V>> {
+        self.limbs.clone()
+    }
+
+    fn literal(c: &mut Circuit3, bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), N, "a Bytes<{N}> schema literal is {N} bytes");
+        SchemaLiteral {
+            limbs: bytes_literal_limbs(c, bytes),
+        }
+    }
+
+    fn from_limbs(limbs: Vec<Wire3<FieldT, V>>) -> Self {
+        assert_eq!(limbs.len(), Self::LIMBS, "a Bytes<{N}> schema is {} limbs", Self::LIMBS);
+        SchemaLiteral { limbs }
+    }
+}
+
+/// THE OUTPUT SCHEMA A SLOT FILES, AS A TYPE — the record's
+/// `outputDeserializationSchema`, which is what tells the MPC how to decode
+/// the EVM return before it attests it.
+///
+/// Two things, together, because a schema is used at both visibilities and
+/// in both places: the BYTES (the record's literal, and the `LEN` the MPC
+/// parses) and the circuit TYPE at a visibility (the record field, private
+/// while the request is assembled and public once it is stored). A generic
+/// associated type is what lets one name serve both — `S::At<Private>` in
+/// the event, `S::At<Public>` in [`EventRecordV1`] — so a filing names its
+/// schema ONCE and cannot name two different ones on the two sides.
+///
+/// Declare one with [`output_schema!`](crate::output_schema); the library's
+/// own five are [`schema`].
+pub trait OutputSchema: 'static {
+    /// The schema as a record field at visibility `V`.
+    type At<V: Vis3>: SchemaBytes<V>;
+
+    /// The schema's bytes — the JSON the MPC parses, and the literal the
+    /// record carries.
+    const BYTES: &'static [u8];
+}
+
+/// DECLARE AN OUTPUT SCHEMA: a marker type, its bytes, and its record field
+/// type at both visibilities.
+///
+/// The width is `BYTES.len()`, so the two cannot disagree; the schema string
+/// is written out in full rather than assembled from the return type's
+/// Solidity spelling and the field's name, because on stable Rust a
+/// `&'static str` cannot be concatenated in a `const` — and because it is
+/// the WIRE, which a deployment should be able to read off its own source.
+#[macro_export]
+macro_rules! output_schema {
+    ($(
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident = $bytes:expr;
+    )*) => { $(
+        $(#[$meta])*
+        $vis struct $name;
+
+        impl $crate::signet_v1::OutputSchema for $name {
+            type At<V: ::minocrab_std::v3::Vis3> =
+                $crate::signet_v1::SchemaLiteral<V, { $bytes.len() }>;
+            const BYTES: &'static [u8] = $bytes;
+        }
+    )* };
+}
+
+/// THE OUTPUT SCHEMAS THE DEPLOYED LINEAGE FILES — the five strings the
+/// flush-pattern vault's `send*` circuits put in their records, as types the
+/// typed API's filings name.
+///
+/// They are here rather than beside the calls because a schema is a fact
+/// about what the MPC is asked to DECODE, which is the protocol's business:
+/// the same `transfer` is filed with the `success` schema by a vault and
+/// could be filed with `[]` by a protocol that does not look at the return.
+pub mod schema {
+    crate::output_schema! {
+        /// `[]` — a call whose return is not decoded at all: the MPC attests
+        /// an EMPTY `serializedOutput` and the verdict
+        /// ([`output_kind`](super::output_kind)) is the whole answer. Two bytes.
+        pub struct NoReturn = b"[]";
+
+        /// `[{"name":"success","type":"bool"}]` — the ERC-20 `bool`, named
+        /// `success` as the deployed records name it. Thirty-four bytes.
+        pub struct Success = b"[{\"name\":\"success\",\"type\":\"bool\"}]";
+
+        /// `[{"name":"amountIn","type":"uint256"}]` — a Uniswap
+        /// `exactOutputSingle`'s spend. Thirty-eight bytes.
+        pub struct AmountIn = b"[{\"name\":\"amountIn\",\"type\":\"uint256\"}]";
+
+        /// `[{"name":"shares","type":"uint256"}]` — an ERC-4626 `deposit`'s
+        /// minted shares. Thirty-six bytes.
+        pub struct Shares = b"[{\"name\":\"shares\",\"type\":\"uint256\"}]";
+
+        /// `[{"name":"assets","type":"uint256"}]` — an ERC-4626 `redeem`'s
+        /// returned assets. Thirty-six bytes.
+        pub struct Assets = b"[{\"name\":\"assets\",\"type\":\"uint256\"}]";
     }
 }
 
@@ -574,14 +697,57 @@ pub fn calculate_attestation_digest_v1<V: Vis3, const LEN: usize>(
     output_kind: Wire3<FieldT, V>,
     output_limbs: &[Wire3<FieldT, V>],
 ) -> B32<V> {
+    calculate_attestation_digest_v1_at(c, request_id, block_height, output_kind, LEN as u64, output_limbs)
+}
+
+/// [`calculate_attestation_digest_v1`] WITH THE WIDTH AS DATA.
+///
+/// The compat port's widths are consts of the circuit, so it names them as
+/// const parameters and the type says which `queueAttestation*` it is. The
+/// typed API's width is `<Call::Return as AbiReturn>::LEN`, an ASSOCIATED
+/// const, and stable Rust cannot pass one as a const-generic argument
+/// (`generic_const_exprs`) — so this is the same function with the number in
+/// the argument list. It emits the same `constant`, in the same place: the
+/// two forms are instruction-identical.
+pub fn calculate_attestation_digest_v1_at<V: Vis3>(
+    c: &mut Circuit3,
+    request_id: &RequestId<V>,
+    block_height: Wire3<FieldT, V>,
+    output_kind: Wire3<FieldT, V>,
+    len: u64,
+    output_limbs: &[Wire3<FieldT, V>],
+) -> B32<V> {
     c.region("signet v1: attestation digest (transientHash)", |c| {
-        let tag = V::from_public(c.constant(hash_domain::ATTESTATION_DIGEST));
-        let width = V::from_public(c.constant(LEN as u64));
-        let mut limbs = vec![tag, request_id.bytes().hi, request_id.bytes().lo, block_height, output_kind, width];
-        limbs.extend_from_slice(output_limbs);
-        let f = c.transient_hash(&limbs);
+        let f = attestation_transient_hash_v1(c, request_id, block_height, output_kind, len, output_limbs);
         upgrade_from_transient(c, f)
     })
+}
+
+/// [`calculate_attestation_digest_v1`] WITHOUT THE UPGRADE, and with the
+/// width as data rather than as a const.
+///
+/// Two callers need the raw Poseidon output. A refund accepts TWO
+/// attestations whose preimages differ in both the width and the limbs — the
+/// MPC's verdict over an EMPTY output (width 0) and this call's output at its
+/// own width — and Poseidon is not a stream, so one hash cannot cover both:
+/// `Pending::refund` hashes it both ways, selects the field element by the
+/// verdict and upgrades ONCE, which is also where the const width stops
+/// being a const. Everything else goes through
+/// [`calculate_attestation_digest_v1`], whose `LEN` keeps the width a fact
+/// about the call's type.
+pub fn attestation_transient_hash_v1<V: Vis3>(
+    c: &mut Circuit3,
+    request_id: &RequestId<V>,
+    block_height: Wire3<FieldT, V>,
+    output_kind: Wire3<FieldT, V>,
+    len: u64,
+    output_limbs: &[Wire3<FieldT, V>],
+) -> Wire3<FieldT, V> {
+    let tag = V::from_public(c.constant(hash_domain::ATTESTATION_DIGEST));
+    let width = V::from_public(c.constant(len));
+    let mut limbs = vec![tag, request_id.bytes().hi, request_id.bytes().lo, block_height, output_kind, width];
+    limbs.extend_from_slice(output_limbs);
+    c.transient_hash(&limbs)
 }
 
 /// `verifyRespondBidirectionalEventV1<LEN>(serializedOutput, event,
@@ -595,11 +761,27 @@ pub fn verify_respond_bidirectional_event_v1<V: Vis3, const LEN: usize>(
     event: &RespondBidirectionalEvent<V>,
     mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
-    let digest = calculate_attestation_digest_v1::<V, LEN>(
+    verify_respond_bidirectional_event_v1_at(c, LEN as u64, output_limbs, event, mpc_response_key)
+}
+
+/// [`verify_respond_bidirectional_event_v1`] WITH THE WIDTH AS DATA — the
+/// typed API's form, for the same reason
+/// [`calculate_attestation_digest_v1_at`] exists: the width is an associated
+/// const of the call's return type, and stable Rust cannot pass one as a
+/// const-generic argument.
+pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
+    c: &mut Circuit3,
+    len: u64,
+    output_limbs: &[Wire3<FieldT, V>],
+    event: &RespondBidirectionalEvent<V>,
+    mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
+) -> Wire3<FieldT, V> {
+    let digest = calculate_attestation_digest_v1_at(
         c,
         &event.request_id,
         event.block_height.field(),
         event.output_kind.field(),
+        len,
         output_limbs,
     );
     verify_attestation_signature(

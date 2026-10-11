@@ -123,10 +123,24 @@ fn no_pair_costs_more_than_the_modern_lineage() {
         eprintln!("{name:>18}: pending {ours:>6}   modern {theirs:>6}");
         assert!(ours <= theirs, "{name}: {ours} > {theirs}");
     }
-    // The two settle-less circuits: the segmentation allowance only.
-    const SEGMENTATION_ALLOWANCE: usize = 64;
-    assert!(p_init.1 <= m_init.1 + SEGMENTATION_ALLOWANCE, "initialize: {} vs {}", p_init.1, m_init.1);
-    assert!(p_appr.1 <= m_appr.1 + SEGMENTATION_ALLOWANCE, "approve_router: {} vs {}", p_appr.1, m_appr.1);
+    // THE TWO SETTLE-LESS CIRCUITS have no settle to amortise against, so
+    // they are held to an allowance rather than to a pair.
+    //
+    // IT GREW AT M44 RUNG D, from 64 rows to 256. `modern` is the retired V2
+    // lineage, and the V1 record this one now files is not the same object:
+    // its tail carries a 34-byte output-SCHEMA literal where V2 carried a
+    // one-byte response kind, and its id is `calculateRequestIdV1` — two
+    // chained Poseidons (the transaction digest, then the preimage) where V2
+    // hashed the whole record once. `approve_router` pays both and nothing
+    // back: 1,126 → 1,282 rows, +156. The split between the two causes is
+    // NOT measured here; what the allowance pins is that the V1 vocabulary
+    // costs a request a couple of hundred rows and not thousands.
+    //
+    // The pairs above are the claim that matters, and every one of them is
+    // still under modern's.
+    const V1_RECORD_ALLOWANCE: usize = 256;
+    assert!(p_init.1 <= m_init.1 + V1_RECORD_ALLOWANCE, "initialize: {} vs {}", p_init.1, m_init.1);
+    assert!(p_appr.1 <= m_appr.1 + V1_RECORD_ALLOWANCE, "approve_router: {} vs {}", p_appr.1, m_appr.1);
 }
 
 /// The lending flows (M35 rung C extension), against their COMPAT PORT
