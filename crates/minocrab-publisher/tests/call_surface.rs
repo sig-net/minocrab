@@ -162,6 +162,11 @@ fn a_circuit_outside_the_expected_vk_table_has_no_key_location() {
 #[test]
 fn a_respond_call_lays_its_signature_out_where_the_singleton_says() {
     let (rid, sig) = (request_id(), signature());
+    // ONE ROW TODAY: `respondBidirectional` moved to its own test at M43 B
+    // when PR #127 gave it a different payload. The loop stays a table so
+    // the next circuit with this layout is one line, and so this test reads
+    // as the twin of the one below.
+    #[allow(clippy::single_element_loop)]
     for (circuit, event, call) in [(
         RESPOND,
         SIGNATURE_RESPONDED_EVENT,

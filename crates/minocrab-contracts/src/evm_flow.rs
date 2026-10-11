@@ -287,11 +287,11 @@
 //!
 //! ```
 //! use minocrab::v3::Circuit3;
-//! use minocrab_contracts::evm::{erc20, always, Check, EvmCall, Filed, U256};
+//! use minocrab_contracts::evm::{erc20, always, EvmCall, Filed, U256};
 //! use minocrab_contracts::evm_flow::{Owned, Pending, Succeeded};
 //! use minocrab_contracts::signet_flow::Signet;
 //! use minocrab_contracts::signet_v1::schema;
-//! use minocrab_std::v3::{Ledger, LedgerRepr, Uint, B32};
+//! use minocrab_std::v3::{Check, Ledger, LedgerRepr, Uint, B32};
 //! use minocrab::{Private, Public};
 //!
 //! #[derive(LedgerRepr)] struct Amount { amount: Uint<64, Public> }

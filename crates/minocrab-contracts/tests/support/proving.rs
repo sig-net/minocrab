@@ -4,8 +4,9 @@
 //! MECHANICAL TRANSLATION of `midnight_ledger::test_utilities`'
 //! `CombinedProofProvider`, v3 arm only (`ledger/src/test_utilities.rs:749-818`).
 //! The upstream one is a private struct behind the ledger's `test-utilities`
-//! + `proving` features, and its resolver owns a `ZswapResolver` and a
-//! `DustResolver` — network-fetched parameter sets these gates never need.
+//! and `proving` features, and its resolver owns a `ZswapResolver` and a
+//! `DustResolver`, which are network-fetched parameter sets these gates
+//! never need.
 
 use std::collections::BTreeMap;
 use std::io;

@@ -294,6 +294,11 @@ pub struct VaultEventV1 {
 }
 
 impl FixedLen for VaultEventV1 {
+    // The trailing `+ 0` is `respondSerializationSchema: Bytes<0>`, spelled
+    // out so the sum reads field for field against the record above. It is
+    // the field whose presence in the ALIGNMENT and absence from the LIMBS
+    // is the V1 record\'s one surprise, so it is not a term to tidy away.
+    #[allow(clippy::identity_op)]
     const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 34 + 0;
 }
 
@@ -316,6 +321,11 @@ pub struct ReplaceNonceEventV1 {
 }
 
 impl FixedLen for ReplaceNonceEventV1 {
+    // The trailing `+ 0` is `respondSerializationSchema: Bytes<0>`, spelled
+    // out so the sum reads field for field against the record above. It is
+    // the field whose presence in the ALIGNMENT and absence from the LIMBS
+    // is the V1 record\'s one surprise, so it is not a term to tidy away.
+    #[allow(clippy::identity_op)]
     const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 2 + 0;
 }
 
@@ -338,6 +348,11 @@ pub struct SwapEventV1 {
 }
 
 impl FixedLen for SwapEventV1 {
+    // The trailing `+ 0` is `respondSerializationSchema: Bytes<0>`, spelled
+    // out so the sum reads field for field against the record above. It is
+    // the field whose presence in the ALIGNMENT and absence from the LIMBS
+    // is the V1 record\'s one surprise, so it is not a term to tidy away.
+    #[allow(clippy::identity_op)]
     const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams7::LEN + 32 + 1 + 64 + 38 + 0;
 }
 
@@ -361,6 +376,11 @@ pub struct SupplyEventV1 {
 }
 
 impl FixedLen for SupplyEventV1 {
+    // The trailing `+ 0` is `respondSerializationSchema: Bytes<0>`, spelled
+    // out so the sum reads field for field against the record above. It is
+    // the field whose presence in the ALIGNMENT and absence from the LIMBS
+    // is the V1 record\'s one surprise, so it is not a term to tidy away.
+    #[allow(clippy::identity_op)]
     const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams2::LEN + 32 + 1 + 64 + 36 + 0;
 }
 
@@ -382,6 +402,11 @@ pub struct RedeemEventV1 {
 }
 
 impl FixedLen for RedeemEventV1 {
+    // The trailing `+ 0` is `respondSerializationSchema: Bytes<0>`, spelled
+    // out so the sum reads field for field against the record above. It is
+    // the field whose presence in the ALIGNMENT and absence from the LIMBS
+    // is the V1 record\'s one surprise, so it is not a term to tidy away.
+    #[allow(clippy::identity_op)]
     const LEN: usize = 1 + 32 + 32 + 1 + 1 + EvmType2TxParams3::LEN + 32 + 1 + 64 + 36 + 0;
 }
 
