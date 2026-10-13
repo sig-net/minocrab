@@ -71,6 +71,25 @@
 //!   a near-miss must still fire. A subtraction whose MINUEND is itself
 //!   unbounded stays a finding, which is what keeps `manager::execute` in the
 //!   baseline (M23 R3 Class B, notes/taint-lint.org §8).
+//! - A GUARDED read can be discharged without a bound, by OBSERVABILITY
+//!   (M23 R3 Class A, option 4 of notes/taint-lint.org §8). Its value really
+//!   is free when the guard is false, and no bound is invented; what is
+//!   checked instead is that nothing can be stolen with it — every Impact
+//!   that could publish anything derived from the read is guarded by a bit
+//!   that is zero whenever the read's own guard is, and nothing constrains
+//!   the derived values or returns them. When the guard IS true the popeq
+//!   binds the read, which is the rule above. This is a reachability claim,
+//!   so it is REFUSED on anything the walk cannot account for: an
+//!   unconditional or differently-guarded Impact, an `Assert`/`ConstrainEq`/
+//!   `ConstrainBits`, an `Output`, or a derived wire steering another read's
+//!   guard. Two stated limits of its own:
+//!   - it discharges the READ wire, not a wire merely DERIVED from one. A
+//!     `cond_select` of a confined read that feeds a hash limb keeps its
+//!     finding — the safe direction, and why the `manager::*` `%sel.*`
+//!     residue stands.
+//!   - "zero whenever `g` is zero" is SYNTACTIC, through
+//!     `cond_select{a: _, b: 0, bit: k}` chains only. A guard that is
+//!     semantically but not syntactically dominated marks nothing.
 //! - popeq ONLY. Wires embedded in pushes (`push`/`pushs` cell contents) and
 //!   dynamic `idx` keys also flow to the transcript, but their in-range
 //!   argument is different (transaction well-formedness, not a read of
@@ -194,6 +213,12 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     let shapes = Shapes::index(instructions);
     let ge_facts = shapes.ge_facts(instructions);
 
+    // Pass A3 — the guarded ledger reads discharged by OBSERVABILITY rather
+    // than by a bound: a forged value reaches no effect that is not already
+    // inert whenever the read's own guard is false (M23 R3 Class A, option 4
+    // of notes/taint-lint.org §8).
+    let confined = confined_reads(instructions, &shapes, &Flow::of(instructions));
+
     // Pass B — one forward walk: propagate producer bounds (operands always
     // precede their uses in SSA, so forward order reaches the fixpoint given
     // pass A), track which identifiers hold `Bytes32` values (for `Encode`),
@@ -207,11 +232,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
         match ins {
             // ---- the two audited hashes ---------------------------------
             Instruction::PersistentHash { alignment, inputs, output } => {
-                audit_hash(index, "persistent_hash", alignment, inputs, &bound, &mut findings);
+                audit_hash(index, "persistent_hash", alignment, inputs, &bound, &confined, &mut findings);
                 is_bytes32.insert(output.0.clone());
             }
             Instruction::Keccak256 { alignment, inputs, output } => {
-                audit_hash(index, "keccak256", alignment, inputs, &bound, &mut findings);
+                audit_hash(index, "keccak256", alignment, inputs, &bound, &confined, &mut findings);
                 is_bytes32.insert(output.0.clone());
             }
 
@@ -379,6 +404,7 @@ fn audit_hash(
     alignment: &Alignment,
     inputs: &[Operand],
     bound: &BTreeMap<String, Max>,
+    confined: &BTreeSet<String>,
     findings: &mut Vec<Finding>,
 ) {
     let mut ops = inputs.iter();
@@ -436,7 +462,7 @@ fn audit_hash(
                         return;
                     };
                     consumed += 1;
-                    check_limb(index, hash, op, ai, li, *length, width, bound, findings);
+                    check_limb(index, hash, op, ai, li, *length, width, bound, confined, findings);
                 }
             }
         }
@@ -476,6 +502,7 @@ fn check_limb(
     atom_len: u32,
     width_bytes: usize,
     bound: &BTreeMap<String, Max>,
+    confined: &BTreeSet<String>,
     findings: &mut Vec<Finding>,
 ) {
     let required = 8 * width_bytes as u32;
@@ -498,6 +525,10 @@ fn check_limb(
                 });
             }
         }
+        // A guarded ledger read the observability warrant discharges: no
+        // bound, and none needed, because a forged value reaches no effect
+        // that is not already inert when the read's guard is false.
+        Operand::Variable(id) if confined.contains(&id.0) => {}
         Operand::Variable(id) => match bound.get(&id.0) {
             Some(m) if m.bits() <= required => {}
             proven => findings.push(Finding {
@@ -547,6 +578,19 @@ fn check_limb(
 /// non-immediate header, limb count mismatch, leftover elements — marks
 /// NOTHING: under-marking is the safe direction.
 fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
+    for (op, width) in popeq_limbs(inputs).unwrap_or_default() {
+        if let (Operand::Variable(id), Some(width)) = (op, width) {
+            note(bound, id, Max::all_ones(8 * width as u32));
+        }
+    }
+}
+
+/// The parse behind [`mark_popeq`], shared with the guarded-read index the
+/// observability warrant builds (`Confinement`): each limb element of a
+/// `popeq`/`popeqc` paired with its byte width, or `None` for a field- or
+/// compress-wide limb that bounds nothing. `None` for the whole thing if the
+/// element stream is not cleanly a popeq.
+fn popeq_limbs(inputs: &[Operand]) -> Option<Vec<(&Operand, Option<usize>)>> {
     let small = |op: &Operand| -> Option<u64> {
         match op {
             Operand::Immediate(v) => {
@@ -557,13 +601,11 @@ fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
         }
     };
     if inputs.len() < 2 || small(&inputs[0]).is_none_or(|op| op != 0x0c && op != 0x0d) {
-        return;
+        return None;
     }
-    let Some(atom_count) = small(&inputs[1]).map(|n| n as usize) else {
-        return;
-    };
+    let atom_count = small(&inputs[1]).map(|n| n as usize)?;
     if inputs.len() < 2 + atom_count {
-        return;
+        return None;
     }
     let compress_elem = field_max(); // p − 1 (fab.rs: `compress` → −1)
     let field_elem = Max::from_fr(&(Fr::from(0u64) - Fr::from(2u64))); // p − 2
@@ -571,7 +613,7 @@ fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
     let mut widths: Vec<Option<usize>> = Vec::new();
     for header in &inputs[2..2 + atom_count] {
         let Operand::Immediate(v) = header else {
-            return;
+            return None;
         };
         let m = Max::from_fr(v);
         if m == compress_elem || m == field_elem {
@@ -587,18 +629,207 @@ fn mark_popeq(inputs: &[Operand], bound: &mut BTreeMap<String, Max>) {
                 widths.extend(std::iter::repeat_n(Some(LIMB_BYTES), n / LIMB_BYTES));
             }
         } else {
-            return;
+            return None;
         }
     }
     let limbs = &inputs[2 + atom_count..];
     if limbs.len() != widths.len() {
-        return;
+        return None;
     }
-    for (op, width) in limbs.iter().zip(widths) {
-        if let (Operand::Variable(id), Some(width)) = (op, width) {
-            note(bound, id, Max::all_ones(8 * width as u32));
+    Some(limbs.iter().zip(widths).collect())
+}
+
+// ---- the observability warrant (M23 R3 Class A, notes/taint-lint.org §8) ----
+//
+// `mark_popeq` refuses to bound a read whose popeq guard is a WIRE, and that
+// refusal is right: in-circuit the `public_input` arm ignores its guard
+// entirely, and a false guard makes the Impact push `select(g, x, 0) = 0`, so
+// the verifier's comparison passes on the zero and the wire is genuinely free.
+// No bound exists to prove, and inventing one would be the over-marking the
+// module docs forbid.
+//
+// What makes such a read sound is a DIFFERENT argument, and option 4 of §8:
+// OBSERVABILITY. When `g` is false, every effect a forged value could reach is
+// itself inert — each Impact that would publish the digest is guarded by a bit
+// that is zero whenever `g` is, so it pushes zeros too, and nothing constrains
+// the digest. The branch has no effect to steal, so a forged preimage buys the
+// prover nothing. When `g` is true the popeq binds the read to the ledger's
+// normalized value, which is `mark_popeq`'s own warrant. Free but
+// unobservable, or observable but bound: either way the packing's injectivity
+// cannot be exploited.
+//
+// This is a REACHABILITY obligation rather than a bound, and §8 is explicit
+// that "a single unguarded consumer makes it wrong" — so the classification
+// below is exhaustive and every unknown is a refusal.
+
+/// Per-instruction reads and definitions, computed once. `passes::operands`
+/// clones the instruction, so calling it inside the closure's fixpoint would
+/// be quadratic in clones; this pays for it once per circuit.
+struct Flow {
+    /// Every wire the instruction READS — `passes::operands` (all reads but
+    /// the terminator's) plus `passes::returned` (the terminator's). Both are
+    /// exhaustive by construction and are the lists the Lean dataflow gate
+    /// diffs against `MinocrabZkir.Dataflow` (tests/lean_dataflow.rs), so a
+    /// new upstream operand position cannot hide from this walk.
+    reads: Vec<BTreeSet<String>>,
+    /// Every wire the instruction BINDS (`passes::defined_identifiers`).
+    defines: Vec<Vec<String>>,
+}
+
+impl Flow {
+    fn of(instructions: &[Instruction]) -> Self {
+        fn wire(op: &Operand) -> Option<String> {
+            match op {
+                Operand::Variable(id) => Some(id.0.clone()),
+                Operand::Immediate(_) => None,
+            }
+        }
+        Flow {
+            reads: instructions
+                .iter()
+                .map(|ins| {
+                    super::passes::operands(ins)
+                        .iter()
+                        .chain(super::passes::returned(ins).iter())
+                        .filter_map(wire)
+                        .collect()
+                })
+                .collect(),
+            defines: instructions
+                .iter()
+                .map(|ins| {
+                    super::passes::defined_identifiers(ins)
+                        .into_iter()
+                        .map(|id| id.0)
+                        .collect()
+                })
+                .collect(),
         }
     }
+}
+
+/// How far [`Shapes::dominated_by`] chases a guard chain. `when` nests a
+/// handful deep; SSA rules out a cycle, so this only bounds pathological input.
+const DOMINANCE_FUEL: u32 = 32;
+
+/// The guarded ledger reads whose forgery reaches no effect — discharged by
+/// observability rather than by a bound.
+fn confined_reads(instructions: &[Instruction], shapes: &Shapes, flow: &Flow) -> BTreeSet<String> {
+    // The reads in question: a wire embedded as a SIZED limb of a popeq whose
+    // guard is a WIRE. An immediate-guarded popeq is `mark_popeq`'s case and
+    // already bounded; a field- or compress-wide limb witnesses no byte atom.
+    let mut guarded: BTreeMap<String, String> = BTreeMap::new();
+    for ins in instructions {
+        if let Instruction::Impact { guard: Operand::Variable(g), inputs } = ins {
+            for (op, width) in popeq_limbs(inputs).unwrap_or_default() {
+                if let (Operand::Variable(id), Some(_)) = (op, width) {
+                    guarded.insert(id.0.clone(), g.0.clone());
+                }
+            }
+        }
+    }
+    guarded
+        .into_iter()
+        .filter(|(read, g)| confined(instructions, shapes, flow, read, g))
+        .map(|(read, _)| read)
+        .collect()
+}
+
+/// Is everything derived from `read` inert whenever `g` is false?
+fn confined(
+    instructions: &[Instruction],
+    shapes: &Shapes,
+    flow: &Flow,
+    read: &str,
+    g: &str,
+) -> bool {
+    // The forward closure: every wire a forged `read` could change. Grown to a
+    // fixpoint rather than in stream order, so the walk does not rely on
+    // operands preceding their uses even though SSA gives it.
+    let mut tainted: BTreeSet<String> = BTreeSet::new();
+    tainted.insert(read.to_string());
+    loop {
+        let mut grew = false;
+        for i in 0..instructions.len() {
+            if flow.reads[i].iter().any(|w| tainted.contains(w)) {
+                for out in &flow.defines[i] {
+                    grew |= tainted.insert(out.clone());
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+
+    // Every instruction reading something derived from the read must be inert
+    // whenever `g` is false.
+    instructions.iter().enumerate().all(|(i, ins)| {
+        if !flow.reads[i].iter().any(|w| tainted.contains(w)) {
+            return true;
+        }
+        match ins {
+            // THE TRANSCRIPT. An Impact pushes `select(guard, x, 0)`, so it is
+            // inert exactly when its guard is zero, and therefore inert
+            // whenever `g` is zero iff its guard is dominated by `g`. An
+            // IMMEDIATE guard is never dominated by a wire: it publishes
+            // whatever `g` does.
+            Instruction::Impact { guard: Operand::Variable(h), .. } => {
+                shapes.dominated_by(&h.0, g, DOMINANCE_FUEL)
+            }
+            Instruction::Impact { .. } => false,
+
+            // A CONSTRAINT on a derived wire. A forged value then changes
+            // whether the circuit is satisfiable, which may well be safe — but
+            // that is a different argument from "no effect to steal", and this
+            // rule does not make it. Refuse.
+            Instruction::Assert { .. }
+            | Instruction::ConstrainEq { .. }
+            | Instruction::ConstrainBits { .. }
+            | Instruction::ConstrainToBoolean { .. } => false,
+
+            // Leaving the circuit named is an effect of its own.
+            Instruction::Output { .. } => false,
+
+            // A derived wire used as the GUARD of a read — the only way these
+            // two can read a tainted wire — steers the transcript WALK, how
+            // many elements are consumed. That is observable even though the
+            // arm ignores the guard in-circuit. Refuse.
+            Instruction::PublicInput { .. } | Instruction::PrivateInput { .. } => false,
+
+            // Everything else only COMPUTES: whatever it binds is already in
+            // the closure, so its own consumers are checked in turn.
+            // Exhaustive on purpose, like pass B — a new upstream instruction
+            // that reaches the transcript must break this build rather than be
+            // waved through as arithmetic.
+            Instruction::PersistentHash { .. }
+            | Instruction::Keccak256 { .. }
+            | Instruction::TransientHash { .. }
+            | Instruction::HashToCurve { .. }
+            | Instruction::Encode { .. }
+            | Instruction::DivModPowerOfTwo { .. }
+            | Instruction::ReconstituteField { .. }
+            | Instruction::Bytes32IntoLowHigh { .. }
+            | Instruction::Bytes32FromLowHigh { .. }
+            | Instruction::IntoBytes32 { .. }
+            | Instruction::FromBytes32 { .. }
+            | Instruction::ReverseBytes { .. }
+            | Instruction::Copy { .. }
+            | Instruction::CondSelect { .. }
+            | Instruction::Add { .. }
+            | Instruction::Mul { .. }
+            | Instruction::Neg { .. }
+            | Instruction::Inv { .. }
+            | Instruction::TestEq { .. }
+            | Instruction::Not { .. }
+            | Instruction::LessThan { .. }
+            | Instruction::EcMul { .. }
+            | Instruction::EcMulGenerator { .. }
+            | Instruction::IntoCoordinates { .. }
+            | Instruction::FromCoordinates { .. }
+            | Instruction::JubjubScalarFromNative { .. } => true,
+        }
+    })
 }
 
 /// Merge a newly proven maximum for `id`, keeping the tightest.
@@ -729,6 +960,33 @@ impl Shapes {
         let Operand::Variable(lt) = lt else { return None };
         let (a, b, bits) = self.less_than.get(&lt.0)?;
         Some(Ge { a: a.clone(), b: b.clone(), bits: *bits, guard: None })
+    }
+
+    /// Is `h` zero whenever `g` is zero? Then an op guarded by `h` is inert
+    /// whenever one guarded by `g` is — what the observability warrant needs of
+    /// every Impact that could publish a forged digest.
+    ///
+    /// True for `h == g`, and through any chain of
+    /// `cond_select{a: _, b: 0, bit: k}`: that output is zero unless `k`, so if
+    /// `k` is in turn zero whenever `g` is, so is the output. This is exactly
+    /// how `when` nests a guard inside an enclosing one, which is why
+    /// `erc20_vault::complete_deposit` can push the coin commitment under
+    /// `%sel.102 = cond_select(%mul.101, 0, %sel.65)` while the read sits under
+    /// `%sel.65`. Syntactic and conservative: any other shape is not dominated
+    /// as far as this rule is concerned.
+    fn dominated_by(&self, h: &str, g: &str, fuel: u32) -> bool {
+        if h == g {
+            return true;
+        }
+        if fuel == 0 {
+            return false;
+        }
+        match self.select.get(h) {
+            Some((Operand::Variable(bit), _, otherwise)) if is_imm(otherwise, 0) => {
+                self.dominated_by(&bit.0, g, fuel - 1)
+            }
+            _ => false,
+        }
     }
 
     /// `cond_select{a: x, b: 0, bit: g}`: the operand is `x` when `g` holds and
@@ -1180,6 +1438,19 @@ mod tests {
 
     /// `popeq` (0x0c) expecting one `bytes<8>` limb wire — the u64 cell
     /// read shape — under the given guard.
+    /// An unconditional `push` (op 0x10) of `wire` — an effect the
+    /// observability warrant cannot excuse. Added wherever a test means to pin
+    /// the absence of a BOUND rather than the absence of reachability: without
+    /// an observable consumer the digest is dead and the walk discharges the
+    /// read, soundly but for the other reason. NB 0x10 is not a popeq, so
+    /// `mark_popeq` bounds nothing from it.
+    fn publish(wire: &str) -> Instruction {
+        Instruction::Impact {
+            guard: imm(1),
+            inputs: vec![imm(0x10), imm(1), imm(1), imm(0x20), var(wire)],
+        }
+    }
+
     fn popeq_u64(guard: Operand, wire: &str) -> Instruction {
         Instruction::Impact {
             guard,
@@ -1227,6 +1498,7 @@ mod tests {
             pi("pi"),
             popeq_u64(var("g"), "pi"),
             keccak(vec![bytes_atom(8)], vec![var("pi")]),
+            publish("digest"),
         ];
         assert_eq!(audit(&variable).len(), 1);
         // An immediate-ZERO guard is a dead op, not a warrant.
@@ -1234,6 +1506,7 @@ mod tests {
             pi("pi"),
             popeq_u64(imm(0), "pi"),
             keccak(vec![bytes_atom(8)], vec![var("pi")]),
+            publish("digest"),
         ];
         assert_eq!(audit(&dead).len(), 1);
     }
@@ -1337,6 +1610,7 @@ mod tests {
             guarded_pi.clone(),
             popeq_u64(var("g"), "pi"),
             keccak(vec![bytes_atom(8)], vec![var("pi")]),
+            publish("digest"),
         ];
         assert_eq!(audit(&stream).len(), 1);
         // The same read under an UNCONDITIONAL popeq is bounded — so what
@@ -1346,6 +1620,7 @@ mod tests {
             guarded_pi,
             popeq_u64(imm(1), "pi"),
             keccak(vec![bytes_atom(8)], vec![var("pi")]),
+            publish("digest"),
         ];
         assert_eq!(audit(&unconditional), vec![]);
     }
@@ -1546,6 +1821,113 @@ mod tests {
             keccak(vec![bytes_atom(8)], vec![var("d")]),
         ];
         assert_eq!(audit(&reversed).len(), 1);
+    }
+
+    /// OPTION 4, the observability warrant (M23 R3 Class A,
+    /// notes/taint-lint.org §8). A guarded ledger read has no bound and none
+    /// is invented; it is discharged exactly when every effect a forged value
+    /// could reach is ALREADY inert whenever the read's own guard is false.
+    ///
+    /// The clean case is `erc20_vault`'s five `complete_*` circuits: the
+    /// contract address is read under the arm's guard, absorbed into the
+    /// tokenType digest and then the coin commitment, and every Impact that
+    /// publishes either is guarded by that same bit or one nested inside it.
+    #[test]
+    fn a_guarded_read_is_discharged_when_its_digest_is_inert_under_its_guard() {
+        // read under `g`, popeq under `g`, digest pushed under `publisher`.
+        let pushed_under = |publisher: Operand| {
+            vec![
+                Instruction::PublicInput {
+                    guard: Some(var("g")),
+                    val_t: IrType::Native,
+                    output: id("pi"),
+                },
+                popeq_u64(var("g"), "pi"),
+                keccak(vec![bytes_atom(8)], vec![var("pi")]),
+                Instruction::Impact {
+                    guard: publisher,
+                    inputs: vec![imm(0x10), imm(1), imm(1), imm(0x20), var("digest")],
+                },
+            ]
+        };
+        // The same guard: inert together. Discharged.
+        assert_eq!(audit(&pushed_under(var("g"))), vec![]);
+        // UNCONDITIONAL: it publishes the forged digest whatever `g` does.
+        assert_eq!(audit(&pushed_under(imm(1))).len(), 1);
+        // An UNRELATED wire: nothing ties it to `g`, so `g = 0` does not make
+        // it inert. This is the "single unguarded consumer" §8 names.
+        assert_eq!(audit(&pushed_under(var("h"))).len(), 1);
+
+        // A guard NESTED inside `g` — `cond_select{a: _, b: 0, bit: g}`, which
+        // is zero whenever `g` is. `erc20_vault::complete_deposit` pushes its
+        // coin commitment under exactly this. Discharged.
+        let mut nested = pushed_under(var("inner"));
+        nested.insert(
+            3,
+            Instruction::CondSelect {
+                bit: var("g"),
+                a: var("whatever"),
+                b: imm(0),
+                output: id("inner"),
+            },
+        );
+        assert_eq!(audit(&nested), vec![]);
+        // The same shape with the ZERO branch replaced by a nonzero one is NOT
+        // dominated: it can be nonzero while `g` is zero.
+        let mut not_nested = pushed_under(var("inner"));
+        not_nested.insert(
+            3,
+            Instruction::CondSelect {
+                bit: var("g"),
+                a: var("whatever"),
+                b: imm(1),
+                output: id("inner"),
+            },
+        );
+        assert_eq!(audit(&not_nested).len(), 1);
+    }
+
+    /// The observability warrant refuses every consumer it cannot account for.
+    /// A CONSTRAINT on the digest makes a forged value matter to
+    /// satisfiability, which may be safe but is a different argument; leaving
+    /// the circuit named is an effect; and steering another read's guard moves
+    /// the transcript walk. All three keep the finding.
+    #[test]
+    fn the_observability_warrant_refuses_a_constrained_or_returned_digest() {
+        let with = |tail: Instruction| {
+            vec![
+                Instruction::PublicInput {
+                    guard: Some(var("g")),
+                    val_t: IrType::Native,
+                    output: id("pi"),
+                },
+                popeq_u64(var("g"), "pi"),
+                keccak(vec![bytes_atom(8)], vec![var("pi")]),
+                Instruction::Impact {
+                    guard: var("g"),
+                    inputs: vec![imm(0x10), imm(1), imm(1), imm(0x20), var("digest")],
+                },
+                tail,
+            ]
+        };
+        // Baseline: without the tail this is the discharged case.
+        assert_eq!(audit(&with(Instruction::Copy { val: var("pi"), output: id("unused") })), vec![]);
+
+        for tail in [
+            Instruction::Assert { cond: var("digest") },
+            Instruction::ConstrainEq { a: var("digest"), b: imm(0) },
+            Instruction::ConstrainBits { val: var("digest"), bits: 64 },
+            Instruction::ConstrainToBoolean { val: var("digest") },
+            Instruction::Output { vals: vec![var("digest")] },
+            Instruction::PublicInput {
+                guard: Some(var("digest")),
+                val_t: IrType::Native,
+                output: id("steered"),
+            },
+        ] {
+            let findings = audit(&with(tail.clone()));
+            assert_eq!(findings.len(), 1, "{tail:?} should keep the finding: {findings:?}");
+        }
     }
 }
 

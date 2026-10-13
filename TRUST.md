@@ -31,7 +31,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-ir/src/lib.rs` | 41 | **READING** | nothing beyond re-exports (41 lines) |
 | `minocrab-ir/src/v3.rs` | 961 | every instruction-level differential (the emitted stream equals compactc's); v3_builder. The operand-type TABLES themselves: **READING** against zkir-v3/src/ir_vm.rs | an instruction emitted with an operand type the VM rejects, on a path no fixture takes |
 | `minocrab-ir/src/v3/passes.rs` | 1221 | Lean (crates/minocrab-ir/lean, the pass theorems, M25/M27); v3_passes; the zkir dump + row snapshot (every pass is zero-movement on the shipped artifacts) | a pass that changes a circuit's statement while preserving its rows |
-| `minocrab-ir/src/v3/taint.rs` | 1319 | Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; the MARKING RULES' warrants are cited in-file per rule and are READING | a limb marked bounded that is not — a false negative in the one lint that sees what honest inputs cannot |
+| `minocrab-ir/src/v3/taint.rs` | 2088 | Kani harnesses (./kani.sh, M23 R4) + unit tests for the Max arithmetic; 18 unit tests over the marking rules, the three subtraction warrants' near-miss refusals and the observability walk's refused sinks; the MARKING RULES' warrants are cited in-file per rule and are READING. The observability walk (M23 R3 Class A) reads operands through passes::operands / defined_identifiers, which the Lean dataflow gate diffs | a limb marked bounded that is not, or a guarded read discharged as unobservable whose digest in fact reaches an effect the walk's sink classification waves through — a false negative in the one lint that sees what honest inputs cannot |
 | `minocrab/src/lib.rs` | 192 | compile_fail doctests (a private wire cannot reach an output); READING for the lattice itself (192 lines) | a Meet impl that lets private meet public as public |
 | `minocrab/src/v3.rs` | 2061 | every differential (the streams Circuit3 emits); v3_guard_scope (guard scopes); the generated disclosure set-equality tests + compile_fail (the disclose gate). The instruction methods' operand/immediate handling and public_input minting: **READING** against reduce-to-zkir.ss | a guard dropped on one effect inside `when`; a public input minted in the wrong order |
 | `minocrab/src/v3/abi.rs` | 607 | v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot | an argument type constrained to the wrong width |
@@ -74,7 +74,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | 391 | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | 222 | **READING** | nothing a proof depends on (the CLI) |
 
-28776 lines in the seven crates; 11239 of them in files whose warrant is READING in whole or in part (the rows in bold).
+29545 lines in the seven crates; 11239 of them in files whose warrant is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget
