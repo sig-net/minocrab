@@ -58,11 +58,19 @@
 //!   OFF-circuit `run`/preprocess semantics (the witness GENERATOR), not a
 //!   constraint. Pinned by `a_guarded_read_under_a_guarded_popeq_stays_free`
 //!   and written up in notes/taint-lint.org §8.
-//! - An ASSERT is not a bound source in any rule: the lint propagates
-//!   through producers only. `Uint::sub_with`'s `assert(a ≥ b);
-//!   add(a, neg(b))` therefore fires even with both operands
-//!   range-constrained, guarded or not
-//!   (`a_subtraction_proven_non_negative_still_fires`, §8).
+//! - An ASSERT is a bound source in exactly THREE rules, all of them about
+//!   the one shape a subtraction lowers to — `assert(a ≥ b); add(a, neg(b))`,
+//!   where `Neg` wraps and the producer walk alone concludes nothing. N1
+//!   needs no assert (a constant minuend and a range-constrained
+//!   subtrahend); N2 needs an unconditional one; N3 needs a guarded one with
+//!   both operands zeroed under that same guard. Each reads only in-circuit
+//!   constraints, so none widens the external dependency above. Nothing else
+//!   in the lint reads an `Assert`, and in particular an assert is never
+//!   evidence about a wire it does not name — see
+//!   `the_subtraction_warrants_refuse_a_mismatched_assert` for the three ways
+//!   a near-miss must still fire. A subtraction whose MINUEND is itself
+//!   unbounded stays a finding, which is what keeps `manager::execute` in the
+//!   baseline (M23 R3 Class B, notes/taint-lint.org §8).
 //! - popeq ONLY. Wires embedded in pushes (`push`/`pushs` cell contents) and
 //!   dynamic `idx` keys also flow to the transcript, but their in-range
 //!   argument is different (transaction well-formedness, not a read of
@@ -177,6 +185,15 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
         }
     }
 
+    // Pass A2 — the shapes a subtraction lowers to, and the `a ≥ b` facts the
+    // stream asserts. Position-independent for the same reason as pass A: an
+    // `assert` constrains the witness wherever it sits, so a fact recorded
+    // here bounds a wire defined before it. These feed the N1-N3 warrants in
+    // pass B's `Add` arm — the ONLY rules in the lint that read an `Assert`
+    // (notes/taint-lint.org §8, M23 R3's Class B).
+    let shapes = Shapes::index(instructions);
+    let ge_facts = shapes.ge_facts(instructions);
+
     // Pass B — one forward walk: propagate producer bounds (operands always
     // precede their uses in SSA, so forward order reaches the fixpoint given
     // pass A), track which identifiers hold `Bytes32` values (for `Encode`),
@@ -276,6 +293,15 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                             note(&mut bound, output, sum);
                         }
                     }
+                }
+                // A SUBTRACTION, which is the same instruction: `Neg` wraps and
+                // is unmarked, so the interval arithmetic above concludes
+                // nothing for `add(a, neg(b))`. The three warrants recover the
+                // bound where the stream proves the difference non-negative.
+                // Both bounds are valid upper bounds when both apply, and
+                // `note` keeps the tighter.
+                if let Some(m) = subtraction_max(a, b, &bound, &shapes, &ge_facts) {
+                    note(&mut bound, output, m);
                 }
             }
             Instruction::Mul { a, b, output } => {
@@ -596,6 +622,207 @@ fn op_max(bound: &BTreeMap<String, Max>, op: &Operand) -> Option<Max> {
 /// interval arithmetic could wrap and is abandoned.
 fn field_max() -> Max {
     Max::from_fr(&(Fr::from(0u64) - Fr::from(1u64)))
+}
+
+// ---- the subtraction warrants (M23 R3 Class B, notes/taint-lint.org §8) -----
+//
+// ZKIR v3 has no `Sub`: `Uint::sub_with` / `BoundedUint::sub_with` lower to
+// `assert(ge(a, b)); let n = neg(b); from_field_unchecked(add(a, n))`
+// (minocrab-std/src/v3.rs). `Neg` wraps mod p and is deliberately unmarked
+// (the module docs' soundness direction), so pass B's interval arithmetic
+// concludes nothing about the difference and every such wire fires — the
+// `%add.*` residue of the frozen baseline. These three rules recover the
+// bound in the cases where the stream itself proves the difference
+// non-negative. They cite only IN-CIRCUIT constraints, so unlike `mark_popeq`
+// they do not widen the lint's one external dependency.
+
+/// The instruction shapes the warrants must see through, indexed by output
+/// wire. SSA, so each wire has at most one producer.
+#[derive(Default)]
+struct Shapes {
+    /// `neg` output → its operand.
+    neg: BTreeMap<String, Operand>,
+    /// `not` output → its operand.
+    not: BTreeMap<String, Operand>,
+    /// `cond_select` output → `(bit, a, b)`; the output is `bit ? a : b`.
+    select: BTreeMap<String, (Operand, Operand, Operand)>,
+    /// `less_than` output → `(a, b, bits)`.
+    less_than: BTreeMap<String, (Operand, Operand, u32)>,
+}
+
+/// `a ≥ b` as the stream asserts it: the width the comparison was made at, and
+/// the guard it holds under (`None` = unconditionally).
+struct Ge {
+    a: Operand,
+    b: Operand,
+    bits: u32,
+    guard: Option<String>,
+}
+
+impl Shapes {
+    fn index(instructions: &[Instruction]) -> Self {
+        let mut s = Shapes::default();
+        for ins in instructions {
+            match ins {
+                Instruction::Neg { a, output } => {
+                    s.neg.insert(output.0.clone(), a.clone());
+                }
+                Instruction::Not { a, output } => {
+                    s.not.insert(output.0.clone(), a.clone());
+                }
+                Instruction::CondSelect { bit, a, b, output } => {
+                    s.select
+                        .insert(output.0.clone(), (bit.clone(), a.clone(), b.clone()));
+                }
+                Instruction::LessThan { a, b, bits, output } => {
+                    s.less_than.insert(output.0.clone(), (a.clone(), b.clone(), *bits));
+                }
+                _ => {}
+            }
+        }
+        s
+    }
+
+    /// Every `a ≥ b` the stream's asserts establish.
+    fn ge_facts(&self, instructions: &[Instruction]) -> Vec<Ge> {
+        instructions
+            .iter()
+            .filter_map(|ins| match ins {
+                Instruction::Assert { cond } => self.ge_fact(cond),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// What one `assert` establishes, if its condition is a shape
+    /// `predicate::ge` lowers to — optionally under one guard.
+    fn ge_fact(&self, cond: &Operand) -> Option<Ge> {
+        // Unconditional first. This also DISAMBIGUATES the two shapes, which
+        // are both a `cond_select` with `b: 1`: `cond_select{a: 0, b: 1,
+        // bit: lt}` is `NOT lt` and belongs here, while the guarded form below
+        // carries a wire in `a`.
+        if let Some(ge) = self.not_less_than(cond) {
+            return Some(ge);
+        }
+        // Guarded: `cond_select{a: inner, b: 1, bit: g}` is `g ? inner : true`,
+        // so asserting it establishes `g ⇒ inner` — the shape an `assert`
+        // inside `when` lowers to.
+        let Operand::Variable(c) = cond else { return None };
+        let (bit, inner, otherwise) = self.select.get(&c.0)?;
+        let Operand::Variable(g) = bit else { return None };
+        if !is_imm(otherwise, 1) {
+            return None;
+        }
+        let ge = self.not_less_than(inner)?;
+        Some(Ge { guard: Some(g.0.clone()), ..ge })
+    }
+
+    /// `NOT (a < b)`, in either encoding the builder emits: a `Not`
+    /// instruction, or `cond_select{a: 0, b: 1, bit: lt}`.
+    fn not_less_than(&self, op: &Operand) -> Option<Ge> {
+        let Operand::Variable(v) = op else { return None };
+        let lt = match (self.not.get(&v.0), self.select.get(&v.0)) {
+            (Some(inner), _) => inner,
+            (None, Some((bit, a, b))) if is_imm(a, 0) && is_imm(b, 1) => bit,
+            _ => return None,
+        };
+        let Operand::Variable(lt) = lt else { return None };
+        let (a, b, bits) = self.less_than.get(&lt.0)?;
+        Some(Ge { a: a.clone(), b: b.clone(), bits: *bits, guard: None })
+    }
+
+    /// `cond_select{a: x, b: 0, bit: g}`: the operand is `x` when `g` holds and
+    /// EXACTLY zero otherwise.
+    fn zeroed_under(&self, op: &Operand, g: &str) -> bool {
+        let Operand::Variable(v) = op else { return false };
+        matches!(
+            self.select.get(&v.0),
+            Some((Operand::Variable(bit), _, otherwise))
+                if bit.0 == g && is_imm(otherwise, 0)
+        )
+    }
+}
+
+/// Is this operand exactly the immediate `n`?
+fn is_imm(op: &Operand, n: u64) -> bool {
+    matches!(op, Operand::Immediate(v) if *v == Fr::from(n))
+}
+
+/// A bound on `add(a, b)` when it is really a SUBTRACTION — one operand the
+/// `neg` of the other's subtrahend — under warrants N1, N2 or N3.
+fn subtraction_max(
+    a: &Operand,
+    b: &Operand,
+    bound: &BTreeMap<String, Max>,
+    shapes: &Shapes,
+    ge_facts: &[Ge],
+) -> Option<Max> {
+    // `add` is symmetric, so either operand may be the negation.
+    for (minuend, negated) in [(a, b), (b, a)] {
+        let Operand::Variable(n) = negated else { continue };
+        let Some(subtrahend) = shapes.neg.get(&n.0) else { continue };
+        if let Some(m) = n1(minuend, subtrahend, bound) {
+            return Some(m);
+        }
+        if let Some(m) = n2_or_n3(minuend, subtrahend, bound, shapes, ge_facts) {
+            return Some(m);
+        }
+    }
+    None
+}
+
+/// WARRANT N1 — `add(C, neg(b))` with `C` an immediate and `b ≤ Mb ≤ C`: the
+/// result is the INTEGER `C − b ∈ [0, C]`. The range constraint on `b` alone
+/// rules out the wrap, so no assert is needed, which makes this the cleanest
+/// of the three. (`erc20_vault_pending`'s `change_nonce`, `255 − mintNonce.hi`
+/// with `constrain_bits 8` on the operand — note `Mb ≤ C` holds exactly there,
+/// and a 9-bit constraint would correctly fail it.)
+fn n1(minuend: &Operand, subtrahend: &Operand, bound: &BTreeMap<String, Max>) -> Option<Max> {
+    let Operand::Immediate(c) = minuend else { return None };
+    let c = Max::from_fr(c);
+    let mb = op_max(bound, subtrahend)?;
+    mb.le(&c).then_some(c)
+}
+
+/// WARRANT N2 — `a ≤ Ma`, `b ≤ Mb`, both within the width the comparison was
+/// made at, plus an UNCONDITIONALLY asserted `a ≥ b`: the field difference IS
+/// the integer difference, so it is `≤ Ma`.
+///
+/// WARRANT N3 — the same, with the assert GUARDED, when both operands are
+/// `cond_select{a: x, b: 0, bit: g}` on the SAME `g`: with `g = 1` N2 applies;
+/// with `g = 0` both operands are exactly 0 and the difference is 0. Either
+/// way `≤ Ma`.
+///
+/// Both require `Ma` and `Mb` inside `2^bits − 1`: a `less_than` at a width
+/// narrower than its operands is not the comparison we are reading it as, and
+/// assuming otherwise would be an OVER-marking.
+fn n2_or_n3(
+    minuend: &Operand,
+    subtrahend: &Operand,
+    bound: &BTreeMap<String, Max>,
+    shapes: &Shapes,
+    ge_facts: &[Ge],
+) -> Option<Max> {
+    let ma = op_max(bound, minuend)?;
+    let mb = op_max(bound, subtrahend)?;
+    for fact in ge_facts {
+        if fact.a != *minuend || fact.b != *subtrahend {
+            continue;
+        }
+        let width = Max::all_ones(fact.bits);
+        if !(ma.le(&width) && mb.le(&width)) {
+            continue;
+        }
+        match &fact.guard {
+            None => return Some(ma),
+            Some(g) => {
+                if shapes.zeroed_under(minuend, g) && shapes.zeroed_under(subtrahend, g) {
+                    return Some(ma);
+                }
+            }
+        }
+    }
+    None
 }
 
 // ---- exact 256-bit interval maxima ------------------------------------------
@@ -1123,19 +1350,17 @@ mod tests {
         assert_eq!(audit(&unconditional), vec![]);
     }
 
-    /// `Uint::<BITS>::sub_with`'s lowering — `assert(a ≥ b); add(a, neg(b))`
-    /// (minocrab-std/src/v3.rs, `sub_with`) — fires even with both operands
-    /// range-constrained and the guard unconditional.
+    /// `assert(a ≥ b); add(a, neg(b))` — the lowering of
+    /// `Uint::<BITS>::sub_with` (minocrab-std/src/v3.rs) — is bounded by `Ma`
+    /// under WARRANT N2, which is the first and only place the lint reads an
+    /// `Assert` (M23 R3 Class B, notes/taint-lint.org §8).
     ///
-    /// Recorded deliberately (notes/taint-lint.org §8): `Neg` wraps, so pass
-    /// B drops it, and an `Assert` is not a bound source in ANY rule — the
-    /// lint propagates through producers only. The non-negativity of the
-    /// difference is therefore invisible to it, which is why the whole
-    /// `%add.*` residue of the baseline (kernel_tokens, manager,
-    /// erc20_vault{,_pending}) is one class awaiting a ruling rather than a
-    /// guarded-versus-unguarded distinction.
+    /// This test replaces `a_subtraction_proven_non_negative_still_fires`,
+    /// which pinned the opposite and was the recorded shape of the finding.
+    /// Its second half is kept: the SUM of the same operands is a different
+    /// and correct firing.
     #[test]
-    fn a_subtraction_proven_non_negative_still_fires() {
+    fn a_subtraction_proven_non_negative_is_bounded() {
         let stream = vec![
             Instruction::ConstrainBits { val: var("a"), bits: 128 },
             Instruction::ConstrainBits { val: var("b"), bits: 128 },
@@ -1146,9 +1371,29 @@ mod tests {
             Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
             keccak(vec![bytes_atom(16)], vec![var("d")]),
         ];
-        let findings = audit(&stream);
-        assert_eq!(findings.len(), 1, "{findings:?}");
-        assert!(findings[0].detail.contains("not provably bounded"));
+        assert_eq!(audit(&stream), vec![]);
+
+        // The other encoding of `NOT (a < b)` the builder emits —
+        // `cond_select{a: 0, b: 1, bit: lt}` instead of a `Not` instruction —
+        // is the same warrant. This is `kernel_tokens::s_send_shielded`'s
+        // actual shape.
+        let selected = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 128 },
+            Instruction::ConstrainBits { val: var("b"), bits: 128 },
+            Instruction::LessThan { a: var("a"), b: var("b"), bits: 128, output: id("lt") },
+            Instruction::CondSelect {
+                bit: var("lt"),
+                a: imm(0),
+                b: imm(1),
+                output: id("ge"),
+            },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(16)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&selected), vec![]);
+
         // The SUM of the same two operands is bounded, by the exact interval
         // arithmetic: 2·(2^128−1) needs 129 bits, so it fires on a 16-byte
         // atom for a different and correct reason.
@@ -1159,6 +1404,148 @@ mod tests {
             keccak(vec![bytes_atom(16)], vec![var("s")]),
         ];
         assert_eq!(audit(&summed), vec![]);
+    }
+
+    /// WARRANT N1 — `add(C, neg(b))` with `C` an immediate: bounded by `C`
+    /// when `Mb ≤ C`, and NOT otherwise. `erc20_vault_pending`'s
+    /// `change_nonce` is `255 − mintNonce.hi` with `constrain_bits 8`, where
+    /// `Mb = C = 255` exactly — so the boundary is the case that matters.
+    #[test]
+    fn a_constant_minus_a_range_constrained_wire_is_bounded() {
+        let subtraction = |bits: u32| {
+            vec![
+                Instruction::ConstrainBits { val: var("b"), bits },
+                Instruction::Neg { a: var("b"), output: id("nb") },
+                Instruction::Add { a: imm(255), b: var("nb"), output: id("d") },
+                keccak(vec![bytes_atom(1)], vec![var("d")]),
+            ]
+        };
+        // Mb = 255 = C: the difference is in [0, 255], one byte.
+        assert_eq!(audit(&subtraction(8)), vec![]);
+        // Mb = 511 > C: `255 − b` wraps for b > 255, and the result is then
+        // field-wide. Marking it would be the over-marking the module docs
+        // warn against.
+        let findings = audit(&subtraction(9));
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].detail.contains("not provably bounded"));
+        // An UNBOUNDED subtrahend is the same refusal.
+        let free = vec![
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: imm(255), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(1)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&free).len(), 1);
+    }
+
+    /// WARRANT N3 — a GUARDED `assert(a ≥ b)` bounds the difference only when
+    /// both operands are `cond_select{a: x, b: 0, bit: g}` on the SAME `g`,
+    /// which is `erc20_vault::complete_swap`'s shape. Three ways it must
+    /// refuse: a different guard on one operand, an operand not zeroed at all,
+    /// and an unbounded minuend (`manager::execute`, which stays a finding).
+    #[test]
+    fn a_guarded_subtraction_needs_both_operands_zeroed_under_one_guard() {
+        // `g ? x : 0` and `g ? y : 0`, compared and subtracted under `g`.
+        let guarded = |a_bit: &str, b_bit: &str| {
+            vec![
+                Instruction::ConstrainBits { val: var("x"), bits: 64 },
+                Instruction::ConstrainBits { val: var("y"), bits: 64 },
+                Instruction::CondSelect {
+                    bit: var(a_bit),
+                    a: var("x"),
+                    b: imm(0),
+                    output: id("sa"),
+                },
+                Instruction::CondSelect {
+                    bit: var(b_bit),
+                    a: var("y"),
+                    b: imm(0),
+                    output: id("sb"),
+                },
+                Instruction::ConstrainBits { val: var("sa"), bits: 64 },
+                Instruction::ConstrainBits { val: var("sb"), bits: 64 },
+                Instruction::LessThan { a: var("sa"), b: var("sb"), bits: 64, output: id("lt") },
+                Instruction::Not { a: var("lt"), output: id("ge") },
+                // `g ? (sa ≥ sb) : true` — the assert inside `when`.
+                Instruction::CondSelect {
+                    bit: var("g"),
+                    a: var("ge"),
+                    b: imm(1),
+                    output: id("gge"),
+                },
+                Instruction::Assert { cond: var("gge") },
+                Instruction::Neg { a: var("sb"), output: id("nb") },
+                Instruction::Add { a: var("sa"), b: var("nb"), output: id("d") },
+                keccak(vec![bytes_atom(16)], vec![var("d")]),
+            ]
+        };
+        // Both operands zeroed under the assert's own guard: bounded.
+        assert_eq!(audit(&guarded("g", "g")), vec![]);
+        // One operand zeroed under a DIFFERENT bit: with `g = 0` the assert
+        // says nothing and `sb` is not forced to 0, so the difference may wrap.
+        assert_eq!(audit(&guarded("g", "h")).len(), 1);
+
+        // An unbounded minuend has no bound to propagate — `manager::execute`,
+        // whose minuend is itself an unbounded guarded read. Stays a finding.
+        let unbounded_minuend = vec![
+            Instruction::ConstrainBits { val: var("b"), bits: 64 },
+            Instruction::LessThan { a: var("a"), b: var("b"), bits: 64, output: id("lt") },
+            Instruction::Not { a: var("lt"), output: id("ge") },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(16)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&unbounded_minuend).len(), 1);
+    }
+
+    /// The warrants read the asserted PAIR, not merely the presence of an
+    /// assert: a `less_than` at a width narrower than its operands is not the
+    /// comparison the rule reads it as, and an assert about OTHER wires
+    /// bounds nothing.
+    #[test]
+    fn the_subtraction_warrants_refuse_a_mismatched_assert() {
+        // `a ≥ b` asserted, but the comparison is at 32 bits while both
+        // operands are constrained to 64 — `less_than` is not a comparison of
+        // the full values, so N2 must not fire.
+        let narrow = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 64 },
+            Instruction::ConstrainBits { val: var("b"), bits: 64 },
+            Instruction::LessThan { a: var("a"), b: var("b"), bits: 32, output: id("lt") },
+            Instruction::Not { a: var("lt"), output: id("ge") },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(8)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&narrow).len(), 1);
+
+        // The assert is about a DIFFERENT pair than the subtraction.
+        let other_pair = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 64 },
+            Instruction::ConstrainBits { val: var("b"), bits: 64 },
+            Instruction::ConstrainBits { val: var("c"), bits: 64 },
+            Instruction::LessThan { a: var("a"), b: var("c"), bits: 64, output: id("lt") },
+            Instruction::Not { a: var("lt"), output: id("ge") },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(8)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&other_pair).len(), 1);
+
+        // The pair asserted in the WRONG ORDER (`b ≥ a`) does not bound
+        // `a − b`.
+        let reversed = vec![
+            Instruction::ConstrainBits { val: var("a"), bits: 64 },
+            Instruction::ConstrainBits { val: var("b"), bits: 64 },
+            Instruction::LessThan { a: var("b"), b: var("a"), bits: 64, output: id("lt") },
+            Instruction::Not { a: var("lt"), output: id("ge") },
+            Instruction::Assert { cond: var("ge") },
+            Instruction::Neg { a: var("b"), output: id("nb") },
+            Instruction::Add { a: var("a"), b: var("nb"), output: id("d") },
+            keccak(vec![bytes_atom(8)], vec![var("d")]),
+        ];
+        assert_eq!(audit(&reversed).len(), 1);
     }
 }
 
