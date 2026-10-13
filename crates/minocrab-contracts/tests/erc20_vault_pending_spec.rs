@@ -102,7 +102,11 @@ fn check_case(
 
     // --- 4. ledger execution: declared effects == computed effects ------
     match exec::run(pre, self_addr, ops) {
-        Ok(ex) => spec::check_effects(outcome.effects(), pre, &ex),
+        // A transcript the VM accepts must also fit the guaranteed section.
+        Ok(ex) => {
+            exec::guaranteed_only(pre, self_addr, ops)?;
+            spec::check_effects(outcome.effects(), pre, &ex)
+        }
         Err(e) => {
             if counter_would_overflow(outcome.effects(), pre) {
                 Ok(())

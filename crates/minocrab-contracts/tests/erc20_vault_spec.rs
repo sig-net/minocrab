@@ -126,7 +126,18 @@ fn check_case(
 
     // --- 3. ledger execution: declared effects == computed effects ------
     match exec::run(pre, self_addr, ops) {
-        Ok(ex) => spec::check_effects(outcome.effects(), pre, &ex),
+        // A transcript the VM accepts must also fit the guaranteed section.
+        // MEASURED OVER BUDGET (2026-09-19, initial ledger parameters, this
+        // harness's states): start_supply (84 ops) and start_redeem (87 ops)
+        // are demoted WHOLE to the fallible section — no checkpoint, so the
+        // partitioner's only fallback. Named here so the gate stays green
+        // while they are; a third demotion fails.
+        Ok(ex) => {
+            if !matches!(circuit, Circuit::StartSupply | Circuit::StartRedeem) {
+                exec::guaranteed_only(pre, self_addr, ops)?;
+            }
+            spec::check_effects(outcome.effects(), pre, &ex)
+        }
         Err(e) => {
             if counter_would_overflow(outcome.effects(), pre) {
                 Ok(())
