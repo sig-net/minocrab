@@ -99,6 +99,18 @@
             # M38 D2: the supply-chain gate (`cargo deny check`, the `deny:`
             # CI job) — advisories/licenses/bans/sources per deny.toml.
             pkgs.cargo-deny
+            # Pruning target/ (dmd, 2026-10-14, at 74 GB). The dev profile
+            # already carries `debug = "line-tables-only"` — the 2026-08-16
+            # fix, still doing its job — so what grows now is pure
+            # ACCUMULATION: cargo never prunes target/, so every fingerprint
+            # change leaves its old generation behind, and heavy branch and
+            # worktree switching makes that unbounded. Measured: 349,276
+            # files under target/debug/deps, 223,815 of them older than two
+            # weeks. `cargo sweep --time 14` collects exactly those; a plain
+            # `cargo clean` is the blunt alternative and costs a full rebuild
+            # of dependencies at opt-level 3. A tool, not packaging — the
+            # nix-light-touch rule, same as the three above.
+            pkgs.cargo-sweep
             compactc
             # M11 stage 10: the published TypeScript decoder in spec/ts/ and
             # its vector-driven tests. BINARIES ONLY, as ever — node runs the

@@ -246,27 +246,48 @@ fn account_slots(id: &[u8; 32]) -> [Fr; 2] {
     ]
 }
 
-const ALICE: [u8; 32] = [0xa1; 32];
+/// Alice's CALLER SECRET, not her account id. Since §12 option 2 the account
+/// is derived from this and never supplied, so the registry key is whatever
+/// `register` computes — which is why the helpers below read it back out of
+/// the run rather than asserting a value.
+const ALICE_SK: [u8; 32] = [0xa1; 32];
+
+/// Run `register` for a caller secret and a key, and return the post-state
+/// together with the account id the circuit derived.
+///
+/// Witness order is the circuit's: `(sk_hi, sk_lo, ek)`.
+fn register_key(
+    st: StateValue<InMemoryDB>,
+    caller_sk: &[u8; 32],
+    pk: JubjubSubgroup,
+    ek_native: Fr,
+) -> (StateValue<InMemoryDB>, [Fr; 2]) {
+    let register = Disclosure::register();
+    let sk = account_slots(caller_sk);
+    let limbs = encode_point(pk);
+    let out = run_wit(
+        &register,
+        st,
+        &[limbs[0], limbs[1]],
+        &[sk[0], sk[1], ek_native],
+    )
+    .expect("registration applies");
+    let account = disclosed(&register, &out.run, "registered account");
+    assert_eq!(account.len(), 2, "the account is two limbs");
+    (out.post, [account[0], account[1]])
+}
 
 /// Register Alice's key, then disclose `value` to her. Returns the memo as the
 /// ledger holds it.
 fn disclose(value: u128, pk: JubjubSubgroup, ek_native: Fr, seed: &[u8; 32]) -> [Fr; 3] {
-    let register = Disclosure::register();
-    let acct = account_slots(&ALICE);
     let pk_limbs = encode_point(pk);
-    let registered = run_wit(
-        &register,
-        empty_state(),
-        &[acct[0], acct[1], pk_limbs[0], pk_limbs[1]],
-        &[ek_native],
-    )
-    .expect("registration applies");
+    let (post, acct) = register_key(empty_state(), &ALICE_SK, pk, ek_native);
 
     let disclose_to = Disclosure::disclose_to();
     let seed = account_slots(seed);
     let out = run(
         &disclose_to,
-        registered.post,
+        post,
         &[
             acct[0],
             acct[1],
@@ -331,22 +352,13 @@ fn a_memo_cannot_be_addressed_to_an_unregistered_key() {
     let (_ek, pk) = keypair(42);
     let (_mallory_ek, mallory_pk) = keypair(99);
 
-    let register = Disclosure::register();
-    let acct = account_slots(&ALICE);
-    let alice = encode_point(pk);
-    let registered = run_wit(
-        &register,
-        empty_state(),
-        &[acct[0], acct[1], alice[0], alice[1]],
-        &[ek_witness(42)],
-    )
-    .expect("registration applies");
+    let (post, acct) = register_key(empty_state(), &ALICE_SK, pk, ek_witness(42));
 
     let mallory = encode_point(mallory_pk);
     let seed = account_slots(&[0x5e; 32]);
     let err = run(
         &Disclosure::disclose_to(),
-        registered.post,
+        post,
         &[
             acct[0],
             acct[1],
@@ -373,15 +385,15 @@ fn a_memo_cannot_be_addressed_to_an_unregistered_key() {
 #[test]
 fn a_key_the_registrant_does_not_hold_cannot_be_registered() {
     let (_ek, pk) = keypair(42);
-    let acct = account_slots(&ALICE);
+    let sk = account_slots(&ALICE_SK);
     let limbs = encode_point(pk);
 
     // Key 42's point, key 43's secret.
     let err = run_wit(
         &Disclosure::register(),
         empty_state(),
-        &[acct[0], acct[1], limbs[0], limbs[1]],
-        &[ek_witness(43)],
+        &[limbs[0], limbs[1]],
+        &[sk[0], sk[1], ek_witness(43)],
     )
     .expect_err("proof of possession refuses it");
     let shown = format!("{err}");
@@ -392,85 +404,76 @@ fn a_key_the_registrant_does_not_hold_cannot_be_registered() {
 
     // The same point with its OWN secret registers, so the refusal above is
     // the proof talking and not the shape of the call.
-    run_wit(
-        &Disclosure::register(),
-        empty_state(),
-        &[acct[0], acct[1], limbs[0], limbs[1]],
-        &[ek_witness(42)],
-    )
-    .expect("the holder of the key may register it");
+    register_key(empty_state(), &ALICE_SK, pk, ek_witness(42));
 }
 
-/// THE LIMIT of that proof, pinned so it is never read as more than it is: a
-/// squatter may register SOMEONE ELSE'S account id under a key they genuinely
-/// hold, and the proof passes, because they really do know that secret.
-/// `account` is a caller-supplied `Bytes<32>` and nothing binds it to the
-/// caller, so "we check the key" is NOT "accounts are safe". Closing this
-/// needs the account bound to the caller — `register`'s docs and
-/// notes/disclosure-model.org §6 say which, and it is deliberately not done.
+/// SQUATTING IS INEXPRESSIBLE since §12 option 2: the account is derived from
+/// a witnessed caller secret and there is no argument by which a caller could
+/// name somebody else's. Two different caller secrets therefore register two
+/// different accounts, and Mallory cannot reach Alice's entry at all — not by
+/// getting there first, and not by overwriting it later.
 #[test]
-fn proof_of_possession_does_not_stop_account_squatting() {
-    let (_mallory_ek, mallory_pk) = keypair(99);
-    let acct = account_slots(&ALICE);
-    let mallory = encode_point(mallory_pk);
-
-    run_wit(
-        &Disclosure::register(),
-        empty_state(),
-        // Alice's account id, Mallory's key, Mallory's own secret.
-        &[acct[0], acct[1], mallory[0], mallory[1]],
-        &[ek_witness(99)],
-    )
-    .expect("nothing binds the account to the caller — this is the open rung");
-}
-
-/// WORSE THAN FIRST-COME-FIRST-SERVED, and the reason the squatting rung is
-/// the larger of the two: `register` is a bare `Map.insert`, with no
-/// non-membership check, so a later call OVERWRITES a live registration.
-/// Mallory does not have to get there first — they can take over an account
-/// that has been registered and in use for months, and every subsequent
-/// disclosure to it is addressed to them.
-#[test]
-fn a_later_register_overwrites_a_live_registration() {
+fn the_account_is_derived_from_the_caller_not_chosen() {
+    const MALLORY_SK: [u8; 32] = [0x99; 32];
     let (_alice_ek, alice_pk) = keypair(42);
-    let (mallory_ek, mallory_pk) = keypair(99);
-    let acct = account_slots(&ALICE);
+    let (_mallory_ek, mallory_pk) = keypair(99);
+
+    let (post, alice_acct) = register_key(empty_state(), &ALICE_SK, alice_pk, ek_witness(42));
+    // Mallory registers, holding their own key, on top of Alice's state.
+    let (post, mallory_acct) = register_key(post, &MALLORY_SK, mallory_pk, ek_witness(99));
+    assert_ne!(alice_acct, mallory_acct, "different callers, different accounts");
+
+    // Alice's entry is untouched: a disclosure to her account still binds to
+    // HER key, and Mallory's key is refused for it.
+    let seed = account_slots(&[0x5e; 32]);
     let alice = encode_point(alice_pk);
+    run(
+        &Disclosure::disclose_to(),
+        post.clone(),
+        &[alice_acct[0], alice_acct[1], alice[0], alice[1], Fr::from(1u64), seed[0], seed[1]],
+    )
+    .expect("Alice's registration survived Mallory's");
+
     let mallory = encode_point(mallory_pk);
-
-    let first = run_wit(
-        &Disclosure::register(),
-        empty_state(),
-        &[acct[0], acct[1], alice[0], alice[1]],
-        &[ek_witness(42)],
+    run(
+        &Disclosure::disclose_to(),
+        post,
+        &[alice_acct[0], alice_acct[1], mallory[0], mallory[1], Fr::from(1u64), seed[0], seed[1]],
     )
-    .expect("Alice registers her own key");
+    .expect_err("Mallory's key is not Alice's registered key");
+}
 
-    // Mallory overwrites it, proving possession of THEIR key.
-    let second = run_wit(
-        &Disclosure::register(),
-        first.post,
-        &[acct[0], acct[1], mallory[0], mallory[1]],
-        &[ek_witness(99)],
-    )
-    .expect("no non-membership check stands in the way");
+/// Re-registering replaces the caller's OWN key and nobody else's, which is
+/// key ROTATION rather than a takeover — a recipient who loses `ek` is
+/// otherwise locked out forever. It reads like the missing non-membership
+/// check and is not one: the entry a caller can overwrite is only ever the
+/// one their own secret derives.
+#[test]
+fn re_registering_rotates_the_callers_own_key() {
+    let (_old_ek, old_pk) = keypair(42);
+    let (new_ek, new_pk) = keypair(43);
 
-    // The registry now binds Alice's account to Mallory's key, so a memo
-    // addressed to "Alice" is one Mallory opens.
+    let (post, first_acct) = register_key(empty_state(), &ALICE_SK, old_pk, ek_witness(42));
+    let (post, second_acct) = register_key(post, &ALICE_SK, new_pk, ek_witness(43));
+    assert_eq!(first_acct, second_acct, "the same secret is the same account");
+
+    // The rotated key is the one a sender now binds against, and the holder
+    // of the NEW secret reads the memo.
     let disclose_to = Disclosure::disclose_to();
     let seed = account_slots(&[0x5e; 32]);
+    let new = encode_point(new_pk);
     let out = run(
         &disclose_to,
-        second.post,
-        &[acct[0], acct[1], mallory[0], mallory[1], Fr::from(4_242u64), seed[0], seed[1]],
+        post,
+        &[second_acct[0], second_acct[1], new[0], new[1], Fr::from(4_242u64), seed[0], seed[1]],
     )
-    .expect("the binding now accepts Mallory's key for Alice's account");
+    .expect("the rotated key is the registered one");
     let eph = disclosed(&disclose_to, &out.run, "ephemeral key");
     let ct = disclosed(&disclose_to, &out.run, "masked value");
     assert_eq!(
-        wallet_decrypt(&[eph[0], eph[1], ct[0]], mallory_ek),
+        wallet_decrypt(&[eph[0], eph[1], ct[0]], new_ek),
         Fr::from(4_242u64),
-        "Mallory reads a disclosure meant for Alice"
+        "the holder of the rotated key reads it"
     );
 }
 
@@ -480,23 +483,20 @@ fn a_later_register_overwrites_a_live_registration() {
 /// nothing below this assert catches it.
 #[test]
 fn the_identity_key_is_refused() {
-    let register = Disclosure::register();
-    let acct = account_slots(&ALICE);
-    let identity = encode_point(JubjubSubgroup::identity());
-    let registered = run_wit(
-        &register,
+    // `g^0 == identity`, so zero is a genuine proof of possession for it:
+    // the identity survives registration and dies at `derive_shared`.
+    let (post, acct) = register_key(
         empty_state(),
-        &[acct[0], acct[1], identity[0], identity[1]],
-        // `g^0 == identity`, so zero is a genuine proof of possession for it:
-        // the identity survives registration and dies at `derive_shared`.
-        &[Fr::from(0u64)],
-    )
-    .expect("registering the identity is allowed — only encrypting to it is not");
+        &ALICE_SK,
+        JubjubSubgroup::identity(),
+        Fr::from(0u64),
+    );
+    let identity = encode_point(JubjubSubgroup::identity());
 
     let seed = account_slots(&[0x5e; 32]);
     run(
         &Disclosure::disclose_to(),
-        registered.post,
+        post,
         &[
             acct[0],
             acct[1],

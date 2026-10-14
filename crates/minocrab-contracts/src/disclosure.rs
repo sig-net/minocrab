@@ -366,6 +366,42 @@ pub fn ephemeral_scalar(
 /// them); here it cannot, because it would have nothing to hand `kdf`.
 pub struct SharedSecret(PointLimbs<Private>);
 
+/// The account id a caller may register: `upgradeFromTransient(transientHash(
+/// [pad(32, "disclosure:acct:"), sk]))` over a WITNESSED caller secret.
+///
+/// This is `notes/disclosure-model.org` §12 option 2, and it is what makes
+/// account squatting inexpressible rather than merely expensive: `register`
+/// takes no account argument at all, so the id is a function of a secret only
+/// the caller holds. There is no value a squatter can supply to name somebody
+/// else's account, which closes BOTH halves of §6 — the land-grab and the
+/// takeover — and leaves a re-registration meaning only "rotate my own key".
+///
+/// Derived from a SECRET, not from `own_public_key`. Hashing the caller's
+/// public key would be cheaper and equally squat-proof, but anyone who knew
+/// that public key could compute the account id, so every disclosure to it
+/// would be publicly attributable to its owner. A commitment to a secret is a
+/// stable pseudonym nobody can compute from public data; senders learn it from
+/// the recipient, which they had to do anyway.
+///
+/// DOMAIN-SEPARATED FROM THE VAULT, deliberately. `common::commitment_transient`
+/// is this exact shape under the pad `"vault:user:"`, and the vault DISCLOSES
+/// its user commitment — so reusing that pad would make a caller's disclosure
+/// account id equal a value already public elsewhere, linking the two
+/// contracts for anyone holding the same `sk`. The shape is reused, per the
+/// reuse rule; the domain is not, and must not be.
+fn account_of_caller(c: &mut Circuit3) -> B32<Private> {
+    c.region("caller account id", |c| {
+        let sk = B32 {
+            hi: c.witness::<FieldT>(),
+            lo: c.witness::<FieldT>(),
+        }
+        .constrain_input(c);
+        let pad = B32::pad(c, "disclosure:acct:");
+        let f = c.transient_hash(&[pad.hi.private(), pad.lo.private(), sk.hi, sk.lo]);
+        hash::upgrade_from_transient(c, f)
+    })
+}
+
 /// `Ecdh_deriveShared(pk, e)` — the ONE Diffie-Hellman step, with the ONE copy
 /// of the weak-input guards. Returns `(E = g^e, S = pk^e)`.
 ///
@@ -507,24 +543,25 @@ impl Disclosure {
     /// that no later transaction can undo, since the registry entry is the
     /// only thing a sender binds against.
     ///
-    /// WHAT IT DOES NOT CLOSE, and the distinction is the whole reason this
-    /// is only half a fix: it proves knowledge of the key's secret, NOT the
-    /// right to speak for `account`. `account` is still a caller-supplied
-    /// `Bytes<32>`, so a squatter may register SOMEONE ELSE'S account id
-    /// under a key they genuinely hold — the proof passes, because they do
-    /// know that `ek`, and disclosures to that account then go to them.
+    /// # Whose account, and why squatting cannot be expressed
     ///
-    /// AND THIS IS A `Map.insert` WITH NO NON-MEMBERSHIP CHECK, so it is not
-    /// even first-come-first-served: an Impact `ins` overwrites, so a later
-    /// call SEIZES a live registration. Mallory need not get there first.
-    /// `tests/disclosure.rs::a_later_register_overwrites_a_live_registration`
-    /// runs the whole hijack, and
-    /// `proof_of_possession_does_not_stop_account_squatting` pins the
-    /// land-grab. `notes/disclosure-model.org` §12 lists what closing it
-    /// costs; the cheap half is a `member` check plus a `rotate` gated on the
-    /// incumbent key. Not done here, and conflating it with the possession
-    /// proof above is how "we check the key" comes to sound like "accounts
-    /// are safe".
+    /// There is NO `account` argument. The id is
+    /// [`account_of_caller`] — a commitment to a witnessed caller secret — so
+    /// a caller can only ever write the one entry their own secret derives.
+    /// That closes both halves of what §6 used to call one hole: there is no
+    /// id to grab first, and no id to seize later.
+    ///
+    /// A consequence worth stating, because it reads like a bug and is not:
+    /// this is a bare `Map.insert`, so re-registering REPLACES the stored key.
+    /// Since the key it replaces is always the caller's own, that is key
+    /// ROTATION, which a registry needs anyway — a recipient who loses `ek`
+    /// is otherwise locked out forever. What it is not is a takeover: nothing
+    /// a caller can supply addresses another account's entry.
+    ///
+    /// Still NOT proven here: that the caller is entitled to be disclosed to
+    /// by any particular counterparty. Authority of that kind is a contract's
+    /// own business (`notes/disclosure-model.org` §12 option 3 is the issuer
+    /// signature, if an issuer must gatekeep which accounts exist at all).
     ///
     /// The witnessed scalar goes through `jubjub_scalar_from_native`, which
     /// reduces mod ℓ, so a wallet's `ek` (already `< ℓ`) passes through
@@ -534,9 +571,12 @@ impl Disclosure {
     #[circuit]
     pub fn register(
         c: &mut Circuit3,
-        account: B32<Private>,
         pk: JubjubPoint<Private>,
     ) -> Discloses<(RegisteredAccount, RegisteredKey)> {
+        // WHOSE account this is, derived rather than claimed. The witness
+        // order is (sk_hi, sk_lo, ek).
+        let account = account_of_caller(c);
+
         let supplied = PointLimbs::of(c, pk);
         let ek_native = c.witness::<FieldT>();
         let ek = c.jubjub_scalar_from_native(ek_native);

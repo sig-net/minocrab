@@ -476,10 +476,12 @@ struct Disclosure {
     memos: LedgerList<Memo<Public>>,                   // encode(E) ‖ ct
 }
 
-// The recipient registers once. `ek` is witnessed and the circuit proves
-// `g^ek == pk`, so a key you do not hold cannot be registered.
+// The recipient registers once. There is no account argument: the id is
+// derived from a witnessed caller secret, so you can only register your own,
+// and re-registering rotates your key. `ek` is witnessed too and the circuit
+// proves `g^ek == pk`, so a key you do not hold cannot be registered.
 #[circuit]
-fn register(c: &mut Circuit3, account: B32<Private>, pk: JubjubPoint<Private>)
+fn register(c: &mut Circuit3, pk: JubjubPoint<Private>)
     -> Discloses<(RegisteredAccount, RegisteredKey)>;
 
 // Anyone may then disclose to that account.
@@ -495,7 +497,7 @@ Opening a memo takes **no proof, no circuit and no transaction** — the recipie
 
 | circuit | k | rows |
 |---|---|---|
-| `register` | 10 | 840 |
+| `register` | 10 | 1,006 |
 | `discloseTo` | 14 | 12,796 |
 
 What it proves, what it cannot, and what it costs transaction privacy next to a shielded UTXO: [notes/disclosure-model.org](notes/disclosure-model.org).
