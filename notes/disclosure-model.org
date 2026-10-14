@@ -1,20 +1,21 @@
 #+title: Disclosing data to an individual: what a MinoCrab contract can and cannot promise
 
-Exploration opened 2026-10-11 at dmd's request, on branch =disclosure-explore= (worktree =~/minocrab-disclosure=), off =main= at fd16216. NOT a milestone: nothing here is on the critical path, and nothing here is load-bearing for M44. The executable half is =crates/minocrab-contracts/src/disclosure.rs= and =crates/minocrab-contracts/tests/disclosure.rs= (8 tests, green).
+Exploration opened 2026-10-11 at dmd's request, off =main= at fd16216. NOT a milestone: nothing here is on the critical path, and nothing here is load-bearing for M44. The executable half is =crates/minocrab-contracts/src/disclosure.rs= and =crates/minocrab-contracts/tests/disclosure.rs= (8 tests, green).
+
+Gated 2026-10-13 onto =main= after M44: both circuits are in =support::circuits()=, so the snapshots, the ZKIR dump and the lints see them, and README.md carries the feature. That gating is the part the exploration itself had NOT done; §11 is what the gates said.
 
 The question as dmd put it: can a smart contract disclose data to an individual person — some encryption their key can decrypt privately — in the spirit of DAML's privacy model, not its implementation, but its ability to make sure people can see data within their purview?
 
 * 0. Driving it
 
 #+begin_src sh
-cd ~/minocrab-disclosure
 cargo test -p minocrab-contracts --test disclosure                     # the 8 gates
 cargo test -p minocrab-contracts --test disclosure -- --nocapture      # + the row table and region profile
 #+end_src
 
 Three files. =crates/minocrab-contracts/src/disclosure.rs= is the contract and the primitive; =crates/minocrab-contracts/tests/disclosure.rs= is the gates AND the native wallet (the recipient's side, in plain Rust); this note is the argument. The one dependency added is =group= as a dev-dependency, for =JubjubSubgroup::generator()=.
 
-Nothing is committed to =main= and nothing is pushed. §8 is the ordered list of what to do next; §6's last paragraph is the one deliberate soundness hole, left visible.
+§8 is the ordered list of what to do next; §6's last paragraph is the one deliberate soundness hole, left visible.
 
 * 1. The short answer
 
@@ -95,7 +96,9 @@ CANNOT DO AT ALL: exclusivity. The sender can encrypt the same value to a second
 
 AUTHORITY, which is DAML's other half: expressible, and this repo already has the pieces. A =controller= is "assert, in-circuit, that the caller holds a secret / produced a signature" — =secp256k1_ecdsa_verify= and =own_public_key= are both in =minocrab-std=. What is missing versus DAML is that authority there is a LEDGER-MODEL concept checked uniformly, and here it is an assertion each circuit has to remember to write. That asymmetry is worth a note of its own if the exploration continues.
 
-ONE SOUNDNESS HOLE LEFT OPEN ON PURPOSE: =register= does not prove possession of =ek=. Whoever registers an account first owns it, and can register a key they do not control, or register someone else's account under their own key — after which "disclosures to Alice" go to them. The fix is cheap and is rung 1 in §8: witness =ek=, assert =ec_mul_generator(ek) == pk=. It is left undone so the hole is visible rather than papered over.
+REGISTRATION, AND THE TWO HOLES THAT ARE NOT ONE HOLE. The first draft of this note treated "=register= does not prove possession of =ek=" as a single defect with a single cheap fix. It is two, they need different fixes, and only one of them is now closed — a distinction worth keeping, because conflating them is how "we check the key" comes to sound like "accounts are safe".
+- A KEY THE REGISTRANT DOES NOT HOLD. CLOSED 2026-10-13: =register= witnesses =ek= and binds =ec_mul_generator(ek)= to the supplied =pk= limb for limb. This mattered more than "proof of possession" makes it sound — without it anyone could point an account at a key whose secret is lost or never existed, and since the registry entry is the only thing =disclose_to= binds against, every disclosure to that account would be undecryptable by ANYONE and no later transaction could undo it. A denial of service, not just an impersonation risk. Cost: =register= 157 → 840 rows, k 8 → 10, which is one generator multiplication and two =test_eq= and is paid once per account. Gated by =a_key_the_registrant_does_not_hold_cannot_be_registered=, which also registers the same point with its OWN secret so the refusal is the proof talking and not the shape of the call. The identity point still registers, with =ek = 0=, because =g^0 = identity= really is a proof of possession for it — it dies at =derive_shared= instead, which is where it should.
+- SOMEONE ELSE'S ACCOUNT UNDER A KEY THEY DO HOLD. STILL OPEN, and the proof above does nothing about it: =account= is a caller-supplied =Bytes<32>=, so a squatter registers Alice's id under their own key, the possession proof PASSES because they genuinely know that =ek=, and disclosures to Alice go to them. Closing it means binding the account to the CALLER — =own_public_key=, or a commitment to the caller's secret the way the vault's =common::commitment_transient= does — which is authority (guarantee 4), a different obligation from key ownership. Pinned as a passing test, =proof_of_possession_does_not_stop_account_squatting=, so the limit is executable rather than a sentence someone can skim.
 
 * 7. Cost, measured
 
@@ -103,7 +106,7 @@ ONE SOUNDNESS HOLE LEFT OPEN ON PURPOSE: =register= does not prove possession of
 
 | circuit    |  k |  rows |
 |------------+----+-------|
-| register   |  8 |   157 |
+| register   | 10 |   840 |
 | discloseTo | 14 | 12796 |
 
 Region attribution of =discloseTo=: 64.7% =ecdh derive shared= (~8049 rows — the two unavoidable scalar multiplications, =E = g^e= and =S = pk^e=, at roughly 4k each), 31.9% top level (the Impact ops, the =Uint<128>= range constraint, the registry binding), 3.2% randomness expansion, and the two SHA-256 hashes essentially free. SO A DISCLOSURE IS A CURVE COST, NOT A HASH COST, which is the opposite of most circuits in this repo.
@@ -114,7 +117,7 @@ The number that matters for the DAML comparison: AN OBSERVER IS FREE IN DAML AND
 
 * 8. The rungs, in order
 
-1. PROOF OF KEY POSSESSION AT =register=. Witness =ek=, assert =ec_mul_generator(ek) == pk=. One curve operation and two =test_eq=. Closes §6's open hole; without it "their key" does not mean anything.
+1. PROOF OF KEY POSSESSION AT =register=. DONE 2026-10-13 (§6, first bullet): witnessed =ek=, =ec_mul_generator(ek)= bound to =pk=, 157 → 840 rows and k 8 → 10. What it did NOT do is bind =account= to the caller, so the squatting half of §6 is still open and is now rung 1b: derive or bind =account= from =own_public_key= / a commitment to the caller's secret. That is authority rather than key ownership, and it is the larger of the two.
 2. A VIEW TAG. One clear byte of the KDF output per memo, cutting the recipient's scan by 255/256. Costs nothing in-circuit and buckets recipients 256 ways; the trade is worth writing down before choosing.
 3. ONE-TIME ADDRESSES. §4's option (2) — the real fix for recipient privacy, and the biggest single piece of work here.
 4. A MULTI-RECIPIENT PRIMITIVE that hoists the ephemeral while keeping the weak-input guards inside the only function that can produce a shared secret. §7's factor of two, done without reintroducing §9's mistake.
@@ -155,3 +158,15 @@ WHERE WE STAND: safe by the TYPE and not by the comment. =encrypt= takes =Uint<1
 (f) THE NATIVE PER-RECIPIENT CHANNEL EXISTS AND A CONTRACT MAY NOT USE IT. A zswap =Output= carries =ciphertext: Option<Sp<CoinCiphertext>>=, built as =CoinCiphertext::new(rng, coin, epk)= to the recipient's encryption key — Midnight already has a per-recipient encrypted channel in consensus. But =MalformedOffer::ContractSentCiphertext= ("contract was sent an output with a ciphertext") makes a contract-addressed output carrying one MALFORMED, and the payload is a =CoinInfo= regardless, not arbitrary data. So the chain's own channel is user-to-user value transfer only, and a contract wanting to disclose to a person has to build §1's path. This is the single most useful thing to know before starting.
 
 (g) =PointLimbs::disclose_as= produces TWO disclosure records under one label, not one record of two wires, because =disclose= is per-wire. Anything reading =Compiled3::disclosures= by label has to collect all matching records. Cost a debugging round in =tests/disclosure.rs=; worth knowing for any multi-wire typed disclosure.
+
+* 11. Putting it in the gated set (2026-10-13)
+
+The exploration's own 8 tests were green from the start, and that is all the original branch checked. Running the WHOLE workspace found one red the exploration had never seen: =circuit_closure=, the closure gate that walks =src/= for =#[circuit]= attributes and demands each one appear in =support::circuits()=. Both disclosure circuits were missing from it, and its message says exactly what that costs — "so no snapshot, dump, adversarial suite or lint sees them". An exploration is the last thing that should be exempt from that, so the fix is the registry line rather than an exemption: =listed.extend(of("disclosure", &disclosure::Disclosure::CIRCUITS));= appended LAST in =circuits()=, so the frozen tables above it keep their row order and only gain entries. This is the gate earning its keep a second time (it found =xcall::Xcall::call_emit= on its first run).
+
+What that pulled in, and what each said:
+- =interface_snapshot= — two appended entries, nothing moved. =register= is =(account_hi, account_lo, pk: Point<Jubjub>)=; =disclose_to= adds =(value, seed_hi, seed_lo)=. A =B32= argument crosses as two field limbs, which is why an account is two =in= lines and not one.
+- =row_snapshot= — 226 → 228 circuits, =disclosure::register= =(10, 840)= and =disclosure::disclose_to= =(14, 12796)=. The frozen pair is now the SAME number §7's table quotes, so the cost claim in this note and in the README is a gate rather than a measurement someone took once. README's "all 226 circuits are frozen" moved to 228 with it.
+- =taint_lint= — ZERO findings from either circuit, which is the result worth recording. =disclose_to= absorbs the shared-secret limbs and the registry limbs into =persistent_hash= preimages, exactly the shape §B3 is about, and every one of those wires is already bounded by a rule the pass has: the =encode= outputs carry the (248, 8) recomposition warrant (§4), and =value= is a =Uint<128>= whose =constrain_bits 128= is in-circuit. So the lint is silent here for the right reason and not by luck — and silent under the post-M23-R3 rules (notes/taint-lint.org §9), not merely absent from a frozen baseline.
+- =leakage_inventory= — green and frozen without regeneration: its inventory is per-contract and disclosure is not one of the contracts it walks. Worth knowing rather than assuming, since the disclosure path is precisely where a leakage question would be interesting; if the exploration continues, adding it to that instrument is its own rung.
+
+State: =cargo test --workspace --no-fail-fast= is green with these two circuits in the set, and so are =cargo clippy --workspace --all-targets -- -D warnings= and the =snapshots= job (=--release=, both snapshot tests).

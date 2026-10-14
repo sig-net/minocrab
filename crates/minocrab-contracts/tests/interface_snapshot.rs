@@ -2592,6 +2592,26 @@ wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
+    (
+        "disclosure::register",
+        "\
+in  account_hi: Scalar<BLS12-381>
+in  account_lo: Scalar<BLS12-381>
+in  pk: Point<Jubjub>
+wit Scalar<BLS12-381>
+",
+    ),
+    (
+        "disclosure::disclose_to",
+        "\
+in  account_hi: Scalar<BLS12-381>
+in  account_lo: Scalar<BLS12-381>
+in  pk: Point<Jubjub>
+in  value: Scalar<BLS12-381>
+in  seed_hi: Scalar<BLS12-381>
+in  seed_lo: Scalar<BLS12-381>
+",
+    ),
     // GENERATED END
 ];
 

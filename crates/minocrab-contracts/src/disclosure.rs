@@ -491,24 +491,56 @@ pub const DISCLOSURE: Disclosure = Disclosure::new();
 
 #[contract]
 impl Disclosure {
-    /// `register(account, pk)` — publish the account's Jubjub public key.
+    /// `register(account, pk)` — publish the account's Jubjub public key,
+    /// proving the registrant holds its secret.
     ///
     /// Both arguments go public: the account is the map key and the key is the
     /// stored value, and a directory everyone can encrypt to is the point.
-    /// What this does NOT do is prove the registrant HOLDS the secret behind
-    /// `pk` — a proof of knowledge of `ek` (a Schnorr-style
-    /// `ec_mul_generator(ek) == pk` over a witnessed `ek`) would, and
-    /// `notes/disclosure-model.org` §3 says why that matters for the
-    /// "within their purview" claim and leaves it as the next rung.
+    ///
+    /// # Proof of possession, and the half of the hole it closes
+    ///
+    /// `ek` is witnessed and `ec_mul_generator(ek)` is bound to the supplied
+    /// `pk` limb for limb, so a key nobody controls cannot be registered.
+    /// Without it "their key" means nothing: an attacker could point an
+    /// account at a key whose secret is lost, and every disclosure to that
+    /// account would then be undecryptable by anyone — a denial of service
+    /// that no later transaction can undo, since the registry entry is the
+    /// only thing a sender binds against.
+    ///
+    /// WHAT IT DOES NOT CLOSE, and the distinction is the whole reason this
+    /// is only half a fix: it proves knowledge of the key's secret, NOT the
+    /// right to speak for `account`. `account` is still a caller-supplied
+    /// `Bytes<32>`, so a squatter may register SOMEONE ELSE'S account id
+    /// under a key they genuinely hold — the proof passes, because they do
+    /// know that `ek`, and disclosures to that account then go to them.
+    /// Closing it needs the account BOUND TO THE CALLER (`own_public_key`,
+    /// or a commitment to the caller's secret the way the vault's
+    /// `common::commitment_transient` does), which is a separate rung and
+    /// deliberately not done here. `notes/disclosure-model.org` §6 keeps the
+    /// two apart, because conflating them is how "we check the key" comes to
+    /// sound like "accounts are safe".
+    ///
+    /// The witnessed scalar goes through `jubjub_scalar_from_native`, which
+    /// reduces mod ℓ, so a wallet's `ek` (already `< ℓ`) passes through
+    /// unchanged, and a prover witnessing `ek + ℓ` proves the same statement
+    /// about the same key. That is the module's existing idiom — see
+    /// [`ephemeral_scalar`].
     #[circuit]
     pub fn register(
         c: &mut Circuit3,
         account: B32<Private>,
         pk: JubjubPoint<Private>,
     ) -> Discloses<(RegisteredAccount, RegisteredKey)> {
-        let limbs = PointLimbs::of(c, pk);
+        let supplied = PointLimbs::of(c, pk);
+        let ek_native = c.witness::<FieldT>();
+        let ek = c.jubjub_scalar_from_native(ek_native);
+        let derived = c.ec_mul_generator(ek);
+        let derived = PointLimbs::of(c, JubjubPoint::from_point(derived));
+        c.assert_eq(supplied.x, derived.x);
+        c.assert_eq(supplied.y, derived.y);
+
         let account = account.disclose_as::<RegisteredAccount>(c);
-        let limbs = limbs.disclose_as::<RegisteredKey>(c);
+        let limbs = supplied.disclose_as::<RegisteredKey>(c);
         DISCLOSURE.keys.insert(c, &account, &limbs);
         Discloses::of(())
     }

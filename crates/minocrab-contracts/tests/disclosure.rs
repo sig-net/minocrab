@@ -51,6 +51,14 @@ fn keypair(seed: u64) -> (JubjubFr, JubjubSubgroup) {
     (ek, JubjubSubgroup::generator() * ek)
 }
 
+/// The witness `register` wants for a key from [`keypair`]: the NATIVE field
+/// element, before the reduction. The circuit applies
+/// `jubjub_scalar_from_native` itself, exactly as `keypair` does, so the two
+/// sides agree on which scalar a seed means.
+fn ek_witness(seed: u64) -> Fr {
+    Fr::from(seed)
+}
+
 /// `encode(point)` off-circuit: the two field limbs the ledger stores.
 fn encode_point(p: JubjubSubgroup) -> [Fr; 2] {
     let limbs = encode_offcircuit(&IrValue::JubjubPoint(p));
@@ -178,10 +186,21 @@ fn run(
     st: StateValue<InMemoryDB>,
     inputs: &[Fr],
 ) -> Result<Executed, ExecError> {
+    run_wit(compiled, st, inputs, &[])
+}
+
+/// [`run`] with a private transcript. `register` witnesses the native scalar
+/// behind the key it publishes, so its proof of possession needs one.
+fn run_wit(
+    compiled: &Compiled3,
+    st: StateValue<InMemoryDB>,
+    inputs: &[Fr],
+    wit: &[Fr],
+) -> Result<Executed, ExecError> {
     let ctx = exec::context(st, [7u8; 32]);
     exec::execute(
         &compiled.ir,
-        &Call::new(inputs, &[]).with_comm_rand(Fr::from(5u64)),
+        &Call::new(inputs, wit).with_comm_rand(Fr::from(5u64)),
         &ctx,
     )
 }
@@ -231,14 +250,15 @@ const ALICE: [u8; 32] = [0xa1; 32];
 
 /// Register Alice's key, then disclose `value` to her. Returns the memo as the
 /// ledger holds it.
-fn disclose(value: u128, pk: JubjubSubgroup, seed: &[u8; 32]) -> [Fr; 3] {
+fn disclose(value: u128, pk: JubjubSubgroup, ek_native: Fr, seed: &[u8; 32]) -> [Fr; 3] {
     let register = Disclosure::register();
     let acct = account_slots(&ALICE);
     let pk_limbs = encode_point(pk);
-    let registered = run(
+    let registered = run_wit(
         &register,
         empty_state(),
         &[acct[0], acct[1], pk_limbs[0], pk_limbs[1]],
+        &[ek_native],
     )
     .expect("registration applies");
 
@@ -275,7 +295,7 @@ fn the_recipient_recovers_the_value_and_nobody_else_does() {
     let (eve_ek, _eve_pk) = keypair(43);
 
     for value in [0u128, 1, 1_000_000, u128::MAX] {
-        let memo = disclose(value, pk, &[0x5e; 32]);
+        let memo = disclose(value, pk, ek_witness(42), &[0x5e; 32]);
         assert_eq!(
             wallet_decrypt(&memo, ek),
             Fr::from(value),
@@ -295,8 +315,8 @@ fn the_recipient_recovers_the_value_and_nobody_else_does() {
 #[test]
 fn two_disclosures_of_the_same_value_share_nothing() {
     let (ek, pk) = keypair(42);
-    let a = disclose(7_777, pk, &[0x01; 32]);
-    let b = disclose(7_777, pk, &[0x02; 32]);
+    let a = disclose(7_777, pk, ek_witness(42), &[0x01; 32]);
+    let b = disclose(7_777, pk, ek_witness(42), &[0x02; 32]);
     assert_ne!(a[0..2], b[0..2], "distinct ephemeral keys");
     assert_ne!(a[2], b[2], "distinct ciphertexts");
     assert_eq!(wallet_decrypt(&a, ek), Fr::from(7_777u64));
@@ -314,10 +334,11 @@ fn a_memo_cannot_be_addressed_to_an_unregistered_key() {
     let register = Disclosure::register();
     let acct = account_slots(&ALICE);
     let alice = encode_point(pk);
-    let registered = run(
+    let registered = run_wit(
         &register,
         empty_state(),
         &[acct[0], acct[1], alice[0], alice[1]],
+        &[ek_witness(42)],
     )
     .expect("registration applies");
 
@@ -344,6 +365,65 @@ fn a_memo_cannot_be_addressed_to_an_unregistered_key() {
     );
 }
 
+/// PROOF OF POSSESSION: a key whose secret the registrant does not hold
+/// cannot be registered. Without this, an attacker could point an account at
+/// a key nobody controls and every disclosure to that account would be
+/// undecryptable by anyone — and the registry entry is the only thing a
+/// sender binds against, so no later transaction could undo it.
+#[test]
+fn a_key_the_registrant_does_not_hold_cannot_be_registered() {
+    let (_ek, pk) = keypair(42);
+    let acct = account_slots(&ALICE);
+    let limbs = encode_point(pk);
+
+    // Key 42's point, key 43's secret.
+    let err = run_wit(
+        &Disclosure::register(),
+        empty_state(),
+        &[acct[0], acct[1], limbs[0], limbs[1]],
+        &[ek_witness(43)],
+    )
+    .expect_err("proof of possession refuses it");
+    let shown = format!("{err}");
+    assert!(
+        shown.contains("Equality constraint failed"),
+        "expected the possession binding's constrain_eq to fail, got {shown}"
+    );
+
+    // The same point with its OWN secret registers, so the refusal above is
+    // the proof talking and not the shape of the call.
+    run_wit(
+        &Disclosure::register(),
+        empty_state(),
+        &[acct[0], acct[1], limbs[0], limbs[1]],
+        &[ek_witness(42)],
+    )
+    .expect("the holder of the key may register it");
+}
+
+/// THE LIMIT of that proof, pinned so it is never read as more than it is: a
+/// squatter may register SOMEONE ELSE'S account id under a key they genuinely
+/// hold, and the proof passes, because they really do know that secret.
+/// `account` is a caller-supplied `Bytes<32>` and nothing binds it to the
+/// caller, so "we check the key" is NOT "accounts are safe". Closing this
+/// needs the account bound to the caller — `register`'s docs and
+/// notes/disclosure-model.org §6 say which, and it is deliberately not done.
+#[test]
+fn proof_of_possession_does_not_stop_account_squatting() {
+    let (_mallory_ek, mallory_pk) = keypair(99);
+    let acct = account_slots(&ALICE);
+    let mallory = encode_point(mallory_pk);
+
+    run_wit(
+        &Disclosure::register(),
+        empty_state(),
+        // Alice's account id, Mallory's key, Mallory's own secret.
+        &[acct[0], acct[1], mallory[0], mallory[1]],
+        &[ek_witness(99)],
+    )
+    .expect("nothing binds the account to the caller — this is the open rung");
+}
+
 /// Encrypting to the identity point is refused: `S = identity` for any `e`,
 /// so `mask = KDF(identity)` is a value any observer can recompute and the
 /// "ciphertext" opens trivially. The identity IS a valid subgroup point, so
@@ -353,10 +433,13 @@ fn the_identity_key_is_refused() {
     let register = Disclosure::register();
     let acct = account_slots(&ALICE);
     let identity = encode_point(JubjubSubgroup::identity());
-    let registered = run(
+    let registered = run_wit(
         &register,
         empty_state(),
         &[acct[0], acct[1], identity[0], identity[1]],
+        // `g^0 == identity`, so zero is a genuine proof of possession for it:
+        // the identity survives registration and dies at `derive_shared`.
+        &[Fr::from(0u64)],
     )
     .expect("registering the identity is allowed — only encrypting to it is not");
 

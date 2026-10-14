@@ -19,7 +19,7 @@ use midnight_transient_crypto::proofs::ProofPreimage;
 use minocrab::v3::Compiled3;
 use minocrab_zkir::v3::{to_zkir_string, IrSource};
 use minocrab_contracts::{
-    adts, attest, bounded, bounded_ledger, coins, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
+    adts, attest, bounded, bounded_ledger, coins, disclosure, kernel_tokens, erc20_vault, erc20_vault_pending, events, events_borsh, hashing, manager, mint_tokens,
     nested, opaque,
     serde_builtin, signet_contract, test_caller, treasury, xcall, xcall_with_payment,
     xcontract_events, xcontract_events_borsh,
@@ -411,6 +411,12 @@ pub fn circuits() -> Vec<Circuit> {
     // the rows here are deliberately BELOW compactc's artifacts
     // (tests/manager_differential.rs holds the PI-equality warrant).
     listed.extend(of("manager", &manager::Manager::CIRCUITS));
+    // Per-recipient disclosure (notes/disclosure-model.org): an EXPLORATION,
+    // listed anyway, because `circuit_closure` is right that an unlisted
+    // circuit is seen by no snapshot, dump or lint — an exploration is the
+    // last thing that should be exempt. Appended LAST so the frozen tables
+    // above keep their row order and only gain entries.
+    listed.extend(of("disclosure", &disclosure::Disclosure::CIRCUITS));
     listed
 }
 
