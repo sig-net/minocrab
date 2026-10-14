@@ -424,6 +424,56 @@ fn proof_of_possession_does_not_stop_account_squatting() {
     .expect("nothing binds the account to the caller — this is the open rung");
 }
 
+/// WORSE THAN FIRST-COME-FIRST-SERVED, and the reason the squatting rung is
+/// the larger of the two: `register` is a bare `Map.insert`, with no
+/// non-membership check, so a later call OVERWRITES a live registration.
+/// Mallory does not have to get there first — they can take over an account
+/// that has been registered and in use for months, and every subsequent
+/// disclosure to it is addressed to them.
+#[test]
+fn a_later_register_overwrites_a_live_registration() {
+    let (_alice_ek, alice_pk) = keypair(42);
+    let (mallory_ek, mallory_pk) = keypair(99);
+    let acct = account_slots(&ALICE);
+    let alice = encode_point(alice_pk);
+    let mallory = encode_point(mallory_pk);
+
+    let first = run_wit(
+        &Disclosure::register(),
+        empty_state(),
+        &[acct[0], acct[1], alice[0], alice[1]],
+        &[ek_witness(42)],
+    )
+    .expect("Alice registers her own key");
+
+    // Mallory overwrites it, proving possession of THEIR key.
+    let second = run_wit(
+        &Disclosure::register(),
+        first.post,
+        &[acct[0], acct[1], mallory[0], mallory[1]],
+        &[ek_witness(99)],
+    )
+    .expect("no non-membership check stands in the way");
+
+    // The registry now binds Alice's account to Mallory's key, so a memo
+    // addressed to "Alice" is one Mallory opens.
+    let disclose_to = Disclosure::disclose_to();
+    let seed = account_slots(&[0x5e; 32]);
+    let out = run(
+        &disclose_to,
+        second.post,
+        &[acct[0], acct[1], mallory[0], mallory[1], Fr::from(4_242u64), seed[0], seed[1]],
+    )
+    .expect("the binding now accepts Mallory's key for Alice's account");
+    let eph = disclosed(&disclose_to, &out.run, "ephemeral key");
+    let ct = disclosed(&disclose_to, &out.run, "masked value");
+    assert_eq!(
+        wallet_decrypt(&[eph[0], eph[1], ct[0]], mallory_ek),
+        Fr::from(4_242u64),
+        "Mallory reads a disclosure meant for Alice"
+    );
+}
+
 /// Encrypting to the identity point is refused: `S = identity` for any `e`,
 /// so `mask = KDF(identity)` is a value any observer can recompute and the
 /// "ciphertext" opens trivially. The identity IS a valid subgroup point, so

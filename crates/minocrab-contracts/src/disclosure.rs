@@ -513,12 +513,18 @@ impl Disclosure {
     /// `Bytes<32>`, so a squatter may register SOMEONE ELSE'S account id
     /// under a key they genuinely hold — the proof passes, because they do
     /// know that `ek`, and disclosures to that account then go to them.
-    /// Closing it needs the account BOUND TO THE CALLER (`own_public_key`,
-    /// or a commitment to the caller's secret the way the vault's
-    /// `common::commitment_transient` does), which is a separate rung and
-    /// deliberately not done here. `notes/disclosure-model.org` §6 keeps the
-    /// two apart, because conflating them is how "we check the key" comes to
-    /// sound like "accounts are safe".
+    ///
+    /// AND THIS IS A `Map.insert` WITH NO NON-MEMBERSHIP CHECK, so it is not
+    /// even first-come-first-served: an Impact `ins` overwrites, so a later
+    /// call SEIZES a live registration. Mallory need not get there first.
+    /// `tests/disclosure.rs::a_later_register_overwrites_a_live_registration`
+    /// runs the whole hijack, and
+    /// `proof_of_possession_does_not_stop_account_squatting` pins the
+    /// land-grab. `notes/disclosure-model.org` §12 lists what closing it
+    /// costs; the cheap half is a `member` check plus a `rotate` gated on the
+    /// incumbent key. Not done here, and conflating it with the possession
+    /// proof above is how "we check the key" comes to sound like "accounts
+    /// are safe".
     ///
     /// The witnessed scalar goes through `jubjub_scalar_from_native`, which
     /// reduces mod ℓ, so a wallet's `ek` (already `< ℓ`) passes through

@@ -498,7 +498,7 @@ Opening a memo takes **no proof, no circuit and no transaction** — the recipie
 | `register` | 10 | 840 |
 | `discloseTo` | 14 | 12,796 |
 
-What it proves, what it cannot, and the open rungs: [notes/disclosure-model.org](notes/disclosure-model.org).
+What it proves, what it cannot, and what it costs transaction privacy next to a shielded UTXO: [notes/disclosure-model.org](notes/disclosure-model.org).
 
 ## Porting kit
 
