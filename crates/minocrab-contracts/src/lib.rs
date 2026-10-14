@@ -12,6 +12,9 @@ pub mod bounded;
 pub mod bounded_ledger;
 pub mod coins;
 pub mod common;
+/// Per-recipient disclosure (notes/disclosure-model.org) — the one module here
+/// with no Compact original to be a rewrite OF. An exploration, not corpus.
+pub mod disclosure;
 pub mod erc20_vault;
 pub mod erc20_vault_pending;
 pub mod evm;

@@ -13,7 +13,7 @@ That said, it is a direct port of the Compact compiler with millions of tests ch
 
 **More errors caught at compile time.** A `Wire<Private>` cannot reach a public output without `disclose(w, label)`, and the label must appear in the circuit's signature; a generated test enforces that and caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard. A guarded-off read must say what its default means. A literal outside its operand's bound doesn't build. Argument types *are* the range constraints: `Uint<64>` is `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
 
-**Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a reference model affordable: every vault circuit's run is replayed through Midnight's reference VM against a modelled pre-state, with the guard failures both artifacts must reject and a tamper sweep over every transcript and witness element ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the Pending lineage keeps an eighteen-property spec harness and its own executor replay ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), [executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)); and a leakage inventory is generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 226 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The property harness and adversarial sweeps of the seventeen-circuit vault retired with it (M44); their flush-pattern successors are the milestone's open rung F.
+**Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a reference model affordable: every vault circuit's run is replayed through Midnight's reference VM against a modelled pre-state, with the guard failures both artifacts must reject and a tamper sweep over every transcript and witness element ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the Pending lineage keeps an eighteen-property spec harness and its own executor replay ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), [executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)); and a leakage inventory is generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 228 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The property harness and adversarial sweeps of the seventeen-circuit vault retired with it (M44); their flush-pattern successors are the milestone's open rung F.
 
 **Direct ZKIR emission.** Low-level instruction selection: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Rows −12..−86% on the vault, prove time −44..−81% wherever a circuit is not floored by protocol-pinned crypto ([BENCHMARK.md](BENCHMARK.md)).
 
@@ -464,6 +464,43 @@ fn complete(c: &mut Circuit3, ticket: Succeeded<Kinded<Transfer, 1>>) -> Disclos
 | `refund` | 15 | 26,073 | 4 | 0 |
 
 The serial twin — a step that is not a monoid, such as a moving average — keeps the same `insert` / `take` / `combine` and adds a `sequence` that flushes one to four keys through one `popeq` of the accumulator ([fee_ema.rs](crates/minocrab-contracts/tests/fee_ema.rs): report k8 / 130 rows, sequence k10 / 1,008, settle k7 / 108).
+
+## Disclosing to one person
+
+`disclose_to` writes a value to the public ledger that only the holder of one registered Jubjub key can read — so an RWA issuer can require every transaction to be registered with them before it takes place, and read the details when nobody else can.
+
+```rust
+#[derive(Ledger)]
+struct Disclosure {
+    keys: LedgerMap<B32<Public>, PointLimbs<Public>>,  // account -> encode(pk)
+    memos: LedgerList<Memo<Public>>,                   // encode(E) ‖ ct
+}
+
+// The recipient registers once. There is no account argument: the id is
+// derived from a witnessed caller secret, so you can only register your own,
+// and re-registering rotates your key. `ek` is witnessed too and the circuit
+// proves `g^ek == pk`, so a key you do not hold cannot be registered.
+#[circuit]
+fn register(c: &mut Circuit3, pk: JubjubPoint<Private>)
+    -> Discloses<(RegisteredAccount, RegisteredKey)>;
+
+// Anyone may then disclose to that account.
+#[circuit]
+fn disclose_to(c: &mut Circuit3, account: B32<Private>, pk: JubjubPoint<Private>,
+               value: Uint<128>, seed: B32<Private>)
+    -> Discloses<(RegisteredAccount, EphemeralKey, MaskedValue)>;
+```
+
+`seed` must be fresh CSPRNG bytes the sender never publishes: it keys a one-time pad, so a guessable seed opens every memo sent under it.
+
+Opening a memo takes **no proof, no circuit and no transaction** — the recipient recomputes the shared secret from their own key and subtracts the pad, which [disclosure.rs](crates/minocrab-contracts/tests/disclosure.rs) does natively in Rust.
+
+| circuit | k | rows |
+|---|---|---|
+| `register` | 10 | 1,006 |
+| `discloseTo` | 14 | 12,796 |
+
+What it proves, what it cannot, and what it costs transaction privacy next to a shielded UTXO: [notes/disclosure-model.org](notes/disclosure-model.org).
 
 ## Porting kit
 

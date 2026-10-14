@@ -3139,6 +3139,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "borsh",
+ "group",
  "libc",
  "midnight-base-crypto",
  "midnight-coin-structure",

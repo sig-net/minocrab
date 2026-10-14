@@ -263,6 +263,8 @@ const SNAPSHOT: &[(&str, u8, usize)] = &[
     ("manager::deposit_shielded", 16, 38488),
     ("manager::deposit_unshielded", 13, 4150),
     ("manager::execute", 18, 209316),
+    ("disclosure::register", 10, 1006),
+    ("disclosure::disclose_to", 14, 12796),
     // GENERATED END
 ];
 
