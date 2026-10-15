@@ -265,10 +265,19 @@ pub fn point_av(point: &IrValue) -> AlignedValue {
 /// unlike `prims::aligned` (which only takes plain widths), this keeps a
 /// record's or a point's own [`minocrab::AlignmentAtom`] list, which may
 /// contain non-`Bytes` atoms (a `Field`, for a point's fifth limb).
+///
+/// Atoms come back in the ledger's NORMAL FORM (trailing zero bytes
+/// stripped, `ValueAtom::normalize`), as `ops.rs`'s constructors already
+/// build them and as the executor now decodes a program's values: a
+/// `bytes<32>` whose top byte is zero is one and the same state value
+/// either way, and the canonical spelling is the one the ledger stores and
+/// the one an absent union arm decodes as unit from.
 pub fn aligned_atoms(atoms: &[minocrab::AlignmentAtom], limbs: &[Fr]) -> AlignedValue {
-    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
+    let mut value = Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
         .parse_field_repr(limbs)
-        .expect("limbs match the alignment")
+        .expect("limbs match the alignment");
+    value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+    value
 }
 
 /// The `ProofPreimage` a call implies.
