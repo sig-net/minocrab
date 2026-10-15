@@ -89,6 +89,8 @@ enum Node<V: Vis3> {
     /// A boolean that is already a wire ([`is_true`]) — zero instructions.
     Leaf(Wire3<FieldT, V>),
     Not(Box<Node<V>>),
+    /// `a → b`: one `select(a, b, 1)`.
+    Implies(Box<Node<V>>, Box<Node<V>>),
     And(Box<Node<V>>, Box<Node<V>>),
     Or(Box<Node<V>>, Box<Node<V>>),
 }
@@ -534,6 +536,18 @@ impl<V: Vis3> Check<V> {
         }
     }
 
+    /// `self → other` (`!self || other`) — ONE `cond_select` over the two
+    /// lowered booleans: where the premise holds the conclusion decides,
+    /// otherwise true. The shape of every scope rule ("a spend grant must
+    /// have a positive cap"); written as `not(a).or(b)` it is four
+    /// instructions and twelve rows, this is five.
+    pub fn implies(self, other: Check<V>) -> Check<V> {
+        Check {
+            node: Node::Implies(Box::new(self.node), Box::new(other.node)),
+            message: self.message.or(other.message),
+        }
+    }
+
     /// Lower to the boolean wire, for a circuit that wants the value (a
     /// branch guard, a `cond_select`) rather than an assertion. This is the
     /// escape hatch; `c.assert(p)` is the normal path.
@@ -620,6 +634,11 @@ fn lower<V: Vis3>(c: &mut Circuit3, node: Node<V>) -> Wire3<FieldT, V> {
         Node::Not(inner) => {
             let value = lower(c, *inner);
             c.not(value)
+        }
+        Node::Implies(premise, conclusion) => {
+            let premise = lower(c, *premise);
+            let conclusion = lower(c, *conclusion);
+            c.cond_select(premise, conclusion, 1u64)
         }
         Node::And(left, right) => {
             let left = lower(c, *left);

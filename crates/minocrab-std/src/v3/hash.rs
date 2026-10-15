@@ -60,8 +60,13 @@
 use minocrab::v3::{AnyWire3, Circuit3, FieldT, Wire3};
 use minocrab::Alignment;
 
+use midnight_base_crypto::repr::BinaryHashRepr;
+use midnight_transient_crypto::fab::{AlignmentExt, ValueReprAlignedValue};
+use minocrab::{AlignmentAtom, AlignmentSegment, Fr};
+use sha2::{Digest, Sha256};
+
 use super::borsh::{limbs_of, CircuitBorsh};
-use super::{Serializer, Vis3, B32};
+use super::{BytesN, Serializer, Uint, Vis3, B32};
 
 /// `persistentHash` (SHA-256) of the value's canonical Borsh encoding — the
 /// DEFAULT flavor, and the free one.
@@ -192,4 +197,168 @@ pub fn upgrade_from_transient<V: Vis3>(c: &mut Circuit3, f: Wire3<FieldT, V>) ->
     let hi = V::from_public(c.constant(0u64));
     let (_over_31_bytes, lo) = c.div_mod_power_of_two(f, 248);
     B32 { hi, lo }
+}
+
+// ---- the preimage builder ----------------------------------------------------
+
+/// A `persistentHash` preimage in FAB layout, built one typed field at a
+/// time — the Compact-parity flavor of [`persistent_hash_compact`] without
+/// the hand-written alignment.
+///
+/// ```ignore
+/// let entry = Preimage::tag("midnight:account:device:v1")
+///     .bytes(me)              // a Bytes<32>
+///     .uint(epoch)            // a Uint<32>: a 4-byte atom, width FROM THE TYPE
+///     .uint(counter)          // a Uint<64>: 8 bytes
+///     .hash(c);
+/// ```
+///
+/// Two things it does that the raw call does not:
+///
+/// - **The limb width comes from the type.** `uint` takes a `Uint<BITS>`, so
+///   the atom's byte width and the wire's proven bound are one object; the
+///   taint lint's §B3 class (a hash limb wider than its slot, where the FAB
+///   packing stops being injective) cannot be written with it.
+/// - **An all-constant preimage is hashed OFF-circuit.** [`Self::tag`] and
+///   [`Self::blob_const`] add immediates, and [`Self::hash`] on a preimage
+///   of nothing but immediates computes the SHA-256 here and emits the digest
+///   as two constants: ~1.9k rows per 64-byte block that compactc spends
+///   hashing a literal domain separator at proving time, saved. Measured on
+///   the passport account custody contract: every challenge-bearing circuit
+///   hashes a 64-byte constant tag, 3,750 rows each.
+///
+/// Lifted from the passport port's `Preimage` (PR #184, Apache-2.0), where
+/// it was the one builder every hash in the contract went through.
+#[derive(Clone)]
+pub struct Preimage<V: Vis3> {
+    atoms: Vec<AlignmentSegment>,
+    slots: Vec<AnyWire3<V>>,
+}
+
+impl<V: Vis3> Default for Preimage<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<V: Vis3> Preimage<V> {
+    pub fn new() -> Self {
+        Preimage {
+            atoms: Vec::new(),
+            slots: Vec::new(),
+        }
+    }
+
+    /// `pad(32, s)` as the FIRST field: the usual domain separator. An
+    /// immediate, so a preimage of tag-only folds (see [`Self::hash`]).
+    pub fn tag(s: &str) -> Self {
+        assert!(s.len() <= 32, "pad(32, ..) literal longer than 32 bytes: {s:?}");
+        let mut bytes = [0u8; 32];
+        bytes[..s.len()].copy_from_slice(s.as_bytes());
+        Self::new().bytes_const(&bytes)
+    }
+
+    /// A constant `Bytes<32>`, as immediates.
+    pub fn bytes_const(mut self, bytes: &[u8; 32]) -> Self {
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }));
+        self.slots.push(AnyWire3::immediate(Fr::from(u64::from(bytes[31]))));
+        self.slots.push(AnyWire3::immediate(Fr::from_le_bytes(&bytes[..31]).expect("31 bytes fit")));
+        self
+    }
+
+    /// A constant `Bytes<N>` (`N > 31`), as immediates in slot order —
+    /// `pad(N, s)` for the long tags.
+    pub fn blob_const<const N: usize>(mut self, bytes: &[u8; N]) -> Self {
+        const { assert!(N > 31, "Bytes<N> here needs N > 31 — bytes_const below that") };
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: N as u32 }));
+        // Slot order is leftover (most significant) chunk first; each limb is
+        // its chunk little-endian — the inverse of `BytesN::to_le_bytes`.
+        let leftover = match N % 31 {
+            0 => 31,
+            r => r,
+        };
+        let mut end = N;
+        let mut len = leftover;
+        while end > 0 {
+            let start = end - len;
+            self.slots.push(AnyWire3::immediate(
+                Fr::from_le_bytes(&bytes[start..end]).expect("at most 31 bytes fit"),
+            ));
+            end = start;
+            len = 31;
+        }
+        self
+    }
+
+    /// A `Bytes<32>` field.
+    pub fn bytes(mut self, value: B32<V>) -> Self {
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }));
+        self.slots.extend([value.hi.erase(), value.lo.erase()]);
+        self
+    }
+
+    /// A `Uint<BITS>` field: a `BITS / 8`-byte atom, the width from the type.
+    pub fn uint<const BITS: u32>(mut self, value: Uint<BITS, V>) -> Self {
+        const { assert!(BITS % 8 == 0, "a hashed Uint<BITS> needs a whole number of bytes") };
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: BITS / 8 }));
+        self.slots.push(value.field().erase());
+        self
+    }
+
+    /// A `Field` field — a native scalar, no byte width (a curve coordinate).
+    pub fn field(mut self, value: Wire3<FieldT, V>) -> Self {
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Field));
+        self.slots.push(value.erase());
+        self
+    }
+
+    /// A `Bytes<N>` field (`N > 31`), its limbs in slot order.
+    pub fn blob<const N: usize>(mut self, value: &BytesN<V, N>) -> Self {
+        self.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: N as u32 }));
+        self.slots.extend(value.limbs().iter().map(|w| w.erase()));
+        self
+    }
+
+    /// Concatenate another preimage's fields after this one's.
+    pub fn append(mut self, rhs: Self) -> Self {
+        self.atoms.extend(rhs.atoms);
+        self.slots.extend(rhs.slots);
+        self
+    }
+
+    /// The alignment built so far (the operand compactc emits).
+    pub fn alignment(&self) -> Alignment {
+        Alignment(self.atoms.clone())
+    }
+
+    /// `persistentHash` of the preimage. All-immediate preimages are hashed
+    /// here and come back as two constants (zero rows); anything with a wire
+    /// in it is [`persistent_hash_compact`].
+    pub fn hash(self, c: &mut Circuit3) -> B32<V> {
+        let immediates: Option<Vec<Fr>> = self.slots.iter().map(|w| w.as_immediate()).collect();
+        match immediates {
+            Some(limbs) => constant_persistent_hash(c, &Alignment(self.atoms), &limbs),
+            None => persistent_hash_compact(c, Alignment(self.atoms), &self.slots),
+        }
+    }
+}
+
+/// SHA-256 of a CONSTANT FAB-aligned value, computed here and emitted as
+/// the digest's two `Bytes<32>` limbs (two `Copy`s of immediates: zero
+/// rows). The encoding is the one the backend hashes in-circuit
+/// (`ValueReprAlignedValue::binary_repr`, as `minocrab_sim`'s
+/// `persistent_hash` arm and ir_vm.rs:478-506), so the two agree by
+/// construction; `constant_persistent_hash_matches_the_circuit` holds them
+/// together.
+pub fn constant_persistent_hash<V: Vis3>(c: &mut Circuit3, alignment: &Alignment, limbs: &[Fr]) -> B32<V> {
+    let value = alignment
+        .parse_field_repr(limbs)
+        .expect("a constant preimage's limbs fit its alignment");
+    let mut repr = Vec::new();
+    ValueReprAlignedValue(value).binary_repr(&mut repr);
+    let digest: [u8; 32] = Sha256::digest(&repr).into();
+    B32 {
+        hi: V::from_public(c.constant(Fr::from(u64::from(digest[31])))),
+        lo: V::from_public(c.constant(Fr::from_le_bytes(&digest[..31]).expect("31 bytes fit"))),
+    }
 }

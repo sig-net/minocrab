@@ -35,7 +35,7 @@ use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
     kernel_claim_zswap_coin_receive, kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier,
     kernel_inc_unshielded_inputs, kernel_inc_unshielded_outputs, kernel_mint_shielded,
-    kernel_mint_unshielded, kernel_self, BalanceCmp, ImpactElem, LedgerValue,
+    kernel_mint_unshielded, kernel_self, kernel_caller, BalanceCmp, ImpactElem, LedgerValue,
 };
 
 use super::assumed::Assumed;
@@ -193,6 +193,35 @@ pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
     let me = SelfAddress(ContractAddress::from_limbs(never_stale(c, wires)));
     c.ext_insert(CachedSelfAddress(me));
     me
+}
+
+/// What [`caller`] returns: the ledger's `PublicAddress` under a `Maybe` —
+/// `None` at the top of a transaction, `Some(Left(contract))` when another
+/// contract called this one, `Some(Right(user))` when a user's funds did.
+pub type Caller = Maybe<Either<ContractAddress<Public>, UserAddress<Public>, Public>, Public>;
+
+/// `kernel.caller()` — WHO is calling this circuit, as the ledger knows it.
+///
+/// The read is `context[6]`, authenticated by the ledger at admission: a
+/// prover cannot choose it, which is exactly why a "only contract X may
+/// spend this grant" rule compares this value rather than an argument.
+/// Like [`self_address`] it is fixed for the transaction, so the read is
+/// acknowledged here and never wears [`Assumed`].
+///
+/// Six public inputs; the lowering is compactc 0.35.0's, byte for byte
+/// (`minocrab_ledger::kernel_caller`). First wanted by the passport account
+/// custody port (PR #184), which hand-assembled the opcodes for lack of this.
+pub fn caller(c: &mut Circuit3) -> Caller {
+    let w = kernel_caller(c);
+    c.acknowledge_stale(&w.iter().map(|x| x.val()).collect::<Vec<_>>());
+    Maybe {
+        is_some: Bool::from_field_unchecked(w[0]),
+        value: Either {
+            is_left: Bool::from_field_unchecked(w[1]),
+            left: ContractAddress::from_limbs([w[2], w[3]]),
+            right: UserAddress::from_limbs([w[4], w[5]]),
+        },
+    }
 }
 
 /// `kernel.mintShielded(domain_sep, amount)` — effects\[4\].

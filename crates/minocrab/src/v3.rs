@@ -229,6 +229,16 @@ impl<V: Visibility> AnyWire3<V> {
             _vis: PhantomData,
         }
     }
+
+    /// The value, if this is an immediate rather than a wire — what lets a
+    /// gadget fold an all-constant computation (a hash of a literal tag)
+    /// off-circuit instead of emitting it.
+    pub fn as_immediate(&self) -> Option<Fr> {
+        match self.arg {
+            Arg::Imm(f) => Some(f),
+            _ => None,
+        }
+    }
 }
 
 /// A condition usable as a GUARD: a wire, or (in `minocrab-std`) a `Check`

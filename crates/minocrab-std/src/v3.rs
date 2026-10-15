@@ -1048,6 +1048,15 @@ impl<V: Vis3> B32<V> {
         let (lo, hi) = c.bytes32_into_low_high(typed);
         B32 { hi, lo }
     }
+
+    /// `a == b` — two `test_eq` and a `mul` (7 rows), the comparison every
+    /// commitment check is. Both at one visibility; move one with
+    /// `.private()` first, where the join belongs.
+    pub fn eq(self, c: &mut Circuit3, other: B32<V>) -> Bool<V> {
+        let hi = c.test_eq(self.hi, other.hi);
+        let lo = c.test_eq(self.lo, other.lo);
+        Bool::from_field_unchecked(c.mul(hi, lo))
+    }
 }
 
 /// Declare a `Bytes<32>`-shaped newtype and its whole impl set — the M23 R2
@@ -2047,6 +2056,39 @@ impl<V: Vis3> JubjubPoint<V> {
     pub fn point(self) -> Wire3<JubjubPointT, V> {
         self.0
     }
+
+    /// `p == identity` — by coordinates: the identity of twisted-Edwards
+    /// JubJub is the affine point (0, 1). Nine rows (`into_coordinates`
+    /// plus two `test_eq`), against ~1.1k for compactc's idiom
+    /// `p == ecMulGenerator(0)` (a 402-row scalar conversion and a 688-row
+    /// generator multiplication, to produce a constant).
+    pub fn is_identity(self, c: &mut Circuit3) -> Bool<V> {
+        let (x, y) = c.into_coordinates(self.0);
+        let x0 = c.test_eq(x, 0u64);
+        let y1 = c.test_eq(y, 1u64);
+        Bool::from_field_unchecked(c.mul(x0, y1))
+    }
+
+    /// `[8]p` — three doublings. JubJub's cofactor is 8, so this is the
+    /// point that decides small order: `[8]p == identity` iff `p` is torsion
+    /// (or the identity). The twisted-Edwards addition law is complete, so
+    /// `add(p, p)` IS doubling; three of them are 18 rows, where
+    /// `ecMul(p, 8 as JubjubScalar)` is 402 + 688.
+    pub fn times_cofactor(self, c: &mut Circuit3) -> JubjubPoint<V> {
+        let p2 = c.add(self.0, self.0);
+        let p4 = c.add(p2, p2);
+        JubjubPoint(c.add(p4, p4))
+    }
+
+    /// Reject the identity and the small-order points — the check every
+    /// stored or signing JubJub key needs, in ~30 rows instead of the ~2.2k
+    /// of compactc's `assert(ecMul(pk, 8) != ecMulGenerator(0))`. Same
+    /// predicate: `[8]p` is the identity exactly for the identity and the
+    /// seven points of order 2, 4 and 8, so `[8]p != O` is `p` live.
+    pub fn assert_not_small_order(self, c: &mut Circuit3) {
+        let weak = self.times_cofactor(c).is_identity(c);
+        c.assert(not(is_true(weak)).message("point has small order"));
+    }
 }
 
 /// The TypeScript type name a Compact `Opaque<'ts-type'>` carries — a MARKER
@@ -2658,4 +2700,72 @@ pub fn coin_commitment_to_contract<V: Vis3>(
     addr: &B32<V>,
 ) -> B32<V> {
     coin_commitment_to(c, coin, AnyWire3::immediate(0u64), addr)
+}
+
+// ---- base64url --------------------------------------------------------------
+
+/// The base64url (RFC 4648 §5, no padding) text of a 32-byte value: 43
+/// characters — the WebAuthn challenge encoding, `clientDataJSON`'s
+/// `"challenge"` member.
+///
+/// COST, and why it is written this way. Every byte extraction in ZKIR is a
+/// `div_mod_power_of_two` at ~148 rows whatever the shift, so the cheap plan
+/// is the FEWEST splits: the 31 low bytes once (30 splits, as
+/// `explode_limb`), then each 3-byte group recombined big-endian into one
+/// 24-bit value and split three times into its four sextets — 62 splits,
+/// ~9.2k rows. The per-bit form (`byte_bits` in the passport WebAuthn
+/// module, or eight 1-bit splits per byte) is 256 splits on top of the
+/// bytes, ~38k rows: the difference between k=18 and k=17 on every P-256
+/// circuit of that contract. The sextet-to-character map is three
+/// comparisons and four selects per character.
+pub fn base64url_32<V: Vis3>(c: &mut Circuit3, value: &B32<V>) -> BytesN<V, 43> {
+    let mut bytes = explode_limb(c, value.lo, 31);
+    bytes.push(value.hi);
+    let mut chars: Vec<Wire3<FieldT, V>> = Vec::with_capacity(43);
+    for group in bytes.chunks(3) {
+        // Big-endian group value: the first byte is the first character's
+        // high bits.
+        let mut g = group[0];
+        for b in &group[1..] {
+            let shifted = c.mul(g, 256u64);
+            g = c.add(shifted, *b);
+        }
+        // 3 bytes = 24 bits = 4 sextets; the 2-byte tail = 16 bits = 2
+        // sextets and a top-4-bits character padded with two zero bits.
+        let (sextets, mut rest) = if group.len() == 3 {
+            (4, g)
+        } else {
+            let shifted = c.mul(g, 4u64);
+            (3, shifted)
+        };
+        let mut group_chars = Vec::with_capacity(sextets);
+        for _ in 0..sextets - 1 {
+            let (q, r) = c.div_mod_power_of_two(rest, 6);
+            group_chars.push(r);
+            rest = q;
+        }
+        group_chars.push(rest);
+        group_chars.reverse();
+        for s in group_chars {
+            chars.push(base64url_char(c, s));
+        }
+    }
+    debug_assert_eq!(chars.len(), 43);
+    BytesN::from_le_bytes(c, &chars)
+}
+
+/// One base64url character from a 6-bit value: `A-Z` 0..26, `a-z` 26..52,
+/// `0-9` 52..62, `-` 62, `_` 63.
+fn base64url_char<V: Vis3>(c: &mut Circuit3, s: Wire3<FieldT, V>) -> Wire3<FieldT, V> {
+    let less26 = c.less_than(s, 26u64, 6);
+    let less52 = c.less_than(s, 52u64, 6);
+    let less62 = c.less_than(s, 62u64, 6);
+    let eq62 = c.test_eq(s, 62u64);
+    let upper = c.add(s, 65u64);
+    let lower = c.add(s, 71u64);
+    let digit = c.add(s, -Fr::from(4u64));
+    let tail = c.cond_select(eq62, 45u64, 95u64);
+    let tail = c.cond_select(less62, digit, tail);
+    let tail = c.cond_select(less52, lower, tail);
+    c.cond_select(less26, upper, tail)
 }

@@ -1875,6 +1875,24 @@ impl<T: LedgerRepr> LedgerCell<T> {
 }
 
 /// `export ledger n: Counter`.
+impl<const BITS: u32> LedgerCell<crate::v3::Uint<BITS, minocrab::Public>> {
+    /// `cell = cell + amount` on a `Uint<BITS>` cell, overflow aborting: a
+    /// read, a native `add`, the `BITS`-bit range check that IS the overflow
+    /// check, a write. The idiom of every `round`, `nonce` and `count` cell
+    /// a contract keeps; compactc's `x = (x + 1) as Uint<N>` lowers the same way.
+    ///
+    /// The read is a read-modify-write and is acknowledged as such: the value
+    /// is consumed by the write in the same transcript, which is the M42
+    /// stale-read ruling's RMW case. A `Counter` cell does this fresh with one
+    /// Impact `addi` — prefer it where the ledger ABI is yours to choose.
+    pub fn add(&self, c: &mut Circuit3, amount: u64) {
+        let prior = self.read(c).stale(c);
+        let sum = c.add(prior.field(), amount);
+        let next = crate::v3::Uint::<BITS, minocrab::Public>::from_field_checked(c, sum);
+        self.write(c, &next);
+    }
+}
+
 pub struct LedgerCounter<P = FieldPath> {
     path: P,
 }
