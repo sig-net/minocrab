@@ -29,6 +29,13 @@ include = [
 workspace = true
 
 [dependencies]
+# The constant-preimage fold of `hash::Preimage` (2026-10): SHA-256 over the
+# FAB binary encoding, computed here when every limb is an immediate. All
+# three already reach this crate through `minocrab` and `minocrab-ledger`,
+# so the dependency graph does not grow.
+midnight-base-crypto.workspace = true
+midnight-transient-crypto.workspace = true
+sha2.workspace = true
 minocrab.workspace = true
 # The typed ledger block (M9 phase 7): `v3::ledger`'s LedgerMap/LedgerCell/
 # LedgerCounter are one-line wrappers over this crate's op emission, so the
@@ -56,26 +63,25 @@ borsh-schema = ["dep:borsh"]
 all-features = true
 
 [dev-dependencies]
+# tests/v3_passport_upstream.rs reads the IR back as JSON to compare opcodes.
+serde_json.workspace = true
 minocrab-sim = { path = "../minocrab-sim", features = ["unstable"] }
 # The blind ops' gate (M40, tests/v3_blind.rs) seeds a `StateValue` and runs
 # each transcript through Midnight's on-chain VM via the executor; these
 # three are the state tree's own types. Already in the lock.
 midnight-onchain-state.workspace = true
 midnight-storage.workspace = true
-midnight-base-crypto.workspace = true
 midnight-onchain-vm.workspace = true
 minocrab-ir = { path = "../minocrab-ir", features = ["unstable"] }
 minocrab-zkir = { path = "../minocrab-zkir" }
 # v3 secp tests generate ECDSA signatures through zkir-v3's own off-circuit
 # helpers and check the Ethereum address against a native keccak.
 midnight-zkir-v3.workspace = true
-midnight-transient-crypto.workspace = true
 midnight-curves.workspace = true
 sha3.workspace = true
 # The persistent-hash oracle of the Borsh flavor (M11 stage 9): the digest the
 # chip produces must be SHA-256 of `borsh::to_vec`. Already in the lock (the
 # simulator hashes with it), so no new dependency enters the graph.
-sha2.workspace = true
 # The Borsh layer's conformance oracle (M11 stage 1): the in-circuit bytes are
 # asserted equal to `borsh::to_vec` of a plain Rust twin, which is the whole
 # claim of the module — the subset IS Borsh. Dev-dependency only, same posture

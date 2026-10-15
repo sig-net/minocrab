@@ -1,0 +1,66 @@
+#+TITLE: ZKIR op costs under Midnight's cost model, and what they bought on the passport port
+#+DATE: 2026-10-15
+
+Measured 2026-10-15 with =minocrab_sim::v3::cost= (Midnight's own =IrSource::model()=, the k and row count the prover will see) on one-op circuits, baseline (empty circuit) subtracted. Backend: midnight-ledger 04c9c5d's zkir-v3, the one main is pinned to; the passport PR #184 numbers it reproduces were produced on midnight-zkir 3.1.0-rc.1, and every one of the 52 circuits came out identical to the row, so the two models agree on these ops. The table is the thing to have open when a circuit is 2k rows over a power of two.
+
+* 1. The table
+
+| op | rows | note |
+|----+------+------|
+| =constrain_bits= 6 or 8 | 3 | a byte range check — the cheapest thing there is |
+| =constrain_bits= 64 / 128 / 248 | 17 / 33 / 63 | ~bits/4 |
+| =less_than= 6 / 8 / 64 / 128 | 10 / 10 / 13 / 19 | |
+| =div_mod_power_of_two= (ANY shift: 1, 6, 8, 130) | 148 | THE trap — a byte extraction costs 50 range checks |
+| =reconstitute_field= 248 | 12 | the inverse direction is cheap |
+| =cond_select= | 5 | |
+| =not= / =mul= / =add= | 3 | |
+| =mul= by constant | 2 | |
+| =test_eq= field | 4 | |
+| =assert= / =assert_eq= field | 2 | |
+| =public_transcript_input= | 1 | |
+| JubJub: point arg / =into_coordinates= | 5 / 5 | |
+| JubJub: =add(p, q)= / =add(p, p)= | 11 / 6 | the doubling is cheaper than a general add |
+| JubJub: =test_eq= points / =assert_eq= points | 15 / 10 | |
+| JubJub: =jubjub_scalar_from_native= | 402 | a constant 8 or 0 pays this too |
+| JubJub: =ec_mul= (variable OR constant scalar) / =ec_mul_generator= | 688 / 688 | the generator form is =assign_fixed= + the same mul; no fixed-base saving |
+| secp256k1: point arg / =into_coordinates= | 44 / 44 | |
+| secp256k1: =into_bytes32= of a coordinate | ~400 | so each "point as Bytes<32>" costs ~450 |
+| secp256k1: =from_bytes32= to scalar / =inv= / =mul= scalars | 208 / 76 / 84 | |
+| secp256k1: =ec_mul= / =ec_mul_generator= | 11,714 / 11,714 | an ECDSA verify is two of these: 23.4k |
+| secp256r1: point arg / =into_coordinates= | 60 / 60 | |
+| secp256r1: =from_coordinates= / =from_bytes32= to base / =inv= | 118 / 227 / 93 | |
+| secp256r1: =ec_mul= | 21,950 | ECDSA: 43.9k, the P-256 floor |
+| =persistent_hash= 1 / 2 / 4 / 8 × bytes<32> | 1,885 / 3,753 / 5,641 / 9,417 | SHA-256: ~1.9k per 64-byte block, so the preimage LAYOUT matters |
+| =persistent_hash= 1 × bytes<64> | 3,750 | a 64-byte constant tag hashed in-circuit is 3.75k rows |
+| =transient_hash= 2 / 4 fields | 22 / 46 | Poseidon is ~170× cheaper than SHA per input |
+
+Reproduce: the =micro= binary in the scratch =port-bench= crate of 2026-10-15 (kept out of the tree; =notes/passport-account-custody.org= §7 on the zkir-3.1 branch says where), or any one-op =Circuit3= through =cost=.
+
+* 2. What the table said about the passport port, and what was lifted into std
+
+The port (passport PR #184, machine-written, 52 circuits) built against this branch's crates reproduces the PR's k and rows exactly. Its op histograms against the table:
+
+- *P-256 circuits spent ~50k of 124k rows on byte extraction*: 342 =div_mod_power_of_two= per circuit — 256 of them one-bit splits for base64 (the Compact reference's =byte_bits= does the same with 8 comparisons and 7 selects per byte, and compactc's own byte indexing adds 292 splits), 36 to get three bytes out of a 37-byte =authenticator_data=, 21 for the origin check. The fix is arithmetic, no new witnesses: recombine each 3-byte group big-endian and split it three times by six bits (62 splits for the whole encoding), and split only the 6-byte leftover limb of the authenticator data (5 splits). Lifted as =v3::base64url_32= — 40.8k rows less per P-256 circuit.
+- *Every challenge-bearing circuit hashed a constant 64-byte domain tag in-circuit*: 3,750 rows. compactc does not constant-fold =persistentHash=. Lifted as =hash::Preimage= (the port's builder, with =uint= taking a typed =Uint<BITS>= so a hash limb cannot be wider than its slot) whose =hash= folds an all-immediate preimage off-circuit via =hash::constant_persistent_hash=, checked against the chip by simulation.
+- *The JubJub small-order check was two scalar multiplications*: =ecMul(pk, 8) != ecMulGenerator(0)= is 402 + 688 + 402 + 688 + 15 ≈ 2.2k rows for a cofactor test. Three doublings and a coordinate compare are ~30. Lifted as =JubjubPoint::times_cofactor= / =is_identity= / =assert_not_small_order=; =times_cofactor= is checked equal to =ec_mul(p, 8)= by simulation on five points (the twisted-Edwards addition law is complete, so =add(p, p)= is doubling).
+- *=kernel.caller= did not exist*, so the port hand-assembled thirteen Impact ops. Lifted as =kernel::caller= (=minocrab_ledger::kernel_caller=), byte-for-byte compactc 0.35.0's lowering, asserted by a test against the artifact's opcodes.
+- Smaller: =B32::eq= (the port's =bytes_eq=, eleven uses), =Check::implies= (one select where =not(a).or(b)= is four instructions), =LedgerCell<Uint<N>>::add= (the port's hand-written =increment=), and the executor's FAB-atom normalisation (a real bug the port's fork fixed: an absent union arm must decode as the ledger's canonical empty atom) with its two regression tests.
+- NOT lifted here: =GeneratorScalarTy for Secp256r1ScalarT= — the backend main is pinned to (04c9c5d) has no P-256 generator arm; that belongs with the zkir-3.1 bump.
+
+* 3. The measured effect on the port
+
+The port's scratch copy with the std helpers substituted (tags as immediates, =assert_not_small_order=, =base64url_32=, the limb-aware authenticator split, =when(..).otherwise(..)= in =deposit_unshielded=, =kernel::caller=), through the same cost model:
+
+| | before | after |
+|---+--------+-------|
+| total rows, 52 circuits | 3,656,014 | 2,948,966 (−19.3%) |
+| k lowered | — | 14 of 52 circuits |
+| P-256 circuits at k=18 | 9 | 0 (all nine → 17) |
+| JubJub k changes | — | append_inbox 16→15, remove_device 16→15, publish_recovery_session 16→15, withdraw_shielded_with_grant 17→16, withdraw_shielded_to_contract_with_grant 17→16, recover_finalise 12→11 |
+| per P-256 circuit | | −34.4k to −40.8k rows |
+| per JubJub device circuit | | −5.05k rows (tag fold 3.75k + cofactor check 1.3k) |
+| per k256 device circuit | | −3.75k rows (the tag fold; the ECDSA floor is 23.4k) |
+
+The k=17 → 16 that would matter most for k256 (=withdraw_shielded_with_k256=, 67.7k → 64.0k) did not happen: 2^16 is 65,536 and the backend's reserved rows put the real threshold near 61-62k, so another ~2.5k has to come from the protocol-fixed parts (nine SHA blocks and the ECDSA), which is to say from Compact-side spec changes (a 32-byte tag where 8 would do, preimages packed to block boundaries), not from the eDSL.
+
+Soundness notes for the three big ones: the fold is SHA-256 over the same FAB binary encoding the chip hashes (=ValueReprAlignedValue::binary_repr=) and the test holds the two equal; base64url is exact integer arithmetic on byte values the circuit already range-checked (the 24-bit group is below the field, the splits are the backend's); the cofactor doubling relies on completeness of the JubJub addition law, true for twisted Edwards with non-square =d= and asserted by simulation — a real proof of =times_cofactor= against the backend's gadget is the remaining check before anyone relies on it for a stored key.

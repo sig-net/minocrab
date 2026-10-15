@@ -322,3 +322,63 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
         ImpactOp::constant(&Op::Swap { n: 0 }),
     ]
 }
+
+/// `kernel.caller()` — the immediate caller of this contract call, the
+/// context's slot 6: `Maybe<Either<ContractAddress, UserAddress>>` (the
+/// ledger's `PublicAddress`), six public-transcript inputs in FAB order —
+/// `is_some`, `is_left`, left `[hi, lo]`, right `[hi, lo]`.
+///
+/// compactc 0.35.0's lowering, transcribed from the passport account
+/// contract's grant-caller check (`withdraw_unshielded_with_grant_*`,
+/// instructions 102-115 of the artifact; the port in PR #184 carries the
+/// same bytes, verified by its 504 fixtures):
+///
+/// ```text
+/// dup 2; idxc [6]           -- context[6], the caller slot
+/// dup 0; type; push 1; eq   -- `type` yields 1 for Null: is it ABSENT?
+/// branch 4                  -- absent: skip the present arm
+///   push true; swap 0; concat 80; jmp 2   -- present: prefix is_some = true
+///                                          (an uncached concat: 0x16 0x50)
+/// pop; push [0,0,0,0]       -- absent: pop the Null, the canonical none
+/// popeqc
+/// ```
+///
+/// The ledger authenticates this read at admission (the caller is whoever
+/// actually called), so it is never a private witness — a contract that
+/// wants "only contract X may call me" compares THIS value, not an argument.
+pub fn kernel_caller(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 6] {
+    let atoms = vec![
+        BOOL_ATOM,
+        BOOL_ATOM,
+        AlignmentAtom::Bytes { length: 32 },
+        AlignmentAtom::Bytes { length: 32 },
+    ];
+    let (wires, value) = mint_read(c, atoms.clone());
+    label_read(c, &value, "the kernel caller read", &[]);
+    let truth = LedgerValue::new(vec![BOOL_ATOM], vec![ImpactElem::Imm(Fr::from(1u64))]);
+    let none = LedgerValue::new(atoms, vec![ImpactElem::Imm(Fr::from(0u64)); 6]);
+    emit(
+        c,
+        &[
+            dup(2),
+            ImpactOp::constant(&Op::Idx {
+                cached: true,
+                push_path: false,
+                path: vec![Key::Value(field_key(6))].into(),
+            }),
+            dup(0),
+            ImpactOp::constant(&Op::Type),
+            push_cell(false, &truth),
+            ImpactOp::constant(&Op::Eq),
+            ImpactOp::constant(&Op::Branch { skip: 4 }),
+            push_cell(false, &truth),
+            swap(0),
+            ImpactOp::constant(&Op::Concat { cached: false, n: 80 }),
+            ImpactOp::constant(&Op::Jmp { skip: 2 }),
+            ImpactOp::constant(&Op::Pop),
+            push_cell(false, &none),
+            popeq(true, &value),
+        ],
+    );
+    [wires[0], wires[1], wires[2], wires[3], wires[4], wires[5]]
+}

@@ -68,7 +68,7 @@ pub use kernel::{
     kernel_claim_unshielded_coin_spend, kernel_claim_zswap_coin_receive,
     kernel_claim_zswap_coin_spend, kernel_claim_zswap_nullifier, kernel_inc_unshielded_inputs,
     kernel_inc_unshielded_outputs, kernel_mint_shielded, kernel_mint_unshielded, kernel_self,
-    BalanceCmp,
+    kernel_caller, BalanceCmp,
 };
 pub use ops::{
     branch, cell_add_at, cell_and_at, cell_copy_at, cell_max_at, cell_min_at, cell_or_at,

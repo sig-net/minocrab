@@ -53,7 +53,17 @@ pub fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
 }
 
 /// A multi-atom value from its limbs and atom widths.
+/// NORMAL FORM: atoms come back with trailing zero bytes stripped
+/// (`ValueAtom::normalize`), the ledger's canonical spelling and the one
+/// the executor decodes a program's values into since the FAB-atom fix of
+/// 2026-10 — `bytes<8>` of 123456 is `[40e201]`, not `[40e2010000000000]`.
 pub fn aligned(widths: &[u32], limbs: &[Fr]) -> AlignedValue {
+    let mut value = aligned_padded(widths, limbs);
+    value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+    value
+}
+
+fn aligned_padded(widths: &[u32], limbs: &[Fr]) -> AlignedValue {
     Alignment(widths.iter().map(|&w| atom(w)).collect())
         .parse_field_repr(limbs)
         .expect("limbs match the alignment")

@@ -709,6 +709,19 @@ impl Decoder<'_> {
         self.at += width;
         alignment
             .parse_field_repr(limbs)
+            // NORMALISE every atom. `parse_field_repr` keeps a zero-valued
+            // atom at its alignment width (a `bytes<32>` zero is 32 zero
+            // bytes), but the ledger stores and compares atoms in canonical
+            // form, where a zero is the EMPTY atom — and `()` decodes only
+            // from the empty one. Compact encodes an absent union arm (the
+            // unused recipient of a shielded send) as exactly such a zero,
+            // so without this the gathered program carried a value the
+            // ledger VM would not accept as unit. Found by the passport
+            // account-custody port (PR #184, its executor fork), 2026-10.
+            .map(|mut value| {
+                value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+                value
+            })
             .ok_or_else(|| decode_err(at, "the limbs do not fit the alignment"))
     }
 
@@ -759,5 +772,34 @@ impl Decoder<'_> {
             }
             other => Err(decode_err(at, format!("unknown state-value tag {other}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod decoder_normalisation {
+    //! The two regressions the passport port's executor fork carried
+    //! (PR #184, `bin/measure/src/executor.rs`), taken with the fix.
+    use super::*;
+
+    #[test]
+    fn unused_union_arm_decodes_as_ledger_unit() {
+        // A bytes<32> zero is how Compact encodes the unused recipient arm.
+        // The ledger accepts it as unit only in canonical (empty atom) form.
+        let fields = [1u64, 32, 0, 0].map(Fr::from);
+        let decoded = Decoder { elems: &fields, at: 0 }.aligned_value().unwrap();
+        <()>::try_from(&decoded.value.0[0]).unwrap();
+        assert_eq!(ValueReprAlignedValue(decoded).field_vec(), fields[2..]);
+    }
+
+    #[test]
+    fn normalisation_preserves_nonzero_value_and_alignment() {
+        let fields = [1u64, 8, 7].map(Fr::from);
+        let decoded = Decoder { elems: &fields, at: 0 }.aligned_value().unwrap();
+        assert_eq!(decoded.value.0[0].0, vec![7]);
+        assert_eq!(
+            decoded.alignment,
+            Alignment(vec![AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 8 })])
+        );
+        assert_eq!(ValueReprAlignedValue(decoded).field_vec(), fields[2..]);
     }
 }
