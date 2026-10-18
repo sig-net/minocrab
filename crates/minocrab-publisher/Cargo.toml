@@ -6,9 +6,8 @@ name = "minocrab-publisher"
 # `minocrab-contracts` (a corpus, `publish = false`) — the ONLY remaining edge
 # to that crate is a dev-dependency (tests/real_proof.rs, which keygens from
 # the real circuit). So the same blocker the rest of the workspace already
-# carries applies here and nowhere further: PUBLISHING.md's git-dependency
-# block on the `midnight-*` line (upstream has not published the ledger-9.1
-# line to crates.io yet). `publish` is left at its default (true) rather than
+# carries applies here and nowhere further: PUBLISHING.md's `midnight-*`
+# block (upstream has not published the ledger-9.1 line to crates.io yet). `publish` is left at its default (true) rather than
 # pinned false, matching the other nine crates PUBLISHING.md already tracks
 # as ready-when-upstream-is.
 version.workspace = true

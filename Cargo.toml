@@ -67,8 +67,9 @@ signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 # parse/emit matches the toolchain byte-for-byte. crates.io only has the older
 # 2.1 (ledger-8) line — see notes/midnight-code-reuse.org.
 # zkir-v3: the ledger-9.1.0.0-rc.3 tag's copy predates the bundled zkir-v3
-# binary despite identical version strings. This rev is what the official
-# compact flake pins for the zkir-v3 binaries our compactc ships with.
+# binary despite identical version strings. The rev `[patch.crates-io]` pins
+# below is what the official compact flake pins for the zkir-v3 binaries our
+# compactc ships with.
 midnight-zkir-v3 = "3.0.0-rc.2"
 # zkir-v3's own dependencies, so types unify (Fr etc.).
 midnight-transient-crypto = "3.0.0"
@@ -144,7 +145,7 @@ alloy-primitives = "=1.6.1"
 [patch.crates-io]
 # Every `midnight-*` dependency above is a crates.io VERSION, and this block
 # points each one at the pinned rev. A downstream workspace that links
-# signet-protocol or minocrab-publisher (sig-net/mpc) applies its own
+# minocrab-publisher (sig-net/mpc) applies its own
 # `[patch.crates-io]` instead, so these crates share ONE copy of the ledger
 # types with it rather than bringing a second one from a git source cargo
 # cannot unify. Inside the rev the crates refer to each other by path, so
