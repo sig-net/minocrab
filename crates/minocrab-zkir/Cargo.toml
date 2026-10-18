@@ -2,6 +2,9 @@
 name = "minocrab-zkir"
 description = "MinoCrab L0: read, write and round-trip Midnight ZKIR v3, reusing midnight-zkir-v3's own types"
 version.workspace = true
+# Held until the `midnight-*` line is on crates.io at the pinned rev
+# (PUBLISHING.md): the version requirements alone would resolve elsewhere.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
