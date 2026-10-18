@@ -44,10 +44,10 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{AlignmentAtom, Fr, Public};
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::{
-    bytes_limbs, bytes_literal_limbs, BoundedUint, Bytes, BytesN, ContractAddress, LedgerRepr,
-    Uint, Vis3, B32,
+    bytes_limbs, bytes_literal_limbs, BoundedUint, Bytes, BytesN, CircuitArg, ContractAddress,
+    LedgerRepr, Uint, Vis3, B32,
 };
-use signet_signer_interface::RespondBidirectionalEvent;
+use signet_signer_interface::Signature;
 
 use crate::common::{Caip2Id, SigningPath};
 pub use crate::signet::{
@@ -684,6 +684,22 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaB
 
 // ---- the attestation ------------------------------------------------------------------
 
+/// Compact `struct RespondBidirectionalEventV1 { requestId: RequestId,
+/// blockHeight: Uint<64>, outputKind: OutputKind, serializedOutputLength:
+/// Uint<64>, digest: Bytes<32>, signature: Signature }` at 0.24.1 — the
+/// attestation the vault's `queueAttestation*` circuits take. The deployed
+/// singleton's struct (`signet_signer_interface::RespondBidirectionalEventV1`,
+/// 0.25.0) also carries `outputHash`; the two share every other field.
+#[derive(Clone, CircuitArg)]
+pub struct RespondBidirectionalEventV1<V: Vis3> {
+    pub request_id: RequestId<V>,
+    pub block_height: Uint<64, V>,
+    pub output_kind: OutputKind<V>,
+    pub serialized_output_length: Uint<64, V>,
+    pub digest: B32<V>,
+    pub signature: Signature<V>,
+}
+
 /// `calculateSignetAttestationDigestV1<LEN>(requestId, blockHeight,
 /// outputKind, serializedOutput)` — Poseidon over `[HashDomain.attestationDigest,
 /// requestId, blockHeight, outputKind, LEN, serializedOutput]`, the width
@@ -758,7 +774,7 @@ pub fn attestation_transient_hash_v1<V: Vis3>(
 pub fn verify_respond_bidirectional_event_v1<V: Vis3, const LEN: usize>(
     c: &mut Circuit3,
     output_limbs: &[Wire3<FieldT, V>],
-    event: &RespondBidirectionalEvent<V>,
+    event: &RespondBidirectionalEventV1<V>,
     mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     verify_respond_bidirectional_event_v1_at(c, LEN as u64, output_limbs, event, mpc_response_key)
@@ -773,7 +789,7 @@ pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
     c: &mut Circuit3,
     len: u64,
     output_limbs: &[Wire3<FieldT, V>],
-    event: &RespondBidirectionalEvent<V>,
+    event: &RespondBidirectionalEventV1<V>,
     mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
     let digest = calculate_attestation_digest_v1_at(

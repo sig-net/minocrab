@@ -1,8 +1,8 @@
 //! Proving, in process.
 //!
 //! No proof server, no child process, and no network once the KZG parameters
-//! are on disk. That is notes/mpc-publisher.org §2's claim about the port,
-//! and [`InProcessProver`] is the whole of what it costs: a `ProvingProvider`
+//! are on disk. [`InProcessProver`] is the whole of what that costs: a
+//! `ProvingProvider`
 //! that resolves key material off the managed directory and hands the
 //! preimage to `ProofPreimage::prove::<zkir_v3::IrSource>`.
 //!
@@ -23,7 +23,7 @@
 //!
 //! [`SignerResolver`] tries the managed directory first and the ledger's own
 //! [`DustResolver`] second. The dust half resolves exactly one key —
-//! `midnight/dust/spend` — and it is dead weight until M30 rung C puts a
+//! `midnight/dust/spend` — and it is dead weight until a DUST wallet puts a
 //! dust spend in the transaction; it is wired now because the fee proof is
 //! the one other proof a published respond transaction will contain, and a
 //! resolver that cannot find its key fails at proving time, deep inside an
@@ -50,8 +50,7 @@ use crate::keys::ManagedDir;
 /// `~/.cache/midnight/zk-params`), fetching only what is missing.
 ///
 /// `FetchMode::OnDemand` will reach `srs.midnight.network` for a parameter set
-/// that is NOT cached. Ship the params in the image — the whole point of
-/// notes/mpc-publisher.org §2's "no network touch" — and it never does.
+/// that is NOT cached. Ship the params in the image and it never does.
 pub fn params_provider() -> Result<MidnightDataProvider, PublishError> {
     MidnightDataProvider::new(FetchMode::OnDemand, OutputMode::Log, vec![]).map_err(|e| {
         PublishError::Io { path: "the KZG parameter cache".to_string(), source: e }
@@ -73,7 +72,7 @@ pub fn dust_resolver() -> Result<DustResolver, PublishError> {
 pub struct SignerResolver {
     pub managed: ManagedDir,
     /// `None` while nothing in the transaction spends dust — see the module
-    /// header, and M30 rung C.
+    /// header.
     pub dust: Option<DustResolver>,
 }
 

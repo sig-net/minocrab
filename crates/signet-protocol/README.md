@@ -17,6 +17,6 @@ Three things, one dependency (`sha2`):
 
 No circuit code, no ledger types, no key material. The envelope layouts live in `minocrab-publisher` beside the functions that fill them.
 
-[Repository README](https://github.com/sig-net/minocrab#readme) · [notes/mpc-publisher.org](https://github.com/sig-net/minocrab/blob/main/notes/mpc-publisher.org)
+[Repository README](https://github.com/sig-net/minocrab#readme)
 
 Licensed under MIT OR Apache-2.0.

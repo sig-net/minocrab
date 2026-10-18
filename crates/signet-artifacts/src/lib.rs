@@ -1,9 +1,9 @@
 //! The managed artifact pipeline for the three Signet signer circuits
-//! (M29 rungs A+B — notes/mpc-publisher.org §3, §8).
+//! (M29 rungs A+B).
 //!
 //! `sig-net/mpc`'s TypeScript sidecar never interprets the IR: compactc's JS
 //! executor makes the proof preimage and whatever sits at
-//! `zkir/<circuit>.bzkir` proves it (mpc-publisher.org §3). So the whole
+//! `zkir/<circuit>.bzkir` proves it. So the whole
 //! swap to MinoCrab's optimised artifact is a directory of files — no
 //! sidecar change. This crate builds that directory:
 //!
@@ -171,7 +171,7 @@ pub fn generate(out_dir: &Path, zkir_v3: &Path) -> anyhow::Result<()> {
     // `.zkir`/`.bzkir` found in `zkir_dir`, AND (as a side effect of the
     // binary's own `maybe_bzkir`, which writes a `.bzkir` sibling the first
     // time it loads a bare `.zkir`) the `.bzkir` files land in `zkir_dir`
-    // too. This is the exact invocation — see notes/mpc-publisher.org §8.
+    // too, so no separate `.bzkir` step exists.
     let status = Command::new(zkir_v3)
         .arg("compile-many")
         .arg(&zkir_dir)

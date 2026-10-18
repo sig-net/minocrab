@@ -18,7 +18,7 @@
 //!            │                                             publish.rs
 //!            ├─ prove   in process: no proof server, no child process, and
 //!            │          no network once the KZG parameters are on disk
-//!            ├─ balance THE DUST SEAM (M30 C) — [`dust::DustBalancer`]
+//!            ├─ balance THE DUST SEAM — [`dust::DustBalancer`]
 //!            ├─ sign    Intent::sign
 //!            └─ seal    PedersenRandomness ─▶ PureGeneratorPedersen
 //! ```
@@ -38,10 +38,10 @@
 //!
 //! # Not here
 //!
-//! - The DUST wallet (M30 C). [`dust::DustBalancer`] is the seam it plugs
-//!   into; [`dust::NoDust`] is what the tests run today, and it leaves the
-//!   transaction unbalanced — `well_formed` must have `enforce_balancing`
-//!   off, which is exactly the gap notes/mpc-publisher.org §2 names.
+//! - The DUST wallet, which lives in `sig-net/mpc`'s `chain-midnight`.
+//!   [`dust::DustBalancer`] is the seam it plugs into; [`dust::NoDust`] is
+//!   what the tests run, and it leaves the transaction unbalanced —
+//!   `well_formed` must have `enforce_balancing` off.
 //! - Submission, event ingestion, the `IntentClient` swap-in and the four
 //!   retry classes (`wallet_unsynced`, `proving_timeout`, `state_conflict`,
 //!   `ambiguous_submit`). Those are mpc's, tracked there (milestones.org

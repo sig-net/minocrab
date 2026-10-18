@@ -14,20 +14,20 @@ import "@sig-net/midnight/src/Signet";
 // Every method here is unauthenticated by design to keep proving time as low as possible.
 // Verification is deliberately the reader's job: 
 // - MPC authenticates notifications by:
-//   - confirming via the indexer that the transaction which emitted this notification event
-//     also contains a contract call on the callerAddress named in the notification event.
+//   - confirming that the callerAddress named in the notification event is the contract
+//     that called this circuit in the same transaction.
 //   - reading the event back from the named caller's own ledger and refusing entries
 //     whose recomputed request id or sender does not match
 // - Clients verify posted signatures and attestations themselves (off-chain or in their own circuits).
 
 // signBidirectional should be called (cross-contract) by clients to notify the MPC
 // that a SignBidirectionalEvent has been written to their canonical
-// SignBidirectionalEventMap state map. The MPC does not trust the notification's
+// SignBidirectionalEventMapV1 state map. The MPC does not trust the notification's
 // content. It authenticates by:
 //   (a) reading the event back from the named caller's own ledger and refusing entries
 //       whose recomputed request id or sender does not match, and
-//   (b) confirming via the indexer that the transaction which emitted this notification event
-//       also contains a contract call on the callerAddress named in the notification event.
+//   (b) confirming that the callerAddress named in the notification event is the contract
+//       that called this circuit in the same transaction.
 export circuit signBidirectional(
       requestId: RequestId,
       notification: SignBidirectionalEventNotification
@@ -50,7 +50,7 @@ export circuit signBidirectional(
 // when its signature recovers to the caller's derived key over that request's
 // transaction.
 export circuit respond(
-    signatureRespondedEvent: SignatureRespondedEvent,
+    signatureRespondedEvent: SignatureRespondedEventV1,
 ): [] {
     emit (Misc {
         name: pad(32, "SignatureRespondedEvent"),
@@ -67,17 +67,17 @@ export circuit respond(
 
 // respondBidirectional emits the MPC's respond-bidirectional response as a
 // RespondBidirectionalEvent contract event: the ECDSA signature that attests
-// the foreign transaction execution, with the block height, output kind and
-// output width it signs over and the digest it is over (never the output
-// itself).
+// the foreign transaction's outcome (executed, failed or unviable), with the
+// block height, output kind, output width and output hash it signs over and
+// the digest it is over (never the output itself).
 // The payload leads with the request id the post answers. The id is
 // unauthenticated routing data, and the post is emitted unverified: callers
 // read their request's posts by id and verify each candidate themselves
 // against their MPC response key (derived from the caller contract's address
 // + the fixed path "midnight response key", see
-// verifyRespondBidirectionalEvent in Signet.compact).
+// verifyRespondBidirectionalEventV1 in Signet.compact).
 export circuit respondBidirectional(
-    respondBidirectionalEvent: RespondBidirectionalEvent
+    respondBidirectionalEvent: RespondBidirectionalEventV1
 ): [] {
     emit (Misc {
         name: pad(32, "RespondBidirectionalEvent"),
@@ -86,12 +86,13 @@ export circuit respondBidirectional(
             ...(disclose(respondBidirectionalEvent.blockHeight) as Bytes<8>),            // +8, little-endian
             disclose(respondBidirectionalEvent.outputKind) as Uint<8>,                   // +1, the enum's variant index
             ...(disclose(respondBidirectionalEvent.serializedOutputLength) as Bytes<8>), // +8, little-endian
+            ...disclose(respondBidirectionalEvent.outputHash),                           // +32
             ...disclose(respondBidirectionalEvent.digest),                               // +32
             ...disclose(respondBidirectionalEvent.signature.bigR.x),                     // +32
             ...disclose(respondBidirectionalEvent.signature.bigR.y),                     // +32
             ...disclose(respondBidirectionalEvent.signature.s),                          // +32
             disclose(respondBidirectionalEvent.signature.recoveryId),                    // +1
-            ...default<Bytes<78>>,                                                       // +78
+            ...default<Bytes<46>>,                                                       // +46
         ],                                                                               // = 256 bytes
     });
 }

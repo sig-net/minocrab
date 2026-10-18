@@ -1,0 +1,156 @@
+pragma language_version >= 0.25;
+
+// Compiled export surface of the Signet module: a contract-less program
+// re-exporting its pure circuits as pureCircuits for unit tests and
+// off-chain code. Only non-generic circuits can be exported. Compile with
+// --skip-zk and --feature-zkir-v3.
+
+import CompactStandardLibrary;
+import "./Signet";
+
+export {
+  HashDomain,
+  OutputKind,
+  calculateRequestIdV1,
+  calculateSignetAttestationDigestV1,
+  verifyRespondBidirectionalAttestationV1,
+  constructSignBidirectionalEventNotificationV1,
+  ethereumCaip2Id,
+  evmAddressAbiWord,
+  numericAbiWord,
+  boolAbiWord,
+  abiWordToUint128,
+  abiWordToBool,
+  checkedTruncationU128
+};
+
+// ---- Fixed-width output hash oracles (tests only) --------------------------
+// The size-generic output hash and verify circuits cannot appear in the
+// export list above. These fixed-width instantiations exist solely to pin
+// the TS twin in ecdsa-attestation.ts against the compiled circuits (widths
+// 0, 1, 2, 32 and 100, where 0 is the empty output of a failed or unviable
+// execution). Client contracts instantiate the generic circuits at their own
+// width.
+
+export pure circuit calculateAttestedOutputHash0(
+  serializedOutput: Bytes<0>
+): Bytes<32> {
+  return calculateAttestedOutputHashV1<0>(serializedOutput);
+}
+
+export pure circuit calculateAttestedOutputHash1(
+  serializedOutput: Bytes<1>
+): Bytes<32> {
+  return calculateAttestedOutputHashV1<1>(serializedOutput);
+}
+
+export pure circuit calculateAttestedOutputHash2(
+  serializedOutput: Bytes<2>
+): Bytes<32> {
+  return calculateAttestedOutputHashV1<2>(serializedOutput);
+}
+
+export pure circuit calculateAttestedOutputHash32(
+  serializedOutput: Bytes<32>
+): Bytes<32> {
+  return calculateAttestedOutputHashV1<32>(serializedOutput);
+}
+
+export pure circuit calculateAttestedOutputHash100(
+  serializedOutput: Bytes<100>
+): Bytes<32> {
+  return calculateAttestedOutputHashV1<100>(serializedOutput);
+}
+
+// Fixed-width instantiations of verifyAttestedOutputV1, pinning its TS twin
+// verifyAttestedOutput, including the trailing-zero case the length check
+// exists for (a 2-byte output against a 1-byte attestation).
+
+export pure circuit verifyAttestedOutput1(
+  serializedOutput: Bytes<1>,
+  attestedOutputLength: Uint<64>,
+  attestedOutputHash: Bytes<32>
+): Boolean {
+  return verifyAttestedOutputV1<1>(serializedOutput, attestedOutputLength, attestedOutputHash);
+}
+
+export pure circuit verifyAttestedOutput2(
+  serializedOutput: Bytes<2>,
+  attestedOutputLength: Uint<64>,
+  attestedOutputHash: Bytes<32>
+): Boolean {
+  return verifyAttestedOutputV1<2>(serializedOutput, attestedOutputLength, attestedOutputHash);
+}
+
+// ---- Fixed-width transaction digest oracles (tests only) --------------------
+// Pin the TS twin calculateEvmType2TxParamsDigest against the compiled circuit
+// at the caller contracts' <1, 0, 0> shape and at a shape with unused
+// capacity in every dimension.
+
+export pure circuit calculateEvmType2TxParamsDigestV1_1_0_0(
+  txParams: EvmType2TxParams<1, 0, 0>
+): Bytes<32> {
+  return calculateEvmType2TxParamsDigestV1<1, 0, 0>(txParams);
+}
+
+export pure circuit calculateEvmType2TxParamsDigestV1_2_1_2(
+  txParams: EvmType2TxParams<2, 1, 2>
+): Bytes<32> {
+  return calculateEvmType2TxParamsDigestV1<2, 1, 2>(txParams);
+}
+
+// Pin the TS twin calculateRequestId against the composed request id circuit
+// at the same two shapes, and its tag assert.
+
+export pure circuit calculateEvmType2RequestIdV1_1_0_0_34(
+  request: SignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34, 0>
+): RequestId {
+  return calculateEvmType2RequestIdV1<1, 0, 0, 34>(request);
+}
+
+export pure circuit calculateEvmType2RequestIdV1_2_1_2_34(
+  request: SignBidirectionalEventV1<EvmType2TxParams<2, 1, 2>, 34, 0>
+): RequestId {
+  return calculateEvmType2RequestIdV1<2, 1, 2, 34>(request);
+}
+
+export pure circuit verifyRespondBidirectionalEvent0(
+  serializedOutput: Bytes<0>,
+  respondBidirectionalEvent: RespondBidirectionalEventV1,
+  mpcResponseKey: Secp256k1Point
+): Boolean {
+  return verifyRespondBidirectionalEventV1<0>(
+    serializedOutput,
+    respondBidirectionalEvent,
+    mpcResponseKey
+  );
+}
+
+export pure circuit verifyRespondBidirectionalEvent32(
+  serializedOutput: Bytes<32>,
+  respondBidirectionalEvent: RespondBidirectionalEventV1,
+  mpcResponseKey: Secp256k1Point
+): Boolean {
+  return verifyRespondBidirectionalEventV1<32>(
+    serializedOutput,
+    respondBidirectionalEvent,
+    mpcResponseKey
+  );
+}
+
+export pure circuit constructSignBidirectionalEventV1_1_0_0_34(
+  request: SignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34, 0>
+): SignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34, 0> {
+  return constructSignBidirectionalEventV1<EvmType2TxParams<1, 0, 0>, 34>(
+    request.keyVersion,
+    request.sender,
+    request.path,
+    request.algo,
+    request.txParamType,
+    request.txParams,
+    request.executionDest,
+    request.signatureDest,
+    request.params,
+    request.outputDeserializationSchema
+  );
+}

@@ -46,8 +46,7 @@
 //! also the call `crates/minocrab-bench` makes, one layer down.
 //!
 //! Proving is therefore entirely in process: no proof server, no child
-//! process, and no network once the KZG parameters are on disk. That is the
-//! claim notes/mpc-publisher.org §2 makes about the port, exercised.
+//! process, and no network once the KZG parameters are on disk.
 //!
 //! # What this gate does NOT prove
 //!

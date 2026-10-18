@@ -1,6 +1,6 @@
 [package]
 name = "signet-protocol"
-# M30 rung C1 (notes/mpc-publisher.org §11): what the Signet singleton and
+# M30 rung C1: what the Signet singleton and
 # the MPC that reads it must agree on, in the smallest PUBLISHABLE crate that
 # can carry it — so that `minocrab-publisher` (which `sig-net/mpc` links) does
 # not pull the corpus crate (`minocrab-contracts`, `publish = false`) into

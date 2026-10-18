@@ -36,6 +36,6 @@ hashes the keys also read — this crate does not depend on the corpus crate
 (`minocrab-contracts`) at all except as a dev-dependency of its own real-proof
 gate, which needs an actual circuit to keygen against.
 
-[Repository README](https://github.com/sig-net/minocrab#readme) · [notes/mpc-publisher.org](https://github.com/sig-net/minocrab/blob/main/notes/mpc-publisher.org)
+[Repository README](https://github.com/sig-net/minocrab#readme)
 
 Licensed under MIT OR Apache-2.0.

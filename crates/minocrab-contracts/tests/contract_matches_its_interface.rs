@@ -14,8 +14,7 @@
 //! commitment, and the returned slot count. It is the same comparison
 //! `minocrab-abi` runs against a corpus artifact, pointed at ourselves.
 //!
-//! Since PR #127 (M43) all three circuits take the interface crate's own
-//! structs, so the type level already says most of this; what the test
+//! All three circuits take the interface crate's own structs, so the type level already says most of this; what the test
 //! still adds is the constraint prefix slot for slot — that the enum
 //! argument is constrained below 3 and the two `Uint<64>`s to 64 bits, as
 //! the deployed artifact constrains them.
@@ -24,13 +23,13 @@ use minocrab::Public;
 use minocrab_abi::assert_ir_matches_interface;
 use minocrab_contracts::signet_contract;
 use signet_signer_interface::{
-    RequestId, RespondBidirectionalEvent, SignBidirectionalEventNotification,
-    SignatureRespondedEvent, SignetSigner,
+    RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification,
+    SignatureRespondedEventV1, SignetSigner,
 };
 
 type SignBidirectional = (RequestId<Public>, SignBidirectionalEventNotification<Public>);
-type Respond = (SignatureRespondedEvent<Public>,);
-type RespondBidirectional = (RespondBidirectionalEvent<Public>,);
+type Respond = (SignatureRespondedEventV1<Public>,);
+type RespondBidirectional = (RespondBidirectionalEventV1<Public>,);
 
 /// The one whose argument type IS the interface crate's: one declaration,
 /// used at `Private` by the callee and `Public` by every caller.
@@ -42,7 +41,7 @@ fn sign_bidirectional_matches_its_interface() {
     );
 }
 
-/// The two respond circuits: nine and fourteen slots, the interface's
+/// The two respond circuits: nine and sixteen slots, the interface's
 /// structs at `Private`.
 #[test]
 fn the_respond_circuits_match_their_interface() {

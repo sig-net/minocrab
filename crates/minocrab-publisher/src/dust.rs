@@ -1,17 +1,16 @@
-//! THE DUST SEAM — where M30 rung C plugs in, and nothing more.
+//! THE DUST SEAM — where a DUST wallet plugs in, and nothing more.
 //!
 //! A transaction on Midnight pays its fee in DUST. Every primitive for that
 //! exists in `midnight_ledger::dust` — `DustLocalState::{replay_events, spend,
 //! process_ttls, wallet_balance}`, `Transaction::balance`, `DustActions` — and
-//! no wallet has been written around them in Rust anywhere
-//! (notes/mpc-publisher.org §2: the one GAP). Writing that wallet is M30 rung
-//! C and is deliberately NOT in this crate yet.
+//! the wallet around them lives in `sig-net/mpc`'s `chain-midnight`, not in
+//! this crate.
 //!
 //! What is here is the shape of the hole, so that the rest of the pipeline is
 //! finished rather than pending: [`DustBalancer`] is the one call the publish
 //! path makes, and [`NoDust`] is the implementation the tests run.
 //!
-//! # What rung C's implementation has to do
+//! # What a wallet implementation has to do
 //!
 //! `midnight_ledger::test_utilities`' `balance_tx` (`test_utilities.rs:479-640`)
 //! is the reference for the shape, though not for the policy:
@@ -74,7 +73,7 @@ pub trait DustBalancer<D: DB> {
 /// Everything downstream of it works — signing, sealing, `well_formed`,
 /// `apply` — as long as `WellFormedStrictness::enforce_balancing` is OFF. On a
 /// real chain it is on, so a transaction published through [`NoDust`] pays no
-/// fee and is rejected. That is exactly the gap M30 rung C closes, and it is
+/// fee and is rejected. That gap is a DUST wallet's to close, and it is
 /// named in the type rather than left as a comment somewhere.
 pub struct NoDust;
 

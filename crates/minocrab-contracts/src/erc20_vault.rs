@@ -89,10 +89,12 @@ use minocrab_std::v3::{
 };
 
 use signet_signer_interface::notification::construct_notification_v1;
-use signet_signer_interface::{RespondBidirectionalEvent, SignetSigner};
+use signet_signer_interface::SignetSigner;
 
 use crate::common::{self, SigningPath, UserCommitment};
-use crate::signet_v1::{self, output_kind, EventRecordV1, SchemaBytes};
+use crate::signet_v1::{
+    self, output_kind, EventRecordV1, RespondBidirectionalEventV1, SchemaBytes,
+};
 
 pub use crate::signet_v1::RequestId;
 
@@ -866,7 +868,7 @@ fn burn_surrendered_coin(c: &mut Circuit3, coin: ShieldedCoinArg) {
 /// The attestation-queueing body the three `queueAttestation*` share:
 /// `requireInitialised`, the verify against `mpcResponseKey`, the digest and
 /// `recordAttestation`. `output_limbs` is the disclosed output at width `LEN`.
-fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirectionalEvent<Private>, output_limbs: &[Wire3<FieldT, Private>]) {
+fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirectionalEventV1<Private>, output_limbs: &[Wire3<FieldT, Private>]) {
     require_initialised(c);
     let mpc_key = VAULT.mpc_response_key.read(c);
     let valid = signet_v1::verify_respond_bidirectional_event_v1::<Private, LEN>(c, output_limbs, event, mpc_key.point().private());
@@ -1166,7 +1168,7 @@ impl Vault {
     #[circuit]
     pub fn queue_attestation0(
         c: &mut Circuit3,
-        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEvent<Private>,
+        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: Bytes0,
     ) -> Discloses<(Attestation,)> {
         let _ = serialized_output;
@@ -1179,7 +1181,7 @@ impl Vault {
     #[circuit]
     pub fn queue_attestation1(
         c: &mut Circuit3,
-        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEvent<Private>,
+        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: Bytes<1>,
     ) -> Discloses<(Attestation, SerializedOutput)> {
         queue_attestation::<1>(c, &event, &[serialized_output.field()]);
@@ -1191,7 +1193,7 @@ impl Vault {
     #[circuit]
     pub fn queue_attestation32(
         c: &mut Circuit3,
-        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEvent<Private>,
+        #[arg(name = "respondBidirectionalEvent")] event: RespondBidirectionalEventV1<Private>,
         serialized_output: B32<Private>,
     ) -> Discloses<(Attestation, SerializedOutput)> {
         queue_attestation::<32>(c, &event, &[serialized_output.hi, serialized_output.lo]);

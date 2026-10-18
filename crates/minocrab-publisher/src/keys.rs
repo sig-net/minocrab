@@ -134,8 +134,7 @@ impl ManagedDir {
     /// other way asking for a circuit not in its table); a circuit the JSON
     /// and the key file DISAGREE on is
     /// [`PublishError::ExpectedVkOutOfSync`], naming the circuit, the path
-    /// and both hashes — the mismatch this rung exists to catch (M30 C2,
-    /// notes/mpc-publisher.org §11).
+    /// and both hashes — the mismatch this rung exists to catch (M30 C2).
     pub fn deployment(
         &self,
         address: ContractAddress,

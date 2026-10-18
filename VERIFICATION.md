@@ -409,8 +409,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   ([signet_real_proof.rs](crates/minocrab-contracts/tests/signet_real_proof.rs),
   [signet_ledger_apply.rs](crates/minocrab-contracts/tests/signet_ledger_apply.rs)).
   What has not happened is a node accepting one: the vault's circuits have no
-  such gate yet, and no MinoCrab artifact has been submitted to a network
-  ([notes/mpc-publisher.org §9](notes/mpc-publisher.org)).
+  such gate yet, and no MinoCrab artifact has been submitted to a network.
 - **Cross-contract calls: the circuit binds neither the entry point nor the
   argument types — unless it asks to.** `callOnce` and `callEmit` compile to
   byte-identical ZKIR under different entry points, asserted by a test; what

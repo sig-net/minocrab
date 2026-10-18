@@ -571,7 +571,7 @@ use minocrab_std::v3::{
     Prim, ProofWires, Uint, Vis3, ZswapCoinPublicKey, B32,
 };
 use minocrab::v3::Val;
-use signet_signer_interface::{RequestId, RespondBidirectionalEvent};
+use signet_signer_interface::RequestId;
 
 use crate::common::{self, SecretKey};
 use crate::evm::{
@@ -580,7 +580,7 @@ use crate::evm::{
 };
 use crate::signet::Secp256k1SigLimbs;
 use crate::signet_v1::{
-    self, output_kind, EventRecordV1, OutputSchema,
+    self, output_kind, EventRecordV1, OutputSchema, RespondBidirectionalEventV1,
 };
 use crate::signet_flow::{
     file_request, BlockHeightSettled, EvmTx, Outcome, RequestIdSettled, SignRequest, Signet,
@@ -703,7 +703,7 @@ impl<I: Interface> CircuitArg for Contract<I> {
 /// than for an environment/response pair.
 ///
 /// THE REQUEST ID IS NOT A SEPARATE FIELD any more: V1's
-/// `RespondBidirectionalEvent` carries it, beside the height, the verdict,
+/// `RespondBidirectionalEventV1` carries it, beside the height, the verdict,
 /// the width and the digest, and all of those are inside the signed
 /// preimage — so a ticket cannot name one request and verify another.
 macro_rules! ticket {
@@ -717,7 +717,7 @@ macro_rules! ticket {
             /// serializedOutputLength, digest, signature }`. The signature is
             /// in circuit-input form (`bigR.x` and `s` little-endian; the
             /// reversal is the transaction builder's).
-            pub respond: RespondBidirectionalEvent<Private>,
+            pub respond: RespondBidirectionalEventV1<Private>,
             /// `serializedOutput`: the MPC's Borsh of the decoded return at
             /// the call's own width ([`AbiReturn::LEN`]) — flat bytes, not a
             /// decoded value, because that is what the digest commits to.
@@ -730,15 +730,15 @@ macro_rules! ticket {
             Returned<F>: AbiReturn,
         {
             const SLOTS: usize =
-                <RespondBidirectionalEvent<Private>>::SLOTS + <Serialized<F>>::SLOTS;
+                <RespondBidirectionalEventV1<Private>>::SLOTS + <Serialized<F>>::SLOTS;
 
             fn push_atoms(atoms: &mut Vec<minocrab::AlignmentAtom>) {
-                <RespondBidirectionalEvent<Private>>::push_atoms(atoms);
+                <RespondBidirectionalEventV1<Private>>::push_atoms(atoms);
                 <Serialized<F>>::push_atoms(atoms);
             }
 
             fn push_prims(prims: &mut Vec<Prim>) {
-                <RespondBidirectionalEvent<Private>>::push_prims(prims);
+                <RespondBidirectionalEventV1<Private>>::push_prims(prims);
                 <Serialized<F>>::push_prims(prims);
             }
         }
@@ -749,7 +749,7 @@ macro_rules! ticket {
         {
             fn declare(c: &mut Circuit3, path: &ArgPath) -> Self {
                 $name {
-                    respond: <RespondBidirectionalEvent<Private>>::declare(
+                    respond: <RespondBidirectionalEventV1<Private>>::declare(
                         c,
                         &path.field("respond"),
                     ),
