@@ -2,7 +2,7 @@
 name = "minocrab-sim"
 description = "MinoCrab L5: native ZKIR simulator with disclosure reports and row-cost metrics, so circuits run under cargo test"
 version.workspace = true
-# Held until the `midnight-*` line is on crates.io at the pinned rev
+# Held until the `midnight-*` line is on crates.io at the pinned tags
 # (PUBLISHING.md): the version requirements alone would resolve elsewhere.
 publish = false
 edition.workspace = true

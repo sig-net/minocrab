@@ -287,9 +287,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
   **binaries only** — compactc, `zkir`/`zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.
-- **The ledger stagenet runs.** Every `midnight-*` crate is patched, in both
+- **The ledger stagenet runs.** Every ledger crate is patched, in both
   `[patch.crates-io]` blocks, to the per-crate tag midnight-node 2.0.0-rc.4
   pins (the release stagenet runs, and the tags sig-net/mpc builds against),
+  and zkir-v3, which the node does not link, to the tag cut beside them;
   and `Cargo.lock` records the commit each tag resolved to, so a moved tag
   cannot change the build without a lockfile diff. Those tags carry the zkir
   sources the compact release's own `flake.lock` pins for the binaries it

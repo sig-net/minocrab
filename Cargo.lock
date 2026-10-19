@@ -635,7 +635,7 @@ dependencies = [
  "ff",
  "hex",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "num-bigint",
  "rand 0.8.7",
  "serde",
@@ -1376,7 +1376,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2483,9 +2483,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-circuits"
-version = "7.2.2"
+version = "7.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f17609477cc373fa26e89dcc69ad5e31455dfeceedc152e926f132e37c8240f"
+checksum = "a3040d26341a9168a3db7adeb365da9b9b8e756bc911a08c5f76a6a93d441ca7"
 dependencies = [
  "base64 0.13.1",
  "ff",
@@ -2493,7 +2493,7 @@ dependencies = [
  "group",
  "lazy_static",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2711,9 +2711,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-proofs"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2fdf3f037284217bc19cf5678bcb82be70ca17657a336b8149bf4ca1a30c9db"
+checksum = "22b1526bc7d9d1fad29505a15b81fe54aa7698a7dcd1948b447021bc8571f543"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -2864,9 +2864,9 @@ dependencies = [
  "lru 0.18.2",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
- "midnight-circuits 7.2.2",
+ "midnight-circuits 7.2.4",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "midnight-serialize",
  "midnight-storage-core",
  "midnight-zk-stdlib 2.3.3",
@@ -2917,9 +2917,9 @@ dependencies = [
  "ff",
  "group",
  "hex-literal",
- "midnight-circuits 7.2.2",
+ "midnight-circuits 7.2.4",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "num-bigint",
  "num-traits",
  "rand 0.8.7",
@@ -2940,9 +2940,9 @@ dependencies = [
  "hex",
  "midnight-base-crypto",
  "midnight-circuits 6.2.1",
- "midnight-circuits 7.2.2",
+ "midnight-circuits 7.2.4",
  "midnight-proofs 0.7.2",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "midnight-serialize",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
@@ -2968,9 +2968,9 @@ dependencies = [
  "group",
  "hex",
  "midnight-base-crypto",
- "midnight-circuits 7.2.2",
+ "midnight-circuits 7.2.4",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "midnight-serialize",
  "midnight-transient-crypto 3.0.0",
  "midnight-zk-stdlib 2.3.3",
@@ -3647,7 +3647,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4024,7 +4024,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4081,7 +4081,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4418,7 +4418,7 @@ dependencies = [
  "blake2b_simd",
  "ff",
  "midnight-curves 0.3.1",
- "midnight-proofs 0.8.1",
+ "midnight-proofs 0.8.2",
  "num-bigint",
  "rand 0.8.7",
 ]
@@ -4698,10 +4698,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5272,7 +5272,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

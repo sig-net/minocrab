@@ -15,7 +15,7 @@ independently.
 | pin | where | controls |
 |-----+-------+----------|
 | compactc release | =flake.nix= =compactcVersion= + =compactcHashes= | the compiler that produces =corpus/zkir/= — every differential's other side, plus the bundled =zkir= / =zkir-v3= binaries |
-| midnight-* crate rev | =Cargo.toml= =[workspace.dependencies]= (one rev, ~11 crates) + =[patch.crates-io]= | our ZKIR types, the Impact op set, the reference VM, =Transaction::well_formed= |
+| midnight-* crate tags | =[patch.crates-io]= in =Cargo.toml= and, identically, =.cargo/config.toml= (the per-crate tags midnight-node pins, plus zkir-v3's) | our ZKIR types, the Impact op set, the reference VM, =Transaction::well_formed= |
 | corpus source revs | =corpus/sources.json= (=corpus/update.sh=) | which contracts the corpus holds |
 | rustc | =flake.nix= =rust-bin.stable.latest= — *floating*, no version pinned | the language level; see Hazard 6 |
 
@@ -65,14 +65,18 @@ Then =direnv reload= (or re-enter =nix develop=) and check =compactc
 --version= — bearing in mind Hazard 2.
 
 *** midnight-* crates
-One rev, everywhere:
+Copy the =[patch.crates-io]= tags of the midnight-node release the target
+network runs (its root =Cargo.toml=), plus the zkir-v3 tag cut beside them,
+into both =Cargo.toml= and =.cargo/config.toml=, identically, and keep
+sig-net/mpc on the same set:
 #+begin_src sh
-sed -i '' 's/<old-rev>/<new-rev>/g' Cargo.toml   # 11 workspace deps + 2 [patch] lines
 cargo metadata --format-version 1 >/dev/null     # resolve only; seconds
 #+end_src
-=[patch.crates-io]= must move with them (Hazard 4). Do NOT split the rev
-across crates: every =midnight-*= dep shares one rev so their =Fr=,
-=ProofPreimage= and =IrSource= types unify (Hazard 3).
+Then hold the registry proving crates at the node's =Cargo.lock= versions
+where zkir-v3 allows (=cargo update -p <crate>@<v> --precise <node-v>=). Do
+NOT mix tag sets: every =midnight-*= crate must come from the one set so their
+=Fr=, =ProofPreimage= and =IrSource= types unify (Hazard 3); a split shows as
+two lockfile entries for one crate.
 
 *** corpus sources
 #+begin_src sh

@@ -7,8 +7,10 @@ front doors, `include` lists. What remains is one external blocker, below.
 
 Every `midnight-*` dependency is declared as a crates.io version (workspace
 `Cargo.toml`), and `[patch.crates-io]` (in `Cargo.toml` and, identically,
-`.cargo/config.toml`) points each at the `midnightntwrk/midnight-ledger` tag
-midnight-node 2.0.0-rc.4 pins, the release stagenet runs. Those tags carry the
+`.cargo/config.toml`) points each ledger crate at the
+`midnightntwrk/midnight-ledger` tag midnight-node 2.0.0-rc.4 pins, the release
+stagenet runs, and zkir-v3, which the node does not link, at the tag cut beside
+them. Those tags carry the
 zkir and zkir-v3 sources the official compact flake pins for the binaries our
 compactc ships with (`ledger-9.1.0.0-rc.3` and rev `04c9c5d9…`) unchanged, with
 only their manifests moved. The registry only

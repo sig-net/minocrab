@@ -101,8 +101,8 @@ midnight-storage = "2.0.1"
 midnight-zswap = "9.0.0"
 midnight-ledger = { version = "1.0.0", package = "midnight-ledger-v9" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
-# simulator mirrors it). Versions match what the pinned midnight-ledger rev
-# already pulls in, so all types unify with midnight-zkir-v3's.
+# simulator mirrors it). Versions match what the pinned midnight-ledger tags
+# already pull in, so all types unify with midnight-zkir-v3's.
 midnight-curves = "0.3.1"
 group = "0.13"
 sha2 = "0.11"
@@ -144,10 +144,11 @@ alloy-sol-types = "=1.6.1"
 alloy-primitives = "=1.6.1"
 
 [patch.crates-io]
-# Every `midnight-*` dependency above is a crates.io VERSION, and this block
-# points each one at the git tag midnight-node 2.0.0-rc.4 pins, the release
-# stagenet runs; sig-net/mpc patches the same tags, so minocrab is tested
-# against the ledger code it ships in. A downstream workspace that links
+# The ledger's `midnight-*` dependencies above are crates.io VERSIONS, and this
+# block points each one at the git tag midnight-node 2.0.0-rc.4 pins, the
+# release stagenet runs; zkir-v3, which the node does not link, takes the
+# zkir-v3 tag cut beside them. sig-net/mpc patches the same set, so minocrab is
+# tested against the ledger code it ships in. A downstream workspace that links
 # minocrab-publisher applies its own `[patch.crates-io]` instead, so these
 # crates share ONE copy of the ledger types with it rather than bringing a
 # second one from a git source cargo cannot unify. Per-crate TAGS, not one
@@ -157,10 +158,13 @@ alloy-primitives = "=1.6.1"
 # -ledger-v9 and -zswap ^2.0.0, midnight-zkir ^2.2.0, for back-compat v1
 # proving), and 2.2.0 was never published to crates.io: without that entry
 # this workspace fails to resolve, and a graph without midnight-zkir (a
-# minocrab-std consumer) silently takes crates.io 2.1.x. Cargo.lock holds the
-# registry proving crates (midnight-proofs, -circuits, -zk-stdlib, -storage) at
-# the node's lockfile versions, or the lowest zkir-v3 accepts; a broad
-# `cargo update` moves them.
+# minocrab-std consumer) silently takes crates.io 2.1.x. The registry crates
+# (midnight-storage, -curves and the proving crates) are not patched; Cargo.lock
+# holds them at the node's lockfile versions, except midnight-proofs 0.8.2,
+# -circuits 7.2.4 and -zk-stdlib 2.3.3: zkir-v3 needs at least circuits 7.2.2
+# and zk-stdlib 2.3.3, above the node's, and circuits 7.2.4 rejects an
+# out-of-range secp256k1 input that 7.2.2 panics on (the Lean model ports
+# 7.2.4). A broad `cargo update` moves them.
 midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.1" }
 midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.2" }
 midnight-base-crypto-derive = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
