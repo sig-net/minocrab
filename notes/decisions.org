@@ -70,6 +70,12 @@ sig-net's contract lands (P9).
   
 Use the single rev
 
+  Superseded 2026-10-19 (milestones.org M45 F): mpc now links
+  =minocrab-publisher=, so both repos pin the per-crate tags midnight-node
+  2.0.0-rc.4 pins, the release stagenet runs. =zkir-v3= has that tag now
+  (=zkir-v3-3.0.0-rc.1=, the compact flake's rev with only =Cargo.toml=
+  changed).
+
 - [X] A2. (Hold lifted; the executor BUILT and merged 2026-09-06 — M35 D done, M35 E waits on the attestation-digest finding in signet-async.org §10, M26's harness distillation next.) THE M26 HOLD on the authoring path — "not before the super
   review" (milestones.org M26, last open item). The super review is now
   run externally (M23's closing line). Options: lift / keep. RECOMMEND:

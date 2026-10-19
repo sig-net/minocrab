@@ -7,9 +7,11 @@ front doors, `include` lists. What remains is one external blocker, below.
 
 Every `midnight-*` dependency is declared as a crates.io version (workspace
 `Cargo.toml`), and `[patch.crates-io]` (in `Cargo.toml` and, identically,
-`.cargo/config.toml`) points each at rev `04c9c5d9…` of
-`midnightntwrk/midnight-ledger`, because that rev is what the official compact
-flake pins for the zkir binaries our compactc ships with. The registry only
+`.cargo/config.toml`) points each at the `midnightntwrk/midnight-ledger` tag
+midnight-node 2.0.0-rc.4 pins, the release stagenet runs. Those tags carry the
+zkir and zkir-v3 sources the official compact flake pins for the binaries our
+compactc ships with (`ledger-9.1.0.0-rc.3` and rev `04c9c5d9…`) unchanged, with
+only their manifests moved. The registry only
 carries the older, incompatible ledger-8 / zkir-2.1 line, and no
 `midnight-zkir-v3` or `midnight-ledger-v9` at all.
 
@@ -20,7 +22,7 @@ dependency could not be patched to the same repository, and two copies of the
 ledger types do not unify. A `[patch]` is never packaged.
 
 **The plan is still to wait for upstream** (dmd, 2026-08-17). Midnight
-publishes the ledger-9.1 line to crates.io at our rev; the patch entries go;
+publishes the ledger-9.1 line to crates.io at our tags; the patch entries go;
 this document becomes a checklist. The ask is queued for the upstream team
 through the usual feedback channel — see notes/compact-findings.org.
 
@@ -37,14 +39,14 @@ every local `cargo package` and `cargo publish --dry-run` still applies the
 resolves from crates.io. Once upstream publishes semver-compatible versions, a
 publish would go through and a downstream build would resolve them, which
 compiles something silently different from what every test in this repo
-checks unless those versions ARE rev `04c9c5d9…`. That is the exact failure
+checks unless those versions ARE the pinned tags. That is the exact failure
 class this project exists to prevent, so the seven crates that depend on the
 `midnight-*` line (`minocrab-zkir`, `minocrab-ir`, `minocrab-std`,
 `minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-publisher`) carry
 `publish = false`, and everything that depends on them cannot publish either.
 
 The checklist that lifts it: confirm every `midnight-*` version the lockfile
-resolves is published from the pinned rev (or move the pin to what was
+resolves is published from the pinned tags (or move the pin to what was
 published), delete the patch entries from both `Cargo.toml` and
 `.cargo/config.toml`, rerun every gate against the registry, and only then
 remove the `publish = false` lines.
@@ -100,7 +102,7 @@ cargo publish --dry-run -p minocrab-zkir
 
 `cargo publish --dry-run` refuses the seven held crates (`publish = false`);
 `cargo package` still packages them. With the patch in place both verify
-against the pinned rev, not the registry, so run them for real only with the
+against the pinned tags, not the registry, so run them for real only with the
 patch removed, per the checklist above.
 
 ## What each crate ships

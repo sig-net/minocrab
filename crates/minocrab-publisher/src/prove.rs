@@ -15,8 +15,9 @@
 //! sets a respond transaction has no use for — it carries no shielded offer.
 //! `zkir::LocalProvingProvider`, the public one, is the ZKIR **v2** crate's
 //! and will not load our `ir-source[v3-generic]`. So this is a MECHANICAL
-//! TRANSLATION of `CombinedProofProvider`'s v3 arm
-//! (`ledger/src/test_utilities.rs:749-818`), the same one
+//! TRANSLATION of `CombinedProofProvider`'s v3 arm (midnight-ledger
+//! `04c9c5d`, `ledger/src/test_utilities.rs:749-818`; the 9.1.0.0-rc.3 tag
+//! this crate builds against predates it), the same one
 //! `minocrab-contracts`' `tests/signet_real_proof.rs` made for M29 E.
 //!
 //! # The dust half of the resolver

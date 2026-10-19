@@ -297,6 +297,15 @@ bump landed; use =flake.nix= and the nix store path.
 revs in the graph gives two incompatible =Fr= types and an error message
 that names the same type twice. If a bump forces a split, it is not a bump.
 
+2026-10-19 (milestones.org M45 F): the patch block now pins the per-crate
+tags midnight-node pins for the release stagenet runs, not one rev, as
+sig-net/mpc does. Hazards 1 and 3 still bind, in this form: the tag set is
+the node's, whose crates name each other by version, so cargo unifies them
+(a split shows as two lockfile entries for one crate); =Cargo.lock= records
+the commit each tag resolved to; and a tag is taken for =zkir= or =zkir-v3=
+only when its source directory equals the rev compactc's =flake.lock= pins
+for that binary, manifest aside (=git diff <rev> <tag> -- zkir-v3=).
+
 ** Hazard 4 — the =[patch.crates-io]= mirror
 =midnight-zkir= depends on =transient-crypto-old= ^2.2.0, never published to
 crates.io. We mirror midnight-ledger's own workspace patches:

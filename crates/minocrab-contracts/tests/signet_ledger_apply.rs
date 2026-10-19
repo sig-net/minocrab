@@ -125,9 +125,8 @@ fn golden(bytes: &[u8], expected_sha256: &str, who: &str) -> ProvenTx {
         expected_sha256,
         "{who}: imported fixture bytes differ from the recorded capture"
     );
-    // Also the M29 F evidence: mpc builds against crate-ledger-9.1.0.0-rc.3,
-    // this repo against rev 04c9c5d. A transaction serialized by theirs
-    // decoding here IS the two pins agreeing on the wire format.
+    // mpc's reader tests decode these under the same ledger tags this repo
+    // pins, so a capture that no longer decodes means the wire format moved.
     midnight_serialize::tagged_deserialize(&mut &bytes[..]).unwrap_or_else(|e| {
         panic!("{who}: the captured transaction must decode under our ledger pin: {e}")
     })
