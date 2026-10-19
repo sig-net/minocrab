@@ -73,7 +73,9 @@ sig-net/mpc on the same set:
 cargo metadata --format-version 1 >/dev/null     # resolve only; seconds
 #+end_src
 Then hold the registry proving crates at the node's =Cargo.lock= versions
-where zkir-v3 allows (=cargo update -p <crate>@<v> --precise <node-v>=). Do
+where zkir-v3 allows (=cargo update -p <crate>@<v> --precise <node-v>=), but
+not =midnight-circuits= below 7.2.4 (so =midnight-proofs= 0.8.2): 7.2.2
+panics on an out-of-range secp256k1 input, and =v3_foreign_decode= fails. Do
 NOT mix tag sets: every =midnight-*= crate must come from the one set so their
 =Fr=, =ProofPreimage= and =IrSource= types unify (Hazard 3); a split shows as
 two lockfile entries for one crate.
