@@ -287,15 +287,16 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
   **binaries only** — compactc, `zkir`/`zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.
-- **One rev for the whole stack.** All ~11 `midnight-*` crates and both
-  `[patch.crates-io]` entries pin the same 40-character rev
-  `04c9c5d9bcebb8d4427d8589fb54d58a55599c14` — never a tag, because a version
-  string is not a rev (two artifacts reporting `3.0.0-rc.2` can be different
-  code). The authority is the rev the compact release's own `flake.lock` pins
-  for the binaries it ships; `./bump.sh pins` prints it.
-- **The rev is a hypothesis; the corpus is the proof.** Our pin equals neither
-  rev upstream pins, because all `midnight-*` crates must share one for their
-  `Fr` / `ProofPreimage` / `IrSource` types to unify. What makes that safe is
+- **The ledger stagenet runs.** Every ledger crate is patched, in both
+  `[patch.crates-io]` blocks, to the per-crate tag midnight-node 2.0.0-rc.4
+  pins (the release stagenet runs, and the tags sig-net/mpc builds against),
+  and zkir-v3, which the node does not link, to the tag cut beside them;
+  and `Cargo.lock` records the commit each tag resolved to, so a moved tag
+  cannot change the build without a lockfile diff. Those tags carry the zkir
+  sources the compact release's own `flake.lock` pins for the binaries it
+  ships (`ledger-9.1.0.0-rc.3` for zkir, rev `04c9c5d9…` for zkir-v3)
+  unchanged, with only their manifests moved; `./bump.sh pins` prints both.
+- **The pin is a hypothesis; the corpus is the proof.** What makes it safe is
   instrument (a): 814 of compactc's own artifacts round-trip through these
   bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
@@ -409,8 +410,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   ([signet_real_proof.rs](crates/minocrab-contracts/tests/signet_real_proof.rs),
   [signet_ledger_apply.rs](crates/minocrab-contracts/tests/signet_ledger_apply.rs)).
   What has not happened is a node accepting one: the vault's circuits have no
-  such gate yet, and no MinoCrab artifact has been submitted to a network
-  ([notes/mpc-publisher.org §9](notes/mpc-publisher.org)).
+  such gate yet, and no MinoCrab artifact has been submitted to a network.
 - **Cross-contract calls: the circuit binds neither the entry point nor the
   argument types — unless it asks to.** `callOnce` and `callEmit` compile to
   byte-identical ZKIR under different entry points, asserted by a test; what

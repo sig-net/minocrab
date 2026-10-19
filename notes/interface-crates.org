@@ -759,6 +759,19 @@ have forced the bump on =xcall-target-interface=, whose callee did not
 move. =artifact_agreement= is green against the pr127 artifact
 throughout.
 
+0.3.0, 2026-10-19 (M45): regenerated from the midnight-integration
+v0.25.0 artifact (corpus =signet-midnight-integration-v0250=, =b62e67e=),
+the singleton =@sig-net/midnight-contract= 0.25.0 deploys. The generator
+names the structs as compactc's =contract-info.json= does, so they are
+now =SignatureRespondedEventV1= and =RespondBidirectionalEventV1=, and
+the latter carries =outputHash: Bytes<32>= between
+=serializedOutputLength= and =digest= (16 limbs, was 14). The vault's
+=queueAttestation*= circuits import the Signet module at v0.24.1, whose
+=RespondBidirectionalEventV1= has no =outputHash=; that struct now lives
+beside the rest of the 0.24.1 vocabulary in
+=minocrab_contracts::signet_v1=, so the vault's ZKIR, row and interface
+snapshots did not move.
+
 * As built — stage 6 (2026-08-15)
 The callee side. row_snapshot and interface_snapshot bit-identical, all
 differential suites green (including =signet_contract='s differential and

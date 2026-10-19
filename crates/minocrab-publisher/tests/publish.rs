@@ -154,8 +154,8 @@ fn the_committed_managed_dir_cannot_prove() {
 /// committed keys passes, and one whose operations carry each OTHER circuit's
 /// key is caught — by the hash, not by the name.
 ///
-/// This is the check `sig-net/mpc`'s `prover.ts` makes before it will prove,
-/// and notes/mpc-publisher.org §5.2 turns on: it is why a lying RPC endpoint
+/// This is the check `sig-net/mpc`'s `prover.ts` makes before it will prove:
+/// it is why a lying RPC endpoint
 /// can waste a publisher's time but not make it sign against the wrong
 /// deployment.
 #[test]
@@ -278,7 +278,7 @@ fn a_respond_publish_applies_and_emits_the_captured_bytes() {
 
     // No unshielded offer and no dust registration, so signing has nothing to
     // sign — asserted rather than skipped, because the step is in the pipeline
-    // and M30 C's dust registrations will make it do work.
+    // and dust registrations will make it do work.
     let signed = sign(built.clone(), &FundingKeys::default(), &mut rng).expect("signing");
     let sealed = seal(&signed, StdRng::seed_from_u64(0x5345_414c));
 

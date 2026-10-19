@@ -3,47 +3,59 @@
 Everything except the publish itself is done: metadata, per-crate READMEs, rustdoc
 front doors, `include` lists. What remains is one external blocker, below.
 
-## Blocked: `midnight-*` are git dependencies
+## Blocked: the `midnight-*` line is not on crates.io
 
-crates.io **rejects any git dependency**. Every `midnight-*` crate is pinned to
-rev `04c9c5d9…` of `midnightntwrk/midnight-ledger` (workspace `Cargo.toml`,
-plus `[patch.crates-io]` entries), because that rev is what the official
-compact flake pins for the zkir binaries our compactc ships with. The registry
-only carries the older, incompatible ledger-8 / zkir-2.1 line.
+Every `midnight-*` dependency is declared as a crates.io version (workspace
+`Cargo.toml`), and `[patch.crates-io]` (in `Cargo.toml` and, identically,
+`.cargo/config.toml`) points each ledger crate at the
+`midnightntwrk/midnight-ledger` tag midnight-node 2.0.0-rc.4 pins, the release
+stagenet runs, and zkir-v3, which the node does not link, at the tag cut beside
+them. Those tags carry the
+zkir and zkir-v3 sources the official compact flake pins for the binaries our
+compactc ships with (`ledger-9.1.0.0-rc.3` and rev `04c9c5d9…`) unchanged, with
+only their manifests moved. The registry only
+carries the older, incompatible ledger-8 / zkir-2.1 line, and no
+`midnight-zkir-v3` or `midnight-ledger-v9` at all.
 
-**The plan is to wait for upstream** (dmd, 2026-08-17). Midnight publishes the
-ledger-9.1 line to crates.io at our rev; the git pins become version pins; this
-document becomes a checklist. Nothing else in this repo has to change. The ask
-is queued for the upstream team through the usual feedback channel — see
-notes/compact-findings.org.
+The versions are there so that a downstream workspace links our crates under
+its own `[patch.crates-io]` (sig-net/mpc links `minocrab-publisher` and
+`signet-protocol` against the per-crate ledger tags midnight-node pins): a git
+dependency could not be patched to the same repository, and two copies of the
+ledger types do not unify. A `[patch]` is never packaged.
+
+**The plan is still to wait for upstream** (dmd, 2026-08-17). Midnight
+publishes the ledger-9.1 line to crates.io at our tags; the patch entries go;
+this document becomes a checklist. The ask is queued for the upstream team
+through the usual feedback channel — see notes/compact-findings.org.
 
 Vendoring the pinned crates under our own names was considered and **rejected**,
 not deferred: republishing someone else's crates is a licensing question we do
 not get to answer for them, and it buys a permanent maintenance obligation on
 every upstream bump.
 
-### What was NOT done, and why
+### The guard that replaces the git-dependency check
 
-`cargo package` says it plainly:
+The packaged manifest carries the version requirements and no patch, while
+every local `cargo package` and `cargo publish --dry-run` still applies the
+`.cargo/config.toml` patch, so both pass and prove nothing about how the crate
+resolves from crates.io. Once upstream publishes semver-compatible versions, a
+publish would go through and a downstream build would resolve them, which
+compiles something silently different from what every test in this repo
+checks unless those versions ARE the pinned tags. That is the exact failure
+class this project exists to prevent, so the seven crates that depend on the
+`midnight-*` line (`minocrab-zkir`, `minocrab-ir`, `minocrab-std`,
+`minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-publisher`) carry
+`publish = false`, and everything that depends on them cannot publish either.
 
-```
-all dependencies must have a version requirement specified when packaging.
-dependency `midnight-transient-crypto` does not specify a version
-Note: The packaged dependency will use the version from crates.io,
-the `git` specification will be removed from the dependency declaration.
-```
-
-**No `version = …` keys were added to the git dependencies.** Adding one makes
-`cargo publish` accept the manifest — the git source is stripped and the
-version requirement is left standing — and then a downstream build resolves
-`midnight-zkir = "2.2"` against the crates.io ledger-8 line and compiles
-something silently different from what every test in this repo checks. That is
-the exact failure class this project exists to prevent. The block stays.
+The checklist that lifts it: confirm every `midnight-*` version the lockfile
+resolves is published from the pinned tags (or move the pin to what was
+published), delete the patch entries from both `Cargo.toml` and
+`.cargo/config.toml`, rerun every gate against the registry, and only then
+remove the `publish = false` lines.
 
 Path dependencies on our own crates *do* carry versions
-(`[workspace.dependencies]`, one place). That is a different thing: the path is
-used for the local build and the version requirement resolves to the same crate
-we are publishing.
+(`[workspace.dependencies]`, one place). The path is used for the local build
+and the version requirement resolves to the same crate we are publishing.
 
 ## Publish order
 
@@ -68,14 +80,15 @@ Cargo strips a versionless dev-dependency on publish, which is what breaks the
 It also means no published crate ships a runnable test suite — see `include`
 below.
 
-Not published, each carrying `publish = false` with its reason in the manifest:
-`minocrab-contracts`, `minocrab-bench`, `signet-signer-interface`,
-`xcall-target-interface`.
+Never published, each carrying `publish = false` with its reason in the
+manifest: `minocrab-contracts`, `minocrab-bench`, `signet-signer-interface`,
+`xcall-target-interface`. (The seven held crates above carry it too, until
+the checklist lifts it.)
 
 ## Dry run
 
 ```sh
-# What each crate would ship. Works today, git deps and all.
+# What each crate would ship. Works today.
 # (Add --allow-dirty to run it against uncommitted work.)
 for c in minocrab-zkir minocrab-ir minocrab minocrab-macros minocrab-ledger \
          minocrab-std minocrab-sim minocrab-abi minocrab-interface-gen; do
@@ -89,8 +102,10 @@ cargo doc --no-deps -p minocrab-std   # …and each of the nine
 cargo publish --dry-run -p minocrab-zkir
 ```
 
-`cargo package` (without `--list`) and `cargo publish --dry-run` **fail today**
-at the git-dependency check. That is the blocker above, not a defect.
+`cargo publish --dry-run` refuses the seven held crates (`publish = false`);
+`cargo package` still packages them. With the patch in place both verify
+against the pinned tags, not the registry, so run them for real only with the
+patch removed, per the checklist above.
 
 ## What each crate ships
 

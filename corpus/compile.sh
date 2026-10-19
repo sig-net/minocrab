@@ -51,7 +51,7 @@ done
 export COMPACT_PATH=".compact-path"
 
 # A source may carry its OWN links (a second pin of a repo whose packages
-# import each other, e.g. signet-midnight-integration-pr127): those go into
+# import each other, e.g. signet-midnight-integration-v0250): those go into
 # `.compact-path-<source>` and that source compiles with it on the path
 # ahead of the shared one (M43 A).
 declare -A SRC_PATH

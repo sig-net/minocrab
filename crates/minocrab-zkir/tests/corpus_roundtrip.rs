@@ -93,6 +93,8 @@ fn round_trips_entire_corpus() {
         // flush-pattern vault's circuit set is larger than the
         // seventeen-circuit one it replaces, and all fifteen new artifacts
         // are v3.
+        // Unchanged when the pr127 pin gave way to v0.25.0 (b62e67e): the
+        // singleton's three v3 circuits replace the three they were.
         (849, 110),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \

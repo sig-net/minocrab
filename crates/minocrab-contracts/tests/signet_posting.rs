@@ -22,7 +22,7 @@
 //! - `minocrab`: `signet_contract::SignetContract::*().ir`, the artifact
 //!   `crates/signet-artifacts` ships;
 //! - `compactc`: the corpus `.zkir` compactc 0.34.0 wrote for the same
-//!   source (midnight-integration PR #127, `e9350c4`), keygen'd here with
+//!   source (midnight-integration v0.25.0, `b62e67e`), keygen'd here with
 //!   the same `midnight-zkir-v3`.
 //!
 //! What is EXPECTED equal, and why: the proof (same proof system, same
@@ -68,7 +68,7 @@ use support::signet_call::{
 const SIDES: [&str; 2] = ["minocrab", "compactc"];
 
 const CORPUS_DIR: &str =
-    "corpus/zkir/signet-midnight-integration-pr127/packages/signet-contract/src/signet-contract/zkir";
+    "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir";
 
 fn ir_of(side: &str, circuit: &str) -> IrSource {
     match side {

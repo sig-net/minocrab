@@ -87,7 +87,8 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // the singleton's three circuits at PR #127. +3 at M44 A: the third
     // pin (v0.24.1, a80e98e) — three artifacts: the singleton, the Signet
     // module and its oracle program; the vault's 17 → 29 circuits replace
-    // each other within its one artifact.
+    // each other within its one artifact. Unchanged when the pr127 pin gave
+    // way to v0.25.0 (b62e67e): three artifacts for three.
     assert_eq!(
         artifacts, 322,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \

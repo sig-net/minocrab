@@ -67,40 +67,42 @@ signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
 # parse/emit matches the toolchain byte-for-byte. crates.io only has the older
 # 2.1 (ledger-8) line — see notes/midnight-code-reuse.org.
 # zkir-v3: the ledger-9.1.0.0-rc.3 tag's copy predates the bundled zkir-v3
-# binary despite identical version strings. This rev is what the official
-# compact flake pins for the zkir-v3 binaries our compactc ships with.
-midnight-zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-# Same repo+rev as midnight-zkir-v3's own path deps, so types unify (Fr etc.).
-midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# binary despite identical version strings. The zkir-v3-3.0.0-rc.1 tag
+# `[patch.crates-io]` pins below descends from rev 04c9c5d, which the official
+# compact flake pins for the zkir-v3 binaries our compactc ships with, and its
+# `zkir-v3/` differs from that rev only in `Cargo.toml`.
+midnight-zkir-v3 = "3.0.0"
+# zkir-v3's own dependencies, so types unify (Fr etc.).
+midnight-transient-crypto = "3.0.0"
+midnight-base-crypto = "1.1.0"
 # The Impact VM's op set (Op::field_repr is the authority on the PI
 # encoding minocrab-ledger reproduces) and the contract state model.
-midnight-onchain-vm = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-onchain-vm = "4.0.0"
 # The tagged (de)serialization framework (ProofPreimage/key files on disk).
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-midnight-onchain-state = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-serialize = "1.2.0"
+midnight-onchain-state = "4.0.0"
 # The Impact VM's driver: QueryContext::query is the intended public entry for
 # "apply this op stream to this state" (it owns the [context, effects, state]
 # stack convention, the Effects encode/decode and the charged-state gas
 # update). M10's verification harness executes the reference op streams
 # through it rather than re-implementing any of that.
-midnight-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-onchain-runtime = "4.0.0"
 # ContractAddress/TokenType — the key types QueryContext and Effects are
 # expressed in. Already in the graph via onchain-state; named here so the
 # harness can spell them.
-midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-midnight-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+midnight-coin-structure = "3.0.0"
+midnight-storage = "2.0.1"
 # The zswap Offer/Input/Output types and the top-level ledger Transaction,
 # used ONLY by the M10 burn well-formedness test (avenue 6): it constructs a
 # transaction of the burn's exact shape and drives it through the pinned
 # ledger's own `Transaction::well_formed` to prove the single claimed shielded
 # spend of a user-recipient output is accepted with the receive/nullifier sets
 # empty. Dev-dependency of minocrab-contracts only; nothing shipping links it.
-midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-midnight-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14", package = "midnight-ledger-v9" }
+midnight-zswap = "9.0.0"
+midnight-ledger = { version = "1.0.0", package = "midnight-ledger-v9" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
-# simulator mirrors it). Versions match what the pinned midnight-ledger rev
-# already pulls in, so all types unify with midnight-zkir-v3's.
+# simulator mirrors it). Versions match what the pinned midnight-ledger tags
+# already pull in, so all types unify with midnight-zkir-v3's.
 midnight-curves = "0.3.1"
 group = "0.13"
 sha2 = "0.11"
@@ -142,17 +144,40 @@ alloy-sol-types = "=1.6.1"
 alloy-primitives = "=1.6.1"
 
 [patch.crates-io]
-# Nothing of ours depends on midnight-zkir (v2) any more, but midnight-zswap
-# — which the contracts crate needs for coins — still does, and midnight-zkir
-# depends on "transient-crypto-old" ^2.2.0 (back-compat v1 proving), which
-# was never published to crates.io. So the ledger's own workspace patches
-# are mirrored: transient-crypto-old from its release tag, and
-# serialize/base-crypto unified onto the rc.3 copies so the old and new
-# transient-crypto share one set of core types. Drop this block when
-# midnight-zswap drops zkir_v2.
-midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "04c9c5d9bcebb8d4427d8589fb54d58a55599c14" }
+# The ledger's `midnight-*` dependencies above are crates.io VERSIONS, and this
+# block points each one at the git tag midnight-node 2.0.0-rc.4 pins, the
+# release stagenet runs; zkir-v3, which the node does not link, takes the
+# zkir-v3 tag cut beside them. sig-net/mpc patches the same set, so minocrab is
+# tested against the ledger code it ships in. A downstream workspace that links
+# minocrab-publisher applies its own `[patch.crates-io]` instead, so these
+# crates share ONE copy of the ledger types with it rather than bringing a
+# second one from a git source cargo cannot unify. Per-crate TAGS, not one
+# rev: the ledger 9 crates refer to each other by version, and the graph
+# carries two lines of midnight-transient-crypto at once. The ledger 9 crates
+# ask for the 2.x line as "transient-crypto-old" (midnight-onchain-state,
+# -ledger-v9 and -zswap ^2.0.0, midnight-zkir ^2.2.0, for back-compat v1
+# proving), and 2.2.0 was never published to crates.io: without that entry
+# this workspace fails to resolve, and a graph without midnight-zkir (a
+# minocrab-std consumer) silently takes crates.io 2.1.x. The registry crates
+# (midnight-storage, -curves and the proving crates) are not patched; Cargo.lock
+# holds them at the node's lockfile versions, except midnight-proofs 0.8.2,
+# -circuits 7.2.4 and -zk-stdlib 2.3.3: zkir-v3 needs at least circuits 7.2.2
+# and zk-stdlib 2.3.3, above the node's, and circuits 7.2.4 rejects an
+# out-of-range secp256k1 input that 7.2.2 panics on (the Lean model ports
+# 7.2.4). A broad `cargo update` moves them.
+midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.1" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.2" }
+midnight-base-crypto-derive = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.0.0-rc.2" }
+midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
+midnight-onchain-state = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-rc.3" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.1" }
+midnight-ledger-v9 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.3" }
+midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-rc.3" }
+midnight-onchain-vm = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.2" }
+midnight-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-4.0.0-rc.2" }
+midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.3" }
+midnight-zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-v3-3.0.0-rc.1" }
 
 [workspace.lints.rust]
 # minocrab-ir's Kani harnesses are compiled under `cargo kani` only.

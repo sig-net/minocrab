@@ -62,7 +62,8 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // 95 → 110 v3 at M44 A: the corpus repinned to midnight-examples main
     // (375071b, the flush-pattern vault) and midnight-integration v0.24.1
     // (the V1 Signet vocabulary). See corpus_roundtrip.rs for the file
-    // counts; the v2 count does not move.
+    // counts; the v2 count does not move. Unchanged when the pr127 pin
+    // gave way to v0.25.0 (b62e67e): three singleton circuits for three.
     assert!(
         stdout.starts_with("110 ok, 0 failed, 739 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"

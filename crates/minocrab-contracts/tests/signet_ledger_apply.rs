@@ -45,7 +45,7 @@
 //! | `ContractCall::communication_commitment` | `transient_commit(input ‖ output, rand)` over a per-call `rand`; the sidecar sampled theirs, this suite pins ours so dumped preimages are reproducible. |
 //! | `ContractCall::proof` | theirs is a real `ProofVersioned::V3`; ours is `ProofPreimageVersioned::V2`. This gate runs under the proof-preimage marker, where `ProofKind::proof_verify` is a no-op — rung E carries the proven one. |
 //! | intent `binding_commitment` and `ttl`; transaction `binding_randomness` and `network_id` | per transaction and per chain. |
-//! | `Transcript::gas` | the DECLARED cost, computed by `partition_transcripts` under whichever `LedgerParameters` the builder held. Both sides agree on `bytes_written`/`bytes_deleted` (678) and on a zero `read_time` — the singleton reads nothing — but the golden declares `compute_time` 2.208 ms where ours declares 1.303 ms, because theirs was partitioned by the sidecar against the capture chain's parameters at `crate-ledger-9.1.0.0-rc.3` and ours against `INITIAL_PARAMETERS` at rev `04c9c5d`. Printed by the test for the record, not asserted; the transaction applies under our pin at our figure, which is what `apply` checks. |
+//! | `Transcript::gas` | the DECLARED cost, computed by `partition_transcripts` under whichever `LedgerParameters` the builder held. Both sides agree on `bytes_written`/`bytes_deleted` (678) and on a zero `read_time` — the singleton reads nothing — but the golden declares `compute_time` 2.208 ms where ours declares 1.303 ms, because theirs was partitioned by the sidecar against the capture chain's parameters and ours against `INITIAL_PARAMETERS`. Printed by the test for the record, not asserted; the transaction applies under our pin at our figure, which is what `apply` checks. |
 //! | `Transcript::effects` | same reason. |
 //!
 //! The payload VALUES match only because step 2 feeds the golden's own
@@ -56,8 +56,8 @@
 //! # What this gate does NOT prove
 //!
 //! No proof is made or verified (rung E). No fee is paid: balancing and
-//! limits are off, and no DUST wallet exists anywhere in this workspace
-//! (notes/mpc-publisher.org §2). The goldens are not inclusion proofs — see
+//! limits are off, and no DUST wallet exists in this workspace (it lives in
+//! `sig-net/mpc`'s `chain-midnight`). The goldens are not inclusion proofs — see
 //! `tests/fixtures/mpc/README.md`.
 
 use midnight_base_crypto::fab::AlignedValue;
@@ -125,9 +125,8 @@ fn golden(bytes: &[u8], expected_sha256: &str, who: &str) -> ProvenTx {
         expected_sha256,
         "{who}: imported fixture bytes differ from the recorded capture"
     );
-    // Also the M29 F evidence: mpc builds against crate-ledger-9.1.0.0-rc.3,
-    // this repo against rev 04c9c5d. A transaction serialized by theirs
-    // decoding here IS the two pins agreeing on the wire format.
+    // mpc's reader tests decode these under the same ledger tags this repo
+    // pins, so a capture that no longer decodes means the wire format moved.
     midnight_serialize::tagged_deserialize(&mut &bytes[..]).unwrap_or_else(|e| {
         panic!("{who}: the captured transaction must decode under our ledger pin: {e}")
     })
@@ -366,16 +365,17 @@ fn respond_apply_matches_the_captured_transaction() {
     );
 }
 
-/// The captured `respondBidirectional` transaction predates PR #127: its
-/// payload is the OLD layout (requestId ‖ signature ‖ zeros), and the
-/// singleton this crate ports now emits requestId ‖ blockHeight ‖ outputKind
-/// ‖ serializedOutputLength ‖ digest ‖ signature ‖ zeros. So this capture no
+/// The captured `respondBidirectional` transaction predates the attestation
+/// layout: its payload is the OLD one (requestId ‖ signature ‖ zeros), and
+/// the singleton this crate ports (midnight-integration v0.25.0) emits
+/// requestId ‖ blockHeight ‖ outputKind ‖ serializedOutputLength ‖
+/// outputHash ‖ digest ‖ signature ‖ zeros. So this capture no
 /// longer evidences the payload bytes; what it still evidences — and what
 /// this test holds it to — is everything that did not change: the entry
 /// point, the event name, the request id at offset 0, and the SHAPE of the
 /// Impact program (`push` of the three-cell Misc — version, tag, 288 bytes
 /// — then `log`; the pushed literal itself carries the payload, so it
-/// differs exactly where the payload does). A capture from a chain running the #127 singleton
+/// differs exactly where the payload does). A capture from a chain running the v0.25.0 singleton
 /// is owed (`tests/fixtures/mpc/README.md`); when it arrives, this becomes
 /// the full 288-byte comparison `respond` has.
 #[test]
@@ -422,9 +422,9 @@ fn respond_bidirectional_apply_matches_the_captured_transactions_program() {
     assert_eq!(ours.emission.name, theirs.emission.name, "{who}: event name");
     assert_eq!(ours.emission.payload[..32], theirs.emission.payload[..32], "{who}: request id");
     // And the layout really did move: the signature sits after the
-    // attestation now (payload offset 81, i.e. Misc offset 113), not where
+    // attestation now (payload offset 113, i.e. Misc offset 145), not where
     // the capture had it (payload offset 32).
-    assert_eq!(ours.emission.payload[81..113], big_r_x, "{who}: bigR.x at the #127 offset");
+    assert_eq!(ours.emission.payload[113..145], big_r_x, "{who}: bigR.x at the v0.25.0 offset");
     assert_eq!(theirs.emission.payload[32..64], big_r_x, "{who}: bigR.x at the capture's offset");
     assert_ne!(ours.emission.payload[32..64], big_r_x, "{who}: bigR.x is no longer at the old offset");
 }

@@ -25,18 +25,18 @@ use std::path::PathBuf;
 use minocrab::Public;
 use minocrab_abi::{circuit_schema, Artifact, Pin};
 use signet_signer_interface::{
-    RespondBidirectionalEvent, RequestId, SignBidirectionalEventNotification,
-    SignatureRespondedEvent, SignetSigner,
+    RespondBidirectionalEventV1, RequestId, SignBidirectionalEventNotification,
+    SignatureRespondedEventV1, SignetSigner,
 };
 
 /// Where the artifact came from, relative to the workspace root. The same
 /// string `pin.json` carries.
-const SOURCE: &str = "corpus/zkir/signet-midnight-integration-pr127/packages/signet-contract/src/signet-contract";
+const SOURCE: &str = "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract";
 
 /// The three circuits' argument lists, as the interface declares them.
 type SignBidirectional = (RequestId<Public>, SignBidirectionalEventNotification<Public>);
-type Respond = (SignatureRespondedEvent<Public>,);
-type RespondBidirectional = (RespondBidirectionalEvent<Public>,);
+type Respond = (SignatureRespondedEventV1<Public>,);
+type RespondBidirectional = (RespondBidirectionalEventV1<Public>,);
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

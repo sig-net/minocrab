@@ -8,8 +8,7 @@
 //! (`minocrab-publisher`, which `sig-net/mpc` links to BUILD the events). Only
 //! the last of those has to be publishable, and the first is a test corpus
 //! that never will be — so the facts live here, in a crate with one
-//! dependency, and each reader spells them once from this definition
-//! (notes/mpc-publisher.org §11).
+//! dependency, and each reader spells them once from this definition.
 //!
 //! # What is here
 //!
@@ -103,8 +102,7 @@ pub mod circuits {
 /// The one definition in this workspace: `signet-artifacts` writes
 /// `expectedVk.json` with it, `minocrab-publisher` checks a deployment's
 /// verifier keys with it, and `signet-artifacts`' `tests/hash_verifier_key_pin.rs`
-/// pins it against the TypeScript function itself under node (M29 B;
-/// notes/mpc-publisher.org §8 has the provenance).
+/// pins it against the TypeScript function itself under node (M29 B).
 pub fn hash_verifier_key(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(bytes);

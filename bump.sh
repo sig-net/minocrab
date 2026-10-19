@@ -24,10 +24,15 @@ rule() { printf '%s\n' "--------------------------------------------------------
 # What flake.nix pins the compactc release at.
 pinned_compactc() { sed -n 's/^ *compactcVersion = "\(.*\)";/\1/p' flake.nix; }
 
-# The single midnight-ledger rev every midnight-* dependency uses.
+# The midnight-ledger refs (per-crate tags, or revs) the patch block pins.
 pinned_ledger_rev() {
-  sed -n 's/.*midnightntwrk\/midnight-ledger", rev = "\([0-9a-f]*\)".*/\1/p' Cargo.toml |
+  sed -nE 's/.*midnightntwrk\/midnight-ledger", (rev|tag) = "([^"]*)".*/\2/p' Cargo.toml |
     sort -u
+}
+
+# The ref zkir-v3 is patched to: what `compactc`'s bundled zkir-v3 is read against.
+pinned_zkir_v3_ref() {
+  sed -nE 's/^midnight-zkir-v3 = .*midnight-ledger", (rev|tag) = "([^"]*)".*/\2/p' Cargo.toml
 }
 
 # ------------------------------------------------------------------- `pins`
@@ -41,9 +46,7 @@ cmd_pins() {
   local compactc_version
   compactc_version="$(pinned_compactc)"
   printf '  flake.nix compactc            %s\n' "$compactc_version"
-  printf '  Cargo.toml midnight-ledger    %s\n' "$(pinned_ledger_rev | tr '\n' ' ')"
-  printf '  Cargo.toml [patch] tag        %s\n' \
-    "$(sed -n 's/.*midnight-ledger", tag = "\(.*\)".*/\1/p' Cargo.toml | sort -u | tr '\n' ' ')"
+  printf '  Cargo.toml [patch] refs       %s\n' "$(pinned_ledger_rev | tr '\n' ' ')"
   for bin in compactc zkir zkir-v3 rustc; do
     if command -v "$bin" >/dev/null 2>&1; then
       printf '  %-29s %s\n' "$bin --version" "$("$bin" --version 2>&1 | head -1)"
@@ -69,9 +72,9 @@ cmd_pins() {
       | [.key, .value.locked.rev, (.value.original.ref // "-")] | @tsv' |
       awk -F'\t' '{ printf "  %-16s %s  %s\n", $1, $2, $3 }'
     echo
-    echo "  READ THIS AGAINST the Cargo.toml rev above. They are allowed to"
-    echo "  differ (we need ONE rev for all midnight-* crates so their types"
-    echo "  unify; upstream pins zkir and zkir-v3 from two). What is NOT"
+    echo "  READ THIS AGAINST the Cargo.toml refs above. They are allowed to"
+    echo "  differ (we pin the tags midnight-node pins, so the crates match"
+    echo "  the chain; compactc pins zkir and zkir-v3 by rev). What is NOT"
     echo "  allowed is not knowing — see notes/version-bump.org §Hazard 1."
   fi
 
@@ -86,7 +89,7 @@ cmd_pins() {
   fi
   local head ours cmp
   head="$(git ls-remote "$LEDGER_REPO" HEAD 2>/dev/null | cut -f1)"
-  ours="$(pinned_ledger_rev | head -1)"
+  ours="$(pinned_zkir_v3_ref)"
   printf '  midnight-ledger HEAD          %s\n' "$head"
   if [ "$head" = "$ours" ]; then
     echo "                                = our pin"

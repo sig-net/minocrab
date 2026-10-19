@@ -865,6 +865,8 @@ in  respondBidirectionalEvent_requestId_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_blockHeight: Scalar<BLS12-381>
 in  respondBidirectionalEvent_outputKind: Scalar<BLS12-381>
 in  respondBidirectionalEvent_serializedOutputLength: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_hi: Scalar<BLS12-381>
+in  respondBidirectionalEvent_outputHash_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_hi: Scalar<BLS12-381>
 in  respondBidirectionalEvent_digest_lo: Scalar<BLS12-381>
 in  respondBidirectionalEvent_signature_bigR_x_hi: Scalar<BLS12-381>
