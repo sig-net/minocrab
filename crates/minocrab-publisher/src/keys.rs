@@ -14,8 +14,9 @@
 //! # Where a [`Deployment`]'s table comes from (M30 C2)
 //!
 //! [`ManagedDir::deployment`] builds the table from the package's OWN
-//! `expectedVk.json` — the table the former sidecar's build/prove gate read
-//! from the package's `expectedVk` export — and CHECKS every entry it uses
+//! `expectedVk.json` — the shape the former sidecar's build/prove gate read
+//! from the package's `expectedVk` export, circuit to `hashVerifierKey` of that
+//! package's own `.verifier` — and CHECKS every entry it uses
 //! against the hash of the `.verifier` file this directory actually carries,
 //! failing loudly and by name if they disagree. Deriving the table from the
 //! `.verifier` files directly, the way an earlier version of this function
@@ -82,7 +83,7 @@ impl ManagedDir {
 
     /// `<root>/expectedVk.json` — the package's own copy of the hash table,
     /// written by `signet-artifacts::generate`; the former sidecar's gate read
-    /// the same table from the package's `expectedVk` export.
+    /// the package's `expectedVk` export instead.
     pub fn expected_vk_path(&self) -> PathBuf {
         self.root.join("expectedVk.json")
     }
