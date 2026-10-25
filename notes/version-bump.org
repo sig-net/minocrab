@@ -314,12 +314,12 @@ for that binary, manifest aside (=git diff <rev> <tag> -- zkir-v3=).
 
 ** Hazard 4 — the =[patch.crates-io]= mirror
 =midnight-zkir= depends on =transient-crypto-old= ^2.2.0, never published to
-crates.io. We mirror midnight-ledger's own workspace patches:
-=midnight-transient-crypto= from tag =transient-crypto-2.2.0-rc.1=, and
-=serialize= / =base-crypto= forced onto the pinned rev so old and new
-transient-crypto share one set of core types. The patch block moves with the
-rev — check upstream's own root =Cargo.toml= =[patch]= section at the new
-rev and mirror it again. When it goes stale cargo does NOT fail; it warns
+crates.io. Since M45 F the block is the tag set midnight-node's root
+=Cargo.toml= =[patch]= section pins, =transient-crypto-old= from tag
+=transient-crypto-2.2.0-rc.1= among them, so old and new transient-crypto
+share one set of core types. The patch block moves with the node release —
+check the node's root =Cargo.toml= =[patch]= section at the new release and
+mirror it again, in both =Cargo.toml= and =.cargo/config.toml=. When it goes stale cargo does NOT fail; it warns
 =patch `midnight-transient-crypto v2.2.0 (…)` was not used in the crate
 graph= and carries on with the unpatched dependency. Dry run B printed
 exactly that. Grep the build log for =was not used in the crate graph= after

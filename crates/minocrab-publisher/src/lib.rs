@@ -1,11 +1,10 @@
 //! The MPC's Midnight publisher, pure core (M30).
 //!
 //! `sig-net/mpc` publishes an MPC signature to Midnight by building a
-//! `respond` call, proving it, paying its DUST fee and submitting it. Today a
-//! Node 22 sidecar (`midnight-publisher-ts`) does the first three, for one
-//! stated reason — "the compiled contract's bindings and executor are
-//! JavaScript" (`intent.ts`'s header). This crate is the claim that this is
-//! no longer true, in a form mpc's `chain-midnight` can link:
+//! `respond` call, proving it, paying its DUST fee and submitting it. mpc's
+//! `chain-midnight` links this crate to build and prove the call in process,
+//! where a Node 22 sidecar once did, because the compiled contract's bindings
+//! and executor were JavaScript:
 //!
 //! ```text
 //!  (request id, signature)                        M30 A — call.rs
@@ -38,14 +37,17 @@
 //!
 //! # Not here
 //!
-//! - The DUST wallet, which lives in `sig-net/mpc`'s `chain-midnight`.
-//!   [`dust::DustBalancer`] is the seam it plugs into; [`dust::NoDust`] is
-//!   what the tests run, and it leaves the transaction unbalanced —
-//!   `well_formed` must have `enforce_balancing` off.
-//! - Submission, event ingestion, the `IntentClient` swap-in and the four
-//!   retry classes (`wallet_unsynced`, `proving_timeout`, `state_conflict`,
-//!   `ambiguous_submit`). Those are mpc's, tracked there (milestones.org
-//!   M30's "Out of scope here").
+//! - The DUST wallet, which lives in `sig-net/mpc`'s `chain-midnight`. It
+//!   does not go through [`dust::DustBalancer`]: mpc takes
+//!   [`call::respond`] / [`call::respond_bidirectional`],
+//!   `SignerCall::prototype`, [`intent::build_intent`] /
+//!   [`intent::preimage_tx`] and [`InProcessProver`] from here, then pays
+//!   with a separately proven (ZKIR v2) fee intent merged into the sealed
+//!   respond. [`dust::NoDust`] is what this crate's tests run, and it leaves
+//!   the transaction unbalanced — `well_formed` must have
+//!   `enforce_balancing` off.
+//! - Submission, event ingestion and the retry classes. Those are mpc's
+//!   (its `doc/midnight-publisher.md`).
 
 pub mod call;
 pub mod dust;

@@ -24,11 +24,11 @@
 //!
 //! [`SignerResolver`] tries the managed directory first and the ledger's own
 //! [`DustResolver`] second. The dust half resolves exactly one key —
-//! `midnight/dust/spend` — and it is dead weight until a DUST wallet puts a
-//! dust spend in the transaction; it is wired now because the fee proof is
-//! the one other proof a published respond transaction will contain, and a
-//! resolver that cannot find its key fails at proving time, deep inside an
-//! `anyhow::Error`, rather than at construction.
+//! `midnight/dust/spend` — whose IR is ZKIR **v2** (`ir-source[v2]`), so
+//! [`InProcessProver`], which loads every IR as `zkir_v3::IrSource`, cannot
+//! prove a DUST spend with it. A fee proof goes through a v2 prover such as
+//! `zkir::LocalProvingProvider`; sig-net/mpc proves its fee intent that way,
+//! with its own `DustResolver`.
 
 use std::io;
 

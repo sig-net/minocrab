@@ -3,10 +3,10 @@
 **The MPC's Midnight publisher, pure core** — part of [MinoCrab](https://github.com/sig-net/minocrab).
 
 `sig-net/mpc` publishes an MPC signature to Midnight by building a `respond`
-call, proving it, paying its DUST fee and submitting it. A Node 22 sidecar
-does the first three today, for one stated reason — "the compiled contract's
-bindings and executor are JavaScript". This crate is the claim that this is
-no longer true, in a form `chain-midnight` can link:
+call, proving it, paying its DUST fee and submitting it. Its `chain-midnight`
+links this crate to build and prove the call in process, where a Node 22
+sidecar once did, because the compiled contract's bindings and executor were
+JavaScript:
 
 ```
  (request id, signature)                       call.rs — the public surface
