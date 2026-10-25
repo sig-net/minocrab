@@ -14,12 +14,13 @@
 //! # Where a [`Deployment`]'s table comes from (M30 C2)
 //!
 //! [`ManagedDir::deployment`] builds the table from the package's OWN
-//! `expectedVk.json` — the same table the former sidecar's build/prove gate
-//! read — and CHECKS every entry it uses against the hash of the `.verifier` file
-//! this directory actually carries, failing loudly and by name if they
-//! disagree. Deriving the table from the `.verifier` files directly, the way
-//! an earlier version of this function did, cannot catch this: a directory
-//! can only ever agree with itself. The JSON and the keys are two artifacts
+//! `expectedVk.json` — the table the former sidecar's build/prove gate read
+//! from the package's `expectedVk` export — and CHECKS every entry it uses
+//! against the hash of the `.verifier` file this directory actually carries,
+//! failing loudly and by name if they disagree. Deriving the table from the
+//! `.verifier` files directly, the way an earlier version of this function
+//! did, cannot catch this: a directory can only ever agree with itself. The
+//! JSON and the keys are two artifacts
 //! `signet-artifacts::generate` writes from the SAME bytes in the SAME run,
 //! but nothing stops one of them from going stale independently afterward
 //! (a hand-edited JSON, a key regenerated without re-running the pipeline,
@@ -80,8 +81,8 @@ impl ManagedDir {
     }
 
     /// `<root>/expectedVk.json` — the package's own copy of the hash table,
-    /// written by `signet-artifacts::generate` and read by the former
-    /// sidecar's build/prove gate.
+    /// written by `signet-artifacts::generate`; the former sidecar's gate read
+    /// the same table from the package's `expectedVk` export.
     pub fn expected_vk_path(&self) -> PathBuf {
         self.root.join("expectedVk.json")
     }
