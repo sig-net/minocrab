@@ -1,7 +1,8 @@
 //! The managed key directory, and the disk [`Resolver`] over it.
 //!
-//! This is the layout `sig-net/mpc`'s sidecar reads out of
-//! `@sig-net/midnight-contract` and `crates/signet-artifacts` writes (M29 A):
+//! This is the layout `crates/signet-artifacts` writes (M29 A); `sig-net/mpc`'s
+//! `chain-midnight` reads its `keys/` and `zkir/` out of
+//! `@sig-net/midnight-contract`'s `dist/managed`:
 //!
 //! ```text
 //! <root>/keys/<circuit>.prover     the proving key
@@ -13,8 +14,8 @@
 //! # Where a [`Deployment`]'s table comes from (M30 C2)
 //!
 //! [`ManagedDir::deployment`] builds the table from the package's OWN
-//! `expectedVk.json` — the same file the sidecar's build/prove gate reads —
-//! and CHECKS every entry it uses against the hash of the `.verifier` file
+//! `expectedVk.json` — the same table the former sidecar's build/prove gate
+//! read — and CHECKS every entry it uses against the hash of the `.verifier` file
 //! this directory actually carries, failing loudly and by name if they
 //! disagree. Deriving the table from the `.verifier` files directly, the way
 //! an earlier version of this function did, cannot catch this: a directory
@@ -79,8 +80,8 @@ impl ManagedDir {
     }
 
     /// `<root>/expectedVk.json` — the package's own copy of the hash table,
-    /// written by `signet-artifacts::generate` and read by the sidecar's
-    /// build/prove gate.
+    /// written by `signet-artifacts::generate` and read by the former
+    /// sidecar's build/prove gate.
     pub fn expected_vk_path(&self) -> PathBuf {
         self.root.join("expectedVk.json")
     }

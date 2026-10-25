@@ -26,15 +26,15 @@
 //! 4. `process_ttls`, and only report ready when the replayed state has caught
 //!    up past the block the publisher pinned.
 //!
-//! and the policies it does NOT settle, which the milestone names: the state
-//! must be persisted and REBUILDABLE FROM GENESIS (the event source is
-//! untrusted — §5.3), one submit at a time while there is a single DUST UTXO,
-//! and the funding seed is a hot key either way.
+//! and the policies it does NOT settle, which are the wallet's: the state must
+//! be REBUILDABLE FROM GENESIS (the event source is untrusted —
+//! `79b2add:notes/mpc-publisher.org` §5.3), one submit at a time while there
+//! is a single DUST UTXO, and the funding seed is a hot key either way.
 //!
 //! # Why the seam is here and not at the call site
 //!
 //! Because the ORDER matters and this is where it is decided: build, prove,
-//! balance, sign, seal. Balancing after proving is what the sidecar does
+//! balance, sign, seal. Balancing after proving is what the wallet SDK does
 //! (`prove` then `balanceUnboundTransaction`) and it is forced — the fee
 //! depends on the proof sizes. Signing after balancing is forced too: a dust
 //! registration added by the wallet is signed by `Intent::sign`'s third key
