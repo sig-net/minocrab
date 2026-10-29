@@ -90,6 +90,8 @@ cmd_pins() {
   local head ours cmp
   head="$(git ls-remote "$LEDGER_REPO" HEAD 2>/dev/null | cut -f1)"
   ours="$(pinned_zkir_v3_ref)"
+  # A tag pin is compared by the commit it names; a rev pin is that commit.
+  ours="$(git ls-remote "$LEDGER_REPO" "refs/tags/$ours^{}" 2>/dev/null | cut -f1 | grep . || echo "$ours")"
   printf '  midnight-ledger HEAD          %s\n' "$head"
   if [ "$head" = "$ours" ]; then
     echo "                                = our pin"
