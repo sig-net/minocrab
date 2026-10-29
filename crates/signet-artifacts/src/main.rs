@@ -1,6 +1,6 @@
 //! `cargo run -p signet-artifacts -- <out-dir>` — write the managed
-//! directory `sig-net/mpc`'s sidecar and the deploy tooling read for the
-//! three Signet signer circuits (M29 rungs A+B).
+//! directory the deploy tooling reads for the three Signet signer circuits
+//! (M29 rungs A+B).
 //!
 //! `zkir-v3` is located as `$ZKIR_V3` if set, else `zkir-v3` on `PATH` (the
 //! flake's pinned copy, the same one compactc invokes).

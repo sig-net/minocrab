@@ -1,9 +1,9 @@
 [package]
 name = "signet-artifacts"
 # M29 rung A/B: the managed-directory pipeline for the three Signet signer
-# circuits — `.zkir` from minocrab, `.bzkir`
-# + prover/verifier keys from the pinned `zkir-v3` binary, and the
-# `expectedVk` hash table the sidecar's build/prove paths check. Not
+# circuits — `.zkir` from minocrab, `.bzkir` + prover/verifier keys from the
+# pinned `zkir-v3` binary, and the `expectedVk` hash table a publisher's
+# build/prove paths check. Not
 # depended on by anything else in the workspace, so it carries no
 # `[workspace.dependencies]` entry (workspace_versions.rs only checks those).
 publish = false

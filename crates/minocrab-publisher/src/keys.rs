@@ -16,13 +16,13 @@
 //! [`ManagedDir::deployment`] builds the table from the package's OWN
 //! `expectedVk.json` — the shape the former sidecar's build/prove gate read
 //! from the package's `expectedVk` export, circuit to `hashVerifierKey` of that
-//! package's own `.verifier` — and CHECKS every entry it uses
-//! against the hash of the `.verifier` file this directory actually carries,
-//! failing loudly and by name if they disagree. Deriving the table from the
+//! package's own `.verifier` — and CHECKS every entry it uses against the
+//! hash of the `.verifier` file this directory actually carries, failing
+//! loudly and by name if they disagree. Deriving the table from the
 //! `.verifier` files directly, the way an earlier version of this function
 //! did, cannot catch this: a directory can only ever agree with itself. The
-//! JSON and the keys are two artifacts
-//! `signet-artifacts::generate` writes from the SAME bytes in the SAME run,
+//! JSON and the keys are two artifacts `signet-artifacts::generate` writes
+//! from the SAME bytes in the SAME run,
 //! but nothing stops one of them from going stale independently afterward
 //! (a hand-edited JSON, a key regenerated without re-running the pipeline,
 //! a stale file surviving a partial copy) — this is the check that notices.

@@ -68,8 +68,8 @@
         };
         # NO flake package for the `minocrab` CLI, decided rather than
         # missing (M24 §5; dmd pre-authorised the skip): nixpkgs'
-        # importCargoLock cannot vendor this workspace — the two pinned
-        # midnight-ledger git revs both export identical crate
+        # importCargoLock cannot vendor this workspace — the pinned
+        # midnight-ledger git refs all export identical crate
         # name-versions (midnight-serialize-macros 1.0.0 et al.), which
         # collide in the vendor directory. The CLI stays a plain cargo
         # binary: `cargo build --release -p minocrab-sim --bin minocrab`.

@@ -2,9 +2,8 @@
 //!
 //! No proof server, no child process, and no network once the KZG parameters
 //! are on disk. [`InProcessProver`] is the whole of what that costs: a
-//! `ProvingProvider`
-//! that resolves key material off the managed directory and hands the
-//! preimage to `ProofPreimage::prove::<zkir_v3::IrSource>`.
+//! `ProvingProvider` that resolves key material off the managed directory
+//! and hands the preimage to `ProofPreimage::prove::<zkir_v3::IrSource>`.
 //!
 //! # Why it is written here rather than imported
 //!

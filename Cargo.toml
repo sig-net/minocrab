@@ -18,7 +18,7 @@ members = [
     "crates/signet-signer-interface",
     "crates/xcall-target-interface",
     # M29 rung A/B: the managed artifact pipeline for the Signet signer
-    # circuits (zkir/keys/expectedVk the MPC sidecar reads unchanged).
+    # circuits (zkir/keys/expectedVk).
     "crates/signet-artifacts",
     # M30 C1: the Signet protocol facts (Misc envelope, signer circuit and
     # event names, hashVerifierKey) — the one publishable crate the contract,

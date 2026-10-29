@@ -107,8 +107,8 @@ fn is_hex64(s: &str) -> bool {
 ///
 /// This is the Rust twin of `@midnight-ntwrk/compact-js`'s
 /// `ContractKeyLocation` (`dist/cjs/ContractKeyLocation.js`), which the
-/// sidecar builds with `encodeContractKeyLocation({contractAddress,
-/// circuitId, verifierKeyHash})` and its proof server parses back. The wire
+/// former sidecar built with `encodeContractKeyLocation({contractAddress,
+/// circuitId, verifierKeyHash})` and the proof server parses back. The wire
 /// spelling is
 ///
 /// ```text
@@ -234,9 +234,9 @@ impl Deployment {
     /// (`hashVerifierKey(verifierKey) !== verifierKeyHash` before it would
     /// prove), moved to the side that matters more: `state` is what the NODE
     /// says the contract carries, and this gate is the reason a lying
-    /// endpoint's respond call fails safe. Nothing in
-    /// the publish path calls it automatically — the pure core has no node —
-    /// so a caller with a contract state should, once per pinned read.
+    /// endpoint's respond call fails safe. Nothing in the publish path calls
+    /// it automatically — the pure core has no node — so a caller with a
+    /// contract state should, once per pinned read.
     pub fn check_deployed<D: DB>(
         &self,
         state: &ContractState<D>,

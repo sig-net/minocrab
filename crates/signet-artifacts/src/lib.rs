@@ -1,11 +1,10 @@
 //! The managed artifact pipeline for the three Signet signer circuits
 //! (M29 rungs A+B).
 //!
-//! `sig-net/mpc`'s TypeScript sidecar never interprets the IR: compactc's JS
-//! executor makes the proof preimage and whatever sits at
-//! `zkir/<circuit>.bzkir` proves it. So the whole
-//! swap to MinoCrab's optimised artifact is a directory of files — no
-//! sidecar change. This crate builds that directory:
+//! `sig-net/mpc`'s former TypeScript sidecar never interpreted the IR:
+//! compactc's JS executor made the proof preimage and whatever sat at
+//! `zkir/<circuit>.bzkir` proved it, so the swap to MinoCrab's optimised
+//! artifact was a directory of files. This crate builds that directory:
 //!
 //! ```text
 //! <out-dir>/zkir/<circuit>.zkir        - minocrab_zkir::v3::write_zkir's
@@ -27,8 +26,8 @@
 //!
 //! Circuit names on disk are the Compact names compactc's own artifacts use
 //! (`signBidirectional`, `respond`, `respondBidirectional`), NOT the Rust
-//! function names — the sidecar looks them up by the Compact name
-//! (`@sig-net/midnight-contract`'s `expectedVk` keys, `RESPOND_CIRCUITS`).
+//! function names — consumers look them up by the Compact name
+//! (`@sig-net/midnight-contract`'s `expectedVk` keys, mpc's `chain-midnight`).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -43,7 +42,7 @@ use signet_protocol::hash_verifier_key;
 pub type Circuit = (&'static str, fn() -> Compiled3);
 
 /// The three Signet signer circuits, named the way compactc's artifacts and
-/// the sidecar's `expectedVk`/`RESPOND_CIRCUITS` name them
+/// `@sig-net/midnight-contract`'s `expectedVk` name them
 /// (`signet_protocol::circuits`), each paired with the circuit that builds it
 /// (`crates/minocrab-contracts/src/signet_contract.rs`).
 pub fn circuits() -> Vec<Circuit> {
@@ -195,7 +194,7 @@ pub fn generate(out_dir: &Path, zkir_v3: &Path) -> anyhow::Result<()> {
     std::fs::write(&manifest_path, manifest)
         .map_err(|e| anyhow::anyhow!("writing {}: {e}", manifest_path.display()))?;
 
-    // 4. `expectedVk.json`: the sidecar's build/prove gate table.
+    // 4. `expectedVk.json`: the build/prove gate table.
     let vk_json = expected_vk_json(out_dir, &names)?;
     let vk_path = out_dir.join("expectedVk.json");
     let mut f = std::fs::File::create(&vk_path)
