@@ -22,10 +22,10 @@
 //! `.verifier` files directly, the way an earlier version of this function
 //! did, cannot catch this: a directory can only ever agree with itself. The
 //! JSON and the keys are two artifacts `signet-artifacts::generate` writes
-//! from the SAME bytes in the SAME run,
-//! but nothing stops one of them from going stale independently afterward
-//! (a hand-edited JSON, a key regenerated without re-running the pipeline,
-//! a stale file surviving a partial copy) — this is the check that notices.
+//! from the SAME bytes in the SAME run, but nothing stops one of them from
+//! going stale independently afterward (a hand-edited JSON, a key regenerated
+//! without re-running the pipeline, a stale file surviving a partial copy) —
+//! this is the check that notices.
 //!
 //! `midnight_ledger::test_utilities::test_resolver`'s external resolver reads
 //! exactly these three files under exactly these two subdirectories; this is

@@ -3,10 +3,9 @@ name = "minocrab-publisher"
 # M30: the pure core of the MPC's Midnight publisher — the piece
 # `sig-net/mpc`'s TypeScript sidecar existed to provide. Since M30 C1 this
 # crate reads the Misc envelope and the three signer event names from
-# `signet-protocol` (publishable) rather than
-# `minocrab-contracts` (a corpus, `publish = false`) — the ONLY remaining edge
-# to that crate is a dev-dependency (tests/real_proof.rs, which keygens from
-# the real circuit). So the same blocker the rest of the workspace already
+# `signet-protocol` (publishable) rather than `minocrab-contracts` (a corpus,
+# `publish = false`) — the ONLY remaining edge to that crate is a
+# dev-dependency (tests/real_proof.rs, which keygens from the real circuit). So the same blocker the rest of the workspace already
 # carries applies here and nowhere further: PUBLISHING.md's `midnight-*`
 # block (upstream has not published the ledger-9.1 line to crates.io yet).
 version.workspace = true
