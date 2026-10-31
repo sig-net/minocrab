@@ -40,16 +40,14 @@ pub enum PublishError {
         source: std::io::Error,
     },
     /// The deployed contract's verifier key for a circuit is not the one the
-    /// `expectedVk` table records — the sidecar's `prover.ts` gate, and the
-    /// reason a lying endpoint's respond call fails safe
-    /// (notes/mpc-publisher.org §5.2).
+    /// `expectedVk` table records — the gate the former sidecar's `prover.ts`
+    /// ran, and the reason a lying endpoint's respond call fails safe.
     #[error("{circuit}: the deployed verifier key hashes to {got}, not the expected {expected}")]
     VerifierKeyMismatch { circuit: String, expected: String, got: String },
     /// The package's OWN `expectedVk.json` disagrees with its OWN
     /// `.verifier` file for one circuit — a mismatch between the shipped
     /// table and the shipped keys, caught before anything is deployed or
-    /// proved against them (`ManagedDir::deployment`, M30 C2,
-    /// notes/mpc-publisher.org §11). Distinct from
+    /// proved against them (`ManagedDir::deployment`, M30 C2). Distinct from
     /// [`PublishError::VerifierKeyMismatch`], which compares against a
     /// DEPLOYED contract's operation, not the package's own files.
     #[error(
@@ -68,7 +66,8 @@ pub enum PublishError {
     /// input it was offered, for instance).
     #[error("signing failed: {0}")]
     Signing(String),
-    /// The dust seam (M30 rung C) refused to balance the transaction.
+    /// The dust seam ([`crate::dust::DustBalancer`]) refused to balance the
+    /// transaction.
     #[error("dust balancing failed: {0}")]
     Dust(String),
 }

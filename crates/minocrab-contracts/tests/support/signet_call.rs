@@ -218,9 +218,9 @@ pub fn singleton_contract_state(
     ContractState::new(StateValue::Array(Array::new()), operations, Default::default())
 }
 
-/// Balancing and limits OFF: there is no DUST wallet anywhere in this
-/// workspace (notes/mpc-publisher.org §2 names that as the gap M30 C
-/// closes), and none of these transactions carries a zswap offer.
+/// Balancing and limits OFF: there is no DUST wallet in this workspace (it
+/// lives in `sig-net/mpc`'s `chain-midnight`), and none of these
+/// transactions carries a zswap offer.
 pub fn unbalanced_strictness() -> WellFormedStrictness {
     let mut s = WellFormedStrictness::default();
     s.enforce_balancing = false;
@@ -300,7 +300,7 @@ pub fn respond_input(
     minocrab_publisher::call::respond_input(request_id, &signature(big_r_x, big_r_y, s, recovery_id))
 }
 
-/// `respondBidirectional`'s 288 Misc bytes (PR #127's layout) —
+/// `respondBidirectional`'s 288 Misc bytes (v0.25.0's layout) —
 /// `minocrab_publisher::call::respond_bidirectional_misc`, with the signature
 /// spread out as above.
 pub fn respond_bidirectional_misc(
@@ -319,7 +319,7 @@ pub fn respond_bidirectional_misc(
     )
 }
 
-/// `respondBidirectional`'s arguments with their COMPACT alignment: fourteen
+/// `respondBidirectional`'s arguments with their COMPACT alignment: sixteen
 /// field limbs.
 pub fn respond_bidirectional_input(
     request_id: &[u8; 32],
@@ -339,8 +339,13 @@ pub fn respond_bidirectional_input(
 /// The attestation every bidirectional scenario in this suite uses: a
 /// finalised height with all eight bytes live, the `failed` verdict (variant
 /// 1, so a zero-vs-one confusion with `executed` is visible), a width that
-/// is not the height, and a digest distinct from the id.
+/// is not the height, and an output hash and a digest distinct from the id
+/// and from each other.
 pub fn sample_attestation() -> Attestation {
+    let mut output_hash = [0u8; 32];
+    for (i, b) in output_hash.iter_mut().enumerate() {
+        *b = 0x5cu8.wrapping_add((i as u8).wrapping_mul(17));
+    }
     let mut digest = [0u8; 32];
     for (i, b) in digest.iter_mut().enumerate() {
         *b = 0xd1u8.wrapping_add((i as u8).wrapping_mul(29));
@@ -349,6 +354,7 @@ pub fn sample_attestation() -> Attestation {
         block_height: 0x0102_0304_0506_0708,
         output_kind: 1,
         serialized_output_length: 0x0000_0000_0000_0020,
+        output_hash,
         digest,
     }
 }

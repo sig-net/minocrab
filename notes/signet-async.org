@@ -86,14 +86,12 @@ macro with type information it does not have, and is unwanted anyway.
   a block-time =cancel=.
 - Executor: a =Responder= trait implemented by minocrab-sim (test key)
   and by the M30 Rust publisher, so one test drives request → sign →
-  settle. That is the end-to-end coverage mpc-publisher.org §4 says
-  neither repo has.
+  settle: end-to-end coverage neither repo had.
 
 * 5. Timing
 
-Signet is not deployed and the vault is ours (mpc-publisher.org §0), so
-the record format and interface are movable during M29 and frozen the
-moment either ships.
+While Signet was undeployed and the vault ours, the record format and
+interface were movable; they froze the moment either shipped.
 
 * 6. Simulating Sig in tests (dmd asked 2026-09-05)
 

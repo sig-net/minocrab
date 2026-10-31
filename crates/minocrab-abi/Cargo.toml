@@ -2,6 +2,9 @@
 name = "minocrab-abi"
 description = "Artifact agreement: check a MinoCrab interface crate against the callee contract's compiled compactc artifact, as a test"
 version.workspace = true
+# Held until the `midnight-*` line is on crates.io at the pinned tags
+# (PUBLISHING.md): the version requirements alone would resolve elsewhere.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

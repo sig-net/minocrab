@@ -2,7 +2,7 @@
 //! out of this crate; the pin stays here beside the key files) to
 //! `@midnight-ntwrk/compact-js`'s `hashVerifierKey`
 //! (`ContractKeyLocation.js`: `createHash('sha256').update(bytes).digest
-//! ('hex')`, read directly — see notes/mpc-publisher.org §8).
+//! ('hex')`, read directly).
 //!
 //! NO fixture pair (a `.verifier` file plus its published hash) was found
 //! anywhere reachable: `@sig-net/midnight-contract` (the package that

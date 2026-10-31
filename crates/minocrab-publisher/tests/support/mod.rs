@@ -72,8 +72,9 @@ pub fn singleton_contract_state(
     ContractState::new(StateValue::Array(Array::new()), operations, Default::default())
 }
 
-/// Balancing and limits OFF: nothing here pays a DUST fee, because no DUST
-/// wallet exists yet (M30 rung C — `minocrab_publisher::dust`).
+/// Balancing and limits OFF: nothing here pays a DUST fee, because the DUST
+/// wallet lives in `sig-net/mpc`'s `chain-midnight` (`minocrab_publisher::dust`
+/// is its seam).
 pub fn unbalanced_strictness() -> WellFormedStrictness {
     let mut s = WellFormedStrictness::default();
     s.enforce_balancing = false;

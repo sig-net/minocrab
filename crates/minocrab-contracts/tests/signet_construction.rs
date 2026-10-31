@@ -41,7 +41,7 @@ use support::signet_call::{
 
 fn corpus_zkir(name: &str) -> IrSource {
     let path = format!(
-        "{}/../../corpus/zkir/signet-midnight-integration-pr127/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
+        "{}/../../corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",
         env!("CARGO_MANIFEST_DIR")
     );
     minocrab_zkir::v3::read_zkir(&path).expect("corpus golden parses")
@@ -114,8 +114,7 @@ impl SignCall {
 }
 
 /// `respond`: `({ requestId, signature: { bigR: {x, y}, s, recoveryId } })`
-/// — nine field inputs, the same nine as when the id was a separate
-/// argument (PR #127 only moved it into the struct).
+/// — nine field inputs.
 pub struct RespondCall {
     request_id: [u8; 32],
     big_r_x: [u8; 32],
@@ -179,8 +178,8 @@ impl RespondCall {
 }
 
 /// `respondBidirectional`: `({ requestId, blockHeight, outputKind,
-/// serializedOutputLength, digest, signature })` — fourteen field inputs
-/// (PR #127).
+/// serializedOutputLength, outputHash, digest, signature })` — sixteen field
+/// inputs (midnight-integration v0.25.0).
 pub struct RespondBidirectionalCall {
     respond: RespondCall,
     attestation: RespondAttestation,
@@ -212,8 +211,10 @@ impl RespondBidirectionalCall {
         limbs.push(Fr::from(a.block_height));
         limbs.push(Fr::from(u64::from(a.output_kind)));
         limbs.push(Fr::from(a.serialized_output_length));
-        let (hi, lo) = b32_slots(&a.digest);
-        limbs.extend([hi, lo]);
+        for b32 in [&a.output_hash, &a.digest] {
+            let (hi, lo) = b32_slots(b32);
+            limbs.extend([hi, lo]);
+        }
         for b32 in [&r.big_r_x, &r.big_r_y, &r.s] {
             let (hi, lo) = b32_slots(b32);
             limbs.extend([hi, lo]);
@@ -332,7 +333,7 @@ fn the_alignment_does_not_reach_the_preimage() {
 /// two circuits that read different argument lists.
 #[test]
 fn input_schema_matches_the_corpus_artifact() {
-    for (name, count) in [("signBidirectional", 8usize), ("respond", 9), ("respondBidirectional", 14)] {
+    for (name, count) in [("signBidirectional", 8usize), ("respond", 9), ("respondBidirectional", 16)] {
         let theirs = corpus_zkir(name);
         assert_eq!(theirs.inputs.len(), count, "{name}: corpus input count");
     }
@@ -341,7 +342,7 @@ fn input_schema_matches_the_corpus_artifact() {
         RespondCall::new().preimage("respond", signet_contract::SIGNATURE_RESPONDED_EVENT).inputs.len(),
         9
     );
-    assert_eq!(RespondBidirectionalCall::new().preimage().inputs.len(), 14);
+    assert_eq!(RespondBidirectionalCall::new().preimage().inputs.len(), 16);
 }
 
 /// The tamper twins, on the LEDGER-BUILT preimage: a transcript whose logged
@@ -364,11 +365,11 @@ fn a_tampered_event_is_rejected_by_both_artifacts() {
     assert!(simulate(&signet_contract::SignetContract::respond().ir, &pi).is_err(), "ours must reject");
     assert!(simulate(&corpus_zkir("respond"), &pi).is_err(), "corpus must reject");
 
-    // The five PR #127 fields, one tamper each, at the offsets the layout
-    // declares (name(32) then requestId at 32, blockHeight at 64, outputKind
-    // at 72, length at 73, digest at 81).
+    // The five attestation fields, one tamper each, at the offsets the
+    // layout declares (name(32) then requestId at 32, blockHeight at 64,
+    // outputKind at 72, length at 73, outputHash at 81, digest at 113).
     let bidirectional = RespondBidirectionalCall::new();
-    for (offset, what) in [(64usize, "blockHeight byte 0"), (71, "blockHeight byte 7"), (72, "outputKind"), (80, "serializedOutputLength byte 7"), (81, "digest byte 0")] {
+    for (offset, what) in [(64usize, "blockHeight byte 0"), (71, "blockHeight byte 7"), (72, "outputKind"), (80, "serializedOutputLength byte 7"), (81, "outputHash byte 0"), (112, "outputHash byte 31"), (113, "digest byte 0")] {
         let mut misc = bidirectional.misc_bytes();
         misc[offset] ^= 0x01;
         let pi = call_preimage("respondBidirectional", bidirectional.typed_input(), &misc);

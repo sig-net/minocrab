@@ -40,14 +40,14 @@
 //! `ZswapResolver` and a `DustResolver`: network-fetched parameter sets this
 //! gate has no use for, since the transaction carries no zswap offer and no
 //! dust action. So [`V3ProvingProvider`] is a MECHANICAL TRANSLATION of that
-//! struct's v3 arm (`ledger/src/test_utilities.rs:749-818`): resolve the key
+//! struct's v3 arm (midnight-ledger `04c9c5d`,
+//! `ledger/src/test_utilities.rs:749-818`): resolve the key
 //! material, load the `ir-source[v3-generic]` `IrSource` from it, and hand
 //! the preimage to `ProofPreimage::prove::<zkir_v3::IrSource>` — which is
 //! also the call `crates/minocrab-bench` makes, one layer down.
 //!
 //! Proving is therefore entirely in process: no proof server, no child
-//! process, and no network once the KZG parameters are on disk. That is the
-//! claim notes/mpc-publisher.org §2 makes about the port, exercised.
+//! process, and no network once the KZG parameters are on disk.
 //!
 //! # What this gate does NOT prove
 //!

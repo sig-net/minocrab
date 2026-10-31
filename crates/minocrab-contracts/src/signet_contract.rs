@@ -12,18 +12,19 @@
 //!   emit (Misc { name: pad(32, "SignatureRespondedEvent"),
 //!                payload: Bytes[...requestId, ...x, ...y, ...s, recoveryId, ...zeros(127)] })
 //! respondBidirectional({ requestId, blockHeight: Uint<64>, outputKind: OutputKind,
-//!                        serializedOutputLength: Uint<64>, digest: Bytes<32>, signature }):
+//!                        serializedOutputLength: Uint<64>, outputHash: Bytes<32>,
+//!                        digest: Bytes<32>, signature }):
 //!   emit (Misc { name: pad(32, "RespondBidirectionalEvent"),
 //!                payload: Bytes[...requestId, ...blockHeight as Bytes<8> (LE), outputKind as Uint<8>,
-//!                               ...serializedOutputLength as Bytes<8> (LE), ...digest,
-//!                               ...x, ...y, ...s, recoveryId, ...zeros(78)] })
+//!                               ...serializedOutputLength as Bytes<8> (LE), ...outputHash, ...digest,
+//!                               ...x, ...y, ...s, recoveryId, ...zeros(46)] })
 //! ```
 //!
-//! The source is midnight-integration PR #127 (`align-with-protocol-spec`,
-//! `e9350c4`, M43): the request id moved INTO both event structs, and the
-//! bidirectional attestation gained the block height, the MPC's verdict, the
-//! output width and the digest. `respond`'s field vector and payload are
-//! what they were before; `respondBidirectional`'s are not.
+//! The source is midnight-integration tag v0.25.0 (`b62e67e`), the
+//! singleton `@sig-net/midnight-contract` 0.25.0 deploys: the request id is
+//! inside both event structs, and the bidirectional attestation carries the
+//! block height, the MPC's verdict, the output width, the output hash and
+//! the digest.
 //!
 //! No ledger fields, no witnesses; every argument is disclosed into the
 //! 256-byte event payload. `Misc` is the same tag-10 event as the events
@@ -34,8 +35,8 @@ use minocrab::{Private, Public};
 use minocrab_ledger::{emit, emit_event, ImpactElem, LedgerValue};
 use minocrab_std::v3::{contract, label, Disclose, Discloses, Serializer, B32};
 use signet_signer_interface::{
-    RequestId, RespondBidirectionalEvent, SignBidirectionalEventNotification, Signature,
-    SignatureRespondedEvent,
+    RequestId, RespondBidirectionalEventV1, SignBidirectionalEventNotification, Signature,
+    SignatureRespondedEventV1,
 };
 
 use signet_protocol::misc::{MISC_SIZE, MISC_TAG, MISC_VERSION};
@@ -61,6 +62,7 @@ label! {
     AttestationBlockHeight = "blockHeight";
     AttestationOutputKind = "outputKind";
     AttestationOutputLength = "serializedOutputLength";
+    AttestationOutputHash = "outputHash";
     AttestationDigest = "digest";
     SignatureBigRx = "signature.bigR.x";
     SignatureBigRy = "signature.bigR.y";
@@ -96,10 +98,8 @@ fn misc_name(c: &mut Circuit3, name: &str) -> Serializer<Public> {
 /// as a one-byte `Uint<8>`.
 ///
 /// The arguments are the interface crate's own types — `Signature`, wrapped
-/// in `SignatureRespondedEvent` / `RespondBidirectionalEvent` exactly as the
-/// Compact signature nests them, since PR #127 put the request id inside
-/// the event and the flattening the pre-#127 port did (see git history for
-/// `respond_like`) no longer buys anything: the argument IS the struct, at
+/// in `SignatureRespondedEventV1` / `RespondBidirectionalEventV1` exactly as
+/// the Compact signature nests them: the argument IS the struct, at
 /// `Private` here and `Public` for any caller, one declaration.
 /// `tests/contract_matches_its_interface.rs` checks the built IR against
 /// the interface slot for slot.
@@ -169,13 +169,12 @@ impl SignetContract {
     }
 
     /// `export circuit respond(signatureRespondedEvent:
-    /// SignatureRespondedEvent): []` — `{ requestId, signature }`, nine
-    /// field limbs, the same nine (and the same payload) as before PR #127
-    /// moved the id into the struct.
+    /// SignatureRespondedEventV1): []` — `{ requestId, signature }`, nine
+    /// field limbs.
     #[circuit]
     pub fn respond(
         c: &mut Circuit3,
-        signature_responded_event: SignatureRespondedEvent<Private>,
+        signature_responded_event: SignatureRespondedEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,
         SignatureBigRx,
@@ -198,21 +197,22 @@ impl SignetContract {
     }
 
     /// `export circuit respondBidirectional(respondBidirectionalEvent:
-    /// RespondBidirectionalEvent): []` — `{ requestId, blockHeight,
-    /// outputKind, serializedOutputLength, digest, signature }`, fourteen
-    /// field limbs. `outputKind` is the interface crate's `BoundedUint<3>`
+    /// RespondBidirectionalEventV1): []` — `{ requestId, blockHeight,
+    /// outputKind, serializedOutputLength, outputHash, digest, signature }`,
+    /// sixteen field limbs. `outputKind` is the interface crate's `BoundedUint<3>`
     /// (Compact's three-variant enum: the argument constraint is `less_than
     /// 3`), emitted as its one-byte variant index; the two `Uint<64>`s are
     /// emitted as eight little-endian bytes each, Compact's `as Bytes<8>`.
     #[circuit]
     pub fn respond_bidirectional(
         c: &mut Circuit3,
-        respond_bidirectional_event: RespondBidirectionalEvent<Private>,
+        respond_bidirectional_event: RespondBidirectionalEventV1<Private>,
     ) -> Discloses<(
         EmittedRequestId,
         AttestationBlockHeight,
         AttestationOutputKind,
         AttestationOutputLength,
+        AttestationOutputHash,
         AttestationDigest,
         SignatureBigRx,
         SignatureBigRy,
@@ -227,18 +227,20 @@ impl SignetContract {
             .serialized_output_length
             .field()
             .disclose_as::<AttestationOutputLength>(c);
+        let output_hash = event.output_hash.disclose_as::<AttestationOutputHash>(c);
         let digest = event.digest.disclose_as::<AttestationDigest>(c);
         let sig = disclose_signature(c, event.signature);
 
         // payload: requestId(32) ‖ blockHeight(8, LE) ‖ outputKind(1) ‖
-        //          serializedOutputLength(8, LE) ‖ digest(32) ‖ x(32) ‖ y(32)
-        //          ‖ s(32) ‖ recoveryId(1) ‖ zeros(78)
+        //          serializedOutputLength(8, LE) ‖ outputHash(32) ‖ digest(32)
+        //          ‖ x(32) ‖ y(32) ‖ s(32) ‖ recoveryId(1) ‖ zeros(46)
         c.region("event serialize + emit", |c| {
             let mut s = misc_name(c, RESPOND_BIDIRECTIONAL_EVENT);
             s.push_b32(&rid.bytes());
             s.push_uint(height, 8);
             s.push_uint(kind, 1);
             s.push_uint(length, 8);
+            s.push_b32(&output_hash);
             s.push_b32(&digest);
             sig.push(&mut s);
             emit_misc(c, s);

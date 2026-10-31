@@ -1,7 +1,8 @@
 //! The managed key directory, and the disk [`Resolver`] over it.
 //!
-//! This is the layout `sig-net/mpc`'s sidecar reads out of
-//! `@sig-net/midnight-contract` and `crates/signet-artifacts` writes (M29 A):
+//! This is the layout `crates/signet-artifacts` writes (M29 A); `sig-net/mpc`'s
+//! `chain-midnight` reads its `keys/` and `zkir/` out of
+//! `@sig-net/midnight-contract`'s `dist/managed`:
 //!
 //! ```text
 //! <root>/keys/<circuit>.prover     the proving key
@@ -13,16 +14,18 @@
 //! # Where a [`Deployment`]'s table comes from (M30 C2)
 //!
 //! [`ManagedDir::deployment`] builds the table from the package's OWN
-//! `expectedVk.json` — the same file the sidecar's build/prove gate reads —
-//! and CHECKS every entry it uses against the hash of the `.verifier` file
-//! this directory actually carries, failing loudly and by name if they
-//! disagree. Deriving the table from the `.verifier` files directly, the way
-//! an earlier version of this function did, cannot catch this: a directory
-//! can only ever agree with itself. The JSON and the keys are two artifacts
-//! `signet-artifacts::generate` writes from the SAME bytes in the SAME run,
-//! but nothing stops one of them from going stale independently afterward
-//! (a hand-edited JSON, a key regenerated without re-running the pipeline,
-//! a stale file surviving a partial copy) — this is the check that notices.
+//! `expectedVk.json` — the shape the former sidecar's build/prove gate read
+//! from the package's `expectedVk` export, circuit to `hashVerifierKey` of that
+//! package's own `.verifier` — and CHECKS every entry it uses against the
+//! hash of the `.verifier` file this directory actually carries, failing
+//! loudly and by name if they disagree. Deriving the table from the
+//! `.verifier` files directly, the way an earlier version of this function
+//! did, cannot catch this: a directory can only ever agree with itself. The
+//! JSON and the keys are two artifacts `signet-artifacts::generate` writes
+//! from the SAME bytes in the SAME run, but nothing stops one of them from
+//! going stale independently afterward (a hand-edited JSON, a key regenerated
+//! without re-running the pipeline, a stale file surviving a partial copy) —
+//! this is the check that notices.
 //!
 //! `midnight_ledger::test_utilities::test_resolver`'s external resolver reads
 //! exactly these three files under exactly these two subdirectories; this is
@@ -79,8 +82,8 @@ impl ManagedDir {
     }
 
     /// `<root>/expectedVk.json` — the package's own copy of the hash table,
-    /// written by `signet-artifacts::generate` and read by the sidecar's
-    /// build/prove gate.
+    /// written by `signet-artifacts::generate`; the former sidecar's gate read
+    /// the package's `expectedVk` export instead.
     pub fn expected_vk_path(&self) -> PathBuf {
         self.root.join("expectedVk.json")
     }
@@ -134,8 +137,7 @@ impl ManagedDir {
     /// other way asking for a circuit not in its table); a circuit the JSON
     /// and the key file DISAGREE on is
     /// [`PublishError::ExpectedVkOutOfSync`], naming the circuit, the path
-    /// and both hashes — the mismatch this rung exists to catch (M30 C2,
-    /// notes/mpc-publisher.org §11).
+    /// and both hashes — the mismatch this rung exists to catch (M30 C2).
     pub fn deployment(
         &self,
         address: ContractAddress,

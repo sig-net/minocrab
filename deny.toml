@@ -22,23 +22,27 @@ targets = [
 # This section is considered when running `cargo deny check advisories`.
 [advisories]
 ignore = [
-    # Transitive via the pinned midnight-ledger git rev (midnight-zk-stdlib
+    # Transitive via the pinned midnight-ledger git tags (midnight-zk-stdlib
     # -> midnight-transient-crypto -> ... ), not a dependency we chose: an
     # "unmaintained" notice, not a vulnerability. Also a direct
     # workspace dependency (Cargo.toml's borsh-format conformance oracle,
     # dev-only) pinned to the SAME 2.0.1 midnight's own lock resolves to,
     # so there is nothing to bump independently. Revisit when midnight-ledger
     # moves off it.
-    { id = "RUSTSEC-2025-0141", reason = "bincode 2.0.1 unmaintained (team disbanded, not a CVE); pulled in transitively by the pinned midnight-ledger rev and matched by our own dev-only borsh-format oracle dependency. No safe upgrade exists upstream." },
+    { id = "RUSTSEC-2025-0141", reason = "bincode 2.0.1 unmaintained (team disbanded, not a CVE); pulled in transitively by the pinned midnight-ledger tags and matched by our own dev-only borsh-format oracle dependency. No safe upgrade exists upstream." },
     # Transitive via alloy-primitives/midnight-curves's proc-macro graph
     # (M38 D's alloy oracle, dev-only). An "unmaintained" notice (repo
     # archived), not a vulnerability, and not a crate we depend on directly.
     { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained (repo archived by its author, not a CVE); transitive dependency of alloy/midnight-curves, dev-only. No direct dependency to swap to `pastey` ourselves." },
     # Not a RUSTSEC advisory ID — a yanked-version notice for a transitive
     # crate (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto, via
-    # the pinned midnight-ledger rev). Recorded rather than left to warn
+    # the pinned midnight-ledger tags). Recorded rather than left to warn
     # silently; nothing we can bump without moving the ledger pin.
-    { crate = "chacha20@0.10.1", reason = "yanked version, pulled in transitively by the pinned midnight-ledger rev (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto). Not a dependency we chose or can bump independently." },
+    { crate = "chacha20@0.10.1", reason = "yanked version, pulled in transitively by the pinned midnight-ledger tags (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto). Not a dependency we chose or can bump independently." },
+    # Transitive via elliptic-curve 0.13 (k256 -> midnight-base-crypto, via
+    # the pinned midnight-ledger tags). The fix needs the RustCrypto curve
+    # major the ledger has not moved to.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 constant-time operations can branch on secret values; required as crypto-bigint 0.5 by elliptic-curve 0.13 (k256 via midnight-base-crypto), fix 0.7.6 needs the RustCrypto curve major upgrade upstream. sig-net/mpc ignores it for the same chain." },
 ]
 
 # This section is considered when running `cargo deny check licenses`.

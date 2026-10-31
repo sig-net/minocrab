@@ -1,18 +1,17 @@
 [package]
 name = "minocrab-publisher"
 # M30: the pure core of the MPC's Midnight publisher — the piece
-# `sig-net/mpc`'s TypeScript sidecar exists to provide (notes/mpc-publisher.org
-# §2). Since M30 C1 this crate reads the Misc envelope and the three signer
-# event names from `signet-protocol` (publishable) rather than
-# `minocrab-contracts` (a corpus, `publish = false`) — the ONLY remaining edge
-# to that crate is a dev-dependency (tests/real_proof.rs, which keygens from
-# the real circuit). So the same blocker the rest of the workspace already
-# carries applies here and nowhere further: PUBLISHING.md's git-dependency
-# block on the `midnight-*` line (upstream has not published the ledger-9.1
-# line to crates.io yet). `publish` is left at its default (true) rather than
-# pinned false, matching the other nine crates PUBLISHING.md already tracks
-# as ready-when-upstream-is.
+# `sig-net/mpc`'s TypeScript sidecar existed to provide. Since M30 C1 this
+# crate reads the Misc envelope and the three signer event names from
+# `signet-protocol` (publishable) rather than `minocrab-contracts` (a corpus,
+# `publish = false`) — the ONLY remaining edge to that crate is a
+# dev-dependency (tests/real_proof.rs, which keygens from the real circuit). So the same blocker the rest of the workspace already
+# carries applies here and nowhere further: PUBLISHING.md's `midnight-*`
+# block (upstream has not published the ledger-9.1 line to crates.io yet).
 version.workspace = true
+# Held until the `midnight-*` line is on crates.io at the pinned tags
+# (PUBLISHING.md): the version requirements alone would resolve elsewhere.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -30,7 +29,7 @@ workspace = true
 # The Misc envelope constants, the three signer circuit/event names, and
 # `hash_verifier_key` — signet-protocol is the ONE definition of all three,
 # read by the contract that emits these events and the artifact pipeline that
-# hashes the keys, same as here (notes/mpc-publisher.org §11).
+# hashes the keys, same as here.
 signet-protocol.workspace = true
 midnight-base-crypto.workspace = true
 midnight-coin-structure.workspace = true

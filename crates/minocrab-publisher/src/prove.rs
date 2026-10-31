@@ -1,10 +1,9 @@
 //! Proving, in process.
 //!
 //! No proof server, no child process, and no network once the KZG parameters
-//! are on disk. That is notes/mpc-publisher.org §2's claim about the port,
-//! and [`InProcessProver`] is the whole of what it costs: a `ProvingProvider`
-//! that resolves key material off the managed directory and hands the
-//! preimage to `ProofPreimage::prove::<zkir_v3::IrSource>`.
+//! are on disk. [`InProcessProver`] is the whole of what that costs: a
+//! `ProvingProvider` that resolves key material off the managed directory
+//! and hands the preimage to `ProofPreimage::prove::<zkir_v3::IrSource>`.
 //!
 //! # Why it is written here rather than imported
 //!
@@ -15,19 +14,20 @@
 //! sets a respond transaction has no use for — it carries no shielded offer.
 //! `zkir::LocalProvingProvider`, the public one, is the ZKIR **v2** crate's
 //! and will not load our `ir-source[v3-generic]`. So this is a MECHANICAL
-//! TRANSLATION of `CombinedProofProvider`'s v3 arm
-//! (`ledger/src/test_utilities.rs:749-818`), the same one
+//! TRANSLATION of `CombinedProofProvider`'s v3 arm (midnight-ledger
+//! `04c9c5d`, `ledger/src/test_utilities.rs:749-818`; the 9.1.0.0-rc.3 tag
+//! this crate builds against predates it), the same one
 //! `minocrab-contracts`' `tests/signet_real_proof.rs` made for M29 E.
 //!
 //! # The dust half of the resolver
 //!
 //! [`SignerResolver`] tries the managed directory first and the ledger's own
 //! [`DustResolver`] second. The dust half resolves exactly one key —
-//! `midnight/dust/spend` — and it is dead weight until M30 rung C puts a
-//! dust spend in the transaction; it is wired now because the fee proof is
-//! the one other proof a published respond transaction will contain, and a
-//! resolver that cannot find its key fails at proving time, deep inside an
-//! `anyhow::Error`, rather than at construction.
+//! `midnight/dust/spend` — whose IR is ZKIR **v2** (`ir-source[v2]`), so
+//! [`InProcessProver`], which loads every IR as `zkir_v3::IrSource`, cannot
+//! prove a DUST spend with it. A fee proof goes through a v2 prover such as
+//! `zkir::LocalProvingProvider`; sig-net/mpc proves its fee intent that way,
+//! with its own `DustResolver`.
 
 use std::io;
 
@@ -50,8 +50,7 @@ use crate::keys::ManagedDir;
 /// `~/.cache/midnight/zk-params`), fetching only what is missing.
 ///
 /// `FetchMode::OnDemand` will reach `srs.midnight.network` for a parameter set
-/// that is NOT cached. Ship the params in the image — the whole point of
-/// notes/mpc-publisher.org §2's "no network touch" — and it never does.
+/// that is NOT cached. Ship the params in the image and it never does.
 pub fn params_provider() -> Result<MidnightDataProvider, PublishError> {
     MidnightDataProvider::new(FetchMode::OnDemand, OutputMode::Log, vec![]).map_err(|e| {
         PublishError::Io { path: "the KZG parameter cache".to_string(), source: e }
@@ -73,7 +72,7 @@ pub fn dust_resolver() -> Result<DustResolver, PublishError> {
 pub struct SignerResolver {
     pub managed: ManagedDir,
     /// `None` while nothing in the transaction spends dust — see the module
-    /// header, and M30 rung C.
+    /// header.
     pub dust: Option<DustResolver>,
 }
 

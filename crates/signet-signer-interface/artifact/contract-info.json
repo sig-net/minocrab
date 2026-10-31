@@ -58,7 +58,7 @@
           "name": "signatureRespondedEvent",
           "type": {
             "type-name": "Struct",
-            "name": "SignatureRespondedEvent",
+            "name": "SignatureRespondedEventV1",
             "elements": [
               {
                 "name": "requestId",
@@ -136,7 +136,7 @@
           "name": "respondBidirectionalEvent",
           "type": {
             "type-name": "Struct",
-            "name": "RespondBidirectionalEvent",
+            "name": "RespondBidirectionalEventV1",
             "elements": [
               {
                 "name": "requestId",
@@ -173,6 +173,13 @@
                 "type": {
                   "type-name": "Uint",
                   "maxval": 18446744073709551615
+                }
+              },
+              {
+                "name": "outputHash",
+                "type": {
+                  "type-name": "Bytes",
+                  "length": 32
                 }
               },
               {

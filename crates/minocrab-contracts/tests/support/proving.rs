@@ -2,7 +2,8 @@
 //! (`signet_real_proof.rs`, M29 E; `signet_posting.rs`, M43 D).
 //!
 //! MECHANICAL TRANSLATION of `midnight_ledger::test_utilities`'
-//! `CombinedProofProvider`, v3 arm only (`ledger/src/test_utilities.rs:749-818`).
+//! `CombinedProofProvider`, v3 arm only (midnight-ledger `04c9c5d`,
+//! `ledger/src/test_utilities.rs:749-818`).
 //! The upstream one is a private struct behind the ledger's `test-utilities`
 //! and `proving` features, and its resolver owns a `ZswapResolver` and a
 //! `DustResolver`, which are network-fetched parameter sets these gates

@@ -7,26 +7,26 @@
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 15639,
-      "hash": "68168c44b90bafc76be45bc77bc761af710c48b6dc579967a5f6e7653467034f"
+      "size": 65034,
+      "hash": "72786fa2f137108d4a903d4f5325efed7fbbc38563da7901bb4647dd3d4a6832"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 11942,
-      "hash": "d630431aa643e6d90a7a77a944bdcdd45b2d143a87a2409d647261266a5c0b5f"
+      "size": 46524,
+      "hash": "ca88a16e64aa7550f3e37495c54f144ffbdfd3a4bac098cd215f72c6130092ca"
     },
     "index.js": {
       "type": "file",
-      "size": 63612,
-      "hash": "f6efd46497387b4d2362b7b6f133118e49b2271544b8a1ae65d1d58b7d4fb171"
+      "size": 134484,
+      "hash": "fa279d2b3177f9f6196ffcf63475452dfe3f2a0486696102de13adfc3c984cf1"
     },
     "index.js.map": {
       "type": "file",
-      "size": 6372,
-      "hash": "8d4a0efc8a4cf59f64f59434196f3096dc5da81318c7f2dd3fb865ebe116f000"
+      "size": 10952,
+      "hash": "2415e097a6a30d811a037b41cc41fb9ebe3eecaba6db27d9bf3117d4ee6f929d"
     }
   }
 }

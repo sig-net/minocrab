@@ -60,7 +60,7 @@ retiring the vault's prover-chosen =evm_nonce= onto =Queued= when
 sig-net's contract lands (P9).
 
 * A. Decisions that unblock scheduled work
-- [X] A1. THE M29 F PIN (notes/mpc-publisher.org §9 "The decision this
+- [X] A1. THE M29 F PIN (=79b2add:notes/mpc-publisher.org= §9 "The decision this
   leaves"). This repo pins one midnight rev (04c9c5d); mpc pins per-crate
   release tags at the same semvers. Options: keep our single rev / adopt
   mpc's tags. RECOMMEND: keep the single rev — =zkir-v3= has no release
@@ -69,6 +69,12 @@ sig-net's contract lands (P9).
   and =notes/zkir.org='s pin table.
   
 Use the single rev
+
+  Superseded 2026-10-19 (milestones.org M45 F): sig-net/mpc's draft PR
+  #1471 links =minocrab-publisher=, so both repos pin the per-crate tags
+  midnight-node 2.0.0-rc.4 pins, the release stagenet runs. =zkir-v3=, which
+  the node does not link, has a tag now (=zkir-v3-3.0.0-rc.1=, the compact
+  flake's rev with only =Cargo.toml= changed).
 
 - [X] A2. (Hold lifted; the executor BUILT and merged 2026-09-06 — M35 D done, M35 E waits on the attestation-digest finding in signet-async.org §10, M26's harness distillation next.) THE M26 HOLD on the authoring path — "not before the super
   review" (milestones.org M26, last open item). The super review is now
@@ -140,7 +146,7 @@ OK, can you write up (as tersely as possible) some concrete examples where what 
 
   No
 
-* C. The publisher (notes/mpc-publisher.org §10 "Open questions")
+* C. The publisher (=79b2add:notes/mpc-publisher.org= §10 "Open questions")
 - [X] C1. (DONE 2026-09-06, merged — crates/signet-protocol; M30 C1.) Hoist the Misc envelope constants and the three event names (~6 constants) into a small PUBLISHABLE crate so mpc's graph does not pull the corpus crate. RECOMMEND: yes, when mpc links the crate (or now — it is an hour).
 
   Sounds good

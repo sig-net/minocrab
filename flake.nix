@@ -26,8 +26,9 @@
         # 0.34.0 (language 0.26.0, runtime 0.19.0, released 2026-08-25) — the
         # first FULL release of the cross-contract-capable line (ledger 9);
         # latest Mainnet-targeting stable is 0.31.1 (ledger 8, no CCC).
-        # Its own flake.lock pins zkir-v3 at 04c9c5d9bceb — EXACTLY our
-        # Cargo.toml rev — so this is a compactc-only pin (M31, hazard 1).
+        # Its own flake.lock pins zkir-v3 at 04c9c5d9bceb, whose zkir-v3/ our
+        # Cargo.toml's zkir-v3-3.0.0-rc.1 tag carries unchanged, so this is a
+        # compactc-only pin (M31, hazard 1).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
         compactcVersion = "0.34.0";
         # The release zips name linux targets `-unknown-linux-musl`.
@@ -67,8 +68,8 @@
         };
         # NO flake package for the `minocrab` CLI, decided rather than
         # missing (M24 §5; dmd pre-authorised the skip): nixpkgs'
-        # importCargoLock cannot vendor this workspace — the two pinned
-        # midnight-ledger git revs both export identical crate
+        # importCargoLock cannot vendor this workspace — the pinned
+        # midnight-ledger git refs all export identical crate
         # name-versions (midnight-serialize-macros 1.0.0 et al.), which
         # collide in the vendor directory. The CLI stays a plain cargo
         # binary: `cargo build --release -p minocrab-sim --bin minocrab`.

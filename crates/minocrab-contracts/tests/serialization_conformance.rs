@@ -1160,11 +1160,10 @@ fn sign_bidirectional_misc_bytes_are_canonical_borsh() {
 }
 
 /// `respond` — requestId ‖ signature, checked against its corpus artifact.
-/// Until midnight-integration PR #127 `respondBidirectional` shared this
-/// payload under its own event name and sat in the same table; its payload
-/// now carries the attestation (height, kind, width, digest) between the id
-/// and the signature, a different Borsh record, and its byte-level tamper
-/// coverage lives in `signet_construction.rs` (M43 B).
+/// `respondBidirectional`'s payload carries the attestation (height, kind,
+/// width, output hash, digest) between the id and the signature, a different
+/// Borsh record, and its byte-level tamper coverage lives in
+/// `signet_construction.rs`.
 #[test]
 fn respond_misc_bytes_are_canonical_borsh() {
     let circuits = [(

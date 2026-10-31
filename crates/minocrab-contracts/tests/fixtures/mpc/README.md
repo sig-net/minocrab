@@ -57,19 +57,18 @@ read proof, none of which the capture carries.
 `midnight:transaction[v12](signature[v2],proof,pedersen-schnorr[v1])` —
 a tagged-serialized
 `Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>`.
-mpc builds against `crate-ledger-9.1.0.0-rc.3`; this repo builds against rev
-`04c9c5d`. That these files deserialize here at all is the M29 F evidence
-that the two pins agree on the transaction wire format (see
-`notes/mpc-publisher.org` §9).
+mpc's reader tests decode them under `crate-ledger-9.1.0.0-rc.3`, the tag
+this repo builds against too. They first decoded here under rev `04c9c5d`, the M29 F
+evidence that the two pins agreed on the transaction wire format.
 
-## Since PR #127 (M43, 2026-09-24)
+## The singleton these captures predate
 
-The singleton this crate ports moved to midnight-integration PR #127
-(`align-with-protocol-spec`, `e9350c4`): `respond` and `respondBidirectional`
-take ONE event struct, and `respondBidirectional`'s payload is now
-`requestId(32) ‖ blockHeight LE(8) ‖ outputKind(1) ‖ serializedOutputLength
-LE(8) ‖ digest(32) ‖ signature(97) ‖ zeros(78)`. Consequences for these two
-captures, both taken from a chain running the PRE-#127 singleton
+The singleton this crate ports is midnight-integration v0.25.0 (`b62e67e`):
+`respond` and `respondBidirectional` take ONE event struct, and
+`respondBidirectional`'s payload is `requestId(32) ‖ blockHeight LE(8) ‖
+outputKind(1) ‖ serializedOutputLength LE(8) ‖ outputHash(32) ‖ digest(32) ‖
+signature(97) ‖ zeros(46)`. Consequences for these two captures, both taken
+from a chain running an earlier singleton
 (`@sig-net/midnight-contract@0.20.0-rc.1`):
 
 - `respond-tx-161.mn` still evidences all 288 bytes: `respond`'s field vector
@@ -77,7 +76,7 @@ captures, both taken from a chain running the PRE-#127 singleton
 - `respond-bidirectional-tx-181.mn` evidences the entry point, the event
   name, the request id at payload offset 0 and the program's shape (`push`
   of the three-cell Misc, `log`) — NOT the payload layout, which the test
-  now only checks has moved. A capture from a chain running the #127
+  now only checks has moved. A capture from a chain running the v0.25.0
   singleton is OWED here; when it lands, the test becomes the full 288-byte
   comparison `respond` has (`signet_ledger_apply.rs`,
   `respond_bidirectional_apply_matches_the_captured_transactions_program`).

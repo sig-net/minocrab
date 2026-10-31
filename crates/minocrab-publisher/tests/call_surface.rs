@@ -73,6 +73,7 @@ fn attestation() -> Attestation {
         block_height: 0x0102_0304_0506_0708,
         output_kind: 1,
         serialized_output_length: 32,
+        output_hash: fill(0x5c),
         digest: fill(0xd1),
     }
 }
@@ -162,8 +163,8 @@ fn a_circuit_outside_the_expected_vk_table_has_no_key_location() {
 #[test]
 fn a_respond_call_lays_its_signature_out_where_the_singleton_says() {
     let (rid, sig) = (request_id(), signature());
-    // ONE ROW TODAY: `respondBidirectional` moved to its own test at M43 B
-    // when PR #127 gave it a different payload. The loop stays a table so
+    // ONE ROW TODAY: `respondBidirectional` has its own test below, since
+    // its payload carries the attestation. The loop stays a table so
     // the next circuit with this layout is one line, and so this test reads
     // as the twin of the one below.
     #[allow(clippy::single_element_loop)]
@@ -190,9 +191,9 @@ fn a_respond_call_lays_its_signature_out_where_the_singleton_says() {
     }
 }
 
-/// `respondBidirectional`'s PR #127 layout: requestId(32) ‖ blockHeight
-/// LE(8) ‖ outputKind(1) ‖ length LE(8) ‖ digest(32) ‖ x ‖ y ‖ s ‖
-/// recoveryId ‖ zeros(78); fourteen limbs.
+/// `respondBidirectional`'s v0.25.0 layout: requestId(32) ‖ blockHeight
+/// LE(8) ‖ outputKind(1) ‖ length LE(8) ‖ outputHash(32) ‖ digest(32) ‖ x ‖
+/// y ‖ s ‖ recoveryId ‖ zeros(46); sixteen limbs.
 #[test]
 fn a_respond_bidirectional_call_lays_its_attestation_out_where_the_singleton_says() {
     let (rid, att, sig) = (request_id(), attestation(), signature());
@@ -208,13 +209,14 @@ fn a_respond_bidirectional_call_lays_its_attestation_out_where_the_singleton_say
     assert_eq!(&call.misc[64..72], &att.block_height.to_le_bytes()[..], "blockHeight, little-endian");
     assert_eq!(call.misc[72], att.output_kind, "outputKind");
     assert_eq!(&call.misc[73..81], &att.serialized_output_length.to_le_bytes()[..], "serializedOutputLength, little-endian");
-    assert_eq!(&call.misc[81..113], &att.digest[..], "digest");
-    assert_eq!(&call.misc[113..145], &sig.big_r_x[..], "bigR.x");
-    assert_eq!(&call.misc[145..177], &sig.big_r_y[..], "bigR.y");
-    assert_eq!(&call.misc[177..209], &sig.s[..], "s");
-    assert_eq!(call.misc[209], sig.recovery_id, "recoveryId");
-    assert!(call.misc[210..].iter().all(|b| *b == 0), "the tail is zero-padded");
-    assert_eq!(field_repr_len(&call), 14, "argument limbs");
+    assert_eq!(&call.misc[81..113], &att.output_hash[..], "outputHash");
+    assert_eq!(&call.misc[113..145], &att.digest[..], "digest");
+    assert_eq!(&call.misc[145..177], &sig.big_r_x[..], "bigR.x");
+    assert_eq!(&call.misc[177..209], &sig.big_r_y[..], "bigR.y");
+    assert_eq!(&call.misc[209..241], &sig.s[..], "s");
+    assert_eq!(call.misc[241], sig.recovery_id, "recoveryId");
+    assert!(call.misc[242..].iter().all(|b| *b == 0), "the tail is zero-padded");
+    assert_eq!(field_repr_len(&call), 16, "argument limbs");
 }
 
 /// `pad(32, name)` ‖ version(1) ‖ requestId(32) ‖ payload(128) ‖ zeros(95),

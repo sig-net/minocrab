@@ -83,8 +83,8 @@ suite warrants; this says where the suites stop.
 Bottom of the stack first, because every layer above is written against
 the one below. Times are for someone who knows Midnight's ledger and ZKIR
 v3 internals; double them otherwise. Each item says what to compare against
-in the pinned ledger checkout (`midnight-ledger` at `04c9c5d9`, the rev in
-`Cargo.toml`) and in compactc's compiler sources (`corpus/src/compact/`).
+in the pinned ledger checkout (`midnight-ledger` at the per-crate tags in
+`Cargo.toml`'s `[patch.crates-io]`) and in compactc's compiler sources (`corpus/src/compact/`).
 
 | # | read | budget | the question it answers | compare against |
 |---|---|---|---|---|

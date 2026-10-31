@@ -65,9 +65,8 @@ pub struct ChainContext<D: DB> {
 /// All three lists are empty for a respond intent as it stands today: it
 /// carries no unshielded offer and no dust registration, so `Intent::sign`
 /// has nothing to sign and the transaction's authority is its proof. They are
-/// here because M30 rung C's dust registrations are signed by the third list,
-/// and because "the funding seed is a hot key either way"
-/// (notes/mpc-publisher.org §5.3) is a fact about this struct.
+/// here because dust registrations are signed by the third list, and
+/// because the funding seed is a hot key whichever wallet holds it.
 #[derive(Default)]
 pub struct FundingKeys {
     pub guaranteed: Vec<SigningKey>,
