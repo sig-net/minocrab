@@ -39,6 +39,10 @@ ignore = [
     # the pinned midnight-ledger tags). Recorded rather than left to warn
     # silently; nothing we can bump without moving the ledger pin.
     { crate = "chacha20@0.10.1", reason = "yanked version, pulled in transitively by the pinned midnight-ledger tags (rand 0.10.2 -> atomic-write-file -> midnight-base-crypto). Not a dependency we chose or can bump independently." },
+    # Transitive via elliptic-curve 0.13 (k256 -> midnight-base-crypto, via
+    # the pinned midnight-ledger tags). The fix needs the RustCrypto curve
+    # major the ledger has not moved to.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 constant-time operations can branch on secret values; required as crypto-bigint 0.5 by elliptic-curve 0.13 (k256 via midnight-base-crypto), fix 0.7.6 needs the RustCrypto curve major upgrade upstream. sig-net/mpc ignores it for the same chain." },
 ]
 
 # This section is considered when running `cargo deny check licenses`.
