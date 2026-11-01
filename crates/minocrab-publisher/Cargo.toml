@@ -31,6 +31,10 @@ workspace = true
 # read by the contract that emits these events and the artifact pipeline that
 # hashes the keys, same as here.
 signet-protocol.workspace = true
+# The protocol's off-circuit hashes: the attestation half of a
+# `respondBidirectional` is built from them (`Attestation::over`), and a
+# reader checks a decoded event's digest with them.
+signet-hashing.workspace = true
 midnight-base-crypto.workspace = true
 midnight-coin-structure.workspace = true
 midnight-ledger.workspace = true

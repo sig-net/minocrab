@@ -25,6 +25,10 @@ pub enum PublishError {
     /// The logged bytes are not exactly one Misc envelope.
     #[error("the Misc payload is {got} bytes, not {want}")]
     MiscSize { got: usize, want: usize },
+    /// `decode_misc` was handed 288 bytes that are not a signer event: a
+    /// name that is none of the three, or bytes where the layout has zeros.
+    #[error("not a signer event: {0}")]
+    NotASignerEvent(String),
     /// `partition_transcripts` refused the program.
     #[error("the ledger could not partition the call's transcript: {0}")]
     Partition(String),

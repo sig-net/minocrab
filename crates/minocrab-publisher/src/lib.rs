@@ -58,9 +58,16 @@ pub mod keys;
 pub mod prove;
 pub mod publish;
 
+/// The protocol's off-circuit hashes (request id, transaction digest,
+/// attested output hash, attestation digest), re-exported so a consumer of
+/// this crate names one dependency. [`call::Attestation`] is built from
+/// [`hashing::Attestation::over`].
+pub use signet_hashing as hashing;
+
 pub use call::{
-    respond, respond_bidirectional, sign_bidirectional, Attestation, ContractKeyLocation,
-    Deployment, EcdsaSignature, Notification, SignerCall, SIGNER_CIRCUITS,
+    decode_misc, respond, respond_bidirectional, sign_bidirectional, Attestation,
+    ContractKeyLocation, Deployment, EcdsaSignature, Notification, SignerCall, SignerEvent,
+    SIGNER_CIRCUITS,
 };
 pub use dust::{DustBalancer, NoDust};
 pub use error::PublishError;
