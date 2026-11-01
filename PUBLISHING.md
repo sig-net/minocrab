@@ -42,9 +42,10 @@ resolves from crates.io. Once upstream publishes semver-compatible versions, a
 publish would go through and a downstream build would resolve them, which
 compiles something silently different from what every test in this repo
 checks unless those versions ARE the pinned tags. That is the exact failure
-class this project exists to prevent, so the seven crates that depend on the
+class this project exists to prevent, so the eight crates that depend on the
 `midnight-*` line (`minocrab-zkir`, `minocrab-ir`, `minocrab-std`,
-`minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-publisher`) carry
+`minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-publisher`,
+`signet-hashing`) carry
 `publish = false`, and everything that depends on them cannot publish either.
 
 The checklist that lifts it: confirm every `midnight-*` version the lockfile
@@ -82,7 +83,7 @@ below.
 
 Never published, each carrying `publish = false` with its reason in the
 manifest: `minocrab-contracts`, `minocrab-bench`, `signet-signer-interface`,
-`xcall-target-interface`. (The seven held crates above carry it too, until
+`xcall-target-interface`. (The eight held crates above carry it too, until
 the checklist lifts it.)
 
 ## Dry run
@@ -102,7 +103,7 @@ cargo doc --no-deps -p minocrab-std   # …and each of the nine
 cargo publish --dry-run -p minocrab-zkir
 ```
 
-`cargo publish --dry-run` refuses the seven held crates (`publish = false`);
+`cargo publish --dry-run` refuses the eight held crates (`publish = false`);
 `cargo package` still packages them. With the patch in place both verify
 against the pinned tags, not the registry, so run them for real only with the
 patch removed, per the checklist above.

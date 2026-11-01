@@ -25,6 +25,11 @@ members = [
     # the artifact pipeline and the publisher all read, so mpc's graph never
     # pulls the corpus crate.
     "crates/signet-protocol",
+    # The protocol's off-circuit hashes (request id, transaction digest,
+    # attested output hash, attestation digest) over the ledger's own
+    # FieldRepr — one definition for mpc, the publisher and the contract
+    # tests, pinned against compiled-Compact vectors.
+    "crates/signet-hashing",
     # M30: the MPC publisher's pure core — build/prove/sign/seal a respond
     # intent, with no node I/O, for sig-net/mpc to link behind IntentClient.
     "crates/minocrab-publisher",
@@ -59,6 +64,7 @@ minocrab-macros = { path = "crates/minocrab-macros", version = "0.1.0" }
 minocrab-std = { path = "crates/minocrab-std", version = "0.1.0" }
 minocrab-zkir = { path = "crates/minocrab-zkir", version = "0.1.0" }
 signet-protocol = { path = "crates/signet-protocol", version = "0.1.0" }
+signet-hashing = { path = "crates/signet-hashing", version = "0.1.0" }
 
 # --- upstream -------------------------------------------------------------
 # ZKIR v2 — Midnight's own IR definition; we re-export rather than redefine.
