@@ -15,9 +15,9 @@ registry crates, and every gate in this repo runs against them. The
 requirements are caret ranges (`midnight-zkir` is exact), so a downstream
 build without this lockfile may resolve newer compatible releases.
 
-The seven crates that depend on the `midnight-*` line (`minocrab-zkir`,
+The eight crates that depend on the `midnight-*` line (`minocrab-zkir`,
 `minocrab-ir`, `minocrab-std`, `minocrab-ledger`, `minocrab-sim`,
-`minocrab-abi`, `minocrab-publisher`) still carry `publish = false`, and
+`minocrab-abi`, `minocrab-publisher`, `signet-hashing`) still carry `publish = false`, and
 everything that depends on them cannot publish either. The guard existed
 because a patched build proved nothing about the registry; with the patch
 gone, removing those lines is the remaining step, and a deliberate one.
@@ -56,7 +56,7 @@ below.
 
 Never published, each carrying `publish = false` with its reason in the
 manifest: `minocrab-contracts`, `minocrab-bench`, `signet-signer-interface`,
-`xcall-target-interface`. (The seven held crates above carry it too, until
+`xcall-target-interface`. (The eight held crates above carry it too, until
 it is lifted.)
 
 ## Dry run
@@ -76,7 +76,7 @@ cargo doc --no-deps -p minocrab-std   # …and each of the nine
 cargo publish --dry-run -p minocrab-zkir
 ```
 
-`cargo publish --dry-run` refuses the seven held crates (`publish = false`);
+`cargo publish --dry-run` refuses the eight held crates (`publish = false`);
 `cargo package` still packages them, verifying against the registry crates.
 
 ## What each crate ships
