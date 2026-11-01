@@ -62,25 +62,31 @@ fn bytes(length: u32) -> AlignmentAtom {
 
 // ---- the protocol's enums --------------------------------------------------------------
 
-/// `enum HashDomain` — the u8 index every V1 hash is prefixed with. Append
-/// variants only, as the source says.
+/// `enum HashDomain` — the u8 index every V1 hash is prefixed with, as the
+/// circuit constants this port spells them. The indices are
+/// `signet_protocol::HashDomain`'s (the one definition, shared with the
+/// off-circuit `signet-hashing`); this module only casts them to the `u64`
+/// `Circuit3::constant` takes.
 pub mod hash_domain {
-    pub const REQUEST_ID: u64 = 0;
-    pub const ATTESTATION_DIGEST: u64 = 1;
-    pub const EVM_TYPE2_TX_HEADER: u64 = 2;
-    pub const EVM_TYPE2_TX_WORD: u64 = 3;
-    pub const EVM_TYPE2_TX_ACCESS_ENTRY: u64 = 4;
-    pub const EVM_TYPE2_TX_STORAGE_KEY: u64 = 5;
+    use signet_protocol::HashDomain;
+    pub const REQUEST_ID: u64 = HashDomain::RequestId as u64;
+    pub const ATTESTATION_DIGEST: u64 = HashDomain::AttestationDigest as u64;
+    pub const EVM_TYPE2_TX_HEADER: u64 = HashDomain::EvmType2TxHeader as u64;
+    pub const EVM_TYPE2_TX_WORD: u64 = HashDomain::EvmType2TxWord as u64;
+    pub const EVM_TYPE2_TX_ACCESS_ENTRY: u64 = HashDomain::EvmType2TxAccessEntry as u64;
+    pub const EVM_TYPE2_TX_STORAGE_KEY: u64 = HashDomain::EvmType2TxStorageKey as u64;
 }
 
 /// `enum OutputKind { executed, failed, unviable }` — the MPC's verdict on a
-/// request's execution, signed into the attestation digest.
+/// request's execution, signed into the attestation digest. The indices are
+/// `signet_protocol::OutputKind`'s.
 pub mod output_kind {
-    pub const EXECUTED: u64 = 0;
-    pub const FAILED: u64 = 1;
-    pub const UNVIABLE: u64 = 2;
+    use signet_protocol::OutputKind;
+    pub const EXECUTED: u64 = OutputKind::Executed as u64;
+    pub const FAILED: u64 = OutputKind::Failed as u64;
+    pub const UNVIABLE: u64 = OutputKind::Unviable as u64;
     /// The variant count: an `OutputKind` argument is `less_than 3`.
-    pub const COUNT: u128 = 3;
+    pub const COUNT: u128 = OutputKind::ALL.len() as u128;
 }
 
 /// An `OutputKind` as a wire: a `Uint<0..3>`, which is how compactc
