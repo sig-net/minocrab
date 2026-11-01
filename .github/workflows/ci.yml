@@ -84,10 +84,24 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - uses: Swatinem/rust-cache@v2
+      # The baseline is built in ITS OWN checkout, under its own
+      # .cargo/config.toml. `--baseline-rev` would build it in a scratch
+      # project under this checkout's target/, where THIS branch's config
+      # patches apply to the base's manifests — and a base whose midnight-*
+      # line is pinned differently (git revs against per-crate tags) then
+      # resolves two copies of midnight-transient-crypto and does not
+      # compile. The rustdoc flags are cargo-semver-checks' own.
+      - run: git worktree add --detach ../base "origin/${{ github.base_ref }}"
       - run: >
-          nix develop -c cargo semver-checks check-release
-          -p signet-signer-interface -p xcall-target-interface
-          --baseline-rev "origin/${{ github.base_ref }}"
+          nix develop -c bash -c 'cd ../base && RUSTC_BOOTSTRAP=1
+          RUSTDOCFLAGS="-Z unstable-options --document-private-items --document-hidden-items --output-format=json --cap-lints allow"
+          cargo doc --no-deps --lib -p signet-signer-interface -p xcall-target-interface'
+      - run: >
+          nix develop -c cargo semver-checks check-release -p signet-signer-interface
+          --baseline-rustdoc ../base/target/doc/signet_signer_interface.json
+      - run: >
+          nix develop -c cargo semver-checks check-release -p xcall-target-interface
+          --baseline-rustdoc ../base/target/doc/xcall_target_interface.json
 
   # The heavy gates: the frozen (k, rows) and interface tables, --release
   # as the testing docs prescribe.
