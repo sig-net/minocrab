@@ -725,7 +725,7 @@ one. The handle type inside is named for the contract
 =cargo semver-checks= (0.50.0, from the flake devshell — a tool, not
 packaging) runs on the two interface crates against the base branch:
 the =interface-wire-compat-semver= CI job (PRs only; nothing is on
-crates.io, so =--baseline-rev origin/<base>=). Two facts it took to
+crates.io, so the baseline is =origin/<base>=). Two facts it took to
 make it run:
 - The tool builds each crate from a SCRATCH project, which does not
   carry the workspace's =[patch.crates-io]=, so
@@ -734,6 +734,12 @@ make it run:
   =.cargo/config.toml= as well (config-level patches follow any cargo
   invocation under the tree), with a comment saying the two blocks must
   stay identical and when both go.
+- Config patches follow the WORKING DIRECTORY, not the manifest, so a
+  =--baseline-rev= build of the base branch resolves under the PR's
+  patches; when a PR changes the patch set (M45 F) the baseline no longer
+  compiles. The job therefore builds the baseline's rustdoc JSON with
+  =cargo rustdoc= in a worktree of the base branch outside this tree, and
+  passes it as =--baseline-rustdoc=, one crate at a time.
 - PROVEN TO FIRE: renaming =SignetSigner::respond= to =respond_renamed=
   reports "semver requires new major version: 2 major checks failed" —
   =inherent_method_missing= (=SignetSigner::respond=) and

@@ -84,10 +84,22 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - uses: Swatinem/rust-cache@v2
-      - run: >
-          nix develop -c cargo semver-checks check-release
-          -p signet-signer-interface -p xcall-target-interface
-          --baseline-rev "origin/${{ github.base_ref }}"
+      # The baseline's rustdoc is built in its own checkout, outside this
+      # tree: cargo reads .cargo/config.toml from the working directory, so
+      # `--baseline-rev` would resolve the base branch under THIS branch's
+      # [patch.crates-io] and fail to build whenever the patch set changes.
+      - env:
+          BASELINE: ${{ runner.temp }}/baseline
+        run: |
+          git worktree add --detach "$BASELINE" "origin/${{ github.base_ref }}"
+          for crate in signet-signer-interface xcall-target-interface; do
+            (cd "$BASELINE" && RUSTC_BOOTSTRAP=1 nix develop "$GITHUB_WORKSPACE" -c \
+              cargo rustdoc -p "$crate" --lib -- -Z unstable-options \
+              --document-private-items --document-hidden-items \
+              --output-format=json --cap-lints=allow)
+            nix develop -c cargo semver-checks check-release -p "$crate" \
+              --baseline-rustdoc "$BASELINE/target/doc/${crate//-/_}.json"
+          done
 
   # The heavy gates: the frozen (k, rows) and interface tables, --release
   # as the testing docs prescribe.
