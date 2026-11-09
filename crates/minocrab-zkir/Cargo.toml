@@ -2,8 +2,8 @@
 name = "minocrab-zkir"
 description = "MinoCrab L0: read, write and round-trip Midnight ZKIR v3, reusing midnight-zkir-v3's own types"
 version.workspace = true
-# Held until the `midnight-*` line is on crates.io at the pinned tags
-# (PUBLISHING.md): the version requirements alone would resolve elsewhere.
+# Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
+# it needs is on crates.io now.
 publish = false
 edition.workspace = true
 license.workspace = true

@@ -486,6 +486,8 @@ pub enum Attestation {
     /// The MPC's failure kind: reverted, never mined, or undecodable. Its
     /// signed preimage is the kind byte ALONE.
     NeverExecuted,
+    /// This call's kind with a `bool` byte of 2: signed, but not a `bool`.
+    ExecutedNonBoolean,
 }
 
 impl Attestation {
@@ -493,7 +495,9 @@ impl Attestation {
     /// response kind byte.
     pub fn output_kind(self) -> u64 {
         match self {
-            Attestation::ExecutedTrue | Attestation::ExecutedFalse => output_kind::EXECUTED,
+            Attestation::ExecutedTrue
+            | Attestation::ExecutedFalse
+            | Attestation::ExecutedNonBoolean => output_kind::EXECUTED,
             Attestation::NeverExecuted => output_kind::FAILED,
         }
     }
@@ -502,7 +506,9 @@ impl Attestation {
     /// execution, zero for a non-execution.
     pub fn signed_width(self) -> usize {
         match self {
-            Attestation::ExecutedTrue | Attestation::ExecutedFalse => TRANSFER_OUTPUT_LEN,
+            Attestation::ExecutedTrue
+            | Attestation::ExecutedFalse
+            | Attestation::ExecutedNonBoolean => TRANSFER_OUTPUT_LEN,
             Attestation::NeverExecuted => 0,
         }
     }
@@ -512,6 +518,7 @@ impl Attestation {
         match self {
             Attestation::ExecutedTrue => vec![Fr::from(1u64)],
             Attestation::ExecutedFalse => vec![Fr::from(0u64)],
+            Attestation::ExecutedNonBoolean => vec![Fr::from(2u64)],
             // A failed or unviable request has nothing to decode.
             Attestation::NeverExecuted => vec![],
         }
@@ -524,6 +531,7 @@ impl Attestation {
         match self {
             Attestation::ExecutedTrue => Fr::from(1u64),
             Attestation::ExecutedFalse | Attestation::NeverExecuted => Fr::from(0u64),
+            Attestation::ExecutedNonBoolean => Fr::from(2u64),
         }
     }
 }

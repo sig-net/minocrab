@@ -7,9 +7,9 @@
 //!
 //! On-disk `.zkir` JSON (compactc's output) wraps the version as
 //! `{"major": 3, "minor": n}`; [`v3::read_zkir`] handles the inward rewrite
-//! and [`v3::write_zkir`] is its exact inverse. The corpus also holds
-//! compactc's ZKIR v2 artifacts, which nothing in this workspace targets;
-//! [`major_version`] is how a corpus walk tells them apart before parsing.
+//! and [`v3::write_zkir`] is its exact inverse. Older compilers also wrote
+//! ZKIR v2, which nothing in this workspace targets; [`major_version`] is how
+//! a walk over `.zkir` files tells them apart before parsing.
 //!
 //! # Where this sits
 //!

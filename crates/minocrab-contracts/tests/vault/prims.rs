@@ -23,7 +23,7 @@ use midnight_transient_crypto::hash::transient_hash;
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
@@ -237,7 +237,7 @@ pub fn attestation_digest(request_id: &[u8; 32], block_height: u64, output_kind:
 pub fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
-    from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
+    from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
 }
 
 pub fn natives(v: &IrValue) -> Vec<Fr> {
@@ -272,15 +272,15 @@ pub fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> ([u8; 32], [u8; 32],
     let generator = IrValue::Secp256k1Point(k256::K256::generator());
     let mut le = *digest;
     le.reverse();
-    let z = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
+    let z = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
 
     let r_point = ec_mul_offcircuit(&generator, k).unwrap();
     let (x, _y) = into_coordinates_offcircuit(&r_point).unwrap();
     let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
-        panic!("into_bytes32 yields Bytes32");
+        panic!("to_bytes of a field element yields Bytes(32)");
     };
     let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
-    let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
+    let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
 
     let rd = mul_offcircuit(&r, d).unwrap();
     let z_rd = add_offcircuit(&z, &rd).unwrap();

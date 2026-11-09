@@ -1473,7 +1473,8 @@ impl Vault {
     /// Bytes<1>, mintNonce: Bytes<32>, recipient: Maybe<Either<ZswapCoinPublicKey,
     /// ContractAddress>>): []` — settles a deposit on any verdict: executed
     /// and `true` mints the deposited amount to the recipient (the caller by
-    /// default); anything else only closes the request. Depositor-gated.
+    /// default); anything else only closes the request. `serializedOutput`
+    /// must be 0 or 1 on every verdict. Depositor-gated.
     #[circuit]
     pub fn complete_deposit(
         c: &mut Circuit3,

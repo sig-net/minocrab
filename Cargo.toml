@@ -101,7 +101,7 @@ midnight-storage = "3.0.0"
 midnight-zswap = "9.0.1"
 midnight-ledger = { version = "1.0.1", package = "midnight-ledger-v9" }
 # Crypto primitives zkir-v3's off-circuit interpreter uses directly (the v3
-# simulator mirrors it). Versions match what the pinned midnight-ledger tags
+# simulator mirrors it). Versions match what the pinned midnight-* crates
 # already pull in, so all types unify with midnight-zkir-v3's.
 midnight-curves = "0.3.1"
 group = "0.13"

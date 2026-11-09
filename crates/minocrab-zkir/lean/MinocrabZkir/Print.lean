@@ -191,6 +191,8 @@ def Instr.toJ : Instr → J
     .obj [("op", .str "bytes_into_natives"), ("outputs", ids outputs), ("bytes", bytes.toJ)]
   | .bytesFromNatives out len inputs =>
     .obj [("op", .str "bytes_from_natives"), ("output", .str out), ("len", .int len), ("inputs", ops inputs)]
+  | .reverse out bytes =>
+    .obj [("op", .str "reverse"), ("output", .str out), ("bytes", bytes.toJ)]
   | .divModPowerOfTwo outputs val bits =>
     .obj [("op", .str "div_mod_power_of_two"), ("outputs", ids outputs), ("val", val.toJ), ("bits", .int bits)]
   | .reconstituteField out divisor modulus bits =>

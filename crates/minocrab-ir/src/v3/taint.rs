@@ -447,21 +447,21 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             | Instruction::IntoCoordinates { .. }
             | Instruction::FromCoordinates { .. }
             | Instruction::FromBytes32 { .. }
+            | Instruction::FromBytes { .. }
             | Instruction::Neg { .. }
             | Instruction::Inv { .. }
             | Instruction::JubjubScalarFromNative { .. }
             | Instruction::Output { .. } => {}
-            // ZKIR 3.1's byte and boolean instructions, which minocrab does
-            // not emit. Left unmarked: a missing bound can only add a
-            // finding, never hide one.
+            // ZKIR 3.1's byte and boolean instructions, which neither
+            // minocrab nor compactc 0.36 emits. Left unmarked: a missing
+            // bound can only add a finding, never hide one.
             Instruction::Slice { .. }
             | Instruction::Nth { .. }
             | Instruction::Concat { .. }
             | Instruction::LoadConstant { .. }
             | Instruction::And { .. }
             | Instruction::Or { .. }
-            | Instruction::Xor { .. }
-            | Instruction::FromBytes { .. } => {}
+            | Instruction::Xor { .. } => {}
         }
         // The field-valued producers, recorded after the arm so a value is
         // known only from its own definition on.
@@ -943,7 +943,6 @@ fn confined(
     })
 }
 
-/// Merge a newly proven maximum for `id`, keeping the tightest.
 /// The prime-field `IrType`s, whose `ToBytes` is 32 bytes.
 fn is_prime_field(t: &IrType) -> bool {
     matches!(
@@ -959,6 +958,7 @@ fn is_prime_field(t: &IrType) -> bool {
     )
 }
 
+/// Merge a newly proven maximum for `id`, keeping the tightest.
 fn note(bound: &mut BTreeMap<String, Max>, id: &Identifier, m: Max) {
     bound
         .entry(id.0.clone())
@@ -1367,6 +1367,85 @@ mod tests {
             inputs,
             output: id("digest"),
         }
+    }
+
+    fn native_input(name: &str, public: bool) -> Instruction {
+        if public {
+            Instruction::PublicInput { guard: None, val_t: IrType::Native, output: id(name) }
+        } else {
+            Instruction::PrivateInput { guard: None, val_t: IrType::Native, output: id(name) }
+        }
+    }
+
+    /// `[lo, hi]` into a 31-byte and a 1-byte atom: the `Bytes(32)` split.
+    fn hash_low_high() -> Instruction {
+        keccak(vec![bytes_atom(31), bytes_atom(1)], vec![var("lo"), var("hi")])
+    }
+
+    #[test]
+    fn bytes_from_natives_bounds_each_limb_by_the_bytes_it_contributes() {
+        let stream = |hash: Instruction| {
+            vec![
+                native_input("lo", false),
+                native_input("hi", false),
+                Instruction::BytesFromNatives {
+                    inputs: vec![var("lo"), var("hi")],
+                    len: 32,
+                    output: id("b"),
+                },
+                hash,
+            ]
+        };
+        assert_eq!(audit(&stream(hash_low_high())), vec![]);
+        // The first limb carries 31 bytes, one more than a 30-byte atom.
+        let narrow = keccak(vec![bytes_atom(30), bytes_atom(1)], vec![var("lo"), var("hi")]);
+        assert_eq!(audit(&stream(narrow)).len(), 1);
+    }
+
+    #[test]
+    fn bytes_into_natives_bounds_the_high_byte_only_of_a_known_bytes32() {
+        let split = |prefix: Vec<Instruction>, input: Operand| {
+            let mut stream = prefix;
+            stream.push(Instruction::ToBytes { input, output: id("b") });
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("b"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            stream
+        };
+        // A field element's `to_bytes` is 32 bytes: (31 bytes, 1 byte).
+        for public in [true, false] {
+            assert_eq!(audit(&split(vec![native_input("x", public)], var("x"))), vec![]);
+        }
+        assert_eq!(
+            audit(&split(
+                vec![
+                    native_input("x", true),
+                    Instruction::Copy { val: var("x"), output: id("y") },
+                ],
+                var("y"),
+            )),
+            vec![]
+        );
+        assert_eq!(audit(&split(vec![], imm(5))), vec![]);
+        // A value the stream does not type (a circuit argument, which may be
+        // a 33-byte point): only the 31-byte chunk bound holds, so the second
+        // limb is not provably one byte.
+        assert_eq!(audit(&split(vec![], var("arg"))).len(), 1);
+    }
+
+    #[test]
+    fn sha512_is_audited_like_the_other_byte_hashes() {
+        let stream = vec![
+            native_input("w", false),
+            Instruction::Sha512 {
+                alignment: Alignment(vec![bytes_atom(20)]),
+                inputs: vec![var("w")],
+                output: id("digest"),
+            },
+        ];
+        assert_eq!(audit(&stream).len(), 1);
     }
 
     #[test]

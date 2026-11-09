@@ -655,6 +655,17 @@ theorem step_sat (P : Program) (π : Preimage) (st st' : State C) (i : Instr)
             val_of_resolve st ihi _ hwh m hs', hrange.1, hrange.2, s4⟩
       · close_throw h
     · close_throw h
+  | reverse out bytes =>
+    unfold_step h
+    obtain ⟨w, hw, b, hb, h⟩ := h
+    rw [asBytes32_ok] at hb
+    subst hb
+    subst h
+    refine ⟨(close_insert st out _ (hfresh out (by simp [Instr.defines]))).1, ?_⟩
+    intro m hs _ pis _
+    have hs' := Sub.of_insert (hfresh out (by simp [Instr.defines])) hs
+    have s4 := bound_of_insert hs
+    exact ⟨b, val_of_resolve st bytes _ hw m hs', s4⟩
   | divModPowerOfTwo outs v bits =>
     unfold_step h
     split at h

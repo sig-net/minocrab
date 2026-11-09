@@ -14,28 +14,18 @@ independently.
 
 | pin | where | controls |
 |-----+-------+----------|
-| compactc release | =flake.nix= =compactcVersion= + =compactcHashes= | the compiler that produces =corpus/zkir/= — every differential's other side, plus the bundled =zkir= / =zkir-v3= binaries |
-| midnight-* crate tags | =[patch.crates-io]= in =Cargo.toml= and, identically, =.cargo/config.toml= (the per-crate tags midnight-node pins, plus zkir-v3's) | our ZKIR types, the Impact op set, the reference VM, =Transaction::well_formed= |
+| compactc release | =flake.nix= =compactcVersion= + =compactcHashes= | the compiler that produces =corpus/zkir/= — every differential's other side, plus the bundled =zkir-v3= binary |
+| midnight-* crate versions | =Cargo.toml= =[workspace.dependencies]= and =Cargo.lock=: the crates.io versions the target midnight-node release locks (=midnight-zkir= exactly, as =midnight-zkir-v3=) | our ZKIR types, the Impact op set, the reference VM, =Transaction::well_formed= |
 | corpus source revs | =corpus/sources.json= (=corpus/update.sh=) | which contracts the corpus holds |
 | rustc | =flake.nix= =rust-bin.stable.latest= — *floating*, no version pinned | the language level; see Hazard 6 |
 
 The first two are coupled and the coupling is the whole hazard surface: the
 crates must describe the ZKIR that the *binaries* speak. Hazard 1.
 
-PIN 5, noted 2026-09-04 (not yet a moving part, will be): the =zkir=
-crate has been SPLIT OUT of midnight-ledger into
-=midnightntwrk/midnight-zkir= (default branch =zkir-v3=). We still
-reach =midnight-zkir-v3= through the ledger git rev, which works only
-as long as the ledger rev we pin still vendors it. midnight-zkir's tip
-already carries an instruction batch (their PR #10, merged 2026-08-28:
-=LoadConstant=, =And=/=Or=/=Xor= + =Bool=, =Byte=, =Bytes(n)= +
-=Nth=/=Concat=/=Slice=, =Sha512=, stricter decode) that no compactc
-release uses — compactc 0.34.0 still pins zkir-v3 at =04c9c5d=. When a
-release adopts it, the corpus, our bindings, the 34-arm Lean semantics
-(=crates/minocrab-zkir/lean=) and upstream's Agda spec (their PRs
-16/17, notes/zkir-semantics.org §11) all move in one bump. Add the
-midnight-zkir rev to =./bump.sh pins= when the crate is pinned
-directly.
+PIN 5, noted 2026-09-04, settled at Bump 2: =zkir= moved out of
+midnight-ledger into =midnightntwrk/midnight-zkir=, published as the
+crates.io =midnight-zkir= 3.x line, which we import as =midnight-zkir-v3=.
+=./bump.sh pins= reports its newest version beside the locked one.
 
 * The checklist
 Run everything inside the direnv/nix shell (=nix develop -c …= also works).
@@ -46,10 +36,11 @@ Nix supplies BINARIES ONLY; every build is plain cargo.
 ./bump.sh pins
 #+end_src
 Prints, on one screen: our four pins and the tool version strings; the
-midnight-ledger revs the *pinned compactc release* was itself built from
-(read out of that release tag's own =flake.lock=); whether a newer compactc
-release exists; how midnight-ledger =main= relates to our rev; and which
-corpus sources have moved. Needs network.
+ledger and zkir revs the *pinned compactc release* was itself built from
+(read out of that release tag's own =flake.lock=); the newest compactc and
+midnight-node releases; the newest crates.io =midnight-ledger-v9= and
+=midnight-zkir= against the locked ones; and which corpus sources have
+moved. Needs network.
 
 ** 1. Move the pin
 *** compactc
@@ -65,20 +56,19 @@ Then =direnv reload= (or re-enter =nix develop=) and check =compactc
 --version= — bearing in mind Hazard 2.
 
 *** midnight-* crates
-Copy the =[patch.crates-io]= tags of the midnight-node release the target
-network runs (its root =Cargo.toml=), plus the zkir-v3 tag cut beside them,
-into both =Cargo.toml= and =.cargo/config.toml=, identically, and keep
-sig-net/mpc on the same set:
+Set =[workspace.dependencies]= in =Cargo.toml= to the crates.io versions in
+the =Cargo.lock= of the midnight-node release the target network runs, and
+keep sig-net/mpc on the same set:
 #+begin_src sh
 cargo metadata --format-version 1 >/dev/null     # resolve only; seconds
 #+end_src
-Then hold the registry proving crates at the node's =Cargo.lock= versions
-where zkir-v3 allows (=cargo update -p <crate>@<v> --precise <node-v>=), but
-not =midnight-circuits= below 7.2.4 (so =midnight-proofs= 0.8.2): 7.2.2
-panics on an out-of-range secp256k1 input, and =v3_foreign_decode= fails. Do
-NOT mix tag sets: every =midnight-*= crate must come from the one set so their
-=Fr=, =ProofPreimage= and =IrSource= types unify (Hazard 3); a split shows as
-two lockfile entries for one crate.
+Then hold every =midnight-*= entry of our =Cargo.lock=, the registry
+proving crates included, at the node's versions
+(=cargo update -p <crate>@<v> --precise <node-v>=), but not
+=midnight-circuits= below 7.2.4: 7.2.2 panics on an out-of-range secp256k1
+input, and =v3_foreign_decode= fails. Every =midnight-*= crate must resolve
+once so their =Fr=, =ProofPreimage= and =IrSource= types unify (Hazard 3); a
+split shows as two lockfile entries for one crate.
 
 *** corpus sources
 #+begin_src sh
@@ -120,11 +110,13 @@ bump is blocked on it, but a bump that moved =k= for any benchmarked circuit
 leaves the published table wrong.
 
 ** 7. Commit shape
-Two commits, not one: the *pin* (=flake.nix= / =Cargo.toml= / =Cargo.lock= /
-=corpus/=) and the *accepted baselines* (snapshots, pins, spec, generated
-crates). The second commit's message is where the reasons from step 4 go —
-one line per moved instrument. A reviewer must be able to read the baseline
-commit alone and know why each number moved.
+Three commits: the *pin* (=flake.nix= / =Cargo.toml= / =Cargo.lock= and the
+code the new crates need), the *recompiled corpus* (=corpus/zkir/= and the
+fixtures' =out/=, compiler output only, collapsed as generated by
+=.gitattributes=), and the *accepted baselines* (snapshots, pins, spec,
+generated crates). The last commit's message is where the reasons from step
+4 go — one line per moved instrument. A reviewer must be able to read the
+baseline commit alone and know why each number moved.
 
 * Drift taxonomy
 What each instrument is, what a failure MEANS after a bump, and the response.
@@ -303,35 +295,24 @@ bump landed; use =flake.nix= and the nix store path.
 revs in the graph gives two incompatible =Fr= types and an error message
 that names the same type twice. If a bump forces a split, it is not a bump.
 
-2026-10-19 (milestones.org M45 F): the patch block now pins the per-crate
-tags midnight-node pins for the release stagenet runs, not one rev, as
-sig-net/mpc does. Hazards 1 and 3 still bind, in this form: the tag set is
-the node's, whose crates name each other by version, so cargo unifies them
-(a split shows as two lockfile entries for one crate); =Cargo.lock= records
-the commit each tag resolved to; and a tag is taken for =zkir= or =zkir-v3=
-only when its source directory equals the rev compactc's =flake.lock= pins
-for that binary, manifest aside (=git diff <rev> <tag> -- zkir-v3=).
+Since Bump 2 every =midnight-*= crate comes from crates.io at the versions
+midnight-node locks. Hazards 1 and 3 still bind, in this form: the node's
+crates name each other by version, so cargo unifies them (a split shows as
+two lockfile entries for one crate); and the =midnight-zkir= version must
+carry the source the rev compactc's =flake.lock= pins for its =zkir-v3=
+binary, manifest aside.
 
-** Hazard 4 — the =[patch.crates-io]= mirror
-=midnight-zkir= depends on =transient-crypto-old= ^2.2.0, never published to
-crates.io. Since M45 F the block is the tag set midnight-node's root
-=Cargo.toml= =[patch]= section pins, =transient-crypto-old= from tag
-=transient-crypto-2.2.0-rc.1= among them, so old and new transient-crypto
-share one set of core types. The patch block moves with the node release —
-check the node's root =Cargo.toml= =[patch]= section at the new release and
-mirror it again, in both =Cargo.toml= and =.cargo/config.toml=. When it goes stale cargo does NOT fail; it warns
-=patch `midnight-transient-crypto v2.2.0 (…)` was not used in the crate
-graph= and carries on with the unpatched dependency. Dry run B printed
-exactly that. Grep the build log for =was not used in the crate graph= after
-any rev bump.
+** Hazard 4 — the =[patch.crates-io]= mirror (retired at Bump 2)
+Until Bump 2 the ledger crates came from git tags through a
+=[patch.crates-io]= block mirrored in =.cargo/config.toml=; a stale entry
+only warned (=was not used in the crate graph=). Both are gone: every
+=midnight-*= crate resolves from crates.io.
 
-** Hazard 5 — per-source =--feature-zkir-v3=
-The three sig-net sources carry =flags: ["--feature-zkir-v3"]= in
-=corpus/sources.json=; everything else compiles v2. A toolchain that renames
-the flag, or makes v3 the default, silently changes which IR 66 corpus
-artifacts are in — visible as a mass round-trip or differential change, not
-as a compile failure. Check the flag against the new release notes before
-blaming the bindings.
+** Hazard 5 — per-source =--feature-zkir-v3= (retired at Bump 2)
+Until compactc 0.36 only the sources carrying =flags:
+["--feature-zkir-v3"]= in =corpus/sources.json= compiled to v3. compactc
+0.36 writes v3 only and rejects the flag, so the flags are gone and every
+artifact is v3; =compile.sh= still honours a per-source =flags= entry.
 
 ** Hazard 6 — rustc floats
 =flake.nix= pins =rust-bin.stable.latest.default=, i.e. whatever stable is
@@ -1156,7 +1137,8 @@ The ledger-9 mainnet set: midnight-node 2.1.101 (Mainnet, Preprod and
 Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
 
 ** The pins
-- compactc 0.36.0 (=b5d9e4dfc=, 2026-11-03), four platform hashes in
+- compactc 0.36.0 (=b5d9e4dfc=, committed 2026-11-03, released
+  2026-11-04), four platform hashes in
   =flake.nix=. It writes ZKIR v3 only (=--feature-zkir-v3= is now an
   error), at minor version 3.1.
 - Every =midnight-*= crate from crates.io at the versions midnight-node
@@ -1182,7 +1164,8 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
    builders emit them too. On a =Bytes(32)= each proves the same statement
    as the 3.0 op it replaces (zkir 3.2.0 =ir_vm.rs=), and
    =bytes_from_natives= is about 137 rows cheaper than
-   =bytes32_from_low_high=. The taint lint bounds every
+   =bytes32_from_low_high=. That gadget change also moves the verifier
+   key of every circuit that uses it (29 of ours). The taint lint bounds every
    =bytes_into_natives= output (31 range-checked bytes at most) and every
    =bytes_from_natives= limb.
 4. *Upstream soundness fix.* =reconstitute_field= now proves the
@@ -1196,7 +1179,11 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
    until the fix lands in midnight-examples and the pin moves to it;
    =fetch.sh= would restore the unpatched source. compactc 0.36 also constrains that
    Boolean to 0 or 1, now on every call; the Rust vault matches, with
-   tests for a byte of 2 on both verdicts.
+   tests for a byte of 2 on every verdict. =AbiReturn for Bool= (the
+   treasury and pending-vault lineages) carries the same check. The
+   workaround moves =completeDeposit='s and =completeWithdraw='s verifier
+   keys under the old compiler too, so the midnight-examples fix ships with
+   the compactc 0.36 redeploy.
 
 ** Row snapshot
 Every moved circuit was priced twice: the pre-bump IR under the new

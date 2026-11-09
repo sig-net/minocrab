@@ -336,9 +336,9 @@ pub fn circuits() -> Vec<Circuit> {
     listed.extend([
         c!("xcall::local_base", || xcall::Xcall::local_base()),
         c!("xcall::call_once", || xcall::call_once()),
-        // call_once up to the entry-point constant (xcall_differential pins
-        // it); listed so the instruments see it under its own name
-        // (tests/circuit_closure.rs).
+        // call_once up to the entry-point constant (xcall_differential's
+        // each_call_proves_only_its_own_entry_point pins it); listed so the
+        // instruments see it under its own name (tests/circuit_closure.rs).
         c!("xcall::call_emit", || xcall::Xcall::call_emit()),
         c!("xcall::call_twice", || xcall::call_twice()),
         c!("xcall::call_big", || xcall::Xcall::call_big()),

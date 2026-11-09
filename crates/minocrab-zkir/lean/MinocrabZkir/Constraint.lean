@@ -116,9 +116,10 @@ def SatInstr (P : Program) (mem : Assignment C) (pis : List Fr) (k : Nat) : Inst
   | .bytes32FromLowHigh out (ilo, ihi) =>
     ∃ lo hi, val mem ilo = some (.native lo) ∧ val mem ihi = some (.native hi)
       ∧ lo.val < 2 ^ 248 ∧ hi.val < 256 ∧ bound mem out (.bytes32 (bytesOfLowHigh lo hi))
-  -- zkir 3.2.0 ir_vm.rs `ToBytes`/`FromBytes`/`BytesIntoNatives`/
-  -- `BytesFromNatives` on a `Bytes(32)`: the same gadgets as the 3.0 arms
-  -- above (`encode_incircuit`'s 31-byte and 1-byte chunks;
+  -- midnight-zkir 3.2.0's in-circuit `ToBytes`/`FromBytes`/
+  -- `BytesIntoNatives`/`BytesFromNatives` on a `Bytes(32)` constrain the
+  -- same relation as the 3.0 arms above, through different gadgets
+  -- (`encode_incircuit`'s 31-byte and 1-byte chunks;
   -- `assigned_to_le_bytes(limb, nb_bytes)` per input).
   | .toBytes out input =>
     ∃ v b, val mem input = some v ∧ intoBytes32V M v = .ok b ∧ bound mem out (.bytes32 b)
@@ -132,6 +133,8 @@ def SatInstr (P : Program) (mem : Assignment C) (pis : List Fr) (k : Nat) : Inst
     ∃ ilo ihi lo hi, inputs = [ilo, ihi] ∧ len = 32
       ∧ val mem ilo = some (.native lo) ∧ val mem ihi = some (.native hi)
       ∧ lo.val < 2 ^ 248 ∧ hi.val < 256 ∧ bound mem out (.bytes32 (bytesOfLowHigh lo hi))
+  | .reverse out bytes =>
+    ∃ b, val mem bytes = some (.bytes32 b) ∧ bound mem out (.bytes32 b.reverse)
   | .divModPowerOfTwo outs v bits =>
     ∃ q r x, outs = [q, r] ∧ val mem v = some (.native x)
       ∧ bound mem q (.native (Fr.ofNat (x.val / 2 ^ bits)))

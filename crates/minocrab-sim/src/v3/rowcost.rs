@@ -99,6 +99,24 @@ pub fn keccak_blocks(len: usize) -> usize {
 }
 
 /// Rows one `persistent_hash` over `len` bytes costs.
+/// `bytes_from_natives` / `bytes_into_natives` over `len` bytes: a row per
+/// 4 bytes of each 31-byte chunk, measured with midnight-zkir 3.2.0's own
+/// model at lengths 1 to 94; `bytes_into_natives` converts a 1-byte chunk
+/// without a row.
+pub fn limb_rows(len: usize, one_byte_free: bool) -> usize {
+    (0..len)
+        .step_by(31)
+        .map(|start| {
+            let chunk = (len - start).min(31);
+            if one_byte_free && chunk == 1 {
+                0
+            } else {
+                chunk.div_ceil(4)
+            }
+        })
+        .sum()
+}
+
 pub fn sha256_rows(len: usize) -> usize {
     sha256_blocks(len) * SHA256_PER_BLOCK
 }
@@ -394,21 +412,23 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             // The coordinates are already there; the cost lands on the
             // `into_bytes32` that follows.
             I::IntoCoordinates { .. } | I::FromCoordinates { .. } => SIMPLE,
-            I::IntoBytes32 { input, .. } => {
+            // `to_bytes` is ZKIR 3.1's `into_bytes32`, and so on: the same
+            // gadgets on a `Bytes(32)`.
+            I::IntoBytes32 { input, .. } | I::ToBytes { input, .. } => {
                 if is_foreign(&type_of(input)) {
                     INTO_BYTES32_FOREIGN
                 } else {
                     DECOMPOSE_BYTES32
                 }
             }
-            I::FromBytes32 { val_t, .. } => {
+            I::FromBytes32 { val_t, .. } | I::FromBytes { val_t, .. } => {
                 if is_foreign(val_t) {
                     FROM_BYTES32_FOREIGN
                 } else {
                     COMPOSE_BYTES32
                 }
             }
-            I::ReverseBytes { .. } => REVERSE_BYTES,
+            I::ReverseBytes { .. } | I::Reverse { .. } => REVERSE_BYTES,
             // `Bytes<32>` → (low, high) recomposes (cheap); (low, high) →
             // `Bytes<32>` decomposes the 248-bit limb (dear).
             I::Bytes32IntoLowHigh { .. } => COMPOSE_BYTES32,
@@ -428,30 +448,17 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             | I::CondSelect { .. }
             | I::PublicInput { .. }
             | I::PrivateInput { .. } => SIMPLE,
-            // ZKIR 3.1's instructions, which `cryptocost` does not price:
-            // each takes the cost of its nearest measured ZKIR 3.0 shape (the
-            // byte conversions minocrab emits are those shapes on a
-            // `Bytes(32)`), so these rows are an estimate. SHA-512 has no
-            // measured shape and is priced as two SHA-256 compressions per
-            // input; the selections and the constant add no constraint.
+            // Packing and unpacking 31-byte limbs, a row per 4 bytes of each
+            // chunk; `bytes_into_natives` converts a 1-byte chunk for free.
+            I::BytesIntoNatives { bytes, outputs } => match type_of(bytes) {
+                IrType::Bytes(n) => limb_rows(n as usize, true),
+                _ => outputs.len() * COMPOSE_BYTES32,
+            },
+            I::BytesFromNatives { len, .. } => limb_rows(*len as usize, false),
+            // Unmeasured: SHA-512 is priced as two SHA-256 passes over the
+            // same bytes; the boolean gates as one row; the selections and
+            // the constant add no constraint.
             I::Sha512 { alignment, .. } => 2 * sha256_rows(alignment.bin_len()),
-            I::ToBytes { input, .. } => {
-                if is_foreign(&type_of(input)) {
-                    INTO_BYTES32_FOREIGN
-                } else {
-                    DECOMPOSE_BYTES32
-                }
-            }
-            I::FromBytes { val_t, .. } => {
-                if is_foreign(val_t) {
-                    FROM_BYTES32_FOREIGN
-                } else {
-                    COMPOSE_BYTES32
-                }
-            }
-            I::Reverse { .. } => REVERSE_BYTES,
-            I::BytesIntoNatives { outputs, .. } => outputs.len() * COMPOSE_BYTES32,
-            I::BytesFromNatives { inputs, .. } => inputs.len() * DECOMPOSE_BYTES32,
             I::And { .. } | I::Or { .. } | I::Xor { .. } => SIMPLE,
             I::Slice { .. } | I::Nth { .. } | I::Concat { .. } | I::LoadConstant { .. } => 0,
         })

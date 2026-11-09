@@ -36,9 +36,9 @@ make specific error classes unwritable rather than merely untested.
 - **Claim** — every artifact the pinned compactc produces parses, re-emits and
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
-  over the 84 ZKIR v3 `.zkir` in `corpus/zkir` (the 722 v2 artifacts compactc also emits are counted and skipped; the test asserts both counts), plus
-  [toolchain_accepts.rs](crates/minocrab-zkir/tests/toolchain_accepts.rs), a
-  hand-built circuit through the pinned `zkir mock-compile`.
+  over the 855 ZKIR v3 `.zkir` in `corpus/zkir` (the count is asserted), plus
+  [v3_builder.rs](crates/minocrab-ir/tests/v3_builder.rs), a hand-built
+  circuit through the pinned `zkir-v3 mock-compile`.
 - **Command** — `cargo test -p minocrab-zkir`
 - **Why it is first** — it is the most fundamental instrument in the tree; if it
   is red, nothing downstream tells you anything new
@@ -287,7 +287,7 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 - **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.36.0"` with
   a per-architecture `compactcHashes` entry (`sha256-qBJrLMBiMO0sZVgFmolF…` for
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
-  **binaries only** — compactc, `zkir`/`zkir-v3`, node, the Rust toolchain. The
+  **binaries only** — compactc, `zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.
 - **The ledger Mainnet, Preprod and Preview run.** Every `midnight-*` crate
   comes from crates.io at the version midnight-node 2.1.101 locks (ledger
@@ -296,10 +296,10 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   compactc's own `flake.lock` pins for its bundled `zkir-v3`;
   `./bump.sh pins` prints both sides.
 - **The pin is a hypothesis; the corpus is the proof.** What makes it safe is
-  instrument (a): 814 of compactc's own artifacts round-trip through these
+  instrument (a): 855 of compactc's own artifacts round-trip through these
   bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
-  the 814 ZKIR circuits (315 contracts) the pinned compactc
+  the 855 ZKIR circuits (325 contracts) the pinned compactc
   produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
   in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
   corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
@@ -467,8 +467,8 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 **Morning — run the gates, cheapest and most diagnostic first.**
 
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
-2. `cargo test -p minocrab-zkir` — 814 artifacts round-trip, count asserted. If this is red, stop.
-3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
+2. `cargo test -p minocrab-zkir` — 855 artifacts round-trip, count asserted. If this is red, stop.
+3. `cargo test -p minocrab-ledger` — entry-point hash rule over 325 contracts, plus the Impact op baseline.
 4. `cargo test --workspace` — the differentials, the Pending lineage's pair pins, the leakage inventory, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
 6. `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (34,000 cases, ~20 s; §2(e)). Raise the count for a longer gate; the wall clock is linear in it.

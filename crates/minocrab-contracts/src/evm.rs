@@ -779,13 +779,11 @@ impl AbiReturn for Unit {
     fn decode(_c: &mut Circuit3, _out: &Bytes0<Private>) {}
 }
 
-/// A Borsh `bool`: one byte, true iff it is `1`.
+/// A Borsh `bool`: one byte, which must be 0 or 1, true iff it is `1`.
 ///
-/// NO CANONICITY CHECK, deliberately: `deserialize<VaultResponse, 1>(output)
-/// .success` in the deployed source is `byte == 1`, so a byte of 2 reads as
-/// FALSE rather than as a proof failure, and this lineage says the same
-/// thing. The byte is inside the signed digest either way, so the MPC chose
-/// it.
+/// compactc 0.36 lowers `deserialize<VaultResponse, 1>(output).success` to
+/// `constrain_to_boolean` on the byte, then `byte == 1`, so a byte of 2 is a
+/// proof failure, not FALSE; this lineage says the same thing.
 impl AbiReturn for Bool {
     const LEN: usize = 1;
     type Serialized = Bytes<1, Private>;
@@ -795,8 +793,9 @@ impl AbiReturn for Bool {
     }
 
     fn decode(c: &mut Circuit3, out: &Bytes<1, Private>) -> BoolWire<Private> {
+        let byte = c.assert_boolean(out.field());
         let one = c.constant(1u64).private();
-        BoolWire::from_field_unchecked(c.test_eq(out.field(), one))
+        BoolWire::from_field_unchecked(c.test_eq(byte, one))
     }
 }
 

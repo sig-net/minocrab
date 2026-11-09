@@ -73,7 +73,7 @@ else
   : > "$REPORT"
 fi
 
-# Per-source extra compiler flags (e.g. --feature-zkir-v3), from sources.json.
+# Per-source extra compiler flags, from sources.json (none at present).
 declare -A SRC_FLAGS
 while IFS=$'\t' read -r n fl; do
   SRC_FLAGS[$n]="$fl"

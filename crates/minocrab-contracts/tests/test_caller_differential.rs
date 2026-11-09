@@ -20,7 +20,7 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::test_caller;
 use minocrab_sim::v3::{assert_call_compatible, simulate};
@@ -81,7 +81,7 @@ fn deployer_commitment(sk: &[u8; 32]) -> [u8; 32] {
 fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
-    from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
+    from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
 }
 
 fn natives(v: &IrValue) -> Vec<Fr> {

@@ -34,8 +34,8 @@ fn round_trips_entire_corpus() {
     for path in &files {
         let name = path.display().to_string();
         let result = (|| -> Result<bool, String> {
-            // The corpus keeps compactc's ZKIR v2 artifacts for the record;
-            // nothing here targets them, so they are counted and skipped.
+            // A ZKIR v2 artifact (older compilers wrote them) is counted and
+            // skipped: nothing here targets it.
             if minocrab_zkir::major_version(path).map_err(|e| format!("version: {e}"))? != 3 {
                 return Ok(false);
             }

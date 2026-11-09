@@ -17,7 +17,7 @@ let ir = minocrab_zkir::v3::read_zkir("respond.zkir")?;
 println!("v3, {} instructions", ir.instructions.len());
 ```
 
-`v3::write_zkir` is the exact inverse of the reader, including the `{"major": 3, "minor": m}` envelope — every pinned compactc v3 artifact parses and re-emits byte-identically (the corpus's v2 artifacts are told apart by `major_version` and skipped).
+`v3::write_zkir` is the exact inverse of the reader, including the `{"major": 3, "minor": m}` envelope — every pinned compactc v3 artifact parses and re-emits byte-identically (ZKIR v2 files from older compilers are told apart by `major_version` and skipped).
 
 [Repository README](https://github.com/sig-net/minocrab#readme) · [VERIFICATION.md](https://github.com/sig-net/minocrab/blob/main/VERIFICATION.md) · [BENCHMARK.md](https://github.com/sig-net/minocrab/blob/main/BENCHMARK.md)
 

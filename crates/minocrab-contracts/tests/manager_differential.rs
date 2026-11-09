@@ -978,11 +978,11 @@ fn num_word(v: u128) -> [u8; 32] {
 fn eth_address(pk: &IrValue) -> [u8; 20] {
     let (x, y) = into_coordinates_offcircuit(pk).unwrap();
     let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
-        panic!("into_bytes32 yields Bytes32")
+        panic!("to_bytes of a field element yields Bytes(32)")
     };
     let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
     let IrValue::Bytes(y_le_bytes) = to_bytes_offcircuit(&y).unwrap() else {
-        panic!("into_bytes32 yields Bytes32")
+        panic!("to_bytes of a field element yields Bytes(32)")
     };
     let y_le: [u8; 32] = y_le_bytes.try_into().expect("a field element is 32 bytes");
     let mut buf = [0u8; 64];
@@ -1317,10 +1317,10 @@ fn evm_sig_inputs(digest: &[u8; 32], d: u64) -> (Vec<Fr>, [u8; 20]) {
     let d = scalar(d);
     let k = scalar(0x517e_c0de_u64);
     let (r_le, s_le, pk) = sign(digest, &d, &k);
-    use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+    use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
     use minocrab_zkir::v3::IrType;
-    let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
-    let s = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
+    let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
+    let s = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
     let mut v = natives(&r);
     v.extend(natives(&s));
     v.extend(natives(&pk));

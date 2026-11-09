@@ -41,7 +41,7 @@ not all 32.
 ### 3. `reverse_bytes` is one instruction
 
 When you *do* need a full byte reversal, `c.reverse_bytes(typed)` is ZKIR's
-native `ReverseBytes` (~150 rows). The stdlib's explode/rebuild chain is
+native `Reverse` (~150 rows). The stdlib's explode/rebuild chain is
 ~4,600. Never hand-roll a reversal.
 
 ### 4. `Serializer` re-limbs by segment

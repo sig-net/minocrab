@@ -10,9 +10,10 @@ Every `midnight-*` dependency now resolves from crates.io, with no
 9.1.0.1, the release Mainnet, Preprod and Preview run): `midnight-ledger-v9`
 1.0.1, the onchain crates 4.0.1, `midnight-zkir` 3.2.0 (the ZKIR v3 line,
 imported as `midnight-zkir-v3`) and the rest named in the workspace
-`Cargo.toml`. What a local `cargo package` verifies is therefore what a
-downstream build resolves, and every gate in this repo runs against the
-registry crates.
+`Cargo.toml`. A local `cargo package` therefore verifies against the
+registry crates, and every gate in this repo runs against them. The
+requirements are caret ranges (`midnight-zkir` is exact), so a downstream
+build without this lockfile may resolve newer compatible releases.
 
 The seven crates that depend on the `midnight-*` line (`minocrab-zkir`,
 `minocrab-ir`, `minocrab-std`, `minocrab-ledger`, `minocrab-sim`,

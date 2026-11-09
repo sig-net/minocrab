@@ -48,7 +48,7 @@ cmd_pins() {
   compactc_version="$(pinned_compactc)"
   printf '  flake.nix compactc            %s\n' "$compactc_version"
   printf '  Cargo.lock ledger crates      %s\n' "$(pinned_ledger_versions)"
-  for bin in compactc zkir zkir-v3 rustc; do
+  for bin in compactc zkir-v3 rustc; do
     if command -v "$bin" >/dev/null 2>&1; then
       printf '  %-29s %s\n' "$bin --version" "$("$bin" --version 2>&1 | head -1)"
     else

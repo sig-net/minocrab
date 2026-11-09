@@ -23,17 +23,16 @@ minocrab::label! {
 
 // --- cross-contract calls ---------------------------------------------------
 
-/// One cross-contract call `target.circ(args…) → results`, exactly as
-/// compactc 0.36 desugars it (notes/ledger-abi.org §Implementation): witness
-/// the callee's return limbs and the communication randomness; recompute
-/// `comm = transientHash([rand] ++ args ++ results)` in-circuit; claim
-/// `(addr, entry_point, comm)` via [`kernel_claim_contract_call`], with the
-/// entry-point hash as two CONSTANT limbs.
+/// One cross-contract call `target.circ(args…) → results`, as compactc 0.36
+/// desugars it: witness the callee's return limbs and the communication
+/// randomness; recompute `comm = transientHash([rand] ++ args ++ results)`
+/// in-circuit; claim `(addr, entry_point, comm)` via
+/// [`kernel_claim_contract_call`], with the entry-point hash as two CONSTANT
+/// limbs.
 ///
 /// The constant is what binds the proof to the callee circuit named at the
-/// call site: before compactc 0.36 the hash was a prover-supplied witness,
-/// so any two same-shaped entry points of a callee were interchangeable in
-/// the proof (external review §4.5; compactc 0.36's cross-contract fix).
+/// call site: two same-shaped entry points of a callee are different
+/// circuits (external review §4.5).
 ///
 /// `addr` is the callee's address (`Bytes<32>` `[hi, lo]`, from a
 /// [`cell_read`] of the target field — one fresh uncached read per call

@@ -50,6 +50,11 @@ def mapOperands (f : Operand → Operand) : Instr → Instr
   | .reverseBytes out bytes => .reverseBytes out (f bytes)
   | .bytes32IntoLowHigh outs bytes => .bytes32IntoLowHigh outs (f bytes)
   | .bytes32FromLowHigh out (lo, hi) => .bytes32FromLowHigh out (f lo, f hi)
+  | .toBytes out input => .toBytes out (f input)
+  | .fromBytes ty out bytes => .fromBytes ty out (f bytes)
+  | .bytesIntoNatives outs bytes => .bytesIntoNatives outs (f bytes)
+  | .bytesFromNatives out len inputs => .bytesFromNatives out len (inputs.map f)
+  | .reverse out bytes => .reverse out (f bytes)
   | .divModPowerOfTwo outs val bits => .divModPowerOfTwo outs (f val) bits
   | .reconstituteField out d m bits => .reconstituteField out (f d) (f m) bits
   | .transientHash out inputs => .transientHash out (inputs.map f)

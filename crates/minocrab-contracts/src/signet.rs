@@ -740,7 +740,7 @@ pub fn calculate_attestation_digest<V: Vis3, const LEN_OUTPUT: usize>(
 
 /// `reverseBytes32(b)` — byte-order adapter (stored records are
 /// big-endian, the scalar casts read little-endian). ZKIR's native
-/// `ReverseBytes` instruction (~150 rows) replaces the Compact stdlib's
+/// `Reverse` instruction (~150 rows) replaces the Compact stdlib's
 /// explode/rebuild chain (~4600 rows, what compactc emits).
 pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
     let typed = b.to_typed(c);

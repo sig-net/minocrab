@@ -87,7 +87,7 @@ jobs:
       # The baseline's rustdoc is built in its own checkout, outside this
       # tree: cargo reads .cargo/config.toml from the working directory, so
       # `--baseline-rev` would resolve the base branch under THIS branch's
-      # [patch.crates-io] and fail to build whenever the patch set changes.
+      # cargo configuration rather than its own.
       - env:
           BASELINE: ${{ runner.temp }}/baseline
         run: |

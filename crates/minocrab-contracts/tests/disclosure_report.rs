@@ -71,8 +71,8 @@ fn the_start_deposit_disclosure_report_is_valued() {
     // label (gas limit, maxFeePerGas, maxPriorityFeePerGas, in that order),
     // so nine lines for seven labels. Under M44's flush pattern
     // `startDeposit` only files the request, so the cross-contract call's
-    // own disclosures — the entry-point hash and the communications
-    // commitment — are `sendDeposit`'s, not this circuit's.
+    // own disclosure — the communications commitment — is `sendDeposit`'s,
+    // not this circuit's.
     let disclosed: Vec<&String> = lines.iter().filter(|l| l.contains("| disclosed |")).collect();
     assert_eq!(disclosed.len(), 9, "{}", lines.join("\n"));
 

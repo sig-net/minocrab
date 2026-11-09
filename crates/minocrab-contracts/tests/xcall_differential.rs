@@ -196,10 +196,8 @@ impl Scenario {
         target[..12].copy_from_slice(b"target-contr");
         target[31] = 0x21;
         // The entry-point hash, DERIVED from the callee circuit's name
-        // (M12 stage 1) rather than invented. The circuit does not bind it
-        // — the ep limbs are prover-supplied witnesses — so this is a
-        // preimage-only change; what it buys is that the scenario now
-        // carries the value a real transaction would.
+        // (M12 stage 1) rather than invented: the claim carries it as a
+        // constant, so the preimage must name the circuit's own callee.
         let ep = ep_hash("deposit");
         Scenario {
             recipient,
@@ -381,10 +379,23 @@ fn each_call_proves_only_its_own_entry_point() {
     s.ep = ep_hash("depositEmit");
     assert!(simulate(&emit, &s.preimage_call_n(1)).is_ok(), "callEmit claims depositEmit");
     assert!(simulate(&once, &s.preimage_call_n(1)).is_err(), "callOnce cannot claim depositEmit");
-    assert_ne!(
-        to_zkir_string(&once).expect("serializes"),
-        to_zkir_string(&emit).expect("serializes"),
-    );
+    // The two circuits differ in exactly the two entry-point limbs of the
+    // claim, and nowhere else.
+    let instructions = |ir| -> Vec<serde_json::Value> {
+        let text = to_zkir_string(ir).expect("serializes");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("json");
+        value["instructions"].as_array().expect("instructions").clone()
+    };
+    let (a, b) = (instructions(&once), instructions(&emit));
+    assert_eq!(a.len(), b.len());
+    let differing: Vec<(&serde_json::Value, &serde_json::Value)> =
+        a.iter().zip(&b).filter(|(x, y)| x != y).collect();
+    assert_eq!(differing.len(), 1, "{differing:?}");
+    let (x, y) = differing[0];
+    assert_eq!(x["op"], "impact");
+    let (xs, ys) = (x["inputs"].as_array().unwrap(), y["inputs"].as_array().unwrap());
+    assert_eq!(xs.len(), ys.len());
+    assert_eq!(xs.iter().zip(ys).filter(|(p, q)| p != q).count(), 2);
 }
 
 #[test]
@@ -444,8 +455,8 @@ fn target_deposit_emit_matches_corpus() {
 }
 
 /// Criterion 3: tampering with ANY element of the callOnce transcript or
-/// its private witnesses (cc-rand, ep limbs) must be rejected by both
-/// artifacts, with zero acceptance disagreements.
+/// its private witness (cc-rand) must be rejected by both artifacts, with
+/// zero acceptance disagreements.
 #[test]
 fn call_once_rejects_tampering() {
     let theirs = corpus_zkir("caller", "callOnce");
@@ -463,8 +474,8 @@ fn call_once_rejects_tampering() {
             disagreements += 1;
         }
     }
-    // Flipping any private witness breaks the in-circuit comm (cc-rand)
-    // or the claimed entry point (ep limbs) against the transcript.
+    // Flipping the private witness breaks the in-circuit comm (cc-rand)
+    // against the transcript.
     for i in 0..pi.private_transcript.len() {
         let mut t = pi.clone();
         t.private_transcript[i] = t.private_transcript[i] + Fr::from(1u64);

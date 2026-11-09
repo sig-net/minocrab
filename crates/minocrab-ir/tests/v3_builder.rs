@@ -103,3 +103,39 @@ fn unsupported_type_is_a_build_error() {
     let c = b.input("b", IrType::Bytes(32));
     b.test_eq(a, c);
 }
+
+/// The byte builders write the ZKIR 3.1 instructions compactc 0.36 writes,
+/// in a minor-version-1 file, never the deprecated 3.0 ones.
+#[test]
+fn byte_builders_emit_zkir_3_1_instructions() {
+    let mut b = Builder3::new();
+    let x = b.input("x", IrType::Native);
+    let bytes = b.into_bytes32(x);
+    let back = b.from_bytes32(bytes, IrType::Native);
+    let reversed = b.reverse_bytes(bytes);
+    let (low, high) = b.bytes32_into_low_high(reversed);
+    let rebuilt = b.bytes32_from_low_high(low, high);
+    let (l2, _) = b.bytes32_into_low_high(rebuilt);
+    b.output(&[Arg::from(back), Arg::from(l2)]);
+    let json = minocrab_zkir::v3::to_zkir_string(&b.finish(false)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["version"], serde_json::json!({ "major": 3, "minor": 1 }));
+    let ops: Vec<&str> = value["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["op"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            "to_bytes",
+            "from_bytes",
+            "reverse",
+            "bytes_into_natives",
+            "bytes_from_natives",
+            "bytes_into_natives",
+            "output"
+        ]
+    );
+}

@@ -115,7 +115,7 @@ impl MulTy for Secp256r1ScalarT {}
 impl MulTy for Curve25519BaseT {}
 impl MulTy for Curve25519ScalarT {}
 
-/// Prime fields with a canonical 32-byte form (IntoBytes32/FromBytes32).
+/// Prime fields with a canonical 32-byte form (`ToBytes`/`FromBytes`).
 pub trait Bytes32ConvTy: IrTy {}
 impl Bytes32ConvTy for FieldT {}
 impl Bytes32ConvTy for Secp256k1BaseT {}

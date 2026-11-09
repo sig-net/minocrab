@@ -133,6 +133,7 @@ def Instr.decode (j : Json) : P Instr := do
   | "bytes_into_natives" => pure (.bytesIntoNatives (← idents j "outputs") (← operand j "bytes"))
   | "bytes_from_natives" =>
     pure (.bytesFromNatives (← ident j "output") (← nat j "len") (← operands j "inputs"))
+  | "reverse" => pure (.reverse (← ident j "output") (← operand j "bytes"))
   | "div_mod_power_of_two" =>
     pure (.divModPowerOfTwo (← idents j "outputs") (← operand j "val") (← nat j "bits"))
   | "reconstitute_field" =>
@@ -163,13 +164,13 @@ def Instr.decode (j : Json) : P Instr := do
 is reported as such rather than as a decode failure. -/
 def majorOf (j : Json) : P Nat := do nat (← key j "version") "major"
 
-/-- ir.rs:977-1011 `IrSource::load`, major 3 only, minors 0 and 1 (the
-ones midnight-zkir 3.2.0 reads; compactc 0.36 writes 3.1). -/
+/-- `IrSource::load` (midnight-zkir 3.2.0 ir.rs:1318-1320): major 3,
+minors 0 to 2. -/
 def Program.decode (j : Json) : P Program := do
   let ver ← key j "version"
   let major ← nat ver "major"
   let minor ← nat ver "minor"
-  unless major = 3 ∧ minor ≤ 1 do throw s!"Unhandled version: {major}.{minor}"
+  unless major = 3 ∧ minor ≤ 2 do throw s!"Unhandled version: {major}.{minor}"
   let inputs ← (← arr j "inputs").mapM fun x => do
     pure ((← str x "name"), (← IrType.ofName (← str x "type")))
   let outputs ← (← arr j "outputs").mapM fun x => do IrType.ofName (← x.getStr?)

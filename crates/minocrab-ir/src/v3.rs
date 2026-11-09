@@ -96,8 +96,8 @@ fn supports_mul(ty: &IrType) -> bool {
 }
 
 #[cfg(feature = "unstable")]
-/// IntoBytes32/FromBytes32 support prime-field elements with a canonical
-/// 32-byte little-endian form.
+/// The 32-byte conversions (`ToBytes`/`FromBytes` on a `Bytes(32)`) support
+/// prime-field elements, which have a canonical 32-byte little-endian form.
 fn supports_bytes32_conversion(ty: &IrType) -> bool {
     matches!(ty, IrType::Native) || is_foreign_field(ty)
 }
@@ -990,10 +990,9 @@ impl Builder3 {
         #[cfg(debug_assertions)]
         passes::check_kept(&built_stream, &instructions, &kept);
         let ir = IrSource {
-            // ZKIR 3.1, the minor version compactc 0.36 writes, so a ported
-            // circuit serializes byte-identically to compactc's artifact.
-            // The minor version is a label: no instruction is gated on it
-            // (midnight-zkir 3.2.0 CHANGELOG).
+            // ZKIR 3.1, the minor version compactc 0.36 writes. Explicit
+            // because `IrMinorVersion`'s default is V2; midnight-zkir 3.2.0
+            // gates no instruction on it.
             version: IrMinorVersion::V1,
             inputs: self.inputs,
             outputs: self.outputs.unwrap_or_default(),

@@ -87,7 +87,7 @@ const TARGET_CONTRACT: XcallTarget = XcallTarget::at_field(TARGET);
 
 /// The caller contract: the local control, the two cross-contract entry
 /// points that are `#[circuit]`s, and the target's own `depositBig` callee.
-/// (`callOnce`/`callTwice`/`callOnceBound` are built through [`entry`] over a
+/// (`callOnce`/`callTwice` are built through [`entry`] over a
 /// Rust-valued family and stay free functions — see [`call_n_times`].)
 pub struct Xcall;
 
@@ -117,8 +117,8 @@ impl Xcall {
     }
 
     /// `export circuit callEmit(recipient, amount): []` — `target.depositEmit`.
-    /// Structurally identical to [`call_once`]; the difference is which entry
-    /// point the PROVER claims, and entry-point limbs are witnesses.
+    /// [`call_once`] with the other entry point: the two circuits differ only
+    /// in the entry-point constant of the claim.
     #[circuit]
     pub fn call_emit(
         c: &mut Circuit3,

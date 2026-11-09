@@ -4,7 +4,7 @@ which operand positions an instruction READS and which identifiers it
 DEFINES — the Lean twin of `minocrab_ir::v3::passes::operands_mut` /
 `returned_operands` (the reads, split the way the fold pass splits
 them) and of `defined_identifiers` (the writes). Every function is one
-exhaustive `match` over the 37 constructors, so the kernel checks
+exhaustive `match` over the 38 constructors, so the kernel checks
 coverage the way `passes.rs`'s wildcard-free matches make rustc check
 it. GATE: the `zkir-dataflow` dump agrees with the Rust functions on
 every corpus instruction (minocrab-ir/tests/lean_dataflow.rs).
@@ -39,6 +39,7 @@ def Instr.operands : Instr → List Operand
   | .fromBytes _ _ bytes => [bytes]
   | .bytesIntoNatives _ bytes => [bytes]
   | .bytesFromNatives _ _ inputs => inputs
+  | .reverse _ bytes => [bytes]
   | .divModPowerOfTwo _ val _ => [val]
   | .reconstituteField _ divisor modulus _ => [divisor, modulus]
   | .transientHash _ inputs => inputs
@@ -90,6 +91,7 @@ def Instr.defines : Instr → List Ident
   | .fromBytes _ out _ => [out]
   | .bytesIntoNatives outputs _ => outputs
   | .bytesFromNatives out _ _ => [out]
+  | .reverse out _ => [out]
   | .divModPowerOfTwo outputs _ _ => outputs
   | .reconstituteField out _ _ _ => [out]
   | .transientHash out _ => [out]

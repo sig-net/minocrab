@@ -534,11 +534,9 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
       throw "Bytes32FromLowHigh: low operand must fit in 31 bytes and high operand in a single byte"
     pure (st.insert out (.bytes32 (bytesOfLowHigh lo hi)))
   -- The ZKIR 3.1 byte instructions, on the one length this model carries
-  -- (`Bytes(32)`): there each is the 3.0 instruction above it, the same
-  -- off-circuit function (zkir 3.2.0 ir_vm.rs routes `IntoBytes32`,
-  -- `FromBytes32`, `Bytes32IntoLowHigh` and `Bytes32FromLowHigh` through
-  -- `to_bytes`, `from_bytes`, `encode` and `decode`). Any other length is
-  -- outside the model and fails here.
+  -- (`Bytes(32)`): there each computes the same value as the 3.0
+  -- instruction above it (midnight-zkir 3.2.0 `preprocess`). Any other
+  -- length is outside the model and fails here.
   | .toBytes out input =>
     let v ← resolve st input
     let b ← intoBytes32V M v
@@ -567,6 +565,9 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
         pure (st.insert out (.bytes32 (bytesOfLowHigh lo hi)))
       else throw "BytesFromNatives: only Bytes<32> is modelled"
     | _ => throw "BytesFromNatives: only Bytes<32> (two inputs) is modelled"
+  | .reverse out bytes =>
+    let b ← asBytes32 (← resolve st bytes)
+    pure (st.insert out (.bytes32 b.reverse))
   | .output vals =>
     if vals.length ≠ prog.outputs.length then
       throw s!"Output: signature declares {prog.outputs.length} return values but instruction has {vals.length}"

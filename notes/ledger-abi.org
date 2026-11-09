@@ -654,9 +654,10 @@ xcontract-events corpus artifacts). One call
 2. =private_input= per FAB limb of the callee's declared RETURN
    type, each followed immediately by its =constrain_bits= (Bytes<32>
    → 8/248; Field limbs unconstrained) — results come FIRST.
-3. =private_input= cc-rand (unconstrained), then ep-mod
-   (constrain 8), then ep-div (constrain 248) — the two FAB limbs of
-   the entry-point-hash Bytes<32>, hi (leftover byte) then lo.
+3. =private_input= cc-rand (unconstrained). Up to compactc 0.34 it
+   was followed by ep-mod (constrain 8) and ep-div (constrain 248), the
+   two FAB limbs of the entry-point-hash Bytes<32>; since compactc 0.36
+   the hash is two immediates in step 5's claim instead.
 4. =transient_hash= comm = poseidon([cc-rand] ++ arg limbs ++ result
    limbs) — value-only FAB order, args as passed (post-disclose).
 5. The =kernel.claimContractCall(addr, ep, comm)= vm-code
@@ -669,8 +670,8 @@ xcontract-events corpus artifacts). One call
    exists in onchain-vm (encodes [0x17, 0xa0]).
 The result wires then flow on as ordinary public values (the vault
 inserts them into a Set and outputs them). The callee compiles as a
-plain circuit — no caller machinery on its side. ep-mod/ep-div/
-cc-rand and the result limbs are prover-supplied witnesses; the
+plain circuit — no caller machinery on its side. cc-rand and the
+result limbs are prover-supplied witnesses; the
 ledger enforces the (addr, entry-point-hash, comm) triple matches a
 real ContractCall in the transaction (structure.rs:2722-2745), and
 comm binds args+results under cc-rand hiding.

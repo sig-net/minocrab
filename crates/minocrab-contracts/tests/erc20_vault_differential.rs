@@ -689,14 +689,18 @@ fn complete_withdraw_rejects_tampering() {
 /// 2 is refused even where the verdict ignores it, and even when the MPC
 /// attested it. 0 and 1 are both accepted on a verdict that ignores them.
 fn complete_bool_output_is_constrained(circuit: Circuit, sent: fn() -> Sent) {
-    for byte in [0u64, 1] {
-        let mut s = CompleteScenario::of(sent(), Attestation::failed());
-        s.output = vec![Fr::from(byte)];
-        check(circuit, &s);
+    for verdict in [Attestation::failed, Attestation::unviable] {
+        for byte in [0u64, 1] {
+            let mut s = CompleteScenario::of(sent(), verdict());
+            s.output = vec![Fr::from(byte)];
+            check(circuit, &s);
+        }
     }
-    let mut s = CompleteScenario::of(sent(), Attestation::failed());
-    s.output = vec![Fr::from(2u64)];
-    both_reject(circuit, &s.preimage(), "a non-Boolean output on a failed verdict");
+    for verdict in [Attestation::failed(), Attestation::unviable()] {
+        let mut s = CompleteScenario::of(sent(), verdict);
+        s.output = vec![Fr::from(2u64)];
+        both_reject(circuit, &s.preimage(), "a non-Boolean output on an unexecuted verdict");
+    }
 
     let mut attestation = Attestation::executed_bool(true);
     attestation.output = vec![Fr::from(2u64)];

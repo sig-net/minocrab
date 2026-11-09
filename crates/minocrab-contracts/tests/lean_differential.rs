@@ -45,7 +45,7 @@ use midnight_transient_crypto::hash::{transient_commit, transient_hash};
 use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::{decode_offcircuit, encode_offcircuit};
-use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use minocrab::Fr;
@@ -536,13 +536,13 @@ fn known_answers() -> String {
             b
         },
     ] {
-        let v = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bs).expect("scalar");
+        let v = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bs).expect("scalar");
         out.push_str(&format!(
             "k256_scalar_from_bytes32 {} => {}\n",
             bytes_lexeme(&bs),
             enc_limbs(&v).join(" ")
         ));
-        let v = from_bytes32_offcircuit(&IrType::Secp256k1Base, &bs).expect("base");
+        let v = from_bytes_offcircuit(&IrType::Secp256k1Base, &bs).expect("base");
         out.push_str(&format!(
             "k256_base_from_bytes32 {} => {}\n",
             bytes_lexeme(&bs),
