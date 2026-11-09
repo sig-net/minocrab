@@ -204,8 +204,6 @@ wit Scalar<BLS12-381>
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -244,8 +242,6 @@ wit Scalar<BLS12-381>
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -279,8 +275,6 @@ wit Scalar<BLS12-381>
         "\
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
@@ -326,8 +320,6 @@ wit Scalar<BLS12-381>
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -368,8 +360,6 @@ wit Scalar<BLS12-381>
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -409,8 +399,6 @@ wit Scalar<BLS12-381>
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -447,8 +435,6 @@ wit Scalar<BLS12-381>
         "\
 in  outIndex_hi: Scalar<BLS12-381>
 in  outIndex_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
@@ -493,8 +479,6 @@ in  depositRequest_amount: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -535,8 +519,6 @@ wit Scalar<BLS12-381> (guarded)
 in  erc20Address: Scalar<BLS12-381>
 in  evmNonce: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -551,8 +533,6 @@ in  coin_nonce_lo: Scalar<BLS12-381>
 in  coin_color_hi: Scalar<BLS12-381>
 in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -621,8 +601,6 @@ in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -684,8 +662,6 @@ wit Scalar<BLS12-381>
         "\
 in  evmNonce: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -698,8 +674,6 @@ in  coin_nonce_lo: Scalar<BLS12-381>
 in  coin_color_hi: Scalar<BLS12-381>
 in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -769,8 +743,6 @@ in  coin_nonce_lo: Scalar<BLS12-381>
 in  coin_color_hi: Scalar<BLS12-381>
 in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -1281,8 +1253,6 @@ in  recipient_hi: Scalar<BLS12-381>
 in  recipient_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -1292,19 +1262,6 @@ in  recipient_hi: Scalar<BLS12-381>
 in  recipient_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-",
-    ),
-    (
-        "xcall::call_once_bound",
-        "\
-in  recipient_hi: Scalar<BLS12-381>
-in  recipient_lo: Scalar<BLS12-381>
-in  amount: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -1313,10 +1270,6 @@ wit Scalar<BLS12-381>
 in  recipient_hi: Scalar<BLS12-381>
 in  recipient_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
@@ -1333,8 +1286,6 @@ in  data_5: Scalar<BLS12-381>
 in  data_6: Scalar<BLS12-381>
 in  data_7: Scalar<BLS12-381>
 in  data_8: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
@@ -1377,8 +1328,6 @@ in  coin_color_hi: Scalar<BLS12-381>
 in  coin_color_lo: Scalar<BLS12-381>
 in  coin_value: Scalar<BLS12-381>
 wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 ",
     ),
     (
@@ -1386,8 +1335,6 @@ wit Scalar<BLS12-381>
         "\
 in  requestId_hi: Scalar<BLS12-381>
 in  requestId_lo: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 ",
     ),
@@ -1426,8 +1373,6 @@ in  requestId_lo: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
 out event hash (hi): Scalar<BLS12-381>
 out event hash (lo): Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
@@ -1500,8 +1445,6 @@ in  evmNonce: Scalar<BLS12-381>
 in  token: Scalar<BLS12-381>
 in  to: Scalar<BLS12-381>
 in  amount: Scalar<BLS12-381>
-wit Scalar<BLS12-381>
-wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>
 wit Scalar<BLS12-381>

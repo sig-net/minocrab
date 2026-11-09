@@ -64,8 +64,10 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
     // (the V1 Signet vocabulary). See corpus_roundtrip.rs for the file
     // counts; the v2 count does not move. Unchanged when the pr127 pin
     // gave way to v0.25.0 (b62e67e): three singleton circuits for three.
+    // 110 → 855 v3, 739 → 0 v2 at the compactc 0.36.0 bump: it writes only
+    // ZKIR v3 (3.1); corpus_roundtrip.rs names the six new files.
     assert!(
-        stdout.starts_with("110 ok, 0 failed, 739 v2 skipped"),
+        stdout.starts_with("855 ok, 0 failed, 0 v2 skipped"),
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 

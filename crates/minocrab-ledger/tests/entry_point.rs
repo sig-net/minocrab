@@ -88,9 +88,12 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // pin (v0.24.1, a80e98e) — three artifacts: the singleton, the Signet
     // module and its oracle program; the vault's 17 → 29 circuits replace
     // each other within its one artifact. Unchanged when the pr127 pin gave
-    // way to v0.25.0 (b62e67e): three artifacts for three.
+    // way to v0.25.0 (b62e67e): three artifacts for three. +3 at the
+    // compactc 0.36.0 bump: compact/examples/ecdsa/example_one,
+    // compact/examples/secp256k1/arithmetic and
+    // compact/test-center/compact/ecdsa compile under language 0.28.0.
     assert_eq!(
-        artifacts, 322,
+        artifacts, 325,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );

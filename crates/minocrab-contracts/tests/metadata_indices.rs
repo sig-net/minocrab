@@ -85,7 +85,9 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
 
     // The counts, pinned: a finish that lost every message or region would
     // pass every check above. Move them with the circuits.
-    assert_eq!((circuits, messages, regions), (228, 455, 411));
+    // 228 → 227 circuits: `xcall::call_once_bound` went with compactc 0.36,
+    // whose entry point is a constant of every call.
+    assert_eq!((circuits, messages, regions), (227, 455, 411));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

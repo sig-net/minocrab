@@ -1,13 +1,13 @@
 {
   "source": "corpus/zkir/signet-midnight-experiments/experiments/xcall/contract/src/target",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
-  "contract-info-sha256": "ff78362c096cd64d4d71b60a000fbb0c993cc7ef8cf55ff25fe4bdf023227353",
+  "compiler-version": "0.36.0",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "contract-info-sha256": "1b6cdde1e2a0b3e51743c9a9fbb0ad8645c0266a929dd7ee850a842927fa555d",
   "circuits": {
     "deposit": {
       "proof": true,
-      "zkir-sha256": "0154eac934c2cfde5863d73317ef8a5c2554447e774df0c9f32167ba89cd6aee",
+      "zkir-sha256": "2fb1f45676fe1f5414b446d1f276251b2ece2b2c79bd52cd17be3a5035b21750",
       "inputs": 3,
       "do-communications-commitment": true,
       "constraints": [
@@ -18,7 +18,7 @@
     },
     "depositBig": {
       "proof": true,
-      "zkir-sha256": "70b3681ed5987c7f5dca17d32daa554c141a9f8b39e47e9579c62d4f102da5e6",
+      "zkir-sha256": "634a61399c4c21895881eab46ff9643378028c386934f5534e758507a86e8d5c",
       "inputs": 9,
       "do-communications-commitment": true,
       "constraints": [
@@ -35,7 +35,7 @@
     },
     "depositEmit": {
       "proof": true,
-      "zkir-sha256": "ebfcd7be3f6a5d59851b032d896b91049eacb4db470b7c381c0dfe84d8fa6470",
+      "zkir-sha256": "93635055b397245aba284d8a844796c2c2e9549f34eef2830348d57fe295c034",
       "inputs": 3,
       "do-communications-commitment": true,
       "constraints": [
