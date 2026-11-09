@@ -1,135 +1,136 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 34694,
-      "hash": "72725753edaba97d1e25d57ec9562f27c620d042d099abdfa4528494304520eb"
+      "size": 34759,
+      "hash": "22a81328a1ccc81c862afdfcab881a3789932c516415f811f0a4a88bc8cf96e5"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 45242,
-      "hash": "effe587632b9e7bd4fbe0d28699b401ad4d3bb2c777dad2ae2bce58324d71991"
+      "size": 45270,
+      "hash": "755d87e93ebfa6684ca87a83ed5e65ffe1391449bd2b9e16702c5fb05b64ec53"
     },
     "index.js": {
       "type": "file",
-      "size": 160352,
-      "hash": "93e641ad72fa102270ec6ef19bf3eff5b4c69fa202ea2676bf563dab1dac809a"
+      "size": 172500,
+      "hash": "4cce0c8977d27610a6448ba082594975cb7a4f1270a750d72a842fc2a7cd7349"
     },
     "index.js.map": {
       "type": "file",
-      "size": 7948,
-      "hash": "55a8e6c730e7f1a8e3389467e07069c476f7fae965a97e4b0c17ea9bd69eb71e"
+      "size": 7988,
+      "hash": "0f98b58b93acea8b6c242cde741e2db3ad2f3e35169996efa70e4a6457d0b210"
     }
   },
   "zkir": {
     "type": "directory",
     "getUnshieldedBalanceGtTest.zkir": {
       "type": "file",
-      "size": 3728,
-      "hash": "29800a85f21b8ff27538a5eb54bab6efdca2481cb5b78fc8d3dee60cf1962f5b"
+      "size": 1761,
+      "hash": "3e170fe031495ad7a1d66897cc64c50ef1774498d5f2290000a2e2b04b247584"
     },
     "getUnshieldedBalanceLtTest.zkir": {
       "type": "file",
-      "size": 3728,
-      "hash": "12877bd090687880eb728e863c7238c13f2daf42778c55ae0b33b676f7fe20bd"
+      "size": 1761,
+      "hash": "b9e09e8e093a4eec308703e66b6389f4f4a9b26eb88fe0803c8071f9f22a3704"
     },
     "getUnshieldedBalanceTest.zkir": {
       "type": "file",
-      "size": 3302,
-      "hash": "33fa5c66b52e3494caa7f4d5034b4e2852ef2dc90f11c41546092897dbe5ca84"
+      "size": 1479,
+      "hash": "19c692dca3532aada4b9a6fe0b1d381ea5b9e961f5883167dd9a026bb77ef714"
     },
     "mintShieldedToContractTest.zkir": {
       "type": "file",
-      "size": 8496,
-      "hash": "471dcaaf1e245d966abe3429667311833846df44e18927414163f2287f093497"
+      "size": 5543,
+      "hash": "c70edc0e74e9fc9246d233c5727f70cbc0ba1f9c308b7cd4217ebf6c1d716175"
     },
     "mintShieldedToSelfTest.zkir": {
       "type": "file",
-      "size": 9063,
-      "hash": "81afa167efce23a2c8a0eef6d634156ead59dd8c94c012da79199c877f31aac8"
+      "size": 5726,
+      "hash": "2258d8d91d79f821e31a8991a25da973d3576f8ab048ff7f9bc6035fba9f7d5c"
     },
     "mintShieldedToUserTest.zkir": {
       "type": "file",
-      "size": 6091,
-      "hash": "f878898b9cefbaf7a65db891aa36b09ff7e7879d55a6366d5002fdc7475c5160"
+      "size": 4435,
+      "hash": "ec6dcd58dad969361b843b8a097b96dc349ff218ff319b5c2c9389d73b1d8b48"
     },
     "mintUnshieldedToContractTest.zkir": {
       "type": "file",
-      "size": 12044,
-      "hash": "e6051029b5e73489587054f87af25dd0759de9cd957c544b29a51bd93714eeb5"
+      "size": 6010,
+      "hash": "0914e7d1002096b189ec161ceed306b89dfd13edc490dfe62cbc8f2aef4bfbd3"
     },
     "mintUnshieldedToSelfTest.zkir": {
       "type": "file",
-      "size": 12585,
-      "hash": "4bf21ae8e41ac78ea851e0b8190e83f7cc9d85a05fa9f5824e9783f8d247d6e4"
+      "size": 6193,
+      "hash": "f44688a83c58df98920361abe1d8e6b61e920076b481319a224f2cf7d5697a08"
     },
     "mintUnshieldedToUserTest.zkir": {
       "type": "file",
-      "size": 7143,
-      "hash": "e749fe5f5ae0acff090bf1bf0a4983ad595c1dfd93a3b5176998eb64aa89bafd"
+      "size": 4180,
+      "hash": "8aebb826f5408b799494560a040d9a318f3cb883c570c630a165587ae7621cec"
     },
     "receiveShieldedTest.zkir": {
       "type": "file",
-      "size": 2995,
-      "hash": "79be047ab91aab2226b70eb69237c06a1139af77906fc0ad68dc8bd81bf36299"
+      "size": 2296,
+      "hash": "9a32c0967ca06de0b996f2b36b0877d654948ef1e64b4a141c50294e4754ce22"
     },
     "receiveUnshieldedTest.zkir": {
       "type": "file",
-      "size": 3367,
-      "hash": "374fa3199f4135bf1d70eafdb41baf6a9b9b61eae2f74e11193359e8c6cc3927"
+      "size": 1651,
+      "hash": "ddcdfdc769337aac7c31d27181dc5b1c7c9d3746e6276f9db322db1ae9d0771c"
     },
     "sendImmediateShieldedToContractTest.zkir": {
       "type": "file",
-      "size": 12122,
-      "hash": "edd1df6f084e19a25c30d5f290da2219e5583d4edfd11eea0514654cebee8379"
+      "size": 8921,
+      "hash": "6c9c4a275859aefe8480b0b6b8c7a509f9ac9b4afc7066613ef9e84d1c260952"
     },
     "sendImmediateShieldedToSelfTest.zkir": {
       "type": "file",
-      "size": 12654,
-      "hash": "68f455bd86d7fabba8da1baec0837ef387d511cdcfbfd88c89c3a22b1f37a050"
+      "size": 9100,
+      "hash": "9d0ca36c7017b3081247e9d5f2a69ebd7855531988d3aefb3854f26bbcd08b37"
     },
     "sendImmediateShieldedToUserTest.zkir": {
       "type": "file",
-      "size": 9868,
-      "hash": "5f6c0fa66b2856c65af07394c40583280bcf8b2479584f4a10af6d226e0df7e4"
+      "size": 7541,
+      "hash": "da440545c00679a6e1cb5bb8077ebc1d7fe515a77aab787f2af1feb3fd55af9d"
     },
     "sendShieldedToContractTest.zkir": {
       "type": "file",
-      "size": 12177,
-      "hash": "1519d40ecf8179cae00f4384bb7b8dbddbd4c98ec7065e52af1668834d162d5b"
+      "size": 9046,
+      "hash": "3e84a6235b89a1e15f1c93f403a4b2c5149ab48f9ef064368acbef9eee5c5a7b"
     },
     "sendShieldedToSelfTest.zkir": {
       "type": "file",
-      "size": 12765,
-      "hash": "864ea16e7d6570ac2f3165af4c58a3615273ea3477e25347990ec7b29060f1d1"
+      "size": 9225,
+      "hash": "6e0d0b7d9c2dd9b3489e624192b5f333957e0d20c0d610668f78c4879c397e57"
     },
     "sendShieldedToUserTest.zkir": {
       "type": "file",
-      "size": 9923,
-      "hash": "718d6604aab9145c1d5fcb0ef5eb0e28cbfd5388046e0ec590d43cfaa0fa8b54"
+      "size": 7665,
+      "hash": "0327c0f2f58213a69b585d6645e519e3475f480ba5b6c20e895e1ab8c4946e3c"
     },
     "sendUnshieldedToContractTest.zkir": {
       "type": "file",
-      "size": 11130,
-      "hash": "d69e1e7427808adbb20612e1c0e6c29a189b921d00b8b4e7d05535b8f54e00b8"
+      "size": 4920,
+      "hash": "2a40459b7b2942e8b9297e8fa533a4aa8eb57a2566d101e360904706d7cc9713"
     },
     "sendUnshieldedToSelfTest.zkir": {
       "type": "file",
-      "size": 11703,
-      "hash": "9c4d5da7986a73c1e1399190642dd96df1f820857e51caffdc4132a5c5455d4e"
+      "size": 5103,
+      "hash": "470e15fdae1fb40b3280f61454d1524cd96e61764ec8adaae43e0d3ba214edf4"
     },
     "sendUnshieldedToUserTest.zkir": {
       "type": "file",
-      "size": 6259,
-      "hash": "3cb847833f375b62ca35b65dd4e2871cd773524858e650137de14c564e902d8f"
+      "size": 3117,
+      "hash": "8fa58e1d5f2e53faacf1a6d188e28b6df4f5ff76c4a20451b24437ad772358a1"
     }
   }
 }

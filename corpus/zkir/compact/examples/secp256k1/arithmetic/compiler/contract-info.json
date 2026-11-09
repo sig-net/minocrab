@@ -1,0 +1,164 @@
+{
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "add_base",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Base"
+      }
+    },
+    {
+      "name": "subtract_base",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Base"
+      }
+    },
+    {
+      "name": "multiply_base",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Base"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Base"
+      }
+    },
+    {
+      "name": "add_scalar",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "subtract_scalar",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    },
+    {
+      "name": "multiply_scalar",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "a",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "type-name": "Secp256k1Scalar"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "base",
+      "index": 0,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Secp256k1Base"
+      }
+    },
+    {
+      "name": "scalar",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Secp256k1Scalar"
+      }
+    }
+  ]
+}

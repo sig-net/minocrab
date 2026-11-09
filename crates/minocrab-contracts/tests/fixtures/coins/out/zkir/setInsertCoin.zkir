@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%coin.0", "type": "Scalar<BLS12-381>" },
@@ -29,7 +29,7 @@
     { "op": "cond_select", "output": "%data.10", "bit": "%recipient.5", "a": "%recipient.6", "b": "%recipient.8" },
     { "op": "cond_select", "output": "%data.11", "bit": "%recipient.5", "a": "%recipient.7", "b": "%recipient.9" },
     { "op": "persistent_hash", "output": "%bytes.12", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%coin.0", "%coin.1", "%coin.2", "%coin.3", "%coin.4", "%recipient.5", "%data.10", "%data.11"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%hash.13", "%hash.14"], "bytes": "%bytes.12" },
+    { "op": "bytes_into_natives", "outputs": ["%hash.13", "%hash.14"], "bytes": "%bytes.12" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x34"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%hash.14", "%hash.13"] },

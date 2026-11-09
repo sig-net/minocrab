@@ -1,50 +1,51 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 1683,
-      "hash": "127f662ef8a9d5b9d9a8661f8099d15afcb67834b778d50334385d4bcb4fc937"
+      "size": 1748,
+      "hash": "5fcbd500cc787e4959908a38fe301c6fbc8ac0c1bd723429259a42d40bbf7efb"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 2956,
-      "hash": "622ddea2efec10fec0e11a888f4fd34cd659f838231f609b2ff303d0c82952d1"
+      "size": 2984,
+      "hash": "751f91957dab72deebd0e46ce7711683ec9f5a26b61acfc161746fb631f0da09"
     },
     "index.js": {
       "type": "file",
-      "size": 42314,
-      "hash": "07b3acdeb333b9923ad96bf7234f3f6f12c2606ad1c9ab06ae0c633e6529bea0"
+      "size": 44124,
+      "hash": "d6d34a200e06c0b79664811b27ff0b33865e33b440ee60dff252562a148579ae"
     },
     "index.js.map": {
       "type": "file",
-      "size": 1668,
-      "hash": "30fb0e979b208463a6c900506aac5e79b22ebdeda8d6a63654187387033a6c87"
+      "size": 1725,
+      "hash": "1b8088c2a3313ec66a9dfa1185f9f1d3e5d2a48fbac12e62bf1fa1dee85f27d6"
     }
   },
   "zkir": {
     "type": "directory",
     "dequeue.zkir": {
       "type": "file",
-      "size": 8052,
-      "hash": "3c150597ecefa37bef70a78a209f63601f8a981e6c5cc0490b3d715499c98a46"
+      "size": 3365,
+      "hash": "f91614d461024a68aac8a4079025de908dede82ddd6b9b6cee590c1a0f3693f4"
     },
     "enqueue.zkir": {
       "type": "file",
-      "size": 3506,
-      "hash": "6f7f6748427a8c14b4f68d86aa147c24738c9576b8c4f9fdb0f470b82e7440df"
+      "size": 1738,
+      "hash": "1ad167133f0fb5ccb69dbbbf68ecaa85d07773061efd7c6c3795be4a8a4992a3"
     },
     "isEmpty.zkir": {
       "type": "file",
-      "size": 1630,
-      "hash": "d46e942952b4ea7f57d5b28bedd7047ed49ec189a327d891cd2e4c9284b4e101"
+      "size": 928,
+      "hash": "870393f135af728cdf26f948312048332e18be07bc386565a4cf9a12349b8c7a"
     }
   }
 }

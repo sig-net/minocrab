@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%amount.0", "type": "Scalar<BLS12-381>" },
@@ -139,7 +139,7 @@
     { "op": "reconstitute_field", "output": "%div.166", "divisor": "%div.165", "modulus": "%t.8", "bits": 8 },
     { "op": "reconstitute_field", "output": "%payload.167", "divisor": "%div.166", "modulus": "%t.6", "bits": 8 },
     { "op": "persistent_hash", "output": "%bytes.168", "alignment": [{ "tag": "atom", "value": { "length": 256, "tag": "bytes" } }], "inputs": ["0x00", "0x00", "0x00", "0x00", "0x00", "0x00", "0x00", "%payload.137", "%payload.167"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%eventHash.169", "%eventHash.170"], "bytes": "%bytes.168" },
+    { "op": "bytes_into_natives", "outputs": ["%eventHash.169", "%eventHash.170"], "bytes": "%bytes.168" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x70", "0x01", "0x01", "0x02"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%eventHash.170", "%eventHash.169"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x00"] },

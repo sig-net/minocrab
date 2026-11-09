@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%a.0", "type": "Scalar<BLS12-381>" },
@@ -41,7 +41,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%selfAddr.12", "%selfAddr.13"] },
     { "op": "persistent_hash", "output": "%bytes.14", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d636e5b76315d", "%a.0", "%a.1", "%a.2", "%a.3", "%a.4", "0x00", "%selfAddr.12", "%selfAddr.13"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%tmp.15", "%tmp.16"], "bytes": "%bytes.14" },
+    { "op": "bytes_into_natives", "outputs": ["%tmp.15", "%tmp.16"], "bytes": "%bytes.14" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%tmp.16", "%tmp.15"] },
@@ -49,7 +49,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0xa2"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "persistent_hash", "output": "%bytes.17", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d636e5b76315d", "%b.6", "%b.7", "%b.8", "%b.9", "%b.10", "0x00", "%selfAddr.12", "%selfAddr.13"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%tmp.18", "%tmp.19"], "bytes": "%bytes.17" },
+    { "op": "bytes_into_natives", "outputs": ["%tmp.18", "%tmp.19"], "bytes": "%bytes.17" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%tmp.19", "%tmp.18"] },
@@ -68,7 +68,7 @@
     { "op": "constrain_bits", "val": "%t.28", "bits": 128 },
     { "op": "copy", "output": "%t.29", "val": "%t.28" },
     { "op": "persistent_hash", "output": "%bytes.30", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%t.25", "%t.27", "%a.2", "%a.3", "%t.29", "0x00", "%selfAddr.12", "%selfAddr.13"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%cm.31", "%cm.32"], "bytes": "%bytes.30" },
+    { "op": "bytes_into_natives", "outputs": ["%cm.31", "%cm.32"], "bytes": "%bytes.30" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x02"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%cm.32", "%cm.31"] },

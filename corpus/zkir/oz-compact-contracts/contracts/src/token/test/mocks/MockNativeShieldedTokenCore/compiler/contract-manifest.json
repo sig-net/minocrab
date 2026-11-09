@@ -1,85 +1,86 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 10923,
-      "hash": "864a81382006e7bcbbb2c250981a2438b8dd20383e8ee46b3158cdd261a21d73"
+      "size": 10988,
+      "hash": "9cad6ed87af637845bec9fed222e51eec59746460c6215e7975938b192a2d36d"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 6825,
-      "hash": "92b32f02d1fcca647b59a95f031525cefa5c2fb721977332a7f1f7cf6374e721"
+      "size": 6853,
+      "hash": "ea36b6cd733e14ccbef1fbe75609f8a2aa081da04d6b26d31981d10397e1be4d"
     },
     "index.js": {
       "type": "file",
-      "size": 96004,
-      "hash": "dfc6baaf7bae5f50b5e310388059e742a41009823b30c341025b120e28e1b399"
+      "size": 100852,
+      "hash": "25392d1dd9d9e21546eca8debd38f7d3e08e5165018ac24d1f6b303383d97114"
     },
     "index.js.map": {
       "type": "file",
-      "size": 5301,
-      "hash": "0d69667d3942f563a0adcd0a994ad23ae709ccf1b4ddc68e25ab74cfb81fff48"
+      "size": 5365,
+      "hash": "9f967f4623b71f3ce5cb485d2768db141ce2452fcdd9649fe708fd7a808ecedd"
     }
   },
   "zkir": {
     "type": "directory",
     "_burn.zkir": {
       "type": "file",
-      "size": 23037,
-      "hash": "6573587c2dcd150259703b16fd61ccb03f0950a8261ada2cf95bb487a5ff0b67"
+      "size": 17064,
+      "hash": "405beea7d137cf055133b3c5d3a9e4c6ca91b55327704f8bbe304928d7c4e2d7"
     },
     "_burnFromSelf.zkir": {
       "type": "file",
-      "size": 11763,
-      "hash": "79d33da944d65f770e8a8a44d3b3893d02dfd7312629967c2d08265a8d0aeaae"
+      "size": 9153,
+      "hash": "2254c0ab531e7b6659bb153ae07c21f3568b2a043e0cbd33ac1e3910da0862de"
     },
     "_mint.zkir": {
       "type": "file",
-      "size": 10528,
-      "hash": "f7725f2a1e907fa52f9f5adc4bb7096da8ff58f5dfa836bcf3c9f22a1808d1bd"
+      "size": 7440,
+      "hash": "c4da2e8d7651f734730af831812c995cb83632dbd10b7567fd10c3f73fe9aedd"
     },
     "assertInitialized.zkir": {
       "type": "file",
-      "size": 954,
-      "hash": "e3885ed28e1e17e56970f99f6223f43dd677d3bb79c999a9d0d1f5c7af0dd7a0"
+      "size": 510,
+      "hash": "7a9db27bdf432d07c7d3c67d5c54350640cd9e9c57b29e35a3a74a2d8396a295"
     },
     "assertNotInitialized.zkir": {
       "type": "file",
-      "size": 1009,
-      "hash": "5cd6ffe2b24679073711b49b66ff925d40d5027d49f8771b6e7ce339a3912144"
+      "size": 598,
+      "hash": "83a053f07c784571da4b0eaeca10d6bb614d754c938d2209ffbd14c20f3ddfed"
     },
     "decimals.zkir": {
       "type": "file",
-      "size": 1624,
-      "hash": "8cf17f89008b3f71dd6665675142131a2b9e6f0ad9d8d060060a4198866b7785"
+      "size": 899,
+      "hash": "c6ae2d43ff07315cd231e8aa34a1bce600be27b80d2303e58b553eeac3a196d1"
     },
     "isInitialized.zkir": {
       "type": "file",
-      "size": 953,
-      "hash": "f4a6200cbe554ea77509b53c8d1b9af709c81675690c7e86564589a02ceb8513"
+      "size": 536,
+      "hash": "5426b6645fdc8385e7d56426a9be9fc7b4f9343a1abeb166bca1e22645fdf59f"
     },
     "name.zkir": {
       "type": "file",
-      "size": 1625,
-      "hash": "d65121b43d3bfdb99e2006738beb3c63d871f2e02052f8b469bdb3dc3c56f077"
+      "size": 900,
+      "hash": "e693921b36ebf063c716d766d4b282363fcbeb3aee0848c08829a7001830e201"
     },
     "symbol.zkir": {
       "type": "file",
-      "size": 1664,
-      "hash": "5c6e64e8a46b39e75c5351c331ddd80406571b1d880595810c508189bd3186ac"
+      "size": 900,
+      "hash": "a45116f6000bf7620eef33de7aed4af9e0e9a3a768c69d00086bec4e2da407d1"
     },
     "tokenColor.zkir": {
       "type": "file",
-      "size": 2325,
-      "hash": "6aa64122a282f3407cede99ce6ccf76a6d0002edbedd5108bc432c434bde4b71"
+      "size": 1811,
+      "hash": "d045801f7b30ba0c0767e368ed8cbf1cf288aedd3fdb36aefddabb7bdc7b3c9f"
     }
   }
 }

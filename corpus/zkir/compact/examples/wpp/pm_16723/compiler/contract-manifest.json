@@ -1,55 +1,56 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 4361,
-      "hash": "e18076734c68abcea2d8d11c2e80ceb89d0f59d524a72f1f77692575a0ebab5b"
+      "size": 4426,
+      "hash": "95c9e4bff8e7a0f79b78d07801dccb9b9e685cef40a54898a5cdcbbacdd11fda"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 2898,
-      "hash": "e08319a1e6c765c6b8cfb10479d0858f61c72b434d7a173cd8fef696e14be6a8"
+      "size": 2926,
+      "hash": "3c085320b4b058fd95d6a4f529fb118ce20e68d51ff23c07be2612fa6471eb21"
     },
     "index.js": {
       "type": "file",
-      "size": 88408,
-      "hash": "d2c975c1ba349a305f6a53dea99c000cd57b64f1e92213827f9ac226b361f5b8"
+      "size": 90307,
+      "hash": "e60b93bccc615e783d8162baca03845b98d7df44250c8235bdf864e2fce979ea"
     },
     "index.js.map": {
       "type": "file",
-      "size": 3949,
-      "hash": "131b6fb99c636ea14b68bf280093a92dc779b890ab2c7c050065629ab09f053f"
+      "size": 4008,
+      "hash": "2857c7f3bb4b91e31039b154c963a023ada80ed66c182019052427a51ba7a628"
     }
   },
   "zkir": {
     "type": "directory",
     "alan.zkir": {
       "type": "file",
-      "size": 19939,
-      "hash": "8fde81e0d1ea6519624ef2f2b71b83ef58b278a185f584e4427156a6183d8578"
+      "size": 7550,
+      "hash": "fdd7e5048886cdf654e40fc44fc068a43bb3064190d6149e62c39fb0c22366bf"
     },
     "bob.zkir": {
       "type": "file",
-      "size": 7271,
-      "hash": "23cdd55899be68dbaff8afc6eab705d228340a29489ddd87822a810f9b98cb03"
+      "size": 2607,
+      "hash": "9858e6bdb5d1c7f05d2fb88ff70f51d4b0e63c4cbb4a0bb2e5bea416d8131f41"
     },
     "greg.zkir": {
       "type": "file",
-      "size": 1276,
-      "hash": "e6293e0ab2757900e9acf7cc0f627347583f8adca930b14e0ffd29e08ed97a0c"
+      "size": 681,
+      "hash": "1bc510b550ec45ec34ba9ca67089b00a399327626b80b57478ab6d6fc0904de5"
     },
     "toby.zkir": {
       "type": "file",
-      "size": 2995,
-      "hash": "ad0c3f4bf756df1ff4e48f9cb4776aa978a690a8c361abee54d21973cd60d0aa"
+      "size": 1415,
+      "hash": "5d5f3860454e64247d8890323a4f778aa83bf43902770c0fda7c8b7e2a4d50ea"
     }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%recipient.0", "type": "Scalar<BLS12-381>" },
@@ -31,7 +31,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%contractAddress.8", "%contractAddress.9"] },
     { "op": "persistent_hash", "output": "%bytes.10", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", "0x00", "0x74657374792d74657374", "%contractAddress.8", "%contractAddress.9"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%t.11", "%t.12"], "bytes": "%bytes.10" },
+    { "op": "bytes_into_natives", "outputs": ["%t.11", "%t.12"], "bytes": "%bytes.10" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x04"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "0x00", "0x74657374792d74657374"] },
@@ -49,7 +49,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0xa2"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "persistent_hash", "output": "%bytes.13", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%mintNonce.2", "%mintNonce.3", "%t.12", "%t.11", "0x01", "0x01", "%mintRecipient.4", "%mintRecipient.5"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%cm.14", "%cm.15"], "bytes": "%bytes.13" },
+    { "op": "bytes_into_natives", "outputs": ["%cm.14", "%cm.15"], "bytes": "%bytes.13" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x02"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%cm.15", "%cm.14"] },

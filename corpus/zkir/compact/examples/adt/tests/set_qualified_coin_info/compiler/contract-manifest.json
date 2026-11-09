@@ -1,45 +1,46 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 1514,
-      "hash": "3ad6accf0df99e7983bb23d70b895ea6b526f0671e173e34484392b91b73c2a2"
+      "size": 1579,
+      "hash": "3c2b6286e648337a8c94b770def1062bb3fb9e22333c4f8af729735de6f5d5f3"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 2072,
-      "hash": "fcebebaec88ed97b2be93b76e6ab5fab3763d010e464ecdf6379ede88ade5b06"
+      "size": 2100,
+      "hash": "0343748dba01ab010117aa45fdc3e072f84185ac8f3db9d42bd1e32789841ba6"
     },
     "index.js": {
       "type": "file",
-      "size": 78808,
-      "hash": "e9fb62e9d0af12ac7deccf4a03b2629a6b0033d6871e5fa97de29bb84e415d83"
+      "size": 80381,
+      "hash": "1746f88e487abc0277f6413f2f4c69ad0602877e7a776fe88f0182726b1bfb2c"
     },
     "index.js.map": {
       "type": "file",
-      "size": 1918,
-      "hash": "3a15aec0d96de69f6c6792c01cc797ade3bd505f7db7509de7bdb63e0a250d47"
+      "size": 1974,
+      "hash": "c02705dca11a07097e9da8ded5193e54196c428d38604a4e35f7c9940b02e959"
     }
   },
   "zkir": {
     "type": "directory",
     "test_QualifiedShieldedCoinInfo.zkir": {
       "type": "file",
-      "size": 15165,
-      "hash": "fd4a5ef6b547414e15c8e88a8224bd542f30b71ec74f97dca3877987fd3a2e49"
+      "size": 7430,
+      "hash": "53444bbbd7243e7511b9632f808ce6ce865930bd429d2bd6d4d41977197d9bec"
     },
     "test_ShieldedCoinInfo.zkir": {
       "type": "file",
-      "size": 19889,
-      "hash": "a92684cd0894c905cebd6c944743f0e9d05815b6ed908a2e7e8f3b40a05b0541"
+      "size": 10831,
+      "hash": "b62d35c3c08b6a9c39f3246a03f3251110aa874898cfc6e5ba8a850e4dcbb1c5"
     }
   }
 }

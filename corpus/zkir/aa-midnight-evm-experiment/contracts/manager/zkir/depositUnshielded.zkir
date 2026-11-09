@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%colour.0", "type": "Scalar<BLS12-381>" },
@@ -42,9 +42,9 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0xa2"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "persistent_hash", "output": "%bytes.7", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["%account.3", "%account.4", "%colour.0", "%colour.1", "0x00", "0x61613a6d616e616765723a756e736869656c6465643a7631"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%tmp.8", "%tmp.9"], "bytes": "%bytes.7" },
+    { "op": "bytes_into_natives", "outputs": ["%tmp.8", "%tmp.9"], "bytes": "%bytes.7" },
     { "op": "persistent_hash", "output": "%bytes.10", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["%account.3", "%account.4", "%colour.0", "%colour.1", "0x00", "0x61613a6d616e616765723a756e736869656c6465643a7631"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%k.11", "%k.12"], "bytes": "%bytes.10" },
+    { "op": "bytes_into_natives", "outputs": ["%k.11", "%k.12"], "bytes": "%bytes.10" },
     { "op": "public_input", "type": "Scalar<BLS12-381>", "output": "%t.13", "guard": null },
     { "op": "impact", "guard": "0x01", "inputs": ["0x30"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x50", "0x01", "0x01", "0x03"] },

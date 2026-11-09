@@ -1,55 +1,56 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 1519,
-      "hash": "97d39f0f08fe36c8a2060402e082facd5a018ca21e5c7acf9a1e4c9f184791fa"
+      "size": 1584,
+      "hash": "3dffef4bac1cf61095ab1eb7d64f5a39cdf94974dd04f728c82a37aed663e2ba"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 2606,
-      "hash": "806e07f38f81b0f97d7b1dc07ad3f5df81bcaa652c506ec26d9f2f87c09919e0"
+      "size": 2634,
+      "hash": "755dc1b5ee6727975a8797d87591144ed5a0491fa450a55b73fe38a7f669be07"
     },
     "index.js": {
       "type": "file",
-      "size": 18535,
-      "hash": "e8d51f5844c8ad4cd865cc36421fe1351428d2f387e1b999b927914e617d3f94"
+      "size": 20445,
+      "hash": "51cffcf0db400a2ed9cdcfeb450027ab329c700814e536e404e2d063b25f4687"
     },
     "index.js.map": {
       "type": "file",
-      "size": 1044,
-      "hash": "2e3517bd4c21d30bbd73a59643220b0b03bd6b9ca41763ed7f80af21afbe3b5f"
+      "size": 1102,
+      "hash": "492dddc6afc63d0db314cf813fce775506baa26b1ae496028633f4fd4c1b03b1"
     }
   },
   "zkir": {
     "type": "directory",
     "testBlockTimeGt.zkir": {
       "type": "file",
-      "size": 1453,
-      "hash": "5db37727be6e9822d6fb889728104c660c291dfce0466a5b7d0ce28c1ac2dd55"
+      "size": 810,
+      "hash": "fe5dab9bcbd2a75b61e557336f597908829e30ec42fb527a1fabfdd88e7bbcc3"
     },
     "testBlockTimeGte.zkir": {
       "type": "file",
-      "size": 1548,
-      "hash": "25c1e13a8ca9b03757982ca9e600d7d7ac6cb1b81e74a15527c17da0623f3e8a"
+      "size": 898,
+      "hash": "7032cdb940e3d2f0052b68f66de850a02271ace17a7fa82bcad3e8dde6846701"
     },
     "testBlockTimeLt.zkir": {
       "type": "file",
-      "size": 1453,
-      "hash": "e6818f04e1cf851d4ec1234603665ecfd5223ebe0e8255745a0b3a2c59df82e2"
+      "size": 810,
+      "hash": "468031a4832478165577d74bdcf09fe15f9e9c7f6e5767b2adc588262cc606dc"
     },
     "testBlockTimeLte.zkir": {
       "type": "file",
-      "size": 1548,
-      "hash": "9ea4100483721ff0867494387c66cda67b5a0fde6df4b57495e18a114f883834"
+      "size": 898,
+      "hash": "85a6a811e674fc0890ba5198302bd8c31913c3475bbc11f59129092ac16b3151"
     }
   }
 }

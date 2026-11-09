@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%requestId.0", "type": "Scalar<BLS12-381>" },
@@ -26,7 +26,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%value.7", "%value.8"] },
     { "op": "persistent_hash", "output": "%bytes.9", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%coin.2", "%coin.3", "%coin.4", "%coin.5", "%coin.6", "0x00", "%value.7", "%value.8"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%tmp.10", "%tmp.11"], "bytes": "%bytes.9" },
+    { "op": "bytes_into_natives", "outputs": ["%tmp.10", "%tmp.11"], "bytes": "%bytes.9" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x01"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%tmp.11", "%tmp.10"] },
@@ -41,7 +41,7 @@
     { "op": "cond_select", "output": "%data.14", "bit": "0x00", "a": "0x00", "b": "%value.12" },
     { "op": "cond_select", "output": "%data.15", "bit": "0x00", "a": "0x00", "b": "%value.13" },
     { "op": "persistent_hash", "output": "%bytes.16", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%coin.2", "%coin.3", "%coin.4", "%coin.5", "%coin.6", "0x00", "%data.14", "%data.15"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%hash.17", "%hash.18"], "bytes": "%bytes.16" },
+    { "op": "bytes_into_natives", "outputs": ["%hash.17", "%hash.18"], "bytes": "%bytes.16" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x33"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%hash.18", "%hash.17"] },

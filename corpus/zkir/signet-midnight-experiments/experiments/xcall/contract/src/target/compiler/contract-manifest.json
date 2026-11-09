@@ -1,32 +1,33 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 2181,
-      "hash": "ff78362c096cd64d4d71b60a000fbb0c993cc7ef8cf55ff25fe4bdf023227353"
+      "size": 2246,
+      "hash": "1b6cdde1e2a0b3e51743c9a9fbb0ad8645c0266a929dd7ee850a842927fa555d"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 2673,
-      "hash": "e9a5e93fa207fdb1ed8c730bd609b6c547e6920a8f69fc3e72e041591aa9a813"
+      "size": 2701,
+      "hash": "2c1bde084cc29e84947960570e4743c4490459564f2971f410896e983d933a86"
     },
     "index.js": {
       "type": "file",
-      "size": 45540,
-      "hash": "9caece2a98150c8b496ad88625b526e8228da5d5460533151e2d3ed1efed8e51"
+      "size": 47396,
+      "hash": "1df59f776826f3310fb628bb91213da16f49d535f86a0626a112c91d592cc44b"
     },
     "index.js.map": {
       "type": "file",
-      "size": 1751,
-      "hash": "2d5005a5334608e71fd84d41c76041192ed4bdd6dcb7ebb7766bde6f90e2e036"
+      "size": 1808,
+      "hash": "ab4ac39c0d2b199e882d9cb80b6e954965a550484316a788d5a73f4ba086ab26"
     }
   },
   "zkir": {
@@ -34,17 +35,17 @@
     "deposit.zkir": {
       "type": "file",
       "size": 1414,
-      "hash": "0154eac934c2cfde5863d73317ef8a5c2554447e774df0c9f32167ba89cd6aee"
+      "hash": "2fb1f45676fe1f5414b446d1f276251b2ece2b2c79bd52cd17be3a5035b21750"
     },
     "depositBig.zkir": {
       "type": "file",
       "size": 1431,
-      "hash": "70b3681ed5987c7f5dca17d32daa554c141a9f8b39e47e9579c62d4f102da5e6"
+      "hash": "634a61399c4c21895881eab46ff9643378028c386934f5534e758507a86e8d5c"
     },
     "depositEmit.zkir": {
       "type": "file",
       "size": 26940,
-      "hash": "ebfcd7be3f6a5d59851b032d896b91049eacb4db470b7c381c0dfe84d8fa6470"
+      "hash": "93635055b397245aba284d8a844796c2c2e9549f34eef2830348d57fe295c034"
     }
   }
 }

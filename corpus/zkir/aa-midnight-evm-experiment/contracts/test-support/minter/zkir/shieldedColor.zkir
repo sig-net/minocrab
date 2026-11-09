@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
   ],
@@ -19,7 +19,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%contractAddress.2", "%contractAddress.3"] },
     { "op": "persistent_hash", "output": "%bytes.4", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", "%domain_sep.0", "%domain_sep.1", "%contractAddress.2", "%contractAddress.3"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%t.5", "%t.6"], "bytes": "%bytes.4" },
+    { "op": "bytes_into_natives", "outputs": ["%t.5", "%t.6"], "bytes": "%bytes.4" },
     { "op": "output", "vals": ["%t.6", "%t.5"] }
   ]
 }
