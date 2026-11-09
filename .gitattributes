@@ -1,0 +1,4 @@
+# compactc's compiled output (the corpus and each test fixture's out/):
+# regenerated, never edited, so GitHub collapses it in diffs.
+corpus/zkir/** linguist-generated=true
+crates/minocrab-contracts/tests/fixtures/*/out/** linguist-generated=true

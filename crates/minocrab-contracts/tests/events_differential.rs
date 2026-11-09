@@ -84,7 +84,7 @@ impl Scenario {
 
     /// The reference Impact program with `emits` events.
     fn ops(&self, emits: usize) -> Vec<VmOp> {
-        let key = |i: u8| Key::Value(bytesn_value(1, &[i]));
+        let key = |i: u8| Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"));
         let amount_av = bytesn_value(16, &self.amount.to_le_bytes());
         let mut ops: Vec<VmOp> = Vec::new();
         if emits > 0 {
@@ -113,11 +113,11 @@ impl Scenario {
             Op::Ins { cached: true, n: 1 },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(1, &[events::LAST_AMOUNT])),
+                value: cell(bytesn_value(1, &[events::LAST_AMOUNT])).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
-                value: cell(amount_av.clone()),
+                value: cell(amount_av.clone()).try_into_checked().expect("a canonical value"),
             },
             Op::Ins {
                 cached: false,
@@ -130,11 +130,11 @@ impl Scenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &self.recipient)),
+                value: cell(bytesn_value(32, &self.recipient)).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
-                value: cell(amount_av),
+                value: cell(amount_av).try_into_checked().expect("a canonical value"),
             },
             Op::Ins {
                 cached: false,
@@ -147,8 +147,8 @@ impl Scenario {
             ops.extend([
                 Op::Push {
                     storage: false,
-                    value: StateValue::Array(
-                        vec![
+                    value: StateValue::<InMemoryDB>::Array(
+                        [
                             cell(bytesn_value(4, &events::MISC_VERSION.to_le_bytes())),
                             cell(bytesn_value(1, &[events::MISC_TAG])),
                             cell(bytesn_value(
@@ -157,7 +157,7 @@ impl Scenario {
                             )),
                         ]
                         .into(),
-                    ),
+                    ).try_into_checked().expect("a canonical value"),
                 },
                 Op::Log,
             ]);

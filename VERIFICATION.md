@@ -185,7 +185,9 @@ verdict and the three reasons, each sufficient alone):
   experiments then found every cross-contract caller doing the same, plus
   `xcontract_events::deposit_via_vault` publishing the callee's result. Nine
   signatures gained `XcallEntryPointHash` / `XcallCommitment` / `XcallResult`
-  ([notes/contract-api.org §"M9 closure"](notes/contract-api.org)).
+  ([notes/contract-api.org §"M9 closure"](notes/contract-api.org)). The
+  entry-point label went at the compactc 0.36 bump, when the hash became a
+  constant of the claim.
 - **Valued report** — the simulator resolves each disclosure to the value it
   took on a real preimage
   ([disclosure_report.rs](crates/minocrab-contracts/tests/disclosure_report.rs)).
@@ -277,25 +279,22 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 | range-constraint gap at a typed seam | `v3_bounded` / `v3_leaves` / `v3_entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
 | upstream drift after a version bump | in diagnosis order: `cargo metadata` → workspace build → corpus compile report → ZKIR round-trip → ABI/Impact baseline → workspace → row snapshot → spec/vectors/TS → elevated property run | — `./bump.sh gates` runs exactly this sequence and prints the taxonomy line for whatever fired |
 | the Pending lineage drifting from the port's statement | the per-pair cost pins in `erc20_vault_pending.rs`; the record-byte and request-id equalities in `serialization_conformance` and `signet_flow.rs`; the interface snapshot | PI-equality — the lineage does not claim it (§2d) |
-| interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit binds neither entry point nor argument types (§5) |
+| interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit does not bind argument types (§5) |
 | generated code out of date (interface crates, spec, TS, snapshots) | `cargo test -p minocrab-interface-gen` (byte-for-byte regeneration); `serialization_conformance`'s three drift tests | — `./bump.sh accept` regenerates all of them in dependency order |
 
 ## 4. Reproducibility and supply chain
 
-- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.33.0-rc.2"` with
-  a per-architecture `compactcHashes` entry (`sha256-NaKACcmlfSCQLk/…` for
+- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.36.0"` with
+  a per-architecture `compactcHashes` entry (`sha256-qBJrLMBiMO0sZVgFmolF…` for
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
   **binaries only** — compactc, `zkir`/`zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.
-- **The ledger stagenet runs.** Every ledger crate is patched, in both
-  `[patch.crates-io]` blocks, to the per-crate tag midnight-node 2.0.0-rc.4
-  pins (the release stagenet runs, and the tags sig-net/mpc builds against),
-  and zkir-v3, which the node does not link, to the tag cut beside them;
-  and `Cargo.lock` records the commit each tag resolved to, so a moved tag
-  cannot change the build without a lockfile diff. Those tags carry the zkir
-  sources the compact release's own `flake.lock` pins for the binaries it
-  ships (`ledger-9.1.0.0-rc.3` for zkir, rev `04c9c5d9…` for zkir-v3)
-  unchanged, with only their manifests moved; `./bump.sh pins` prints both.
+- **The ledger Mainnet, Preprod and Preview run.** Every `midnight-*` crate
+  comes from crates.io at the version midnight-node 2.1.101 locks (ledger
+  9.1.0.1), with no `[patch.crates-io]`, and `Cargo.lock` records each
+  crate's checksum. `midnight-zkir` 3.2.0's sources are the ones the pinned
+  compactc's own `flake.lock` pins for its bundled `zkir-v3`;
+  `./bump.sh pins` prints both sides.
 - **The pin is a hypothesis; the corpus is the proof.** What makes it safe is
   instrument (a): 814 of compactc's own artifacts round-trip through these
   bindings, and 20 differential suites agree with its lowering.
@@ -411,16 +410,12 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   [signet_ledger_apply.rs](crates/minocrab-contracts/tests/signet_ledger_apply.rs)).
   What has not happened is a node accepting one: the vault's circuits have no
   such gate yet, and no MinoCrab artifact has been submitted to a network.
-- **Cross-contract calls: the circuit binds neither the entry point nor the
-  argument types — unless it asks to.** `callOnce` and `callEmit` compile to
-  byte-identical ZKIR under different entry points, asserted by a test; what
-  protects the verifier there is the ledger's `(address, entry point,
-  commitment)` match, and the corpus ports keep that shape because compactc
-  has it. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode:
-  every typed `call` in the circuit then constrains the witnessed entry-point
-  limbs to the declared circuit's hash (two `constrain_eq`, no public input);
-  `xcall::call_once_bound` pins that it rejects `depositEmit`'s preimage where
-  `call_once` accepts it. Argument types remain unbound.
+- **Cross-contract calls: the entry point is bound, the argument types are
+  not.** Since compactc 0.36 the callee's entry-point hash is a constant of
+  the call's claim, in compactc's artifacts and in `minocrab_ledger::contract_call`
+  alike, so `callOnce` and `callEmit` are different circuits and each proves
+  only the entry point it names (`xcall_differential`'s
+  `each_call_proves_only_its_own_entry_point`). Argument types remain unbound.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
   reached through a NESTED path (the arms themselves landed at M22 stage A and
   nesting at stage B, but no fixture circuit compiles the combination, so the

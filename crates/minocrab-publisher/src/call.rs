@@ -449,7 +449,7 @@ pub fn log_ops<D: DB>(misc_bytes: &[u8]) -> Vec<VmOp<D>> {
         Op::Push {
             storage: false,
             value: StateValue::Array(
-                vec![
+                [
                     cell(bytesn_value(4, &MISC_VERSION.to_le_bytes())),
                     cell(bytesn_value(1, &[MISC_TAG])),
                     cell(bytesn_value(MISC_SIZE as u32, misc_bytes)),

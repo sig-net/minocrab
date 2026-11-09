@@ -256,13 +256,14 @@ fn entry_point_consts_are_the_derived_names() {
 }
 
 /// The ported circuits themselves still go through the handles, and the
-/// two `xcall` methods still build ONE circuit (honest limit #1).
+/// two `xcall` methods build two circuits: each carries its own entry point
+/// as a constant (compactc 0.36's cross-contract fix).
 #[test]
 fn the_ported_circuits_still_call_through_the_interfaces() {
-    assert_eq!(
+    assert_ne!(
         zkir(&xcall::call_once()),
         zkir(&xcall::Xcall::call_emit()),
-        "depositEmit differs from deposit only in a witness"
+        "deposit and depositEmit are different constants"
     );
     // depositViaVault's result limbs carry the Bytes<32> constraints,
     // which is visible as two ConstrainBits right after the witnesses.

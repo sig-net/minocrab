@@ -45,8 +45,8 @@ use midnight_transient_crypto::hash::{transient_commit, transient_hash};
 use midnight_transient_crypto::proofs::{ProofPreimage, Zkir};
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::{decode_offcircuit, encode_offcircuit};
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use minocrab::Fr;
 use minocrab_sim::v3::{simulate, Run3};
@@ -209,12 +209,14 @@ fn bytes_lexeme(bs: &[u8]) -> String {
     s
 }
 
-/// `IrValue::get_type` (ir_types.rs:149-165) — upstream keeps it
+/// `IrValue::get_type` (zkir 3.2.0 ir_types.rs:413-435) — upstream keeps it
 /// `pub(crate)`, so it is mirrored here exactly as `minocrab-sim` mirrors it.
 fn value_type(v: &IrValue) -> IrType {
     match v {
         IrValue::Native(_) => IrType::Native,
-        IrValue::Bytes32(_) => IrType::Bytes32,
+        IrValue::Bool(_) => IrType::Bool,
+        IrValue::Byte(_) => IrType::Byte,
+        IrValue::Bytes(bs) => IrType::Bytes(bs.len() as u32),
         IrValue::JubjubPoint(_) => IrType::JubjubPoint,
         IrValue::JubjubScalar(_) => IrType::JubjubScalar,
         IrValue::Secp256k1Point(_) => IrType::Secp256k1Point,
@@ -229,11 +231,14 @@ fn value_type(v: &IrValue) -> IrType {
     }
 }
 
-/// The ZKIR type lexeme (`IrType`'s own spelling, ir_types.rs:36-88).
+/// The ZKIR type lexeme (`IrType`'s own spelling, zkir 3.2.0 ir_types.rs:58-110).
 fn type_lexeme(t: IrType) -> &'static str {
     match t {
         IrType::Native => "Scalar<BLS12-381>",
-        IrType::Bytes32 => "Bytes<32>",
+        IrType::Bool => "Bool",
+        IrType::Byte => "Byte",
+        IrType::Bytes(32) => "Bytes<32>",
+        IrType::Bytes(n) => panic!("the Lean model's values cover Bytes<32> only, not Bytes<{n}>"),
         IrType::JubjubPoint => "Point<Jubjub>",
         IrType::JubjubScalar => "Scalar<Jubjub>",
         IrType::Secp256k1Point => "Point<Secp256k1>",
@@ -491,9 +496,9 @@ fn known_answers() -> String {
         // The x coordinate through `into_coordinates` + `into_bytes32` — the
         // ECDSA block's own path.
         let (x, _y) = into_coordinates_offcircuit(&p).expect("affine");
-        let xb = into_bytes32_offcircuit(&x).expect("into_bytes32");
-        let IrValue::Bytes32(xb) = xb else {
-            unreachable!("into_bytes32 yields Bytes32")
+        let xb = to_bytes_offcircuit(&x).expect("to_bytes");
+        let IrValue::Bytes(xb) = xb else {
+            unreachable!("to_bytes of a field element yields Bytes")
         };
         out.push_str(&format!(
             "k256_gen_mul_x {} => {}\n",

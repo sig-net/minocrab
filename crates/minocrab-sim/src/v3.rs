@@ -62,11 +62,13 @@ use midnight_zkir_v3::ir_instructions::encode::{
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::eq::test_eq_offcircuit;
 #[cfg(feature = "unstable")]
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::from_coordinates::from_coordinates_offcircuit;
 #[cfg(feature = "unstable")]
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
+#[cfg(feature = "unstable")]
+use midnight_zkir_v3::ir_types::MAX_BYTES_LEN;
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 #[cfg(feature = "unstable")]
@@ -82,7 +84,7 @@ use minocrab_zkir::v3::{Instruction as I, IrSource};
 #[cfg(feature = "unstable")]
 use minocrab_zkir::v3::{Identifier, IrType, IrValue, Operand};
 #[cfg(feature = "unstable")]
-use sha2::Sha256;
+use sha2::{Sha256, Sha512};
 #[cfg(feature = "unstable")]
 use sha3::{Digest, Keccak256};
 
@@ -214,6 +216,19 @@ pub fn op_name(ins: &I) -> &'static str {
         I::ReverseBytes { .. } => "reverse_bytes",
         I::TestEq { .. } => "test_eq",
         I::TransientHash { .. } => "transient_hash",
+        I::Slice { .. } => "slice",
+        I::Nth { .. } => "nth",
+        I::Concat { .. } => "concat",
+        I::LoadConstant { .. } => "load_constant",
+        I::Sha512 { .. } => "sha512",
+        I::And { .. } => "and",
+        I::Or { .. } => "or",
+        I::Xor { .. } => "xor",
+        I::ToBytes { .. } => "to_bytes",
+        I::FromBytes { .. } => "from_bytes",
+        I::Reverse { .. } => "reverse",
+        I::BytesIntoNatives { .. } => "bytes_into_natives",
+        I::BytesFromNatives { .. } => "bytes_from_natives",
     }
 }
 
@@ -223,7 +238,9 @@ pub fn op_name(ins: &I) -> &'static str {
 fn ir_type_of(value: &IrValue) -> IrType {
     match value {
         IrValue::Native(_) => IrType::Native,
-        IrValue::Bytes32(_) => IrType::Bytes32,
+        IrValue::Bool(_) => IrType::Bool,
+        IrValue::Byte(_) => IrType::Byte,
+        IrValue::Bytes(bs) => IrType::Bytes(bs.len() as u32),
         IrValue::JubjubPoint(_) => IrType::JubjubPoint,
         IrValue::JubjubScalar(_) => IrType::JubjubScalar,
         IrValue::Secp256k1Point(_) => IrType::Secp256k1Point,
@@ -245,7 +262,9 @@ fn ir_type_of(value: &IrValue) -> IrType {
 fn default_ir_value(val_t: &IrType) -> IrValue {
     match val_t {
         IrType::Native => IrValue::Native(Fr::default()),
-        IrType::Bytes32 => IrValue::Bytes32([0u8; 32]),
+        IrType::Bool => IrValue::Bool(bool::default()),
+        IrType::Byte => IrValue::Byte(u8::default()),
+        IrType::Bytes(n) => IrValue::Bytes(vec![u8::default(); *n as usize]),
         IrType::JubjubPoint => IrValue::JubjubPoint(JubjubSubgroup::default()),
         IrType::JubjubScalar => IrValue::JubjubScalar(JubjubFr::default()),
         IrType::Secp256k1Point => IrValue::Secp256k1Point(k256::K256::default()),
@@ -298,6 +317,46 @@ fn get(
         .get(id)
         .cloned()
         .ok_or_else(|| fail(at, op, format!("variable not found: {id:?}")))
+}
+
+#[cfg(feature = "unstable")]
+/// The whole bytes a `Native` limb holds — mirror of the `pub(crate)`
+/// `BYTES_PER_FIELD_ELEMENT` (zkir 3.2.0 ir_types.rs:39).
+const BYTES_PER_FIELD_ELEMENT: usize = 31;
+
+#[cfg(feature = "unstable")]
+/// A `Bytes(32)` value as an array, for the fixed-size ZKIR 3.0 byte
+/// instructions — mirror of the private `ir_value_to_bytes32` (zkir 3.2.0
+/// ir_vm.rs:82-88).
+fn bytes32(value: IrValue, at: usize, op: &'static str) -> Result<[u8; 32], Sim3Error> {
+    let bytes: Vec<u8> = value.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+    let len = bytes.len();
+    bytes
+        .try_into()
+        .map_err(|_| fail(at, op, format!("expected a Bytes<32> value, got Bytes<{len}>")))
+}
+
+#[cfg(feature = "unstable")]
+/// The operands of a boolean gate, each a `Bool` — mirror of
+/// `resolve_bool_list` (zkir 3.2.0 ir_vm.rs:298-313).
+fn operand_bools(
+    memory: &HashMap<Identifier, IrValue>,
+    operands: &[Operand],
+    at: usize,
+    op: &'static str,
+) -> Result<Vec<bool>, Sim3Error> {
+    if operands.is_empty() {
+        return Err(fail(at, op, "Boolean gate requires at least one input"));
+    }
+    operands
+        .iter()
+        .map(|o| {
+            let val = operand(memory, o, at, op)?;
+            let t = ir_type_of(&val);
+            bool::try_from(val)
+                .map_err(|_| fail(at, op, format!("Boolean gate expects Bool inputs, found {t:?}")))
+        })
+        .collect()
 }
 
 #[cfg(feature = "unstable")]
@@ -581,6 +640,21 @@ pub fn simulate_with(
                 let result = IrValue::Native(Fr::from(!operand_bool(&memory, a, at, op)? as u64));
                 memory.insert(output.clone(), result);
             }
+            // zkir 3.2.0 ir_vm.rs:387-405 — ZKIR 3.1's gates over `Bool` values.
+            I::And { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().all(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Or { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().any(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Xor { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?
+                    .into_iter()
+                    .fold(false, |acc, b| acc ^ b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
             // ir_vm.rs:326-330
             I::ConstrainEq { a, b } => {
                 let a = operand(&memory, a, at, op)?;
@@ -803,6 +877,11 @@ pub fn simulate_with(
                 alignment,
                 inputs,
                 output,
+            }
+            | I::Sha512 {
+                alignment,
+                inputs,
+                output,
             } => {
                 let inputs = inputs
                     .iter()
@@ -817,11 +896,12 @@ pub fn simulate_with(
                 })?;
                 let mut repr = Vec::new();
                 ValueReprAlignedValue(value).binary_repr(&mut repr);
-                let hash_output: [u8; 32] = match ins {
-                    I::PersistentHash { .. } => Sha256::digest(&repr).into(),
-                    _ => Keccak256::digest(&repr).into(),
+                let hash_output: Vec<u8> = match ins {
+                    I::PersistentHash { .. } => Sha256::digest(&repr).to_vec(),
+                    I::Keccak256 { .. } => Keccak256::digest(&repr).to_vec(),
+                    _ => Sha512::digest(&repr).to_vec(),
                 };
-                memory.insert(output.clone(), IrValue::Bytes32(hash_output));
+                memory.insert(output.clone(), IrValue::Bytes(hash_output));
             }
             // ir_vm.rs:507-543 — v3's public-input block. A guarded-off
             // Impact still pushes `count` *zeros* into the PI vector
@@ -892,6 +972,10 @@ pub fn simulate_with(
                 let p = match ir_type_of(&s) {
                     IrType::JubjubScalar => IrValue::JubjubPoint(JubjubSubgroup::generator()),
                     IrType::Secp256k1Scalar => IrValue::Secp256k1Point(k256::K256::generator()),
+                    IrType::Secp256r1Scalar => IrValue::Secp256r1Point(p256::P256::generator()),
+                    IrType::Curve25519Scalar => {
+                        IrValue::Curve25519Point(curve25519::Curve25519Subgroup::generator())
+                    }
                     t => {
                         return Err(fail(
                             at,
@@ -919,55 +1003,158 @@ pub fn simulate_with(
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), p);
             }
-            // ir_vm.rs:581-585
-            I::IntoBytes32 { input, output } => {
+            // zkir 3.2.0 ir_vm.rs:437-441
+            I::ToBytes { input, output } => {
                 let x = operand(&memory, input, at, op)?;
-                let bytes =
-                    into_bytes32_offcircuit(&x).map_err(|e| fail(at, op, format!("{e}")))?;
+                let bytes = to_bytes_offcircuit(&x).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), bytes);
             }
-            // ir_vm.rs:586-595
+            // ir_vm.rs:442-449 — the ZKIR 3.0 instruction, fixed at `Bytes(32)`.
+            I::IntoBytes32 { input, output } => {
+                let x = operand(&memory, input, at, op)?;
+                let bytes = to_bytes_offcircuit(&x)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                memory.insert(output.clone(), IrValue::Bytes(bytes.to_vec()));
+            }
+            // ir_vm.rs:450-458
+            I::FromBytes {
+                val_t,
+                bytes,
+                output,
+            } => {
+                let bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), x);
+            }
+            // ir_vm.rs:459-469 — the ZKIR 3.0 instruction, `Bytes(32)` only.
             I::FromBytes32 {
                 val_t,
                 bytes,
                 output,
             } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let bytes: [u8; 32] = bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
-                let x = from_bytes32_offcircuit(val_t, &bytes)
+                let bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), x);
             }
-            // ir_vm.rs:596-601
-            I::ReverseBytes { bytes, output } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let mut bytes: [u8; 32] =
-                    bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+            // ir_vm.rs:470-477 — `ReverseBytes` is `Reverse`'s ZKIR 3.0 name.
+            I::Reverse { bytes, output } | I::ReverseBytes { bytes, output } => {
+                let mut bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
                 bytes.reverse();
-                memory.insert(output.clone(), IrValue::Bytes32(bytes));
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
             }
-            // ir_vm.rs:602-610 — low = first 31 bytes LE, high = last byte.
+            // ir_vm.rs:478-496
+            I::Slice {
+                bytes,
+                start,
+                len,
+                output,
+            } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let (s, l) = (*start as usize, *len as usize);
+                if l == 0 {
+                    return Err(fail(at, op, "slice length must be at least 1"));
+                }
+                let end = s.checked_add(l).filter(|end| *end <= bs.len()).ok_or_else(|| {
+                    fail(at, op, format!("slice out of bounds: {s}..{s}+{l} into Bytes<{}>", bs.len()))
+                })?;
+                memory.insert(output.clone(), IrValue::Bytes(bs[s..end].to_vec()));
+            }
+            // ir_vm.rs:497-517
+            I::BytesIntoNatives { bytes, outputs } => {
+                let value = operand(&memory, bytes, at, op)?;
+                if !matches!(value, IrValue::Bytes(_)) {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesIntoNatives expects a Bytes input, found {:?}", ir_type_of(&value)),
+                    ));
+                }
+                let encoded = encode_offcircuit(&value);
+                if encoded.len() != outputs.len() {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesIntoNatives: {:?} packs into {} field elements but the instruction has {} outputs",
+                            ir_type_of(&value),
+                            encoded.len(),
+                            outputs.len()
+                        ),
+                    ));
+                }
+                for (out_id, enc_val) in outputs.iter().zip(encoded) {
+                    memory.insert(out_id.clone(), enc_val);
+                }
+            }
+            // ir_vm.rs:518-539, with `bytes_from_natives_nb_limbs` (ir_vm.rs:107-121,
+            // private upstream) inlined.
+            I::BytesFromNatives { inputs, len, output } => {
+                if *len == 0 || *len > MAX_BYTES_LEN {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesFromNatives: output length {len} is not in 1..={MAX_BYTES_LEN}"),
+                    ));
+                }
+                let nb_limbs = (*len as usize).div_ceil(BYTES_PER_FIELD_ELEMENT);
+                if inputs.len() != nb_limbs {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: a Bytes<{len}> unpacks from {nb_limbs} field elements \
+                             but the instruction has {} inputs",
+                            inputs.len()
+                        ),
+                    ));
+                }
+                let encoded = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                let value = decode_offcircuit(&encoded, &IrType::Bytes(*len)).map_err(|_| {
+                    fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: every input must fit in the number of bytes it \
+                             contributes to the output ({BYTES_PER_FIELD_ELEMENT} bytes, except \
+                             the last one, which contributes {})",
+                            *len as usize - BYTES_PER_FIELD_ELEMENT * (nb_limbs - 1)
+                        ),
+                    )
+                })?;
+                memory.insert(output.clone(), value);
+            }
+            // ir_vm.rs:540-549 — low = first 31 bytes LE, high = last byte.
             I::Bytes32IntoLowHigh { bytes, outputs } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let mut bytes: [u8; 32] =
-                    bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+                let mut bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
                 let high = IrValue::Native(Fr::from(bytes[31] as u64));
                 bytes[31] = 0;
-                let low = from_bytes32_offcircuit(&IrType::Native, &bytes)
+                let low = from_bytes_offcircuit(&IrType::Native, &bytes)
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(outputs.0.clone(), low);
                 memory.insert(outputs.1.clone(), high);
             }
-            // ir_vm.rs:611-624
+            // ir_vm.rs:550-562
             I::Bytes32FromLowHigh { inputs, output } => {
                 let low = operand(&memory, &inputs.0, at, op)?;
                 let high = operand(&memory, &inputs.1, at, op)?;
-                let bytes_low: [u8; 32] = into_bytes32_offcircuit(&low)
-                    .and_then(TryInto::try_into)
-                    .map_err(|e| fail(at, op, format!("{e}")))?;
-                let bytes_high: [u8; 32] = into_bytes32_offcircuit(&high)
-                    .and_then(TryInto::try_into)
-                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let bytes_low = to_bytes_offcircuit(&low)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                let bytes_high = to_bytes_offcircuit(&high)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
                 if bytes_low[31] != 0 || bytes_high[1..].iter().any(|b| *b != 0) {
                     return Err(fail(
                         at,
@@ -978,7 +1165,52 @@ pub fn simulate_with(
                 }
                 let mut out_bytes = bytes_low;
                 out_bytes[31] = bytes_high[0];
-                memory.insert(output.clone(), IrValue::Bytes32(out_bytes));
+                memory.insert(output.clone(), IrValue::Bytes(out_bytes.to_vec()));
+            }
+            // ir_vm.rs:563-574
+            I::Nth { bytes, index, output } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let k = *index as usize;
+                if k >= bs.len() {
+                    return Err(fail(at, op, format!("nth out of bounds: index {k} into Bytes<{}>", bs.len())));
+                }
+                memory.insert(output.clone(), IrValue::Byte(bs[k]));
+            }
+            // ir_vm.rs:575-597
+            I::Concat { inputs, output } => {
+                let mut bytes = vec![];
+                for input in inputs {
+                    match operand(&memory, input, at, op)? {
+                        IrValue::Byte(b) => bytes.push(b),
+                        IrValue::Bytes(bs) => bytes.extend(bs),
+                        other => {
+                            return Err(fail(
+                                at,
+                                op,
+                                format!("Concat expects Byte or Bytes inputs, found {:?}", ir_type_of(&other)),
+                            ))
+                        }
+                    }
+                }
+                if bytes.is_empty() {
+                    return Err(fail(at, op, "Concat requires at least one byte of input"));
+                }
+                if bytes.len() > MAX_BYTES_LEN as usize {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("Concat result length {} exceeds MAX_BYTES_LEN ({MAX_BYTES_LEN})", bytes.len()),
+                    ));
+                }
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
+            }
+            // ir_vm.rs:598-605
+            I::LoadConstant { val_t, encoding, output } => {
+                let value =
+                    decode_offcircuit(encoding, val_t).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), value);
             }
             // ir_vm.rs:625-644 — outputs are type-checked against the
             // circuit's output signature.

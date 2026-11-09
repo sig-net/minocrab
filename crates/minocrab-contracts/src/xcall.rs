@@ -20,8 +20,9 @@
 //! callBig(data: Bytes<256>):    increment + target.depositBig(data)
 //! callEmit(recipient, amount):  increment + target.depositEmit(r, a)
 //! ```
-//! `callEmit` and `callOnce` differ only in WHICH entry point the prover
-//! claims (witness data), so their circuits are structurally identical.
+//! `callEmit` and `callOnce` differ only in WHICH entry point they claim,
+//! which is a constant of the circuit: their ZKIR differs in exactly the two
+//! entry-point-hash limbs of the claim.
 //!
 //! The target contract's `deposit`/`depositEmit` are exactly the `events`
 //! experiment's `base`/`emit1` circuits (same ledger layout, same
@@ -31,7 +32,6 @@ use minocrab::v3::{Circuit3, Compiled3, FieldT, Wire3};
 use minocrab::{label, Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, emit, map_insert, ImpactElem, LedgerValue, XcallCommitment,
-    XcallEntryPointHash,
 };
 use minocrab_std::v3::{contract, entry, BytesN, CircuitArg, Disclose, Discloses, Uint, B32};
 
@@ -79,7 +79,7 @@ fn disclose_args(c: &mut Circuit3, args: DepositArgs) -> (B32<Public>, Wire3<Fie
 /// Named once because the family is built through [`entry`]: the entry
 /// point's return type and the hand-written set-equality test below have to
 /// be the SAME declaration, and an alias is what makes that a compiler fact.
-type CallDisclosures = Discloses<(Recipient, Amount, XcallEntryPointHash, XcallCommitment)>;
+type CallDisclosures = Discloses<(Recipient, Amount, XcallCommitment)>;
 
 /// The sealed `target` reference. `at_field` means every call site does its
 /// own fresh uncached read of the cell — which `callTwice` relies on.
@@ -124,7 +124,7 @@ impl Xcall {
         c: &mut Circuit3,
         recipient: B32<Private>,
         amount: Uint<128>,
-    ) -> Discloses<(Recipient, Amount, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(Recipient, Amount, XcallCommitment)> {
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -141,7 +141,7 @@ impl Xcall {
     pub fn call_big(
         c: &mut Circuit3,
         data: BytesN<Private, 256>,
-    ) -> Discloses<(Data, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(Data, XcallCommitment)> {
         let data: BytesN<Public, 256> = data.disclose_as::<Data>(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -170,12 +170,10 @@ impl Xcall {
     }
 }
 
-/// `export circuit callOnce/callEmit(recipient, amount): []` — one
-/// cross-contract call carrying `(Bytes<32>, Uint<128>)`. (`callEmit`
-/// claims `depositEmit` instead of `deposit`, which only changes the
-/// prover-supplied entry-point-hash witness, not the circuit: see
-/// [`call_emit`], which builds the same circuit through the other typed
-/// method.)
+/// `export circuit callOnce(recipient, amount): []` — one cross-contract
+/// call carrying `(Bytes<32>, Uint<128>)`. ([`call_emit`] is the same call
+/// through the interface's other method, `depositEmit`: the same circuit
+/// up to the entry-point constant.)
 pub fn call_once() -> Compiled3 {
     call_n_times(1)
 }
@@ -205,27 +203,6 @@ fn call_n_times(n: usize) -> Compiled3 {
     })
 }
 
-/// `callOnce` in the HARDENED mode: the same circuit with
-/// `bind_entry_points`, so the proof itself says the callee circuit is
-/// `deposit` — two `constrain_eq` on the entry-point limbs. Not a corpus
-/// port (compactc witnesses the entry point); it exists to pin that the
-/// mode closes the interchangeability `callOnce`/`callEmit` demonstrate
-/// (external review §4.5, `xcall_differential`).
-pub fn call_once_bound() -> Compiled3 {
-    entry(|c, args: DepositArgs| -> CallDisclosures {
-        minocrab_ledger::bind_entry_points(c);
-        let (r, a) = disclose_args(c, args);
-        // Kept even though guard threading no longer uses it: dropping this
-        // `Copy` would renumber every later identifier, moving the ZKIR
-        // (notes/edsl-trim.org §B, the removal's zero-movement gate).
-        let _ = c.constant(1u64);
-
-        emit(c, &counter_increment(CALL_COUNT, 1));
-        TARGET_CONTRACT.deposit(c, r, Uint::from_field_unchecked(a));
-        Discloses::of(())
-    })
-}
-
 /// Target `deposit` — identical to the `events` experiment's `base`.
 pub fn target_deposit() -> Compiled3 {
     events::base()
@@ -246,7 +223,6 @@ mod call_n_times_discloses {
 
     #[test]
     fn the_declared_disclosures_are_the_ones_the_family_makes() {
-        assert_declared_disclosures::<CallDisclosures>("call_once_bound", &call_once_bound());
         for n in [1, 2] {
             assert_declared_disclosures::<CallDisclosures>(
                 &format!("call_n_times({n})"),

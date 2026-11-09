@@ -5,6 +5,7 @@
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
+use midnight_onchain_state::state::AlignedValueChecked;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::db::InMemoryDB;
@@ -176,6 +177,13 @@ pub fn field_key(index: u8) -> AlignedValue {
     .expect("a byte fits a bytes<1> atom")
 }
 
+/// [`field_key`] as the path key an Impact op carries: `Key::Value` holds an
+/// `AlignedValueChecked` since onchain-vm 4.0.1, and a `bytes<1>` atom has no
+/// field limb that could be non-canonical.
+pub fn field_key_checked(index: u8) -> AlignedValueChecked {
+    AlignedValueChecked::try_from(field_key(index)).expect("a bytes<1> key has no field atom")
+}
+
 /// `idx` by ONE constant `bytes<1>` key.
 ///
 /// Two things are spelled this way, and they are the same instruction: a
@@ -194,7 +202,7 @@ pub fn idx_one(cached: bool, push_path: bool, index: u8) -> ImpactOp {
     ImpactOp::constant(&Op::Idx {
         cached,
         push_path,
-        path: vec![Key::Value(field_key(index))].into(),
+        path: vec![Key::Value(field_key_checked(index))].into(),
     })
 }
 

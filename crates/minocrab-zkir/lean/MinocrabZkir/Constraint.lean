@@ -116,13 +116,33 @@ def SatInstr (P : Program) (mem : Assignment C) (pis : List Fr) (k : Nat) : Inst
   | .bytes32FromLowHigh out (ilo, ihi) =>
     ∃ lo hi, val mem ilo = some (.native lo) ∧ val mem ihi = some (.native hi)
       ∧ lo.val < 2 ^ 248 ∧ hi.val < 256 ∧ bound mem out (.bytes32 (bytesOfLowHigh lo hi))
+  -- zkir 3.2.0 ir_vm.rs `ToBytes`/`FromBytes`/`BytesIntoNatives`/
+  -- `BytesFromNatives` on a `Bytes(32)`: the same gadgets as the 3.0 arms
+  -- above (`encode_incircuit`'s 31-byte and 1-byte chunks;
+  -- `assigned_to_le_bytes(limb, nb_bytes)` per input).
+  | .toBytes out input =>
+    ∃ v b, val mem input = some v ∧ intoBytes32V M v = .ok b ∧ bound mem out (.bytes32 b)
+  | .fromBytes ty out bytes =>
+    ∃ b r, val mem bytes = some (.bytes32 b) ∧ fromBytes32V M ty b = .ok r ∧ bound mem out r
+  | .bytesIntoNatives outs bytes =>
+    ∃ lo hi b, outs = [lo, hi] ∧ val mem bytes = some (.bytes32 b)
+      ∧ bound mem lo (.native (Fr.ofNat (leToNat (b.toList.take 31))))
+      ∧ bound mem hi (.native (Fr.ofNat (b.toList.getD 31 0).toNat))
+  | .bytesFromNatives out len inputs =>
+    ∃ ilo ihi lo hi, inputs = [ilo, ihi] ∧ len = 32
+      ∧ val mem ilo = some (.native lo) ∧ val mem ihi = some (.native hi)
+      ∧ lo.val < 2 ^ 248 ∧ hi.val < 256 ∧ bound mem out (.bytes32 (bytesOfLowHigh lo hi))
   | .divModPowerOfTwo outs v bits =>
     ∃ q r x, outs = [q, r] ∧ val mem v = some (.native x)
       ∧ bound mem q (.native (Fr.ofNat (x.val / 2 ^ bits)))
       ∧ bound mem r (.native (Fr.ofNat (x.val % 2 ^ bits)))
+  -- zkir 3.2.0 ir_vm.rs: the output's CANONICAL bits, split at `bits`,
+  -- must recompose to the modulus and the divisor, so the composite is
+  -- an integer below p (the field sum cannot wrap).
   | .reconstituteField out d m bits =>
     ∃ dv mv, val mem d = some (.native dv) ∧ val mem m = some (.native mv)
       ∧ dv.val < 2 ^ (frBits - bits) ∧ mv.val < 2 ^ bits
+      ∧ dv.val * 2 ^ bits + mv.val < p
       ∧ bound mem out (.native (mv + Fr.ofNat (2 ^ bits) * dv))
   | .transientHash out inputs =>
     ∃ xs, nats mem inputs xs ∧ bound mem out (.native (M.transientHash xs))

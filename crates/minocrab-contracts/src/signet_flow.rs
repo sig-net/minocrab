@@ -106,7 +106,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
+use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::Assumed;
 use minocrab_std::v3::{
     is_true, kernel, label, not, Disclose, LedgerCell, LedgerField, LedgerMap, LedgerRepr,
@@ -270,7 +270,6 @@ label! {
 pub type Requested = (
     RequestIdFiled,
     RequestRecordFiled,
-    XcallEntryPointHash,
     XcallCommitment,
 );
 

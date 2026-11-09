@@ -42,6 +42,7 @@ use midnight_base_crypto::fab::{
 };
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
+use midnight_onchain_state::state::StateValue;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
@@ -141,7 +142,7 @@ fn increment_transcript() -> Vec<Fr> {
         Op::Idx {
             cached: false,
             push_path: true,
-            path: vec![Key::Value(bytes1_value(0))].into(),
+            path: vec![Key::Value(bytes1_value(0).try_into().expect("a canonical value"))].into(),
         },
         Op::Addi { immediate: 1 },
         Op::Ins { cached: true, n: 1 },
@@ -153,11 +154,11 @@ fn cell_write_transcript(index: u8, value: AlignedValue) -> Vec<Fr> {
     transcript(&[
         Op::Push {
             storage: false,
-            value: bytes1_value(index).into(),
+            value: StateValue::<InMemoryDB>::from(bytes1_value(index)).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
-            value: value.into(),
+            value: StateValue::<InMemoryDB>::from(value).try_into_checked().expect("a canonical value"),
         },
         Op::Ins {
             cached: false,

@@ -334,11 +334,10 @@ impl Env {
         o
     }
 
-    /// The cross-contract call's witnesses: `cc-rand`, then the entry-point
-    /// hash's two limbs.
+    /// The cross-contract call's one witness, `cc-rand`; the entry-point hash
+    /// is a constant of the claim (compactc 0.36).
     pub fn call_witnesses(&self, cc_rand: Fr) -> Vec<Fr> {
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        vec![cc_rand, ep_hi, ep_lo]
+        vec![cc_rand]
     }
 
     /// `tokenType(…, kernel.self())`'s read, then `receiveShielded(coin);

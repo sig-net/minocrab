@@ -146,12 +146,12 @@ fn hashes_agree_and_match_primitives() {
     let mut fab = a.as_le_bytes();
     fab.extend(c.as_le_bytes());
     let expected: [u8; 32] = sha2::Sha256::digest(&fab).into();
-    assert_eq!(run.outputs[1], IrValue::Bytes32(expected));
+    assert_eq!(run.outputs[1], IrValue::Bytes(expected.to_vec()));
 
     // Keccak256 == sha3 over the FAB bytes: a Bytes<8> atom is the low 8
     // little-endian bytes of the element.
     let expected: [u8; 32] = sha3::Keccak256::digest(&a.as_le_bytes()[..8]).into();
-    assert_eq!(run.outputs[2], IrValue::Bytes32(expected));
+    assert_eq!(run.outputs[2], IrValue::Bytes(expected.to_vec()));
 }
 
 #[test]
@@ -243,10 +243,10 @@ fn bytes32_ops_agree_and_match_encoding() {
 
     // IntoBytes32 == the canonical little-endian form.
     let le: [u8; 32] = x.as_le_bytes().try_into().expect("32 bytes");
-    assert_eq!(run.outputs[0], IrValue::Bytes32(le));
+    assert_eq!(run.outputs[0], IrValue::Bytes(le.to_vec()));
     let mut reversed = le;
     reversed.reverse();
-    assert_eq!(run.outputs[1], IrValue::Bytes32(reversed));
+    assert_eq!(run.outputs[1], IrValue::Bytes(reversed.to_vec()));
 }
 
 #[test]

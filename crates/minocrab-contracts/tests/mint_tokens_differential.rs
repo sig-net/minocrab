@@ -138,7 +138,7 @@ impl Scenario {
     fn ops_to(&self, mint_to: &[u8; 32]) -> Vec<VmOp> {
         let color = token_type(&self.address);
         let cm = commitment(&self.nonce, &color, mint_to);
-        let key = |i: u8| Key::Value(bytesn_value(1, &[i]));
+        let key = |i: u8| Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"));
         vec![
             // kernel.self()
             Op::Dup { n: 2 },
@@ -160,14 +160,14 @@ impl Scenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &pad32(mint_tokens::DOMAIN_SEP))),
+                value: cell(bytesn_value(32, &pad32(mint_tokens::DOMAIN_SEP))).try_into_checked().expect("a canonical value"),
             },
             Op::Dup { n: 1 },
             Op::Dup { n: 1 },
             Op::Member,
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(8, &1u64.to_le_bytes())),
+                value: cell(bytesn_value(8, &1u64.to_le_bytes())).try_into_checked().expect("a canonical value"),
             },
             Op::Swap { n: 0 },
             Op::Neg,
@@ -191,7 +191,7 @@ impl Scenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &cm)),
+                value: cell(bytesn_value(32, &cm)).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: false,
@@ -241,11 +241,11 @@ impl Scenario {
             // veryPublicValue = ownPublicKey()
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(1, &[0])),
+                value: cell(bytesn_value(1, &[0])).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
-                value: cell(bytesn_value(32, own_pk)),
+                value: cell(bytesn_value(32, own_pk)).try_into_checked().expect("a canonical value"),
             },
             Op::Ins {
                 cached: false,

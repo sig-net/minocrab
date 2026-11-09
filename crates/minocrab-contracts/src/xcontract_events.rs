@@ -39,7 +39,7 @@ use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
 use minocrab_ledger::{
     cell_write, counter_increment, counter_read, emit, emit_event, set_insert,
-    ImpactElem, LedgerValue, XcallCommitment, XcallEntryPointHash, XcallResult,
+    ImpactElem, LedgerValue, XcallCommitment, XcallResult,
 };
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
@@ -93,7 +93,7 @@ impl XcontractEvents {
     pub fn deposit_via_vault(
         c: &mut Circuit3,
         amount: Uint<128>,
-    ) -> Discloses<(Amount, XcallEntryPointHash, XcallCommitment, XcallResult), B32<Public>> {
+    ) -> Discloses<(Amount, XcallCommitment, XcallResult), B32<Public>> {
         let a = amount.disclose_as::<Amount>(c).field();
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

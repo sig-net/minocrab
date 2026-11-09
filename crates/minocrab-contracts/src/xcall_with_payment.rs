@@ -13,7 +13,7 @@ use crate::interfaces::PaymentTarget;
 use minocrab::v3::Circuit3;
 use minocrab::{label, Private, Public};
 use minocrab_ledger::{
-    emit, set_insert, ImpactElem, LedgerValue, XcallCommitment, XcallEntryPointHash,
+    emit, set_insert, ImpactElem, LedgerValue, XcallCommitment,
 };
 use minocrab_std::v3::{
     contract, CircuitArg, Disclose, Discloses, ShieldedCoinInfo3, Uint, B32,
@@ -86,7 +86,7 @@ impl XcallWithPayment {
     pub fn call_once(
         c: &mut Circuit3,
         coin: CoinArg,
-    ) -> Discloses<(Nonce, Color, Value, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(Nonce, Color, Value, XcallCommitment)> {
         let nonce = coin.nonce.disclose_as::<Nonce>(c);
         let color = coin.color.disclose_as::<Color>(c);
         let value = coin.value.disclose_as::<Value>(c).field();
@@ -111,7 +111,7 @@ impl XcallWithPayment {
     pub fn request(
         c: &mut Circuit3,
         request_id: B32<Private>,
-    ) -> Discloses<(RequestId, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(RequestId, XcallCommitment)> {
         let request_id = request_id.disclose_as::<RequestId>(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

@@ -27,7 +27,7 @@ fn build_test_circuit() -> IrSource {
     let mut b = Builder3::new();
     let x = b.input("x", IrType::Native);
     let pk = b.input("pk", IrType::Secp256k1Point);
-    let digest = b.input("digest", IrType::Bytes32);
+    let digest = b.input("digest", IrType::Bytes(32));
 
     // Native arithmetic with an inline immediate.
     let x_plus_3 = b.add(x, 3u64);
@@ -99,7 +99,7 @@ fn type_mismatch_is_a_build_error() {
 #[should_panic(expected = "test_eq: operand must be a field element or point")]
 fn unsupported_type_is_a_build_error() {
     let mut b = Builder3::new();
-    let a = b.input("a", IrType::Bytes32);
-    let c = b.input("b", IrType::Bytes32);
+    let a = b.input("a", IrType::Bytes(32));
+    let c = b.input("b", IrType::Bytes(32));
     b.test_eq(a, c);
 }

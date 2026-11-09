@@ -1150,3 +1150,64 @@ dump diff is empty (the two =bounded_ledger= circuits appear only as
 additions); =TRUST.md= regenerated for =abi.rs= (579 -> 607 lines) and
 =entry.rs= (853 -> 864 lines) moving with the new code the instrument
 and the stdlib addition added.
+
+* Bump 2 — 2026-11-10: compactc 0.34.0 → 0.36.0, ledger 9.1.0.0-rc.3 → 9.1.0.1
+The ledger-9 mainnet set: midnight-node 2.1.101 (Mainnet, Preprod and
+Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
+
+** The pins
+- compactc 0.36.0 (=b5d9e4dfc=, 2026-11-03), four platform hashes in
+  =flake.nix=. It writes ZKIR v3 only (=--feature-zkir-v3= is now an
+  error), at minor version 3.1.
+- Every =midnight-*= crate from crates.io at the versions midnight-node
+  2.1.101 locks; =Cargo.lock='s midnight entries equal the node's. The
+  =[patch.crates-io]= blocks and =.cargo/config.toml= are gone (hazard 4
+  no longer applies), and =midnight-zkir-v3= is the crates.io
+  =midnight-zkir= 3.2.0 renamed. =bump.sh= now reads the node's release
+  and crates.io instead of ledger tags.
+
+** What moved, and why
+1. *API (taxonomy 1).* =IrType::Bytes32= became =Bytes(32)=, thirteen
+   ZKIR 3.1 instructions joined the enum, and onchain-vm 4.0.1 pushes and
+   keys =AlignedValueChecked= (canonical values only: a test fixture that
+   kept trailing zero bytes is now refused, as the ledger refuses it).
+2. *Cross-contract calls (taxonomy 5).* compactc 0.36 makes the callee's
+   entry-point hash a constant of the claim instead of two witnesses with
+   8/248-bit checks. =contract_call= follows: =XcallEntryPointHash=,
+   =bind_entry_points= and =call_once_bound= are gone, and every call is
+   66 rows cheaper. The leakage inventories lose the label, ours and the
+   corpus twins alike.
+3. *Byte instructions (taxonomy 5).* compactc 0.36 writes =to_bytes=,
+   =from_bytes=, =bytes_into_natives= and =bytes_from_natives=; the
+   builders emit them too. On a =Bytes(32)= each proves the same statement
+   as the 3.0 op it replaces (zkir 3.2.0 =ir_vm.rs=), and
+   =bytes_from_natives= is about 137 rows cheaper than
+   =bytes32_from_low_high=. The taint lint bounds every
+   =bytes_into_natives= output (31 range-checked bytes at most) and every
+   =bytes_from_natives= limb.
+4. *Upstream soundness fix.* =reconstitute_field= now proves the
+   composite is below p (canonical bits); the Lean constraint reading
+   carries it, and =decode= refuses non-canonical encodings off-circuit,
+   which the Lean decoder now mirrors.
+5. *Corpus (taxonomy 2).* 855 artifacts, all v3. Three ECDSA examples
+   compile under language 0.28.0. The vault hits compact#856 (a guarded
+   =deserialize<Boolean>= crashes =missing-guard-workarounds=); the pinned
+   copy carries the workaround (reading the response before the branch)
+   until the fix lands in midnight-examples and the pin moves to it;
+   =fetch.sh= would restore the unpatched source. compactc 0.36 also constrains that
+   Boolean to 0 or 1, now on every call; the Rust vault matches, with
+   tests for a byte of 2 on both verdicts.
+
+** Row snapshot
+Every moved circuit was priced twice: the pre-bump IR under the new
+model (upstream's change, same IR) and the new IR (ours).
+- Ours: -66 per cross-contract call; about -137 per
+  =bytes_from_natives=; +1 for the vault's Boolean check.
+- Upstream, same IR: +1296 for circuits taking a =Point<Secp256k1>=
+  input (=initialise= k 10 -> 12, =op_point= k 9 -> 11), +649 on the
+  ECDSA-verify circuits, +5307 on =attest= sha/keccak, +6165 on
+  =serde_builtin=, +3915 on =manager::execute=. Not attributed instruction
+  by instruction; the cause is inside midnight-zkir 3.2.0 and the
+  circuits/zk-stdlib it pins.
+- The three Signet signer verifier keys are byte-identical; only the
+  ZKIR's version label moved, so =expectedVk.json= does not change.

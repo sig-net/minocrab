@@ -27,7 +27,7 @@ pub const FIELDS: u8 = 7;
 const SEGMENT: u8 = 15;
 
 fn key(i: u8) -> Key {
-    Key::Value(bytesn_value(1, &[i]))
+    Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
 }
 
 /// A field's path. Under the segment length there is no segmentation at
@@ -90,7 +90,7 @@ pub fn member(field: u8, k: &[u8; 32], result: bool) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: key32(k),
+            value: key32(k).try_into_checked().expect("a canonical value"),
         },
         Op::Member,
         Op::Popeq {
@@ -112,7 +112,7 @@ pub fn lookup(field: u8, k: &[u8; 32], result: AlignedValue) -> Vec<VmOp> {
         Op::Idx {
             cached: false,
             push_path: false,
-            path: vec![Key::Value(bytesn_value(32, k))].into(),
+            path: vec![Key::Value(bytesn_value(32, k).try_into().expect("a canonical value"))].into(),
         },
         Op::Popeq {
             cached: false,
@@ -131,11 +131,11 @@ pub fn insert(field: u8, k: &[u8; 32], value: AlignedValue) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: key32(k),
+            value: key32(k).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
-            value: cell(value),
+            value: cell(value).try_into_checked().expect("a canonical value"),
         },
         Op::Ins {
             cached: false,
@@ -158,7 +158,7 @@ pub fn remove(field: u8, k: &[u8; 32]) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: key32(k),
+            value: key32(k).try_into_checked().expect("a canonical value"),
         },
         Op::Rem { cached: false },
         Op::Ins { cached: true, n: 1 },
@@ -215,7 +215,7 @@ pub fn claim_contract_call(addr: &[u8; 32], ep: &[u8; 32], comm: Fr) -> Vec<VmOp
         Op::Size,
         Op::Push {
             storage: false,
-            value: cell(addr_ep_comm),
+            value: cell(addr_ep_comm).try_into_checked().expect("a canonical value"),
         },
         Op::Concat {
             cached: true,

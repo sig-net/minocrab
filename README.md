@@ -341,7 +341,7 @@ pub trait SignetSigner {
 - No address in the crate: `at_field(index)` names a sealed ledger cell, `at(address)` takes one as data
 - Each crate commits the callee's artifact plus a hash pin and checks slots, constraints and the compiled `.zkir` prefix against it; a mutation suite proves the checks bite, including a forged circuit with a correct manifest
 
-Limit: the circuit binds neither the entry point nor the argument types unless asked. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode: every typed call then constrains the entry-point hash to the declared circuit's. Argument types stay unbound.
+The entry point is bound: its hash is a constant of the call's claim, as compactc 0.36 compiles it, so a circuit proves only the entry point it names. Limit: argument types stay unbound.
 
 ## Cross-chain calls
 
@@ -583,7 +583,7 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet, because the `midnight-*` line they depend on is not on the registry ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now, and copy this repository's `[patch.crates-io]` block into your own workspace: the ledger's `midnight-*` dependencies are crates.io versions that only that patch resolves, to the pinned tags. A workspace already patching the ledger 9.1 line to its own compatible tags can use those instead (sig-net/mpc does); copy every entry, `midnight-transient-crypto-old` included, or a dependency asking for the 2.x line silently resolves to crates.io instead.
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet: seven of them still carry `publish = false` ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
 
 Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 

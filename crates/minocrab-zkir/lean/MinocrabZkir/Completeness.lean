@@ -596,6 +596,65 @@ theorem step_sat (P : Program) (π : Preimage) (st st' : State C) (i : Instr)
       have s4 := bound_of_insert hs
       exact ⟨lo, hi, val_of_resolve st ilo _ hwl m hs',
         val_of_resolve st ihi _ hwh m hs', hrange.1, hrange.2, s4⟩
+  | toBytes out input =>
+    unfold_step h
+    obtain ⟨v, hv, b, hb, h⟩ := h
+    subst h
+    refine ⟨(close_insert st out _ (hfresh out (by simp [Instr.defines]))).1, ?_⟩
+    intro m hs _ pis _
+    have hs' := Sub.of_insert (hfresh out (by simp [Instr.defines])) hs
+    have s4 := bound_of_insert hs
+    exact ⟨v, b, val_of_resolve st input _ hv m hs', hb, s4⟩
+  | fromBytes ty out bytes =>
+    unfold_step h
+    obtain ⟨w, hw, b, hb, r, hr, h⟩ := h
+    rw [asBytes32_ok] at hb
+    subst hb
+    subst h
+    refine ⟨(close_insert st out _ (hfresh out (by simp [Instr.defines]))).1, ?_⟩
+    intro m hs _ pis _
+    have hs' := Sub.of_insert (hfresh out (by simp [Instr.defines])) hs
+    have s4 := bound_of_insert hs
+    exact ⟨b, r, val_of_resolve st bytes _ hw m hs', hr, s4⟩
+  | bytesIntoNatives outs bytes =>
+    unfold_step h
+    split at h
+    · rename_i lo hi
+      step_simp h
+      obtain ⟨w, hw, b, hb, h⟩ := h
+      rw [asBytes32_ok] at hb
+      subst hb
+      subst h
+      simp only [Instr.defines] at hnd hfresh
+      obtain ⟨sh, s4⟩ := close_two st lo hi _ _ (two_defs _ _ hnd) (hfresh lo (by simp)) (hfresh hi (by simp))
+      refine ⟨sh, ?_⟩
+      intro m hs _ pis _
+      exact ⟨lo, hi, b, rfl, val_of_resolve st bytes _ hw m (sh.1.trans hs), (s4 m hs).1, (s4 m hs).2⟩
+    · close_throw h
+  | bytesFromNatives out len ins =>
+    unfold_step h
+    split at h
+    · rename_i ilo ihi
+      split at h
+      · rename_i hlen
+        step_simp h
+        obtain ⟨wl, hwl, lo, hlo, wh, hwh, hi, hhi, h⟩ := h
+        rw [asNative_ok] at hlo hhi
+        subst hlo hhi
+        split at h
+        · close_throw h
+        · rename_i hrange
+          step_simp h
+          subst h
+          simp only [not_or, Nat.not_le] at hrange
+          refine ⟨(close_insert st out _ (hfresh out (by simp [Instr.defines]))).1, ?_⟩
+          intro m hs _ pis _
+          have hs' := Sub.of_insert (hfresh out (by simp [Instr.defines])) hs
+          have s4 := bound_of_insert hs
+          exact ⟨ilo, ihi, lo, hi, rfl, hlen, val_of_resolve st ilo _ hwl m hs',
+            val_of_resolve st ihi _ hwh m hs', hrange.1, hrange.2, s4⟩
+      · close_throw h
+    · close_throw h
   | divModPowerOfTwo outs v bits =>
     unfold_step h
     split at h
@@ -623,7 +682,8 @@ theorem step_sat (P : Program) (π : Preimage) (st st' : State C) (i : Instr)
       subst hmv hdv
       split at h
       · close_throw h
-      · step_simp h
+      · rename_i hcomp
+        step_simp h
         subst h
         refine ⟨(close_insert st out _ (hfresh out (by simp [Instr.defines]))).1, ?_⟩
         intro m hs _ pis _
@@ -631,7 +691,7 @@ theorem step_sat (P : Program) (π : Preimage) (st st' : State C) (i : Instr)
         have s4 := bound_of_insert hs
         refine ⟨dv, mv, val_of_resolve st d _ hwd m hs',
           val_of_resolve st mo _ hwm m hs', (checkBits_ok _ _ hud).2,
-          (checkBits_ok _ _ hum).2, ?_⟩
+          (checkBits_ok _ _ hum).2, Nat.lt_of_not_le hcomp, ?_⟩
         rw [← ofNat_recon]
         exact s4
   | transientHash out inputs =>

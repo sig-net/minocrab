@@ -329,17 +329,17 @@ pub fn circuits() -> Vec<Circuit> {
     // `xcall` (M5): individually listed, like `erc20_vault_pending` above —
     // its derived circuits (`local_base`, `call_emit`, `call_big`,
     // `target_deposit_big`) sit BETWEEN `entry()`-built family members
-    // (`call_once`, `call_once_bound`, `call_twice`, `target_deposit`,
+    // (`call_once`, `call_twice`, `target_deposit`,
     // `target_deposit_emit`) in the frozen snapshot's order, so no single
     // `of()` call could reproduce it — the derived ones still call through
     // `Xcall::circuit()`.
     listed.extend([
         c!("xcall::local_base", || xcall::Xcall::local_base()),
         c!("xcall::call_once", || xcall::call_once()),
-        // Byte-identical to call_once (xcall_differential pins it); listed so
-        // the instruments see it under its own name (tests/circuit_closure.rs).
+        // call_once up to the entry-point constant (xcall_differential pins
+        // it); listed so the instruments see it under its own name
+        // (tests/circuit_closure.rs).
         c!("xcall::call_emit", || xcall::Xcall::call_emit()),
-        c!("xcall::call_once_bound", || xcall::call_once_bound()),
         c!("xcall::call_twice", || xcall::call_twice()),
         c!("xcall::call_big", || xcall::Xcall::call_big()),
         c!("xcall::target_deposit", || xcall::target_deposit()),

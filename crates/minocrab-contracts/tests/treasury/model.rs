@@ -62,11 +62,14 @@ pub fn tagged32(tag: &[u8], top: u8) -> [u8; 32] {
     out
 }
 
-/// An `AlignedValue` from an explicit atom list and limbs, in order.
+/// An `AlignedValue` from an explicit atom list and limbs, in order, every
+/// atom normalised as the ledger stores it (`prims::aligned`).
 pub fn aligned_atoms(atoms: &[minocrab::AlignmentAtom], limbs: &[Fr]) -> AlignedValue {
-    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
+    let mut value = Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
         .parse_field_repr(limbs)
-        .expect("limbs match the alignment")
+        .expect("limbs match the alignment");
+    value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+    value
 }
 
 /// A `Secp256k1Point` as its cell value.
@@ -311,11 +314,10 @@ pub fn call_args(self_addr: &[u8; 32], records_field: u8, request_id: &[u8; 32])
     args
 }
 
-/// The cross-contract call's own witnesses: `cc-rand`, then the entry-point
-/// hash's two limbs.
-pub fn call_witnesses(env: &Env, cc_rand: Fr) -> Vec<Fr> {
-    let (ep_hi, ep_lo) = b32_slots(&env.ep);
-    vec![cc_rand, ep_hi, ep_lo]
+/// The cross-contract call's one witness, `cc-rand`; the entry-point hash is
+/// a constant of the claim (compactc 0.36).
+pub fn call_witnesses(_env: &Env, cc_rand: Fr) -> Vec<Fr> {
+    vec![cc_rand]
 }
 
 /// A ticket's argument slots: `respond: RespondBidirectionalEvent` then

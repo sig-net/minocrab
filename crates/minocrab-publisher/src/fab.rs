@@ -8,7 +8,7 @@
 use midnight_base_crypto::fab::{
     AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom,
 };
-use midnight_onchain_state::state::StateValue;
+use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
 use midnight_storage::arena::Sp;
 use midnight_storage::db::DB;
 use midnight_transient_crypto::curve::Fr;
@@ -29,8 +29,15 @@ pub fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
     .expect("a Bytes<n> atom accepts n bytes")
 }
 
-/// A cell holding one aligned value.
-pub fn cell<D: DB>(av: AlignedValue) -> StateValue<D> {
+/// A cell holding one aligned value, as the canonical state value an
+/// `Op::Push` carries since onchain-vm 4.0.1.
+///
+/// # Panics
+///
+/// If `av` holds a non-canonical field atom — never at this crate's call
+/// sites, which push `Bytes<n>` atoms only.
+pub fn cell<D: DB>(av: AlignedValue) -> StateValue<D, AlignedValueChecked> {
+    let av = AlignedValueChecked::try_from(av).expect("a Bytes<n> value has no field atom");
     StateValue::Cell(Sp::new(av))
 }
 

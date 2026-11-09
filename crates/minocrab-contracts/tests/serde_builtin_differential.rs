@@ -55,7 +55,9 @@ fn preimage(bytes: &[u8; 128]) -> ProofPreimage {
                 length: 1,
             })]),
         )
-        .unwrap(),
+        .unwrap()
+        .try_into()
+        .expect("a bytes<1> key has no field atom"),
     );
     let ops: Vec<VmOp> = vec![
         Op::Idx {

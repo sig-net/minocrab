@@ -211,7 +211,7 @@ fn short_flushes_of_one_to_four_match_the_native_fold() {
         let acc_reads = out
             .ops
             .iter()
-            .filter(|op| matches!(op, Op::Idx { push_path: false, path, .. } if path.len() == 1 && path.iter().next().is_some_and(|k| *k == Key::Value(field_key(2)))))
+            .filter(|op| matches!(op, Op::Idx { push_path: false, path, .. } if path.len() == 1 && path.iter().next().is_some_and(|k| *k == Key::Value(field_key(2).try_into().expect("a canonical value")))))
             .count();
         assert_eq!(acc_reads, 1, "{order:?}: the accumulator is read once");
         assert_eq!(popeqs(&out), 1 + 2 * order.len(), "{order:?}: acc + (member, head) per report");

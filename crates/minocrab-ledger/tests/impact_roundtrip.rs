@@ -13,7 +13,7 @@
 //! rather than as a silent mis-decode in the executor.
 
 use midnight_base_crypto::fab::{Alignment, AlignedValue, AlignmentAtom, AlignmentSegment};
-use midnight_onchain_state::state::StateValue;
+use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::{ResultModeGather, ResultModeVerify};
 use midnight_storage::arena::Sp;
@@ -30,12 +30,14 @@ type VmOp = Op<ResultModeVerify, InMemoryDB>;
 type GatherOp = Op<ResultModeGather, InMemoryDB>;
 
 /// A well-formed `AlignedValue` from atoms and limbs — the same route
-/// `Alignment::parse_field_repr` gives the executor, so the fixtures cannot
-/// be shapes FAB would never produce.
+/// the executor takes (`Alignment::parse_field_repr`, then every atom
+/// normalised), so the fixtures cannot be shapes FAB would never produce.
 fn aligned(atoms: &[AlignmentAtom], limbs: &[Fr]) -> AlignedValue {
-    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
+    let mut value = Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
         .parse_field_repr(limbs)
-        .expect("the limbs fit the atoms")
+        .expect("the limbs fit the atoms");
+    value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+    value
 }
 
 fn av(width: u32, limbs: &[u64]) -> AlignedValue {
@@ -45,8 +47,8 @@ fn av(width: u32, limbs: &[u64]) -> AlignedValue {
     )
 }
 
-fn cell(v: AlignedValue) -> StateValue<InMemoryDB> {
-    StateValue::Cell(Sp::new(v))
+fn cell(v: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
+    StateValue::Cell(Sp::new(v.try_into().expect("a canonical test value")))
 }
 
 /// One op per `Op::field_repr` branch.
@@ -96,7 +98,7 @@ fn every_shape() -> Vec<VmOp> {
         },
         Op::Push {
             storage: true,
-            value: StateValue::Array(Array::from(vec![
+            value: StateValue::Array(Array::from(&vec![
                 cell(av(32, &[1, 0])),
                 StateValue::Null,
                 cell(av(8, &[0])),
@@ -132,12 +134,12 @@ fn every_shape() -> Vec<VmOp> {
         Op::Idx {
             cached: false,
             push_path: false,
-            path: vec![Key::Value(av(1, &[5]))].into(),
+            path: vec![Key::Value(chk(av(1, &[5])))].into(),
         },
         Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(av(1, &[0])), Key::Value(av(1, &[3]))].into(),
+            path: vec![Key::Value(chk(av(1, &[0]))), Key::Value(chk(av(1, &[3])))].into(),
         },
         Op::Idx {
             cached: false,
@@ -147,7 +149,7 @@ fn every_shape() -> Vec<VmOp> {
         Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(av(1, &[1])), Key::Stack].into(),
+            path: vec![Key::Value(chk(av(1, &[1]))), Key::Stack].into(),
         },
         Op::Ins {
             cached: false,
@@ -236,4 +238,9 @@ fn the_builders_round_trip() {
         }
         assert_eq!(again.len(), elems.len(), "re-encoded length differs");
     }
+}
+
+/// A path key as the VM carries it: canonical.
+fn chk(v: AlignedValue) -> AlignedValueChecked {
+    v.try_into().expect("a canonical test key")
 }

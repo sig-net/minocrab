@@ -146,19 +146,26 @@ def encodeF : V → List Fr
   | .k256Scalar a => Secp256k1.encodeFq a
   | _ => []
 
-def decodeF (t : IrType) (raw : List Fr) : R V :=
+/-- `decode_offcircuit`'s foreign arms, then its canonicity check (zkir
+3.2.0 ir_instructions/encode.rs): a decoding stands only if it re-encodes
+to exactly the limbs given, so a limb pair at or above the emulated
+modulus, or an identity point with nonzero coordinates, is refused rather
+than reduced. -/
+def decodeF (t : IrType) (raw : List Fr) : R V := do
   let fail : R V := throw s!"Failed to decode as {t.name}"
-  match t with
-  | .secp256k1Point => match Secp256k1.decodePoint raw with
-    | some p => pure (.k256Point p)
-    | none => fail
-  | .secp256k1Base => match Secp256k1.decodeFp raw with
-    | some a => pure (.k256Base a)
-    | none => fail
-  | .secp256k1Scalar => match Secp256k1.decodeFq raw with
-    | some a => pure (.k256Scalar a)
-    | none => fail
-  | _ => throw s!"{t.name} is uninterpreted at rung 4 (notes/zkir-rung4.org)"
+  let v ← match t with
+    | .secp256k1Point => match Secp256k1.decodePoint raw with
+      | some p => pure (.k256Point p)
+      | none => fail
+    | .secp256k1Base => match Secp256k1.decodeFp raw with
+      | some a => pure (.k256Base a)
+      | none => fail
+    | .secp256k1Scalar => match Secp256k1.decodeFq raw with
+      | some a => pure (.k256Scalar a)
+      | none => fail
+    | _ => throw s!"{t.name} is uninterpreted at rung 4 (notes/zkir-rung4.org)"
+  if encodeF v = raw then pure v
+  else throw s!"The encoded value of type {t.name} is not in canonical form"
 
 /-- `IrValue::default` (ir_types.rs:168-186)'s foreign arms. Only the
 secp256k1 ones are meaningful; the rest are placeholders no supported
@@ -209,7 +216,7 @@ result types that leave no room to fail — they must return a
 program using them would therefore run to a WRONG answer rather than an
 error. `unsupported` closes that hole before the walk starts: a value of
 an uninterpreted type can only enter a program through a declared input
-or output type, a `public_input` / `private_input` / `from_bytes32` type
+or output type, a `public_input` / `private_input` / `from_bytes32` / `from_bytes` type
 annotation, or one of the two Jubjub-producing instructions, and all of
 those are checked here. -/
 
@@ -228,6 +235,8 @@ private def instrObjection : Instr → Option String
     if interpreted t then none else some s!"private_input of {t.name}"
   | .fromBytes32 t _ _ =>
     if interpreted t then none else some s!"from_bytes32 to {t.name}"
+  | .fromBytes t _ _ =>
+    if interpreted t then none else some s!"from_bytes to {t.name}"
   | .hashToCurve _ _ => some "hash_to_curve (Jubjub)"
   | .jubjubScalarFromNative _ _ => some "jubjub_scalar_from_native"
   | _ => none
@@ -241,5 +250,22 @@ def unsupported (p : Program) : Option String :=
     match p.outputs.find? (fun t => !interpreted t) with
     | some t => some s!"output : {t.name}"
     | none => p.instructions.findSome? instrObjection
+
+/-! ## Build-time checks of the decoder's canonicity rule -/
+
+private def decodes (t : IrType) (raw : List Fr) : Bool :=
+  match decodeF t raw with
+  | .ok _ => true
+  | .error _ => false
+
+-- Limbs that re-encode to themselves decode.
+#guard decodes .secp256k1Base (encodeF (.k256Base (Secp256k1.Fp.ofNat 5)))
+#guard decodes .secp256k1Point (encodeF (.k256Point .infinity))
+-- The largest limb pair the range checks admit is 2^256, above the
+-- emulated modulus: the decoder alone would reduce it, the canonicity
+-- check refuses it.
+#guard !decodes .secp256k1Base [Fr.ofNat (2 ^ 192 - 1), Fr.ofNat (2 ^ 64 - 1)]
+-- The identity flag with nonzero coordinates is not the identity's encoding.
+#guard !decodes .secp256k1Point [0, 0, 0, 0, 1]
 
 end MinocrabZkir.Concrete

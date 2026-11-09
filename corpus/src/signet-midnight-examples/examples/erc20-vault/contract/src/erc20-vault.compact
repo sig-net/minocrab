@@ -947,15 +947,16 @@ export circuit completeDeposit(
   assert(bidirectionalDepositMap.member(disclosedId), "Request event missing");
   bidirectionalDepositMap.remove(disclosedId);
 
+  const output = disclose(serializedOutput);
+  const success = deserialize<VaultResponse, 1>(output).success;
   if (record.outputKind == OutputKind.executed) {
-    const output = disclose(serializedOutput);
     assert(
       calculateSignetAttestationDigestV1<1>(
         disclosedId, record.blockHeight, record.outputKind, output
       ) == record.digest,
       "Output does not match the attestation"
     );
-    if (deserialize<VaultResponse, 1>(output).success) {
+    if (success) {
       const claimRecipient = disclose(recipient).is_some
         ? disclose(recipient).value
         : left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey());
@@ -1127,7 +1128,8 @@ export circuit completeWithdraw(
       "Output does not match the attestation"
     );
   }
-  if (outcomeRefunds(record.outputKind) || !deserialize<VaultResponse, 1>(output).success) {
+  const success = deserialize<VaultResponse, 1>(output).success;
+  if (outcomeRefunds(record.outputKind) || !success) {
     mintShieldedToken(
       vaultTokenDomainSeparator(args.request.erc20Address),
       args.request.amount as Uint<64>,

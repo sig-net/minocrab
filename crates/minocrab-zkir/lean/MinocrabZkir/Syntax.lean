@@ -46,9 +46,18 @@ inductive Segment where
   | compress
 deriving DecidableEq, Repr, Inhabited
 
-/-- The 33 instructions (ir.rs:382-941). Field ORDER here is compactc's
-JSON key order (print-zkir-v3.ss `Instruction`), which the printer
-follows verbatim; field NAMES are the JSON keys. -/
+/-- The 33 ZKIR 3.0 instructions (ir.rs:382-941), then the four ZKIR 3.1
+byte instructions compactc 0.36 writes in their place (`to_bytes`,
+`from_bytes`, `bytes_into_natives`, `bytes_from_natives`; midnight-zkir
+3.2.0 ir.rs). Field ORDER here is compactc's JSON key order
+(print-zkir-v3.ss `Instruction`), which the printer follows verbatim;
+field NAMES are the JSON keys.
+
+DELIBERATE SUBSET of ZKIR 3.1: its other nine instructions (`slice`,
+`nth`, `concat`, `load_constant`, `sha512`, `and`, `or`, `xor`,
+`reverse`) and its `Bool`/`Byte`/`Bytes(n)` types are not representable;
+compactc 0.36 writes none of them, and a file carrying one fails to
+parse here, loudly. -/
 inductive Instr where
   | encode (outputs : List Ident) (input : Operand)
   | assert (cond : Operand)
@@ -68,6 +77,10 @@ inductive Instr where
   | reverseBytes (output : Ident) (bytes : Operand)
   | bytes32IntoLowHigh (outputs : Ident × Ident) (bytes : Operand)
   | bytes32FromLowHigh (output : Ident) (inputs : Operand × Operand)
+  | toBytes (output : Ident) (input : Operand)
+  | fromBytes (type : IrType) (output : Ident) (bytes : Operand)
+  | bytesIntoNatives (outputs : List Ident) (bytes : Operand)
+  | bytesFromNatives (output : Ident) (len : Nat) (inputs : List Operand)
   | divModPowerOfTwo (outputs : List Ident) (val : Operand) (bits : Nat)
   | reconstituteField (output : Ident) (divisor modulus : Operand) (bits : Nat)
   | transientHash (output : Ident) (inputs : List Operand)
@@ -87,7 +100,9 @@ inductive Instr where
 deriving DecidableEq, Repr, Inhabited
 
 /-- `IrSource` (ir.rs:59-72) with the on-disk version envelope: only
-major 3 is ever accepted (ir.rs:990-999), so the major is not stored. -/
+major 3 is ever accepted (ir.rs:990-999), so the major is not stored.
+The minor (0 or 1) is a label: no instruction is gated on it
+(midnight-zkir 3.2.0). -/
 structure Program where
   minor : Nat
   doCommunicationsCommitment : Bool

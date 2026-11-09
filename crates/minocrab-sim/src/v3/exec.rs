@@ -71,7 +71,7 @@ use std::borrow::Cow;
 use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment};
 use midnight_coin_structure::contract::ContractAddress;
 use midnight_onchain_runtime::context::{Effects, QueryContext};
-use midnight_onchain_state::state::{ChargedState, StateValue};
+use midnight_onchain_state::state::{AlignedValueChecked, ChargedState, StateValue};
 use midnight_onchain_vm::cost_model::INITIAL_COST_MODEL;
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::{GatherEvent, ResultModeGather, ResultModeVerify};
@@ -565,7 +565,11 @@ fn decode_one(d: &mut Decoder<'_>, alignments: &mut Vec<Alignment>) -> Result<Ga
         },
         0x10 | 0x11 => Op::Push {
             storage: opcode == 0x11,
-            value: d.state_value()?,
+            // onchain-vm 4.0.1 pushes only canonical values: a non-canonical
+            // field limb or a non-empty Merkle tree is not well-formed.
+            value: d.state_value()?.try_into_checked().map_err(|()| {
+                decode_err(at, "a pushed value is not canonical (onchain-vm AlignedValueChecked)")
+            })?,
         },
         0x12 => Op::Branch { skip: d.u32()? },
         0x13 => Op::Jmp { skip: d.u32()? },
@@ -732,7 +736,11 @@ impl Decoder<'_> {
             self.at += 1;
             return Ok(Key::Stack);
         }
-        Ok(Key::Value(self.aligned_value()?))
+        let at = self.at;
+        let value = self.aligned_value()?;
+        AlignedValueChecked::try_from(value)
+            .map(Key::Value)
+            .map_err(|()| decode_err(at, "a path key is not canonical (onchain-vm AlignedValueChecked)"))
     }
 
     /// A `StateValue` (onchain-state `state.rs:171`).

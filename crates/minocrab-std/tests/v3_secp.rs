@@ -13,8 +13,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit as from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
@@ -44,9 +44,10 @@ fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> (IrValue, IrValue, IrVal
 
     let r_point = ec_mul_offcircuit(&generator(), k).unwrap();
     let (x, _y) = into_coordinates_offcircuit(&r_point).unwrap();
-    let IrValue::Bytes32(x_le) = into_bytes32_offcircuit(&x).unwrap() else {
+    let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
         panic!("into_bytes32 yields Bytes32");
     };
+    let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
     let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
 
     // s = k⁻¹ · (z + r·d)
@@ -155,9 +156,10 @@ fn ethereum_address_matches_native_keccak() {
     // Expected address natively: keccak256(X_be ++ Y_be)[12..32].
     let (x, y) = into_coordinates_offcircuit(&pk).unwrap();
     let coord_be = |v: &IrValue| -> [u8; 32] {
-        let IrValue::Bytes32(mut le) = into_bytes32_offcircuit(v).unwrap() else {
+        let IrValue::Bytes(le_bytes) = to_bytes_offcircuit(v).unwrap() else {
             panic!("into_bytes32 yields Bytes32");
         };
+        let mut le: [u8; 32] = le_bytes.try_into().expect("a field element is 32 bytes");
         le.reverse();
         le
     };

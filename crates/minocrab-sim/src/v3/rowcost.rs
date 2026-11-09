@@ -178,7 +178,7 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
             | I::IntoBytes32 { output, .. }
             | I::ReverseBytes { output, .. }
             | I::Bytes32FromLowHigh { output, .. } => {
-                types.insert(output.clone(), IrType::Bytes32);
+                types.insert(output.clone(), IrType::Bytes(32));
             }
             I::TransientHash { output, .. }
             | I::Not { a: _, output }
@@ -238,6 +238,48 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
             I::Bytes32IntoLowHigh { outputs, .. } => {
                 types.insert(outputs.0.clone(), IrType::Native);
                 types.insert(outputs.1.clone(), IrType::Native);
+            }
+            // ZKIR 3.1's byte and boolean instructions (zkir 3.2.0 ir.rs:999-1290).
+            I::Sha512 { output, .. } => {
+                types.insert(output.clone(), IrType::Bytes(64));
+            }
+            I::ToBytes { input, output } => {
+                let t = match type_of(&types, input) {
+                    IrType::Secp256k1Point | IrType::Secp256r1Point => IrType::Bytes(33),
+                    _ => IrType::Bytes(32),
+                };
+                types.insert(output.clone(), t);
+            }
+            I::FromBytes { val_t, output, .. } | I::LoadConstant { val_t, output, .. } => {
+                types.insert(output.clone(), val_t.clone());
+            }
+            I::Reverse { bytes, output } => {
+                let t = type_of(&types, bytes);
+                types.insert(output.clone(), t);
+            }
+            I::Slice { len, output, .. } | I::BytesFromNatives { len, output, .. } => {
+                types.insert(output.clone(), IrType::Bytes(*len));
+            }
+            I::Nth { output, .. } => {
+                types.insert(output.clone(), IrType::Byte);
+            }
+            I::Concat { inputs, output } => {
+                let len = inputs
+                    .iter()
+                    .map(|i| match type_of(&types, i) {
+                        IrType::Bytes(n) => n,
+                        _ => 1,
+                    })
+                    .sum();
+                types.insert(output.clone(), IrType::Bytes(len));
+            }
+            I::And { output, .. } | I::Or { output, .. } | I::Xor { output, .. } => {
+                types.insert(output.clone(), IrType::Bool);
+            }
+            I::BytesIntoNatives { outputs, .. } => {
+                for out in outputs {
+                    types.insert(out.clone(), IrType::Native);
+                }
             }
             I::Assert { .. }
             | I::ConstrainBits { .. }
@@ -386,6 +428,32 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             | I::CondSelect { .. }
             | I::PublicInput { .. }
             | I::PrivateInput { .. } => SIMPLE,
+            // ZKIR 3.1's instructions, which `cryptocost` does not price:
+            // each takes the cost of its nearest measured ZKIR 3.0 shape (the
+            // byte conversions minocrab emits are those shapes on a
+            // `Bytes(32)`), so these rows are an estimate. SHA-512 has no
+            // measured shape and is priced as two SHA-256 compressions per
+            // input; the selections and the constant add no constraint.
+            I::Sha512 { alignment, .. } => 2 * sha256_rows(alignment.bin_len()),
+            I::ToBytes { input, .. } => {
+                if is_foreign(&type_of(input)) {
+                    INTO_BYTES32_FOREIGN
+                } else {
+                    DECOMPOSE_BYTES32
+                }
+            }
+            I::FromBytes { val_t, .. } => {
+                if is_foreign(val_t) {
+                    FROM_BYTES32_FOREIGN
+                } else {
+                    COMPOSE_BYTES32
+                }
+            }
+            I::Reverse { .. } => REVERSE_BYTES,
+            I::BytesIntoNatives { outputs, .. } => outputs.len() * COMPOSE_BYTES32,
+            I::BytesFromNatives { inputs, .. } => inputs.len() * DECOMPOSE_BYTES32,
+            I::And { .. } | I::Or { .. } | I::Xor { .. } => SIMPLE,
+            I::Slice { .. } | I::Nth { .. } | I::Concat { .. } | I::LoadConstant { .. } => 0,
         })
         .collect()
 }

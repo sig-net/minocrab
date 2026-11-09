@@ -170,9 +170,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::ConstrainToBoolean { val: Operand::Variable(id) } => {
                 note(&mut bound, id, Max::all_ones(1));
             }
-            // ir_vm.rs asserts BOTH operands in-circuit:
-            // `divisor < 2^(FR_BITS − bits)` and `modulus < 2^bits`
-            // (assert_lower_than_fixed, the ReconstituteField arm).
+            // ir_vm.rs bounds BOTH operands in-circuit: the output's canonical
+            // FR_BITS bits, split at `bits`, must recompose to the modulus and
+            // the divisor, so `modulus < 2^bits` and
+            // `divisor < 2^(FR_BITS − bits)` (zkir 3.2.0, the
+            // ReconstituteField arm).
             Instruction::ReconstituteField { divisor, modulus, bits, .. } => {
                 if let Operand::Variable(id) = modulus {
                     note(&mut bound, id, Max::all_ones(*bits));
@@ -189,6 +191,20 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 }
                 if let Operand::Variable(id) = high {
                     note(&mut bound, id, Max::all_ones(8));
+                }
+            }
+            // Each limb is decomposed into exactly the bytes it contributes
+            // (`assigned_to_le_bytes(limb, nb_bytes)`, zkir 3.2.0 ir_vm.rs's
+            // BytesFromNatives arm): every limb but the last is < 2^248, the
+            // last < 2^(8·r) for the r bytes it contributes.
+            Instruction::BytesFromNatives { inputs, len, .. } => {
+                for (i, limb) in inputs.iter().enumerate() {
+                    let contributes = (*len as usize)
+                        .saturating_sub(LIMB_BYTES * i)
+                        .min(LIMB_BYTES);
+                    if let Operand::Variable(id) = limb {
+                        note(&mut bound, id, Max::all_ones(8 * contributes as u32));
+                    }
                 }
             }
             // The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): an
@@ -227,6 +243,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // rather than silently escape the audit — the unsound direction is a new
     // byte-absorbing hash falling through a wildcard.
     let mut is_bytes32: BTreeSet<String> = BTreeSet::new();
+    // Identifiers the stream itself shows to hold a prime-field element (never
+    // a point): what lets a `ToBytes` output be known as `Bytes(32)`, since a
+    // point's `ToBytes` is 33 bytes (secp) and `Encode` cannot tell them apart.
+    // Circuit arguments are not instructions, so they are never in this set.
+    let mut field_valued: BTreeSet<String> = BTreeSet::new();
     let mut findings = Vec::new();
     for (index, ins) in instructions.iter().enumerate() {
         match ins {
@@ -238,6 +259,12 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::Keccak256 { alignment, inputs, output } => {
                 audit_hash(index, "keccak256", alignment, inputs, &bound, &confined, &mut findings);
                 is_bytes32.insert(output.0.clone());
+            }
+            // The same byte decoder as the two above (`fab_decode_to_bytes`,
+            // zkir 3.2.0 ir_vm.rs:1122-1148); its `Bytes(64)` output is not a
+            // `Bytes(32)`, so `Encode` of it stays unmarked.
+            Instruction::Sha512 { alignment, inputs, output: _ } => {
+                audit_hash(index, "sha512", alignment, inputs, &bound, &confined, &mut findings);
             }
 
             // ---- bounded producers, each with its in-circuit warrant ----
@@ -266,8 +293,9 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     note(&mut bound, &outputs[1], Max::all_ones(*bits));
                 }
             }
-            // output = divisor·2^bits + modulus exactly (linear_combination),
-            // with both operands asserted in range (pass A above).
+            // output = divisor·2^bits + modulus as an integer below p (its
+            // canonical bits ARE the two operands), with both operands in
+            // range (pass A above).
             Instruction::ReconstituteField { divisor, modulus, bits, output } => {
                 let d = op_max(&bound, divisor)
                     .map(|m| m.min(Max::all_ones(cap.bits() - *bits)))
@@ -351,6 +379,45 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             | Instruction::Bytes32FromLowHigh { output, .. } => {
                 is_bytes32.insert(output.0.clone());
             }
+            // `BytesFromNatives { len: 32 }` is a `Bytes(32)`.
+            Instruction::BytesFromNatives { len, output, .. } => {
+                if *len == 32 {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            // `ToBytes` of a prime-field element is its 32-byte LE form; of a
+            // point it is 32 or 33 bytes, so only a known field value marks.
+            Instruction::ToBytes { input, output } => {
+                let field = match input {
+                    Operand::Immediate(_) => true,
+                    Operand::Variable(id) => field_valued.contains(&id.0),
+                };
+                if field {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            // `Reverse` keeps the length.
+            Instruction::Reverse { bytes: Operand::Variable(id), output } => {
+                if is_bytes32.contains(&id.0) {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            Instruction::Reverse { .. } => {}
+            // Every output is a chunk of at most 31 of the input's assigned
+            // (range-checked) bytes, recomposed little-endian; synthesis fails
+            // on a non-`Bytes` input (zkir 3.2.0 ir_vm.rs's BytesIntoNatives
+            // arm, `encode_incircuit` in ir_instructions/encode.rs). Of a
+            // `Bytes(32)` the second chunk is the one high byte.
+            Instruction::BytesIntoNatives { bytes, outputs } => {
+                for output in outputs {
+                    note(&mut bound, output, Max::all_ones(8 * LIMB_BYTES as u32));
+                }
+                let input_is_bytes32 =
+                    matches!(bytes, Operand::Variable(id) if is_bytes32.contains(&id.0));
+                if input_is_bytes32 && outputs.len() == 2 {
+                    note(&mut bound, &outputs[1], Max::all_ones(8));
+                }
+            }
             Instruction::PublicInput { val_t, output, .. }
             | Instruction::PrivateInput { val_t, output, .. } => {
                 // The witnessed VALUE is free; only its shape is `val_t`
@@ -359,7 +426,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 // bounded by pass A's Impact arm (`mark_popeq`) — via the
                 // ledger's external warrant, per the M23 R3 ruling — and a
                 // guarded one stays free, deliberately.
-                if *val_t == IrType::Bytes32 {
+                if *val_t == IrType::Bytes(32) {
                     is_bytes32.insert(output.0.clone());
                 }
             }
@@ -384,6 +451,37 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             | Instruction::Inv { .. }
             | Instruction::JubjubScalarFromNative { .. }
             | Instruction::Output { .. } => {}
+            // ZKIR 3.1's byte and boolean instructions, which minocrab does
+            // not emit. Left unmarked: a missing bound can only add a
+            // finding, never hide one.
+            Instruction::Slice { .. }
+            | Instruction::Nth { .. }
+            | Instruction::Concat { .. }
+            | Instruction::LoadConstant { .. }
+            | Instruction::And { .. }
+            | Instruction::Or { .. }
+            | Instruction::Xor { .. }
+            | Instruction::FromBytes { .. } => {}
+        }
+        // The field-valued producers, recorded after the arm so a value is
+        // known only from its own definition on.
+        match ins {
+            Instruction::IntoCoordinates { outputs: (x, y), .. } => {
+                field_valued.insert(x.0.clone());
+                field_valued.insert(y.0.clone());
+            }
+            Instruction::FromBytes { val_t, output, .. }
+            | Instruction::FromBytes32 { val_t, output, .. }
+            | Instruction::PublicInput { val_t, output, .. }
+            | Instruction::PrivateInput { val_t, output, .. }
+                if is_prime_field(val_t) =>
+            {
+                field_valued.insert(output.0.clone());
+            }
+            Instruction::Copy { val: Operand::Variable(id), output } if field_valued.contains(&id.0) => {
+                field_valued.insert(output.0.clone());
+            }
+            _ => {}
         }
     }
     findings
@@ -827,12 +925,40 @@ fn confined(
             | Instruction::EcMulGenerator { .. }
             | Instruction::IntoCoordinates { .. }
             | Instruction::FromCoordinates { .. }
-            | Instruction::JubjubScalarFromNative { .. } => true,
+            | Instruction::JubjubScalarFromNative { .. }
+            | Instruction::Sha512 { .. }
+            | Instruction::Slice { .. }
+            | Instruction::Nth { .. }
+            | Instruction::Concat { .. }
+            | Instruction::LoadConstant { .. }
+            | Instruction::And { .. }
+            | Instruction::Or { .. }
+            | Instruction::Xor { .. }
+            | Instruction::ToBytes { .. }
+            | Instruction::FromBytes { .. }
+            | Instruction::Reverse { .. }
+            | Instruction::BytesIntoNatives { .. }
+            | Instruction::BytesFromNatives { .. } => true,
         }
     })
 }
 
 /// Merge a newly proven maximum for `id`, keeping the tightest.
+/// The prime-field `IrType`s, whose `ToBytes` is 32 bytes.
+fn is_prime_field(t: &IrType) -> bool {
+    matches!(
+        t,
+        IrType::Native
+            | IrType::JubjubScalar
+            | IrType::Secp256k1Base
+            | IrType::Secp256k1Scalar
+            | IrType::Secp256r1Base
+            | IrType::Secp256r1Scalar
+            | IrType::Curve25519Base
+            | IrType::Curve25519Scalar
+    )
+}
+
 fn note(bound: &mut BTreeMap<String, Max>, id: &Identifier, m: Max) {
     bound
         .entry(id.0.clone())

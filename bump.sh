@@ -13,7 +13,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-LEDGER_REPO="https://github.com/midnightntwrk/midnight-ledger"
+NODE_REPO="midnightntwrk/midnight-node"
 COMPACT_REPO="https://github.com/LFDT-Minokawa/compact"
 
 # ---------------------------------------------------------------- utilities
@@ -24,15 +24,16 @@ rule() { printf '%s\n' "--------------------------------------------------------
 # What flake.nix pins the compactc release at.
 pinned_compactc() { sed -n 's/^ *compactcVersion = "\(.*\)";/\1/p' flake.nix; }
 
-# The midnight-ledger refs (per-crate tags, or revs) the patch block pins.
-pinned_ledger_rev() {
-  sed -nE 's/.*midnightntwrk\/midnight-ledger", (rev|tag) = "([^"]*)".*/\2/p' Cargo.toml |
-    sort -u
+# The crates.io version Cargo.lock holds for one crate (every line, if the
+# graph carries more than one).
+locked_version() {
+  grep -A1 -E "^name = \"$1\"$" Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | tr '\n' ' '
 }
 
-# The ref zkir-v3 is patched to: what `compactc`'s bundled zkir-v3 is read against.
-pinned_zkir_v3_ref() {
-  sed -nE 's/^midnight-zkir-v3 = .*midnight-ledger", (rev|tag) = "([^"]*)".*/\2/p' Cargo.toml
+# The ledger pin, as the two crates that name it: the ledger and zkir-v3.
+pinned_ledger_versions() {
+  printf 'midnight-ledger-v9 %s, midnight-zkir %s' \
+    "$(locked_version midnight-ledger-v9)" "$(locked_version midnight-zkir)"
 }
 
 # ------------------------------------------------------------------- `pins`
@@ -46,7 +47,7 @@ cmd_pins() {
   local compactc_version
   compactc_version="$(pinned_compactc)"
   printf '  flake.nix compactc            %s\n' "$compactc_version"
-  printf '  Cargo.toml [patch] refs       %s\n' "$(pinned_ledger_rev | tr '\n' ' ')"
+  printf '  Cargo.lock ledger crates      %s\n' "$(pinned_ledger_versions)"
   for bin in compactc zkir zkir-v3 rustc; do
     if command -v "$bin" >/dev/null 2>&1; then
       printf '  %-29s %s\n' "$bin --version" "$("$bin" --version 2>&1 | head -1)"
@@ -54,9 +55,6 @@ cmd_pins() {
       printf '  %-29s NOT ON PATH (run inside the nix shell)\n' "$bin"
     fi
   done
-  printf '  locked crate versions         %s\n' \
-    "$(grep -A1 -E '^name = "midnight-(zkir|zkir-v3)"$' Cargo.lock |
-       sed -n 's/^version = "\(.*\)"/\1/p' | tr '\n' ' ')"
 
   rule
   bold "WHAT THE PINNED compactc WAS BUILT AGAINST"
@@ -68,14 +66,14 @@ cmd_pins() {
   else
     printf '%s' "$lock" | jq -r '
       .nodes | to_entries[]
-      | select((.value.locked.repo // "") | test("ledger"))
+      | select((.value.locked.repo // "") | test("ledger|zkir"))
       | [.key, .value.locked.rev, (.value.original.ref // "-")] | @tsv' |
       awk -F'\t' '{ printf "  %-16s %s  %s\n", $1, $2, $3 }'
     echo
-    echo "  READ THIS AGAINST the Cargo.toml refs above. They are allowed to"
-    echo "  differ (we pin the tags midnight-node pins, so the crates match"
-    echo "  the chain; compactc pins zkir and zkir-v3 by rev). What is NOT"
-    echo "  allowed is not knowing — see notes/version-bump.org §Hazard 1."
+    echo "  READ THIS AGAINST the Cargo.lock versions above. They are allowed"
+    echo "  to differ (we take the crates.io versions midnight-node locks, so"
+    echo "  the crates match the chain; compactc pins zkir-v3 by rev). What is"
+    echo "  NOT allowed is not knowing — see notes/version-bump.org §Hazard 1."
   fi
 
   rule
@@ -87,21 +85,18 @@ cmd_pins() {
     curl -fsSL "https://api.github.com/repos/LFDT-Minokawa/compact/releases?per_page=6" |
       jq -r '.[] | "    \(.tag_name)\t\(.prerelease|if . then "pre-release" else "latest" end)\t\(.published_at)"'
   fi
-  local head ours cmp
-  head="$(git ls-remote "$LEDGER_REPO" HEAD 2>/dev/null | cut -f1)"
-  ours="$(pinned_zkir_v3_ref)"
-  # A tag pin is compared by the commit it names; a rev pin is that commit.
-  ours="$(git ls-remote "$LEDGER_REPO" "refs/tags/$ours^{}" 2>/dev/null | cut -f1 | grep . || echo "$ours")"
-  printf '  midnight-ledger HEAD          %s\n' "$head"
-  if [ "$head" = "$ours" ]; then
-    echo "                                = our pin"
-  elif [ -n "$head" ]; then
-    # "newer" is a claim about ANCESTRY, not about dates. Our pin has been
-    # on a line that main does not contain — ask, do not assume.
-    cmp="$(curl -fsSL "https://api.github.com/repos/midnightntwrk/midnight-ledger/compare/$ours...$head" 2>/dev/null |
-      jq -r '"\(.status): main has \(.ahead_by) commits we do not, we have \(.behind_by) main does not (merge base \(.merge_base_commit.sha[0:12]), \(.merge_base_commit.commit.committer.date[0:10]))"')"
-    printf '                                %s\n' "${cmp:-comparison unavailable}"
+  echo "  midnight-node releases (newest first; its Cargo.lock is the crate pin):"
+  if command -v gh >/dev/null 2>&1; then
+    gh release list -R "$NODE_REPO" -L 4 2>/dev/null | sed 's/^/    /'
+  else
+    curl -fsSL "https://api.github.com/repos/$NODE_REPO/releases?per_page=4" |
+      jq -r '.[] | "    \(.tag_name)\t\(.prerelease|if . then "pre-release" else "latest" end)\t\(.published_at)"'
   fi
+  local crate newest
+  for crate in midnight-ledger-v9 midnight-zkir; do
+    newest="$(curl -fsSL -A minocrab-bump "https://crates.io/api/v1/crates/$crate" 2>/dev/null | jq -r '.crate.max_stable_version // empty')"
+    printf '  crates.io %-19s newest %s, locked %s\n' "$crate" "${newest:-unavailable}" "$(locked_version "$crate")"
+  done
 
   rule
   bold "CORPUS SOURCE PINS"
@@ -167,8 +162,8 @@ cmd_gates() {
 
   rule
   bold "TOOLCHAIN UNDER TEST"
-  printf '  compactc pin  %s\n  ledger rev    %s\n  rustc         %s\n' \
-    "$(pinned_compactc)" "$(pinned_ledger_rev | tr '\n' ' ')" "$(rustc --version 2>&1)"
+  printf '  compactc pin  %s\n  ledger        %s\n  rustc         %s\n' \
+    "$(pinned_compactc)" "$(pinned_ledger_versions)" "$(rustc --version 2>&1)"
 
   # Before anything is built: does the pin even RESOLVE? A rev that renames
   # or drops a crate fails here in seconds, and every later stage would only

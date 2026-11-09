@@ -35,6 +35,7 @@ use std::borrow::Cow;
 use midnight_base_crypto::fab::{AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom};
 use midnight_onchain_vm::ops::Op;
 use midnight_onchain_vm::result_mode::ResultModeVerify;
+use midnight_onchain_state::state::StateValue;
 use midnight_storage::db::InMemoryDB;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
@@ -99,11 +100,11 @@ fn write_transcript(v: u8) -> Vec<Fr> {
     transcript(&[
         Op::Push {
             storage: false,
-            value: bytes1_value(0).into(),
+            value: StateValue::<InMemoryDB>::from(bytes1_value(0)).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
-            value: bytes1_value(v).into(),
+            value: StateValue::<InMemoryDB>::from(bytes1_value(v)).try_into_checked().expect("a canonical value"),
         },
         Op::Ins {
             cached: false,
