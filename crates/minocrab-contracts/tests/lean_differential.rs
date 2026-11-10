@@ -288,7 +288,7 @@ fn wrapped(key: &str, values: &[String]) -> String {
 
 /// The Rust reference's verdict on `(ir, preimage)`, cross-checked against
 /// upstream `IrSource::check` (which is `preprocess(..)?.pi_skips`
-/// verbatim, zkir-v3/src/ir.rs:75-81).
+/// verbatim, midnight-zkir 3.2.0 src/ir.rs:77-82).
 ///
 /// `check` PANICS rather than erroring on some malformed preimages
 /// (notes/zkir-semantics.org §10 I2: `decode_offcircuit`'s `assert_eq!` on a

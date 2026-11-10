@@ -178,8 +178,8 @@ The compiler passes that emit ZKIR (Scheme) are in
 | IR | status | where | notes |
 |----+--------+-------+-------|
 | v1 | dead (pre-2.0) | history in CHANGELOG_zkir.md | 1.0.0 initial; 1.1.1 added .bzkir; 1.3.0 added compile-many |
-| v2 | *current mainnet format* | =midnight-ledger/zkir=, crates.io =midnight-zkir= 2.1.0; repo tags up to =zkir-2.2.0= | minor versions 2.0 / 2.1 (2.1 = same semantics, more optimizations, JubjubPoint in TestEq/ConstrainEq/CondSelect) |
-| v3 | rc, opt-in | =midnight-ledger/zkir-v3= (3.0.0-rc.1 in-repo, not on crates.io) | selected with =compact compile --feature-zkir-v3=; adds Keccak-256, secp256k1 (+ ECDSA verify in stdlib); "ZKIR 3.1 features" add secp256r1 and Curve25519 (compact CHANGELOG, toolchain 0.33.120) |
+| v2 | superseded by v3 at compactc 0.36 | =midnight-ledger/zkir=, crates.io =midnight-zkir= 2.1.0; repo tags up to =zkir-2.2.0= | minor versions 2.0 / 2.1 (2.1 = same semantics, more optimizations, JubjubPoint in TestEq/ConstrainEq/CondSelect) |
+| v3 | *current*: the only format compactc 0.36.0 writes (minor 1) | crates.io =midnight-zkir= 3.x (repo =midnightntwrk/midnight-zkir=); MinoCrab pins 3.2.0 | adds Keccak-256, secp256k1 (+ ECDSA verify in stdlib); 3.1 adds the =Bytes(n)=/=Bool=/=Byte= types and byte instructions; before 0.36 it was opt-in with =--feature-zkir-v3= (3.0.0-rc.1 in midnight-ledger) |
 
 Sources: =CHANGELOG_zkir.md= in midnight-ledger; toolchain 0.33.0 release
 notes (=LFDT-Minokawa/compact/doc/release-notes/toolchain-0.33.0.md=);

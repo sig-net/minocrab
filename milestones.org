@@ -12,7 +12,15 @@ Open milestones are ordered by PRIORITY, not number (dmd, 2026-09-04):
 the quick wins M31-M34 sit ahead of the long-running Lean work (M27),
 which is filed last. Session start = the first open milestone in file
 order.
-M40 and M41 sit at the VERY TOP, ahead of the closed summaries (dmd, 2026-09-15: needed soon); M42 follows them (2026-09-16). M43 (the production handover of the signer, 2026-09-24) sits ahead of all of them; M44 (the vault on the flush pattern, 2026-10-07) ahead of M43. M45 (the signer at v0.25.0, 2026-10-19) ahead of M44.
+M40 and M41 sit at the VERY TOP, ahead of the closed summaries (dmd, 2026-09-15: needed soon); M42 follows them (2026-09-16). M43 (the production handover of the signer, 2026-09-24) sits ahead of all of them; M44 (the vault on the flush pattern, 2026-10-07) ahead of M43. M45 (the signer at v0.25.0, 2026-10-19) ahead of M44. M46 (the ledger-9 mainnet stack, 2026-11-10) ahead of M45.
+
+* M46 — The ledger-9 mainnet stack: midnight-node 2.1.101 and compactc 0.36.0 (2026-11-10)
+Mainnet, Preprod and Preview run ledger 9.1.0.1; compactc 0.36.0 (language 0.28.0) is its compiler and writes ZKIR 3.1 only. notes/version-bump.org "Bump 2" has the procedure and every moved instrument.
+- [X] A. THE STACK: every =midnight-*= crate from crates.io at midnight-node 2.1.101's lockfile versions (=midnight-ledger-v9= 1.0.1, onchain 4.0.1, =midnight-zkir= 3.2.0 as =midnight-zkir-v3=); both =[patch.crates-io]= blocks and =.cargo/config.toml= removed; =deny.toml= allows no git source.
+- [X] B. ZKIR 3.1: the byte builders emit =to_bytes=, =from_bytes=, =reverse=, =bytes_into_natives=, =bytes_from_natives= at minor 1; the simulator, passes, taint lint and the Lean model (five constructors, =reconstitute_field='s canonical split, =decodeF='s re-encode check) follow midnight-zkir 3.2.0.
+- [X] C. COMPACTC 0.36 LOWERING: a cross-contract call's entry point is a constant of the claim (=XcallEntryPointHash=, =bind_entry_points=, =call_once_bound= removed); a deserialized Boolean is constrained to 0 or 1 (the vault, and =AbiReturn for Bool=); =secp256k1_ecdsa_verify= rejects the identity key.
+- [X] D. THE VAULT: compact#856 (notes/compact-findings.org 11) is worked around by reading the response before the branch, in midnight-examples (PR #127) and the pinned corpus copy; =corpus/sources.json= moves to the published commit once it lands.
+- [ ] E. PORT =kernel.checkpoint()=: compactc 0.36.0 compiles it (one =impact= of =0xff=, corpus =kernel_checkpoint.zkir=).
 
 * M45 — The signer at midnight-integration v0.25.0, and the publisher linkable from mpc (2026-10-19)
 sig-net/mpc replaces its TypeScript publisher sidecar with an in-process Rust publisher that links =minocrab-publisher= and =signet-protocol=. The deployed singleton is =@sig-net/midnight-contract= 0.25.0 (tag v0.25.0, =b62e67e=), whose =respondBidirectional= attests =outputHash= beside the digest. The interface decision is in notes/interface-crates.org (0.3.0).

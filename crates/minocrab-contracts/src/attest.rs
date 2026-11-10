@@ -67,7 +67,8 @@ pub struct RespondOutput<V: Vis3> {
 /// `deserialize<RespondOutput, 128>(output)` (expand-serialize.ss
 /// build-deserialize): `success = (byte 0 == 1)`, `amount = bytes 1..17`
 /// (Uint<128>, LE), `recipient = bytes 17..37` (`Bytes<20>`, one limb);
-/// the 91 padding bytes are ignored.
+/// the 91 padding bytes are ignored. compactc 0.36 also constrains byte 0 to
+/// 0 or 1; the caller asserts `success`, which already rejects any byte but 1.
 fn deserialize_respond_output<V: Vis3>(
     c: &mut Circuit3,
     output: &BytesN<V, 128>,

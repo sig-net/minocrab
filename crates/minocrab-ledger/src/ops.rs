@@ -4,8 +4,8 @@
 use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
-use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
-use midnight_onchain_vm::ops::{Key, Op};
+use midnight_onchain_state::state::StateValue;
+use midnight_onchain_vm::ops::{expect_checked_state_value, Key, Op};
 use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::HashMap as StorageHashMap;
@@ -422,7 +422,7 @@ pub fn map_insert_adt_default_at(
         push_cell(false, key),
         ImpactOp::constant(&Op::Push {
             storage: true,
-            value: checked_constant(initial),
+            value: expect_checked_state_value(initial),
         }),
         ins1(),
         insc(path.len()),
@@ -442,7 +442,7 @@ fn reset_to_at(path: &[LedgerKey], initial: StateValue<InMemoryDB>) -> Vec<Impac
     ops.push(path[path.len() - 1].push_as_cell());
     ops.push(ImpactOp::constant(&Op::Push {
         storage: true,
-        value: checked_constant(initial),
+        value: expect_checked_state_value(initial),
     }));
     ops.push(ins1());
     ops.extend(insc_container(path));
@@ -471,16 +471,6 @@ pub fn set_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
     map_reset_at(path)
 }
 
-/// An ADT's declared initial value as the constant an `Op::Push` carries:
-/// `Op::Push` holds `StateValue<_, AlignedValueChecked>` since onchain-vm
-/// 4.0.1. Every initial value below is built from `u64` cells, empty maps and
-/// blank trees, none of which has a non-canonical field limb or a non-empty
-/// Merkle tree.
-fn checked_constant(value: StateValue<InMemoryDB>) -> StateValue<InMemoryDB, AlignedValueChecked> {
-    value
-        .try_into_checked()
-        .expect("an ADT's initial value is canonical with empty Merkle trees")
-}
 
 /// A `Map`'s (and a `Set`'s) initial value: the empty map.
 pub fn empty_map() -> StateValue<InMemoryDB> {
@@ -858,7 +848,7 @@ pub fn historic_merkle_tree_reset_history_at(path: &[LedgerKey]) -> Vec<ImpactOp
         push_cell(false, &field_index_value(TREE_HISTORY)),
         ImpactOp::constant(&Op::Push {
             storage: true,
-            value: checked_constant(empty_map()),
+            value: expect_checked_state_value(empty_map()),
         }),
         dup(2),
         idx_one(false, false, TREE),
@@ -888,7 +878,7 @@ pub fn historic_merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<Impac
     ops.push(path[path.len() - 1].push_as_cell());
     ops.push(ImpactOp::constant(&Op::Push {
         storage: true,
-        value: checked_constant(initial),
+        value: expect_checked_state_value(initial),
     }));
     ops.extend(history_append());
     ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));

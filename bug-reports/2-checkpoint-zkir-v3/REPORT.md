@@ -1,5 +1,9 @@
 # `kernel.checkpoint()` cannot be compiled with `--feature-zkir-v3`
 
+**Fixed in compactc 0.36.0**, whose only backend is ZKIR v3: it compiles
+`checkpoint.compact` to one `impact` of `0xff`. `test.sh` reproduces the bug
+with the compilers before it (0.34 and earlier) only.
+
 The v2 backend assembles `kernel.checkpoint()`'s `ckpt` instruction; the v3
 backend has no case for it, so any contract calling `checkpoint()` fails to
 compile under `--feature-zkir-v3` — and it fails with an internal assertion

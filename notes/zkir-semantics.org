@@ -163,7 +163,7 @@ two walks may disagree (§4.3 lists those).
 | bytes32_into_low_high | outputs(2), bytes | bytes | outputs.0 (low = bytes[0..31] LE), outputs.1 (high = bytes[31]) | compute | 602: NO error possible | 1131: "imposes no in-circuit constraints" (ir.rs:651) |
 | bytes32_from_low_high | output, inputs(2) | inputs.0 (low), inputs.1 (high) | output | compute+constraint | 611: low < 2^248 and high < 256 else error | 1140: byte 31 of low fixed to 0; high converted to a byte |
 | div_mod_power_of_two | outputs(2), val, bits | val | outputs[0] = val >> bits, outputs[1] = val mod 2^bits | compute | 395: exactly 2 outputs; bits ≤ 248 | 1005: canonical bit decomposition enforced (=assigned_to_le_bits(None, true)=) |
-| reconstitute_field | output, divisor, modulus, bits | divisor, modulus | output = divisor·2^bits + modulus | compute+constraint | 412: modulus < 2^bits, divisor < 2^(255−bits), and the composite ≤ p−1, else error | 1025: both range asserts in-circuit (this is the taint lint's cited warrant, taint.rs:133-144) |
+| reconstitute_field | output, divisor, modulus, bits | divisor, modulus | output = divisor·2^bits + modulus | compute+constraint | 412: modulus < 2^bits, divisor < 2^(255−bits), and the composite ≤ p−1, else error | 1025: both range asserts in-circuit (this is the taint lint's cited warrant, taint.rs:133-144); since midnight-zkir 3.2.0 (ir_vm.rs:1273) also the canonical split, so the composite < p is enforced |
 | transient_hash | output, inputs | inputs[] | output (Native) | intrinsic | 468: Poseidon over Natives | |
 | persistent_hash | output, alignment, inputs | inputs[] | output (Bytes32) | intrinsic over FAB bytes | 478-506: operands → alignment (§3.2) → bytes → SHA-256 | 893: in-circuit decoder range-checks every limb |
 | keccak256 | output, alignment, inputs | inputs[] | output (Bytes32) | intrinsic over FAB bytes | same arm, Keccak-256 | same |
@@ -174,6 +174,11 @@ two walks may disagree (§4.3 lists those).
 | jubjub_scalar_from_native | output, native | native | output | intrinsic | 463 | |
 | public_input | type, output, guard | guard? | output | INPUT (public_transcript_outputs) | 348-366: guard absent/true: decode =encoded_len(type)= elements from =public_transcript_outputs= at the cursor, advance; guard false: =IrValue::default(type)=, cursor NOT advanced | 978: witnessed free; guard NOT constrained (ir.rs:894) |
 | private_input | type, output, guard | guard? | output | INPUT (private_transcript) | 367-386: same over =private_transcript= | same |
+| to_bytes | output, input | input | output (Bytes(32); a Weierstrass point gives 33) | compute (Native) / intrinsic (foreign) | 3.2.0 ir_vm.rs:666 | 3.2.0 1365 |
+| from_bytes | type, output, bytes | bytes | output | compute (Native) / intrinsic (foreign) | 3.2.0 678: any length, reduced | 3.2.0 1381 |
+| reverse | output, bytes | bytes | output (same length) | compute | 3.2.0 698 (=reverse_bytes= is its alias) | 3.2.0 1403: a permutation, no constraint |
+| bytes_into_natives | outputs, bytes | bytes | outputs[] (31-byte chunks, LE) | compute | 3.2.0 725: input must be Bytes; output count = chunk count | 3.2.0 1438 |
+| bytes_from_natives | output, len, inputs | inputs[] | output (Bytes(len)) | compute+constraint | 3.2.0 746: limb count and per-limb width checked | 3.2.0 1459: each limb range-checked to its byte count |
 | output | vals | vals[] | — | TERMINATOR (but does not stop the walk — it is just the last instruction compactc emits) | 625-644: arity = =IrSource.outputs=, per-position type check, values collected | 1151 |
 
 Bookends of the walk (ir_vm.rs), part of the semantics though not
@@ -1098,7 +1103,7 @@ pin — see version-bump.org pin 5), the 34-arm Lean, their Agda.
 | I1 | out of their scope (contract level) | unchanged |
 | I2 | §4.1: the Bytes32 decoder "panics (=assert_eq!=, encode.rs:126-131) rather than returning an error … The intended semantics is failure" | CLOSE by citation; the upstream note we owed is written by upstream. Their #10's stricter decode may fix it at tip — check when re-pinning |
 | I3 | =Alignment= "defined externally in base_crypto::fab and treated abstractly here" | unchanged; rung 4 |
-| I4 | §6.6(d) and O4 list the SAME unenforced premises as our §4.3 (=Assert= ≠0 only, ignored transcript-read guards, =ReconstituteField= overflow, exact =LessThan= bounds — width =max(bits + bits%2, 4)= as ours) and classify =CondSelect=/=Not=/=Impact= guards as constrained | the STATEMENT is upstream-endorsed; the vault-specific boolean-by-construction fact per =assert= is still ours (vault prong) |
+| I4 | §6.6(d) and O4 list the SAME unenforced premises as our §4.3 (=Assert= ≠0 only, ignored transcript-read guards, =ReconstituteField= overflow, exact =LessThan= bounds — width =max(bits + bits%2, 4)= as ours) and classify =CondSelect=/=Not=/=Impact= guards as constrained | the STATEMENT is upstream-endorsed; the vault-specific boolean-by-construction fact per =assert= is still ours (vault prong). =ReconstituteField= overflow is enforced in-circuit since midnight-zkir 3.2.0 |
 | I5 | O2 value typing: "the type of every cell a static property of the source" | =ImpactsNative= becomes a corpus/workspace fact via an O2 checker, not a hypothesis of =completeness= |
 
 ** What it does NOT cover, i.e. what stays ours

@@ -239,5 +239,6 @@ fn the_three_circuits_build() {
     let (k_req, rows_req) = cost(&submit_is_even_request().ir);
     let (k_ver, rows_ver) = cost(&verify_response().ir);
     eprintln!("initialise k={k_init}; submit k={k_req} rows={rows_req}; verify k={k_ver} rows={rows_ver}");
-    assert!(k_init <= 13 && k_req <= 14 && k_ver <= 15);
+    // The verify includes the secp256k1 identity-key check (compactc 0.36).
+    assert!(k_init <= 13 && k_req <= 14 && k_ver <= 16);
 }

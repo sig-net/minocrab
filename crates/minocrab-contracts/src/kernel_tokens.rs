@@ -8,9 +8,9 @@
 //! v3 use of an unshielded primitive, of `balance*`, of `blockTime*` or of
 //! `mergeCoin`.
 //!
-//! `kernel.checkpoint()` is absent from the fixture and from this module
-//! because compactc's ZKIR-v3 backend cannot compile it — see the fixture's
-//! header for the exact failure, and notes/kernel-tokens.org finding (a).
+//! `kernel.checkpoint()` is absent from the fixture and from this module:
+//! compactc before 0.36 could not compile it for ZKIR v3 (the fixture's
+//! header, notes/kernel-tokens.org finding (a)), and it is not ported yet.
 
 use minocrab::v3::Circuit3;
 use minocrab::{Private, Public};

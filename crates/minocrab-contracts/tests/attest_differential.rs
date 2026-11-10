@@ -339,4 +339,12 @@ fn verify_only_matches_corpus() {
         simulate(&theirs, &pi).is_err(),
         "corpus must reject a bad signature"
     );
+
+    // The identity key: private key 0 signs anything, so compactc 0.36's
+    // `secp256k1EcdsaVerify` refuses the point at infinity before verifying.
+    let (r, s, pk) = sign(&digest, &scalar(0), &k);
+    let inputs = verify_only_inputs(&request_id, &digest, &r, &s, &pk);
+    let pi = preimage(inputs, attest_transcript(&request_id));
+    assert!(simulate(&theirs, &pi).is_err(), "corpus must reject the identity key");
+    assert!(simulate(&ours, &pi).is_err(), "ours must reject the identity key");
 }

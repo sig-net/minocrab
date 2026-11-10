@@ -448,20 +448,22 @@ fn the_circuits_build_at_a_finite_cost() {
             && k_supply_permit <= 14,
         "{k_mint} {k_swap} {k_supply} {k_operator} {k_supply_permit}"
     );
+    // A settle verifies a secp256k1 signature, identity-key check included
+    // (compactc 0.36), which lands it at k = 16.
     assert!(
-        k_mint_done <= 15
-            && k_swap_done <= 15
-            && k_supply_done <= 15
-            && k_operator_done <= 15
-            && k_supply_permit_done <= 15,
+        k_mint_done <= 16
+            && k_swap_done <= 16
+            && k_supply_done <= 16
+            && k_operator_done <= 16
+            && k_supply_permit_done <= 16,
         "{k_mint_done} {k_swap_done} {k_supply_done} {k_operator_done} {k_supply_permit_done}"
     );
     assert!(
-        k_mint_ref <= 15
-            && k_swap_ref <= 15
-            && k_supply_ref <= 15
-            && k_operator_ref <= 15
-            && k_supply_permit_ref <= 15,
+        k_mint_ref <= 16
+            && k_swap_ref <= 16
+            && k_supply_ref <= 16
+            && k_operator_ref <= 16
+            && k_supply_permit_ref <= 16,
         "{k_mint_ref} {k_swap_ref} {k_supply_ref} {k_operator_ref} {k_supply_permit_ref}"
     );
 }

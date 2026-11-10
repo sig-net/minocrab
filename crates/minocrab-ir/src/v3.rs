@@ -6,9 +6,9 @@
 //! native field, `Bytes<32>`, and the foreign-curve types); and immediates
 //! appear inline as operands instead of via `LoadImm`. [`Builder3`] tracks
 //! the type of every value and panics at circuit-build time on an operand
-//! type an instruction does not support (the lists in midnight-ledger
-//! `zkir-v3/src/ir.rs` doc comments), so a type error can never reach the
-//! prover. Semantics reference: `zkir-v3/src/ir_vm.rs`.
+//! type an instruction does not support (the lists in midnight-zkir's
+//! `src/ir.rs` doc comments), so a type error can never reach the prover.
+//! Semantics reference: midnight-zkir's `src/ir_vm.rs`.
 
 #[cfg(feature = "unstable")]
 use std::sync::Arc;

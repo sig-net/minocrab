@@ -39,7 +39,8 @@ make specific error classes unwritable rather than merely untested.
   over the 855 ZKIR v3 `.zkir` in `corpus/zkir` (the count is asserted), plus
   [v3_builder.rs](crates/minocrab-ir/tests/v3_builder.rs), a hand-built
   circuit through the pinned `zkir-v3 mock-compile`.
-- **Command** — `cargo test -p minocrab-zkir`
+- **Command** — `cargo test -p minocrab-zkir` and
+  `cargo test -p minocrab-ir --test v3_builder`
 - **Why it is first** — it is the most fundamental instrument in the tree; if it
   is red, nothing downstream tells you anything new
   ([notes/version-bump.org §Drift taxonomy 3](notes/version-bump.org)).
@@ -419,8 +420,8 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
   reached through a NESTED path (the arms themselves landed at M22 stage A and
   nesting at stage B, but no fixture circuit compiles the combination, so the
-  typed methods stop at declared slots); `kernel.checkpoint()`, which is
-  outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
+  typed methods stop at declared slots); `kernel.checkpoint()`, which
+  compactc 0.36 compiles for ZKIR v3 but which is not ported; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
 - **The circuit list is closed in both directions.** `support::circuits()`
   (209 entries) feeds both snapshots, the dump instrument and the adversarial

@@ -1435,6 +1435,33 @@ mod tests {
         assert_eq!(audit(&split(vec![], var("arg"))).len(), 1);
     }
 
+    /// Only a 32-byte value's high chunk is one byte: a secp256k1 point's
+    /// `to_bytes` is 33 bytes and `bytes_from_natives { len: 33 }` is a
+    /// `Bytes(33)`, so the second limb of either is two bytes wide.
+    #[test]
+    fn a_33_byte_value_is_not_marked_bytes32() {
+        let split = |prefix: Vec<Instruction>| {
+            let mut stream = prefix;
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("b"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            audit(&stream)
+        };
+        let point = vec![
+            Instruction::PrivateInput { guard: None, val_t: IrType::Secp256k1Point, output: id("p") },
+            Instruction::ToBytes { input: var("p"), output: id("b") },
+        ];
+        assert_eq!(split(point).len(), 1);
+        let bytes33 = vec![
+            native_input("l0", false),
+            native_input("l1", false),
+            Instruction::BytesFromNatives { inputs: vec![var("l0"), var("l1")], len: 33, output: id("b") },
+        ];
+        assert_eq!(split(bytes33).len(), 1);
+    }
+
     #[test]
     fn reversing_keeps_a_known_bytes32_and_marks_nothing_else() {
         // zkir 3.2.0 runs `reverse_bytes` as `reverse`, at any length.

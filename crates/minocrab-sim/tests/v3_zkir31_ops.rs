@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 
-use midnight_curves::k256;
+use midnight_curves::{k256, p256};
 use midnight_transient_crypto::curve::Fr as TFr;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
@@ -489,6 +489,55 @@ fn malformed_byte_instructions_reject() {
         let ins = vec![op, json!({"op": "output", "vals": []})];
         assert_eq!(diff(&[input], &[], ins, raw, label), Outcome::Reject, "{label}");
     }
+}
+
+/// More shapes compactc never writes, refused by both: `bytes_from_natives`
+/// of length 0 (upstream's limb count refuses it; an empty value would
+/// otherwise decode), and a zero-length slice no output type check masks.
+#[test]
+fn empty_byte_strings_reject() {
+    let ins = vec![
+        json!({"op": "bytes_from_natives", "inputs": [], "len": 0, "output": "%b"}),
+        json!({"op": "output", "vals": []}),
+    ];
+    assert_eq!(diff(&[], &[], ins, &[], "bytes_from_natives len 0"), Outcome::Reject);
+    let ins = vec![
+        json!({"op": "slice", "bytes": "%b", "start": 0, "len": 0, "output": "%s"}),
+        json!({"op": "output", "vals": []}),
+    ];
+    assert_eq!(diff(&[("%b", "Bytes<3>")], &[], ins, &bytes_raw(&[1, 2, 3]), "slice len 0"), Outcome::Reject);
+}
+
+/// `ec_mul_generator` on a secp256r1 scalar.
+#[test]
+fn secp256r1_generator_agrees() {
+    let sk: Vec<Fr> = encode_offcircuit(&IrValue::Secp256r1Scalar(p256::Fq::from(12345u64)))
+        .into_iter()
+        .map(|v| v.try_into().unwrap())
+        .collect();
+    let ins = vec![
+        json!({"op": "ec_mul_generator", "scalar": "%s", "output": "%P"}),
+        json!({"op": "output", "vals": ["%P"]}),
+    ];
+    let out = diff(&[("%s", "Scalar<Secp256r1>")], &["Point<Secp256r1>"], ins, &sk, "secp256r1 generator");
+    assert!(matches!(out, Outcome::Accept(_)), "{out:?}");
+}
+
+/// A point's `to_bytes` is 33 bytes, so splitting it costs what the model
+/// says a `Bytes(33)` costs.
+#[test]
+fn point_to_bytes_split_estimate_matches_the_model() {
+    use minocrab_sim::v3::{cost, rowcost::est_rows};
+    let ins = vec![
+        json!({"op": "to_bytes", "input": "%P", "output": "%Pb"}),
+        json!({"op": "bytes_into_natives", "bytes": "%Pb", "outputs": ["%p0", "%p1"]}),
+        json!({"op": "output", "vals": []}),
+    ];
+    let inputs = [("%P", "Point<Secp256k1>")];
+    let est = est_rows(&ir(&inputs, &[], ins.clone(), false))[1];
+    let with = cost(&ir(&inputs, &[], ins.clone(), false)).1;
+    let without = cost(&ir(&inputs, &[], vec![ins[0].clone(), ins[2].clone()], false)).1;
+    assert_eq!(est, with - without);
 }
 
 /// `rowcost`'s estimate for the limb conversions is the model's own row count.

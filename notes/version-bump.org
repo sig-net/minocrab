@@ -133,8 +133,8 @@ Seconds. Fails when the new rev does not provide a crate we name.
   B).
 
 ** 2. Corpus compile report — =corpus/compile-report.tsv=
-The gate compares the OK count against =git show HEAD:=. 312 ok / 166 fail
-today.
+The gate compares the OK count against =git show HEAD:=. 325 ok / 162 fail
+at compactc 0.36.0.
 - FEWER ok MEANS: the new compiler rejects contracts the old one accepted —
   a language-level break (a pragma range, a removed builtin, a stricter
   check). The failures are *data*, not bugs to fix in the corpus: read the
@@ -147,9 +147,9 @@ today.
   a REPIN decision, because those contracts are the benchmark and the ports.
 
 ** 3. ZKIR round-trip — =cargo test -p minocrab-zkir=
-Parses, re-emits and re-parses every ZKIR v3 =.zkir= in the corpus (84 at
-the current pin; the 722 v2 artifacts are counted and skipped — M36
-retired the v2 bindings on 2026-09-05, since nothing in the workspace
+Parses, re-emits and re-parses every ZKIR v3 =.zkir= in the corpus (855 at
+compactc 0.36.0, which writes no v2; a v2 artifact from an older compiler
+is counted and skipped — M36 retired the v2 bindings on 2026-09-05, since nothing in the workspace
 targets v2 and the v2 reading answered a question no gate asks). The
 =toolchain_accepts= v2 mock-compile test went with them; the v3 toolchain
 is exercised in-process by the bench (keygen + prove through
@@ -163,8 +163,8 @@ is exercised in-process by the bench (keygen + prove through
   pre-release toolchain is allowed to move the IR.
 
 ** 4. ABI + Impact baseline — =cargo test -p minocrab-ledger=
-=entry_point.rs= sweeps every =contract-info.json= under =corpus/zkir= (312
-contracts, 618 circuit names) through the entry-point hash rule;
+=entry_point.rs= sweeps every =contract-info.json= under =corpus/zkir= (325
+contracts at compactc 0.36.0) through the entry-point hash rule;
 =differential_baseline.rs= is the noop/base Impact op stream.
 - MEANS: =contract-info.json='s shape, the entry-point hash rule, or the
   Impact op encoding moved.
@@ -213,7 +213,7 @@ for byte with the committed =src/lib.rs=.
 - RESPONSE: ACCEPT via =./bump.sh accept= step 3 — but only after 6 is
   understood, because the generator's input is the artifact.
 
-** 8. Interface snapshot — 87 circuits' ordered (label, type) lists
+** 8. Interface snapshot — 227 circuits' ordered (label, type) lists
 =crates/minocrab-contracts/tests/interface_snapshot.rs=.
 - MEANS: an argument, output or witness read moved, was renamed or was
   inserted. A toolchain bump reaches this only through OUR code (a stdlib
@@ -222,7 +222,7 @@ for byte with the committed =src/lib.rs=.
 - RESPONSE: ACCEPT only with a written reason per line; argument order feeds
   the communications commitment, so movement breaks deployed callers.
 
-** 9. Row snapshot — =(k, rows)= for 87 circuits, =--release=
+** 9. Row snapshot — =(k, rows)= for 227 circuits, =--release=
 =crates/minocrab-contracts/tests/row_snapshot.rs=. The M7 note calls this
 M8's asset and it is: a toolchain bump that changes lowering shows up as a
 moved row count per circuit.
@@ -386,7 +386,7 @@ a session ends with a half-accepted tree:
 4. =regenerate_spec= — =spec/borsh-subset.md='s generated region,
    =spec/vectors/*.json=, =spec/ts/=;
 5. =regenerate_row_snapshot= and =regenerate_interface_snapshot=
-   (=--release=; it prices 87 circuits).
+   (=--release=; it prices 227 circuits).
 
 Then it prints =git status --short= and says the only thing that matters:
 every line of that diff needs a reason before it is committed.
@@ -1189,6 +1189,14 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
    workaround moves =completeDeposit='s and =completeWithdraw='s verifier
    keys under the old compiler too, so the midnight-examples fix ships with
    the compactc 0.36 redeploy.
+6. *ECDSA (taxonomy 5).* compactc 0.36's =secp256k1EcdsaVerify= asserts
+   the public key is not the identity before verifying (private key 0
+   signs anything). =secp256k1_ecdsa_verify= now does the same, through the
+   check =secp256k1_ethereum_address= already made; the attest differential
+   has an identity-key case both sides reject.
+   The added instructions renumber =manager::execute='s 25 taint-baseline
+   entries; normalised for instruction and wire numbers the baseline's 38
+   findings are the same before and after.
 
 ** Row snapshot
 Every moved circuit was priced twice: the pre-bump IR under the new
@@ -1196,7 +1204,13 @@ model (upstream's change, same IR) and the new IR (ours).
 - Ours: -66 per cross-contract call; about -137 per
   =bytes_from_natives=; +1 per attested Boolean checked (the vault's two
   settle circuits, and the five =AbiReturn for Bool= readers in the
-  treasury and pending-vault lineages).
+  treasury and pending-vault lineages); the identity-key check in
+  =secp256k1_ecdsa_verify= (a second =ec_mul_generator=) adds 11672 rows to
+  each of the 16 settle and verify circuits that call it, 3111 to
+  =attest::keccak_verify= and 8314 to =manager::execute=; k goes 15 -> 16
+  on the vault's queue attestations, =attest::verify_only=, the treasury's
+  settles and =erc20_vault_pending::complete_withdraw=, and 16 -> 17 on
+  =attest::keccak_verify=.
 - Upstream, same IR: +1296 for circuits taking a =Point<Secp256k1>=
   input (=initialise= k 10 -> 12, =op_point= k 9 -> 11), +649 on the
   ECDSA-verify circuits, +5307 on =attest= sha/keccak, +6165 on

@@ -2297,19 +2297,36 @@ pub fn hash_to_secp256k1_scalar<V: Vis3>(
     c.from_bytes32(reversed)
 }
 
+/// `pk != default<Secp256k1Point>`, asserted. The default point is
+/// generator · 0, built as compactc does (to_bytes(0) → from_bytes scalar →
+/// ec_mul_generator).
+fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>) {
+    let zero = c.constant(0u64);
+    let zero_bytes = c.into_bytes32(zero);
+    let zero_scalar: Wire3<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);
+    let identity = c.ec_mul_generator(zero_scalar);
+    let is_identity = c.test_eq(pk, V::from_public(identity));
+    let not_identity = c.not(is_identity);
+    c.assert(not_identity);
+}
+
 /// `circuit secp256k1EcdsaVerify(msgHash, sig, pk): Boolean`
 ///
 /// Standard ECDSA: `w = s⁻¹`, `u1 = z·w`, `u2 = r·w`,
 /// `P = u1·G + u2·pk`, valid iff `P.x == r` as 32-byte big-endian
 /// integers. Accepts both low-s and high-s signatures (as the library
 /// does); `msgHash` is taken as given and must be bound to the real
-/// message by the caller.
+/// message by the caller. The point at infinity is rejected
+/// (`pk != default<Secp256k1Point>`).
 pub fn secp256k1_ecdsa_verify<V: Vis3>(
     c: &mut Circuit3,
     msg_hash: &B32<V>,
     sig: &Secp256k1EcdsaSignature<V>,
     pk: Wire3<Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
+    // Private key 0 signs anything, so the point at infinity is refused
+    // first, as compactc 0.36's library does.
+    assert_not_identity(c, pk);
     let z = hash_to_secp256k1_scalar(c, msg_hash);
     let w = c.inv(sig.s);
     let u1 = c.mul(z, w);
@@ -2348,15 +2365,7 @@ pub fn secp256k1_ethereum_address<V: Vis3>(
     c: &mut Circuit3,
     pk: Wire3<Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
-    // default<Secp256k1Point> = generator · 0, built as compactc does
-    // (into_bytes32(0) → from_bytes32 scalar → ec_mul_generator).
-    let zero = c.constant(0u64);
-    let zero_bytes = c.into_bytes32(zero);
-    let zero_scalar: Wire3<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);
-    let identity = c.ec_mul_generator(zero_scalar);
-    let is_identity = c.test_eq(pk, V::from_public(identity));
-    let not_identity = c.not(is_identity);
-    c.assert(not_identity);
+    assert_not_identity(c, pk);
 
     // keccak256 over the 64 big-endian coordinate bytes (alignment =
     // 64 × bytes 1, per the verified library dump).

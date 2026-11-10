@@ -114,7 +114,8 @@ fn check_roundtrip_matches_corpus() {
     assert_eq!(ours.check(&pi).expect("upstream accepts ours"), our_run.pi_skips);
 
     // Criterion 3: non-canonical encodings must be rejected by BOTH —
-    // a flag byte of 2 (deserializes to false, re-serializes to 0)…
+    // a flag byte of 2 (compactc 0.36 refuses it as a Boolean; ours reads
+    // false, re-serializes 0 and fails the round trip)…
     let mut bad_flag = bytes;
     bad_flag[0] = 2;
     let pi = preimage(&bad_flag);

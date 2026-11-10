@@ -4,7 +4,7 @@
 //! values with inline immediates, checking every operand's [`v3::IrType`]
 //! against the instruction's supported-type list as it goes, so an emitted
 //! stream is well-formed by construction. The passes (L4) operate on this
-//! layer. Semantics reference: `zkir-v3/src/ir_vm.rs` in midnight-ledger.
+//! layer. Semantics reference: midnight-zkir's `src/ir_vm.rs`.
 //!
 //! # Where this sits
 //!

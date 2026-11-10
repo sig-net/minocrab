@@ -481,7 +481,7 @@ fn transcript(ops: &[VmOp]) -> Vec<Fr> {
 /// The preimage of a circuit that READS: the op stream is
 /// `public_transcript_inputs`, and what the ledger hands back — every `popeq`
 /// result, value-only, in read order — is `public_transcript_outputs`, which
-/// is what a `public_input` gate consumes (`zkir-v3/src/ir_vm.rs:347-365`).
+/// is what a `public_input` gate consumes (midnight-zkir 3.2.0 `src/ir_vm.rs`, the `PublicInput` arm).
 ///
 /// The communications commitment covers the circuit's INPUTS and its declared
 /// OUTPUTS (`onchain-runtime-wasm/src/primitives.rs`), which for these

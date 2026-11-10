@@ -3,7 +3,7 @@
 //! Every circuit here is built with the typed `Builder3`, then run through
 //! BOTH our `minocrab_sim::v3::simulate` and upstream's `IrSource::check`
 //! (the `Zkir` trait; literally `preprocess(..)?.pi_skips`, see
-//! zkir-v3/src/ir.rs:75-81) on the same `ProofPreimage`. Acceptance must
+//! midnight-zkir 3.2.0 src/ir.rs:77-82) on the same `ProofPreimage`. Acceptance must
 //! agree, and our `pi_skips` must equal `check`'s — the simulator is never
 //! trusted alone. Value-level spot checks go directly against Midnight's
 //! crypto primitives.

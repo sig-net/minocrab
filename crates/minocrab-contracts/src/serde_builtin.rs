@@ -40,6 +40,8 @@ impl SerdeBuiltin {
         // const v = deserialize<Mixed, 128>(bytes)
         let bytes = data.to_le_bytes(c);
         let one_p = one.private();
+        // compactc 0.36 also constrains the flag byte to 0 or 1; the
+        // round-trip assert below already rejects a byte above 1.
         let flag = c.test_eq(bytes[0], one_p);
         let amount = rebuild_limb(c, &bytes[1..17]);
         let small = bytes[17];

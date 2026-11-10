@@ -178,10 +178,10 @@ pub fn field_key(index: u8) -> AlignedValue {
 }
 
 /// [`field_key`] as the path key an Impact op carries: `Key::Value` holds an
-/// `AlignedValueChecked` since onchain-vm 4.0.1, and a `bytes<1>` atom has no
-/// field limb that could be non-canonical.
+/// `AlignedValueChecked` since onchain-vm 4.0.1, which upstream builds from a
+/// `u8` directly.
 pub fn field_key_checked(index: u8) -> AlignedValueChecked {
-    AlignedValueChecked::try_from(field_key(index)).expect("a bytes<1> key has no field atom")
+    AlignedValueChecked::from(index)
 }
 
 /// `idx` by ONE constant `bytes<1>` key.

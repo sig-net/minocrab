@@ -387,8 +387,8 @@ pub fn circuits() -> Vec<Circuit> {
     // circuits built on them. Ours rather than the corpus's for the fourth
     // time and the same measured reason — the v3 corpus's kernel/token
     // surface is entirely SHIELDED (tests/kernel_tokens_differential.rs
-    // has the scan). `kernel.checkpoint()` is absent because compactc's
-    // v3 backend cannot compile it at all.
+    // has the scan). `kernel.checkpoint()` is absent: compactc before 0.36
+    // could not compile it for v3, and it is not ported yet.
     listed.extend(of(
         "kernel_tokens",
         &kernel_tokens::KernelTokens::CIRCUITS,
