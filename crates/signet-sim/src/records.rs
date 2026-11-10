@@ -137,7 +137,7 @@ pub struct EvmAccessListEntry {
     pub storage_keys: Vec<[u8; 32]>,
 }
 
-/// Notification recovered from the singleton's emitted event payload.
+/// Notification recovered from the signet signer's emitted event payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignBidirectionalEventNotification {
     pub version: u8,

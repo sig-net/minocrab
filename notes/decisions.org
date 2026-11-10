@@ -72,7 +72,7 @@ Use the single rev
 
   Superseded 2026-10-19 (milestones.org M45 F): sig-net/mpc's draft PR
   #1471 links =minocrab-publisher=, so both repos pin the per-crate tags
-  midnight-node 2.0.0-rc.4 pins, the release stagenet runs. =zkir-v3=, which
+  midnight-node 2.0.0-rc.4 pins. =zkir-v3=, which
   the node does not link, has a tag now (=zkir-v3-3.0.0-rc.1=, the compact
   flake's rev with only =Cargo.toml= changed).
 

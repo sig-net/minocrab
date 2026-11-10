@@ -661,7 +661,7 @@ impl<T: FixedLen> FixedLen for AttestationPreimage<T> {
     const LEN: usize = 32 + T::LEN;
 }
 
-// ---- the Signet singleton's Misc payloads -------------------------------------
+// ---- the signet signer's Misc payloads -------------------------------------
 //
 // `Misc` is event tag 10: `name: Bytes<32>` ‖ `payload: Bytes<256>`, 288
 // serialized bytes. The spec types below are the PAYLOAD's leading bytes;
@@ -704,7 +704,7 @@ impl FixedLen for RespondMisc {
 /// is a visible omission.
 ///
 /// Order is the document's: the DEPLOYED V1 records and outputs first, then
-/// the V2 specification, then the singleton's logged payloads.
+/// the V2 specification, then the signet signer's logged payloads.
 pub fn schema_containers() -> Vec<(&'static str, BorshSchemaContainer)> {
     vec![
         // The deployed V1 records (signet-midnight-examples 375071b).

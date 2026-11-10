@@ -13,8 +13,8 @@ family-separated shielded/unshielded custody, and ONE write gateway
 =execute= over seven selectors (register native/EVM, withdraw
 shielded/unshielded, internal transfer shielded/unshielded, open swap).
 It calls NO other contract — it reimplements EIP-712 + ECDSA and custodies
-zswap coins directly (unlike the erc20-vault, which offloads to the Signet
-singleton). Pinned in corpus/sources.json; artifacts under
+zswap coins directly (unlike the erc20-vault, which offloads to the
+signet signer). Pinned in corpus/sources.json; artifacts under
 corpus/zkir/aa-midnight-evm-experiment/. Now 315 corpus artifacts (312 →
 315; the entry_point sweep's frozen count moved and was accepted).
 

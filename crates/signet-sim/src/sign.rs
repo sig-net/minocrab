@@ -1,5 +1,5 @@
 //! ECDSA over secp256k1, as the MPC's signature is consumed on Midnight:
-//! `bigR` as a point, `s`, and a recovery id — the shape the singleton's
+//! `bigR` as a point, `s`, and a recovery id — the shape the signet signer's
 //! `respondBidirectional` takes and the caller's settle circuit verifies
 //! (`verify_attestation_signature`: `r = bigR.x` and `s`, both big-endian
 //! on the wire; the digest is the big-endian message scalar).
@@ -11,7 +11,7 @@ use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, ProjectivePoint, Scalar, U256};
 use sha3::{Digest, Keccak256};
 
-/// A signature in the singleton's wire shape.
+/// A signature in the signet signer's wire shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
     /// `bigR.x`, big-endian.

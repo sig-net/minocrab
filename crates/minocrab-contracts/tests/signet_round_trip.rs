@@ -8,7 +8,7 @@
 //!
 //! 1. a request circuit runs against a real pre-state; the executor derives
 //!    its transcript FROM that state and the Impact VM applies it;
-//! 2. the singleton's notification is built from the slot's OWN declared
+//! 2. the signet signer's notification is built from the slot's OWN declared
 //!    path (`Pending::record_path`, the one the artifact-agreement gate pins
 //!    against the compiled contract-info);
 //! 3. `SigNetSim` — the MPC's own reader, translated — walks the POST state
@@ -49,7 +49,7 @@ use vault_pending::prims::{attestation_digest, b32_slots, pad32};
 /// gate is `Outbox::raise_seen`'s, and the model varies it under proptest.
 const HEIGHT: u64 = 21_000_000;
 
-/// The singleton's `Misc` payload for a request: `version(1) ‖
+/// The signet signer's `Misc` payload for a request: `version(1) ‖
 /// requestId(32) ‖ callerAddress(32) ‖ pathDepth(1) ‖ path(4) ‖ zeros`.
 ///
 /// Built from the SLOT's declared path, not from a constant — the same

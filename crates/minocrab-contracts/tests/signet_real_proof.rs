@@ -27,7 +27,7 @@
 //!    `ProofVerificationMode::Real`, against the deployed key — then `apply`.
 //!
 //! The negative control is in the same test: the same three proofs are also
-//! offered to a singleton deployed with the keys PERMUTED (respond's
+//! offered to a signet signer deployed with the keys PERMUTED (respond's
 //! operation carrying signBidirectional's verifier key, and so on), and
 //! `well_formed` must reject every one. Without it, step 5 passing would be
 //! consistent with nothing being verified at all.
@@ -246,7 +246,7 @@ fn every_signer_circuit_proves_and_verifies_against_the_deployed_key() {
             );
         }
 
-        // 3. Deploy: the honest singleton, and the permuted-key one the
+        // 3. Deploy: the honest signet signer, and the permuted-key one the
         // negative control offers the same proofs to.
         let (ledger, address) =
             deploy_singleton(singleton_contract_state(|c| Some(managed_verifier_key(c))), tblock);
@@ -307,7 +307,7 @@ fn every_signer_circuit_proves_and_verifies_against_the_deployed_key() {
             previous_rss = rss.max(previous_rss);
 
             // The negative control: the same circuit, proved honestly, at a
-            // singleton whose operation carries ANOTHER circuit's verifier
+            // signet signer whose operation carries ANOTHER circuit's verifier
             // key. `well_formed` must say no.
             let wrong_tx = prove_at(wrong_address);
             let provider = V3ProvingProvider {
