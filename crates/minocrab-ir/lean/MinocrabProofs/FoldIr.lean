@@ -72,6 +72,13 @@ def mapOperands (f : Operand → Operand) : Instr → Instr
   | .privateInput ty out guard => .privateInput ty out (guard.map f)
   | .output vals => .output vals
 
+/-- `mapOperands` rewrites exactly `Instr.operands`, in its order: no
+operand position is skipped and none is added. -/
+theorem operands_mapOperands (f : Operand → Operand) (i : Instr) :
+    (mapOperands f i).operands = i.operands.map f := by
+  cases i <;> simp [mapOperands, Instr.operands]
+    <;> (try rename_i p; obtain ⟨_, _⟩ := p) <;> simp_all
+
 theorem mapOperands_mapOperands (f g : Operand → Operand) (i : Instr) :
     mapOperands f (mapOperands g i) = mapOperands (f ∘ g) i := by
   cases i <;> simp [mapOperands, List.map_map, Option.map_map]
@@ -195,7 +202,7 @@ The model's `other touched` arm becomes the whole real instruction, its
 operands resolved under the running copy environment (`resolve`); the
 output terminator's list is resolved too, as in the model. The proof is
 the model's, with the per-instruction reasoning packed into
-`mapOperands_congr` (33 arms, kernel-checked) and the walk split on
+`mapOperands_congr` (38 arms, kernel-checked) and the walk split on
 `isCopy` instead of on the constructor. -/
 
 /-- Every name an instruction reads: its `operands_mut` positions plus,
@@ -430,7 +437,7 @@ theorem resolve_of_ne_output (e : Env) (i : Instr) (h : ∀ vals, i ≠ .output 
   cases i <;> simp_all [resolve]
 
 /-- Substitutions that agree on an instruction's operands give the same
-instruction — the 33-arm fact the generic case rests on. -/
+instruction — the 38-arm fact the generic case rests on. -/
 theorem mapOperands_congr (f g : Operand → Operand) (i : Instr)
     (h : ∀ op ∈ i.operands, f op = g op) : mapOperands f i = mapOperands g i := by
   cases i <;> simp only [Instr.operands, mapOperands] at h ⊢

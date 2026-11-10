@@ -300,9 +300,9 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
   bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
   the 855 ZKIR circuits (325 contracts) the pinned compactc
-  produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
-  in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
-  corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
+  produced. Recompiling with the same compiler moves **zero artifacts**
+  (`git status --short corpus/zkir` → nothing; measured at dry run D1 on an
+  earlier pin, `compiled 312/478 OK` in 3 m 11 s). That is what makes a post-bump diff readable: every
   changed artifact is a change the new compiler made
   ([notes/version-bump.org §Dry run D1](notes/version-bump.org)).
 - **`accept` is idempotent, and lands reviewable diffs.** At HEAD it rewrote two
@@ -345,7 +345,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   constraint dedup; skeleton/observables preservation for copy folding,
   reflected as `VerifiedPass` — and, since M27, the dedup half is stated over
   the *real* ZKIR v3 instruction set rather than a three-constructor model:
-  `crates/minocrab-zkir/lean/` defines the 33-instruction syntax that
+  `crates/minocrab-zkir/lean/` defines the 38-instruction syntax that
   round-trips every v3 corpus artifact byte for byte against compactc's own
   printer, a dataflow that agrees with the Rust `operands_mut` family on
   every corpus instruction, and the evaluation semantics of `preprocess` with

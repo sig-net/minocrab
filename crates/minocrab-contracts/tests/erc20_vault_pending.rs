@@ -217,6 +217,7 @@ fn the_lending_flows_cost_no_more_than_the_compat_port() {
 /// | this kind, flag `true`  | ACCEPT   | reject |
 /// | this kind, flag `false` | reject   | ACCEPT |
 /// | the MPC's failure kind  | reject   | ACCEPT |
+/// | this kind, byte `2`     | reject   | reject |
 ///
 /// The middle row is the one the deployed vault gets wrong.
 #[test]
@@ -243,6 +244,13 @@ fn the_withdrawals_outcome_picks_the_circuit() {
         (
             "a mined transfer that returned true",
             Attested::Executed { value: 1 },
+            false,
+        ),
+        // Not a `bool`: `AbiReturn for Bool` refuses it rather than read it
+        // as `false`.
+        (
+            "a signed flag byte of 2",
+            Attested::Executed { value: 2 },
             false,
         ),
     ] {

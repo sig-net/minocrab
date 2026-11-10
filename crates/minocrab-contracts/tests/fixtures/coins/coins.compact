@@ -4,7 +4,7 @@ pragma language_version >= 0.25;
 // circuit each (notes/coin-arms-nested-adts.org §1).
 //
 //   nix build .#compactc          # at the repo root, provides ./result
-//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//   ./result/bin/compactc --skip-zk \
 //       crates/minocrab-contracts/tests/fixtures/coins/coins.compact \
 //       crates/minocrab-contracts/tests/fixtures/coins/out
 //

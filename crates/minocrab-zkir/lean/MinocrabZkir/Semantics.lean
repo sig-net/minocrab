@@ -1,7 +1,7 @@
 /-
 The EVALUATION reading of ZKIR v3 (M27 rung 3; notes/zkir-semantics.org
-§4.1, §5): `IrSource::preprocess` (zkir-v3/src/ir_vm.rs:185-691, rev
-04c9c5d9) transcribed over the real IR type, with the intrinsics
+§4.1, §5): `IrSource::preprocess` (zkir-v3/src/ir_vm.rs:185-691 at rev 04c9c5d9;
+midnight-zkir 3.2.0 ir_vm.rs:229 for the 3.1 arms) transcribed over the real IR type, with the intrinsics
 UNINTERPRETED — a `Model` record of functions the semantics consults and
 never defines. Everything Native/Bytes32 is concrete here; the foreign
 curve/field carriers are opaque types in `Carriers`.

@@ -14,7 +14,7 @@ use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage, Zkir};
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
 use minocrab_sim::v3::simulate;
-use minocrab_zkir::v3::{parse_zkir, IrSource, IrValue};
+use minocrab_zkir::v3::{parse_zkir, IrSource, IrValue, Operand};
 use minocrab_zkir::Fr;
 use serde_json::{json, Value};
 
@@ -35,11 +35,7 @@ impl Rng {
 }
 
 fn imm(fr: Fr) -> Value {
-    // ZKIR JSON immediates are little-endian hex.
-    let le = fr.as_le_bytes();
-    let end = le.iter().rposition(|b| *b != 0).map_or(1, |i| i + 1);
-    let hex: String = le[..end].iter().map(|b| format!("{b:02x}")).collect();
-    Value::String(format!("0x{hex}"))
+    serde_json::to_value(Operand::Immediate(fr)).expect("an immediate serializes")
 }
 
 fn ir(inputs: &[(&str, &str)], outputs: &[&str], ins: Vec<Value>, comm: bool) -> IrSource {
@@ -382,7 +378,7 @@ fn to_from_bytes_agree() {
         &raw,
         "to/from bytes",
     );
-    eprintln!("to/from bytes: {out:?}");
+    assert!(matches!(out, Outcome::Accept(_)), "to/from bytes: {out:?}");
     // The deprecated fixed-size ops on a 33-byte point reject in both.
     let ins = vec![
         json!({"op": "ec_mul_generator", "scalar": "%s", "output": "%P"}),
@@ -453,6 +449,45 @@ fn deprecated_bytes32_instructions_agree() {
         ];
         let out = diff(&[("%lo", "Scalar<BLS12-381>"), ("%hi", "Scalar<BLS12-381>")], &[], ins, &[lo, hi], label);
         assert_eq!(out, Outcome::Reject, "{label}");
+    }
+}
+
+/// Shapes compactc never writes, refused by both: `bytes_into_natives` with
+/// the wrong output count or a non-`Bytes` input, and `from_bytes32` of a
+/// `Bytes` that is not 32 long.
+#[test]
+fn malformed_byte_instructions_reject() {
+    let b40 = bytes_raw(&[9; 40]);
+    let seven = [Fr::from(7u64)];
+    let cases: Vec<(&str, (&str, &str), Value, &[Fr])> = vec![
+        (
+            "bytes_into_natives one output for 40 bytes",
+            ("%b", "Bytes<40>"),
+            json!({"op": "bytes_into_natives", "bytes": "%b", "outputs": ["%o0"]}),
+            &b40,
+        ),
+        (
+            "bytes_into_natives three outputs for 40 bytes",
+            ("%b", "Bytes<40>"),
+            json!({"op": "bytes_into_natives", "bytes": "%b", "outputs": ["%o0", "%o1", "%o2"]}),
+            &b40,
+        ),
+        (
+            "bytes_into_natives of a native",
+            ("%b", "Scalar<BLS12-381>"),
+            json!({"op": "bytes_into_natives", "bytes": "%b", "outputs": ["%o0"]}),
+            &seven,
+        ),
+        (
+            "from_bytes32 of 40 bytes",
+            ("%b", "Bytes<40>"),
+            json!({"op": "from_bytes32", "type": "Scalar<BLS12-381>", "bytes": "%b", "output": "%f"}),
+            &b40,
+        ),
+    ];
+    for (label, input, op, raw) in cases {
+        let ins = vec![op, json!({"op": "output", "vals": []})];
+        assert_eq!(diff(&[input], &[], ins, raw, label), Outcome::Reject, "{label}");
     }
 }
 

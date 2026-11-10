@@ -71,10 +71,10 @@ fn lean_syntax_round_trips_the_v3_corpus_byte_for_byte() {
         "unexpected round-trip summary (corpus size moved?): {stdout}"
     );
 
-    // The five ops and the alignment atoms / types the corpus never
-    // exercises are covered by a hand-written fixture in compactc's
-    // layout — parse/print consistency only, since no compactc output
-    // exists for them (notes/zkir-semantics.org §1.4).
+    // The ops, minor versions, alignment atoms and types the corpus never
+    // exercises are covered by hand-written fixtures in compactc's layout —
+    // parse/print consistency only, since no compactc output exists for
+    // them (notes/zkir-semantics.org §1.4).
     let fixtures = lean_dir.join("fixtures");
     let run = Command::new(&exe)
         .arg(&fixtures)

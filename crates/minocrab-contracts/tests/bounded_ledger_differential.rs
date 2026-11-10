@@ -1,5 +1,5 @@
 //! `bounded_ledger.compact` — the M31 differential: a `Uint<0..1>` in LEDGER
-//! position, against compactc 0.34.0's own artifact.
+//! position, against compactc 0.36.0's own artifact.
 //!
 //! WHY THIS FIXTURE EXISTS, and why it is separate from `bounded.compact`.
 //! compactc issue #588 (fixed 0.33.108, CHANGELOG.md at compactc-v0.34.0)

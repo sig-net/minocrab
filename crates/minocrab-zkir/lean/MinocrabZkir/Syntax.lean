@@ -3,8 +3,8 @@ ZKIR v3 syntax — the inductive behind a `.zkir` file as compactc writes
 it (M27 rung 1; design of record: notes/zkir-semantics.org §1-2).
 
 WHAT THIS MODELS: `midnight-zkir-v3`'s `IrSource` / `Instruction` /
-`Operand` / `IrType` (zkir-v3/src/ir.rs, ir_types.rs at the pinned rev
-04c9c5d9), read back from the JSON compactc's `print-zkir-v3.ss` emits.
+`Operand` / `IrType` (midnight-zkir 3.2.0 src/ir.rs, ir_types.rs; the
+line numbers of 3.0 items cite zkir-v3 rev 04c9c5d9), read back from the JSON compactc's `print-zkir-v3.ss` emits.
 It is SYNTAX: an immediate is the SIGNED literal the file carries
 (`-0x01` and the 31-byte spelling of p−1 are two different trees that
 the semantics sends to one field element); an identifier is the string
@@ -19,7 +19,8 @@ here, loudly.
 
 namespace MinocrabZkir
 
-/-- The 13 value types (ir_types.rs:36-88), in declaration order. -/
+/-- The 13 ZKIR 3.0 value types (ir_types.rs:36-88), in declaration order:
+a subset of 3.2.0's `IrType`, which adds `Bool`, `Byte` and `Bytes(n)`. -/
 inductive IrType where
   | native | bytes32 | jubjubPoint | jubjubScalar
   | secp256k1Point | secp256k1Base | secp256k1Scalar
@@ -101,8 +102,8 @@ inductive Instr where
   | output (vals : List Operand)
 deriving DecidableEq, Repr, Inhabited
 
-/-- `IrSource` (ir.rs:59-72) with the on-disk version envelope: only
-major 3 is ever accepted (ir.rs:990-999), so the major is not stored.
+/-- `IrSource` (3.2.0 ir.rs:37-50) with the on-disk version envelope: only
+major 3 is ever accepted (3.2.0 ir.rs:1318-1320), so the major is not stored.
 The minor (0, 1 or 2) is a label: nothing in midnight-zkir 3.2.0 gates an
 instruction on it. -/
 structure Program where

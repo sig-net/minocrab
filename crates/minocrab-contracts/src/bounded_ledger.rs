@@ -12,7 +12,7 @@
 //! byte-identical under both compilers: argument position never moved. Only
 //! ledger position did, and no corpus artifact and no existing fixture puts
 //! a `Uint<0..1>` there — hence this fixture, compiled fresh under the
-//! PINNED (0.34.0) compactc.
+//! PINNED (0.36.0) compactc.
 //!
 //! WHAT IT PINS, and against what. `bounded_differential`'s own ABI check
 //! (`compactc_s_abi_agrees_with_the_leafs`) reads compactc's own `maxval`

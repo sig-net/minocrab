@@ -937,7 +937,7 @@ pub static FOLD_PROOF: ProofRef = lean_proof! {
     // (`Fold.lean`, kept as the M25 record) to the same four theorems over
     // the REAL instruction set (`FoldIr.lean`, on `MinocrabZkir.Instr`);
     // `fold_preserves_observables` there resolves every instruction's
-    // `operands_mut` positions under the copy environment (33 arms).
+    // `operands_mut` positions under the copy environment (38 arms).
     file: "../../lean/MinocrabProofs/FoldIr.lean",
     theorems: [
         "fold_outputs",

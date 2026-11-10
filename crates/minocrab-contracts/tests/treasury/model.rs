@@ -316,7 +316,7 @@ pub fn call_args(self_addr: &[u8; 32], records_field: u8, request_id: &[u8; 32])
 
 /// The cross-contract call's one witness, `cc-rand`; the entry-point hash is
 /// a constant of the claim (compactc 0.36).
-pub fn call_witnesses(_env: &Env, cc_rand: Fr) -> Vec<Fr> {
+pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
     vec![cc_rand]
 }
 
@@ -443,7 +443,7 @@ impl SendScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 

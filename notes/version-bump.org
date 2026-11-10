@@ -66,9 +66,12 @@ Then hold every =midnight-*= entry of our =Cargo.lock=, the registry
 proving crates included, at the node's versions
 (=cargo update -p <crate>@<v> --precise <node-v>=), but not
 =midnight-circuits= below 7.2.4: 7.2.2 panics on an out-of-range secp256k1
-input, and =v3_foreign_decode= fails. Every =midnight-*= crate must resolve
-once so their =Fr=, =ProofPreimage= and =IrSource= types unify (Hazard 3); a
-split shows as two lockfile entries for one crate.
+input, and =v3_foreign_decode= fails. Each =midnight-*= crate resolves once
+per line so their =Fr=, =ProofPreimage= and =IrSource= types unify (Hazard
+3). =midnight-zkir= 2.2.0 links the older proving line (=midnight-proofs=
+0.7, =-circuits= 6, =-zk-stdlib= 1, =-curves= 0.2, =-transient-crypto= 2)
+beside the current one, so those crates and =midnight-zkir= itself appear
+twice by design; any other crate with two lockfile entries is a split.
 
 *** corpus sources
 #+begin_src sh
@@ -77,7 +80,7 @@ split shows as two lockfile entries for one crate.
 
 ** 2. Recompile the corpus — compactc bumps only
 #+begin_src sh
-./corpus/compile.sh           # ~312 contracts; rewrites corpus/zkir/ + compile-report.tsv
+./corpus/compile.sh           # ~325 contracts; rewrites corpus/zkir/ + compile-report.tsv
 #+end_src
 Nothing else regenerates the other side of the differentials. A crate-rev
 bump does not need this; a corpus-source bump does it for you.
@@ -1180,7 +1183,9 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
    =fetch.sh= would restore the unpatched source. compactc 0.36 also constrains that
    Boolean to 0 or 1, now on every call; the Rust vault matches, with
    tests for a byte of 2 on every verdict. =AbiReturn for Bool= (the
-   treasury and pending-vault lineages) carries the same check. The
+   treasury and pending-vault lineages) carries the same check, so their
+   =complete= and =refund= circuits now reject a byte of 2 or more where
+   they used to read it as false and refund. The
    workaround moves =completeDeposit='s and =completeWithdraw='s verifier
    keys under the old compiler too, so the midnight-examples fix ships with
    the compactc 0.36 redeploy.
@@ -1189,7 +1194,9 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
 Every moved circuit was priced twice: the pre-bump IR under the new
 model (upstream's change, same IR) and the new IR (ours).
 - Ours: -66 per cross-contract call; about -137 per
-  =bytes_from_natives=; +1 for the vault's Boolean check.
+  =bytes_from_natives=; +1 per attested Boolean checked (the vault's two
+  settle circuits, and the five =AbiReturn for Bool= readers in the
+  treasury and pending-vault lineages).
 - Upstream, same IR: +1296 for circuits taking a =Point<Secp256k1>=
   input (=initialise= k 10 -> 12, =op_point= k 9 -> 11), +649 on the
   ECDSA-verify circuits, +5307 on =attest= sha/keccak, +6165 on

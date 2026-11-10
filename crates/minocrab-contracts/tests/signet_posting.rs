@@ -21,7 +21,7 @@
 //!
 //! - `minocrab`: `signet_contract::SignetContract::*().ir`, the artifact
 //!   `crates/signet-artifacts` ships;
-//! - `compactc`: the corpus `.zkir` compactc 0.34.0 wrote for the same
+//! - `compactc`: the corpus `.zkir` compactc 0.36.0 wrote for the same
 //!   source (midnight-integration v0.25.0, `b62e67e`), keygen'd here with
 //!   the same `midnight-zkir-v3`.
 //!

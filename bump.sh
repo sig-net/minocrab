@@ -8,7 +8,7 @@
 #   ./bump.sh accept   every regenerator, i.e. accept-the-new-baseline
 #
 # Run inside the direnv/nix shell (`nix develop -c ./bump.sh gates` also
-# works). Nix supplies BINARIES ONLY — cargo, compactc, zkir, node; every
+# works). Nix supplies BINARIES ONLY — cargo, compactc, zkir-v3, node; every
 # build below is plain cargo.
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -165,11 +165,11 @@ cmd_gates() {
   printf '  compactc pin  %s\n  ledger        %s\n  rustc         %s\n' \
     "$(pinned_compactc)" "$(pinned_ledger_versions)" "$(rustc --version 2>&1)"
 
-  # Before anything is built: does the pin even RESOLVE? A rev that renames
-  # or drops a crate fails here in seconds, and every later stage would only
+  # Before anything is built: does the pin even RESOLVE? A version that
+  # renames or drops a crate fails here in seconds, and every later stage would only
   # reprint the same cargo error.
   stage "dependency resolution" \
-    "the new rev does not provide a crate we name. Upstream renamed or dropped it — find its new name/home before going further (this is how the ledger-v9 rename shows up)." \
+    "the new version set does not provide a crate we name. Upstream renamed or dropped it — find its new name/home before going further (this is how the ledger-v9 rename shows up)." \
     bash -c 'cargo metadata --format-version 1 >/dev/null'
   if [ "${STAGE_RESULT[0]}" = "FAIL" ]; then
     rule

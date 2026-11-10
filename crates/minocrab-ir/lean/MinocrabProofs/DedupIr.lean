@@ -1,11 +1,11 @@
 /-
 `dedup_range_constraints` over the REAL IR (M27 rung 3, the pass prong;
 notes/zkir-semantics.org §4.4): the four M25 theorems of `Passes.lean`
-restated on `MinocrabZkir.Instr` — the 33-constructor inductive that
+restated on `MinocrabZkir.Instr` — the 38-constructor inductive that
 round-trips the corpus byte for byte — instead of the three-constructor
 model. The algorithm is the same transcription of `passes.rs`; only
 `established` now inspects the real constructors, and "everything else
-passes through" is a statement about the 31 other constructors rather
+passes through" is a statement about the 36 other constructors rather
 than one `other` tag. The proofs are the M25 proofs unchanged: they were
 already parametric in what `established` returns `none` for, which is
 the model-gap closure this file exists to record.

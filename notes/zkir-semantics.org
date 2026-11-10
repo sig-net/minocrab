@@ -724,7 +724,7 @@ the gate is on the PRINTER (=print (decode (Json.parse s)) = s=), so a
 lenient generic parser is fine and reusing core's is the
 reuse-before-writing rule applied.
 MODULES: =Syntax.lean= (the inductive: =IrType=, =Operand=, =Segment=,
-=Instr= — 33 constructors — =Program=), =Print.lean= (json.ss's layout
+=Instr= — 38 constructors — =Program=), =Print.lean= (json.ss's layout
 + print-zkir-v3.ss's key orders, both cited), =Parse.lean= (Json →
 Syntax), =Dataflow.lean= (=reads=, =defines=, =guardOf=,
 =impactPushes=; exhaustive by =match=), =Semantics.lean= (§4.1 =run=,

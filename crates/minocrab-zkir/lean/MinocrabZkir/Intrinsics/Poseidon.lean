@@ -2,7 +2,8 @@
 Poseidon over BLS12-381's scalar field — midnight's `transient_hash`,
 ported MECHANICALLY (M27 rung 4; notes/zkir-rung4.org).
 
-CHAIN OF CITATION, pinned revisions:
+CHAIN OF CITATION, at the revisions cited (the cited midnight-circuits
+files are identical in the pinned 7.3.0):
   transient-crypto/src/hash.rs:78-83  `transient_hash(elems)` =
     `<PoseidonChip<outer::Scalar> as HashCPU>::hash(elems)`
     (midnight-ledger rev 04c9c5d9)

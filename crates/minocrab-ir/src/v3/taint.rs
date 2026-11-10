@@ -374,9 +374,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             }
 
             // ---- Bytes32-typed producers (for Encode above) -------------
-            Instruction::IntoBytes32 { output, .. }
-            | Instruction::ReverseBytes { output, .. }
-            | Instruction::Bytes32FromLowHigh { output, .. } => {
+            Instruction::IntoBytes32 { output, .. } | Instruction::Bytes32FromLowHigh { output, .. } => {
                 is_bytes32.insert(output.0.clone());
             }
             // `BytesFromNatives { len: 32 }` is a `Bytes(32)`.
@@ -396,13 +394,15 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     is_bytes32.insert(output.0.clone());
                 }
             }
-            // `Reverse` keeps the length.
-            Instruction::Reverse { bytes: Operand::Variable(id), output } => {
+            // `Reverse` keeps the length. zkir 3.2.0 runs the deprecated
+            // `ReverseBytes` as `Reverse`, at any length (ir_vm.rs).
+            Instruction::Reverse { bytes: Operand::Variable(id), output }
+            | Instruction::ReverseBytes { bytes: Operand::Variable(id), output } => {
                 if is_bytes32.contains(&id.0) {
                     is_bytes32.insert(output.0.clone());
                 }
             }
-            Instruction::Reverse { .. } => {}
+            Instruction::Reverse { .. } | Instruction::ReverseBytes { .. } => {}
             // Every output is a chunk of at most 31 of the input's assigned
             // (range-checked) bytes, recomposed little-endian; synthesis fails
             // on a non-`Bytes` input (zkir 3.2.0 ir_vm.rs's BytesIntoNatives
@@ -1433,6 +1433,36 @@ mod tests {
         // a 33-byte point): only the 31-byte chunk bound holds, so the second
         // limb is not provably one byte.
         assert_eq!(audit(&split(vec![], var("arg"))).len(), 1);
+    }
+
+    #[test]
+    fn reversing_keeps_a_known_bytes32_and_marks_nothing_else() {
+        // zkir 3.2.0 runs `reverse_bytes` as `reverse`, at any length.
+        let reversed = |known: bool, deprecated: bool| {
+            let mut stream = vec![];
+            let input = if known {
+                stream.push(native_input("x", true));
+                stream.push(Instruction::ToBytes { input: var("x"), output: id("b") });
+                var("b")
+            } else {
+                var("arg")
+            };
+            stream.push(if deprecated {
+                Instruction::ReverseBytes { bytes: input, output: id("r") }
+            } else {
+                Instruction::Reverse { bytes: input, output: id("r") }
+            });
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("r"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            audit(&stream)
+        };
+        for deprecated in [false, true] {
+            assert_eq!(reversed(true, deprecated), vec![], "deprecated: {deprecated}");
+            assert_eq!(reversed(false, deprecated).len(), 1, "deprecated: {deprecated}");
+        }
     }
 
     #[test]

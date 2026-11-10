@@ -1,8 +1,8 @@
 //! L5 — native ZKIR simulator.
 //!
 //! Executes a circuit in plain Rust for `cargo test` loops: no proving, no
-//! keys, instant feedback. Semantics mirror midnight-ledger's reference
-//! interpreter (`zkir-v3/src/ir_vm.rs`) instruction for instruction:
+//! keys, instant feedback. Semantics mirror midnight-zkir's reference
+//! interpreter (`src/ir_vm.rs`) instruction for instruction:
 //! `v3::simulate` *verifies* a complete `ProofPreimage` — arguments
 //! decoded per the input schema, Impact public inputs checked against the
 //! transcript as they accumulate — so every run can be cross-checked against

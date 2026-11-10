@@ -98,7 +98,6 @@ pub fn keccak_blocks(len: usize) -> usize {
     len / 136 + 1
 }
 
-/// Rows one `persistent_hash` over `len` bytes costs.
 /// `bytes_from_natives` / `bytes_into_natives` over `len` bytes: a row per
 /// 4 bytes of each 31-byte chunk, measured with midnight-zkir 3.2.0's own
 /// model at lengths 1 to 94; `bytes_into_natives` converts a 1-byte chunk
@@ -117,6 +116,7 @@ pub fn limb_rows(len: usize, one_byte_free: bool) -> usize {
         .sum()
 }
 
+/// Rows one `persistent_hash` over `len` bytes costs.
 pub fn sha256_rows(len: usize) -> usize {
     sha256_blocks(len) * SHA256_PER_BLOCK
 }
@@ -188,9 +188,6 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
             I::PublicInput { val_t, output, .. } | I::PrivateInput { val_t, output, .. } => {
                 types.insert(output.clone(), val_t.clone());
             }
-            I::FromBytes32 { val_t, output, .. } => {
-                types.insert(output.clone(), val_t.clone());
-            }
             I::PersistentHash { output, .. }
             | I::Keccak256 { output, .. }
             | I::IntoBytes32 { output, .. }
@@ -257,7 +254,7 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
                 types.insert(outputs.0.clone(), IrType::Native);
                 types.insert(outputs.1.clone(), IrType::Native);
             }
-            // ZKIR 3.1's byte and boolean instructions (zkir 3.2.0 ir.rs:999-1290).
+            // ZKIR 3.1's byte and boolean instructions (zkir 3.2.0 ir.rs:987-1269).
             I::Sha512 { output, .. } => {
                 types.insert(output.clone(), IrType::Bytes(64));
             }
@@ -268,7 +265,9 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
                 };
                 types.insert(output.clone(), t);
             }
-            I::FromBytes { val_t, output, .. } | I::LoadConstant { val_t, output, .. } => {
+            I::FromBytes32 { val_t, output, .. }
+            | I::FromBytes { val_t, output, .. }
+            | I::LoadConstant { val_t, output, .. } => {
                 types.insert(output.clone(), val_t.clone());
             }
             I::Reverse { bytes, output } => {

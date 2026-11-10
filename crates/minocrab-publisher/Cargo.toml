@@ -5,9 +5,8 @@ name = "minocrab-publisher"
 # crate reads the Misc envelope and the three signer event names from
 # `signet-protocol` (publishable) rather than `minocrab-contracts` (a corpus,
 # `publish = false`) — the ONLY remaining edge to that crate is a
-# dev-dependency (tests/real_proof.rs, which keygens from the real circuit). So the same blocker the rest of the workspace already
-# carries applies here and nowhere further: PUBLISHING.md's `midnight-*`
-# block (upstream has not published the ledger-9.1 line to crates.io yet).
+# dev-dependency (tests/real_proof.rs, which keygens from the real circuit). So the same hold the rest of the workspace
+# carries applies here and nowhere further: PUBLISHING.md.
 version.workspace = true
 # Held until the owner lifts it (PUBLISHING.md); every `midnight-*` crate
 # it needs is on crates.io now.

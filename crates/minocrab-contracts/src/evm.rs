@@ -736,8 +736,8 @@ impl AbiArg for U256 {
 /// `Bytes<32> as Uint<128>` hazard lives (bug report 4) — and why the
 /// narrowing is written ONCE, here, rather than per settle circuit:
 ///
-/// - a `bool` is one byte, and "true" is `byte == 1` with NO canonicity
-///   check, exactly as compactc lowers `deserialize<_, 1>(output).success`;
+/// - a `bool` is one byte that must be 0 or 1, and "true" is `byte == 1`,
+///   as compactc 0.36 lowers `deserialize<_, 1>(output).success`;
 /// - a `uint256` is 32 little-endian bytes, narrowed by
 ///   [`signet_v1::checked_truncation_u128`], whose byte-31 check is what
 ///   stops a 32-byte string being read modulo the field;
