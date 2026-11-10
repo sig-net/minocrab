@@ -85,7 +85,12 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
 
     // The counts, pinned: a finish that lost every message or region would
     // pass every check above. Move them with the circuits.
-    assert_eq!((circuits, messages, regions), (228, 455, 411));
+    // 228 → 227 circuits: `xcall::call_once_bound` went with compactc 0.36,
+    // whose entry point is a constant of every call. 455 → 474 messages: the
+    // identity-key assert of `secp256k1_ecdsa_verify` in its 18 callers and
+    // of `secp256k1_ethereum_address` in `manager::execute` carry compactc
+    // 0.36's message.
+    assert_eq!((circuits, messages, regions), (227, 474, 411));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

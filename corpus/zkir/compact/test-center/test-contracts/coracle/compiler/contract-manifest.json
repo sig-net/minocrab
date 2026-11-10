@@ -1,55 +1,56 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 14177,
-      "hash": "6f32b79c8c62603ff11e0bc8beb75f4a5f53be3bc3b2cbc2e2daecd1f0805c5e"
+      "size": 14242,
+      "hash": "c95fe6f53acf2cf7d016da965c56e6b5b6ee14a20c37b655506525093c4cede7"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 5614,
-      "hash": "49137a8334097ec1b41bb6421764462f53d4170f478c98f0fc9e8f1c918ffac9"
+      "size": 5642,
+      "hash": "18b5ce25c6203ae0a49e0d90483bf5964e913efb001e8e460445319825ece130"
     },
     "index.js": {
       "type": "file",
-      "size": 199572,
-      "hash": "8301b2452a784e0714b409a1f0a0ca6b000f0aef180974a1dd850c58bf6a78ec"
+      "size": 203514,
+      "hash": "ab4226cfcfcd96ce1cdfc666fdcf65afdbbc04abacaa27a76ea4c972bf0f9376"
     },
     "index.js.map": {
       "type": "file",
-      "size": 7788,
-      "hash": "93149cd40129ffd6cadca8891b00d8ab9cf0eb0252fdd6dadb70bc525e95036d"
+      "size": 7851,
+      "hash": "c24805d9ecaf4c70c771250973a313d4bcfc4158d6564f08ad1848be9446f57e"
     }
   },
   "zkir": {
     "type": "directory",
     "concede.zkir": {
       "type": "file",
-      "size": 47791,
-      "hash": "ec9f19a6865fb636cdcfb4155054366a1b9b101a81fc5d4f76db0ef56ac56ff7"
+      "size": 31524,
+      "hash": "cf1e776946427c02cf5a2697b8e2ce34190ed590d884fe0b2a3e401c0070460d"
     },
     "guess.zkir": {
       "type": "file",
-      "size": 21497,
-      "hash": "16c49569cb06827d063f589e7990cde32c2c32939c14945fcd86b0e6a986314c"
+      "size": 16730,
+      "hash": "bd56ce9185eef9d96f1239564d1213434ae690ce06ced5d554494186068dd235"
     },
     "start.zkir": {
       "type": "file",
-      "size": 54743,
-      "hash": "6ec06705260bedb5f17d6009f118553463ff147ba44d7ae5899df1ac86bd3904"
+      "size": 28384,
+      "hash": "36e79092ebb4333c78bc530d4233c1c012589048488332af4c0fb17cbc52d7b4"
     },
     "withdraw.zkir": {
       "type": "file",
-      "size": 67959,
-      "hash": "911ccdb1398b2f51ffa291727a8b33c6691e4a224b548dc6b3aa54461447d222"
+      "size": 41715,
+      "hash": "487a2d4b6c47abc5a0698f397db130ef55a1de808b0b1a8166c87a58d3a88322"
     }
   }
 }

@@ -15,12 +15,10 @@
 //! *composition* is the specification, and a reader should be able to check
 //! them against the Compact source line by line.
 //!
-//! `kernel.checkpoint()` IS ABSENT. compactc's ZKIR-v3 backend cannot compile
-//! it at all (`assemble1` has no `ckpt` case, so `--feature-zkir-v3` on a
-//! contract calling it fails with `assert not-implemented`); the v2 backend
-//! assembles it to `255`. It is a v2-only feature, so there is no artifact to
-//! agree with and nothing here to agree with it — see
-//! notes/kernel-tokens.org finding (a).
+//! `kernel.checkpoint()` IS ABSENT. compactc before 0.36 could not compile it
+//! for ZKIR v3 (notes/kernel-tokens.org finding (a)); compactc 0.36.0 lowers
+//! it to one `impact` of `0xff` (corpus `kernel_checkpoint.zkir`), which is
+//! not ported yet.
 //!
 //! THE BALANCE CAVEAT, which is Compact's own and worth repeating: the
 //! balance these functions read is the contract's balance at the START of

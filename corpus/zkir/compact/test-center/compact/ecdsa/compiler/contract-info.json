@@ -1,0 +1,102 @@
+{
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "circuits": [
+    {
+      "name": "proveEthereumSignature",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "proveBitcoinSignature",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "msg",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "sig",
+          "type": {
+            "type-name": "Struct",
+            "name": "Secp256k1EcdsaSignature",
+            "elements": [
+              {
+                "name": "r",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              },
+              {
+                "name": "s",
+                "type": {
+                  "type-name": "Secp256k1Scalar"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pk",
+          "type": {
+            "type-name": "Secp256k1Point"
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Boolean"
+      }
+    }
+  ],
+  "witnesses": [
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+  ]
+}

@@ -82,7 +82,7 @@
 //! own width. Poseidon is not a stream, so one hash cannot cover both:
 //! [`Pending::refund`] hashes the preimage BOTH ways, selects the field
 //! element by the verdict and verifies ONCE. The extra cost is one
-//! `transient_hash` and one `cond_select` beside the ~30k rows of the ECDSA
+//! `transient_hash` and one `cond_select` beside the ~37k rows of the ECDSA
 //! verification that follows — measured in
 //! `tests/treasury.rs::the_refund_pays_one_extra_digest`.
 //!
@@ -1389,7 +1389,7 @@ where
     /// the preimage is hashed BOTH ways, the field element is selected by the
     /// verdict, and the signature is verified ONCE
     /// ([`signet_v1::attestation_transient_hash_v1`]). The extra cost is one
-    /// `transient_hash` and one `cond_select` beside the ~30k rows of the
+    /// `transient_hash` and one `cond_select` beside the ~37k rows of the
     /// ECDSA verification that follows.
     ///
     /// The output slots are still DECODED in the failure arms, because a

@@ -117,6 +117,16 @@ fn a_false_attestation_cannot_complete() {
     );
 }
 
+/// A signed `bool` byte of 2 is not a `bool`: `AbiReturn for Bool` refuses
+/// it (compactc 0.36's `constrain_to_boolean`), so it neither completes nor,
+/// read as `false`, refunds.
+#[test]
+fn a_non_boolean_attestation_neither_completes_nor_refunds() {
+    let s = SettleScenario::new(Attestation::ExecutedNonBoolean);
+    assert!(simulate(&Treasury::complete().ir, &s.complete_preimage()).is_err(), "completed");
+    assert!(simulate(&Treasury::refund().ir, &s.refund_preimage()).is_err(), "refunded");
+}
+
 /// A `failed` verdict is not `executed`, so `complete`'s verdict assert
 /// rejects it before anything else does.
 #[test]

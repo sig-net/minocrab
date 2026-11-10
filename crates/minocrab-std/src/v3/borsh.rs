@@ -816,9 +816,9 @@ impl<const BOUND: u128, V: Vis3> CircuitBorsh<V> for BoundedUint<BOUND, V> {
 
 /// Borsh `bool`: one byte, `0` or `1` AND NOTHING ELSE — which is why
 /// `constrain_canonical` is `assert_boolean` and not a range check. (That
-/// rule is what closes the 0x02 hazard when stage 5 makes the attested
-/// success byte a `bool`: today any byte is accepted and everything but
-/// `0x01` refunds.)
+/// rule is what closes the 0x02 hazard: compactc 0.33 accepts any attested
+/// success byte and refunds everything but `0x01`; compactc 0.36 and the
+/// MinoCrab settle circuits reject a byte above 1.)
 impl<V: Vis3> CircuitBorsh<V> for Bool<V> {
     const LEN: usize = 1;
 

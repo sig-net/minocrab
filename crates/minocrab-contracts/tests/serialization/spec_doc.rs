@@ -854,8 +854,8 @@ fn deployed_attested_outputs() -> String {
         "TODAY'S deployed (V1) attested outputs: a Bytes<LEN> at one of THREE widths, with no \
          kind byte. 0 — the EMPTY output, which queueAttestation0 takes and which EVERY failed \
          or unviable verdict carries whatever the request asked for; 1 — the EVM bool, as a raw \
-         byte (any byte is accepted and everything but 0x01 routes to the failure branch: the \
-         0x02 hazard); 32 — one big-endian ABI word, which is how V1 carries every uint256 the \
+         byte (compactc 0.33 accepts any byte and routes everything but 0x01 to the failure \
+         branch, the 0x02 hazard; compactc 0.36 rejects a byte above 1); 32 — one big-endian ABI word, which is how V1 carries every uint256 the \
          destination chain returns (the swap's amountIn, the supply's shares, the redeem's \
          assets). There is NO failure sentinel: the superseded 5-byte 0xdeadbeef01 output has no \
          successor, because the verdict and the output's width are signed into the attestation \

@@ -1,55 +1,56 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 5085,
-      "hash": "64268a12ab4b8ec190e9d54b738713a674e3c3e3b3d0361a61aeb28471f0d8f5"
+      "size": 5150,
+      "hash": "19e88b56067b4a54042a6f0ab8ad1dcf4c0adf060684b70f71cece6ff2ae1207"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 5014,
-      "hash": "64c4b86a2478bef91e2b1be25230e733606231460f7ae8b79464afe012abcb77"
+      "size": 5042,
+      "hash": "7142807501f8b8fb5feecb077d786ee91f2d8556a0894f6c9ea38a9108beac2e"
     },
     "index.js": {
       "type": "file",
-      "size": 60136,
-      "hash": "433784f4c405376bc8d5deebf8a43b9a2b5def796ad9b5a969bb184eef66cf27"
+      "size": 62089,
+      "hash": "af51556855bcaec2e1471b4f55a8b73404fe58d63a1eeead65807d6a4ff2b4d8"
     },
     "index.js.map": {
       "type": "file",
-      "size": 2550,
-      "hash": "f5d8abcaae39aa9ae0730d475bd33bb7480f6ab6ac75d9098ec7d0f8ef521e57"
+      "size": 2574,
+      "hash": "5791b9250a71a1cc2dc59fee4f7f71735c9691d46e4205fe9a0e725de450e4b3"
     }
   },
   "zkir": {
     "type": "directory",
     "mintShieldedTo.zkir": {
       "type": "file",
-      "size": 6713,
-      "hash": "26bbe02c2e1593eeab0de2bccfcad6d494b5819fc0c531c4aa66fe83ba58194b"
+      "size": 6707,
+      "hash": "6d759829331b7812d56970cd8b99ae0207b75c5c04b187ae3fbf4de25f5640ae"
     },
     "mintUnshieldedTo.zkir": {
       "type": "file",
-      "size": 6913,
-      "hash": "f685b6aa6f25ef6a97fd73b844a6e017e47650e8eb140dc482483c02030aeeb8"
+      "size": 6910,
+      "hash": "f3316b713fe42d8d6c1103e695d3d9f82d96296c3172a0a2d2fc9823cdeabdb9"
     },
     "shieldedColor.zkir": {
       "type": "file",
-      "size": 1675,
-      "hash": "d1a3eda1e35ecd016a52b5394177edc60d13b43291bfd49e8e786adedfa046b0"
+      "size": 1672,
+      "hash": "60def0f31d079a977052bb30bb0950fea1145ca3c670777ec279f27dbb4a8b57"
     },
     "unshieldedColor.zkir": {
       "type": "file",
-      "size": 1675,
-      "hash": "6fd6ed5106a2ffac921df2d281a747966ba4858217801ebf5e56d6126ed7f0d9"
+      "size": 1672,
+      "hash": "daeef3f209582bd67c4a2626353b345b9277247eee83200db533324e3c02e93a"
     }
   }
 }

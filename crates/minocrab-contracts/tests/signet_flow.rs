@@ -220,7 +220,7 @@ fn the_block_is_laid_out_by_slot_width() {
 }
 
 /// Each circuit builds, and at a cost a settle's secp256k1 verification
-/// dominates (the vault's settle circuits sit at k = 13-14).
+/// (identity-key check included, compactc 0.36) dominates: k = 16.
 #[test]
 fn the_circuits_build_at_a_finite_cost() {
     let (k_req, rows_req) = cost(&deposit().ir);
@@ -228,7 +228,7 @@ fn the_circuits_build_at_a_finite_cost() {
     let (k_claim, rows_claim) = cost(&claim().ir);
     let (k_ref, _) = cost(&refund_withdrawal().ir);
     assert!(rows_req > 0 && rows_claim > rows_req, "{rows_req} {rows_claim}");
-    assert!(k_req <= 14 && k_wd <= 14 && k_claim <= 15 && k_ref <= 15, "{k_req} {k_wd} {k_claim} {k_ref}");
+    assert!(k_req <= 14 && k_wd <= 14 && k_claim <= 16 && k_ref <= 16, "{k_req} {k_wd} {k_claim} {k_ref}");
 }
 
 // ---- the record the circuit files vs the reader the MPC runs ----------------------

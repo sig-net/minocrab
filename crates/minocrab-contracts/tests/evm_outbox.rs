@@ -279,7 +279,6 @@ fn the_reads_are_per_key_and_the_config_cells() {
 fn an_emit_files_one_record_and_a_call_files_none() {
     let emit = emit();
     assert_eq!(disclosures_labelled(&emit, "xcall communications commitment"), 1);
-    assert_eq!(disclosures_labelled(&emit, "xcall entry-point hash"), 1);
     assert_eq!(disclosures_labelled(&emit, "request id"), 1);
     assert_eq!(disclosures_labelled(&emit, "request record"), 1);
     assert_eq!(disclosures_labelled(&emit, "emitted handle"), 1);

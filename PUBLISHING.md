@@ -1,57 +1,31 @@
 # Publishing to crates.io
 
 Everything except the publish itself is done: metadata, per-crate READMEs, rustdoc
-front doors, `include` lists. What remains is one external blocker, below.
+front doors, `include` lists. What remains is one decision, below.
 
-## Blocked: the `midnight-*` line is not on crates.io
+## The `midnight-*` line is on crates.io; `publish = false` stays until lifted
 
-Every `midnight-*` dependency is declared as a crates.io version (workspace
-`Cargo.toml`), and `[patch.crates-io]` (in `Cargo.toml` and, identically,
-`.cargo/config.toml`) points each ledger crate at the
-`midnightntwrk/midnight-ledger` tag midnight-node 2.0.0-rc.4 pins, the release
-stagenet runs, and zkir-v3, which the node does not link, at the tag cut beside
-them. Those tags carry the
-zkir and zkir-v3 sources the official compact flake pins for the binaries our
-compactc ships with (`ledger-9.1.0.0-rc.3` and rev `04c9c5d9…`) unchanged, with
-only their manifests moved. The registry only
-carries the older, incompatible ledger-8 / zkir-2.1 line, and no
-`midnight-zkir-v3` or `midnight-ledger-v9` at all.
+Every `midnight-*` dependency now resolves from crates.io, with no
+`[patch.crates-io]`, at the versions midnight-node 2.1.101 locks (ledger
+9.1.0.1, the release Mainnet, Preprod and Preview run): `midnight-ledger-v9`
+1.0.1, the onchain crates 4.0.1, `midnight-zkir` 3.2.0 (the ZKIR v3 line,
+imported as `midnight-zkir-v3`) and the rest named in the workspace
+`Cargo.toml`. A local `cargo package` therefore verifies against the
+registry crates, and every gate in this repo runs against them. The
+requirements are caret ranges (`midnight-zkir` is exact), so a downstream
+build without this lockfile may resolve newer compatible releases.
 
-The versions are there so that a downstream workspace links our crates under
-its own `[patch.crates-io]` (sig-net/mpc links `minocrab-publisher` and
-`signet-protocol` against the per-crate ledger tags midnight-node pins): a git
-dependency could not be patched to the same repository, and two copies of the
-ledger types do not unify. A `[patch]` is never packaged.
+The seven crates that depend on the `midnight-*` line (`minocrab-zkir`,
+`minocrab-ir`, `minocrab-std`, `minocrab-ledger`, `minocrab-sim`,
+`minocrab-abi`, `minocrab-publisher`) still carry `publish = false`, and
+everything that depends on them cannot publish either. The guard existed
+because a patched build proved nothing about the registry; with the patch
+gone, removing those lines is the remaining step, and a deliberate one.
 
-**The plan is still to wait for upstream** (dmd, 2026-08-17). Midnight
-publishes the ledger-9.1 line to crates.io at our tags; the patch entries go;
-this document becomes a checklist. The ask is queued for the upstream team
-through the usual feedback channel — see notes/compact-findings.org.
-
-Vendoring the pinned crates under our own names was considered and **rejected**,
-not deferred: republishing someone else's crates is a licensing question we do
-not get to answer for them, and it buys a permanent maintenance obligation on
-every upstream bump.
-
-### The guard that replaces the git-dependency check
-
-The packaged manifest carries the version requirements and no patch, while
-every local `cargo package` and `cargo publish --dry-run` still applies the
-`.cargo/config.toml` patch, so both pass and prove nothing about how the crate
-resolves from crates.io. Once upstream publishes semver-compatible versions, a
-publish would go through and a downstream build would resolve them, which
-compiles something silently different from what every test in this repo
-checks unless those versions ARE the pinned tags. That is the exact failure
-class this project exists to prevent, so the seven crates that depend on the
-`midnight-*` line (`minocrab-zkir`, `minocrab-ir`, `minocrab-std`,
-`minocrab-ledger`, `minocrab-sim`, `minocrab-abi`, `minocrab-publisher`) carry
-`publish = false`, and everything that depends on them cannot publish either.
-
-The checklist that lifts it: confirm every `midnight-*` version the lockfile
-resolves is published from the pinned tags (or move the pin to what was
-published), delete the patch entries from both `Cargo.toml` and
-`.cargo/config.toml`, rerun every gate against the registry, and only then
-remove the `publish = false` lines.
+Vendoring the ledger crates under our own names was considered and
+**rejected**, not deferred: republishing someone else's crates is a licensing
+question we do not get to answer for them, and it buys a permanent
+maintenance obligation on every upstream bump.
 
 Path dependencies on our own crates *do* carry versions
 (`[workspace.dependencies]`, one place). The path is used for the local build
@@ -83,7 +57,7 @@ below.
 Never published, each carrying `publish = false` with its reason in the
 manifest: `minocrab-contracts`, `minocrab-bench`, `signet-signer-interface`,
 `xcall-target-interface`. (The seven held crates above carry it too, until
-the checklist lifts it.)
+it is lifted.)
 
 ## Dry run
 
@@ -103,9 +77,7 @@ cargo publish --dry-run -p minocrab-zkir
 ```
 
 `cargo publish --dry-run` refuses the seven held crates (`publish = false`);
-`cargo package` still packages them. With the patch in place both verify
-against the pinned tags, not the registry, so run them for real only with the
-patch removed, per the checklist above.
+`cargo package` still packages them, verifying against the registry crates.
 
 ## What each crate ships
 

@@ -142,7 +142,7 @@ src/compact/examples/composable/graph/C.compact	ok
 src/compact/examples/composable/graph/Main-A-and-B.compact	ok	
 src/compact/examples/composable/graph/Main-B-and-C-on-A.compact	ok	
 src/compact/examples/counter.compact	ok	
-src/compact/examples/ecdsa/example_one.compact	fail	Exception: example_one.compact line 18 char 10:
+src/compact/examples/ecdsa/example_one.compact	ok	
 src/compact/examples/election.compact	ok	
 src/compact/examples/external/examples.compact	ok	
 src/compact/examples/external/negative/example_four.compact	fail	Exception: example_four.compact line 19 char 1:
@@ -260,7 +260,7 @@ src/compact/examples/return/examples.compact	ok
 src/compact/examples/return/negative/example_one.compact	fail	Exception: example_one.compact line 17 char 10:
 src/compact/examples/return/negative/example_three.compact	fail	Exception: example_three.compact line 18 char 3:
 src/compact/examples/return/negative/example_two.compact	fail	Exception: example_two.compact line 16 char 1:
-src/compact/examples/secp256k1/arithmetic.compact	fail	Exception: arithmetic.compact line 46 char 35:
+src/compact/examples/secp256k1/arithmetic.compact	ok	
 src/compact/examples/std_lib/block_time.compact	ok	
 src/compact/examples/std_lib/import/test_import_csl.compact	ok	
 src/compact/examples/std_lib/import/test_import_csl_quotes.compact	fail	Exception: test_import_csl_quotes.compact line 16 char 1:
@@ -303,7 +303,7 @@ src/compact/examples/wpp/test/test.compact	ok
 src/compact/examples/zerocash.compact	ok	
 src/compact/test-center/compact/bar.compact	ok	
 src/compact/test-center/compact/block-time.compact	ok	
-src/compact/test-center/compact/ecdsa.compact	fail	Exception: ecdsa.compact line 35 char 7:
+src/compact/test-center/compact/ecdsa.compact	ok	
 src/compact/test-center/compact/empty.compact	ok	
 src/compact/test-center/compact/foo.compact	fail	Exception: foo.compact line 17 char 3:
 src/compact/test-center/compact/gas-cost.compact	ok	

@@ -212,8 +212,10 @@ fn the_circuits_build_at_a_finite_cost() {
         k_send <= 14 && k_wrap <= 14 && k_unwrap <= 14,
         "{k_send} {k_wrap} {k_unwrap}"
     );
+    // A settle verifies a secp256k1 signature, identity-key check included
+    // (compactc 0.36), which lands it at k = 16.
     assert!(
-        k_done <= 15 && k_ref <= 15 && k_wrapped <= 15,
+        k_done <= 16 && k_ref <= 16 && k_wrapped <= 16,
         "{k_done} {k_ref} {k_wrapped}"
     );
 }

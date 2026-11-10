@@ -1,7 +1,7 @@
 //! ZKIR v3 bindings — same shape as the v2 module in `lib.rs`, over the
-//! typed IR (`midnight-zkir-v3`, pinned to the same midnight-ledger tag as
-//! the bundled `zkir-v3` binary). The sig-net contracts (and anything built
-//! with `--feature-zkir-v3`) emit this format.
+//! typed IR (`midnight-zkir-v3`, the crates.io `midnight-zkir` 3.2.0 the
+//! pinned compactc's bundled `zkir-v3` binary is built from). compactc 0.36
+//! writes only this format.
 
 use std::io::{Read, Write};
 use std::path::Path;

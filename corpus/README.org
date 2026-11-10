@@ -33,5 +33,5 @@ compactc-compiled ZKIR. This is the project's test bed: round-trip tests
 - sig-net repos carry no license files (internal); the OpenZeppelin and
   Midnight sources are MIT/Apache-2.0 (per-source in sources.json).
 - Compile failures are data, not bugs to fix here: older pragmas and
-  multi-file imports fail under the pinned 0.33 compiler and stay recorded
+  multi-file imports fail under the pinned compiler and stay recorded
   in compile-report.tsv.

@@ -6,9 +6,9 @@
 //! native field, `Bytes<32>`, and the foreign-curve types); and immediates
 //! appear inline as operands instead of via `LoadImm`. [`Builder3`] tracks
 //! the type of every value and panics at circuit-build time on an operand
-//! type an instruction does not support (the lists in midnight-ledger
-//! `zkir-v3/src/ir.rs` doc comments), so a type error can never reach the
-//! prover. Semantics reference: `zkir-v3/src/ir_vm.rs`.
+//! type an instruction does not support (the lists in midnight-zkir's
+//! `src/ir.rs` doc comments), so a type error can never reach the prover.
+//! Semantics reference: midnight-zkir's `src/ir_vm.rs`.
 
 #[cfg(feature = "unstable")]
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use std::sync::Arc;
 #[cfg(feature = "unstable")]
 use minocrab_zkir::Fr;
 pub use minocrab_zkir::v3::{Identifier, Instruction, IrSource, IrType, Operand, TypedIdentifier};
+use minocrab_zkir::v3::IrMinorVersion;
 
 pub use midnight_base_crypto::fab::Alignment;
 
@@ -95,8 +96,8 @@ fn supports_mul(ty: &IrType) -> bool {
 }
 
 #[cfg(feature = "unstable")]
-/// IntoBytes32/FromBytes32 support prime-field elements with a canonical
-/// 32-byte little-endian form.
+/// The 32-byte conversions (`ToBytes`/`FromBytes` on a `Bytes(32)`) support
+/// prime-field elements, which have a canonical 32-byte little-endian form.
 fn supports_bytes32_conversion(ty: &IrType) -> bool {
     matches!(ty, IrType::Native) || is_foreign_field(ty)
 }
@@ -549,7 +550,7 @@ impl Builder3 {
         // Input types are not constrained here: the alignment governs the
         // preimage layout (zkir-v3 encodes each operand per its type).
         let inputs = inputs.iter().map(|&a| self.operand(a)).collect();
-        let output = self.fresh("phash", IrType::Bytes32);
+        let output = self.fresh("phash", IrType::Bytes(32));
         self.instructions.push(Instruction::PersistentHash {
             alignment,
             inputs,
@@ -561,7 +562,7 @@ impl Builder3 {
     /// Keccak-256 of `inputs` laid out per `alignment`; result is `Bytes<32>`.
     pub fn keccak256(&mut self, alignment: Alignment, inputs: &[Arg]) -> Val {
         let inputs = inputs.iter().map(|&a| self.operand(a)).collect();
-        let output = self.fresh("keccak", IrType::Bytes32);
+        let output = self.fresh("keccak", IrType::Bytes(32));
         self.instructions.push(Instruction::Keccak256 {
             alignment,
             inputs,
@@ -666,6 +667,10 @@ impl Builder3 {
     }
 
     // --- Bytes<32> conversions -------------------------------------------------
+    // Emitted as the ZKIR 3.1 byte instructions (`ToBytes`, `FromBytes`,
+    // `BytesIntoNatives`, `BytesFromNatives`, which compactc 0.36 writes, and
+    // `Reverse`, which it does not); on a `Bytes(32)` each proves the same
+    // statement as the deprecated 3.0 op it replaces (zkir 3.2.0 ir_vm.rs).
 
     /// The canonical little-endian 32-byte form of a prime-field element.
     pub fn into_bytes32(&mut self, input: impl Into<Arg>) -> Val {
@@ -676,8 +681,8 @@ impl Builder3 {
             "a prime-field element",
             "into_bytes32",
         );
-        let output = self.fresh("bytes", IrType::Bytes32);
-        self.instructions.push(Instruction::IntoBytes32 {
+        let output = self.fresh("bytes", IrType::Bytes(32));
+        self.instructions.push(Instruction::ToBytes {
             input: self.operand(input),
             output: self.name(output),
         });
@@ -690,7 +695,7 @@ impl Builder3 {
         let bytes = bytes.into();
         self.expect(
             bytes,
-            |t| matches!(t, IrType::Bytes32),
+            |t| matches!(t, IrType::Bytes(32)),
             "Bytes<32>",
             "from_bytes32",
         );
@@ -699,7 +704,7 @@ impl Builder3 {
             "from_bytes32: target must be a prime-field type, got {ty:?}"
         );
         let output = self.fresh("field", ty.clone());
-        self.instructions.push(Instruction::FromBytes32 {
+        self.instructions.push(Instruction::FromBytes {
             bytes: self.operand(bytes),
             val_t: ty,
             output: self.name(output),
@@ -712,12 +717,12 @@ impl Builder3 {
         let bytes = bytes.into();
         self.expect(
             bytes,
-            |t| matches!(t, IrType::Bytes32),
+            |t| matches!(t, IrType::Bytes(32)),
             "Bytes<32>",
             "reverse_bytes",
         );
-        let output = self.fresh("rev", IrType::Bytes32);
-        self.instructions.push(Instruction::ReverseBytes {
+        let output = self.fresh("rev", IrType::Bytes(32));
+        self.instructions.push(Instruction::Reverse {
             bytes: self.operand(bytes),
             output: self.name(output),
         });
@@ -731,15 +736,15 @@ impl Builder3 {
         let bytes = bytes.into();
         self.expect(
             bytes,
-            |t| matches!(t, IrType::Bytes32),
+            |t| matches!(t, IrType::Bytes(32)),
             "Bytes<32>",
             "bytes32_into_low_high",
         );
         let low = self.fresh("low", IrType::Native);
         let high = self.fresh("high", IrType::Native);
-        self.instructions.push(Instruction::Bytes32IntoLowHigh {
+        self.instructions.push(Instruction::BytesIntoNatives {
             bytes: self.operand(bytes),
-            outputs: (self.name(low), self.name(high)),
+            outputs: vec![self.name(low), self.name(high)],
         });
         (low, high)
     }
@@ -750,9 +755,10 @@ impl Builder3 {
         let (low, high) = (low.into(), high.into());
         self.expect_native(low, "bytes32_from_low_high");
         self.expect_native(high, "bytes32_from_low_high");
-        let output = self.fresh("bytes", IrType::Bytes32);
-        self.instructions.push(Instruction::Bytes32FromLowHigh {
-            inputs: (self.operand(low), self.operand(high)),
+        let output = self.fresh("bytes", IrType::Bytes(32));
+        self.instructions.push(Instruction::BytesFromNatives {
+            inputs: vec![self.operand(low), self.operand(high)],
+            len: 32,
             output: self.name(output),
         });
         output
@@ -984,7 +990,10 @@ impl Builder3 {
         #[cfg(debug_assertions)]
         passes::check_kept(&built_stream, &instructions, &kept);
         let ir = IrSource {
-            version: Default::default(),
+            // ZKIR 3.1, the minor version compactc 0.36 writes. Explicit
+            // because `IrMinorVersion`'s default is V2; midnight-zkir 3.2.0
+            // gates no instruction on it.
+            version: IrMinorVersion::V1,
             inputs: self.inputs,
             outputs: self.outputs.unwrap_or_default(),
             do_communications_commitment: communications_commitment,

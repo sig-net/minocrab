@@ -1,0 +1,18 @@
+{
+  "version": { "major": 3, "minor": 2 },
+  "do_communications_commitment": false,
+  "inputs": [
+    { "name": "%a.0", "type": "Scalar<BLS12-381>" },
+    { "name": "%b.1", "type": "Bytes<32>" }
+  ],
+  "outputs": [
+    "Scalar<BLS12-381>"
+  ],
+  "instructions": [
+    { "op": "reverse", "output": "%r.2", "bytes": "%b.1" },
+    { "op": "bytes32_into_low_high", "outputs": ["%l.3", "%h.4"], "bytes": "%r.2" },
+    { "op": "bytes32_from_low_high", "output": "%c.5", "inputs": ["%l.3", "%h.4"] },
+    { "op": "constrain_eq", "a": "%c.5", "b": "%r.2" },
+    { "op": "output", "vals": ["%a.0"] }
+  ]
+}

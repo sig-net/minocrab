@@ -334,11 +334,10 @@ impl Env {
         o
     }
 
-    /// The cross-contract call's witnesses: `cc-rand`, then the entry-point
-    /// hash's two limbs.
-    pub fn call_witnesses(&self, cc_rand: Fr) -> Vec<Fr> {
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        vec![cc_rand, ep_hi, ep_lo]
+    /// The cross-contract call's one witness, `cc-rand`; the entry-point hash
+    /// is a constant of the claim (compactc 0.36).
+    pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
+        vec![cc_rand]
     }
 
     /// `tokenType(…, kernel.self())`'s read, then `receiveShielded(coin);
@@ -1505,7 +1504,7 @@ impl SendScenario {
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
-        self.sent.env.call_witnesses(self.sent.cc_rand)
+        Env::call_witnesses(self.sent.cc_rand)
     }
 
     pub fn ops(&self) -> Vec<VmOp> {
@@ -1919,7 +1918,8 @@ impl CompleteScenario {
         matches!(self.attestation.output_kind, output_kind::FAILED | output_kind::UNVIABLE)
     }
 
-    /// `deserialize<VaultResponse, 1>(output).success` — byte == 1.
+    /// `deserialize<VaultResponse, 1>(output).success` — byte == 1. The model
+    /// is fed only 0 or 1; the circuit rejects a byte above 1.
     pub fn success(&self) -> bool {
         self.output.first() == Some(&Fr::from(1u64))
     }

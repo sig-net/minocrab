@@ -1,7 +1,8 @@
 /-
 secp256k1 — the one foreign curve ZKIR v3's corpus actually exercises
-(M27 rung 4; notes/zkir-rung4.org). Ported mechanically from the pinned
-sources:
+(M27 rung 4; notes/zkir-rung4.org). Ported mechanically from these
+sources (the cited midnight-circuits lines are unchanged in the pinned
+7.3.0):
 
   midnight-ledger 04c9c5d9 zkir-v3/src/ir_instructions/
     add.rs:43-67          `add_offcircuit`           (point, base, scalar)

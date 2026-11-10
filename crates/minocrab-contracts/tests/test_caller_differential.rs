@@ -20,7 +20,7 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::test_caller;
 use minocrab_sim::v3::{assert_call_compatible, simulate};
@@ -81,7 +81,7 @@ fn deployer_commitment(sk: &[u8; 32]) -> [u8; 32] {
 fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
-    from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
+    from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
 }
 
 fn natives(v: &IrValue) -> Vec<Fr> {
@@ -98,7 +98,7 @@ fn natives(v: &IrValue) -> Vec<Fr> {
 /// `initialised == count` and `deployer == commitment`, pinning a key
 /// whose FAB value is `point_av`.
 fn initialise_ops(count: u64, commitment: &[u8; 32], point_av: AlignedValue) -> Vec<VmOp> {
-    let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]));
+    let field_key = |i: u8| Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"));
     vec![
         // initialised == 0
         Op::Dup { n: 0 },
@@ -133,11 +133,11 @@ fn initialise_ops(count: u64, commitment: &[u8; 32], point_av: AlignedValue) -> 
         // mpcResponseKey = disclose(responseKey)
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(1, &[test_caller::MPC_RESPONSE_KEY])),
+            value: cell(bytesn_value(1, &[test_caller::MPC_RESPONSE_KEY])).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
-            value: cell(point_av),
+            value: cell(point_av).try_into_checked().expect("a canonical value"),
         },
         Op::Ins {
             cached: false,

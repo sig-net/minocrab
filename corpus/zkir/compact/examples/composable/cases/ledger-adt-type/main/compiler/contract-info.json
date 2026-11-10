@@ -1,7 +1,8 @@
 {
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "circuits": [
   ],
   "witnesses": [
@@ -20,7 +21,6 @@
         "circuits": [
           {
             "name": "up",
-            "pure": false,
             "argument-types": [
               {
                 "type-name": "Uint",
@@ -35,7 +35,6 @@
           },
           {
             "name": "down",
-            "pure": false,
             "argument-types": [
               {
                 "type-name": "Uint",
@@ -56,7 +55,6 @@
         "circuits": [
           {
             "name": "up",
-            "pure": false,
             "argument-types": [
               {
                 "type-name": "Uint",
@@ -71,7 +69,6 @@
           },
           {
             "name": "down",
-            "pure": false,
             "argument-types": [
               {
                 "type-name": "Uint",

@@ -183,6 +183,16 @@ def Instr.toJ : Instr → J
     .obj [("op", .str "bytes32_into_low_high"), ("outputs", .arr [.str o0, .str o1]), ("bytes", bytes.toJ)]
   | .bytes32FromLowHigh out (i0, i1) =>
     .obj [("op", .str "bytes32_from_low_high"), ("output", .str out), ("inputs", .arr [i0.toJ, i1.toJ])]
+  | .toBytes out input =>
+    .obj [("op", .str "to_bytes"), ("output", .str out), ("input", input.toJ)]
+  | .fromBytes ty out bytes =>
+    .obj [("op", .str "from_bytes"), ("type", .str ty.name), ("output", .str out), ("bytes", bytes.toJ)]
+  | .bytesIntoNatives outputs bytes =>
+    .obj [("op", .str "bytes_into_natives"), ("outputs", ids outputs), ("bytes", bytes.toJ)]
+  | .bytesFromNatives out len inputs =>
+    .obj [("op", .str "bytes_from_natives"), ("output", .str out), ("len", .int len), ("inputs", ops inputs)]
+  | .reverse out bytes =>
+    .obj [("op", .str "reverse"), ("output", .str out), ("bytes", bytes.toJ)]
   | .divModPowerOfTwo outputs val bits =>
     .obj [("op", .str "div_mod_power_of_two"), ("outputs", ids outputs), ("val", val.toJ), ("bits", .int bits)]
   | .reconstituteField out divisor modulus bits =>

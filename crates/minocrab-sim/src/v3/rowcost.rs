@@ -98,6 +98,24 @@ pub fn keccak_blocks(len: usize) -> usize {
     len / 136 + 1
 }
 
+/// `bytes_from_natives` / `bytes_into_natives` over `len` bytes: a row per
+/// 4 bytes of each 31-byte chunk, measured with midnight-zkir 3.2.0's own
+/// model at lengths 1 to 94; `bytes_into_natives` converts a 1-byte chunk
+/// without a row.
+pub fn limb_rows(len: usize, one_byte_free: bool) -> usize {
+    (0..len)
+        .step_by(31)
+        .map(|start| {
+            let chunk = (len - start).min(31);
+            if one_byte_free && chunk == 1 {
+                0
+            } else {
+                chunk.div_ceil(4)
+            }
+        })
+        .sum()
+}
+
 /// Rows one `persistent_hash` over `len` bytes costs.
 pub fn sha256_rows(len: usize) -> usize {
     sha256_blocks(len) * SHA256_PER_BLOCK
@@ -170,15 +188,12 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
             I::PublicInput { val_t, output, .. } | I::PrivateInput { val_t, output, .. } => {
                 types.insert(output.clone(), val_t.clone());
             }
-            I::FromBytes32 { val_t, output, .. } => {
-                types.insert(output.clone(), val_t.clone());
-            }
             I::PersistentHash { output, .. }
             | I::Keccak256 { output, .. }
             | I::IntoBytes32 { output, .. }
             | I::ReverseBytes { output, .. }
             | I::Bytes32FromLowHigh { output, .. } => {
-                types.insert(output.clone(), IrType::Bytes32);
+                types.insert(output.clone(), IrType::Bytes(32));
             }
             I::TransientHash { output, .. }
             | I::Not { a: _, output }
@@ -238,6 +253,50 @@ fn infer_types(ir: &IrSource) -> HashMap<Identifier, IrType> {
             I::Bytes32IntoLowHigh { outputs, .. } => {
                 types.insert(outputs.0.clone(), IrType::Native);
                 types.insert(outputs.1.clone(), IrType::Native);
+            }
+            // ZKIR 3.1's byte and boolean instructions (zkir 3.2.0 ir.rs:987-1269).
+            I::Sha512 { output, .. } => {
+                types.insert(output.clone(), IrType::Bytes(64));
+            }
+            I::ToBytes { input, output } => {
+                let t = match type_of(&types, input) {
+                    IrType::Secp256k1Point | IrType::Secp256r1Point => IrType::Bytes(33),
+                    _ => IrType::Bytes(32),
+                };
+                types.insert(output.clone(), t);
+            }
+            I::FromBytes32 { val_t, output, .. }
+            | I::FromBytes { val_t, output, .. }
+            | I::LoadConstant { val_t, output, .. } => {
+                types.insert(output.clone(), val_t.clone());
+            }
+            I::Reverse { bytes, output } => {
+                let t = type_of(&types, bytes);
+                types.insert(output.clone(), t);
+            }
+            I::Slice { len, output, .. } | I::BytesFromNatives { len, output, .. } => {
+                types.insert(output.clone(), IrType::Bytes(*len));
+            }
+            I::Nth { output, .. } => {
+                types.insert(output.clone(), IrType::Byte);
+            }
+            I::Concat { inputs, output } => {
+                let len = inputs
+                    .iter()
+                    .map(|i| match type_of(&types, i) {
+                        IrType::Bytes(n) => n,
+                        _ => 1,
+                    })
+                    .sum();
+                types.insert(output.clone(), IrType::Bytes(len));
+            }
+            I::And { output, .. } | I::Or { output, .. } | I::Xor { output, .. } => {
+                types.insert(output.clone(), IrType::Bool);
+            }
+            I::BytesIntoNatives { outputs, .. } => {
+                for out in outputs {
+                    types.insert(out.clone(), IrType::Native);
+                }
             }
             I::Assert { .. }
             | I::ConstrainBits { .. }
@@ -352,28 +411,31 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             // The coordinates are already there; the cost lands on the
             // `into_bytes32` that follows.
             I::IntoCoordinates { .. } | I::FromCoordinates { .. } => SIMPLE,
-            I::IntoBytes32 { input, .. } => {
+            // `to_bytes` is ZKIR 3.1's `into_bytes32`, and so on: the same
+            // gadgets on a `Bytes(32)`.
+            I::IntoBytes32 { input, .. } | I::ToBytes { input, .. } => {
                 if is_foreign(&type_of(input)) {
                     INTO_BYTES32_FOREIGN
                 } else {
                     DECOMPOSE_BYTES32
                 }
             }
-            I::FromBytes32 { val_t, .. } => {
+            I::FromBytes32 { val_t, .. } | I::FromBytes { val_t, .. } => {
                 if is_foreign(val_t) {
                     FROM_BYTES32_FOREIGN
                 } else {
                     COMPOSE_BYTES32
                 }
             }
-            I::ReverseBytes { .. } => REVERSE_BYTES,
+            I::ReverseBytes { .. } | I::Reverse { .. } => REVERSE_BYTES,
             // `Bytes<32>` → (low, high) recomposes (cheap); (low, high) →
             // `Bytes<32>` decomposes the 248-bit limb (dear).
             I::Bytes32IntoLowHigh { .. } => COMPOSE_BYTES32,
             I::Bytes32FromLowHigh { .. } => DECOMPOSE_BYTES32,
             I::ConstrainBits { bits, .. } => range_check_rows(*bits),
             I::DivModPowerOfTwo { .. } => DIV_MOD,
-            I::ReconstituteField { .. } => SIMPLE,
+            // midnight-zkir 3.2.0 decomposes the result into canonical bits.
+            I::ReconstituteField { .. } => DIV_MOD,
             I::LessThan { bits, .. } => LESS_THAN_BASE + (*bits as usize).div_ceil(64),
             I::Impact { inputs, .. } => inputs.len() * SIMPLE,
             I::Encode { outputs, .. } => outputs.len() * SIMPLE,
@@ -386,6 +448,19 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             | I::CondSelect { .. }
             | I::PublicInput { .. }
             | I::PrivateInput { .. } => SIMPLE,
+            // Packing and unpacking 31-byte limbs, a row per 4 bytes of each
+            // chunk; `bytes_into_natives` converts a 1-byte chunk for free.
+            I::BytesIntoNatives { bytes, outputs } => match type_of(bytes) {
+                IrType::Bytes(n) => limb_rows(n as usize, true),
+                _ => outputs.len() * COMPOSE_BYTES32,
+            },
+            I::BytesFromNatives { len, .. } => limb_rows(*len as usize, false),
+            // Unmeasured: SHA-512 is priced as two SHA-256 passes over the
+            // same bytes; the boolean gates as one row; the selections and
+            // the constant add no constraint.
+            I::Sha512 { alignment, .. } => 2 * sha256_rows(alignment.bin_len()),
+            I::And { .. } | I::Or { .. } | I::Xor { .. } => SIMPLE,
+            I::Slice { .. } | I::Nth { .. } | I::Concat { .. } | I::LoadConstant { .. } => 0,
         })
         .collect()
 }

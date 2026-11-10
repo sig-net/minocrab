@@ -78,7 +78,7 @@
 //! Placement: here rather than in minocrab-std, because a disclosure is a
 //! frontend concept and every crate that discloses needs the vocabulary —
 //! `minocrab_ledger::contract_call` discloses a cross-contract call's
-//! entry-point hash and commitment, and those labels have to be nameable in
+//! commitment and results, and those labels have to be nameable in
 //! the CALLER's declaration. minocrab-std adds the [`Disclose`] impls for
 //! its own value types.
 

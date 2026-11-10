@@ -13,8 +13,8 @@ use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
@@ -27,7 +27,7 @@ use sha3::{Digest, Keccak256};
 fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
-    from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
+    from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
 }
 
 fn generator() -> IrValue {
@@ -40,14 +40,15 @@ fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> (IrValue, IrValue, IrVal
     // z: the digest as a big-endian integer, reduced mod n.
     let mut le = *digest;
     le.reverse();
-    let z = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
+    let z = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
 
     let r_point = ec_mul_offcircuit(&generator(), k).unwrap();
     let (x, _y) = into_coordinates_offcircuit(&r_point).unwrap();
-    let IrValue::Bytes32(x_le) = into_bytes32_offcircuit(&x).unwrap() else {
-        panic!("into_bytes32 yields Bytes32");
+    let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
+        panic!("to_bytes of a field element yields Bytes(32)");
     };
-    let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
+    let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
+    let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
 
     // s = k⁻¹ · (z + r·d)
     let rd = mul_offcircuit(&r, d).unwrap();
@@ -155,9 +156,10 @@ fn ethereum_address_matches_native_keccak() {
     // Expected address natively: keccak256(X_be ++ Y_be)[12..32].
     let (x, y) = into_coordinates_offcircuit(&pk).unwrap();
     let coord_be = |v: &IrValue| -> [u8; 32] {
-        let IrValue::Bytes32(mut le) = into_bytes32_offcircuit(v).unwrap() else {
-            panic!("into_bytes32 yields Bytes32");
+        let IrValue::Bytes(le_bytes) = to_bytes_offcircuit(v).unwrap() else {
+            panic!("to_bytes of a field element yields Bytes(32)");
         };
+        let mut le: [u8; 32] = le_bytes.try_into().expect("a field element is 32 bytes");
         le.reverse();
         le
     };
@@ -180,4 +182,26 @@ fn ethereum_address_matches_native_keccak() {
     let run = minocrab_sim::v3::simulate(&compiled.ir, &preimage(natives(&pk)))
         .expect("address circuit simulates");
     assert_eq!(run.outputs[0], IrValue::Native(expected));
+}
+
+/// The point at infinity has no Ethereum address: the circuit refuses it, with
+/// compactc 0.36's message.
+#[test]
+fn ethereum_address_rejects_the_identity() {
+    let generator = IrValue::Secp256k1Point(k256::K256::generator());
+    let identity = ec_mul_offcircuit(&generator, &scalar(0)).unwrap();
+
+    let mut c = Circuit3::new();
+    let pk_wire = c.arg::<Secp256k1PointT>("pk");
+    let addr = secp256k1_ethereum_address(&mut c, pk_wire);
+    let addr_pub = c.disclose(addr, "ethereum address");
+    c.output(addr_pub, "address");
+    let compiled = c.finish(false);
+
+    let err = minocrab_sim::v3::simulate_compiled(&compiled, &preimage(natives(&identity)))
+        .expect_err("the identity has no address");
+    assert!(
+        format!("{err}").contains("identity is not a permitted input to secp256k1EthereumAddress"),
+        "{err}"
+    );
 }

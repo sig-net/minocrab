@@ -4,7 +4,7 @@ pragma language_version >= 0.25;
 // circuit each.
 //
 //   nix build .#compactc          # at the repo root, provides ./result
-//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//   ./result/bin/compactc --skip-zk \
 //       crates/minocrab-contracts/tests/fixtures/kernel/kernel.compact \
 //       crates/minocrab-contracts/tests/fixtures/kernel/out
 
@@ -14,15 +14,16 @@ export ledger dummy: Counter;
 
 // ---- kernel primitives with vm-code -----------------------------------------
 
-// kernel.checkpoint() IS ABSENT, and deliberately: compactc's ZKIR-v3
-// backend has no `ckpt` case at all. zkir-passes/print-zkir.ss:546 assembles
-// it to 255 for v2, but zkir-v3-passes/reduce-to-zkir.ss's `assemble1` falls
-// through to `assert not-implemented`, so `compactc --feature-zkir-v3` on a
-// contract calling it dies with
+// kernel.checkpoint() IS ABSENT. Before compactc 0.36 the ZKIR-v3 backend
+// had no `ckpt` case: zkir-passes/print-zkir.ss:546 assembles it to 255 for
+// v2, but zkir-v3-passes/reduce-to-zkir.ss's `assemble1` falls through to
+// `assert not-implemented`, so `compactc --feature-zkir-v3` on a contract
+// calling it died with
 //   unimplemented: [#{vminstr ...} "ckpt" ()]
 //   Internal error (please report): Exception: failed assertion
 //   not-implemented at line 748, char 23 of compiler/zkir-v3-passes.ss
-// It is a v2-only feature. See notes/kernel-tokens.org finding (a).
+// compactc 0.36.0 lowers it to `impact 0xff`; it is not ported yet. See
+// notes/kernel-tokens.org finding (a).
 
 export circuit kMintUnshielded(ds: Bytes<32>, amount: Uint<64>): [] {
   kernel.mintUnshielded(disclose(ds), disclose(amount));

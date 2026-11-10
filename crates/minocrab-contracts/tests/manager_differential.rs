@@ -95,7 +95,7 @@ fn owner_commitment(sk: &[u8; 32]) -> [u8; 32] {
 // --- op-stream builders ------------------------------------------------------
 
 fn field_key(i: u8) -> Key {
-    Key::Value(bytesn_value(1, &[i]))
+    Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
 }
 
 /// `Cell.read` on a top-level field: `dup 0; idx [field]; popeq`.
@@ -139,7 +139,7 @@ fn member(field: u8, key: AlignedValue, holds: bool) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(key),
+            value: cell(key).try_into_checked().expect("a canonical value"),
         },
         Op::Member,
         Op::Popeq {
@@ -161,7 +161,7 @@ fn lookup(field: u8, key: AlignedValue, result: AlignedValue) -> Vec<VmOp> {
         Op::Idx {
             cached: false,
             push_path: false,
-            path: vec![Key::Value(key)].into(),
+            path: vec![Key::Value(key.try_into().expect("a canonical value"))].into(),
         },
         Op::Popeq {
             cached: false,
@@ -181,11 +181,11 @@ fn insert(field: u8, key: AlignedValue, value: AlignedValue) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(key),
+            value: cell(key).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
-            value: cell(value),
+            value: cell(value).try_into_checked().expect("a canonical value"),
         },
         Op::Ins {
             cached: false,
@@ -205,7 +205,7 @@ fn set_insert(field: u8, elem: AlignedValue) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(elem),
+            value: cell(elem).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,
@@ -229,7 +229,7 @@ fn remove(field: u8, key: AlignedValue) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(key),
+            value: cell(key).try_into_checked().expect("a canonical value"),
         },
         Op::Rem { cached: false },
         Op::Ins { cached: true, n: 1 },
@@ -249,7 +249,7 @@ fn kernel_claim(slot: u8, value: &[u8; 32]) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(32, value)),
+            value: cell(bytesn_value(32, value)).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: false,
@@ -309,12 +309,12 @@ fn insert_coin(field: u8, col: &[u8; 32], coin: AlignedValue, cm: &[u8; 32]) -> 
         },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(32, col)),
+            value: cell(bytesn_value(32, col)).try_into_checked().expect("a canonical value"),
         },
         Op::Dup { n: 5 },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(32, cm)),
+            value: cell(bytesn_value(32, cm)).try_into_checked().expect("a canonical value"),
         },
         Op::Idx {
             cached: true,
@@ -323,7 +323,7 @@ fn insert_coin(field: u8, col: &[u8; 32], coin: AlignedValue, cm: &[u8; 32]) -> 
         },
         Op::Push {
             storage: false,
-            value: cell(coin),
+            value: cell(coin).try_into_checked().expect("a canonical value"),
         },
         Op::Swap { n: 0 },
         Op::Concat {
@@ -365,14 +365,14 @@ fn inc_unshielded(slot: u8, color: &[u8; 32], amount: u128) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(left_color_av(color)),
+            value: cell(left_color_av(color)).try_into_checked().expect("a canonical value"),
         },
         Op::Dup { n: 1 },
         Op::Dup { n: 1 },
         Op::Member,
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(16, &amount.to_le_bytes())),
+            value: cell(bytesn_value(16, &amount.to_le_bytes())).try_into_checked().expect("a canonical value"),
         },
         Op::Swap { n: 0 },
         Op::Neg,
@@ -951,7 +951,7 @@ fn deposit_shielded_merge_matches_corpus() {
 // ===========================================================================
 
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_curves::k256;
 use minocrab_zkir::v3::IrValue;
@@ -977,12 +977,14 @@ fn num_word(v: u128) -> [u8; 32] {
 /// `secp256k1EthereumAddress(pk)` off-circuit.
 fn eth_address(pk: &IrValue) -> [u8; 20] {
     let (x, y) = into_coordinates_offcircuit(pk).unwrap();
-    let IrValue::Bytes32(x_le) = into_bytes32_offcircuit(&x).unwrap() else {
-        panic!("into_bytes32 yields Bytes32")
+    let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
+        panic!("to_bytes of a field element yields Bytes(32)")
     };
-    let IrValue::Bytes32(y_le) = into_bytes32_offcircuit(&y).unwrap() else {
-        panic!("into_bytes32 yields Bytes32")
+    let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
+    let IrValue::Bytes(y_le_bytes) = to_bytes_offcircuit(&y).unwrap() else {
+        panic!("to_bytes of a field element yields Bytes(32)")
     };
+    let y_le: [u8; 32] = y_le_bytes.try_into().expect("a field element is 32 bytes");
     let mut buf = [0u8; 64];
     let mut x_be = x_le;
     x_be.reverse();
@@ -1071,7 +1073,7 @@ fn blocktime_lt(time: u64, result: bool) -> Vec<VmOp> {
         },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(8, &time.to_le_bytes())),
+            value: cell(bytesn_value(8, &time.to_le_bytes())).try_into_checked().expect("a canonical value"),
         },
         Op::Lt,
         Op::Popeq {
@@ -1094,24 +1096,24 @@ fn unshielded_balance_lt(color: &[u8; 32], amount: u128, result: bool) -> Vec<Vm
         Op::Dup { n: 0 },
         Op::Push {
             storage: false,
-            value: cell(left_color_av(color)),
+            value: cell(left_color_av(color)).try_into_checked().expect("a canonical value"),
         },
         Op::Member,
         Op::Branch { skip: 3 },
         Op::Pop,
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(16, &0u128.to_le_bytes())),
+            value: cell(bytesn_value(16, &0u128.to_le_bytes())).try_into_checked().expect("a canonical value"),
         },
         Op::Jmp { skip: 1 },
         Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(left_color_av(color))].into(),
+            path: vec![Key::Value(left_color_av(color).try_into().expect("a canonical value"))].into(),
         },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(16, &amount.to_le_bytes())),
+            value: cell(bytesn_value(16, &amount.to_le_bytes())).try_into_checked().expect("a canonical value"),
         },
         Op::Lt,
         Op::Popeq {
@@ -1155,14 +1157,14 @@ fn claim_unshielded_spend(
         },
         Op::Push {
             storage: false,
-            value: cell(key),
+            value: cell(key).try_into_checked().expect("a canonical value"),
         },
         Op::Dup { n: 1 },
         Op::Dup { n: 1 },
         Op::Member,
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(16, &amount.to_le_bytes())),
+            value: cell(bytesn_value(16, &amount.to_le_bytes())).try_into_checked().expect("a canonical value"),
         },
         Op::Swap { n: 0 },
         Op::Neg,
@@ -1315,10 +1317,10 @@ fn evm_sig_inputs(digest: &[u8; 32], d: u64) -> (Vec<Fr>, [u8; 20]) {
     let d = scalar(d);
     let k = scalar(0x517e_c0de_u64);
     let (r_le, s_le, pk) = sign(digest, &d, &k);
-    use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
+    use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
     use minocrab_zkir::v3::IrType;
-    let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
-    let s = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
+    let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &r_le).unwrap();
+    let s = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &s_le).unwrap();
     let mut v = natives(&r);
     v.extend(natives(&s));
     v.extend(natives(&pk));

@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%data.0", "type": "Scalar<BLS12-381>" },
@@ -28,7 +28,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x0e", "0x01"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0xa1"] },
     { "op": "keccak256", "output": "%bytes.9", "alignment": [{ "tag": "atom", "value": { "length": 256, "tag": "bytes" } }], "inputs": ["%data.0", "%data.1", "%data.2", "%data.3", "%data.4", "%data.5", "%data.6", "%data.7", "%data.8"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%tmp.10", "%tmp.11"], "bytes": "%bytes.9" },
+    { "op": "bytes_into_natives", "outputs": ["%tmp.10", "%tmp.11"], "bytes": "%bytes.9" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x01", "0x01"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x11", "0x01", "0x01", "0x20", "%tmp.11", "%tmp.10"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x91"] }

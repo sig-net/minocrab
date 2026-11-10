@@ -4,7 +4,7 @@ pragma language_version >= 0.25;
 // (notes/coin-arms-nested-adts.org §2 and "AS BUILT — STAGE B1").
 //
 //   nix build .#compactc          # at the repo root, provides ./result
-//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//   ./result/bin/compactc --skip-zk \
 //       crates/minocrab-contracts/tests/fixtures/nested/nested.compact \
 //       crates/minocrab-contracts/tests/fixtures/nested/out
 //

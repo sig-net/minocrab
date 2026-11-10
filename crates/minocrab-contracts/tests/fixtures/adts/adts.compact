@@ -3,7 +3,7 @@ pragma language_version >= 0.25;
 // M16 fixture — every ledger-ADT operation Compact exposes, one circuit each.
 //
 //   nix build .#compactc          # at the repo root, provides ./result
-//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//   ./result/bin/compactc --skip-zk \
 //       crates/minocrab-contracts/tests/fixtures/adts/adts.compact \
 //       crates/minocrab-contracts/tests/fixtures/adts/out
 

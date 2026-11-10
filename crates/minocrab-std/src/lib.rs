@@ -2,7 +2,9 @@
 //!
 //! Ports of Compact's `standard-library.compact` and `zkir-v3-library.compact`,
 //! expressed against the L2 eDSL. Translation is mechanical from Midnight's
-//! sources (corpus/src/compact/compiler/), with the lowering recipes pinned
+//! sources (corpus/src/compact/compiler/, pinned before compactc 0.36; the
+//! 0.36 library changes ported here are in notes/version-bump.org Bump 2),
+//! with the lowering recipes pinned
 //! in notes/builtin-lowering.org; each ported item is differential-tested
 //! against compactc's compilation of the original.
 //!

@@ -539,11 +539,13 @@ impl FixedLen for EmptyOutput {
 /// `Bytes<1>` — the attested EVM `bool` of a transfer or an approval, which
 /// `completeDeposit`, `completeWithdraw` and the approvals read.
 ///
-/// A `u8`, not a `bool`: `deserialize<VaultResponse, 1>(output).success` is
-/// `(byte == 1)` with NO canonicity check, so ANY byte is accepted and
-/// everything other than `0x01` routes to the failure branch (the 0x02 hazard,
-/// M10's harness finding). The V2 lineage makes this a Borsh `bool`, which is
-/// `0|1` and nothing else; the deployed type is a byte.
+/// A `u8`, not a `bool`: under compactc 0.33,
+/// `deserialize<VaultResponse, 1>(output).success` is `(byte == 1)` with NO
+/// canonicity check, so ANY byte is accepted and everything other than `0x01`
+/// routes to the failure branch (the 0x02 hazard, M10's harness finding).
+/// compactc 0.36 adds the check, so a byte above 1 fails the proof. The V2
+/// lineage makes this a Borsh `bool`, which is `0|1` and nothing else; the
+/// deployed type is a byte.
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BoolOutput {
     pub success: u8,

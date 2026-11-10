@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%value.0", "type": "Scalar<BLS12-381>" },
@@ -40,7 +40,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%contractAddress.11", "%contractAddress.12"] },
     { "op": "persistent_hash", "output": "%bytes.13", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", "%domain_sep.9", "%domain_sep.10", "%contractAddress.11", "%contractAddress.12"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%t.14", "%t.15"], "bytes": "%bytes.13" },
+    { "op": "bytes_into_natives", "outputs": ["%t.14", "%t.15"], "bytes": "%bytes.13" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x04"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%domain_sep.9", "%domain_sep.10"] },
@@ -61,7 +61,7 @@
     { "op": "cond_select", "output": "%t.17", "bit": "%recipient.3", "a": "%recipient.4", "b": "%recipient.6" },
     { "op": "cond_select", "output": "%t.18", "bit": "%recipient.3", "a": "%recipient.5", "b": "%recipient.7" },
     { "op": "persistent_hash", "output": "%bytes.19", "alignment": [{ "tag": "atom", "value": { "length": 21, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 16, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 1, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x6d69646e696768743a7a737761702d63635b76315d", "%nonce.1", "%nonce.2", "%t.15", "%t.14", "%value.0", "%recipient.3", "%t.17", "%t.18"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%cm.20", "%cm.21"], "bytes": "%bytes.19" },
+    { "op": "bytes_into_natives", "outputs": ["%cm.20", "%cm.21"], "bytes": "%bytes.19" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x02"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x01", "0x20", "%cm.21", "%cm.20"] },

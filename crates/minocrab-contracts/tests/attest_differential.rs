@@ -19,14 +19,14 @@ use midnight_transient_crypto::repr::FieldRepr;
 use midnight_zkir_v3::ir_instructions::add::add_offcircuit;
 use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use midnight_zkir_v3::ir_instructions::encode::encode_offcircuit;
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::attest;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
+use minocrab_sim::v3::{assert_call_compatible, simulate, simulate_compiled};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -63,22 +63,22 @@ fn attest_transcript(request_id: &[u8; 32]) -> Vec<Fr> {
         Op::Idx {
             cached: false,
             push_path: true,
-            path: vec![Key::Value(bytes1_value(call_count))].into(),
+            path: vec![Key::Value(bytes1_value(call_count).try_into().unwrap())].into(),
         },
         Op::Addi { immediate: 1 },
         Op::Ins { cached: true, n: 1 },
         Op::Idx {
             cached: false,
             push_path: true,
-            path: vec![Key::Value(bytes1_value(verified))].into(),
+            path: vec![Key::Value(bytes1_value(verified).try_into().unwrap())].into(),
         },
         Op::Push {
             storage: false,
-            value: StateValue::Cell(Sp::new(bytes32_value(request_id))),
+            value: StateValue::Cell(Sp::new(bytes32_value(request_id).try_into().unwrap())),
         },
         Op::Push {
             storage: true,
-            value: StateValue::Cell(Sp::new(bytes1_value(1))),
+            value: StateValue::Cell(Sp::new(bytes1_value(1).try_into().unwrap())),
         },
         Op::Ins { cached: false, n: 1 },
         Op::Ins { cached: true, n: 1 },
@@ -133,7 +133,7 @@ fn map_only_matches_corpus() {
 fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
-    from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
+    from_bytes_offcircuit(&IrType::Secp256k1Scalar, &bytes).unwrap()
 }
 
 /// Sign `digest` (big-endian integer, RFC 6979) via upstream off-circuit
@@ -142,26 +142,29 @@ fn sign(digest: &[u8; 32], d: &IrValue, k: &IrValue) -> ([u8; 32], [u8; 32], IrV
     let generator = IrValue::Secp256k1Point(k256::K256::generator());
     let mut le = *digest;
     le.reverse();
-    let z = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
+    let z = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &le).unwrap();
 
     let r_point = ec_mul_offcircuit(&generator, k).unwrap();
     let (x, _y) = into_coordinates_offcircuit(&r_point).unwrap();
-    let IrValue::Bytes32(x_le) = into_bytes32_offcircuit(&x).unwrap() else {
-        panic!("into_bytes32 yields Bytes32");
+    let IrValue::Bytes(x_le_bytes) = to_bytes_offcircuit(&x).unwrap() else {
+        panic!("to_bytes of a field element yields Bytes(32)");
     };
-    let r = from_bytes32_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
+    let x_le: [u8; 32] = x_le_bytes.try_into().expect("a field element is 32 bytes");
+    let r = from_bytes_offcircuit(&IrType::Secp256k1Scalar, &x_le).unwrap();
 
     let rd = mul_offcircuit(&r, d).unwrap();
     let z_rd = add_offcircuit(&z, &rd).unwrap();
     let k_inv = inv_offcircuit(k).unwrap();
     let s = mul_offcircuit(&k_inv, &z_rd).unwrap();
 
-    let IrValue::Bytes32(r_le) = into_bytes32_offcircuit(&r).unwrap() else {
+    let IrValue::Bytes(r_le_bytes) = to_bytes_offcircuit(&r).unwrap() else {
         panic!()
     };
-    let IrValue::Bytes32(s_le) = into_bytes32_offcircuit(&s).unwrap() else {
+    let r_le: [u8; 32] = r_le_bytes.try_into().expect("a field element is 32 bytes");
+    let IrValue::Bytes(s_le_bytes) = to_bytes_offcircuit(&s).unwrap() else {
         panic!()
     };
+    let s_le: [u8; 32] = s_le_bytes.try_into().expect("a field element is 32 bytes");
     let pk = ec_mul_offcircuit(&generator, d).unwrap();
     (r_le, s_le, pk)
 }
@@ -335,5 +338,18 @@ fn verify_only_matches_corpus() {
     assert!(
         simulate(&theirs, &pi).is_err(),
         "corpus must reject a bad signature"
+    );
+
+    // The identity key: private key 0 signs anything, so compactc 0.36's
+    // `secp256k1EcdsaVerify` refuses the point at infinity before verifying.
+    let (r, s, pk) = sign(&digest, &scalar(0), &k);
+    let inputs = verify_only_inputs(&request_id, &digest, &r, &s, &pk);
+    let pi = preimage(inputs, attest_transcript(&request_id));
+    assert!(simulate(&theirs, &pi).is_err(), "corpus must reject the identity key");
+    let err = simulate_compiled(&attest::Attest::verify_only(), &pi)
+        .expect_err("ours must reject the identity key");
+    assert!(
+        format!("{err}").contains("identity is not a permitted secp256k1EcdsaVerify"),
+        "{err}"
     );
 }

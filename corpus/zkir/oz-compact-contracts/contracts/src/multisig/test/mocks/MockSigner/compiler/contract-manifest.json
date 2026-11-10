@@ -1,85 +1,86 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 4281,
-      "hash": "80ecc6f06e44d0051cebc30adfbf4b847ed6f6b3b8b2e1b4d856dbd9b5ea7df7"
+      "size": 4346,
+      "hash": "d579d9bf9f229bebf80c67293e6c1408b1a872452fca02d149121c34b68d31e7"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 5896,
-      "hash": "0848ef2f43a5f0850b1b481b973846fd1ffb81ce05d0bd01cb0c1fb2551b0427"
+      "size": 5924,
+      "hash": "1bf723594a5eb114207ec538ebd8f3198f616962c913de8afab1c34312804cfd"
     },
     "index.js": {
       "type": "file",
-      "size": 65944,
-      "hash": "354cf00372814f13655722536190c5e8f9d98c96f2116501c04cfe22ff1199ca"
+      "size": 68620,
+      "hash": "2224997f4b24b8ef18ee6042b1927f66afb9f6d4483866117f8eabff404f93ff"
     },
     "index.js.map": {
       "type": "file",
-      "size": 3186,
-      "hash": "c051771f386cfc0d0b12d107fb515f8aa869e9199b018d446e2f90e3d403c34f"
+      "size": 3250,
+      "hash": "51aa654aa9a9daea42936060d8bbc57be34b48774e70c0490d6d03222db990c6"
     }
   },
   "zkir": {
     "type": "directory",
     "_addSigner.zkir": {
       "type": "file",
-      "size": 4059,
-      "hash": "8b92582e9177d8a3279687a09d8de02a7241ad8116a6d8c1274174656d945be1"
+      "size": 2152,
+      "hash": "6ebac545938da26ba5618c2a02fc1cbcb353f4ce8eab5a1098a9d0ebd605e7be"
     },
     "_changeThreshold.zkir": {
       "type": "file",
-      "size": 2050,
-      "hash": "30b2425968b766229ca63e9654adf30b68abfb7492720c774bc5d2c629622473"
+      "size": 1289,
+      "hash": "8a9676aa28d71eed60352e980c86f4f59d8d0f91ed569de84233bcfef4fabc27"
     },
     "_removeSigner.zkir": {
       "type": "file",
-      "size": 4812,
-      "hash": "7d54cec8739f3458fa21f96315b15f7f50c258502ef42fd2f902e6b06a7215be"
+      "size": 2700,
+      "hash": "a8bee1cacaff33c5229126ed313099921f5e59042fa9519f77933634d97da277"
     },
     "_setThreshold.zkir": {
       "type": "file",
-      "size": 1187,
-      "hash": "05520f891aee7f01ac8eab315cfcbb1461c6d68a535d8aa6ebc6ef38aa3f7665"
+      "size": 745,
+      "hash": "6dc2fbef198737d624dbda5afdddd823bbd65e0c8160a582c6a1154c23b6541c"
     },
     "assertSigner.zkir": {
       "type": "file",
-      "size": 1593,
-      "hash": "737f616b17ff3f746957e6ae0b422339ac8fc683862f8ff0460d22e165219caf"
+      "size": 925,
+      "hash": "1bb39c9edd9297d839cdd03cab523a8d0076bd4c9e54231a799b205c1de88138"
     },
     "assertThresholdMet.zkir": {
       "type": "file",
-      "size": 1887,
-      "hash": "29e498b0335c3987357622a1fad5a3da860025ed644aef8109c00c60b4410962"
+      "size": 1346,
+      "hash": "8a3bcbbf4e01196fb6d9c6416eab70c1dd4afbbce0c57541cfce08839d464fb5"
     },
     "getSignerCount.zkir": {
       "type": "file",
-      "size": 914,
-      "hash": "d015a811c00e027097a6792c1c48fbf0da392faedb9215d2fc772e9f8c03d072"
+      "size": 536,
+      "hash": "c48c95bc595ef801d75a5f60ec448c91dbde3cee35042163dec334ecbfa44e3f"
     },
     "getThreshold.zkir": {
       "type": "file",
-      "size": 953,
-      "hash": "1e2141639872add16ee071454495a6a761f62ddfcdce302303d108e40d7b9893"
+      "size": 536,
+      "hash": "ba95462359bc0b12605eb243d80c2a3a534f133e57ebd2b2f3ca0acffe23b156"
     },
     "initialize.zkir": {
       "type": "file",
-      "size": 13943,
-      "hash": "f0b94eafd61e1c91a72113e06744ba4a93c474aae78e352de6d92497df4fe35d"
+      "size": 8046,
+      "hash": "9dfc8962419e40446df7c557a9cda02793e5d32b6789f88149ad78b908ea7eb6"
     },
     "isSigner.zkir": {
       "type": "file",
-      "size": 1592,
-      "hash": "d0137f19d67aca0fe677ecde39c058689182caf297999879da2ec255d55b745c"
+      "size": 957,
+      "hash": "0bacc4a06e98b17ac5a0bcbce9b71cd5ee2bd925b8c6e8f307611290945b3be2"
     }
   }
 }

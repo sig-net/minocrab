@@ -170,9 +170,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::ConstrainToBoolean { val: Operand::Variable(id) } => {
                 note(&mut bound, id, Max::all_ones(1));
             }
-            // ir_vm.rs asserts BOTH operands in-circuit:
-            // `divisor < 2^(FR_BITS − bits)` and `modulus < 2^bits`
-            // (assert_lower_than_fixed, the ReconstituteField arm).
+            // ir_vm.rs bounds BOTH operands in-circuit: the output's canonical
+            // FR_BITS bits, split at `bits`, must recompose to the modulus and
+            // the divisor, so `modulus < 2^bits` and
+            // `divisor < 2^(FR_BITS − bits)` (zkir 3.2.0, the
+            // ReconstituteField arm).
             Instruction::ReconstituteField { divisor, modulus, bits, .. } => {
                 if let Operand::Variable(id) = modulus {
                     note(&mut bound, id, Max::all_ones(*bits));
@@ -189,6 +191,20 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 }
                 if let Operand::Variable(id) = high {
                     note(&mut bound, id, Max::all_ones(8));
+                }
+            }
+            // Each limb is decomposed into exactly the bytes it contributes
+            // (`assigned_to_le_bytes(limb, nb_bytes)`, zkir 3.2.0 ir_vm.rs's
+            // BytesFromNatives arm): every limb but the last is < 2^248, the
+            // last < 2^(8·r) for the r bytes it contributes.
+            Instruction::BytesFromNatives { inputs, len, .. } => {
+                for (i, limb) in inputs.iter().enumerate() {
+                    let contributes = (*len as usize)
+                        .saturating_sub(LIMB_BYTES * i)
+                        .min(LIMB_BYTES);
+                    if let Operand::Variable(id) = limb {
+                        note(&mut bound, id, Max::all_ones(8 * contributes as u32));
+                    }
                 }
             }
             // The Impact/popeq warrant (M23 R3 ruling, dmd 2026-08-28): an
@@ -227,6 +243,11 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
     // rather than silently escape the audit — the unsound direction is a new
     // byte-absorbing hash falling through a wildcard.
     let mut is_bytes32: BTreeSet<String> = BTreeSet::new();
+    // Identifiers the stream itself shows to hold a prime-field element (never
+    // a point): what lets a `ToBytes` output be known as `Bytes(32)`, since a
+    // point's `ToBytes` is 33 bytes (secp) and `Encode` cannot tell them apart.
+    // Circuit arguments are not instructions, so they are never in this set.
+    let mut field_valued: BTreeSet<String> = BTreeSet::new();
     let mut findings = Vec::new();
     for (index, ins) in instructions.iter().enumerate() {
         match ins {
@@ -238,6 +259,12 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             Instruction::Keccak256 { alignment, inputs, output } => {
                 audit_hash(index, "keccak256", alignment, inputs, &bound, &confined, &mut findings);
                 is_bytes32.insert(output.0.clone());
+            }
+            // The same byte decoder as the two above (`fab_decode_to_bytes`,
+            // zkir 3.2.0 ir_vm.rs:1122-1148); its `Bytes(64)` output is not a
+            // `Bytes(32)`, so `Encode` of it stays unmarked.
+            Instruction::Sha512 { alignment, inputs, output: _ } => {
+                audit_hash(index, "sha512", alignment, inputs, &bound, &confined, &mut findings);
             }
 
             // ---- bounded producers, each with its in-circuit warrant ----
@@ -266,8 +293,9 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                     note(&mut bound, &outputs[1], Max::all_ones(*bits));
                 }
             }
-            // output = divisor·2^bits + modulus exactly (linear_combination),
-            // with both operands asserted in range (pass A above).
+            // output = divisor·2^bits + modulus as an integer below p (its
+            // canonical bits ARE the two operands), with both operands in
+            // range (pass A above).
             Instruction::ReconstituteField { divisor, modulus, bits, output } => {
                 let d = op_max(&bound, divisor)
                     .map(|m| m.min(Max::all_ones(cap.bits() - *bits)))
@@ -346,10 +374,49 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             }
 
             // ---- Bytes32-typed producers (for Encode above) -------------
-            Instruction::IntoBytes32 { output, .. }
-            | Instruction::ReverseBytes { output, .. }
-            | Instruction::Bytes32FromLowHigh { output, .. } => {
+            Instruction::IntoBytes32 { output, .. } | Instruction::Bytes32FromLowHigh { output, .. } => {
                 is_bytes32.insert(output.0.clone());
+            }
+            // `BytesFromNatives { len: 32 }` is a `Bytes(32)`.
+            Instruction::BytesFromNatives { len, output, .. } => {
+                if *len == 32 {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            // `ToBytes` of a prime-field element is its 32-byte LE form; of a
+            // point it is 32 or 33 bytes, so only a known field value marks.
+            Instruction::ToBytes { input, output } => {
+                let field = match input {
+                    Operand::Immediate(_) => true,
+                    Operand::Variable(id) => field_valued.contains(&id.0),
+                };
+                if field {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            // `Reverse` keeps the length. zkir 3.2.0 runs the deprecated
+            // `ReverseBytes` as `Reverse`, at any length (ir_vm.rs).
+            Instruction::Reverse { bytes: Operand::Variable(id), output }
+            | Instruction::ReverseBytes { bytes: Operand::Variable(id), output } => {
+                if is_bytes32.contains(&id.0) {
+                    is_bytes32.insert(output.0.clone());
+                }
+            }
+            Instruction::Reverse { .. } | Instruction::ReverseBytes { .. } => {}
+            // Every output is a chunk of at most 31 of the input's assigned
+            // (range-checked) bytes, recomposed little-endian; synthesis fails
+            // on a non-`Bytes` input (zkir 3.2.0 ir_vm.rs's BytesIntoNatives
+            // arm, `encode_incircuit` in ir_instructions/encode.rs). Of a
+            // `Bytes(32)` the second chunk is the one high byte.
+            Instruction::BytesIntoNatives { bytes, outputs } => {
+                for output in outputs {
+                    note(&mut bound, output, Max::all_ones(8 * LIMB_BYTES as u32));
+                }
+                let input_is_bytes32 =
+                    matches!(bytes, Operand::Variable(id) if is_bytes32.contains(&id.0));
+                if input_is_bytes32 && outputs.len() == 2 {
+                    note(&mut bound, &outputs[1], Max::all_ones(8));
+                }
             }
             Instruction::PublicInput { val_t, output, .. }
             | Instruction::PrivateInput { val_t, output, .. } => {
@@ -359,7 +426,7 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
                 // bounded by pass A's Impact arm (`mark_popeq`) — via the
                 // ledger's external warrant, per the M23 R3 ruling — and a
                 // guarded one stays free, deliberately.
-                if *val_t == IrType::Bytes32 {
+                if *val_t == IrType::Bytes(32) {
                     is_bytes32.insert(output.0.clone());
                 }
             }
@@ -380,10 +447,41 @@ pub fn audit(instructions: &[Instruction]) -> Vec<Finding> {
             | Instruction::IntoCoordinates { .. }
             | Instruction::FromCoordinates { .. }
             | Instruction::FromBytes32 { .. }
+            | Instruction::FromBytes { .. }
             | Instruction::Neg { .. }
             | Instruction::Inv { .. }
             | Instruction::JubjubScalarFromNative { .. }
             | Instruction::Output { .. } => {}
+            // ZKIR 3.1's byte and boolean instructions, which neither
+            // minocrab nor compactc 0.36 emits. Left unmarked: a missing
+            // bound can only add a finding, never hide one.
+            Instruction::Slice { .. }
+            | Instruction::Nth { .. }
+            | Instruction::Concat { .. }
+            | Instruction::LoadConstant { .. }
+            | Instruction::And { .. }
+            | Instruction::Or { .. }
+            | Instruction::Xor { .. } => {}
+        }
+        // The field-valued producers, recorded after the arm so a value is
+        // known only from its own definition on.
+        match ins {
+            Instruction::IntoCoordinates { outputs: (x, y), .. } => {
+                field_valued.insert(x.0.clone());
+                field_valued.insert(y.0.clone());
+            }
+            Instruction::FromBytes { val_t, output, .. }
+            | Instruction::FromBytes32 { val_t, output, .. }
+            | Instruction::PublicInput { val_t, output, .. }
+            | Instruction::PrivateInput { val_t, output, .. }
+                if is_prime_field(val_t) =>
+            {
+                field_valued.insert(output.0.clone());
+            }
+            Instruction::Copy { val: Operand::Variable(id), output } if field_valued.contains(&id.0) => {
+                field_valued.insert(output.0.clone());
+            }
+            _ => {}
         }
     }
     findings
@@ -827,9 +925,37 @@ fn confined(
             | Instruction::EcMulGenerator { .. }
             | Instruction::IntoCoordinates { .. }
             | Instruction::FromCoordinates { .. }
-            | Instruction::JubjubScalarFromNative { .. } => true,
+            | Instruction::JubjubScalarFromNative { .. }
+            | Instruction::Sha512 { .. }
+            | Instruction::Slice { .. }
+            | Instruction::Nth { .. }
+            | Instruction::Concat { .. }
+            | Instruction::LoadConstant { .. }
+            | Instruction::And { .. }
+            | Instruction::Or { .. }
+            | Instruction::Xor { .. }
+            | Instruction::ToBytes { .. }
+            | Instruction::FromBytes { .. }
+            | Instruction::Reverse { .. }
+            | Instruction::BytesIntoNatives { .. }
+            | Instruction::BytesFromNatives { .. } => true,
         }
     })
+}
+
+/// The prime-field `IrType`s, whose `ToBytes` is 32 bytes.
+fn is_prime_field(t: &IrType) -> bool {
+    matches!(
+        t,
+        IrType::Native
+            | IrType::JubjubScalar
+            | IrType::Secp256k1Base
+            | IrType::Secp256k1Scalar
+            | IrType::Secp256r1Base
+            | IrType::Secp256r1Scalar
+            | IrType::Curve25519Base
+            | IrType::Curve25519Scalar
+    )
 }
 
 /// Merge a newly proven maximum for `id`, keeping the tightest.
@@ -1241,6 +1367,142 @@ mod tests {
             inputs,
             output: id("digest"),
         }
+    }
+
+    fn native_input(name: &str, public: bool) -> Instruction {
+        if public {
+            Instruction::PublicInput { guard: None, val_t: IrType::Native, output: id(name) }
+        } else {
+            Instruction::PrivateInput { guard: None, val_t: IrType::Native, output: id(name) }
+        }
+    }
+
+    /// `[lo, hi]` into a 31-byte and a 1-byte atom: the `Bytes(32)` split.
+    fn hash_low_high() -> Instruction {
+        keccak(vec![bytes_atom(31), bytes_atom(1)], vec![var("lo"), var("hi")])
+    }
+
+    #[test]
+    fn bytes_from_natives_bounds_each_limb_by_the_bytes_it_contributes() {
+        let stream = |hash: Instruction| {
+            vec![
+                native_input("lo", false),
+                native_input("hi", false),
+                Instruction::BytesFromNatives {
+                    inputs: vec![var("lo"), var("hi")],
+                    len: 32,
+                    output: id("b"),
+                },
+                hash,
+            ]
+        };
+        assert_eq!(audit(&stream(hash_low_high())), vec![]);
+        // The first limb carries 31 bytes, one more than a 30-byte atom.
+        let narrow = keccak(vec![bytes_atom(30), bytes_atom(1)], vec![var("lo"), var("hi")]);
+        assert_eq!(audit(&stream(narrow)).len(), 1);
+    }
+
+    #[test]
+    fn bytes_into_natives_bounds_the_high_byte_only_of_a_known_bytes32() {
+        let split = |prefix: Vec<Instruction>, input: Operand| {
+            let mut stream = prefix;
+            stream.push(Instruction::ToBytes { input, output: id("b") });
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("b"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            stream
+        };
+        // A field element's `to_bytes` is 32 bytes: (31 bytes, 1 byte).
+        for public in [true, false] {
+            assert_eq!(audit(&split(vec![native_input("x", public)], var("x"))), vec![]);
+        }
+        assert_eq!(
+            audit(&split(
+                vec![
+                    native_input("x", true),
+                    Instruction::Copy { val: var("x"), output: id("y") },
+                ],
+                var("y"),
+            )),
+            vec![]
+        );
+        assert_eq!(audit(&split(vec![], imm(5))), vec![]);
+        // A value the stream does not type (a circuit argument, which may be
+        // a 33-byte point): only the 31-byte chunk bound holds, so the second
+        // limb is not provably one byte.
+        assert_eq!(audit(&split(vec![], var("arg"))).len(), 1);
+    }
+
+    /// Only a 32-byte value's high chunk is one byte: a secp256k1 point's
+    /// `to_bytes` is 33 bytes and `bytes_from_natives { len: 33 }` is a
+    /// `Bytes(33)`, so the second limb of either is two bytes wide.
+    #[test]
+    fn a_33_byte_value_is_not_marked_bytes32() {
+        let split = |prefix: Vec<Instruction>| {
+            let mut stream = prefix;
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("b"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            audit(&stream)
+        };
+        let point = vec![
+            Instruction::PrivateInput { guard: None, val_t: IrType::Secp256k1Point, output: id("p") },
+            Instruction::ToBytes { input: var("p"), output: id("b") },
+        ];
+        assert_eq!(split(point).len(), 1);
+        let bytes33 = vec![
+            native_input("l0", false),
+            native_input("l1", false),
+            Instruction::BytesFromNatives { inputs: vec![var("l0"), var("l1")], len: 33, output: id("b") },
+        ];
+        assert_eq!(split(bytes33).len(), 1);
+    }
+
+    #[test]
+    fn reversing_keeps_a_known_bytes32_and_marks_nothing_else() {
+        // zkir 3.2.0 runs `reverse_bytes` as `reverse`, at any length.
+        let reversed = |known: bool, deprecated: bool| {
+            let mut stream = vec![];
+            let input = if known {
+                stream.push(native_input("x", true));
+                stream.push(Instruction::ToBytes { input: var("x"), output: id("b") });
+                var("b")
+            } else {
+                var("arg")
+            };
+            stream.push(if deprecated {
+                Instruction::ReverseBytes { bytes: input, output: id("r") }
+            } else {
+                Instruction::Reverse { bytes: input, output: id("r") }
+            });
+            stream.push(Instruction::BytesIntoNatives {
+                bytes: var("r"),
+                outputs: vec![id("lo"), id("hi")],
+            });
+            stream.push(hash_low_high());
+            audit(&stream)
+        };
+        for deprecated in [false, true] {
+            assert_eq!(reversed(true, deprecated), vec![], "deprecated: {deprecated}");
+            assert_eq!(reversed(false, deprecated).len(), 1, "deprecated: {deprecated}");
+        }
+    }
+
+    #[test]
+    fn sha512_is_audited_like_the_other_byte_hashes() {
+        let stream = vec![
+            native_input("w", false),
+            Instruction::Sha512 {
+                alignment: Alignment(vec![bytes_atom(20)]),
+                inputs: vec![var("w")],
+                output: id("digest"),
+            },
+        ];
+        assert_eq!(audit(&stream).len(), 1);
     }
 
     #[test]

@@ -18,7 +18,8 @@ use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
 use midnight_onchain_vm::ops::{Key, Op};
-use midnight_onchain_state::state::StateValue;
+use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
+use midnight_storage::db::InMemoryDB;
 use midnight_storage::arena::Sp;
 use midnight_transient_crypto::hash::transient_commit;
 use midnight_transient_crypto::proofs::{KeyLocation, ProofPreimage};
@@ -57,8 +58,8 @@ fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
     .unwrap()
 }
 
-fn cell(av: AlignedValue) -> StateValue {
-    StateValue::Cell(Sp::new(av))
+fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
+    StateValue::Cell(Sp::new(av.try_into().expect("a canonical test value")))
 }
 
 fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>, rand: Fr) -> ProofPreimage {
@@ -77,7 +78,7 @@ fn preimage(inputs: Vec<Fr>, transcript: Vec<Fr>, rand: Fr) -> ProofPreimage {
 const IDX_FIELD0: fn() -> VmOp = || Op::Idx {
     cached: false,
     push_path: true,
-    path: vec![Key::Value(bytes1_value(0))].into(),
+    path: vec![Key::Value(bytes1_value(0).try_into().expect("a canonical test key"))].into(),
 };
 
 #[test]
@@ -155,7 +156,7 @@ fn base_matches_corpus() {
         Op::Idx {
             cached: false,
             push_path: true,
-            path: vec![Key::Value(bytes1_value(2))].into(),
+            path: vec![Key::Value(bytes1_value(2).try_into().expect("a canonical test key"))].into(),
         },
         Op::Push {
             storage: false,

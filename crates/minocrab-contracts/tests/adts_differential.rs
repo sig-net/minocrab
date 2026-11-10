@@ -34,7 +34,7 @@ use std::borrow::Cow;
 use midnight_base_crypto::fab::{
     AlignedValue, Alignment, AlignmentAtom, AlignmentSegment, Value, ValueAtom,
 };
-use midnight_onchain_state::state::StateValue;
+use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::arena::Sp;
@@ -435,7 +435,7 @@ fn idx(k: u8) -> VmOp {
     Op::Idx {
         cached: false,
         push_path: false,
-        path: vec![Key::Value(bytesn_value(1, &[k]))].into(),
+        path: vec![Key::Value(bytesn_value(1, &[k]).try_into().expect("a canonical test key"))].into(),
     }
 }
 
@@ -466,8 +466,8 @@ fn field_le_bytes(f: Fr) -> Vec<u8> {
     out
 }
 
-fn cell(av: AlignedValue) -> StateValue {
-    StateValue::Cell(Sp::new(av))
+fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
+    StateValue::Cell(Sp::new(av.try_into().expect("a canonical test value")))
 }
 
 fn transcript(ops: &[VmOp]) -> Vec<Fr> {
@@ -481,7 +481,7 @@ fn transcript(ops: &[VmOp]) -> Vec<Fr> {
 /// The preimage of a circuit that READS: the op stream is
 /// `public_transcript_inputs`, and what the ledger hands back — every `popeq`
 /// result, value-only, in read order — is `public_transcript_outputs`, which
-/// is what a `public_input` gate consumes (`zkir-v3/src/ir_vm.rs:347-365`).
+/// is what a `public_input` gate consumes (midnight-zkir 3.2.0 `src/ir_vm.rs`, the `PublicInput` arm).
 ///
 /// The communications commitment covers the circuit's INPUTS and its declared
 /// OUTPUTS (`onchain-runtime-wasm/src/primitives.rs`), which for these

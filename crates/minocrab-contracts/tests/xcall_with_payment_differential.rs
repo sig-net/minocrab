@@ -51,7 +51,7 @@ fn cell(av: AlignedValue) -> StateValue {
 }
 
 fn key(i: u8) -> Key {
-    Key::Value(bytesn_value(1, &[i]))
+    Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
 }
 
 fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
@@ -104,7 +104,7 @@ fn call_ops(target: &[u8; 32], ep: &[u8; 32], comm: Fr) -> Vec<VmOp> {
         Op::Size,
         Op::Push {
             storage: false,
-            value: cell(addr_ep_comm_value(target, ep, comm)),
+            value: cell(addr_ep_comm_value(target, ep, comm)).try_into_checked().expect("a canonical value"),
         },
         Op::Concat {
             cached: true,
@@ -149,7 +149,8 @@ fn target_addr() -> [u8; 32] {
 }
 
 /// The entry-point hash, DERIVED from the callee circuit's name (M12
-/// stage 1). Preimage-only: the ep limbs are prover-supplied witnesses.
+/// stage 1). The claim carries it as a constant, so it appears only in the
+/// public transcript (`call_ops`).
 fn ep(name: &str) -> [u8; 32] {
     ep_hash(name)
 }
@@ -174,12 +175,11 @@ fn call_once_matches_corpus() {
     let e = ep("notify");
     let cc_rand = Fr::from(0xc0117u64);
     let comm = transient_commit(&args[..], cc_rand);
-    let (ep_hi, ep_lo) = b32_slots(&e);
     let pi = preimage(
         args,
         call_ops(&target, &e, comm),
         &[bytesn_value(32, &target)],
-        vec![cc_rand, ep_hi, ep_lo],
+        vec![cc_rand],
     );
     assert_call_compatible(&ours, &theirs, &pi);
 }
@@ -199,12 +199,11 @@ fn request_matches_corpus() {
     let e = ep("confirmRequest");
     let cc_rand = Fr::from(0x4e9_0e57u64);
     let comm = transient_commit(&args[..], cc_rand);
-    let (ep_hi, ep_lo) = b32_slots(&e);
     let pi = preimage(
         args,
         call_ops(&target, &e, comm),
         &[bytesn_value(32, &target)],
-        vec![cc_rand, ep_hi, ep_lo],
+        vec![cc_rand],
     );
     assert_call_compatible(&ours, &theirs, &pi);
 }
@@ -324,7 +323,7 @@ impl CoinScenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &cm)),
+                value: cell(bytesn_value(32, &cm)).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: false,
@@ -338,12 +337,12 @@ impl CoinScenario {
         ops.extend([
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(1, &[xwp::TREASURY])),
+                value: cell(bytesn_value(1, &[xwp::TREASURY])).try_into_checked().expect("a canonical value"),
             },
             Op::Dup { n: 3 },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &cm)),
+                value: cell(bytesn_value(32, &cm)).try_into_checked().expect("a canonical value"),
             },
             Op::Idx {
                 cached: true,
@@ -352,7 +351,7 @@ impl CoinScenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(self.coin_cell()),
+                value: cell(self.coin_cell()).try_into_checked().expect("a canonical value"),
             },
             Op::Swap { n: 0 },
             Op::Concat {
@@ -400,7 +399,7 @@ impl CoinScenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, request_id)),
+                value: cell(bytesn_value(32, request_id)).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
@@ -476,7 +475,7 @@ fn confirm_request_matches_corpus() {
         },
         Op::Push {
             storage: false,
-            value: cell(bytesn_value(32, &request_id)),
+            value: cell(bytesn_value(32, &request_id)).try_into_checked().expect("a canonical value"),
         },
         Op::Push {
             storage: true,

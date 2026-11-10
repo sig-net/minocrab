@@ -134,7 +134,7 @@ fn main() {
         tree(c, w, 31, &mut bytes);
     });
 
-    // The native ZKIR ReverseBytes instruction on the same B32.
+    // The native ZKIR Reverse instruction on the same B32.
     rows("native reverse_bytes (typed)", |c| {
         let hi = c.arg::<FieldT>("hi");
         let lo = c.arg::<FieldT>("lo");

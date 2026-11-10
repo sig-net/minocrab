@@ -5,7 +5,7 @@ use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
 use midnight_onchain_state::state::StateValue;
-use midnight_onchain_vm::ops::{Key, Op};
+use midnight_onchain_vm::ops::{expect_checked_state_value, Key, Op};
 use midnight_storage::arena::Sp;
 use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::HashMap as StorageHashMap;
@@ -206,7 +206,7 @@ fn qualify_coin(dup_n: u8, cm: &LedgerValue, coin: &LedgerValue) -> [ImpactOp; 6
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+            path: vec![Key::Value(field_key_checked(1)), Key::Stack].into(),
         }),
         push_cell(false, coin),
         ImpactOp::constant(&Op::Swap { n: 0 }),
@@ -422,7 +422,7 @@ pub fn map_insert_adt_default_at(
         push_cell(false, key),
         ImpactOp::constant(&Op::Push {
             storage: true,
-            value: initial,
+            value: expect_checked_state_value(initial),
         }),
         ins1(),
         insc(path.len()),
@@ -442,7 +442,7 @@ fn reset_to_at(path: &[LedgerKey], initial: StateValue<InMemoryDB>) -> Vec<Impac
     ops.push(path[path.len() - 1].push_as_cell());
     ops.push(ImpactOp::constant(&Op::Push {
         storage: true,
-        value: initial,
+        value: expect_checked_state_value(initial),
     }));
     ops.push(ins1());
     ops.extend(insc_container(path));
@@ -847,7 +847,7 @@ pub fn historic_merkle_tree_reset_history_at(path: &[LedgerKey]) -> Vec<ImpactOp
         push_cell(false, &field_index_value(TREE_HISTORY)),
         ImpactOp::constant(&Op::Push {
             storage: true,
-            value: empty_map(),
+            value: expect_checked_state_value(empty_map()),
         }),
         dup(2),
         idx_one(false, false, TREE),
@@ -877,7 +877,7 @@ pub fn historic_merkle_tree_reset_at(path: &[LedgerKey], depth: u8) -> Vec<Impac
     ops.push(path[path.len() - 1].push_as_cell());
     ops.push(ImpactOp::constant(&Op::Push {
         storage: true,
-        value: initial,
+        value: expect_checked_state_value(initial),
     }));
     ops.extend(history_append());
     ops.push(ImpactOp::constant(&Op::Ins { cached: true, n: 2 }));

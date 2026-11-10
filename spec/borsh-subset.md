@@ -185,7 +185,7 @@ own kind is what makes that *structural* rather than incidental.
 | 1 | `BoolOutput` | the EVM `bool` of a transfer or an approval, as a raw byte | deposit, withdraw, approve |
 | 32 | `WordOutput` | one big-endian ABI word — V1's `uint256` | swap (`amountIn`), supply (`shares`), redeem (`assets`) |
 
-`BoolOutput.success` is a `u8`, not a `bool`: the circuit's `deserialize<VaultResponse, 1>(output).success` is `(byte == 1)` with no canonicity check, so any byte is accepted and everything other than `0x01` routes a *successful* operation to the refund branch. That is the 0x02 hazard, and it is deployed; a decoder MUST reproduce the comparison rather than a `bool` parse.
+`BoolOutput.success` is a `u8`, not a `bool`. Under compactc 0.33, the circuit's `deserialize<VaultResponse, 1>(output).success` is `(byte == 1)` with no canonicity check, so any byte is accepted and everything other than `0x01` routes a *successful* operation to the refund branch. That is the 0x02 hazard, and the vault deployed from compactc 0.33 has it; a decoder of that deployment MUST reproduce the comparison rather than a `bool` parse. compactc 0.36 adds `constrain_to_boolean` on the byte, so a vault built with it rejects a byte above 1 on every verdict: the request cannot settle. The MPC writes only `0` or `1`.
 
 ### The signed digest
 

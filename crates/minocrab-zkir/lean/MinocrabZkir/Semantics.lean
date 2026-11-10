@@ -1,7 +1,7 @@
 /-
 The EVALUATION reading of ZKIR v3 (M27 rung 3; notes/zkir-semantics.org
-§4.1, §5): `IrSource::preprocess` (zkir-v3/src/ir_vm.rs:185-691, rev
-04c9c5d9) transcribed over the real IR type, with the intrinsics
+§4.1, §5): `IrSource::preprocess` (zkir-v3/src/ir_vm.rs:185-691 at rev 04c9c5d9;
+midnight-zkir 3.2.0 ir_vm.rs:229 for the 3.1 arms) transcribed over the real IR type, with the intrinsics
 UNINTERPRETED — a `Model` record of functions the semantics consults and
 never defines. Everything Native/Bytes32 is concrete here; the foreign
 curve/field carriers are opaque types in `Carriers`.
@@ -533,6 +533,41 @@ def step (prog : Program) (π : Preimage) (st : State C) (i : Instr) : R (State 
     if lo.val ≥ 2 ^ 248 ∨ hi.val ≥ 256 then
       throw "Bytes32FromLowHigh: low operand must fit in 31 bytes and high operand in a single byte"
     pure (st.insert out (.bytes32 (bytesOfLowHigh lo hi)))
+  -- The ZKIR 3.1 byte instructions, on the one length this model carries
+  -- (`Bytes(32)`): there each computes the same value as the 3.0
+  -- instruction above it (midnight-zkir 3.2.0 `preprocess`). Any other
+  -- length is outside the model and fails here.
+  | .toBytes out input =>
+    let v ← resolve st input
+    let b ← intoBytes32V M v
+    pure (st.insert out (.bytes32 b))
+  | .fromBytes ty out bytes =>
+    let b ← asBytes32 (← resolve st bytes)
+    let r ← fromBytes32V M ty b
+    pure (st.insert out r)
+  | .bytesIntoNatives outputs bytes =>
+    match outputs with
+    | [lo, hi] =>
+      let b ← asBytes32 (← resolve st bytes)
+      let bs := b.toList
+      let high := (bs.getD 31 0).toNat
+      let low := leToNat (bs.take 31)
+      pure ((st.insert lo (.native (Fr.ofNat low))).insert hi (.native (Fr.ofNat high)))
+    | _ => throw "BytesIntoNatives: only Bytes<32> (two outputs) is modelled"
+  | .bytesFromNatives out len inputs =>
+    match inputs with
+    | [ilo, ihi] =>
+      if len = 32 then
+        let lo ← asNative (← resolve st ilo)
+        let hi ← asNative (← resolve st ihi)
+        if lo.val ≥ 2 ^ 248 ∨ hi.val ≥ 256 then
+          throw "BytesFromNatives: every input must fit in the number of bytes it contributes"
+        pure (st.insert out (.bytes32 (bytesOfLowHigh lo hi)))
+      else throw "BytesFromNatives: only Bytes<32> is modelled"
+    | _ => throw "BytesFromNatives: only Bytes<32> (two inputs) is modelled"
+  | .reverse out bytes =>
+    let b ← asBytes32 (← resolve st bytes)
+    pure (st.insert out (.bytes32 b.reverse))
   | .output vals =>
     if vals.length ≠ prog.outputs.length then
       throw s!"Output: signature declares {prog.outputs.length} return values but instruction has {vals.length}"

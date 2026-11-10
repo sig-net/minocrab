@@ -1,75 +1,76 @@
 {
   "manifest-version": "1",
-  "compiler-version": "0.34.0",
-  "language-version": "0.26.0",
-  "runtime-version": "0.19.0",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
   "compiler": {
     "type": "directory",
     "contract-info.json": {
       "type": "file",
-      "size": 7296,
-      "hash": "929cd9dba07aafd3c51ef86410c234e2f545b59959e26d686cd157cfb52c2794"
+      "size": 7361,
+      "hash": "8d5c228b7667282e7d0ff90c80ea775594c27bb3f7762dbba2cb90cfe3d044b2"
     }
   },
   "contract": {
     "type": "directory",
     "index.d.ts": {
       "type": "file",
-      "size": 5965,
-      "hash": "9ff82a1a628bbf7d8b8f02fe81c47a5d4f9f58cb2c7382d65a48369ac3a09fa3"
+      "size": 5993,
+      "hash": "2781113f3f1b369bd570482bdba8d17a0d3ed08834cb4fdc74b0858cccd20e57"
     },
     "index.js": {
       "type": "file",
-      "size": 125617,
-      "hash": "b7d6c89765cdd4951a846a9ab64237350b7f47bac9f99f50bd7696151e2109eb"
+      "size": 129010,
+      "hash": "559aab3f9d1b4bc6ae97d7ce79a28235c1ba0bc6fb8f5c9615c146dfd4a574f1"
     },
     "index.js.map": {
       "type": "file",
-      "size": 5955,
-      "hash": "cb5722d263f1a2794a436ceca7cef084eda387519f244b850f27083f84c72cbc"
+      "size": 6018,
+      "hash": "fe1417287985a924dc899ef6b79b381fbb588c41acf61d0b70cc0f94021600f5"
     }
   },
   "zkir": {
     "type": "directory",
     "burn.zkir": {
       "type": "file",
-      "size": 20815,
-      "hash": "47761bdece82b0b7ae6a65e98a509626f6637b87bf12cdac1f42ec9027a32086"
+      "size": 16324,
+      "hash": "c6b338c9f7b58b8a260dc476f959ed155bb55d2f498138a9e3f6e24ee3ec4bec"
     },
     "getNonce.zkir": {
       "type": "file",
-      "size": 992,
-      "hash": "0e6e6475c675193b4c115f4b0ed34d1bb900afd1752f20eee45bb9f3583f88d3"
+      "size": 536,
+      "hash": "cf05f7a3f2174ceb2a60c22c171b000918fecf09ef0f4aa7971281189c37222e"
     },
     "getSignerCount.zkir": {
       "type": "file",
-      "size": 914,
-      "hash": "d015a811c00e027097a6792c1c48fbf0da392faedb9215d2fc772e9f8c03d072"
+      "size": 536,
+      "hash": "c48c95bc595ef801d75a5f60ec448c91dbde3cee35042163dec334ecbfa44e3f"
     },
     "getThreshold.zkir": {
       "type": "file",
-      "size": 953,
-      "hash": "1e2141639872add16ee071454495a6a761f62ddfcdce302303d108e40d7b9893"
+      "size": 536,
+      "hash": "ba95462359bc0b12605eb243d80c2a3a534f133e57ebd2b2f3ca0acffe23b156"
     },
     "getTokenDomain.zkir": {
       "type": "file",
-      "size": 1116,
-      "hash": "ec3b7cc7bf239054ac92d4f8005b7d393bd4034c896713b70d74c6c422601f35"
+      "size": 669,
+      "hash": "3485a2e2a31d82b75ab220450c0ddccc35a0f0916be92848b0c13b53a6dff0b5"
     },
     "getTokenType.zkir": {
       "type": "file",
-      "size": 2312,
-      "hash": "0e3f4546e00f5ec5c4feae82be56850337fc067f733791637e945c077b3a445b"
+      "size": 1672,
+      "hash": "8f8ebddf9c74ca5060e13369e99ddde588bd8c09b10b7da860944a3162e5366a"
     },
     "isSigner.zkir": {
       "type": "file",
-      "size": 1592,
-      "hash": "d0137f19d67aca0fe677ecde39c058689182caf297999879da2ec255d55b745c"
+      "size": 975,
+      "hash": "c8039108832e33584455027721262718ab181631362bdc56f22ff9bce8ddd2a0"
     },
     "mint.zkir": {
       "type": "file",
-      "size": 22793,
-      "hash": "f5f6ec0d77b3e1157a70241ccab69d80094e938e6899412a6fc288f1afda0419"
+      "size": 17123,
+      "hash": "60630e9466d0e08f4264483c9b2d7ec1989adbe0ad0efdfd5684106a979d8898"
     }
   }
 }

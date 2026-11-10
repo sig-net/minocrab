@@ -1,5 +1,5 @@
 //! `contract_call` under a guard (external review §4.3): its witnesses —
-//! the callee's results, cc-rand and the entry-point limbs — are read under
+//! the callee's results and cc-rand — are read under
 //! the same guard the claim op is emitted under, so a call inside a branch
 //! consumes the private transcript only where the branch runs.
 //!
@@ -9,7 +9,7 @@
 //! `c.when(g, |c| contract_call(c, ..))`.
 
 use minocrab::v3::{Circuit3, FieldT, LimbConstraint};
-use minocrab_ledger::contract_call;
+use minocrab_ledger::{contract_call, EntryPoint};
 use minocrab_zkir::v3::to_zkir_string;
 
 fn zkir(build: impl FnOnce(&mut Circuit3)) -> String {
@@ -28,12 +28,12 @@ fn a_call_inside_a_scope_reads_its_witnesses_under_the_scope() {
         let lo = c.arg::<FieldT>("addr_lo");
         let lo = c.disclose(lo, "addr lo");
         c.when(g, |c| {
-            contract_call(c, [hi, lo], &[], &[LimbConstraint::Bits(64)]);
+            contract_call(c, [hi, lo], EntryPoint::new("deposit"), &[], &[LimbConstraint::Bits(64)]);
         });
     });
     // The witnesses really are guarded: every private_input names `g`.
     let reads = scoped.matches("private_input").count();
-    assert_eq!(reads, 4, "results + cc-rand + two entry-point limbs");
+    assert_eq!(reads, 2, "results + cc-rand; the entry point is a constant");
     assert!(!scoped.contains(r#""guard":null"#), "{scoped}");
 }
 
@@ -46,7 +46,7 @@ fn a_straight_line_call_reads_its_witnesses_unguarded() {
         let hi = c.disclose(hi, "addr hi");
         let lo = c.arg::<FieldT>("addr_lo");
         let lo = c.disclose(lo, "addr lo");
-        contract_call(c, [hi, lo], &[], &[]);
+        contract_call(c, [hi, lo], EntryPoint::new("deposit"), &[], &[]);
     });
-    assert_eq!(stream.matches(r#""guard":null"#).count(), 3, "{stream}");
+    assert_eq!(stream.matches(r#""guard":null"#).count(), 1, "{stream}");
 }

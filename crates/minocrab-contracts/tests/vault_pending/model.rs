@@ -481,14 +481,12 @@ pub fn call_args(self_addr: &[u8; 32], records_field: u8, request_id: &[u8; 32])
     args
 }
 
-/// The cross-contract call's own witnesses, threaded through EVERY request
-/// circuit's `Pending::request` / `Fired::request` call: `cc-rand`, then
-/// the entry-point hash's two limbs (`signer.sign_bidirectional`'s
-/// communications commitment). Confirmed against `withdraw.zkir` and
-/// `approve_router.zkir` (the LAST private inputs each declares).
-pub fn call_witnesses(env: &Env, cc_rand: Fr) -> Vec<Fr> {
-    let (ep_hi, ep_lo) = b32_slots(&env.ep);
-    vec![cc_rand, ep_hi, ep_lo]
+/// The cross-contract call's own witness, threaded through EVERY request
+/// circuit's `Pending::request` / `Fired::request` call: `cc-rand`
+/// (`signer.sign_bidirectional`'s communications commitment). The entry-point
+/// hash is a constant of the claim since compactc 0.36.
+pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
+    vec![cc_rand]
 }
 
 // ---- the two shared op skeletons ----------------------------------------------------
@@ -917,7 +915,7 @@ impl ApproveRouterScenario {
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
-        call_witnesses(&self.env, self.cc_rand)
+        call_witnesses(self.cc_rand)
     }
 
     pub fn ops(&self) -> Vec<VmOp> {
@@ -999,7 +997,7 @@ impl ApproveStataScenario {
     }
 
     pub fn witnesses(&self) -> Vec<Fr> {
-        call_witnesses(&self.env, self.cc_rand)
+        call_witnesses(self.cc_rand)
     }
 
     pub fn ops(&self) -> Vec<VmOp> {
@@ -1123,7 +1121,7 @@ impl StartDepositScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 
@@ -1382,7 +1380,7 @@ impl StartWithdrawScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 
@@ -1696,7 +1694,7 @@ impl StartSwapScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 
@@ -2006,7 +2004,7 @@ impl StartSupplyScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 
@@ -2292,7 +2290,7 @@ impl StartRedeemScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 

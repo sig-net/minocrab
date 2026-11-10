@@ -73,7 +73,7 @@ pub fn kernel_balance(
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(field_key(5))].into(),
+            path: vec![Key::Value(field_key_checked(5))].into(),
         }),
         dup(0),
         push_cell(false, token_type),
@@ -116,7 +116,7 @@ pub fn kernel_block_time(
     let block_time = ImpactOp::constant(&Op::Idx {
         cached: true,
         push_path: false,
-        path: vec![Key::Value(field_key(2))].into(),
+        path: vec![Key::Value(field_key_checked(2))].into(),
     });
     let ops = if greater {
         vec![
@@ -148,7 +148,7 @@ pub fn kernel_self(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 2] {
     let idx_context = ImpactOp::constant(&Op::Idx {
         cached: true,
         push_path: false,
-        path: vec![Key::Value(field_key(0))].into(),
+        path: vec![Key::Value(field_key_checked(0))].into(),
     });
     emit(c, &[dup(2), idx_context, popeq(true, &value)]);
     [wires[0], wires[1]]
@@ -200,7 +200,7 @@ fn kernel_effect_add(slot: u8, key: &LedgerValue, amount: &LedgerValue) -> Vec<I
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(field_key(slot))].into(),
+            path: vec![Key::Value(field_key_checked(slot))].into(),
         }),
         push_cell(false, key),
         ImpactOp::constant(&Op::Dup { n: 1 }),
@@ -272,7 +272,7 @@ fn kernel_claim(effect_index: u8, note: &LedgerValue) -> Vec<ImpactOp> {
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(field_key(effect_index))].into(),
+            path: vec![Key::Value(field_key_checked(effect_index))].into(),
         }),
         push_cell(false, note),
         push_null(),
@@ -308,7 +308,7 @@ pub fn kernel_claim_contract_call(addr_ep_comm: &LedgerValue) -> Vec<ImpactOp> {
         ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(field_key(3))].into(),
+            path: vec![Key::Value(field_key_checked(3))].into(),
         }),
         dup(0),
         ImpactOp::constant(&Op::Size),
@@ -364,7 +364,7 @@ pub fn kernel_caller(c: &mut Circuit3) -> [Wire3<FieldT, Public>; 6] {
             ImpactOp::constant(&Op::Idx {
                 cached: true,
                 push_path: false,
-                path: vec![Key::Value(field_key(6))].into(),
+                path: vec![Key::Value(field_key_checked(6))].into(),
             }),
             dup(0),
             ImpactOp::constant(&Op::Type),

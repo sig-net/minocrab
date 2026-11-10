@@ -272,11 +272,9 @@ fn is_true_assert(instruction: &Instruction) -> bool {
 ///   AssignedBit>` (`ir_vm.rs`, the arm carrying upstream's own "Yes, this
 ///   does insert a constraint") — an assigned bit the wire must equal, so
 ///   `val ∈ {0,1}`.
-/// - `ConstrainBits { bits }` lowers, for the CURRENT IR minor version, to
-///   `assert_lower_than_fixed(x, 2^bits)` (`ir_vm.rs`; the
-///   `assigned_to_le_bits` decomposition is the V0-only arm beside it) — so
-///   at `bits = 1`, `val < 2` i.e. `val ∈ {0,1}`. Both version arms enforce
-///   the same set at 1 bit.
+/// - `ConstrainBits { bits }` lowers to an `assigned_to_le_bits`
+///   decomposition of length `bits` (midnight-zkir 3.2.0 `ir_vm.rs`, for
+///   every minor version) — so at `bits = 1`, `val < 2` i.e. `val ∈ {0,1}`.
 ///
 /// Upstream's own value semantics agree: `resolve_operand_bool` accepts 0 and
 /// 1, `resolve_operand_bits(_, Some(1))` accepts exactly the values whose bits
@@ -431,7 +429,20 @@ fn returned_operands(instruction: &Instruction) -> &[Operand] {
         | Instruction::LessThan { .. }
         | Instruction::JubjubScalarFromNative { .. }
         | Instruction::PublicInput { .. }
-        | Instruction::PrivateInput { .. } => &[],
+        | Instruction::PrivateInput { .. }
+        | Instruction::Slice { .. }
+        | Instruction::Nth { .. }
+        | Instruction::Concat { .. }
+        | Instruction::LoadConstant { .. }
+        | Instruction::Sha512 { .. }
+        | Instruction::And { .. }
+        | Instruction::Or { .. }
+        | Instruction::Xor { .. }
+        | Instruction::ToBytes { .. }
+        | Instruction::FromBytes { .. }
+        | Instruction::Reverse { .. }
+        | Instruction::BytesIntoNatives { .. }
+        | Instruction::BytesFromNatives { .. } => &[],
     }
 }
 
@@ -480,6 +491,20 @@ fn operands_mut(instruction: &mut Instruction) -> Vec<&mut Operand> {
         Instruction::JubjubScalarFromNative { native, .. } => vec![native],
         Instruction::PublicInput { guard, .. } => guard.iter_mut().collect(),
         Instruction::PrivateInput { guard, .. } => guard.iter_mut().collect(),
+        Instruction::Slice { bytes, .. }
+        | Instruction::Nth { bytes, .. }
+        | Instruction::FromBytes { bytes, .. }
+        | Instruction::Reverse { bytes, .. }
+        | Instruction::BytesIntoNatives { bytes, .. } => vec![bytes],
+        Instruction::ToBytes { input, .. } => vec![input],
+        Instruction::Concat { inputs, .. }
+        | Instruction::Sha512 { inputs, .. }
+        | Instruction::And { inputs, .. }
+        | Instruction::Or { inputs, .. }
+        | Instruction::Xor { inputs, .. }
+        | Instruction::BytesFromNatives { inputs, .. } => inputs.iter_mut().collect(),
+        // A constant's encoding is field immediates, not operands.
+        Instruction::LoadConstant { .. } => vec![],
         // NOT folded: see the pass's docs. The terminator's own operands are
         // left alone, which is what keeps a returned constant named.
         Instruction::Output { vals: _ } => vec![],
@@ -516,8 +541,9 @@ pub fn returned(instruction: &Instruction) -> Vec<Operand> {
 /// that defines a value this list does not know about breaks the build.
 pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
     match instruction {
-        Instruction::Encode { outputs, .. } => outputs.clone(),
-        Instruction::DivModPowerOfTwo { outputs, .. } => outputs.clone(),
+        Instruction::Encode { outputs, .. }
+        | Instruction::DivModPowerOfTwo { outputs, .. }
+        | Instruction::BytesIntoNatives { outputs, .. } => outputs.clone(),
         Instruction::IntoCoordinates { outputs, .. }
         | Instruction::Bytes32IntoLowHigh { outputs, .. } => {
             vec![outputs.0.clone(), outputs.1.clone()]
@@ -545,7 +571,19 @@ pub fn defined_identifiers(instruction: &Instruction) -> Vec<Identifier> {
         | Instruction::LessThan { output, .. }
         | Instruction::JubjubScalarFromNative { output, .. }
         | Instruction::PublicInput { output, .. }
-        | Instruction::PrivateInput { output, .. } => vec![output.clone()],
+        | Instruction::PrivateInput { output, .. }
+        | Instruction::Slice { output, .. }
+        | Instruction::Nth { output, .. }
+        | Instruction::Concat { output, .. }
+        | Instruction::LoadConstant { output, .. }
+        | Instruction::Sha512 { output, .. }
+        | Instruction::And { output, .. }
+        | Instruction::Or { output, .. }
+        | Instruction::Xor { output, .. }
+        | Instruction::ToBytes { output, .. }
+        | Instruction::FromBytes { output, .. }
+        | Instruction::Reverse { output, .. }
+        | Instruction::BytesFromNatives { output, .. } => vec![output.clone()],
         Instruction::Assert { .. }
         | Instruction::ConstrainBits { .. }
         | Instruction::ConstrainEq { .. }
@@ -897,7 +935,7 @@ pub static FOLD_PROOF: ProofRef = lean_proof! {
     // (`Fold.lean`, kept as the M25 record) to the same four theorems over
     // the REAL instruction set (`FoldIr.lean`, on `MinocrabZkir.Instr`);
     // `fold_preserves_observables` there resolves every instruction's
-    // `operands_mut` positions under the copy environment (33 arms).
+    // `operands_mut` positions under the copy environment (38 arms).
     file: "../../lean/MinocrabProofs/FoldIr.lean",
     theorems: [
         "fold_outputs",

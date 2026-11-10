@@ -49,7 +49,7 @@ fn cell(av: AlignedValue) -> StateValue {
 }
 
 fn key(i: u8) -> Key {
-    Key::Value(bytesn_value(1, &[i]))
+    Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical value"))
 }
 
 fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
@@ -138,7 +138,7 @@ fn claim_call_ops(addr: &[u8; 32], ep: &[u8; 32], comm: Fr) -> Vec<VmOp> {
         Op::Size,
         Op::Push {
             storage: false,
-            value: cell(addr_ep_comm_value(addr, ep, comm)),
+            value: cell(addr_ep_comm_value(addr, ep, comm)).try_into_checked().expect("a canonical value"),
         },
         Op::Concat {
             cached: true,
@@ -196,10 +196,8 @@ impl Scenario {
         target[..12].copy_from_slice(b"target-contr");
         target[31] = 0x21;
         // The entry-point hash, DERIVED from the callee circuit's name
-        // (M12 stage 1) rather than invented. The circuit does not bind it
-        // — the ep limbs are prover-supplied witnesses — so this is a
-        // preimage-only change; what it buys is that the scenario now
-        // carries the value a real transaction would.
+        // (M12 stage 1) rather than invented: the claim carries it as a
+        // constant, so the preimage must name the circuit's own callee.
         let ep = ep_hash("deposit");
         Scenario {
             recipient,
@@ -219,8 +217,7 @@ impl Scenario {
         let comm = transient_commit(call_args, cc_rand);
         let mut ops = cell_read_ops(xcall::TARGET, &self.target);
         ops.extend(claim_call_ops(&self.target, &self.ep, comm));
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
-        (ops, vec![cc_rand, ep_hi, ep_lo])
+        (ops, vec![cc_rand])
     }
 
     /// callOnce/callEmit (`n` = 1) and callTwice (`n` = 2).
@@ -246,11 +243,11 @@ impl Scenario {
             // lastAmount = a
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(1, &[last_amount])),
+                value: cell(bytesn_value(1, &[last_amount])).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
-                value: cell(amount_av.clone()),
+                value: cell(amount_av.clone()).try_into_checked().expect("a canonical value"),
             },
             Op::Ins {
                 cached: false,
@@ -264,11 +261,11 @@ impl Scenario {
             },
             Op::Push {
                 storage: false,
-                value: cell(bytesn_value(32, &self.recipient)),
+                value: cell(bytesn_value(32, &self.recipient)).try_into_checked().expect("a canonical value"),
             },
             Op::Push {
                 storage: true,
-                value: cell(amount_av),
+                value: cell(amount_av).try_into_checked().expect("a canonical value"),
             },
             Op::Ins {
                 cached: false,
@@ -317,14 +314,14 @@ impl Scenario {
         ops.extend([
             Op::Push {
                 storage: false,
-                value: StateValue::Array(
-                    vec![
+                value: StateValue::<InMemoryDB>::Array(
+                    [
                         cell(bytesn_value(4, &events::MISC_VERSION.to_le_bytes())),
                         cell(bytesn_value(1, &[events::MISC_TAG])),
                         cell(bytesn_value(events::MISC_SIZE as u32, &misc)),
                     ]
                     .into(),
-                ),
+                ).try_into_checked().expect("a canonical value"),
             },
             Op::Log,
         ]);
@@ -356,11 +353,9 @@ fn call_once_matches_corpus() {
     assert_call_compatible(&ours, &theirs, &s.preimage_call_n(1));
 }
 
-/// callEmit is the same circuit claiming a different entry point — only
-/// the prover-supplied ep witness changes. Built through the interface
-/// handle's OTHER method (`depositEmit`), which is the honest limit #1 of
-/// notes/interface-crates.org made concrete: two typed methods, one
-/// circuit.
+/// callEmit is callOnce claiming a different entry point. Built through
+/// the interface handle's OTHER method (`depositEmit`), so the typed method
+/// names the entry point the circuit carries as a constant.
 #[test]
 fn call_emit_matches_corpus() {
     let theirs = corpus_zkir("caller", "callEmit");
@@ -370,14 +365,37 @@ fn call_emit_matches_corpus() {
     assert_call_compatible(&ours, &theirs, &s.preimage_call_n(1));
 }
 
-/// …and the two methods really do build one circuit: the entry point is a
-/// witness, so it cannot appear in the ZKIR.
+/// …and the entry point is a constant of each circuit (compactc 0.36's
+/// cross-contract fix): each proves only the entry point it names, so a
+/// prover can no longer claim `depositEmit` through `callOnce` (external
+/// review §4.5).
 #[test]
-fn call_once_and_call_emit_are_the_same_circuit() {
-    let once = to_zkir_string(&xcall::call_once().ir).expect("serializes");
-    let emit = to_zkir_string(&xcall::Xcall::call_emit().ir).expect("serializes");
-    assert_eq!(once, emit);
-    assert_ne!(ep_hash("deposit"), ep_hash("depositEmit"));
+fn each_call_proves_only_its_own_entry_point() {
+    let once = xcall::call_once().ir;
+    let emit = xcall::Xcall::call_emit().ir;
+    let mut s = Scenario::new(); // ep = deposit
+    assert!(simulate(&once, &s.preimage_call_n(1)).is_ok(), "callOnce claims deposit");
+    assert!(simulate(&emit, &s.preimage_call_n(1)).is_err(), "callEmit cannot claim deposit");
+    s.ep = ep_hash("depositEmit");
+    assert!(simulate(&emit, &s.preimage_call_n(1)).is_ok(), "callEmit claims depositEmit");
+    assert!(simulate(&once, &s.preimage_call_n(1)).is_err(), "callOnce cannot claim depositEmit");
+    // The two circuits differ in exactly the two entry-point limbs of the
+    // claim, and nowhere else.
+    let instructions = |ir| -> Vec<serde_json::Value> {
+        let text = to_zkir_string(ir).expect("serializes");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("json");
+        value["instructions"].as_array().expect("instructions").clone()
+    };
+    let (a, b) = (instructions(&once), instructions(&emit));
+    assert_eq!(a.len(), b.len());
+    let differing: Vec<(&serde_json::Value, &serde_json::Value)> =
+        a.iter().zip(&b).filter(|(x, y)| x != y).collect();
+    assert_eq!(differing.len(), 1, "{differing:?}");
+    let (x, y) = differing[0];
+    assert_eq!(x["op"], "impact");
+    let (xs, ys) = (x["inputs"].as_array().unwrap(), y["inputs"].as_array().unwrap());
+    assert_eq!(xs.len(), ys.len());
+    assert_eq!(xs.iter().zip(ys).filter(|(p, q)| p != q).count(), 2);
 }
 
 #[test]
@@ -392,7 +410,8 @@ fn call_twice_matches_corpus() {
 fn call_big_matches_corpus() {
     let theirs = corpus_zkir("caller", "callBig");
     let ours = xcall::Xcall::call_big().ir;
-    let s = Scenario::new();
+    let mut s = Scenario::new();
+    s.ep = ep_hash("depositBig");
     let mut data = [0u8; 256];
     for (i, b) in data.iter_mut().enumerate() {
         *b = (i % 251) as u8;
@@ -436,8 +455,8 @@ fn target_deposit_emit_matches_corpus() {
 }
 
 /// Criterion 3: tampering with ANY element of the callOnce transcript or
-/// its private witnesses (cc-rand, ep limbs) must be rejected by both
-/// artifacts, with zero acceptance disagreements.
+/// its private witness (cc-rand) must be rejected by both artifacts, with
+/// zero acceptance disagreements.
 #[test]
 fn call_once_rejects_tampering() {
     let theirs = corpus_zkir("caller", "callOnce");
@@ -455,8 +474,8 @@ fn call_once_rejects_tampering() {
             disagreements += 1;
         }
     }
-    // Flipping any private witness breaks the in-circuit comm (cc-rand)
-    // or the claimed entry point (ep limbs) against the transcript.
+    // Flipping the private witness breaks the in-circuit comm (cc-rand)
+    // against the transcript.
     for i in 0..pi.private_transcript.len() {
         let mut t = pi.clone();
         t.private_transcript[i] = t.private_transcript[i] + Fr::from(1u64);
@@ -469,31 +488,3 @@ fn call_once_rejects_tampering() {
     assert_eq!(disagreements, 0, "acceptance disagreement on tampering");
 }
 
-/// THE HARDENED MODE (external review §4.5): with `bind_entry_points` the
-/// proof says which circuit was called. `call_once_bound` accepts the
-/// honest preimage, rejects one claiming `depositEmit`, and is no longer
-/// the same circuit as `call_once` — which, unbound, accepts both (the
-/// interchangeability `call_once_and_call_emit_are_the_same_circuit`
-/// pins, and compactc's own shape).
-#[test]
-fn a_bound_call_rejects_another_entry_point_of_the_callee() {
-    let bound = xcall::call_once_bound().ir;
-    let unbound = xcall::call_once().ir;
-    let mut s = Scenario::new(); // ep = deposit
-    assert!(simulate(&bound, &s.preimage_call_n(1)).is_ok(), "the declared entry point");
-    assert!(simulate(&unbound, &s.preimage_call_n(1)).is_ok());
-    s.ep = ep_hash("depositEmit");
-    assert!(
-        simulate(&bound, &s.preimage_call_n(1)).is_err(),
-        "bound: another entry point of the same callee must not prove"
-    );
-    assert!(
-        simulate(&unbound, &s.preimage_call_n(1)).is_ok(),
-        "unbound: the entry point is the prover's to claim (compactc parity)"
-    );
-    assert_ne!(
-        to_zkir_string(&bound).expect("serializes"),
-        to_zkir_string(&unbound).expect("serializes"),
-        "binding is two constrain_eq the unbound circuit does not have"
-    );
-}

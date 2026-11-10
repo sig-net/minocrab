@@ -23,14 +23,15 @@
 
         # Pinned Compact toolchain, from the LFDT-Minokawa/compact release
         # binaries (recipe + verified hashes: notes/zkir.org "Option B").
-        # 0.34.0 (language 0.26.0, runtime 0.19.0, released 2026-08-25) — the
-        # first FULL release of the cross-contract-capable line (ledger 9);
-        # latest Mainnet-targeting stable is 0.31.1 (ledger 8, no CCC).
-        # Its own flake.lock pins zkir-v3 at 04c9c5d9bceb, whose zkir-v3/ our
-        # Cargo.toml's zkir-v3-3.0.0-rc.1 tag carries unchanged, so this is a
-        # compactc-only pin (M31, hazard 1).
+        # 0.36.0 (language 0.28.0, runtime 0.21.0, released 2026-11-04) — the
+        # toolchain Midnight's compatibility matrix lists for ledger 9.1.0.1
+        # (Mainnet since 2026-11-06). It emits ZKIR v3 only.
+        # Its own flake.lock pins zkir-v3 at midnight-zkir eeb8a316
+        # (zkir-3.2.0-rc.2), whose zkir/ the crates.io midnight-zkir 3.2.0 our
+        # Cargo.toml names carries unchanged (manifest version aside), so the
+        # binaries and the crate speak one ZKIR (hazard 1).
         # To bump: change version + hash below; hashes per arch in notes/zkir.org.
-        compactcVersion = "0.34.0";
+        compactcVersion = "0.36.0";
         # The release zips name linux targets `-unknown-linux-musl`.
         compactcTarget = {
           aarch64-darwin = "aarch64-darwin";
@@ -39,10 +40,10 @@
           x86_64-linux = "x86_64-unknown-linux-musl";
         };
         compactcHashes = {
-          aarch64-darwin = "sha256-zkWMQGLxod0pIFkaC7WrZXvgL0q4Qi8tdpiHc/YBA8M=";
-          x86_64-darwin = "sha256-Pe4f3Q1crRM146eAdHtkDi90AQ6Pj2MRfz+B9L6lioE=";
-          aarch64-linux = "sha256-0+KSxPSOJX3Naz0+PkdD19jqByn0iVPquRo2bUTNAm0=";
-          x86_64-linux = "sha256-d1zN31pxOZg1Mpu/dHG6WoxU/Mgl03LHXhm6cEIGlYQ=";
+          aarch64-darwin = "sha256-qBJrLMBiMO0sZVgFmolFEZ43D/Iikw5qUvkIcOjMPF0=";
+          x86_64-darwin = "sha256-LGca7R1lsnlF8/MrrRCZcc4fJvUO4jhTjSaQUOQEO/8=";
+          aarch64-linux = "sha256-h3QMokx/mfwiAP05jFfd+qVetg9r3PlxhpsLVDp3Iq0=";
+          x86_64-linux = "sha256-cBe2Eh67nVOlYphLymFtFD74T8fuGLTabDoKZhXLXpc=";
         };
         compactc = pkgs.stdenvNoCC.mkDerivation {
           pname = "compactc";
@@ -67,12 +68,9 @@
           '';
         };
         # NO flake package for the `minocrab` CLI, decided rather than
-        # missing (M24 §5; dmd pre-authorised the skip): nixpkgs'
-        # importCargoLock cannot vendor this workspace — the pinned
-        # midnight-ledger git refs all export identical crate
-        # name-versions (midnight-serialize-macros 1.0.0 et al.), which
-        # collide in the vendor directory. The CLI stays a plain cargo
-        # binary: `cargo build --release -p minocrab-sim --bin minocrab`.
+        # missing (M24 §5; dmd pre-authorised the skip): the crate build is
+        # plain cargo (CLAUDE.md), and the CLI stays a cargo binary:
+        # `cargo build --release -p minocrab-sim --bin minocrab`.
       in
       {
         packages.compactc = compactc;

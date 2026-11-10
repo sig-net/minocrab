@@ -57,9 +57,10 @@ read proof, none of which the capture carries.
 `midnight:transaction[v12](signature[v2],proof,pedersen-schnorr[v1])` —
 a tagged-serialized
 `Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>`.
-mpc's reader tests decode them under `crate-ledger-9.1.0.0-rc.3`, the tag
-this repo builds against too. They first decoded here under rev `04c9c5d`, the M29 F
-evidence that the two pins agreed on the transaction wire format.
+mpc's reader tests decode them under mpc's own ledger pin; this repo decodes
+them under `midnight-ledger-v9` 1.0.1. They first decoded here under rev
+`04c9c5d`, the M29 F evidence that the two pins agreed on the transaction
+wire format.
 
 ## The singleton these captures predate
 

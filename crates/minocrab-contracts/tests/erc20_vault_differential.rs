@@ -683,6 +683,41 @@ fn complete_withdraw_rejects_tampering() {
     sweep(Circuit::CompleteWithdraw, &CompleteScenario::of(Sent::withdraw(), Attestation::executed_bool(false)).preimage());
 }
 
+/// `deserialize<VaultResponse, 1>(output)` runs on every verdict (the
+/// pinned source reads it before the branch, a workaround for compact#856),
+/// and compactc 0.36 constrains the `Boolean` it reads to 0 or 1: a byte of
+/// 2 is refused even where the verdict ignores it, and even when the MPC
+/// attested it. 0 and 1 are both accepted on a verdict that ignores them.
+fn complete_bool_output_is_constrained(circuit: Circuit, sent: fn() -> Sent) {
+    for verdict in [Attestation::failed, Attestation::unviable] {
+        for byte in [0u64, 1] {
+            let mut s = CompleteScenario::of(sent(), verdict());
+            s.output = vec![Fr::from(byte)];
+            check(circuit, &s);
+        }
+    }
+    for verdict in [Attestation::failed(), Attestation::unviable()] {
+        let mut s = CompleteScenario::of(sent(), verdict);
+        s.output = vec![Fr::from(2u64)];
+        both_reject(circuit, &s.preimage(), "a non-Boolean output on an unexecuted verdict");
+    }
+
+    let mut attestation = Attestation::executed_bool(true);
+    attestation.output = vec![Fr::from(2u64)];
+    let s = CompleteScenario::of(sent(), attestation);
+    both_reject(circuit, &s.preimage(), "an attested non-Boolean output");
+}
+
+#[test]
+fn complete_deposit_constrains_the_bool_output() {
+    complete_bool_output_is_constrained(Circuit::CompleteDeposit, Sent::deposit);
+}
+
+#[test]
+fn complete_withdraw_constrains_the_bool_output() {
+    complete_bool_output_is_constrained(Circuit::CompleteWithdraw, Sent::withdraw);
+}
+
 #[test]
 fn complete_swap_matches_corpus() {
     check(Circuit::CompleteSwap, &CompleteScenario::of(Sent::swap(), Attestation::executed_u256(5_500)));

@@ -36,10 +36,11 @@ make specific error classes unwritable rather than merely untested.
 - **Claim** — every artifact the pinned compactc produces parses, re-emits and
   re-parses through our bindings without loss.
 - **Instrument** — [corpus_roundtrip.rs](crates/minocrab-zkir/tests/corpus_roundtrip.rs)
-  over the 84 ZKIR v3 `.zkir` in `corpus/zkir` (the 722 v2 artifacts compactc also emits are counted and skipped; the test asserts both counts), plus
-  [toolchain_accepts.rs](crates/minocrab-zkir/tests/toolchain_accepts.rs), a
-  hand-built circuit through the pinned `zkir mock-compile`.
-- **Command** — `cargo test -p minocrab-zkir`
+  over the 855 ZKIR v3 `.zkir` in `corpus/zkir` (the count is asserted), plus
+  [v3_builder.rs](crates/minocrab-ir/tests/v3_builder.rs), a hand-built
+  circuit through the pinned `zkir-v3 mock-compile`.
+- **Command** — `cargo test -p minocrab-zkir` and
+  `cargo test -p minocrab-ir --test v3_builder`
 - **Why it is first** — it is the most fundamental instrument in the tree; if it
   is red, nothing downstream tells you anything new
   ([notes/version-bump.org §Drift taxonomy 3](notes/version-bump.org)).
@@ -185,7 +186,9 @@ verdict and the three reasons, each sufficient alone):
   experiments then found every cross-contract caller doing the same, plus
   `xcontract_events::deposit_via_vault` publishing the callee's result. Nine
   signatures gained `XcallEntryPointHash` / `XcallCommitment` / `XcallResult`
-  ([notes/contract-api.org §"M9 closure"](notes/contract-api.org)).
+  ([notes/contract-api.org §"M9 closure"](notes/contract-api.org)). The
+  entry-point label went at the compactc 0.36 bump, when the hash became a
+  constant of the claim.
 - **Valued report** — the simulator resolves each disclosure to the value it
   took on a real preimage
   ([disclosure_report.rs](crates/minocrab-contracts/tests/disclosure_report.rs)).
@@ -220,11 +223,12 @@ The Borsh layer belongs here as a safety feature in its own right:
 - The subset is **fixed-width**: `borsh::object_length(v) == T::LEN` for all
   `v`, and `T::LEN` equals the deployed FAB alignment's own `bin_len` — so every
   offset is a compile-time constant and there is no value-dependent branching.
-- A Borsh `bool` is `0` or `1` and nothing else, so on the Pending lineage a
-  non-canonical attested byte is **unprovable rather than refunded** — the
-  port keeps compactc's 0x02 behaviour for parity, pinned by
-  `a_non_boolean_success_byte_refunds_on_the_port` in
-  [erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs).
+- A Borsh `bool` is `0` or `1` and nothing else, so a non-canonical attested
+  byte is **unprovable rather than refunded**: on the Pending lineage and the
+  treasury through `AbiReturn for Bool` (`treasury.rs`
+  `a_non_boolean_attestation_neither_completes_nor_refunds`), and on the vault
+  port as in compactc 0.36 (`erc20_vault_differential.rs`
+  `complete_*_constrains_the_bool_output`).
 - Dual oracle: `borsh::to_vec(v) == bincode-fixint(v)` for every spec type over
   generated values, closed against the **deployed bytes** themselves — the
   singleton's `Misc` envelope is handed to the pinned compactc artifact, which
@@ -277,33 +281,30 @@ Raw material: the drift taxonomy in [notes/version-bump.org](notes/version-bump.
 | range-constraint gap at a typed seam | `v3_bounded` / `v3_leaves` / `v3_entry` (the argument types *are* the constraints); interface-crate check 6 (constraint prefix, slot for slot) | the differentials; the row snapshot sees only a row delta |
 | upstream drift after a version bump | in diagnosis order: `cargo metadata` → workspace build → corpus compile report → ZKIR round-trip → ABI/Impact baseline → workspace → row snapshot → spec/vectors/TS → elevated property run | — `./bump.sh gates` runs exactly this sequence and prints the taxonomy line for whatever fired |
 | the Pending lineage drifting from the port's statement | the per-pair cost pins in `erc20_vault_pending.rs`; the record-byte and request-id equalities in `serialization_conformance` and `signet_flow.rs`; the interface snapshot | PI-equality — the lineage does not claim it (§2d) |
-| interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit binds neither entry point nor argument types (§5) |
+| interface-crate drift vs a deployed callee | `artifact_agreement.rs` — six checks, hash-pinned artifact, 9 mutation cases proving the checker bites | the circuit does not bind argument types (§5) |
 | generated code out of date (interface crates, spec, TS, snapshots) | `cargo test -p minocrab-interface-gen` (byte-for-byte regeneration); `serialization_conformance`'s three drift tests | — `./bump.sh accept` regenerates all of them in dependency order |
 
 ## 4. Reproducibility and supply chain
 
-- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.33.0-rc.2"` with
-  a per-architecture `compactcHashes` entry (`sha256-NaKACcmlfSCQLk/…` for
+- **Toolchain by hash.** `flake.nix` pins `compactcVersion = "0.36.0"` with
+  a per-architecture `compactcHashes` entry (`sha256-qBJrLMBiMO0sZVgFmolF…` for
   `aarch64-darwin`), fetched from the upstream release URL. Nix supplies
-  **binaries only** — compactc, `zkir`/`zkir-v3`, node, the Rust toolchain. The
+  **binaries only** — compactc, `zkir-v3`, node, the Rust toolchain. The
   build itself is plain `cargo`; nothing in this repo is built by nix.
-- **The ledger stagenet runs.** Every ledger crate is patched, in both
-  `[patch.crates-io]` blocks, to the per-crate tag midnight-node 2.0.0-rc.4
-  pins (the release stagenet runs, and the tags sig-net/mpc builds against),
-  and zkir-v3, which the node does not link, to the tag cut beside them;
-  and `Cargo.lock` records the commit each tag resolved to, so a moved tag
-  cannot change the build without a lockfile diff. Those tags carry the zkir
-  sources the compact release's own `flake.lock` pins for the binaries it
-  ships (`ledger-9.1.0.0-rc.3` for zkir, rev `04c9c5d9…` for zkir-v3)
-  unchanged, with only their manifests moved; `./bump.sh pins` prints both.
+- **The ledger Mainnet, Preprod and Preview run.** Every `midnight-*` crate
+  comes from crates.io at the version midnight-node 2.1.101 locks (ledger
+  9.1.0.1), with no `[patch.crates-io]`, and `Cargo.lock` records each
+  crate's checksum. `midnight-zkir` 3.2.0's sources are the ones the pinned
+  compactc's own `flake.lock` pins for its bundled `zkir-v3`;
+  `./bump.sh pins` prints both sides.
 - **The pin is a hypothesis; the corpus is the proof.** What makes it safe is
-  instrument (a): 814 of compactc's own artifacts round-trip through these
+  instrument (a): 855 of compactc's own artifacts round-trip through these
   bindings, and 20 differential suites agree with its lowering.
 - **Deterministic corpus.** `corpus/` holds 673 pinned `.compact` sources and
-  the 814 ZKIR circuits (315 contracts) the pinned compactc
-  produced. Recompiling at HEAD with the same compiler: `compiled 312/478 OK`
-  in 3 m 11 s, and **zero of the 788 artifacts moved** (`git status --short
-  corpus/zkir` → nothing). That is what makes a post-bump diff readable: every
+  the 855 ZKIR circuits (325 contracts) the pinned compactc
+  produced. Recompiling with the same compiler moves **zero artifacts**
+  (`git status --short corpus/zkir` → nothing; measured at dry run D1 on an
+  earlier pin, `compiled 312/478 OK` in 3 m 11 s). That is what makes a post-bump diff readable: every
   changed artifact is a change the new compiler made
   ([notes/version-bump.org §Dry run D1](notes/version-bump.org)).
 - **`accept` is idempotent, and lands reviewable diffs.** At HEAD it rewrote two
@@ -346,7 +347,7 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   constraint dedup; skeleton/observables preservation for copy folding,
   reflected as `VerifiedPass` — and, since M27, the dedup half is stated over
   the *real* ZKIR v3 instruction set rather than a three-constructor model:
-  `crates/minocrab-zkir/lean/` defines the 33-instruction syntax that
+  `crates/minocrab-zkir/lean/` defines the 38-instruction syntax that
   round-trips every v3 corpus artifact byte for byte against compactc's own
   printer, a dataflow that agrees with the Rust `operands_mut` family on
   every corpus instruction, and the evaluation semantics of `preprocess` with
@@ -411,21 +412,17 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
   [signet_ledger_apply.rs](crates/minocrab-contracts/tests/signet_ledger_apply.rs)).
   What has not happened is a node accepting one: the vault's circuits have no
   such gate yet, and no MinoCrab artifact has been submitted to a network.
-- **Cross-contract calls: the circuit binds neither the entry point nor the
-  argument types — unless it asks to.** `callOnce` and `callEmit` compile to
-  byte-identical ZKIR under different entry points, asserted by a test; what
-  protects the verifier there is the ledger's `(address, entry point,
-  commitment)` match, and the corpus ports keep that shape because compactc
-  has it. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode:
-  every typed `call` in the circuit then constrains the witnessed entry-point
-  limbs to the declared circuit's hash (two `constrain_eq`, no public input);
-  `xcall::call_once_bound` pins that it rejects `depositEmit`'s preimage where
-  `call_once` accepts it. Argument types remain unbound.
+- **Cross-contract calls: the entry point is bound, the argument types are
+  not.** Since compactc 0.36 the callee's entry-point hash is a constant of
+  the call's claim, in compactc's artifacts and in `minocrab_ledger::contract_call`
+  alike, so `callOnce` and `callEmit` are different circuits and each proves
+  only the entry point it names (`xcall_differential`'s
+  `each_call_proves_only_its_own_entry_point`). Argument types remain unbound.
 - **Known unported constructs** — the three `insertCoin` / `pushFrontCoin` arms
   reached through a NESTED path (the arms themselves landed at M22 stage A and
   nesting at stage B, but no fixture circuit compiles the combination, so the
-  typed methods stop at declared slots); `kernel.checkpoint()`, which is
-  outside our ZKIR-v3 target; and the hashing sweep family, whose WIDTH is a Rust parameter the
+  typed methods stop at declared slots); `kernel.checkpoint()`, which
+  compactc 0.36 compiles for ZKIR v3 but which is not ported; and the hashing sweep family, whose WIDTH is a Rust parameter the
   benchmark sweeps rather than a ported circuit set.
 - **The circuit list is closed in both directions.** `support::circuits()`
   (209 entries) feeds both snapshots, the dump instrument and the adversarial
@@ -472,8 +469,8 @@ is [TRUST.md](TRUST.md), generated and closure-tested.
 **Morning — run the gates, cheapest and most diagnostic first.**
 
 1. `./bump.sh pins` — see the four pins and what upstream currently offers (~15 s, needs network).
-2. `cargo test -p minocrab-zkir` — 814 artifacts round-trip, count asserted. If this is red, stop.
-3. `cargo test -p minocrab-ledger` — entry-point hash rule over 315 contracts, plus the Impact op baseline.
+2. `cargo test -p minocrab-zkir` — 855 artifacts round-trip, count asserted. If this is red, stop.
+3. `cargo test -p minocrab-ledger` — entry-point hash rule over 325 contracts, plus the Impact op baseline.
 4. `cargo test --workspace` — the differentials, the Pending lineage's pair pins, the leakage inventory, the artifact-agreement suites, the disclosure set-equality tests, `serialization_conformance`.
 5. `cargo test --release -p minocrab-contracts --test row_snapshot --test interface_snapshot` — the two frozen tables.
 6. `PROPTEST_CASES=2000 cargo test --release -p minocrab-contracts --test erc20_vault_spec --test erc20_vault_adversarial` — the elevated property run (34,000 cases, ~20 s; §2(e)). Raise the count for a longer gate; the wall clock is linear in it.

@@ -17,7 +17,7 @@ use midnight_storage::db::InMemoryDB;
 use midnight_storage::storage::{Array, HashMap as StorageHashMap};
 use minocrab::v3::{Circuit3, Compiled3};
 use minocrab::{Fr, Public};
-use minocrab_ledger::field_key;
+use minocrab_ledger::field_key_checked;
 use minocrab_sim::v3::exec::{self, Call, ExecError, Executed};
 use minocrab_std::v3::blind::{Add, Max};
 use minocrab_std::v3::{
@@ -314,7 +314,7 @@ fn a_serial_stream_sequences_a_short_flush_reading_the_accumulator_once() {
         let acc_reads = out
             .ops
             .iter()
-            .filter(|op| matches!(op, Op::Idx { push_path: false, path, .. } if path.len() == 1 && path.iter().next().is_some_and(|k| *k == VmKey::Value(field_key(7)))))
+            .filter(|op| matches!(op, Op::Idx { push_path: false, path, .. } if path.len() == 1 && path.iter().next().is_some_and(|k| *k == VmKey::Value(field_key_checked(7)))))
             .count();
         assert_eq!(acc_reads, 1, "{order:?}: the accumulator is read exactly once");
         assert_eq!(popeqs(&out), 1 + 2 * order.len(), "{order:?}: acc + (member, head) per live key");

@@ -34,8 +34,8 @@ fn round_trips_entire_corpus() {
     for path in &files {
         let name = path.display().to_string();
         let result = (|| -> Result<bool, String> {
-            // The corpus keeps compactc's ZKIR v2 artifacts for the record;
-            // nothing here targets them, so they are counted and skipped.
+            // A ZKIR v2 artifact (older compilers wrote them) is counted and
+            // skipped: nothing here targets it.
             if minocrab_zkir::major_version(path).map_err(|e| format!("version: {e}"))? != 3 {
                 return Ok(false);
             }
@@ -95,7 +95,11 @@ fn round_trips_entire_corpus() {
         // are v3.
         // Unchanged when the pr127 pin gave way to v0.25.0 (b62e67e): the
         // singleton's three v3 circuits replace the three they were.
-        (849, 110),
+        // 849/110 → 855/855 at the compactc 0.36.0 bump (ledger 9.1.0.1):
+        // compactc 0.36 writes only ZKIR v3 (3.1), so every artifact is v3,
+        // and compact/examples/secp256k1/arithmetic.compact now compiles
+        // (+6). The vault compiles with compact#856's workaround applied.
+        (855, 855),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

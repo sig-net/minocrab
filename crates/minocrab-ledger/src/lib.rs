@@ -37,7 +37,7 @@
 //! - [`cell_read`], [`map_lookup`], [`counter_read`] — reads, which return
 //!   wires and record their disclosure
 //! - [`contract_call`] — a cross-contract call, and the labels it discloses
-//!   ([`XcallEntryPointHash`], [`XcallCommitment`], [`XcallResult`])
+//!   ([`XcallCommitment`], [`XcallResult`])
 //!
 //! # Stability (M24 tier boundary)
 //!
@@ -56,11 +56,10 @@ mod reads;
 mod tests;
 
 pub use calls::{
-    bind_entry_points, call, contract_call, ep_hash, ep_limbs, BindEntryPoints, Callee,
-    EntryPoint, XcallCommitment, XcallEntryPointHash, XcallResult,
+    call, contract_call, ep_hash, ep_limbs, Callee, EntryPoint, XcallCommitment, XcallResult,
 };
 pub use impact::{
-    atom_limbs, default_value, dup, field_key, idx_key, idx_key_cached, idx_one, idx_path,
+    atom_limbs, default_value, dup, field_key, field_key_checked, idx_key, idx_key_cached, idx_one, idx_path,
     push_array, push_cell, render_path, swap, ImpactOp, LedgerElem, LedgerKey, LedgerValue, VmOp,
 };
 pub use kernel::{

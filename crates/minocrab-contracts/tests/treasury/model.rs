@@ -62,11 +62,14 @@ pub fn tagged32(tag: &[u8], top: u8) -> [u8; 32] {
     out
 }
 
-/// An `AlignedValue` from an explicit atom list and limbs, in order.
+/// An `AlignedValue` from an explicit atom list and limbs, in order, every
+/// atom normalised as the ledger stores it (`prims::aligned`).
 pub fn aligned_atoms(atoms: &[minocrab::AlignmentAtom], limbs: &[Fr]) -> AlignedValue {
-    Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
+    let mut value = Alignment(atoms.iter().cloned().map(AlignmentSegment::Atom).collect())
         .parse_field_repr(limbs)
-        .expect("limbs match the alignment")
+        .expect("limbs match the alignment");
+    value.value.0 = value.value.0.into_iter().map(|atom| atom.normalize()).collect();
+    value
 }
 
 /// A `Secp256k1Point` as its cell value.
@@ -311,11 +314,10 @@ pub fn call_args(self_addr: &[u8; 32], records_field: u8, request_id: &[u8; 32])
     args
 }
 
-/// The cross-contract call's own witnesses: `cc-rand`, then the entry-point
-/// hash's two limbs.
-pub fn call_witnesses(env: &Env, cc_rand: Fr) -> Vec<Fr> {
-    let (ep_hi, ep_lo) = b32_slots(&env.ep);
-    vec![cc_rand, ep_hi, ep_lo]
+/// The cross-contract call's one witness, `cc-rand`; the entry-point hash is
+/// a constant of the claim (compactc 0.36).
+pub fn call_witnesses(cc_rand: Fr) -> Vec<Fr> {
+    vec![cc_rand]
 }
 
 /// A ticket's argument slots: `respond: RespondBidirectionalEvent` then
@@ -441,7 +443,7 @@ impl SendScenario {
     pub fn witnesses(&self) -> Vec<Fr> {
         let (hi, lo) = b32_slots(&self.sk);
         let mut w = vec![hi, lo];
-        w.extend(call_witnesses(&self.env, self.cc_rand));
+        w.extend(call_witnesses(self.cc_rand));
         w
     }
 
@@ -484,6 +486,8 @@ pub enum Attestation {
     /// The MPC's failure kind: reverted, never mined, or undecodable. Its
     /// signed preimage is the kind byte ALONE.
     NeverExecuted,
+    /// This call's kind with a `bool` byte of 2: signed, but not a `bool`.
+    ExecutedNonBoolean,
 }
 
 impl Attestation {
@@ -491,7 +495,9 @@ impl Attestation {
     /// response kind byte.
     pub fn output_kind(self) -> u64 {
         match self {
-            Attestation::ExecutedTrue | Attestation::ExecutedFalse => output_kind::EXECUTED,
+            Attestation::ExecutedTrue
+            | Attestation::ExecutedFalse
+            | Attestation::ExecutedNonBoolean => output_kind::EXECUTED,
             Attestation::NeverExecuted => output_kind::FAILED,
         }
     }
@@ -500,7 +506,9 @@ impl Attestation {
     /// execution, zero for a non-execution.
     pub fn signed_width(self) -> usize {
         match self {
-            Attestation::ExecutedTrue | Attestation::ExecutedFalse => TRANSFER_OUTPUT_LEN,
+            Attestation::ExecutedTrue
+            | Attestation::ExecutedFalse
+            | Attestation::ExecutedNonBoolean => TRANSFER_OUTPUT_LEN,
             Attestation::NeverExecuted => 0,
         }
     }
@@ -510,6 +518,7 @@ impl Attestation {
         match self {
             Attestation::ExecutedTrue => vec![Fr::from(1u64)],
             Attestation::ExecutedFalse => vec![Fr::from(0u64)],
+            Attestation::ExecutedNonBoolean => vec![Fr::from(2u64)],
             // A failed or unviable request has nothing to decode.
             Attestation::NeverExecuted => vec![],
         }
@@ -522,6 +531,7 @@ impl Attestation {
         match self {
             Attestation::ExecutedTrue => Fr::from(1u64),
             Attestation::ExecutedFalse | Attestation::NeverExecuted => Fr::from(0u64),
+            Attestation::ExecutedNonBoolean => Fr::from(2u64),
         }
     }
 }

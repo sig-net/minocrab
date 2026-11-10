@@ -31,6 +31,14 @@ fn repr(op: &VmOp) -> Vec<Fr> {
     out
 }
 
+#[test]
+fn field_key_checked_is_field_key() {
+    for index in 0..=u8::MAX {
+        let checked: midnight_base_crypto::fab::AlignedValue = field_key_checked(index).into();
+        assert_eq!(checked, field_key(index), "key {index}");
+    }
+}
+
 /// Our hand-laid push/popeq headers must match the real Op encodings.
 #[test]
 fn mixed_op_layout_matches_field_repr() {
@@ -44,7 +52,7 @@ fn mixed_op_layout_matches_field_repr() {
     .unwrap();
     let real = repr(&Op::Push {
         storage: true,
-        value: midnight_onchain_state::state::StateValue::Cell(Sp::new(av.clone())),
+        value: midnight_onchain_state::state::StateValue::Cell(Sp::new(av.clone().try_into().unwrap())),
     });
     let ours = imms(&push_cell(
         true,
@@ -91,7 +99,7 @@ fn push_array_matches_field_repr() {
         storage: true,
         value: StateValue::Array(
             [
-                StateValue::Cell(Sp::new(cell.clone())),
+                StateValue::Cell(Sp::new(cell.clone().try_into().unwrap())),
                 StateValue::Null,
                 StateValue::Null,
             ]
@@ -147,7 +155,7 @@ fn idx_key_matches_field_repr() {
     let real = repr(&Op::Idx {
         cached: false,
         push_path: false,
-        path: vec![Key::Value(av)].into(),
+        path: vec![Key::Value(av.try_into().unwrap())].into(),
     });
     let ours = imms(&idx_key(&LedgerValue::bytes(
         32,
@@ -183,10 +191,10 @@ fn emit_event_matches_field_repr() {
     let real_push = Op::Push {
         storage: false,
         value: StateValue::Array(
-            vec![
-                StateValue::Cell(Sp::new(version_av)),
-                StateValue::Cell(Sp::new(field_key(10))),
-                StateValue::Cell(Sp::new(payload_av)),
+            [
+                StateValue::Cell(Sp::new(version_av.try_into().unwrap())),
+                StateValue::Cell(Sp::new(field_key_checked(10))),
+                StateValue::Cell(Sp::new(payload_av.try_into().unwrap())),
             ]
             .into(),
         ),
@@ -261,13 +269,13 @@ fn claim_contract_call_matches_field_repr() {
         Op::Idx {
             cached: true,
             push_path: true,
-            path: vec![Key::Value(field_key(3))].into(),
+            path: vec![Key::Value(field_key_checked(3))].into(),
         },
         Op::Dup { n: 0 },
         Op::Size,
         Op::Push {
             storage: false,
-            value: midnight_onchain_state::state::StateValue::Cell(Sp::new(av)),
+            value: midnight_onchain_state::state::StateValue::Cell(Sp::new(av.try_into().unwrap())),
         },
         Op::Concat {
             cached: true,
@@ -348,7 +356,7 @@ fn cell_write_coin_matches_field_repr() {
         repr(&Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+            path: vec![Key::Value(field_key_checked(1)), Key::Stack].into(),
         })
     );
     assert_eq!(
@@ -413,7 +421,7 @@ fn assert_qualify_dance(ops: &[ImpactOp], dup_n: u64) {
         repr(&Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(field_key(1)), Key::Stack].into(),
+            path: vec![Key::Value(field_key_checked(1)), Key::Stack].into(),
         })
     );
     assert_eq!(
@@ -580,7 +588,7 @@ fn read_shape_constants_match_corpus_golden() {
         imms(&ImpactOp::constant(&Op::Idx {
             cached: true,
             push_path: false,
-            path: vec![Key::Value(field_key(0))].into(),
+            path: vec![Key::Value(field_key_checked(0))].into(),
         })),
         vec![Fr::from(0x60u64), 1u64.into(), 1u64.into(), 0u64.into()]
     );
@@ -638,12 +646,12 @@ fn key_encoding_matches_field_repr() {
     for index in [0u8, 1, 7, 255] {
         assert_eq!(
             ours(&LedgerKey::Field(index)),
-            real(&Key::Value(field_key(index))),
+            real(&Key::Value(field_key_checked(index))),
             "field {index}"
         );
     }
     let (av, lv) = b32_key();
-    assert_eq!(ours(&LedgerKey::Value(lv)), real(&Key::Value(av)));
+    assert_eq!(ours(&LedgerKey::Value(lv)), real(&Key::Value(av.try_into().unwrap())));
     assert_eq!(ours(&LedgerKey::Stack), real(&Key::Stack));
 }
 
@@ -654,10 +662,10 @@ fn key_encoding_matches_field_repr() {
 fn idx_path_matches_field_repr() {
     let (av, lv) = b32_key();
     let cases: Vec<(Vec<LedgerKey>, Vec<Key>)> = vec![
-        (vec![LedgerKey::Field(3)], vec![Key::Value(field_key(3))]),
+        (vec![LedgerKey::Field(3)], vec![Key::Value(field_key_checked(3))]),
         (
             vec![LedgerKey::Field(0), LedgerKey::Value(lv.clone())],
-            vec![Key::Value(field_key(0)), Key::Value(av.clone())],
+            vec![Key::Value(field_key_checked(0)), Key::Value(av.clone().try_into().unwrap())],
         ),
         (
             vec![
@@ -666,14 +674,14 @@ fn idx_path_matches_field_repr() {
                 LedgerKey::Value(lv),
             ],
             vec![
-                Key::Value(field_key(6)),
-                Key::Value(av.clone()),
-                Key::Value(av),
+                Key::Value(field_key_checked(6)),
+                Key::Value(av.clone().try_into().unwrap()),
+                Key::Value(av.try_into().unwrap()),
             ],
         ),
         (
             vec![LedgerKey::Field(1), LedgerKey::Stack],
-            vec![Key::Value(field_key(1)), Key::Stack],
+            vec![Key::Value(field_key_checked(1)), Key::Stack],
         ),
     ];
     for (ours, theirs) in cases {

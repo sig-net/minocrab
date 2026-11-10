@@ -125,8 +125,8 @@ fn golden(bytes: &[u8], expected_sha256: &str, who: &str) -> ProvenTx {
         expected_sha256,
         "{who}: imported fixture bytes differ from the recorded capture"
     );
-    // mpc's reader tests decode these under the same ledger tags this repo
-    // pins, so a capture that no longer decodes means the wire format moved.
+    // mpc's reader tests decode these too, so a capture that no longer
+    // decodes under this repo's ledger pin means the wire format moved.
     midnight_serialize::tagged_deserialize(&mut &bytes[..]).unwrap_or_else(|e| {
         panic!("{who}: the captured transaction must decode under our ledger pin: {e}")
     })

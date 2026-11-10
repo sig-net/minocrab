@@ -1,5 +1,5 @@
 {
-  "version": { "major": 3, "minor": 0 },
+  "version": { "major": 3, "minor": 1 },
   "do_communications_commitment": true,
   "inputs": [
     { "name": "%ds.0", "type": "Scalar<BLS12-381>" },
@@ -46,7 +46,7 @@
     { "op": "impact", "guard": "0x01", "inputs": ["0x60", "0x01", "0x01", "0x00"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x0d", "0x01", "0x20", "%contractAddress.8", "%contractAddress.9"] },
     { "op": "persistent_hash", "output": "%bytes.10", "alignment": [{ "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }, { "tag": "atom", "value": { "length": 32, "tag": "bytes" } }], "inputs": ["0x00", "0x6d69646e696768743a6465726976655f746f6b656e", "%ds.0", "%ds.1", "%contractAddress.8", "%contractAddress.9"] },
-    { "op": "bytes32_into_low_high", "outputs": ["%color.11", "%color.12"], "bytes": "%bytes.10" },
+    { "op": "bytes_into_natives", "outputs": ["%color.11", "%color.12"], "bytes": "%bytes.10" },
     { "op": "impact", "guard": "0x01", "inputs": ["0x40"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x80", "0x01", "0x01", "0x08"] },
     { "op": "impact", "guard": "0x01", "inputs": ["0x10", "0x01", "0x06", "0x01", "0x20", "0x20", "0x01", "0x20", "0x20", "0x01", "%color.12", "%color.11", "0x00", "0x00", "%r.3", "%r.4", "%r.5", "%r.6", "%r.7"] },

@@ -78,7 +78,7 @@
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
+use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
@@ -804,9 +804,11 @@ fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, request_id: &Reques
     c.assert(b32_eq(&digest, &record.digest).message("Output does not match the attestation"));
 }
 
-/// `deserialize<VaultResponse, 1>(output).success` — the packed Boolean is
-/// (byte == 1), with no canonicity check, as compactc lowers it.
+/// `deserialize<VaultResponse, 1>(output).success` — the byte must be 0 or 1
+/// (compactc 0.36 lowers the `Boolean` read to `constrain_to_boolean`), and
+/// the field is (byte == 1).
 fn attested_success(c: &mut Circuit3, output: Wire3<FieldT, Public>) -> Wire3<FieldT, Public> {
+    let output = c.assert_boolean(output);
     let one = c.constant(1u64);
     c.test_eq(output, one)
 }
@@ -1246,7 +1248,7 @@ impl Vault {
     pub fn send_replace_nonce(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>, Bytes<REPLACE_NONCE_SCHEMA_LEN, Public>, ReplaceNonceArgs>(
             c,
             out_index,
@@ -1331,7 +1333,7 @@ impl Vault {
     pub fn send_approve(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, ApproveArgs>(
             c,
             out_index,
@@ -1443,7 +1445,7 @@ impl Vault {
     pub fn send_deposit(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, DepositArgs>(
             c,
             out_index,
@@ -1471,7 +1473,8 @@ impl Vault {
     /// Bytes<1>, mintNonce: Bytes<32>, recipient: Maybe<Either<ZswapCoinPublicKey,
     /// ContractAddress>>): []` — settles a deposit on any verdict: executed
     /// and `true` mints the deposited amount to the recipient (the caller by
-    /// default); anything else only closes the request. Depositor-gated.
+    /// default); anything else only closes the request. `serializedOutput`
+    /// must be 0 or 1 on every verdict. Depositor-gated.
     #[circuit]
     pub fn complete_deposit(
         c: &mut Circuit3,
@@ -1502,9 +1505,9 @@ impl Vault {
 
         let is_executed = executed(c, &record);
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
+        let success = attested_success(c, output.field());
         c.when(is_executed, |c| {
             assert_output_matches::<1>(c, &request_id, &record, &[output.field()]);
-            let success = attested_success(c, output.field());
             c.when(success, |c| {
                 // const claimRecipient = disclose(recipient).is_some
                 //   ? disclose(recipient).value : left(ownPublicKey())
@@ -1603,7 +1606,7 @@ impl Vault {
     pub fn send_withdraw(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>, BytesN<Public, VAULT_SCHEMA_LEN>, WithdrawArgs>(
             c,
             out_index,
@@ -1629,7 +1632,8 @@ impl Vault {
     /// Bytes<1>, mintNonce: Bytes<32>): []` — settles a withdrawal on any
     /// verdict: an executed `true` leaves the burn standing; a `false`, a
     /// failed or an unviable transaction re-mints the surrendered amount to
-    /// the caller. Withdrawer-gated.
+    /// the caller. `serializedOutput` must be 0 or 1 on every verdict.
+    /// Withdrawer-gated.
     #[circuit]
     pub fn complete_withdraw(
         c: &mut Circuit3,
@@ -1652,7 +1656,8 @@ impl Vault {
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
         c.when(is_executed, |c| assert_output_matches::<1>(c, &request_id, &record, &[output.field()]));
 
-        // if (outcomeRefunds(record.outputKind) || !deserialize<VaultResponse, 1>(output).success)
+        // const success = deserialize<VaultResponse, 1>(output).success;
+        // if (outcomeRefunds(record.outputKind) || !success)
         let refunds = outcome_refunds(c, &record);
         let success = attested_success(c, output.field());
         let returned_false = c.not(success);
@@ -1743,7 +1748,7 @@ impl Vault {
     pub fn send_swap(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>, BytesN<Public, SWAP_SCHEMA_LEN>, SwapArgs>(
             c,
             out_index,
@@ -1886,7 +1891,7 @@ impl Vault {
     pub fn send_supply(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>, BytesN<Public, SUPPLY_SCHEMA_LEN>, SupplyArgs>(
             c,
             out_index,
@@ -2016,7 +2021,7 @@ impl Vault {
     pub fn send_redeem(
         c: &mut Circuit3,
         out_index: RequestIndex<Private>,
-    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallEntryPointHash, XcallCommitment)> {
+    ) -> Discloses<(OutIndex, RequestIdDisclosed, RequestRecord, XcallCommitment)> {
         send_request::<REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>, BytesN<Public, REDEEM_SCHEMA_LEN>, RedeemArgs>(
             c,
             out_index,

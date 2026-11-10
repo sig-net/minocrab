@@ -32,6 +32,16 @@ mod modern {
     pub const REFUND: (u8, usize) = (16, 36480);
     pub const SWAP: (u8, usize) = (14, 12326);
     pub const COMPLETE_SWAP: (u8, usize) = (16, 45961);
+
+    /// compactc 0.36's identity-key check in `secp256k1EcdsaVerify`, which
+    /// every settle above pays since the 0.36 bump and these numbers predate:
+    /// each verifying circuit's move in `row_snapshot.rs` at that bump.
+    pub const ECDSA_IDENTITY_CHECK: usize = 11_672;
+
+    /// A settle's measured `(k, rows)` with that check added.
+    pub const fn settle((k, rows): (u8, usize)) -> (u8, usize) {
+        (k, rows + ECDSA_IDENTITY_CHECK)
+    }
 }
 
 /// Twenty-two fields, segmented (the remainder leads): `[0, i]` for i < 7,
@@ -80,20 +90,20 @@ fn no_pair_costs_more_than_the_modern_lineage() {
     let p_dep = m(&pending::Vault::deposit().ir);
     let m_dep = modern::DEPOSIT;
     let p_claim = m(&pending::Vault::claim().ir);
-    let m_claim = modern::CLAIM;
+    let m_claim = modern::settle(modern::CLAIM);
     let p_wd = m(&pending::Vault::withdraw().ir);
     let m_wd = modern::WITHDRAW;
     let p_cwd = m(&pending::Vault::complete_withdraw().ir);
-    let m_cwd = modern::COMPLETE_WITHDRAW;
+    let m_cwd = modern::settle(modern::COMPLETE_WITHDRAW);
     let p_swap = m(&pending::Vault::swap().ir);
     let m_swap = modern::SWAP;
     let p_cswap = m(&pending::Vault::complete_swap().ir);
-    let m_cswap = modern::COMPLETE_SWAP;
+    let m_cswap = modern::settle(modern::COMPLETE_SWAP);
     let p_appr = m(&pending::Vault::approve_router().ir);
     let m_appr = modern::APPROVE_ROUTER;
     let p_rwd = m(&pending::Vault::refund_withdrawal().ir);
     let p_rsw = m(&pending::Vault::refund_swap().ir);
-    let m_ref = modern::REFUND;
+    let m_ref = modern::settle(modern::REFUND);
 
     let rows: Vec<(&str, (u8, usize), (u8, usize))> = vec![
         ("initialize", p_init, m_init),
@@ -217,6 +227,7 @@ fn the_lending_flows_cost_no_more_than_the_compat_port() {
 /// | this kind, flag `true`  | ACCEPT   | reject |
 /// | this kind, flag `false` | reject   | ACCEPT |
 /// | the MPC's failure kind  | reject   | ACCEPT |
+/// | this kind, byte `2`     | reject   | reject |
 ///
 /// The middle row is the one the deployed vault gets wrong.
 #[test]
@@ -243,6 +254,13 @@ fn the_withdrawals_outcome_picks_the_circuit() {
         (
             "a mined transfer that returned true",
             Attested::Executed { value: 1 },
+            false,
+        ),
+        // Not a `bool`: `AbiReturn for Bool` refuses it rather than read it
+        // as `false`.
+        (
+            "a signed flag byte of 2",
+            Attested::Executed { value: 2 },
             false,
         ),
     ] {

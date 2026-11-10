@@ -62,10 +62,7 @@
       "url": "https://github.com/sig-net/midnight-integration",
       "rev": "fff3421c610e508ad8cf01049bb88b153f170935",
       "license": "UNLICENSED (sig-net internal)",
-      "paths": [],
-      "flags": [
-        "--feature-zkir-v3"
-      ]
+      "paths": []
     },
     {
       "name": "signet-midnight-integration-v0241",
@@ -75,9 +72,6 @@
       "paths": [
         "packages/signet-contract",
         "packages/signet-midnight"
-      ],
-      "flags": [
-        "--feature-zkir-v3"
       ],
       "compact_path_links": {
         "@sig-net/midnight": "signet-midnight-integration-v0241/packages/signet-midnight"
@@ -93,9 +87,6 @@
         "packages/signet-contract",
         "packages/signet-midnight"
       ],
-      "flags": [
-        "--feature-zkir-v3"
-      ],
       "compact_path_links": {
         "@sig-net/midnight": "signet-midnight-integration-v0250/packages/signet-midnight"
       },
@@ -107,9 +98,6 @@
       "rev": "375071b182a7ad2fb35fb2ae334e9725a88442c3",
       "license": "UNLICENSED (sig-net internal)",
       "paths": [],
-      "flags": [
-        "--feature-zkir-v3"
-      ],
       "compact_path_links": {
         "@sig-net/midnight": "signet-midnight-integration-v0241/packages/signet-midnight"
       },
@@ -120,10 +108,7 @@
       "url": "https://github.com/sig-net/midnight-experiments",
       "rev": "74e7ce0def695abdfd609166314e725d02b419c6",
       "license": "UNLICENSED (sig-net internal)",
-      "paths": [],
-      "flags": [
-        "--feature-zkir-v3"
-      ]
+      "paths": []
     },
     {
       "name": "aa-midnight-evm-experiment",
@@ -132,9 +117,6 @@
       "license": "NONE (no license file in repo)",
       "paths": [
         "contracts"
-      ],
-      "flags": [
-        "--feature-zkir-v3"
       ]
     }
   ]

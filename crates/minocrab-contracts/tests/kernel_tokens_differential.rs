@@ -8,10 +8,9 @@
 //! `sendImmediateShielded` (6) — all SHIELDED, and not one v3 use of an
 //! unshielded primitive, of `balance*`, of `blockTime*` or of `mergeCoin`.
 //!
-//! `kernel.checkpoint()` IS NOT HERE, and cannot be: compactc's ZKIR-v3
-//! backend has no `ckpt` case, so a contract calling it does not compile for
-//! our target at all (the v2 backend assembles it to 255). The fixture's
-//! header quotes the failure.
+//! `kernel.checkpoint()` IS NOT HERE: before compactc 0.36 the ZKIR-v3
+//! backend had no `ckpt` case (the fixture's header quotes the failure);
+//! compactc 0.36.0 compiles it, and it is not ported yet.
 
 use minocrab::v3::Compiled3;
 use minocrab_contracts::kernel_tokens::KernelTokens;
@@ -149,8 +148,8 @@ fn every_exported_circuit_is_in_the_differential() {
 ///
 /// EMPTY since the shielded compositions landed: every circuit `kernel.compact`
 /// compiles is ported and agrees with compactc instruction for instruction.
-/// `kernel.checkpoint()` is not here because it is not in the fixture — it
-/// cannot be compiled for our IR version at all (see this file's header).
+/// `kernel.checkpoint()` is not here because it is not in the fixture (see
+/// this file's header).
 const NOT_YET_PORTED: [&str; 0] = [];
 
 /// Every fixture circuit is either ported or explicitly listed as not — so

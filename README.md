@@ -13,7 +13,7 @@ That said, it is a direct port of the Compact compiler with millions of tests ch
 
 **More errors caught at compile time.** A `Wire<Private>` cannot reach a public output without `disclose(w, label)`, and the label must appear in the circuit's signature; a generated test enforces that and caught four real undeclared disclosures ([disclose.rs](crates/minocrab/src/v3/disclose.rs)). Subtraction emits its underflow guard. A guarded-off read must say what its default means. A literal outside its operand's bound doesn't build. Argument types *are* the range constraints: `Uint<64>` is `assert_bits(w, 64)`, from compactc's own table ([v3_leaves.rs](crates/minocrab-std/tests/v3_leaves.rs)).
 
-**Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a reference model affordable: every vault circuit's run is replayed through Midnight's reference VM against a modelled pre-state, with the guard failures both artifacts must reject and a tamper sweep over every transcript and witness element ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the Pending lineage keeps an eighteen-property spec harness and its own executor replay ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), [executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)); and a leakage inventory is generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 228 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The property harness and adversarial sweeps of the seventeen-circuit vault retired with it (M44); their flush-pattern successors are the milestone's open rung F.
+**Rust tooling for testing and verification.** Circuits run natively under `cargo test` ([minocrab-sim](crates/minocrab-sim/src/lib.rs)). That makes a reference model affordable: every vault circuit's run is replayed through Midnight's reference VM against a modelled pre-state, with the guard failures both artifacts must reject and a tamper sweep over every transcript and witness element ([erc20_vault_differential.rs](crates/minocrab-contracts/tests/erc20_vault_differential.rs)); the Pending lineage keeps an eighteen-property spec harness and its own executor replay ([erc20_vault_pending_spec.rs](crates/minocrab-contracts/tests/erc20_vault_pending_spec.rs), [executor_vault.rs](crates/minocrab-contracts/tests/executor_vault.rs)); and a leakage inventory is generated from the ZKIR itself ([leakage_inventory.rs](crates/minocrab-contracts/tests/leakage_inventory.rs)). Every ported circuit is differential-tested against compactc's artifact ([porting kit](#porting-kit)); `(k, rows)` and the interfaces of all 227 circuits are frozen, so drift is a test failure ([row_snapshot.rs](crates/minocrab-contracts/tests/row_snapshot.rs)). The property harness and adversarial sweeps of the seventeen-circuit vault retired with it (M44); their flush-pattern successors are the milestone's open rung F.
 
 **Direct ZKIR emission.** Low-level instruction selection: native byte instructions instead of explode/rebuild chains, one-block hashes where the preimage fits, Poseidon where the spec permits it. Rows −12..−86% on the vault, prove time −44..−81% wherever a circuit is not floored by protocol-pinned crypto ([BENCHMARK.md](BENCHMARK.md)).
 
@@ -341,7 +341,7 @@ pub trait SignetSigner {
 - No address in the crate: `at_field(index)` names a sealed ledger cell, `at(address)` takes one as data
 - Each crate commits the callee's artifact plus a hash pin and checks slots, constraints and the compiled `.zkir` prefix against it; a mutation suite proves the checks bite, including a forged circuit with a correct manifest
 
-Limit: the circuit binds neither the entry point nor the argument types unless asked. `minocrab_ledger::bind_entry_points(c)` is the opt-in hardened mode: every typed call then constrains the entry-point hash to the declared circuit's. Argument types stay unbound.
+The entry point is bound: its hash is a constant of the call's claim, as compactc 0.36 compiles it, so a circuit proves only the entry point it names. Limit: argument types stay unbound.
 
 ## Cross-chain calls
 
@@ -430,7 +430,7 @@ What the types do:
 
 One hazard the types cannot see: the MPC resolves a request as FAILED when the return data does not decode, so a non-conforming ERC-20 returning nothing produces an attested failure for a transfer that moved the tokens. Until the callee's return shape is declared per token, a contract on this API needs a callee allow-list.
 
-[signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. Costs are the same shape as compactc's and lower where the API does less: `supply` k14 / 11,474 rows against the port's k15 / 23,038; `complete_withdraw` k15 / 25,655 against the deployed k16 / 35,553 ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs)).
+[signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. Costs are the same shape as compactc's and lower where the API does less: `supply` k14 / 11,380 rows against the port's k15 / 23,038; `complete_withdraw` k16 / 37,528 against the retired lineage's k16 / 35,847, which predates compactc 0.36's 11,672-row ECDSA identity check ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs)).
 
 ### The outbox: a contention-free call queue
 
@@ -458,10 +458,10 @@ fn complete(c: &mut Circuit3, ticket: Succeeded<Kinded<Transfer, 1>>) -> Disclos
 
 | circuit | k | rows | checked reads | of which shared |
 |---|---|---|---|---|
-| `call` | 10 | 924 | 1 (the handle's not-member check) | 0 |
-| `emit` | 10 | 1,004 | 10 | 1 (the Signet request nonce, the protocol record's counter) |
-| `complete` | 15 | 25,675 | 4 | 0 |
-| `refund` | 15 | 26,073 | 4 | 0 |
+| `call` | 10 | 759 | 1 (the handle's not-member check) | 0 |
+| `emit` | 11 | 1,073 | 10 | 1 (the Signet request nonce, the protocol record's counter) |
+| `complete` | 16 | 37,536 | 4 | 0 |
+| `refund` | 16 | 37,952 | 4 | 0 |
 
 The serial twin — a step that is not a monoid, such as a moving average — keeps the same `insert` / `take` / `combine` and adds a `sequence` that flushes one to four keys through one `popeq` of the accumulator ([fee_ema.rs](crates/minocrab-contracts/tests/fee_ema.rs): report k8 / 130 rows, sequence k10 / 1,008, settle k7 / 108).
 
@@ -504,7 +504,7 @@ What it proves, what it cannot, and what it costs transaction privacy next to a 
 
 ## Porting kit
 
-- `corpus/` is 673 pinned `.compact` sources and the 814 ZKIR circuits the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
+- `corpus/` is 673 pinned `.compact` sources and the 855 ZKIR circuits the pinned compactc produced ([corpus/README.org](corpus/README.org), [sources.json](corpus/sources.json))
 - Rewrite a contract in the eDSL; the harness checks it against compactc's artifact, not your reading of the source
 - The check is statement identity: same typed schema, same public-input stream on one shared `ProofPreimage`, both handed to Midnight's reference VM. Instruction streams may differ. Guard rejections and tampered inputs must agree too.
 
@@ -573,7 +573,7 @@ crates/minocrab-abi             the interface/artifact agreement checker
 crates/minocrab-interface-gen   compactc artifact → interface crate (CLI)
 crates/signet-signer-interface  an interface crate: the Signet singleton
 crates/xcall-target-interface   an interface crate, generated from a contract nobody ported
-corpus/                         673 pinned Compact sources + 814 compactc artifacts
+corpus/                         673 pinned Compact sources + 855 compactc artifacts
 spec/                           the Borsh-subset specification, golden vectors, generated TS
 ```
 
@@ -583,7 +583,7 @@ Benchmark from a clean checkout (nix + direnv supply the pinned toolchain):
 nix run .#bench
 ```
 
-A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet, because the `midnight-*` line they depend on is not on the registry ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now, and copy this repository's `[patch.crates-io]` block into your own workspace: the ledger's `midnight-*` dependencies are crates.io versions that only that patch resolves, to the pinned tags. A workspace already patching the ledger 9.1 line to its own compatible tags can use those instead (sig-net/mpc does); copy every entry, `midnight-transient-crypto-old` included, or a dependency asking for the 2.x line silently resolves to crates.io instead.
+A contract depends on **`minocrab-std`** (which re-exports the eDSL and the decorators) plus `minocrab-sim` as a dev-dependency. Nine crates are meant for crates.io; nothing is published yet: seven of them still carry `publish = false` ([PUBLISHING.md](PUBLISHING.md)). Consume it as a git dependency for now. Every `midnight-*` dependency resolves from crates.io at the versions midnight-node 2.1.101 locks (ledger 9.1.0.1), so no `[patch.crates-io]` block is needed; a workspace on the same versions (sig-net/mpc) unifies with it.
 
 Deeper: `plan.org` (aim and design requirements), `milestones.org` (state of play), `notes/*.org` (findings and decisions of record).
 

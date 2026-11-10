@@ -64,6 +64,10 @@ compactc, and it never belonged on this list.
 
 * 2. GAP — kernel.checkpoint() cannot be compiled for ZKIR v3
 
+STATUS 2026-11-10: FIXED at 0.36.0 (the compactc 0.36.0 bump) —
+=checkpoint.compact= compiles to one =impact= of =0xff=, ZKIR 3.1
+(corpus =kernel_checkpoint.zkir=). MinoCrab has no port yet.
+
 STATUS 2026-08-28: STANDS at 0.34.0, probe-verified — the same
 =failed assertion not-implemented= internal error (now at
 reduce-to-zkir.ss:612 after the v3-pass restructuring; an
@@ -81,6 +85,12 @@ Impact: any v3 contract using checkpoint. Evidence: notes/kernel-tokens.org
 (M17 design note, failure quoted in the fixture header).
 
 * 3. HAZARD — Boolean deserialization accepts non-canonical bytes
+
+STATUS 2026-11-10: FIXED at 0.36.0 — the Boolean arm of =deserialize=
+now emits =constrain_to_boolean= on the byte before =test_eq 1=
+(corpus =completeDeposit.zkir=, =completeWithdraw.zkir=,
+=checkRoundtrip.zkir=, =shaVerify.zkir=, =keccakVerify.zkir=,
+=verifyResponse.zkir=), so a byte above 1 fails the proof.
 
 STATUS 2026-08-28: STANDS at 0.34.0, source-verified — the Boolean
 arm of deserialize lowers to =(== byte 1)=
@@ -208,6 +218,10 @@ source is in corpus/src/compact).
 
 * 9. MINOR — 0.34.0 lost the "try --feature-zkir-v3" diagnostic for secp256k1
 
+STATUS 2026-11-10: MOOT at 0.36.0 — ZKIR v3 is the only backend and the
+flag is gone; the three secp256k1/ECDSA sources compile
+(=corpus/compile-report.tsv=).
+
 FOUND 2026-09-05, at the M31 bump (0.33.0-rc.2 -> 0.34.0), by reading
 the corpus compile-report diff: two sources changed their first-error
 line without changing whether they compile.
@@ -253,6 +267,11 @@ produce the old error.
 
 * 10. SOUNDNESS GAP — =Bytes<32> as Uint<n>= / =as Field= accept byte strings ≥ p as their value mod p (2026-10-02)
 
+STATUS 2026-11-10: FIXED in midnight-zkir 3.2.0 (the 0.36.0 bump's
+crate) — the in-circuit =ReconstituteField= decomposes the result to its
+canonical bits and asserts both halves equal the operands
+(=ir_vm.rs:1291-1300=), so the composite is below p.
+
 What: compactc lowers a =Bytes<32>= to two limbs (248-bit low, 8-bit high) and the cast to =Field=/=Uint<n>= to =reconstitute_field(divisor = high, modulus = low, bits = 248)= followed by =constrain_bits n=. In-circuit (zkir-v3 =ir_vm.rs:1025=) =reconstitute_field= asserts =high < 2^7= and =low < 2^248= and then takes the linear combination mod p — nothing enforces the composite ≤ p−1; only the off-circuit VM (=ir_vm.rs:412=) rejects it. Byte strings in [p, 2^255) are therefore satisfiable witnesses whose cast result is the value mod p, so a prover running its own witness generator can present a 256-bit value ≥ 2^128 and pass =as Uint<128>= with a small result.
 
 Evidence: =/tmp/u128-bench/direct.zkir= (compactc 0.34.0, =--feature-zkir-v3=), five instructions reproduced in notes/bytes32-to-u128.org; the two code paths quoted from the pinned zkir-v3 rev 04c9c5d. The zkir-semantics note already lists "ReconstituteField overflow" as an unenforced premise (I4 row, upstream §6.6(d)); this entry is the compactc-surface consequence: a Compact =as= cast that is exact for honest provers and not for adversarial ones.
@@ -260,3 +279,20 @@ Evidence: =/tmp/u128-bench/direct.zkir= (compactc 0.34.0, =--feature-zkir-v3=), 
 Impact: any circuit that casts an adversarially-chosen =Bytes<32>= to =Field= or =Uint<n>= and relies on the result equalling the bytes' LE value. Workaround from Compact: assert the high byte zero first (=(x as Vector<32, Uint<8>>)[31] == 0=, 3 rows — the div_mods are DCE'd), which bounds the composite below 2^248 < p. Whether anything deployed is affected: not assessed (the vault's =as Field= sites on hash outputs would need a per-site look at where the bytes come from).
 
 Documentation status (checked 2026-10-02): the Compact reference ("Casts of Bytes to and from Field and Uint", https://docs.midnight.network/compact/reference/compact-reference) promises "A dynamic error occurs if the result exceeds the maximum value of the Field or Uint type" — stated as the language semantics, with no distinction between the generated JS/witness path and the proving circuit. The zkir-v3 doc comment on =ReconstituteField= (ir.rs:684) claims it is "guaranteeing that the result does not overflow the field size". The ZKIR v3 spec (midnightntwrk/midnight-zkir PR #16, merged 2026-09-23, =zkir-spec/docs/zkir-v3-spec.md=) is the only place the gap is written down: §6.6(d) lists "ReconstituteField no-overflow" among the premises "the in-circuit lowering does not enforce", §7.2 tags "no field overflow, 2ⁿ·d+m < |Fr|" as obligation O4, and §8.4 states that O4 "rules out only adversarial witnesses" and that statement soundness holds "up to the slack O4 excludes". O4 is a condition on the witness, not on the source, so nothing obliges the Compact compiler to discharge it — the Compact-level "dynamic error" promise and the spec's carve-out are inconsistent, and nothing at the Compact level warns the contract author. That inconsistency is the reportable item.
+
+* 11. CRASH — a guarded =deserialize<Boolean>= crashes =missing-guard-workarounds= (compactc 0.36.0, 2026-11-10)
+
+What: under compactc 0.36.0 a =deserialize<T, N>(bytes).flag= read inside an
+=if= fails to compile: the pass rewrites the guarded byte-to-=Uint<0..1>=
+downcast into =(< 4 (select <guard> <byte> 0) 2)= and the type check then
+rejects =Uint<0..256>= against =Uint<0..3>=. Upstream: LFDT-Minokawa/compact#856.
+
+Evidence: sig-net/midnight-examples' ERC20 vault (=completeDeposit=,
+=completeWithdraw=) fails with that error under 0.36.0 and compiles under
+0.34.0; =--trace-passes= shows the rewrite.
+
+Impact: the vault does not build on the ledger-9 toolchain as written. The
+workaround reads the response before the branch (midnight-examples PR #127,
+mirrored in the pinned corpus copy); compactc 0.36 then applies the
+Boolean's 0-or-1 check on every verdict, and both settle circuits' verifier
+keys move. Deployed contracts are unaffected until they are recompiled.

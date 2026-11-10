@@ -57,8 +57,6 @@ macro_rules! ir_ty {
 ir_ty! {
     /// The native BLS12-381 scalar field (Compact `Field`, `Uint`, `Boolean`).
     FieldT => Native,
-    /// `Bytes<32>` as a single typed value.
-    Bytes32T => Bytes32,
     /// A point on Jubjub, the native embedded curve.
     JubjubPointT => JubjubPoint,
     /// A scalar of Jubjub's scalar field.
@@ -81,6 +79,15 @@ ir_ty! {
     Curve25519BaseT => Curve25519Base,
     /// A scalar-field element of Curve25519.
     Curve25519ScalarT => Curve25519Scalar,
+}
+
+/// `Bytes<32>` as a single typed value: ZKIR's `Bytes(32)`.
+#[derive(Clone, Copy)]
+pub enum Bytes32T {}
+impl IrTy for Bytes32T {
+    fn ir_type() -> IrType {
+        IrType::Bytes(32)
+    }
 }
 
 /// Types supported by TestEq/Add/Neg/CondSelect/ConstrainEq (everything but
@@ -108,7 +115,7 @@ impl MulTy for Secp256r1ScalarT {}
 impl MulTy for Curve25519BaseT {}
 impl MulTy for Curve25519ScalarT {}
 
-/// Prime fields with a canonical 32-byte form (IntoBytes32/FromBytes32).
+/// Prime fields with a canonical 32-byte form (`ToBytes`/`FromBytes`).
 pub trait Bytes32ConvTy: IrTy {}
 impl Bytes32ConvTy for FieldT {}
 impl Bytes32ConvTy for Secp256k1BaseT {}

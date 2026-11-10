@@ -10,7 +10,7 @@ use midnight_base_crypto::fab::{
     Alignment, AlignmentAtom, AlignmentSegment, AlignedValue, Value, ValueAtom,
 };
 use midnight_base_crypto::repr::BinaryHashRepr;
-use midnight_onchain_state::state::StateValue;
+use midnight_onchain_state::state::{AlignedValueChecked, StateValue};
 use midnight_onchain_vm::ops::{Key, Op};
 use midnight_onchain_vm::result_mode::ResultModeVerify;
 use midnight_storage::arena::Sp;
@@ -47,12 +47,12 @@ fn bytesn_value(n: u32, bytes: &[u8]) -> AlignedValue {
     .unwrap()
 }
 
-fn cell(av: AlignedValue) -> StateValue {
-    StateValue::Cell(Sp::new(av))
+fn cell(av: AlignedValue) -> StateValue<InMemoryDB, AlignedValueChecked> {
+    StateValue::Cell(Sp::new(av.try_into().expect("a canonical test value")))
 }
 
 fn key(i: u8) -> Key {
-    Key::Value(bytesn_value(1, &[i]))
+    Key::Value(bytesn_value(1, &[i]).try_into().expect("a canonical test key"))
 }
 
 fn b32_slots(bytes: &[u8; 32]) -> (Fr, Fr) {
@@ -264,7 +264,6 @@ impl Scenario {
             bytesn_value(32, &self.event_hash()),
         ));
 
-        let (ep_hi, ep_lo) = b32_slots(&self.ep);
         preimage(
             vec![amount],
             vec![amount, eh_hi, eh_lo],
@@ -273,7 +272,7 @@ impl Scenario {
                 bytesn_value(32, &self.vault_addr),
                 bytesn_value(32, &self.token_addr),
             ],
-            vec![eh_hi, eh_lo, cc_rand, ep_hi, ep_lo],
+            vec![eh_hi, eh_lo, cc_rand],
         )
     }
 
@@ -325,7 +324,7 @@ impl Scenario {
             Op::Push {
                 storage: false,
                 value: StateValue::Array(
-                    vec![
+                    [
                         cell(bytesn_value(4, &1u32.to_le_bytes())),
                         cell(bytesn_value(1, &[10])),
                         cell(bytesn_value(events::MISC_SIZE as u32, &misc)),

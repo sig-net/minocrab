@@ -18,7 +18,7 @@ pragma language_version >= 0.25;
 // test:
 //
 //   nix build .#compactc          # at the repo root, provides ./result
-//   ./result/bin/compactc --skip-zk --feature-zkir-v3 \
+//   ./result/bin/compactc --skip-zk \
 //       crates/minocrab-contracts/tests/fixtures/bounded_ledger/bounded_ledger.compact \
 //       crates/minocrab-contracts/tests/fixtures/bounded_ledger/out
 //

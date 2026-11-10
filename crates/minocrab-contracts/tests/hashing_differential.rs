@@ -83,7 +83,7 @@ fn check_with_inputs(
         Op::Idx {
             cached: false,
             push_path: true,
-            path: vec![Key::Value(bytesn_value(1, &[hashing::CALL_COUNT]))].into(),
+            path: vec![Key::Value(bytesn_value(1, &[hashing::CALL_COUNT]).try_into().expect("a canonical value"))].into(),
         },
         Op::Addi { immediate: 1 },
         Op::Ins { cached: true, n: 1 },
@@ -92,11 +92,11 @@ fn check_with_inputs(
         ops.extend([
             Op::Push {
                 storage: false,
-                value: StateValue::Cell(Sp::new(bytesn_value(1, &[field]))),
+                value: StateValue::Cell(Sp::new(bytesn_value(1, &[field]).try_into().expect("a canonical value"))),
             },
             Op::Push {
                 storage: true,
-                value: StateValue::Cell(Sp::new(av)),
+                value: StateValue::Cell(Sp::new(av.try_into().expect("a canonical value"))),
             },
             Op::Ins {
                 cached: false,

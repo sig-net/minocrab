@@ -227,6 +227,7 @@ fn walk(ir: &IrSource, literals: &[&str]) -> Walk {
                     I::TransientHash { .. } => Some("transient_hash"),
                     I::PersistentHash { .. } => Some("persistent_hash"),
                     I::Keccak256 { .. } => Some("keccak256"),
+                    I::Sha512 { .. } => Some("sha512"),
                     I::HashToCurve { .. } => Some("hash_to_curve"),
                     _ => None,
                 };

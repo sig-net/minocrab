@@ -1,30 +1,32 @@
 //! L5 for ZKIR v3 — native simulator over the typed IR.
 //!
-//! A mechanical port of the off-circuit arm of midnight-ledger's zkir-v3
-//! interpreter: `IrSource::preprocess` in `zkir-v3/src/ir_vm.rs` (rev
-//! 04c9c5d9, line 185), which upstream keeps `pub(crate)`. The reference
-//! semantics *verify* a complete `ProofPreimage` (they do not generate a
-//! transcript): circuit arguments are decoded from `preimage.inputs` per the
-//! input schema, and `Impact` public inputs are checked against
-//! `preimage.public_transcript_inputs` as they accumulate. `Run3` surfaces
-//! everything upstream's `Preprocessed` carries (memory, pis, pi_skips,
-//! binding input, communications commitment) plus the circuit outputs and
-//! per-instruction counters.
+//! A mechanical port of the off-circuit arm of midnight-zkir 3.2.0's
+//! interpreter: `IrSource::preprocess` in `src/ir_vm.rs`, which upstream
+//! keeps `pub(crate)`. Each arm below follows upstream's arm for the same
+//! instruction. The reference semantics *verify* a complete `ProofPreimage`
+//! (they do not generate a transcript): circuit arguments are decoded from
+//! `preimage.inputs` per the input schema, and `Impact` public inputs are
+//! checked against `preimage.public_transcript_inputs` as they accumulate.
+//! `Run3` surfaces everything upstream's `Preprocessed` carries (memory,
+//! pis, pi_skips, binding input, communications commitment) plus the circuit
+//! outputs and per-instruction counters.
 //!
-//! Per-instruction value semantics are *not* re-implemented: zkir-v3
+//! Per-instruction value semantics are *not* re-implemented: midnight-zkir
 //! publishes its off-circuit helpers (`midnight_zkir_v3::ir_instructions`),
 //! and this module calls them — `add_offcircuit`, `decode_offcircuit`,
-//! `encode_offcircuit`, `native_to_jubjub_scalar`, … — alongside Midnight's
-//! crypto (`transient_hash`, `hash_to_curve`, `transient_commit`, SHA-256 /
-//! Keccak-256 over the FAB-aligned byte encoding), exactly as `preprocess`
-//! does. The only upstream items mirrored rather than reused are three
-//! `pub(crate)` one-liners: `IrValue::get_type` (ir_types.rs:161),
-//! `IrValue::default` (ir_types.rs:182), and `TypedIdentifier`'s field
-//! access (ir.rs:170, recovered through its serde form).
+//! `encode_offcircuit`, `to_bytes_offcircuit`, `from_bytes_offcircuit`,
+//! `native_to_jubjub_scalar`, … — alongside Midnight's crypto
+//! (`transient_hash`, `hash_to_curve`, `transient_commit`, SHA-256 / SHA-512
+//! / Keccak-256 over the FAB-aligned byte encoding), exactly as `preprocess`
+//! does. The upstream items mirrored rather than reused are `pub(crate)`
+//! ones: `IrValue::get_type`, `IrValue::default`, `TypedIdentifier`'s field
+//! access (recovered through its serde form), `BYTES_PER_FIELD_ELEMENT`,
+//! `ir_value_to_bytes32`, `resolve_bool_list` and the limb count of
+//! `bytes_from_natives_nb_limbs`.
 //!
 //! Like the v2 simulator, this is never trusted alone: `tests/v3_end_to_end.rs`
-//! cross-checks every run against upstream `IrSource::check`, which is
-//! `preprocess(..)?.pi_skips` verbatim (zkir-v3/src/ir.rs:75-81).
+//! and `tests/v3_zkir31_ops.rs` cross-check runs against upstream
+//! `IrSource::check`, which is `preprocess(..)?.pi_skips` verbatim.
 
 use std::collections::BTreeMap;
 #[cfg(feature = "unstable")]
@@ -62,11 +64,13 @@ use midnight_zkir_v3::ir_instructions::encode::{
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::eq::test_eq_offcircuit;
 #[cfg(feature = "unstable")]
-use midnight_zkir_v3::ir_instructions::from_bytes32::from_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::from_bytes::from_bytes_offcircuit;
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::from_coordinates::from_coordinates_offcircuit;
 #[cfg(feature = "unstable")]
-use midnight_zkir_v3::ir_instructions::into_bytes32::into_bytes32_offcircuit;
+use midnight_zkir_v3::ir_instructions::to_bytes::to_bytes_offcircuit;
+#[cfg(feature = "unstable")]
+use midnight_zkir_v3::ir_types::MAX_BYTES_LEN;
 #[cfg(feature = "unstable")]
 use midnight_zkir_v3::ir_instructions::into_coordinates::into_coordinates_offcircuit;
 #[cfg(feature = "unstable")]
@@ -82,7 +86,7 @@ use minocrab_zkir::v3::{Instruction as I, IrSource};
 #[cfg(feature = "unstable")]
 use minocrab_zkir::v3::{Identifier, IrType, IrValue, Operand};
 #[cfg(feature = "unstable")]
-use sha2::Sha256;
+use sha2::{Sha256, Sha512};
 #[cfg(feature = "unstable")]
 use sha3::{Digest, Keccak256};
 
@@ -95,13 +99,13 @@ pub enum Sim3Error {
         op: &'static str,
         message: String,
     },
-    /// Argument decoding failed before any instruction ran (ir_vm.rs:191-211).
+    /// Argument decoding failed before any instruction ran.
     #[error("inputs: {0}")]
     Inputs(String),
-    /// A transcript was not consumed exactly (ir_vm.rs:648-661).
+    /// A transcript was not consumed exactly.
     #[error("transcripts not fully consumed: {0}")]
     Transcript(String),
-    /// Communications-commitment handling failed (ir_vm.rs:214-221, 662-681).
+    /// Communications-commitment handling failed.
     #[error("communications commitment: {0}")]
     CommCommitment(String),
 }
@@ -117,7 +121,7 @@ fn fail(at: usize, op: &'static str, message: impl Into<String>) -> Sim3Error {
 
 #[cfg(feature = "unstable")]
 /// The result of simulating one v3 circuit run — upstream's `Preprocessed`
-/// (ir_vm.rs:71-77) with `pis` kept as [`Fr`] instead of unwrapped
+/// with `pis` kept as [`Fr`] instead of unwrapped
 /// `outer::Scalar`, plus outputs and run metrics.
 #[derive(Debug, Clone)]
 pub struct Run3 {
@@ -214,16 +218,31 @@ pub fn op_name(ins: &I) -> &'static str {
         I::ReverseBytes { .. } => "reverse_bytes",
         I::TestEq { .. } => "test_eq",
         I::TransientHash { .. } => "transient_hash",
+        I::Slice { .. } => "slice",
+        I::Nth { .. } => "nth",
+        I::Concat { .. } => "concat",
+        I::LoadConstant { .. } => "load_constant",
+        I::Sha512 { .. } => "sha512",
+        I::And { .. } => "and",
+        I::Or { .. } => "or",
+        I::Xor { .. } => "xor",
+        I::ToBytes { .. } => "to_bytes",
+        I::FromBytes { .. } => "from_bytes",
+        I::Reverse { .. } => "reverse",
+        I::BytesIntoNatives { .. } => "bytes_into_natives",
+        I::BytesFromNatives { .. } => "bytes_from_natives",
     }
 }
 
 #[cfg(feature = "unstable")]
 /// Runtime type of a value — mirror of the `pub(crate)`
-/// `IrValue::get_type` (ir_types.rs:161-180).
+/// `IrValue::get_type`.
 fn ir_type_of(value: &IrValue) -> IrType {
     match value {
         IrValue::Native(_) => IrType::Native,
-        IrValue::Bytes32(_) => IrType::Bytes32,
+        IrValue::Bool(_) => IrType::Bool,
+        IrValue::Byte(_) => IrType::Byte,
+        IrValue::Bytes(bs) => IrType::Bytes(bs.len() as u32),
         IrValue::JubjubPoint(_) => IrType::JubjubPoint,
         IrValue::JubjubScalar(_) => IrType::JubjubScalar,
         IrValue::Secp256k1Point(_) => IrType::Secp256k1Point,
@@ -240,12 +259,13 @@ fn ir_type_of(value: &IrValue) -> IrType {
 
 #[cfg(feature = "unstable")]
 /// Default (zero/identity) value of a type, produced by guarded-off
-/// transcript reads — mirror of the `pub(crate)` `IrValue::default`
-/// (ir_types.rs:182-203).
+/// transcript reads — mirror of the `pub(crate)` `IrValue::default`.
 fn default_ir_value(val_t: &IrType) -> IrValue {
     match val_t {
         IrType::Native => IrValue::Native(Fr::default()),
-        IrType::Bytes32 => IrValue::Bytes32([0u8; 32]),
+        IrType::Bool => IrValue::Bool(bool::default()),
+        IrType::Byte => IrValue::Byte(u8::default()),
+        IrType::Bytes(n) => IrValue::Bytes(vec![u8::default(); *n as usize]),
         IrType::JubjubPoint => IrValue::JubjubPoint(JubjubSubgroup::default()),
         IrType::JubjubScalar => IrValue::JubjubScalar(JubjubFr::default()),
         IrType::Secp256k1Point => IrValue::Secp256k1Point(k256::K256::default()),
@@ -285,7 +305,7 @@ fn input_schema(ir: &IrSource) -> Result<Vec<InputSchema>, Sim3Error> {
         .collect()
 }
 
-// --- operand resolution (ir_vm.rs:227-278) ---------------------------------------
+// --- operand resolution -----------------------------------------------------------
 
 #[cfg(feature = "unstable")]
 fn get(
@@ -298,6 +318,45 @@ fn get(
         .get(id)
         .cloned()
         .ok_or_else(|| fail(at, op, format!("variable not found: {id:?}")))
+}
+
+#[cfg(feature = "unstable")]
+/// The whole bytes a `Native` limb holds — mirror of the `pub(crate)`
+/// `BYTES_PER_FIELD_ELEMENT`.
+const BYTES_PER_FIELD_ELEMENT: usize = 31;
+
+#[cfg(feature = "unstable")]
+/// A `Bytes(32)` value as an array, for the fixed-size ZKIR 3.0 byte
+/// instructions — mirror of the private `ir_value_to_bytes32`.
+fn bytes32(value: IrValue, at: usize, op: &'static str) -> Result<[u8; 32], Sim3Error> {
+    let bytes: Vec<u8> = value.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+    let len = bytes.len();
+    bytes
+        .try_into()
+        .map_err(|_| fail(at, op, format!("expected a Bytes<32> value, got Bytes<{len}>")))
+}
+
+#[cfg(feature = "unstable")]
+/// The operands of a boolean gate, each a `Bool` — mirror of
+/// `resolve_bool_list`.
+fn operand_bools(
+    memory: &HashMap<Identifier, IrValue>,
+    operands: &[Operand],
+    at: usize,
+    op: &'static str,
+) -> Result<Vec<bool>, Sim3Error> {
+    if operands.is_empty() {
+        return Err(fail(at, op, "Boolean gate requires at least one input"));
+    }
+    operands
+        .iter()
+        .map(|o| {
+            let val = operand(memory, o, at, op)?;
+            let t = ir_type_of(&val);
+            bool::try_from(val)
+                .map_err(|_| fail(at, op, format!("Boolean gate expects Bool inputs, found {t:?}")))
+        })
+        .collect()
 }
 
 #[cfg(feature = "unstable")]
@@ -389,7 +448,7 @@ fn from_bits(bits: impl DoubleEndedIterator<Item = bool>) -> Fr {
 
 #[cfg(feature = "unstable")]
 /// Read `width` raw elements from a transcript, or fail. Upstream slices
-/// unchecked (`&transcript[i..i + w]`, ir_vm.rs:359, 378) and therefore
+/// unchecked (`&transcript[i..i + w]`) and therefore
 /// *panics* on exhaustion; this is the one place the port surfaces an error
 /// instead — same rejection, no panic.
 fn take_raw<'t>(
@@ -452,7 +511,7 @@ pub fn assert_call_compatible(ours: &IrSource, theirs: &IrSource, pi: &ProofPrei
 
 #[cfg(feature = "unstable")]
 /// Simulate one run of `ir` against a complete proof preimage, mirroring
-/// `IrSource::preprocess` (ir_vm.rs:185-691) instruction for instruction.
+/// `IrSource::preprocess` instruction for instruction.
 ///
 /// `preimage.inputs` is the circuit's *encoded* argument list: each argument
 /// occupies `IrType::encoded_len` consecutive raw `Fr` elements.
@@ -476,7 +535,7 @@ pub fn simulate_with(
     let mut walk_failures: Vec<(usize, String)> = Vec::new();
     let mut transcript_truncated = false;
 
-    // Decode the flattened argument list per the input schema (ir_vm.rs:191-211).
+    // Decode the flattened argument list per the input schema.
     let mut idx = 0usize;
     for input in input_schema(ir)? {
         let w = input.val_t.encoded_len();
@@ -499,7 +558,7 @@ pub fn simulate_with(
     }
 
     // The PI vector opens with the binding input, then (when enabled) the
-    // communications commitment (ir_vm.rs:213-221).
+    // communications commitment.
     let mut pis: Vec<Fr> = vec![preimage.binding_input];
     if ir.do_communications_commitment {
         // Under `Mode::Gather` the commitment spans the circuit's OUTPUTS,
@@ -535,7 +594,6 @@ pub fn simulate_with(
         // `Mode::Verify` the closure's first `Err` is the function's.
         let mut step = || -> Result<(), Sim3Error> {
         match ins {
-            // ir_vm.rs:287-299
             I::Encode { input, outputs } => {
                 let val = operand(&memory, input, at, op)?;
                 let encoded = encode_offcircuit(&val);
@@ -553,7 +611,7 @@ pub fn simulate_with(
                     memory.insert(out_id.clone(), enc_val);
                 }
             }
-            // ir_vm.rs:300-321 — typed arithmetic via zkir-v3's own helpers.
+            // Typed arithmetic via zkir-v3's own helpers.
             I::Add { a, b, output } => {
                 let a = operand(&memory, a, at, op)?;
                 let b = operand(&memory, b, at, op)?;
@@ -576,18 +634,30 @@ pub fn simulate_with(
                 let result = inv_offcircuit(&a).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), result);
             }
-            // ir_vm.rs:322-325
             I::Not { a, output } => {
                 let result = IrValue::Native(Fr::from(!operand_bool(&memory, a, at, op)? as u64));
                 memory.insert(output.clone(), result);
             }
-            // ir_vm.rs:326-330
+            // ZKIR 3.1's gates over `Bool` values.
+            I::And { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().all(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Or { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?.into_iter().any(|b| b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
+            I::Xor { inputs, output } => {
+                let result = operand_bools(&memory, inputs, at, op)?
+                    .into_iter()
+                    .fold(false, |acc, b| acc ^ b);
+                memory.insert(output.clone(), IrValue::Bool(result));
+            }
             I::ConstrainEq { a, b } => {
                 let a = operand(&memory, a, at, op)?;
                 let b = operand(&memory, b, at, op)?;
                 constrain_eq_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
             }
-            // ir_vm.rs:331-336
             I::CondSelect { bit, a, b, output } => {
                 let bit_val = operand_bool(&memory, bit, at, op)?;
                 let a_val = operand(&memory, a, at, op)?;
@@ -596,7 +666,6 @@ pub fn simulate_with(
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), result);
             }
-            // ir_vm.rs:337-341
             I::Assert { cond } => {
                 if !operand_bool(&memory, cond, at, op)? {
                     if !gather {
@@ -613,7 +682,6 @@ pub fn simulate_with(
                     transcript_truncated = true;
                 }
             }
-            // ir_vm.rs:342-347
             I::TestEq { a, b, output } => {
                 let a = operand(&memory, a, at, op)?;
                 let b = operand(&memory, b, at, op)?;
@@ -621,7 +689,7 @@ pub fn simulate_with(
                     test_eq_offcircuit(&a, &b).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), IrValue::Native(Fr::from(result as u64)));
             }
-            // ir_vm.rs:348-366 — a guarded-off read yields the type's
+            // A guarded-off read yields the type's
             // default and consumes nothing.
             I::PublicInput {
                 guard,
@@ -678,7 +746,6 @@ pub fn simulate_with(
                 };
                 memory.insert(output.clone(), val);
             }
-            // ir_vm.rs:367-386
             I::PrivateInput {
                 guard,
                 val_t,
@@ -704,20 +771,16 @@ pub fn simulate_with(
                 };
                 memory.insert(output.clone(), val);
             }
-            // ir_vm.rs:387-390
             I::Copy { val, output } => {
                 let val = operand(&memory, val, at, op)?;
                 memory.insert(output.clone(), val);
             }
-            // ir_vm.rs:391
             I::ConstrainToBoolean { val } => {
                 operand_bool(&memory, val, at, op)?;
             }
-            // ir_vm.rs:392-394
             I::ConstrainBits { val, bits } => {
                 operand_bits(&memory, val, Some(*bits), at, op)?;
             }
-            // ir_vm.rs:395-411
             I::DivModPowerOfTwo { val, bits, outputs } => {
                 if outputs.len() != 2 {
                     return Err(fail(at, op, "DivModPowerOfTwo requires exactly 2 outputs"));
@@ -735,7 +798,6 @@ pub fn simulate_with(
                     IrValue::Native(from_bits(val_bits[..*bits as usize].iter().copied())),
                 );
             }
-            // ir_vm.rs:412-453
             I::ReconstituteField {
                 divisor,
                 modulus,
@@ -770,13 +832,12 @@ pub fn simulate_with(
                 let divisor = operand_fr(&memory, divisor, at, op)?;
                 memory.insert(output.clone(), IrValue::Native(power * divisor + modulus));
             }
-            // ir_vm.rs:454-462
             I::LessThan { a, b, bits, output } => {
                 let a = from_bits(operand_bits(&memory, a, Some(*bits), at, op)?.into_iter());
                 let b = from_bits(operand_bits(&memory, b, Some(*bits), at, op)?.into_iter());
                 memory.insert(output.clone(), IrValue::Native(Fr::from((a < b) as u64)));
             }
-            // ir_vm.rs:463-467 — reduction mod the Jubjub scalar order.
+            // Reduction mod the Jubjub scalar order.
             I::JubjubScalarFromNative { native, output } => {
                 let x = operand_fr(&memory, native, at, op)?;
                 memory.insert(
@@ -784,7 +845,6 @@ pub fn simulate_with(
                     IrValue::JubjubScalar(native_to_jubjub_scalar(&x)),
                 );
             }
-            // ir_vm.rs:468-477
             I::TransientHash { inputs, output } => {
                 let vals = inputs
                     .iter()
@@ -792,7 +852,7 @@ pub fn simulate_with(
                     .collect::<Result<Vec<Fr>, _>>()?;
                 memory.insert(output.clone(), IrValue::Native(transient_hash(&vals)));
             }
-            // ir_vm.rs:478-506 — SHA-256 / Keccak-256 over the FAB-aligned
+            // SHA-256 / Keccak-256 over the FAB-aligned
             // byte encoding of native inputs; result is Bytes<32>.
             I::PersistentHash {
                 alignment,
@@ -800,6 +860,11 @@ pub fn simulate_with(
                 output,
             }
             | I::Keccak256 {
+                alignment,
+                inputs,
+                output,
+            }
+            | I::Sha512 {
                 alignment,
                 inputs,
                 output,
@@ -817,13 +882,14 @@ pub fn simulate_with(
                 })?;
                 let mut repr = Vec::new();
                 ValueReprAlignedValue(value).binary_repr(&mut repr);
-                let hash_output: [u8; 32] = match ins {
-                    I::PersistentHash { .. } => Sha256::digest(&repr).into(),
-                    _ => Keccak256::digest(&repr).into(),
+                let hash_output: Vec<u8> = match ins {
+                    I::PersistentHash { .. } => Sha256::digest(&repr).to_vec(),
+                    I::Keccak256 { .. } => Keccak256::digest(&repr).to_vec(),
+                    _ => Sha512::digest(&repr).to_vec(),
                 };
-                memory.insert(output.clone(), IrValue::Bytes32(hash_output));
+                memory.insert(output.clone(), IrValue::Bytes(hash_output));
             }
-            // ir_vm.rs:507-543 — v3's public-input block. A guarded-off
+            // The public-input block. A guarded-off
             // Impact still pushes `count` *zeros* into the PI vector
             // (matching the in-circuit `select(guard, x, 0)`) and records
             // the skip; a taken one pushes the values and checks them
@@ -871,7 +937,6 @@ pub fn simulate_with(
                     }
                 }
             }
-            // ir_vm.rs:544-552
             I::HashToCurve { inputs, output } => {
                 let vals = inputs
                     .iter()
@@ -879,19 +944,21 @@ pub fn simulate_with(
                     .collect::<Result<Vec<Fr>, _>>()?;
                 memory.insert(output.clone(), IrValue::JubjubPoint(hash_to_curve(&vals).0));
             }
-            // ir_vm.rs:553-558
             I::EcMul { a, scalar, output } => {
                 let p = operand(&memory, a, at, op)?;
                 let s = operand(&memory, scalar, at, op)?;
                 let r = ec_mul_offcircuit(&p, &s).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), r);
             }
-            // ir_vm.rs:559-568
             I::EcMulGenerator { scalar, output } => {
                 let s = operand(&memory, scalar, at, op)?;
                 let p = match ir_type_of(&s) {
                     IrType::JubjubScalar => IrValue::JubjubPoint(JubjubSubgroup::generator()),
                     IrType::Secp256k1Scalar => IrValue::Secp256k1Point(k256::K256::generator()),
+                    IrType::Secp256r1Scalar => IrValue::Secp256r1Point(p256::P256::generator()),
+                    IrType::Curve25519Scalar => {
+                        IrValue::Curve25519Point(curve25519::Curve25519Subgroup::generator())
+                    }
                     t => {
                         return Err(fail(
                             at,
@@ -903,7 +970,6 @@ pub fn simulate_with(
                 let r = ec_mul_offcircuit(&p, &s).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), r);
             }
-            // ir_vm.rs:569-574
             I::IntoCoordinates { point, outputs } => {
                 let p = operand(&memory, point, at, op)?;
                 let coordinates =
@@ -911,7 +977,6 @@ pub fn simulate_with(
                 memory.insert(outputs.0.clone(), coordinates.0);
                 memory.insert(outputs.1.clone(), coordinates.1);
             }
-            // ir_vm.rs:575-580
             I::FromCoordinates { inputs, output } => {
                 let x = operand(&memory, &inputs.0, at, op)?;
                 let y = operand(&memory, &inputs.1, at, op)?;
@@ -919,55 +984,152 @@ pub fn simulate_with(
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), p);
             }
-            // ir_vm.rs:581-585
-            I::IntoBytes32 { input, output } => {
+            I::ToBytes { input, output } => {
                 let x = operand(&memory, input, at, op)?;
-                let bytes =
-                    into_bytes32_offcircuit(&x).map_err(|e| fail(at, op, format!("{e}")))?;
+                let bytes = to_bytes_offcircuit(&x).map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), bytes);
             }
-            // ir_vm.rs:586-595
+            // The ZKIR 3.0 instruction, fixed at `Bytes(32)`.
+            I::IntoBytes32 { input, output } => {
+                let x = operand(&memory, input, at, op)?;
+                let bytes = to_bytes_offcircuit(&x)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                memory.insert(output.clone(), IrValue::Bytes(bytes.to_vec()));
+            }
+            I::FromBytes {
+                val_t,
+                bytes,
+                output,
+            } => {
+                let bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), x);
+            }
+            // The ZKIR 3.0 instruction, `Bytes(32)` only.
             I::FromBytes32 {
                 val_t,
                 bytes,
                 output,
             } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let bytes: [u8; 32] = bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
-                let x = from_bytes32_offcircuit(val_t, &bytes)
+                let bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
+                let x = from_bytes_offcircuit(val_t, &bytes)
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(output.clone(), x);
             }
-            // ir_vm.rs:596-601
-            I::ReverseBytes { bytes, output } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let mut bytes: [u8; 32] =
-                    bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+            // `ReverseBytes` is `Reverse`'s ZKIR 3.0 name.
+            I::Reverse { bytes, output } | I::ReverseBytes { bytes, output } => {
+                let mut bytes: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
                 bytes.reverse();
-                memory.insert(output.clone(), IrValue::Bytes32(bytes));
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
             }
-            // ir_vm.rs:602-610 — low = first 31 bytes LE, high = last byte.
+            I::Slice {
+                bytes,
+                start,
+                len,
+                output,
+            } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let (s, l) = (*start as usize, *len as usize);
+                if l == 0 {
+                    return Err(fail(at, op, "slice length must be at least 1"));
+                }
+                let end = s.checked_add(l).filter(|end| *end <= bs.len()).ok_or_else(|| {
+                    fail(at, op, format!("slice out of bounds: {s}..{s}+{l} into Bytes<{}>", bs.len()))
+                })?;
+                memory.insert(output.clone(), IrValue::Bytes(bs[s..end].to_vec()));
+            }
+            I::BytesIntoNatives { bytes, outputs } => {
+                let value = operand(&memory, bytes, at, op)?;
+                if !matches!(value, IrValue::Bytes(_)) {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesIntoNatives expects a Bytes input, found {:?}", ir_type_of(&value)),
+                    ));
+                }
+                let encoded = encode_offcircuit(&value);
+                if encoded.len() != outputs.len() {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesIntoNatives: {:?} packs into {} field elements but the instruction has {} outputs",
+                            ir_type_of(&value),
+                            encoded.len(),
+                            outputs.len()
+                        ),
+                    ));
+                }
+                for (out_id, enc_val) in outputs.iter().zip(encoded) {
+                    memory.insert(out_id.clone(), enc_val);
+                }
+            }
+            // With `bytes_from_natives_nb_limbs` (private upstream) inlined.
+            I::BytesFromNatives { inputs, len, output } => {
+                if *len == 0 || *len > MAX_BYTES_LEN {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("BytesFromNatives: output length {len} is not in 1..={MAX_BYTES_LEN}"),
+                    ));
+                }
+                let nb_limbs = (*len as usize).div_ceil(BYTES_PER_FIELD_ELEMENT);
+                if inputs.len() != nb_limbs {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: a Bytes<{len}> unpacks from {nb_limbs} field elements \
+                             but the instruction has {} inputs",
+                            inputs.len()
+                        ),
+                    ));
+                }
+                let encoded = inputs
+                    .iter()
+                    .map(|i| operand_fr(&memory, i, at, op))
+                    .collect::<Result<Vec<Fr>, _>>()?;
+                let value = decode_offcircuit(&encoded, &IrType::Bytes(*len)).map_err(|_| {
+                    fail(
+                        at,
+                        op,
+                        format!(
+                            "BytesFromNatives: every input must fit in the number of bytes it \
+                             contributes to the output ({BYTES_PER_FIELD_ELEMENT} bytes, except \
+                             the last one, which contributes {})",
+                            *len as usize - BYTES_PER_FIELD_ELEMENT * (nb_limbs - 1)
+                        ),
+                    )
+                })?;
+                memory.insert(output.clone(), value);
+            }
+            // Low = first 31 bytes LE, high = last byte.
             I::Bytes32IntoLowHigh { bytes, outputs } => {
-                let bytes = operand(&memory, bytes, at, op)?;
-                let mut bytes: [u8; 32] =
-                    bytes.try_into().map_err(|e| fail(at, op, format!("{e}")))?;
+                let mut bytes = bytes32(operand(&memory, bytes, at, op)?, at, op)?;
                 let high = IrValue::Native(Fr::from(bytes[31] as u64));
                 bytes[31] = 0;
-                let low = from_bytes32_offcircuit(&IrType::Native, &bytes)
+                let low = from_bytes_offcircuit(&IrType::Native, &bytes)
                     .map_err(|e| fail(at, op, format!("{e}")))?;
                 memory.insert(outputs.0.clone(), low);
                 memory.insert(outputs.1.clone(), high);
             }
-            // ir_vm.rs:611-624
             I::Bytes32FromLowHigh { inputs, output } => {
                 let low = operand(&memory, &inputs.0, at, op)?;
                 let high = operand(&memory, &inputs.1, at, op)?;
-                let bytes_low: [u8; 32] = into_bytes32_offcircuit(&low)
-                    .and_then(TryInto::try_into)
-                    .map_err(|e| fail(at, op, format!("{e}")))?;
-                let bytes_high: [u8; 32] = into_bytes32_offcircuit(&high)
-                    .and_then(TryInto::try_into)
-                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let bytes_low = to_bytes_offcircuit(&low)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
+                let bytes_high = to_bytes_offcircuit(&high)
+                    .map_err(|e| fail(at, op, format!("{e}")))
+                    .and_then(|b| bytes32(b, at, op))?;
                 if bytes_low[31] != 0 || bytes_high[1..].iter().any(|b| *b != 0) {
                     return Err(fail(
                         at,
@@ -978,9 +1140,51 @@ pub fn simulate_with(
                 }
                 let mut out_bytes = bytes_low;
                 out_bytes[31] = bytes_high[0];
-                memory.insert(output.clone(), IrValue::Bytes32(out_bytes));
+                memory.insert(output.clone(), IrValue::Bytes(out_bytes.to_vec()));
             }
-            // ir_vm.rs:625-644 — outputs are type-checked against the
+            I::Nth { bytes, index, output } => {
+                let bs: Vec<u8> = operand(&memory, bytes, at, op)?
+                    .try_into()
+                    .map_err(|e| fail(at, op, format!("{e}")))?;
+                let k = *index as usize;
+                if k >= bs.len() {
+                    return Err(fail(at, op, format!("nth out of bounds: index {k} into Bytes<{}>", bs.len())));
+                }
+                memory.insert(output.clone(), IrValue::Byte(bs[k]));
+            }
+            I::Concat { inputs, output } => {
+                let mut bytes = vec![];
+                for input in inputs {
+                    match operand(&memory, input, at, op)? {
+                        IrValue::Byte(b) => bytes.push(b),
+                        IrValue::Bytes(bs) => bytes.extend(bs),
+                        other => {
+                            return Err(fail(
+                                at,
+                                op,
+                                format!("Concat expects Byte or Bytes inputs, found {:?}", ir_type_of(&other)),
+                            ))
+                        }
+                    }
+                }
+                if bytes.is_empty() {
+                    return Err(fail(at, op, "Concat requires at least one byte of input"));
+                }
+                if bytes.len() > MAX_BYTES_LEN as usize {
+                    return Err(fail(
+                        at,
+                        op,
+                        format!("Concat result length {} exceeds MAX_BYTES_LEN ({MAX_BYTES_LEN})", bytes.len()),
+                    ));
+                }
+                memory.insert(output.clone(), IrValue::Bytes(bytes));
+            }
+            I::LoadConstant { val_t, encoding, output } => {
+                let value =
+                    decode_offcircuit(encoding, val_t).map_err(|e| fail(at, op, format!("{e}")))?;
+                memory.insert(output.clone(), value);
+            }
+            // Outputs are type-checked against the
             // circuit's output signature.
             I::Output { vals } => {
                 if vals.len() != ir.outputs.len() {
@@ -1023,7 +1227,7 @@ pub fn simulate_with(
         }
     }
 
-    // Every transcript must be consumed exactly (ir_vm.rs:648-661). Under
+    // Every transcript must be consumed exactly. Under
     // `Mode::Gather` only the private half is exact: the public halves are
     // the run's own output and its provisional input.
     let public_halves_consumed = gather
@@ -1042,8 +1246,8 @@ pub fn simulate_with(
     }
 
     // Communications commitment: transient_commit over the *raw* preimage
-    // inputs followed by the encoded outputs (ir_vm.rs:662-681). (The
-    // in-circuit twin at ir_vm.rs:1184-1199 rebuilds the same list from
+    // inputs followed by the encoded outputs. (The
+    // in-circuit twin rebuilds the same list from
     // memory, skipping absent inputs — off-circuit every declared input was
     // decoded into memory above, so the lists coincide.)
     if ir.do_communications_commitment && !gather {

@@ -38,7 +38,7 @@ use core::marker::PhantomData;
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_ledger::{XcallCommitment, XcallEntryPointHash};
+use minocrab_ledger::XcallCommitment;
 use minocrab_std::v3::blind::{Add, Max};
 use minocrab_std::v3::{
     label, own_public_key, repr_limbs, Disclose, DisclosureLabel, FieldPath, LedgerRepr,
@@ -65,7 +65,6 @@ pub type Emitted = (
     HandleEmitted,
     RequestIdFiled,
     RequestRecordFiled,
-    XcallEntryPointHash,
     XcallCommitment,
 );
 
