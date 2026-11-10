@@ -11,7 +11,7 @@
 //!   offset, width)` rows.
 //! - [`deployed`] — the deployed bytes, built with the protocol's own code:
 //!   FAB `binary_repr` for the hash preimages, the `Misc` envelope for the
-//!   singleton's logs, and the proof preimage that lets the CORPUS ARTIFACT
+//!   signet signer's logs, and the proof preimage that lets the CORPUS ARTIFACT
 //!   be asked whether it accepts them.
 //! - [`records`] — the bridge from the reference model's scenarios to the
 //!   spec types.

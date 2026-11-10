@@ -149,7 +149,7 @@ lists the seventeen; the bench's target table remapped to the new names
 
 * 2. C — the benchmark re-run (2026-09-05)
 Wiring: =minocrab-bench='s target table is the seventeen circuits plus
-the singleton's three, two sides (=minocrab=, =compactc=), preimages
+the signet signer's three, two sides (=minocrab=, =compactc=), preimages
 shared (dumped by the differential suite, so both sides prove the same
 statement per cell). Run as =./bench.sh= from the flake shell, fresh
 (=target/bench/results.jsonl= removed first): 40 cells, ~12 minutes.

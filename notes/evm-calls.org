@@ -595,7 +595,7 @@ The vault's seventeen circuits re-expressed on the typed API, and what
 they replaced retired. NINE REQUEST CIRCUITS AND =claim= ARE
 BYTE-IDENTICAL (the 211-circuit dump: =diff -rq= names exactly the eight
 settles and nothing else — treasury's three, the compat port's, the
-singleton's, every other lineage's file unchanged).
+signet signer's, every other lineage's file unchanged).
 
 ** Per circuit
 | circuit             | verdict                                     |

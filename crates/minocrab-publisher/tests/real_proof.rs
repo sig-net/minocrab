@@ -87,7 +87,7 @@ fn peak_rss_bytes() -> u64 {
     if cfg!(target_os = "macos") { raw } else { raw * 1024 }
 }
 
-/// One publish, end to end, against the singleton at `address` — the whole
+/// One publish, end to end, against the signet signer at `address` — the whole
 /// point of the crate, in eight arguments because every one of them is an
 /// input the chain or the operator supplies rather than something the
 /// publisher invents.
@@ -199,7 +199,7 @@ fn a_respond_intent_publishes_and_verifies() {
             pk_bytes.len() as f64 / 1e6
         );
 
-        // 3. Deploy the singleton under the committed keys, and a permuted-key
+        // 3. Deploy the signet signer under the committed keys, and a permuted-key
         // twin for the negative control.
         let (ledger, address) =
             deploy_singleton(singleton_contract_state(|c| Some(managed_verifier_key(c))), tblock);
@@ -252,7 +252,7 @@ fn a_respond_intent_publishes_and_verifies() {
             rss.saturating_sub(baseline_rss) as f64 / 1e6
         );
 
-        // 7. The negative control: the same publish, offered to a singleton
+        // 7. The negative control: the same publish, offered to a signet signer
         // whose respond operation carries ANOTHER circuit's verifier key.
         // Without this, step 6 passing would be consistent with nothing being
         // verified at all.

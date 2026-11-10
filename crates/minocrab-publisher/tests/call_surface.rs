@@ -161,7 +161,7 @@ fn a_circuit_outside_the_expected_vk_table_has_no_key_location() {
 /// `tests/signet_ledger_apply.rs` checks all 288 bytes against two captured
 /// transactions).
 #[test]
-fn a_respond_call_lays_its_signature_out_where_the_singleton_says() {
+fn a_respond_call_lays_its_signature_out_where_the_signet_signer_says() {
     let (rid, sig) = (request_id(), signature());
     // ONE ROW TODAY: `respondBidirectional` has its own test below, since
     // its payload carries the attestation. The loop stays a table so
@@ -195,7 +195,7 @@ fn a_respond_call_lays_its_signature_out_where_the_singleton_says() {
 /// LE(8) ‖ outputKind(1) ‖ length LE(8) ‖ outputHash(32) ‖ digest(32) ‖ x ‖
 /// y ‖ s ‖ recoveryId ‖ zeros(46); sixteen limbs.
 #[test]
-fn a_respond_bidirectional_call_lays_its_attestation_out_where_the_singleton_says() {
+fn a_respond_bidirectional_call_lays_its_attestation_out_where_the_signet_signer_says() {
     let (rid, att, sig) = (request_id(), attestation(), signature());
     let call = respond_bidirectional::<InMemoryDB>(&deployment(), &rid, &att, &sig)
         .expect("respondBidirectional builds");
@@ -222,7 +222,7 @@ fn a_respond_bidirectional_call_lays_its_attestation_out_where_the_singleton_say
 /// `pad(32, name)` ‖ version(1) ‖ requestId(32) ‖ payload(128) ‖ zeros(95),
 /// and eight argument limbs.
 #[test]
-fn sign_bidirectional_lays_its_notification_out_where_the_singleton_says() {
+fn sign_bidirectional_lays_its_notification_out_where_the_signet_signer_says() {
     let (rid, note) = (request_id(), notification());
     let call =
         sign_bidirectional::<InMemoryDB>(&deployment(), &rid, &note).expect("it builds");
@@ -268,7 +268,7 @@ fn the_prototype_carries_the_call() {
         respond::<InMemoryDB>(&deployment(), &request_id(), &signature()).expect("respond builds");
     let proto = call
         .prototype(&empty_state(), &INITIAL_PARAMETERS, Fr::from(0x516_e37u64))
-        .expect("the singleton's Push+Log program partitions");
+        .expect("the signet signer's Push+Log program partitions");
 
     assert_eq!(proto.entry_point.as_ref(), RESPOND.as_bytes());
     assert_eq!(proto.address, deployment().address);
@@ -277,7 +277,7 @@ fn the_prototype_carries_the_call() {
     assert!(proto.private_transcript_outputs.is_empty());
 
     // One guaranteed transcript, no fallible one: mpc's reader REFUSES a
-    // singleton call that carries a fallible transcript
+    // signet signer call that carries a fallible transcript
     // (`UnsupportedFallibleCall`).
     let guaranteed = proto.guaranteed_public_transcript.expect("a guaranteed transcript");
     assert!(proto.fallible_public_transcript.is_none());

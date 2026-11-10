@@ -59,7 +59,7 @@ pub fn chain_context(tblock: Timestamp) -> ChainContext<InMemoryDB> {
     }
 }
 
-/// The singleton as this repo would deploy it: NO ledger fields (all three
+/// The signet signer as this repo would deploy it: NO ledger fields (all three
 /// signer circuits are stateless), one operation per circuit under whatever
 /// verifier key `key` supplies.
 pub fn singleton_contract_state(
@@ -93,7 +93,7 @@ pub fn tx_context(
     }
 }
 
-/// `ContractDeploy` the singleton into a fresh `LedgerState`, `well_formed`
+/// `ContractDeploy` the signet signer into a fresh `LedgerState`, `well_formed`
 /// it and `apply` it — the state a respond call is then published against.
 ///
 /// The deploy itself is built with the publisher's own intent helpers, so the
@@ -110,11 +110,11 @@ pub fn deploy_singleton(
     let tx = preimage_tx(NETWORK_ID, SEGMENT, intent);
     let vtx = tx
         .well_formed(&ledger, unbalanced_strictness(), tblock)
-        .expect("the singleton deploy is well formed");
+        .expect("the signet signer deploy is well formed");
     let (after, result) = ledger.apply(&vtx, &tx_context(&ledger, tblock));
     assert!(
         matches!(result, TransactionResult::Success(_)),
-        "the singleton deploy must apply: {result:?}"
+        "the signet signer deploy must apply: {result:?}"
     );
     (after, address)
 }
@@ -125,7 +125,7 @@ pub fn deploy_singleton(
 pub type ProvenGolden =
     Transaction<Signature, ProofMarker, <ProofMarker as ProofKind<InMemoryDB>>::Pedersen, InMemoryDB>;
 
-/// One decoded singleton emission: the 288-byte Misc split
+/// One decoded signet signer emission: the 288-byte Misc split
 /// `name(32) ‖ payload(256)`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Emission {
@@ -164,7 +164,7 @@ pub fn emission_of(item: &VersionedLogItem<InMemoryDB>, who: &str) -> Emission {
     Emission { name, payload }
 }
 
-/// Decode one of M29 D's fixtures and return the singleton call's emission.
+/// Decode one of M29 D's fixtures and return the signet signer call's emission.
 ///
 /// The SHA-256 assertion is both the integrity check and the provenance pin:
 /// each fixture's hash IS the ledger transaction hash the capture recorded
@@ -192,11 +192,11 @@ pub fn golden_emission(bytes: &[u8], expected_sha256: &str, who: &str) -> Emissi
         assert!(found.is_none(), "{who}: more than one logging call");
         found = Some(emission_of(&results.events[0], who));
     }
-    found.unwrap_or_else(|| panic!("{who}: no singleton call in the captured transaction"))
+    found.unwrap_or_else(|| panic!("{who}: no signet signer call in the captured transaction"))
 }
 
 /// The signature and request id a captured respond event carries, at the
-/// offsets the singleton's layout declares: requestId(32) ‖ x(32) ‖ y(32) ‖
+/// offsets the signet signer's layout declares: requestId(32) ‖ x(32) ‖ y(32) ‖
 /// s(32) ‖ recoveryId(1) ‖ zeros(127).
 pub fn signature_of(emission: &Emission) -> ([u8; 32], minocrab_publisher::EcdsaSignature) {
     let at = |from: usize| -> [u8; 32] {

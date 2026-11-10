@@ -231,7 +231,7 @@ The Borsh layer belongs here as a safety feature in its own right:
   `complete_*_constrains_the_bool_output`).
 - Dual oracle: `borsh::to_vec(v) == bincode-fixint(v)` for every spec type over
   generated values, closed against the **deployed bytes** themselves — the
-  singleton's `Misc` envelope is handed to the pinned compactc artifact, which
+  signet signer's `Misc` envelope is handed to the pinned compactc artifact, which
   accepts it and rejects it as soon as any one of the 288 bytes moves, including
   a byte of the zero pad ([notes/borsh-format.org §"stage 0"](notes/borsh-format.org)).
 

@@ -240,7 +240,7 @@ Not taken yet:
 - =--release= speed (real proofs + =LedgerState= + =Transaction::apply=):
   =Executed::preimage= is exactly what =support/signet_call.rs= wants, so
   the seam is a constructor away, but nothing wires it.
-- The executor is single-call. Cross-contract calls (the singleton's
+- The executor is single-call. Cross-contract calls (the signet signer's
   =signBidirectional=) are NOT executed: the xcall's arguments ride the
   communications commitment, and the callee's own transcript would need its
   own =execute= against its own state. =partition_transcripts= upstream is

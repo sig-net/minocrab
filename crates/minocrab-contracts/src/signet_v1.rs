@@ -688,7 +688,7 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaB
 /// blockHeight: Uint<64>, outputKind: OutputKind, serializedOutputLength:
 /// Uint<64>, digest: Bytes<32>, signature: Signature }` at 0.24.1 — the
 /// attestation the vault's `queueAttestation*` circuits take. The deployed
-/// singleton's struct (`signet_signer_interface::RespondBidirectionalEventV1`,
+/// signet signer's struct (`signet_signer_interface::RespondBidirectionalEventV1`,
 /// 0.25.0) also carries `outputHash`; the two share every other field.
 #[derive(Clone, CircuitArg)]
 pub struct RespondBidirectionalEventV1<V: Vis3> {

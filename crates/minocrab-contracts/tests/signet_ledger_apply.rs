@@ -7,13 +7,13 @@
 //! nothing about whether the bytes it emits are the bytes `sig-net/mpc`'s
 //! reader decodes off a real chain. This rung closes both, per circuit:
 //!
-//! 1. `ContractDeploy` a singleton whose three operations carry OUR verifier
+//! 1. `ContractDeploy` a signet signer whose three operations carry OUR verifier
 //!    keys (`crates/signet-artifacts/managed/keys/*.verifier`, the committed
 //!    artifacts of M29 A) into a fresh `LedgerState`, and apply it.
 //! 2. Read the GOLDEN — a real, finalized `respond` /
 //!    `respondBidirectional` transaction captured from a chain running
-//!    compactc's artifact of the deployed singleton
-//!    (`tests/fixtures/mpc/README.md`) — decode its singleton call's
+//!    compactc's artifact of the deployed signet signer
+//!    (`tests/fixtures/mpc/README.md`) — decode its signet signer call's
 //!    emission exactly the way `chain-midnight/src/emissions.rs` does, and
 //!    take the request id and signature OUT of it.
 //! 3. Build our own respond call on those same values, through the rung-C
@@ -31,7 +31,7 @@
 //! |---|---|
 //! | `ContractCall::entry_point` | the sidecar addresses the circuit by this name; a mismatch is an unroutable call |
 //! | the guaranteed transcript's Impact program, op for op | this IS the emission: `Push` of `[Bytes<4> version, Bytes<1> tag, Bytes<288> data]`, then `Log` |
-//! | `fallible_transcript` is `None` on both | mpc's reader REFUSES a singleton call that has one (`UnsupportedFallibleCall`) |
+//! | `fallible_transcript` is `None` on both | mpc's reader REFUSES a signet signer call that has one (`UnsupportedFallibleCall`) |
 //! | `Transcript::version` is present | `well_formed` rejects a call against a v3-keyed operation whose transcript declares no version |
 //! | the emitted `VersionedLogItem::version` (1) and `event_type` (`Misc`) | mpc's `emission_from_log_item` checks both before it looks at any byte |
 //! | the logged cell's alignment: exactly one `Bytes<288>` atom | ditto — "emission-schema: Misc data is not one Bytes<288> atom" |
@@ -41,11 +41,11 @@
 //!
 //! | field | why |
 //! |---|---|
-//! | `ContractCall::address` | the golden's singleton is the capture chain's deployment (`b116cd04…`); ours is a fresh `ContractDeploy` whose address is derived from its own nonce and initial state. It cannot match without replaying their deployment, which is impossible by construction — their operations carry compactc's verifier keys and ours carry MinoCrab's, and that difference is the whole point of the swap. |
+//! | `ContractCall::address` | the golden's signet signer is the capture chain's deployment (`b116cd04…`); ours is a fresh `ContractDeploy` whose address is derived from its own nonce and initial state. It cannot match without replaying their deployment, which is impossible by construction — their operations carry compactc's verifier keys and ours carry MinoCrab's, and that difference is the whole point of the swap. |
 //! | `ContractCall::communication_commitment` | `transient_commit(input ‖ output, rand)` over a per-call `rand`; the sidecar sampled theirs, this suite pins ours so dumped preimages are reproducible. |
 //! | `ContractCall::proof` | theirs is a real `ProofVersioned::V3`; ours is `ProofPreimageVersioned::V2`. This gate runs under the proof-preimage marker, where `ProofKind::proof_verify` is a no-op — rung E carries the proven one. |
 //! | intent `binding_commitment` and `ttl`; transaction `binding_randomness` and `network_id` | per transaction and per chain. |
-//! | `Transcript::gas` | the DECLARED cost, computed by `partition_transcripts` under whichever `LedgerParameters` the builder held. Both sides agree on `bytes_written`/`bytes_deleted` (678) and on a zero `read_time` — the singleton reads nothing — but the golden declares `compute_time` 2.208 ms where ours declares 1.303 ms, because theirs was partitioned by the sidecar against the capture chain's parameters and ours against `INITIAL_PARAMETERS`. Printed by the test for the record, not asserted; the transaction applies under our pin at our figure, which is what `apply` checks. |
+//! | `Transcript::gas` | the DECLARED cost, computed by `partition_transcripts` under whichever `LedgerParameters` the builder held. Both sides agree on `bytes_written`/`bytes_deleted` (678) and on a zero `read_time` — the signet signer reads nothing — but the golden declares `compute_time` 2.208 ms where ours declares 1.303 ms, because theirs was partitioned by the sidecar against the capture chain's parameters and ours against `INITIAL_PARAMETERS`. Printed by the test for the record, not asserted; the transaction applies under our pin at our figure, which is what `apply` checks. |
 //! | `Transcript::effects` | same reason. |
 //!
 //! The payload VALUES match only because step 2 feeds the golden's own
@@ -98,7 +98,7 @@ const RESPOND_TX_161_SHA256: &str =
 const RESPOND_BIDIRECTIONAL_TX_181_SHA256: &str =
     "5291b70cbdfe7a095828a2c6c94cf5b89f7eb2a94e22c2c4953d7706067ef17a";
 
-/// The capture chain's singleton address (`README.md`).
+/// The capture chain's signet signer address (`README.md`).
 const CAPTURE_SINGLETON: [u8; 32] = [
     0xb1, 0x16, 0xcd, 0x04, 0x82, 0xb8, 0x49, 0x22, 0xe7, 0x61, 0x27, 0x8a, 0x25, 0xd1, 0xee, 0x23,
     0x05, 0xfd, 0x6d, 0x63, 0x0f, 0x0d, 0x48, 0x95, 0x4d, 0x2a, 0xf6, 0x53, 0x7f, 0x8e, 0x21, 0x4e,
@@ -134,7 +134,7 @@ fn golden(bytes: &[u8], expected_sha256: &str, who: &str) -> ProvenTx {
 
 // ---- the emission decoder (mpc's, translated) ------------------------------
 
-/// One decoded singleton emission: the 288-byte Misc split the way
+/// One decoded signet signer emission: the 288-byte Misc split the way
 /// `chain-midnight/src/emissions.rs` splits it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct Emission {
@@ -171,10 +171,10 @@ fn emission_from_log_item(item: &VersionedLogItem<InMemoryDB>, who: &str) -> Emi
     Emission { name, payload }
 }
 
-/// The golden's singleton call: entry point, guaranteed transcript program,
+/// The golden's signet signer call: entry point, guaranteed transcript program,
 /// and the emission that program produces under the ledger VM —
 /// `emissions_of_call`'s path (a `QueryContext` over an empty state, since
-/// the singleton is stateless).
+/// the signet signer is stateless).
 struct GoldenCall {
     entry_point: EntryPointBuf,
     program: Vec<VmOp>,
@@ -187,15 +187,15 @@ fn golden_call(tx: &ProvenTx, who: &str) -> GoldenCall {
         if call.address.0 .0 != CAPTURE_SINGLETON {
             continue;
         }
-        assert!(found.is_none(), "{who}: more than one singleton call");
+        assert!(found.is_none(), "{who}: more than one signet signer call");
         assert!(
             call.fallible_transcript.is_none(),
-            "{who}: the singleton call carries a fallible transcript"
+            "{who}: the signet signer call carries a fallible transcript"
         );
         let transcript = call
             .guaranteed_transcript
             .as_deref()
-            .unwrap_or_else(|| panic!("{who}: the singleton call has no guaranteed transcript"));
+            .unwrap_or_else(|| panic!("{who}: the signet signer call has no guaranteed transcript"));
         assert!(transcript.version.is_some(), "{who}: the captured transcript declares a version");
         let program: Vec<VmOp> = Vec::from(&transcript.program);
         let results = QueryContext::new(empty_state(), call.address)
@@ -203,7 +203,7 @@ fn golden_call(tx: &ProvenTx, who: &str) -> GoldenCall {
             .unwrap_or_else(|e| {
                 panic!("{who}: the ledger VM rejected the captured transcript: {e}")
             });
-        assert_eq!(results.events.len(), 1, "{who}: emissions in the singleton call");
+        assert_eq!(results.events.len(), 1, "{who}: emissions in the signet signer call");
         println!("{who}: captured transcript gas {:?}", transcript.gas);
         found = Some(GoldenCall {
             entry_point: call.entry_point.clone(),
@@ -211,7 +211,7 @@ fn golden_call(tx: &ProvenTx, who: &str) -> GoldenCall {
             emission: emission_from_log_item(&results.events[0], who),
         });
     }
-    found.unwrap_or_else(|| panic!("{who}: no singleton call in the captured transaction"))
+    found.unwrap_or_else(|| panic!("{who}: no signet signer call in the captured transaction"))
 }
 
 // ---- our side: deploy, build, well_formed, apply ---------------------------
@@ -240,7 +240,7 @@ fn apply_respond_call(
     )
 }
 
-/// Deploy the singleton under the committed keys, build ONE call of
+/// Deploy the signet signer under the committed keys, build ONE call of
 /// `entry_point` over `misc` and `input`, `well_formed` and `apply` it, and
 /// return what the chain would carry.
 fn apply_call(entry_point: &str, misc: &[u8], input: AlignedValue) -> AppliedCall {
@@ -325,7 +325,7 @@ fn respond_matches_the_golden(
     );
 
     // Take the signature out of the golden's payload at the offsets the
-    // singleton's layout declares — requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖
+    // signet signer's layout declares — requestId(32) ‖ x(32) ‖ y(32) ‖ s(32) ‖
     // recoveryId(1) ‖ zeros(127) — and rebuild the same call here.
     let at = |from: usize| -> [u8; 32] {
         let mut out = [0u8; 32];
@@ -367,7 +367,7 @@ fn respond_apply_matches_the_captured_transaction() {
 
 /// The captured `respondBidirectional` transaction predates the attestation
 /// layout: its payload is the OLD one (requestId ‖ signature ‖ zeros), and
-/// the singleton this crate ports (midnight-integration v0.25.0) emits
+/// the signet signer this crate ports (midnight-integration v0.25.0) emits
 /// requestId ‖ blockHeight ‖ outputKind ‖ serializedOutputLength ‖
 /// outputHash ‖ digest ‖ signature ‖ zeros. So this capture no
 /// longer evidences the payload bytes; what it still evidences — and what
@@ -375,7 +375,7 @@ fn respond_apply_matches_the_captured_transaction() {
 /// point, the event name, the request id at offset 0, and the SHAPE of the
 /// Impact program (`push` of the three-cell Misc — version, tag, 288 bytes
 /// — then `log`; the pushed literal itself carries the payload, so it
-/// differs exactly where the payload does). A capture from a chain running the v0.25.0 singleton
+/// differs exactly where the payload does). A capture from a chain running the v0.25.0 signet signer
 /// is owed (`tests/fixtures/mpc/README.md`); when it arrives, this becomes
 /// the full 288-byte comparison `respond` has.
 #[test]
@@ -439,7 +439,7 @@ fn the_deployed_operations_are_our_committed_verifier_keys() {
         singleton_contract_state(|c| Some(managed_verifier_key(c))),
         Timestamp::from_secs(0),
     );
-    let state = ledger.index(address).expect("the singleton is deployed");
+    let state = ledger.index(address).expect("the signet signer is deployed");
     for circuit in SIGNER_CIRCUITS {
         let ep: EntryPointBuf = circuit.as_bytes().into();
         let op = state

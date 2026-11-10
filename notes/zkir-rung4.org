@@ -95,7 +95,7 @@ Forty records; 28 honest, 12 tampered; 29 accepting, 11 rejecting.
 | side | records | why these |
 |---|---|---|
 | erc20-vault | 17 honest | every circuit of the M28 seventeen-circuit vault — the milestone's own target, and the only side where the leakage inventory's claims live |
-| Signet singleton | 3 honest (=signBidirectional=, =respond=, =respondBidirectional=) | the emit-only shape: =add= / =mul= / =div_mod_power_of_two= / =impact= and nothing else, so a failure here is the WALK, not an intrinsic |
+| Signet signer | 3 honest (=signBidirectional=, =respond=, =respondBidirectional=) | the emit-only shape: =add= / =mul= / =div_mod_power_of_two= / =impact= and nothing else, so a failure here is the WALK, not an intrinsic |
 | AA-manager | 8 honest (=depositShielded=, and seven preimages of =execute=) | =depositShielded= is persistent_hash + transient_hash; =execute= is the only circuit in the workspace carrying keccak256 AND persistent_hash AND transient_hash AND a full secp256k1 ECDSA verification, and its seven preimages take seven different branches through it |
 
 Intrinsic coverage, counted from the artifacts the records name:
@@ -169,7 +169,7 @@ whatever precedes it. All three facts have vectors.
 Jubjub (=hash_to_curve=, =jubjub_scalar_from_native=, the point/scalar
 arithmetic and encodings), secp256r1, and curve25519 stay uninterpreted
 at rung 4. §5's rule is explicit — port them ONLY if a record exercises
-them — and none does: the vault, the Signet singleton and the AA-manager
+them — and none does: the vault, the signet signer and the AA-manager
 between them contain no Jubjub, r1 or 25519 value. The one workspace
 circuit that touches Jubjub (=opaque::op_jubjub=, an =encode= of a
 Jubjub value) has no dumped preimage, because no differential suite

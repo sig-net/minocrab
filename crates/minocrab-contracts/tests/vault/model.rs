@@ -135,7 +135,7 @@ pub fn tagged32(tag: &[u8], top: u8) -> [u8; 32] {
 // ---- the environment -------------------------------------------------------------------
 
 /// The configuration cells every circuit may read, plus the call context:
-/// the contract's own address, the singleton's, the MPC key's secret seed
+/// the contract's own address, the signet signer's, the MPC key's secret seed
 /// and the signer's entry-point hash.
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -160,7 +160,7 @@ pub struct Env {
     pub signer_addr: [u8; 32],
     /// The MPC response key's secret scalar seed.
     pub key_seed: u64,
-    /// The singleton's `signBidirectional` entry-point hash.
+    /// The signet signer's `signBidirectional` entry-point hash.
     pub ep: [u8; 32],
 }
 

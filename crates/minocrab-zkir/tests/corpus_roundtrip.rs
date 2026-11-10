@@ -84,7 +84,7 @@ fn round_trips_entire_corpus() {
         // sig-net sources carry --feature-zkir-v3. All 814 pre-existing
         // artifacts are byte-identical under the new compiler.
         // 831/92 → 834/95 at M43 A: the second signet-midnight-integration
-        // pin (pr127, e9350c4) adds the singleton's three v3 circuits at
+        // pin (pr127, e9350c4) adds the signet signer's three v3 circuits at
         // PR #127 beside the fff3421c ones (the Signet module and its
         // circuits.compact compile to no artifact of their own).
         // 834/95 → 849/110 at M44 A: the corpus repinned to
@@ -94,7 +94,7 @@ fn round_trips_entire_corpus() {
         // seventeen-circuit one it replaces, and all fifteen new artifacts
         // are v3.
         // Unchanged when the pr127 pin gave way to v0.25.0 (b62e67e): the
-        // singleton's three v3 circuits replace the three they were.
+        // signet signer's three v3 circuits replace the three they were.
         // 849/110 → 855/855 at the compactc 0.36.0 bump (ledger 9.1.0.1):
         // compactc 0.36 writes only ZKIR v3 (3.1), so every artifact is v3,
         // and compact/examples/secp256k1/arithmetic.compact now compiles

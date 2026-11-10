@@ -6,7 +6,7 @@ publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "M6 baseline benchmark: erc20-vault + Signet singleton under MinoCrab vs compactc"
+description = "M6 baseline benchmark: erc20-vault + signet signer under MinoCrab vs compactc"
 
 [lints]
 workspace = true

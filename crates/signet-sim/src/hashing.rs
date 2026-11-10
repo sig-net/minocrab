@@ -31,7 +31,7 @@ pub fn compute_response_hash(request_id: &[u8; 32], serialized_output: &[u8]) ->
 }
 
 /// The LEGACY request id — keccak256 over the record's byte layout — which
-/// is what the DEPLOYED singleton's callers minted before `fff3421c` and
+/// is what the DEPLOYED signet signer's callers minted before `fff3421c` and
 /// what the MPC's captured fixture carries. Kept so the fixture stays
 /// readable under the rule it was filed under.
 pub fn legacy_request_id(bytes: &[u8]) -> [u8; 32] {

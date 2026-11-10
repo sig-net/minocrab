@@ -114,7 +114,7 @@ finding), notes/borsh-format.org §"Site classification" (the 0x02 hazard).
 * 4. INEFFICIENCY — serialization lowering explodes bytes it could shift
 
 STATUS 2026-09-05 (M31, the 0.34.0 bump): RE-MEASURED, STANDS UNMOVED.
-The deferred bump-time bench was run: the Signet singleton (3 circuits)
+The deferred bump-time bench was run: the signet signer (3 circuits)
 and the vault's seventeen, recompiled from the same sources with both
 0.33.0-rc.2 and 0.34.0 and priced with =minocrab_sim::v3::cost=. Every
 one of the twenty artifacts is BYTE-IDENTICAL between the two
@@ -133,7 +133,7 @@ rows per exploded byte) where ZKIR's own =ReverseBytes= (~150 rows TOTAL) or
 algebraic div_mod shifts do the same work: measured, the mirrored chains cost
 ~4,600 rows where the native instruction costs ~150. On serialization-heavy
 circuits the gap compounds: our segment-based re-limbing produces
-byte-identical semantics at −97.5% rows on the Signet singleton's circuits
+byte-identical semantics at −97.5% rows on the signet signer's circuits
 (respond: k15→k10, 8.24s→0.11s prove, 875MB→44MB). compactc also
 over-serializes relative to its own model on refund (−12%) and completeSwap
 (−15%) even before optimization.

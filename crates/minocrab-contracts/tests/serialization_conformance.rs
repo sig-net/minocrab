@@ -4,7 +4,7 @@
 //! No circuit changes and no new encoder: every byte string on the DEPLOYED
 //! side of an assertion here is produced by the protocol's own code — the
 //! FAB `binary_repr` the ledger holds a record as, the `Misc` envelope the
-//! singleton logs, the reference model M44's differential suite pins to the
+//! signet signer logs, the reference model M44's differential suite pins to the
 //! compactc artifacts. Every byte string on the SPEC side is produced by
 //! borsh's and serde+bincode's derives over the declarations in
 //! `serialization::spec_types`.
@@ -29,7 +29,7 @@
 //!    value-dependent branching, so every offset is a compile-time constant.
 //! c. THE HEADLINE — byte-equality against the deployed protocol's actual
 //!    bytes: the five V1 request records, the three V1 attested-output
-//!    widths, and the singleton's Misc payloads, the last checked by handing
+//!    widths, and the signet signer's Misc payloads, the last checked by handing
 //!    the bytes to the CORPUS ARTIFACT itself. NEITHER the request id NOR the
 //!    attestation digest is a hash of these bytes: both are Poseidon over
 //!    FIELD elements, which is why there is no V1 preimage spec type and why
@@ -575,7 +575,7 @@ proptest! {
         assert_conformant(&AttestationPreimage { request_id, output: failure });
     }
 
-    /// (a) + (b) for the singleton's three Misc payloads (`respond` and
+    /// (a) + (b) for the signet signer's three Misc payloads (`respond` and
     /// `respondBidirectional` share one shape).
     #[test]
     fn misc_payloads_are_conformant(
@@ -1107,7 +1107,7 @@ fn v1_attestation_digest_commits_to_the_kind_and_the_width() {
     );
 }
 
-/// The Signet singleton's `signBidirectional` Misc payload.
+/// The signet signer's `signBidirectional` Misc payload.
 ///
 /// The strong form: the bytes are not compared against a second Rust
 /// construction of them, they are handed to the PINNED COMPACTC ARTIFACT as

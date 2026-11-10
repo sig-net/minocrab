@@ -13,7 +13,7 @@
 //!   stand; the hash claims live in the vault model;
 //! - [`misc_envelope`] is `serialize<Misc, 288>`: the event name, the
 //!   circuit's `Serializer` segments, zero-padded;
-//! - [`misc_preimage`] builds the singleton's public transcript so the
+//! - [`misc_preimage`] builds the signet signer's public transcript so the
 //!   CORPUS ARTIFACT itself can be asked whether it accepts those bytes. It
 //!   is a THIN WRAPPER over `support::signet_call::call_preimage` — the
 //!   ledger's own `ContractCallPrototype`/`construct_proof` path (M29 rung
@@ -67,7 +67,7 @@ pub fn output_bytes(output_len: u32, output_limbs: &[Fr]) -> Vec<u8> {
     fab_bytes(&[AlignmentAtom::Bytes { length: output_len }], output_limbs)
 }
 
-// ---- the Signet singleton's Misc event ---------------------------------------
+// ---- the signet signer's Misc event ---------------------------------------
 
 /// The 32-byte event name, `pad(32, name)`.
 pub fn misc_name(name: &str) -> [u8; 32] {
@@ -103,7 +103,7 @@ pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
         .collect()
 }
 
-/// A singleton call's proof preimage: the circuit arguments as their field
+/// A signet signer call's proof preimage: the circuit arguments as their field
 /// limbs, and the logged 288 Misc bytes as the public transcript.
 ///
 /// THE HAND-BUILT VERSION IS GONE (M29 rung C). This delegates to
@@ -126,7 +126,7 @@ pub fn misc_preimage(inputs: Vec<Fr>, misc_bytes: &[u8]) -> ProofPreimage {
 }
 
 /// A pinned signet-contract corpus artifact (what compactc emitted for the
-/// deployed singleton).
+/// deployed signet signer).
 pub fn corpus_signet_zkir(name: &str) -> IrSource {
     let path = format!(
         "{}/../../corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract/zkir/{name}.zkir",

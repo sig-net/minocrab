@@ -1,7 +1,7 @@
-//! A Signet singleton call BUILT THE WAY THE LEDGER BUILDS IT (M29 rung C),
+//! A signet signer call BUILT THE WAY THE LEDGER BUILDS IT (M29 rung C),
 //! now through `minocrab-publisher` (M30 rung A).
 //!
-//! Every proof preimage the singleton's tests use comes from here, and this
+//! Every proof preimage the signet signer's tests use comes from here, and this
 //! module never assembles one by hand. The path is the production path:
 //!
 //! ```text
@@ -67,7 +67,7 @@ pub use minocrab_publisher::fab::{bytesn_value, cell, scalar_input};
 pub type VmOp = Op<ResultModeVerify, InMemoryDB>;
 pub type PreimageIntent = Intent<Signature, ProofPreimageMarker, PedersenRandomness, InMemoryDB>;
 
-/// The communication-commitment randomness every singleton call in the test
+/// The communication-commitment randomness every signet signer call in the test
 /// suite is built with. FIXED, not sampled: the benchmark harness reads the
 /// preimages these tests dump (`support::dump_preimage`), so a preimage has
 /// to be reproducible across runs. A publisher samples it per call, which is
@@ -77,7 +77,7 @@ pub const COMM_RAND: u64 = 0x516_e37;
 /// The seed for the intent's binding randomness, for the same reason.
 const INTENT_SEED: u64 = 0x5169_6e65_7400;
 
-/// The address the tests deploy the singleton at. Arbitrary and fixed; the
+/// The address the tests deploy the signet signer at. Arbitrary and fixed; the
 /// real one differs per deployment and is not part of the proven statement
 /// (it enters only through `binding_input`, which `construct_proof` leaves
 /// at zero and proving overwrites).
@@ -110,7 +110,7 @@ pub fn b128_limbs(bytes: &[u8; 128]) -> Vec<Fr> {
 
 // ---- the call --------------------------------------------------------------
 
-/// One singleton call, as a [`ContractCallPrototype`] —
+/// One signet signer call, as a [`ContractCallPrototype`] —
 /// `minocrab_publisher::call::call_prototype` with this suite's fixed
 /// randomness and `INITIAL_PARAMETERS`.
 ///
@@ -132,7 +132,7 @@ pub fn call_prototype(
         misc_bytes,
         Fr::from(COMM_RAND),
     )
-    .expect("the singleton's Push+Log program partitions")
+    .expect("the signet signer's Push+Log program partitions")
 }
 
 /// The prototypes as one [`Intent`] — `Intent::new` folds each through
@@ -165,7 +165,7 @@ pub fn calls_of(
 }
 
 /// THE construction gate's subject: the ledger's own `ProofPreimage` for one
-/// singleton call.
+/// signet signer call.
 ///
 /// Built by putting the prototype through `Intent::new` and reading the
 /// preimage back out of the resulting `ContractCall`, so the bytes under
@@ -185,7 +185,7 @@ pub fn call_preimage(entry_point: &str, input: AlignedValue, misc_bytes: &[u8]) 
     }
 }
 
-// ---- deploying the singleton and applying a call ---------------------------
+// ---- deploying the signet signer and applying a call ---------------------------
 
 /// One of the COMMITTED managed verifier keys (M29 rung A:
 /// `crates/signet-artifacts/managed/keys/<circuit>.verifier`, written by the
@@ -205,7 +205,7 @@ pub fn managed_verifier_key(circuit: &str) -> VerifierKey {
         .unwrap_or_else(|e| panic!("{} is a tagged VerifierKey: {e}", path.display()))
 }
 
-/// The singleton as this repo would deploy it: NO ledger fields (all three
+/// The signet signer as this repo would deploy it: NO ledger fields (all three
 /// signer circuits are stateless), one operation per circuit under whatever
 /// verifier key `key` supplies.
 pub fn singleton_contract_state(
@@ -250,7 +250,7 @@ pub fn preimage_tx(
     )
 }
 
-/// `ContractDeploy` the singleton into a fresh `LedgerState`, `well_formed`
+/// `ContractDeploy` the signet signer into a fresh `LedgerState`, `well_formed`
 /// it and `apply` it — the state a respond call is then made against.
 pub fn deploy_singleton(
     state: ContractState<InMemoryDB>,
@@ -263,13 +263,13 @@ pub fn deploy_singleton(
     let tx = preimage_tx(call_intent(vec![], ttl(tblock)).add_deploy(deploy));
     let vtx = tx
         .well_formed(&ledger, unbalanced_strictness(), tblock)
-        .expect("the singleton deploy is well formed");
+        .expect("the signet signer deploy is well formed");
     let (after, result) = ledger.apply(&vtx, &tx_context(&ledger, tblock));
     assert!(
         matches!(result, TransactionResult::Success(_)),
-        "the singleton deploy must apply: {result:?}"
+        "the signet signer deploy must apply: {result:?}"
     );
-    assert!(after.index(address).is_some(), "the singleton is in the state after the deploy");
+    assert!(after.index(address).is_some(), "the signet signer is in the state after the deploy");
     (after, address)
 }
 

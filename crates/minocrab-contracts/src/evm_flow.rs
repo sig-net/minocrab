@@ -1165,7 +1165,7 @@ where
 {
     /// FILE THE CALL. Builds `F::Call`'s transaction from the callee and the
     /// argument tuple, files the signing record under `F::Schema`, stores the
-    /// environment beside it and notifies the singleton with this slot's own
+    /// environment beside it and notifies the signet signer with this slot's own
     /// ledger path. Returns the disclosed request id, and discloses
     /// `signet_flow::Requested` plus whatever `env` discloses.
     ///

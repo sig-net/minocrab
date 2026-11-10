@@ -1,6 +1,6 @@
 # signet-protocol
 
-**What the Signet singleton and the MPC that reads it must agree on**, in the smallest publishable crate that can carry it — part of [MinoCrab](https://github.com/sig-net/minocrab).
+**What the signet signer and the MPC that reads it must agree on**, in the smallest publishable crate that can carry it — part of [MinoCrab](https://github.com/sig-net/minocrab).
 
 ```
   crates/minocrab-contracts       the contract that EMITS the signer events (a corpus, never published)
