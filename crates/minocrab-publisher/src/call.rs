@@ -312,6 +312,45 @@ pub struct Attestation {
     pub digest: [u8; 32],
 }
 
+impl Attestation {
+    /// The attestation of `serialized_output` for `request_id`:
+    /// [`signet_hashing::Attestation::over`], in this crate's wire form.
+    pub fn over(
+        request_id: &[u8; 32],
+        block_height: u64,
+        output_kind: signet_hashing::OutputKind,
+        serialized_output: &[u8],
+    ) -> Result<Attestation, signet_hashing::OutputNotEmpty> {
+        signet_hashing::Attestation::over(request_id, block_height, output_kind, serialized_output)
+            .map(Attestation::from)
+    }
+
+    /// The typed form, or `None` if `output_kind` is not a variant index
+    /// (the circuit constrains it below 3, so a decoded event always has
+    /// one).
+    pub fn typed(&self) -> Option<signet_hashing::Attestation> {
+        Some(signet_hashing::Attestation {
+            block_height: self.block_height,
+            output_kind: signet_hashing::OutputKind::try_from(self.output_kind).ok()?,
+            serialized_output_length: self.serialized_output_length,
+            output_hash: self.output_hash,
+            digest: self.digest,
+        })
+    }
+}
+
+impl From<signet_hashing::Attestation> for Attestation {
+    fn from(a: signet_hashing::Attestation) -> Attestation {
+        Attestation {
+            block_height: a.block_height,
+            output_kind: a.output_kind as u8,
+            serialized_output_length: a.serialized_output_length,
+            output_hash: a.output_hash,
+            digest: a.digest,
+        }
+    }
+}
+
 /// `signBidirectional`'s second argument: `{ version: Uint<8>, payload:
 /// Bytes<128> }`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -433,6 +472,158 @@ pub fn sign_bidirectional_input(
         &bytesn_value(1, &[notification.version]),
         &bytesn_value(128, &notification.payload),
     ])
+}
+
+// ---- reading an envelope back ----------------------------------------------
+
+/// A signer event, decoded from the 288 Misc bytes a circuit logged — the
+/// inverse of [`respond_misc`], [`respond_bidirectional_misc`] and
+/// [`sign_bidirectional_misc`], for the reader that ingests the singleton's
+/// emissions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SignerEvent {
+    /// `SignBidirectionalEvent`: the singleton relaying a client's request.
+    SignBidirectional { request_id: [u8; 32], notification: Notification },
+    /// `SignatureRespondedEvent`: `respond`'s signature over a request id.
+    SignatureResponded { request_id: [u8; 32], signature: EcdsaSignature },
+    /// `RespondBidirectionalEvent`: `respondBidirectional`'s attestation
+    /// and the signature over its digest.
+    RespondBidirectional { request_id: [u8; 32], attestation: Attestation, signature: EcdsaSignature },
+}
+
+impl SignerEvent {
+    /// The request the event is about.
+    pub fn request_id(&self) -> &[u8; 32] {
+        match self {
+            SignerEvent::SignBidirectional { request_id, .. }
+            | SignerEvent::SignatureResponded { request_id, .. }
+            | SignerEvent::RespondBidirectional { request_id, .. } => request_id,
+        }
+    }
+
+    /// The circuit that emitted it (its Compact name).
+    pub fn circuit(&self) -> &'static str {
+        match self {
+            SignerEvent::SignBidirectional { .. } => SIGN_BIDIRECTIONAL,
+            SignerEvent::SignatureResponded { .. } => RESPOND,
+            SignerEvent::RespondBidirectional { .. } => RESPOND_BIDIRECTIONAL,
+        }
+    }
+
+    /// The 288 bytes this event encodes to — [`decode_misc`]'s inverse.
+    pub fn misc(&self) -> Vec<u8> {
+        match self {
+            SignerEvent::SignBidirectional { request_id, notification } => {
+                sign_bidirectional_misc(request_id, notification)
+            }
+            SignerEvent::SignatureResponded { request_id, signature } => {
+                respond_misc(SIGNATURE_RESPONDED_EVENT, request_id, signature)
+            }
+            SignerEvent::RespondBidirectional { request_id, attestation, signature } => {
+                respond_bidirectional_misc(RESPOND_BIDIRECTIONAL_EVENT, request_id, attestation, signature)
+            }
+        }
+    }
+}
+
+/// A sequential reader over an envelope's payload.
+struct Fields<'a>(&'a [u8]);
+
+impl<'a> Fields<'a> {
+    fn take<const N: usize>(&mut self) -> [u8; N] {
+        let (head, rest) = self.0.split_at(N);
+        self.0 = rest;
+        head.try_into().expect("split_at(N) yields N bytes")
+    }
+    fn u8(&mut self) -> u8 {
+        self.take::<1>()[0]
+    }
+    fn u64_le(&mut self) -> u64 {
+        u64::from_le_bytes(self.take::<8>())
+    }
+    fn signature(&mut self) -> EcdsaSignature {
+        EcdsaSignature {
+            big_r_x: self.take(),
+            big_r_y: self.take(),
+            s: self.take(),
+            recovery_id: self.u8(),
+        }
+    }
+    /// The bytes past the last field, which the circuits write as zeros.
+    fn rest(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+/// The signer event in `misc`, the 288 bytes of a `Misc` log item, or why
+/// it is not one.
+///
+/// STRICT: the length must be [`MISC_SIZE`], the first 32 bytes must be one
+/// of the three event names exactly as the circuits pad them, and every
+/// byte past the event's last field must be zero, as the circuits write
+/// them. A `Misc` of another contract, a name of another spelling, or an
+/// envelope with bytes where this layout has padding is `Err`, never a
+/// partial decode: a reader that accepted them would be reading a layout it
+/// does not know. `output_kind` is NOT checked below 3 here, since the
+/// circuit already constrains it; [`Attestation::typed`] is where it is
+/// read as an enum.
+///
+/// The layouts are the encoders', above; `tests/misc_decode.rs` round-trips
+/// each and decodes the compiled circuit's own emission.
+pub fn decode_misc(misc: &[u8]) -> Result<SignerEvent, PublishError> {
+    let (name, payload) = signet_protocol::misc::split(misc)
+        .ok_or(PublishError::MiscSize { got: misc.len(), want: MISC_SIZE })?;
+    let circuit = signet_protocol::circuits::circuit_of_event_name(name).ok_or_else(|| {
+        PublishError::NotASignerEvent(format!(
+            "the Misc name {} is none of the three signer events",
+            hex(&name[..name.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1)])
+        ))
+    })?;
+    let mut f = Fields(payload);
+    let event = match circuit {
+        SIGN_BIDIRECTIONAL => {
+            let version = f.u8();
+            let request_id = f.take();
+            let payload = f.take();
+            SignerEvent::SignBidirectional { request_id, notification: Notification { version, payload } }
+        }
+        RESPOND => {
+            let request_id = f.take();
+            let signature = f.signature();
+            SignerEvent::SignatureResponded { request_id, signature }
+        }
+        RESPOND_BIDIRECTIONAL => {
+            let request_id = f.take();
+            let block_height = f.u64_le();
+            let output_kind = f.u8();
+            let serialized_output_length = f.u64_le();
+            let output_hash = f.take();
+            let digest = f.take();
+            let signature = f.signature();
+            SignerEvent::RespondBidirectional {
+                request_id,
+                attestation: Attestation {
+                    block_height,
+                    output_kind,
+                    serialized_output_length,
+                    output_hash,
+                    digest,
+                },
+                signature,
+            }
+        }
+        _ => unreachable!("circuit_of_event_name returns one of SIGNER_CIRCUITS"),
+    };
+    let rest = f.rest();
+    if let Some(at) = rest.iter().position(|&b| b != 0) {
+        return Err(PublishError::NotASignerEvent(format!(
+            "a {} event's bytes past its last field are zero; byte {} of the envelope is {:#04x}",
+            circuit,
+            MISC_SIZE - rest.len() + at,
+            rest[at]
+        )));
+    }
+    Ok(event)
 }
 
 // ---- the transcript --------------------------------------------------------

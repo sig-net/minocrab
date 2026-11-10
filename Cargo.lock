@@ -3173,6 +3173,7 @@ dependencies = [
  "rand 0.8.7",
  "serde_json",
  "sha2 0.11.0",
+ "signet-hashing",
  "signet-protocol",
  "thiserror",
  "tokio",
@@ -4459,6 +4460,17 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "signet-protocol",
+]
+
+[[package]]
+name = "signet-hashing"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "midnight-transient-crypto 3.0.0",
+ "serde_json",
+ "signet-protocol",
+ "thiserror",
 ]
 
 [[package]]
