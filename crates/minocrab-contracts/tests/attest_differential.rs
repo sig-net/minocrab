@@ -26,7 +26,7 @@ use midnight_zkir_v3::ir_instructions::inv::inv_offcircuit;
 use midnight_zkir_v3::ir_instructions::mul::mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::attest;
-use minocrab_sim::v3::{assert_call_compatible, simulate};
+use minocrab_sim::v3::{assert_call_compatible, simulate, simulate_compiled};
 use minocrab_zkir::v3::{IrSource, IrType, IrValue};
 
 type VmOp = Op<ResultModeVerify, InMemoryDB>;
@@ -346,5 +346,10 @@ fn verify_only_matches_corpus() {
     let inputs = verify_only_inputs(&request_id, &digest, &r, &s, &pk);
     let pi = preimage(inputs, attest_transcript(&request_id));
     assert!(simulate(&theirs, &pi).is_err(), "corpus must reject the identity key");
-    assert!(simulate(&ours, &pi).is_err(), "ours must reject the identity key");
+    let err = simulate_compiled(&attest::Attest::verify_only(), &pi)
+        .expect_err("ours must reject the identity key");
+    assert!(
+        format!("{err}").contains("identity is not a permitted secp256k1EcdsaVerify"),
+        "{err}"
+    );
 }

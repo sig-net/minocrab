@@ -149,7 +149,8 @@ fn target_addr() -> [u8; 32] {
 }
 
 /// The entry-point hash, DERIVED from the callee circuit's name (M12
-/// stage 1). Preimage-only: the ep limbs are prover-supplied witnesses.
+/// stage 1). The claim carries it as a constant, so it appears only in the
+/// public transcript (`call_ops`).
 fn ep(name: &str) -> [u8; 32] {
     ep_hash(name)
 }

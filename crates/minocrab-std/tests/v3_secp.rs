@@ -183,3 +183,25 @@ fn ethereum_address_matches_native_keccak() {
         .expect("address circuit simulates");
     assert_eq!(run.outputs[0], IrValue::Native(expected));
 }
+
+/// The point at infinity has no Ethereum address: the circuit refuses it, with
+/// compactc 0.36's message.
+#[test]
+fn ethereum_address_rejects_the_identity() {
+    let generator = IrValue::Secp256k1Point(k256::K256::generator());
+    let identity = ec_mul_offcircuit(&generator, &scalar(0)).unwrap();
+
+    let mut c = Circuit3::new();
+    let pk_wire = c.arg::<Secp256k1PointT>("pk");
+    let addr = secp256k1_ethereum_address(&mut c, pk_wire);
+    let addr_pub = c.disclose(addr, "ethereum address");
+    c.output(addr_pub, "address");
+    let compiled = c.finish(false);
+
+    let err = minocrab_sim::v3::simulate_compiled(&compiled, &preimage(natives(&identity)))
+        .expect_err("the identity has no address");
+    assert!(
+        format!("{err}").contains("identity is not a permitted input to secp256k1EthereumAddress"),
+        "{err}"
+    );
+}

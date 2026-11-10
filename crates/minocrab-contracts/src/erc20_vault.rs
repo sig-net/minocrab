@@ -1632,7 +1632,8 @@ impl Vault {
     /// Bytes<1>, mintNonce: Bytes<32>): []` — settles a withdrawal on any
     /// verdict: an executed `true` leaves the burn standing; a `false`, a
     /// failed or an unviable transaction re-mints the surrendered amount to
-    /// the caller. Withdrawer-gated.
+    /// the caller. `serializedOutput` must be 0 or 1 on every verdict.
+    /// Withdrawer-gated.
     #[circuit]
     pub fn complete_withdraw(
         c: &mut Circuit3,
@@ -1655,7 +1656,8 @@ impl Vault {
         let output = serialized_output.disclose_as::<SerializedOutput>(c);
         c.when(is_executed, |c| assert_output_matches::<1>(c, &request_id, &record, &[output.field()]));
 
-        // if (outcomeRefunds(record.outputKind) || !deserialize<VaultResponse, 1>(output).success)
+        // const success = deserialize<VaultResponse, 1>(output).success;
+        // if (outcomeRefunds(record.outputKind) || !success)
         let refunds = outcome_refunds(c, &record);
         let success = attested_success(c, output.field());
         let returned_false = c.not(success);

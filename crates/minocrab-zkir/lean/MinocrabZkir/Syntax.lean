@@ -19,8 +19,9 @@ here, loudly.
 
 namespace MinocrabZkir
 
-/-- The 13 ZKIR 3.0 value types (ir_types.rs:36-88), in declaration order:
-a subset of 3.2.0's `IrType`, which adds `Bool`, `Byte` and `Bytes(n)`. -/
+/-- The 13 ZKIR 3.0 value types (ir_types.rs:36-88), in declaration order.
+3.2.0's `IrType` replaces `Bytes32` with `Bytes(n)` (`bytes32` here is
+`Bytes(32)`) and adds `Bool` and `Byte`. -/
 inductive IrType where
   | native | bytes32 | jubjubPoint | jubjubScalar
   | secp256k1Point | secp256k1Base | secp256k1Scalar

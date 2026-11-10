@@ -1,6 +1,6 @@
 # minocrab-std
 
-**L3 of [MinoCrab](https://github.com/sig-net/minocrab) — the standard library.** Ports of Compact's `standard-library.compact` and `zkir-v3-library.compact`: hashing, Merkle trees, Schnorr, secp256k1 ECDSA and Ethereum addresses, the coin and kernel ADTs, the ledger block as types, and Borsh serialization. Translation is mechanical from Midnight's own sources, and each ported item is differential-tested against compactc's compilation of the original.
+**L3 of [MinoCrab](https://github.com/sig-net/minocrab) — the standard library.** Ports of Compact's `standard-library.compact` and `zkir-v3-library.compact`: hashing, Merkle trees, secp256k1 ECDSA and Ethereum addresses, the coin and kernel ADTs, the ledger block as types, and Borsh serialization. Translation is mechanical from Midnight's own sources, and each ported item is differential-tested against compactc's compilation of the original.
 
 ```
   crates/minocrab-zkir       L0   ZKIR bindings

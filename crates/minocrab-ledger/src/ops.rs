@@ -471,7 +471,6 @@ pub fn set_reset_at(path: &[LedgerKey]) -> Vec<ImpactOp> {
     map_reset_at(path)
 }
 
-
 /// A `Map`'s (and a `Set`'s) initial value: the empty map.
 pub fn empty_map() -> StateValue<InMemoryDB> {
     StateValue::Map(StorageHashMap::new())

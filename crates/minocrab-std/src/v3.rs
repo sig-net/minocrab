@@ -2285,9 +2285,10 @@ pub struct Secp256k1EcdsaSignature<V: Vis3> {
     pub s: Wire3<Secp256k1ScalarT, V>,
 }
 
-/// `circuit hashToSecp256k1Scalar(digest: Bytes<32>): Secp256k1Scalar` —
-/// the digest is a big-endian integer (RFC 6979), so reverse the bytes and
-/// reduce mod the scalar-field order.
+/// `reverseBytes32(msgHash) as Secp256k1Scalar`, compactc 0.36's inline form
+/// of the `hashToSecp256k1Scalar` circuit before it — the digest is a
+/// big-endian integer (RFC 6979), so reverse the bytes and reduce mod the
+/// scalar-field order.
 pub fn hash_to_secp256k1_scalar<V: Vis3>(
     c: &mut Circuit3,
     digest: &B32<V>,
@@ -2300,14 +2301,14 @@ pub fn hash_to_secp256k1_scalar<V: Vis3>(
 /// `pk != default<Secp256k1Point>`, asserted. The default point is
 /// generator · 0, built as compactc does (to_bytes(0) → from_bytes scalar →
 /// ec_mul_generator).
-fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>) {
+fn assert_not_identity<V: Vis3>(c: &mut Circuit3, pk: Wire3<Secp256k1PointT, V>, message: Option<&'static str>) {
     let zero = c.constant(0u64);
     let zero_bytes = c.into_bytes32(zero);
     let zero_scalar: Wire3<Secp256k1ScalarT, Public> = c.from_bytes32(zero_bytes);
     let identity = c.ec_mul_generator(zero_scalar);
     let is_identity = c.test_eq(pk, V::from_public(identity));
     let not_identity = c.not(is_identity);
-    c.assert(not_identity);
+    c.assert_with(not_identity, message);
 }
 
 /// `circuit secp256k1EcdsaVerify(msgHash, sig, pk): Boolean`
@@ -2326,7 +2327,11 @@ pub fn secp256k1_ecdsa_verify<V: Vis3>(
 ) -> Wire3<FieldT, V> {
     // Private key 0 signs anything, so the point at infinity is refused
     // first, as compactc 0.36's library does.
-    assert_not_identity(c, pk);
+    assert_not_identity(
+        c,
+        pk,
+        Some("Secp256k1Point identity is not a permitted secp256k1EcdsaVerify verification key"),
+    );
     let z = hash_to_secp256k1_scalar(c, msg_hash);
     let w = c.inv(sig.s);
     let u1 = c.mul(z, w);
@@ -2365,7 +2370,11 @@ pub fn secp256k1_ethereum_address<V: Vis3>(
     c: &mut Circuit3,
     pk: Wire3<Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
-    assert_not_identity(c, pk);
+    assert_not_identity(
+        c,
+        pk,
+        Some("Secp256k1Point identity is not a permitted input to secp256k1EthereumAddress"),
+    );
 
     // keccak256 over the 64 big-endian coordinate bytes (alignment =
     // 64 × bytes 1, per the verified library dump).

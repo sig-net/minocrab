@@ -667,10 +667,10 @@ impl Builder3 {
     }
 
     // --- Bytes<32> conversions -------------------------------------------------
-    // Emitted as the ZKIR 3.1 byte instructions compactc 0.36 writes (`ToBytes`,
-    // `FromBytes`, `Reverse`, `BytesIntoNatives`, `BytesFromNatives`); on a
-    // `Bytes(32)` each proves the same statement as the deprecated 3.0 op it
-    // replaces (zkir 3.2.0 ir_vm.rs).
+    // Emitted as the ZKIR 3.1 byte instructions (`ToBytes`, `FromBytes`,
+    // `BytesIntoNatives`, `BytesFromNatives`, which compactc 0.36 writes, and
+    // `Reverse`, which it does not); on a `Bytes(32)` each proves the same
+    // statement as the deprecated 3.0 op it replaces (zkir 3.2.0 ir_vm.rs).
 
     /// The canonical little-endian 32-byte form of a prime-field element.
     pub fn into_bytes32(&mut self, input: impl Into<Arg>) -> Val {

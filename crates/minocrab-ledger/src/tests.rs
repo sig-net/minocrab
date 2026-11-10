@@ -31,7 +31,6 @@ fn repr(op: &VmOp) -> Vec<Fr> {
     out
 }
 
-/// Our hand-laid push/popeq headers must match the real Op encodings.
 #[test]
 fn field_key_checked_is_field_key() {
     for index in 0..=u8::MAX {
@@ -40,6 +39,7 @@ fn field_key_checked_is_field_key() {
     }
 }
 
+/// Our hand-laid push/popeq headers must match the real Op encodings.
 #[test]
 fn mixed_op_layout_matches_field_repr() {
     // push Cell{bytes<16>, 5}:

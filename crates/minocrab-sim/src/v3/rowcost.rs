@@ -434,7 +434,8 @@ pub fn est_rows(ir: &IrSource) -> Vec<usize> {
             I::Bytes32FromLowHigh { .. } => DECOMPOSE_BYTES32,
             I::ConstrainBits { bits, .. } => range_check_rows(*bits),
             I::DivModPowerOfTwo { .. } => DIV_MOD,
-            I::ReconstituteField { .. } => SIMPLE,
+            // midnight-zkir 3.2.0 decomposes the result into canonical bits.
+            I::ReconstituteField { .. } => DIV_MOD,
             I::LessThan { bits, .. } => LESS_THAN_BASE + (*bits as usize).div_ceil(64),
             I::Impact { inputs, .. } => inputs.len() * SIMPLE,
             I::Encode { outputs, .. } => outputs.len() * SIMPLE,

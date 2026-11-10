@@ -140,8 +140,8 @@ fn the_called_entry_points_are_stable_values() {
         assert_ne!(ours, [0u8; 32], "{name} hashed to zero");
     }
 
-    // Distinct names, distinct hashes — the property `callOnce`/`callEmit`
-    // rely on (same circuit, different claimed entry point).
+    // Distinct names, distinct hashes — the property that keeps
+    // `callOnce`'s and `callEmit`'s claims apart.
     assert_ne!(ep_hash("deposit"), ep_hash("depositEmit"));
 }
 

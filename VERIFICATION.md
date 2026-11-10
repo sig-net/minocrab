@@ -223,11 +223,12 @@ The Borsh layer belongs here as a safety feature in its own right:
 - The subset is **fixed-width**: `borsh::object_length(v) == T::LEN` for all
   `v`, and `T::LEN` equals the deployed FAB alignment's own `bin_len` — so every
   offset is a compile-time constant and there is no value-dependent branching.
-- A Borsh `bool` is `0` or `1` and nothing else, so on the Pending lineage a
-  non-canonical attested byte is **unprovable rather than refunded** — the
-  port keeps compactc's 0x02 behaviour for parity, pinned by
-  `a_non_boolean_success_byte_refunds_on_the_port` in
-  [erc20_vault_adversarial.rs](crates/minocrab-contracts/tests/erc20_vault_adversarial.rs).
+- A Borsh `bool` is `0` or `1` and nothing else, so a non-canonical attested
+  byte is **unprovable rather than refunded**: on the Pending lineage and the
+  treasury through `AbiReturn for Bool` (`treasury.rs`
+  `a_non_boolean_attestation_neither_completes_nor_refunds`), and on the vault
+  port as in compactc 0.36 (`erc20_vault_differential.rs`
+  `complete_*_constrains_the_bool_output`).
 - Dual oracle: `borsh::to_vec(v) == bincode-fixint(v)` for every spec type over
   generated values, closed against the **deployed bytes** themselves — the
   singleton's `Misc` envelope is handed to the pinned compactc artifact, which

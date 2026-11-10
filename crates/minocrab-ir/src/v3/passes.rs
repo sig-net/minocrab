@@ -272,11 +272,9 @@ fn is_true_assert(instruction: &Instruction) -> bool {
 ///   AssignedBit>` (`ir_vm.rs`, the arm carrying upstream's own "Yes, this
 ///   does insert a constraint") — an assigned bit the wire must equal, so
 ///   `val ∈ {0,1}`.
-/// - `ConstrainBits { bits }` lowers, for the CURRENT IR minor version, to
-///   `assert_lower_than_fixed(x, 2^bits)` (`ir_vm.rs`; the
-///   `assigned_to_le_bits` decomposition is the V0-only arm beside it) — so
-///   at `bits = 1`, `val < 2` i.e. `val ∈ {0,1}`. Both version arms enforce
-///   the same set at 1 bit.
+/// - `ConstrainBits { bits }` lowers to an `assigned_to_le_bits`
+///   decomposition of length `bits` (midnight-zkir 3.2.0 `ir_vm.rs`, for
+///   every minor version) — so at `bits = 1`, `val < 2` i.e. `val ∈ {0,1}`.
 ///
 /// Upstream's own value semantics agree: `resolve_operand_bool` accepts 0 and
 /// 1, `resolve_operand_bits(_, Some(1))` accepts exactly the values whose bits

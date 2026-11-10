@@ -1194,6 +1194,12 @@ Preview), compactc 0.36.0 (language 0.28.0, runtime 0.21.0).
    signs anything). =secp256k1_ecdsa_verify= now does the same, through the
    check =secp256k1_ethereum_address= already made; the attest differential
    has an identity-key case both sides reject.
+   The asserts carry 0.36's messages. =corpus/sources.json= still pins
+   the Compact sources (=corpus/src/compact/=, the std port's reference) at
+   =56c3b77=, before 0.36: its =zkir-v3-library.compact= lacks this check
+   and still defines =hashToSecp256k1Scalar=, which 0.36 inlines. Re-pinning
+   it moves the compact example contracts in the corpus too, so it is its
+   own step.
    The added instructions renumber =manager::execute='s 25 taint-baseline
    entries; normalised for instruction and wire numbers the baseline's 38
    findings are the same before and after.

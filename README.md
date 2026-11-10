@@ -430,7 +430,7 @@ What the types do:
 
 One hazard the types cannot see: the MPC resolves a request as FAILED when the return data does not decode, so a non-conforming ERC-20 returning nothing produces an attested failure for a transfer that moved the tokens. Until the callee's return shape is declared per token, a contract on this API needs a callee allow-list.
 
-[signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. Costs are the same shape as compactc's and lower where the API does less: `supply` k14 / 11,474 rows against the port's k15 / 23,038; `complete_withdraw` k15 / 25,655 against the deployed k16 / 35,553 ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs)).
+[signet-sim](crates/signet-sim) is the MPC's reader and responder, so a flow round-trips under `cargo test` without an MPC. Costs are the same shape as compactc's and lower where the API does less: `supply` k14 / 11,380 rows against the port's k15 / 23,038; `complete_withdraw` k16 / 37,528 against the retired lineage's k16 / 35,847, which predates compactc 0.36's 11,672-row ECDSA identity check ([erc20_vault_pending.rs](crates/minocrab-contracts/tests/erc20_vault_pending.rs)).
 
 ### The outbox: a contention-free call queue
 
