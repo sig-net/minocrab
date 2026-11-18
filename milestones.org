@@ -23,17 +23,17 @@ Mainnet, Preprod and Preview run ledger 9.1.0.1; compactc 0.36.0 (language 0.28.
 - [ ] E. PORT =kernel.checkpoint()=: compactc 0.36.0 compiles it (one =impact= of =0xff=, corpus =kernel_checkpoint.zkir=).
 
 * M45 — The signer at midnight-integration v0.25.0, and the publisher linkable from mpc (2026-10-19)
-sig-net/mpc replaces its TypeScript publisher sidecar with an in-process Rust publisher that links =minocrab-publisher= and =signet-protocol=. The deployed singleton is =@sig-net/midnight-contract= 0.25.0 (tag v0.25.0, =b62e67e=), whose =respondBidirectional= attests =outputHash= beside the digest. The interface decision is in notes/interface-crates.org (0.3.0).
+sig-net/mpc replaces its TypeScript publisher sidecar with an in-process Rust publisher that links =minocrab-publisher= and =signet-protocol=. The deployed signet signer is =@sig-net/midnight-contract= 0.25.0 (tag v0.25.0, =b62e67e=), whose =respondBidirectional= attests =outputHash= beside the digest. The interface decision is in notes/interface-crates.org (0.3.0).
 - [X] A. THE PIN: corpus =signet-midnight-integration-v0250= at =b62e67e= (=packages/signet-contract= + =packages/signet-midnight=, its own =@sig-net/midnight= link) replaces the pr127 pin, which nothing reads any more. compactc 0.34.0 compiles 3/3; =respond= and =signBidirectional= are byte-identical to pr127's, =respondBidirectional= goes 14 → 16 inputs, 736 → 862 instructions.
 - [X] B. THE RE-PORT: =signet_contract::respond_bidirectional= emits requestId ‖ blockHeight ‖ outputKind ‖ length ‖ outputHash ‖ digest ‖ signature ‖ zeros(46); =signet_construction= PI-equal to compactc on all three circuits, with outputHash tampers rejected by both. =signet-signer-interface= regenerated (0.3.0: =SignatureRespondedEventV1=, =RespondBidirectionalEventV1= with =outputHash=); the vault's 0.24.1 attestation struct moved to =signet_v1=, so the vault's ZKIR and snapshots did not move. =minocrab-publisher::call::Attestation= gains =output_hash=. Moved gates: row_snapshot (=respond_bidirectional= k=11, 1330 → 1567 rows, nothing else), interface_snapshot (+2 inputs), the five signer Lean run records, lean_dataflow (22885 → 23011); the corpus counts do not move.
 - [X] C. THE ARTIFACTS: only =respondBidirectional= moved — verifier key =08e3cfff…= → =9778599e…= (=expectedVk.json=, =MANIFEST.sha256=, its =.zkir=); =generated_equals_committed= green; under =--release=, =signet_real_proof= proves and verifies all three against the keys its in-process deployment carries (respondBidirectional prove 0.141 s), the publisher's =real_proof= (=respond=) green, and =signet_posting= gives respondBidirectional k=11 / 1567 rows against compactc's k=16 / 61360 at an identical fee (319220000000001 SPECKS).
 - [X] D. THE LINKAGE: every =midnight-*= workspace dependency is a crates.io version and =[patch.crates-io]= (Cargo.toml and .cargo/config.toml, identical) points each at rev =04c9c5d= (F replaces the rev with per-crate tags), so a downstream workspace's own patch governs. Here: workspace tests and clippy green under it, Cargo.lock moved only by the interface crate's version. The downstream link itself was proven in sig-net/mpc, not here.
-- [X] F. THE STAGENET PIN (2026-10-19, supersedes decisions.org A1, whose revisit condition "when mpc actually links =minocrab-publisher=" sig-net/mpc's draft PR #1471 meets): both =[patch.crates-io]= blocks point every ledger crate at the per-crate tag midnight-node 2.0.0-rc.4 pins (stagenet runs that release; sig-net/mpc patches the same set), and zkir-v3, which the node does not link, at the zkir-v3-3.0.0-rc.1 tag, replacing rev =04c9c5d=. That tag descends from =04c9c5d= and its =zkir-v3/= differs only in =Cargo.toml=; zkir-2.2.0-rc.3's =zkir/= is compactc 0.34.0's =ledger-9.1.0.0-rc.3= one, likewise manifest-only. The unpatched registry crates sit at the node's lockfile versions (=midnight-storage= 2.0.1, =-curves=, and the v1 proving line =midnight-proofs= 0.7.2, =-circuits= 6.2.1, =-zk-stdlib= 1.2.1), except the v2 proving line, above the node's 0.8.1/7.2.1/2.3.1 because zkir-v3 needs at least =-circuits= 7.2.2 and =-zk-stdlib= 2.3.3: =midnight-proofs= 0.8.2, =-circuits= 7.2.4 (7.2.2 panics on an out-of-range secp256k1 input that 7.2.4 rejects, and the Lean model ports 7.2.4), =-zk-stdlib= 2.3.3. Every =midnight-*= lockfile entry equals mpc's. =--baseline-rev main= (79b2add) fails inside =interface-wire-compat-semver= because the tool builds that baseline under this tree's =.cargo/config.toml= tag patches, which its git-rev dependencies cannot unify with; the job now builds the baseline's rustdoc JSON in its own worktree of the base branch and passes it as =--baseline-rustdoc= (notes/interface-crates.org "The semver instrument").
+- [X] F. THE NODE PIN (2026-10-19, supersedes decisions.org A1, whose revisit condition "when mpc actually links =minocrab-publisher=" sig-net/mpc's draft PR #1471 meets): both =[patch.crates-io]= blocks point every ledger crate at the per-crate tag midnight-node 2.0.0-rc.4 pins (sig-net/mpc patches the same set), and zkir-v3, which the node does not link, at the zkir-v3-3.0.0-rc.1 tag, replacing rev =04c9c5d=. That tag descends from =04c9c5d= and its =zkir-v3/= differs only in =Cargo.toml=; zkir-2.2.0-rc.3's =zkir/= is compactc 0.34.0's =ledger-9.1.0.0-rc.3= one, likewise manifest-only. The unpatched registry crates sit at the node's lockfile versions (=midnight-storage= 2.0.1, =-curves=, and the v1 proving line =midnight-proofs= 0.7.2, =-circuits= 6.2.1, =-zk-stdlib= 1.2.1), except the v2 proving line, above the node's 0.8.1/7.2.1/2.3.1 because zkir-v3 needs at least =-circuits= 7.2.2 and =-zk-stdlib= 2.3.3: =midnight-proofs= 0.8.2, =-circuits= 7.2.4 (7.2.2 panics on an out-of-range secp256k1 input that 7.2.4 rejects, and the Lean model ports 7.2.4), =-zk-stdlib= 2.3.3. Every =midnight-*= lockfile entry equals mpc's. =--baseline-rev main= (79b2add) fails inside =interface-wire-compat-semver= because the tool builds that baseline under this tree's =.cargo/config.toml= tag patches, which its git-rev dependencies cannot unify with; the job now builds the baseline's rustdoc JSON in its own worktree of the base branch and passes it as =--baseline-rustdoc= (notes/interface-crates.org "The semver instrument").
 - [X] E. NOTES: notes/mpc-publisher.org removed (the user dropped that plan); source comments state the facts it held, and milestone/decision history points at =79b2add:notes/mpc-publisher.org=. M30 C dropped.
 
 * M44 — The vault on the flush pattern: midnight-examples main, the Signet V1 vocabulary, and the terse library deposit (dmd, 2026-10-07)
 dmd, 2026-10-07: "update the vault examples to the most recent version that merged in with all the API changes, also please make the deposit example as terse as possible using libraries". Upstream (midnight-examples main =375071b=, PR #91, 45 contract commits since the M28 pin) redesigned the vault around a request QUEUE and a =flushQueue= that alone touches the contended cells, bound every settle to the attested block height, dropped the refund circuits in favour of the MPC's verdict, and moved to the V1 wire vocabulary of =@sig-net/midnight= 0.24.x (reordered record, domain-tagged Poseidon digests, the kind-bearing attestation, =Bytes<0>= respond schema). Design and as-built record: notes/vault-flush.org. Branch =m44-vault-flush=, local, nothing pushed. dmd, 2026-10-08: "don't be afraid to use opus, we're running low on fable" — the mechanical rungs (E, the serialization suite) are delegated to opus agents.
-- [X] A. (2026-10-07, =ec92b42=.) THE CORPUS: =signet-midnight-examples= at =375071b=; a third midnight-integration pin =signet-midnight-integration-v0241= (tag v0.24.1, =a80e98e=) carrying the V1 Signet module the vault imports, linked per source; 29 =.zkir= over 35 ledger fields in three segments. The pr127 pin stays for M43's signer artifacts (the singleton's Compact changed only in names between the two).
+- [X] A. (2026-10-07, =ec92b42=.) THE CORPUS: =signet-midnight-examples= at =375071b=; a third midnight-integration pin =signet-midnight-integration-v0241= (tag v0.24.1, =a80e98e=) carrying the V1 Signet module the vault imports, linked per source; 29 =.zkir= over 35 ledger fields in three segments. The pr127 pin stays for M43's signer artifacts (the signet signer's Compact changed only in names between the two).
 - [X] B. (2026-10-08, =2b3325b=.) THE V1 LIBRARY: =minocrab_contracts::signet_v1= — the record generic over its schema type, =EventRecordV1=, the tx-params digest, the preimage id, the attestation digest and verify, =checkedTruncationU128=; =minocrab_std::v3::Bytes0= and the zero-limb rule for a zero-length atom in =minocrab-ledger=.
 - [X] C. (2026-10-08, =2b3325b=.) THE COMPAT RE-PORT: =erc20_vault.rs= with the 29 circuits, every one PI-equal to compactc; the harness rebuilt around =Sent= (one request followed through the queue); =erc20_vault_differential= 83 green (matches, guard failures, tamper sweeps). The seventeen-circuit spec/adversarial harness removed (F).
 - [X] E. (2026-10-08, =f12ba67= =7d0d64b= and the serialization commit; notes/vault-flush.org §4.) INSTRUMENTS, opus-delegated: interface and row snapshots (the settle path ~3× cheaper, the ECDSA in =queueAttestation*=), the leakage inventory reviewed — its corpus-twin check found two constant checks the sends hashed where compactc folds, fixed in =signet_v1= — TRUST.md, the lean run records (53), the disclosure golden, the bench table, =opaque_differential=, the two corpus-count pins (322 artifacts, 22885 instructions); the Pending lineage's model keeps its pad-first identity commitment (its four suites green); the lending-cost comparison =#[ignore]=d until D; the Borsh spec suite on the V1 record (five V1 record types, the =Bytes<0>= field spelled out as a zero-width array, the attested outputs at widths 0/1/32, V2 kept beside, the =fff3421c= format marked superseded in spec/borsh-subset.md §11; TS vectors 50/50 under the devshell). OPEN inside E: =taint_lint= is RED on 20 findings by design — the guarded =kernel.self()= reads inside the flush vault's mint arms have no in-circuit warrant (a guarded =public_input= ignores its guard in-circuit; the zero is the witness generator's) and =sub_with= has never been a bound source; notes/taint-lint.org §8 carries the findings and three candidate warrants for dmd's ruling.
@@ -42,8 +42,8 @@ dmd, 2026-10-07: "update the vault examples to the most recent version that merg
 - [ ] F. A property harness on the flush pattern (the model's =Sent= already carries the state; the spec functions and generators are to write), and the adversarial families that survive the redesign (argument/witness malleability, =s = 0= and low-s on every settle, wrong-action settles, forged-membership, the identity response key).
 Exit criteria: every workspace test green (=cargo test=; row_snapshot under =--release=); the differential gate green on all 29; README and BENCHMARK re-pointed; notes/vault-flush.org as built; nothing pushed.
 
-* M43 — Production handover of the signer: the singleton at PR #127, MinoCrab's IR inside =@sig-net/midnight-contract=, and the posting benchmark (dmd, 2026-09-24)
-dmd, 2026-09-24: "this is now a production compiler, we're migrating Sig.Network's mpc data availability over to a minocrab compiled version, minimal footprint in the repo, use the signing infrastructure as is, just update the contract and the proofs; update midnight-examples etc. if they touch this; check that this is more efficient than what they have, ideally a benchmark comparing posting on chain". Decisions taken the same morning: target the singleton at midnight-integration PR #127 (=align-with-protocol-spec=, head =e9350c4=; mpc's own follow-on is #1354); ship the artifacts INSIDE =@sig-net/midnight-contract= (mpc bumps a pin, nothing else — the sidecar never reads the IR, =79b2add:notes/mpc-publisher.org= §3); the benchmark is ledger-level and in-process, both artifact sets, real-stack later; local branches only, no push. Facts found on the way: the sidecar's =expectedVk= table is compactc's generated =contract/index.js= (sha256 of the keys ITS keygen wrote; =--skip-zk= emits an empty table), so the swap must rewrite that table; compactc's prover keys are 56 MB each (k=15/16) against 0.9–1.8 MB here (k=10/11), verifier keys are the same 1353 bytes, proof bytes identical, and the transcript is identical by construction — so the fee is expected identical and the win is the prover's time, RSS and artifact size, which is what the benchmark must confirm rather than assume.
+* M43 — Production handover of the signer: the signet signer at PR #127, MinoCrab's IR inside =@sig-net/midnight-contract=, and the posting benchmark (dmd, 2026-09-24)
+dmd, 2026-09-24: "this is now a production compiler, we're migrating Sig.Network's mpc data availability over to a minocrab compiled version, minimal footprint in the repo, use the signing infrastructure as is, just update the contract and the proofs; update midnight-examples etc. if they touch this; check that this is more efficient than what they have, ideally a benchmark comparing posting on chain". Decisions taken the same morning: target the signet signer at midnight-integration PR #127 (=align-with-protocol-spec=, head =e9350c4=; mpc's own follow-on is #1354); ship the artifacts INSIDE =@sig-net/midnight-contract= (mpc bumps a pin, nothing else — the sidecar never reads the IR, =79b2add:notes/mpc-publisher.org= §3); the benchmark is ledger-level and in-process, both artifact sets, real-stack later; local branches only, no push. Facts found on the way: the sidecar's =expectedVk= table is compactc's generated =contract/index.js= (sha256 of the keys ITS keygen wrote; =--skip-zk= emits an empty table), so the swap must rewrite that table; compactc's prover keys are 56 MB each (k=15/16) against 0.9–1.8 MB here (k=10/11), verifier keys are the same 1353 bytes, proof bytes identical, and the transcript is identical by construction — so the fee is expected identical and the win is the prover's time, RSS and artifact size, which is what the benchmark must confirm rather than assume.
 - [X] A. (2026-09-24, 0bf7910.) THE SECOND PIN: a corpus source =signet-midnight-integration-pr127= at =e9350c4= restricted to =packages/signet-contract= + =packages/signet-midnight=, with a per-source =compact_path_links= (compile.sh grows that; the old pin =fff3421c= stays for the vault, test-caller and Signet-module ports, which are NOT in scope). compactc 0.34.0 compiles it (smoke-tested: respond 9 inputs, respondBidirectional 14).
 - [X] B. (2026-09-24, 0bf7910: all gates green; respondBidirectional k=11, 1330 rows.) THE RE-PORT: =signet-signer-interface= regenerated from the new artifact (respond circuits take ONE struct; =RespondBidirectionalEvent= gains =requestId=, =blockHeight: Uint<64>=, =outputKind: OutputKind= (3-variant enum, =less_than 3=), =serializedOutputLength: Uint<64>=, =digest=; a MAJOR bump of the crate, callers of =signBidirectional= unaffected); =signet_contract::{respond, respond_bidirectional}= ported to the new payloads (=respondBidirectional=: requestId(32) ‖ blockHeight LE(8) ‖ outputKind(1) ‖ length LE(8) ‖ digest(32) ‖ x ‖ y ‖ s ‖ recoveryId ‖ zeros(78)); =minocrab-publisher::call= gains the attestation shape. Gates: signet_construction, serialization/deployed, lean_differential, contract_matches_its_interface, interface_snapshot, row_snapshot against the pr127 corpus; signet_ledger_apply keeps the captured goldens where the layout is unchanged (=respond= is byte-identical: only the argument nesting moved) and states what the old =respondBidirectional= capture still evidences (the program, the name) and what needs a fresh capture.
 - [X] C. (2026-09-24, 0bf7910: only respondBidirectional's key moved, 08e3cfff…; real-proof gate green.) THE ARTIFACTS: =signet-artifacts= regenerated (new =respondBidirectional= key; =respond= and =signBidirectional= unchanged if the IR is), =generated_equals_committed=, =hash_verifier_key_pin=, and the =--release= real-proof gate green on the new circuits.
@@ -51,7 +51,7 @@ dmd, 2026-09-24: "this is now a production compiler, we're migrating Sig.Network
 - [X] E. (2026-09-24, ~/midnight-integration-m43 abeffc3 on minocrab-signer-artifacts; compile/zk/lint/format/build/test green locally under compactc 0.33.0-rc.2.) midnight-integration (worktree ~/midnight-integration-m43 off =align-with-protocol-spec=, local branch): =packages/signet-contract/minocrab/= carries the =.zkir=/=.bzkir=/keys/=expectedVk.json=/=MANIFEST.sha256= plus a PROVENANCE file (minocrab commit, zkir-v3 rev); a dependency-free =zk:minocrab= script replaces =compile:zk= in the build path (compile =--skip-zk=, copy the artifacts over =src/managed/{zkir,keys}= after checking the manifest, rewrite =expectedVk= in the generated module from the shipped verifier keys); a vitest that the shipped keys hash to =expectedVk= and the IR hashes to the manifest; ci.yml / publish.yml keygen steps replaced; package versions bumped to =0.24.0-rc.3=.
 - [X] F. (2026-09-24, ~/mpc-m43 on minocrab-signer-artifacts: pin + fixture, vitest 42/42 against the packed rc.3; package-lock left for the publish.) mpc (worktree ~/mpc-m43 off =feat/midnight-api-parity=): pin bump to the rc.3, =tests/fixtures/initial-singleton-state.mn= regenerated from the new keys; the sidecar's vitest run against a LOCALLY PACKED rc.3 as the verification (the branch itself carries only the pin and the fixture).
 - [X] G. (2026-09-24, ~/midnight-examples-m43 49d9b92: the five pins; yarn.lock left for the publish.) midnight-examples (worktree ~/midnight-examples-m43, rebased onto =feat/vault-attested-heights= PR #78, the branch already on the #127 protocol): the four =@sig-net/midnight-contract= pins.
-- [X] H. (2026-09-24: =79b2add:notes/mpc-publisher.org= §12.) NOTES: =79b2add:notes/mpc-publisher.org= §12 (as built, the =expectedVk= finding, the per-repo change list, what is NOT done: the real-stack run, the redeploy or in-place verifier-key replacement on stagenet, mpc's own #1354 landing).
+- [X] H. (2026-09-24: =79b2add:notes/mpc-publisher.org= §12.) NOTES: =79b2add:notes/mpc-publisher.org= §12 (as built, the =expectedVk= finding, the per-repo change list, what is NOT done: the real-stack run, the redeploy or in-place verifier-key replacement of the deployed contract, mpc's own #1354 landing).
 Exit criteria: every differential gate green against the pr127 corpus; the real-proof gate green; the posting table written with both sides; the three local branches build (integration: =yarn compile && yarn zk:minocrab && yarn build && yarn test:signet-contract=; mpc: the sidecar's vitest against the packed package); nothing pushed.
 Open, not taken (dmd, 2026-09-24, "play it safe this time"; costed in =79b2add:notes/mpc-publisher.org= §12 "Future options"): the payload-as-argument circuit shape (k=9, ~10 lines in the sidecar, encoders in the SDK, a Compact-source change first) is the next proving-time step when the contract moves again; dropping the range checks on those limbs was rejected (sound today, a latent hazard and the end of PI-parity with compactc); batching is the only lever that moves the on-chain fee and is deferred.
 
@@ -148,7 +148,7 @@ Exit criteria MET: the "obviously correct" story exists and is cheap in CI.
       onchain-vm's =Op::field_repr=, value-carrying ops splicing wires into
       the real layout. The ADT remainder became M16 (closed).
 - [X] Sig-net corpus contracts rewritten one by one, each a differential +
-      property test — every experiment, test-caller, the Signet singleton,
+      property test — every experiment, test-caller, the signet signer,
       and all nine erc20-vault circuits with tamper sweeps
       (=notes/signet-corpus.org=).
 Exit criteria MET, CLOSED 2026-08-16: the sig-net contracts run on
@@ -157,7 +157,7 @@ M16/M17, each instruction-for-instruction against compactc.
 
 * M5 — Cross-contract calling
 Pulled ahead of the benchmark: the erc20-vault runtime circuits call the
-Signet singleton cross-contract.
+signet signer cross-contract.
 - [X] Cross-contract calls on ZKIR v3 — the full desugar (result-limb
       witnesses, cc-rand/ep witnesses, in-circuit transientCommit,
       effects[3] claim), decoded in =notes/ledger-abi.org=.
@@ -165,7 +165,7 @@ Exit criteria MET: xcall / xcontract-events / xcall-with-payment all
 differential-green including tamper reject-agreement sweeps.
 
 * M6 — Baseline benchmark: cross-chain deposit/withdrawal
-The erc20-vault + Signet singleton benchmarked under MinoCrab and Compact
+The erc20-vault + signet signer benchmarked under MinoCrab and Compact
 at the same pinned versions. The BASELINE pass: our lowering mirrors
 compactc's, so parity is evidence the rewrite is correctness-preserving.
 - [X] Both contracts under both toolchains, M3 harness green; every
@@ -176,7 +176,7 @@ compactc's, so parity is evidence the rewrite is correctness-preserving.
       ranked optimisation-target list from region-attributed profiles.
 Exit criteria MET: parity on the mirrored circuits (rows ±0.7%), strictly
 better where compactc over-serializes (refund −12%, completeSwap −15%,
-singleton −53..−55% rows; 5 circuits a full k lower → ~half prove
+signet signer −53..−55% rows; 5 circuits a full k lower → ~half prove
 time/RAM), and M7's attack list ranked.
 
 * M7 — Optimisation + presentable deliverable
@@ -189,7 +189,7 @@ time/RAM), and M7's attack list ranked.
       pass 1 — native byte plumbing (ReverseBytes replaces ~4,600-row
       explode/rebuild chains): all 9 vault circuits −18..−38% rows, every
       k=17 circuit crossed to k=16, prove −49..−76% vs compactc;
-      pass 2 — segment-based Serializer re-limbing: singleton circuits
+      pass 2 — segment-based Serializer re-limbing: signet signer circuits
       −97.5% rows vs compactc, respond k 15→10 (0.11s prove / 44MB vs
       their 8.24s / 875MB).
 - [X] BENCHMARK.md at the repo root from a fresh 24-cell run — honest
@@ -366,7 +366,7 @@ interfaces are STATIC (address is data, interface is compile-time).
       the same declaration.
 - [X] Versioning/publishing conventions doc.
 - [X] README showcase sections (cross-contract + Borsh), quoting real code.
-Exit criteria MET: the vault calls the Signet singleton through an
+Exit criteria MET: the vault calls the signet signer through an
 imported interface crate with every gate green; a Compact-only artifact
 imports via the generator.
 
@@ -1208,7 +1208,7 @@ compiles them, compile-report unchanged):
   =reverseBytes32=; =abiWordToUint128= decomposes the word once (Horner).
   The MPC followed on 2026-09-04 (mpc #1206 "align Compact hashing": a
   =compact-hashing= crate; the reader recomputes the id from the stored
-  CELL's field repr; response digest per source chain). The singleton's
+  CELL's field repr; response digest per source chain). The signet signer's
   three circuits are byte-unchanged.
 - THE VAULT (examples, 2026-08-13..24): 17 circuits under NEW NAMES —
   =initialise=, =startDeposit=/=completeDeposit=, =startWithdraw=/
@@ -1229,7 +1229,7 @@ DONE 2026-09-05 (=sig-refresh=):
       =Limbs::transient_hash= twin. GATED at the artifact level by
       =test_caller_differential= (=initialise= call-compatible with the
       NEW artifact — the deployer commitment through =transientHash=)
-      and by the singleton differentials (unchanged). The Poseidon
+      and by the signet signer differentials (unchanged). The Poseidon
       request id's artifact gate is the vault re-port below (or a port
       of the test caller's =submitSignatureRequest=, not done).
 - [X] =signet-sim= retranslated to mpc =10360c3c=: =hashing.rs=
@@ -1294,7 +1294,7 @@ NOT DONE — the vault re-port, which is this milestone's body:
       request circuit ≥1 k level below compactc (2-word requests k14→k11,
       prove −80..−81%; startSwap/startRedeem k16→15, −44..−46%), the nine
       settles ECDSA-floored at k16 (rows −12..−16%, prove ±noise),
-      =initialise= row-identical at 891, singleton −95..−97% as before.
+      =initialise= row-identical at 891, signet signer −95..−97% as before.
       The headline did change materially: the settle-side wins shrank to
       rows-only (Poseidon on both sides now), the request-side wins grew.
       "Optimise" beyond this is the Pending lineage's job (rows-only table
@@ -1318,7 +1318,7 @@ record instantiations followed the same day (6d83065); the Pending
 lineage's lending flows landed under M35 C (1f81716).
 
 * M29 — Signer artifacts for the MPC publisher; real gates on transaction construction and proving (dmd, 2026-09-02)
-Survey and decisions: =79b2add:notes/mpc-publisher.org=. The signet contract is
+Survey and decisions: =79b2add:notes/mpc-publisher.org=. The signet signer is
 not deployed yet, so the deployment is OUR artifact (respond at k=10 /
 1,004 rows vs compactc's k=16 / 40,931; ~46 MB vs ~855 MB to prove).
 Felipe's TypeScript sidecar in =sig-net/mpc= (=midnight-publisher-ts=)
@@ -1353,7 +1353,7 @@ Rust publisher on them.
       time (record their SHA-256 so drift is visible).
 - [X] B. (2026-09-05, same commit. NO (=.verifier=, hash) fixture pair
       exists anywhere reachable — =@sig-net/midnight-contract= is not
-      vendored in ~/mpc and the signet contract is undeployed — so the
+      vendored in ~/mpc and the signet signer is undeployed — so the
       pin RUNS compact-js's =hashVerifierKey= (sha256-hex over the raw
       file bytes, =ContractKeyLocation.js=) under node on our committed
       =respond.verifier= and asserts the Rust function agrees; skips
@@ -1363,7 +1363,7 @@ Rust publisher on them.
       the exact hash function to compact-js's =hashVerifierKey= by a
       test on a corpus =.verifier= whose hash the mpc fixtures carry.
 - [X] C. (2026-09-05, d8ae7b5 — tests/support/signet_call.rs builds every
-      singleton preimage through ContractCallPrototype → Intent →
+      signet signer preimage through ContractCallPrototype → Intent →
       construct_proof and reads it back out of the ContractCall;
       tests/signet_construction.rs: call-compatibility on that preimage
       for all three circuits + tamper twins + the alignment-invariance
@@ -1541,7 +1541,7 @@ step; =./bump.sh pins= / =gates= / =accept= is the runnable half.
       EVERYTHING — the reviewed diff is the between-markers regen, per
       CONTRIBUTING.md, never a blanket accept). Snapshot diffs read.
 - [X] 6. (both benchmark contracts recompiled under both pins: .zkir identical; twenty circuits, no k crossed, no row moved; BENCHMARK.md untouched; compact-findings §4 "RE-MEASURED, STANDS UNMOVED".) Numbers: the bump-time bench compact-findings.org deferred
-      here — the Signet singleton and the vault's nine under 0.34.0,
+      here — the signet signer and the vault's nine under 0.34.0,
       one row-comparison table; BENCHMARK.md's compactc column
       re-stamped only if rows moved.
 - [X] 7. (pin / corpus / reading commits, then the six acceptance commits, each reviewable — merged 00e4ebd and 27a5c9e.) Commit shape per version-bump.org §7: the pin commit, the
@@ -1685,7 +1685,7 @@ sketch, §6 simulating Sig, §7 before/after, §8 the safety catalogue).
 THE AIM, in dmd's words: make this interface AS IDIOT-PROOF AS
 POSSIBLE, because it is a complicated one. Every vault operation is
 one future split across two transactions — a request circuit that
-files a record and cross-calls the singleton, and a settle circuit
+files a record and cross-calls the signet signer, and a settle circuit
 that verifies the MPC's attestation and consumes the record — and
 today the suspension is hand-rolled four times over with eight
 invariants kept in sync by eye (§7's table: kind bytes, record
@@ -1705,7 +1705,7 @@ Decisions of record (dmd, 2026-09-05):
   the stack implicitly; here anything that crosses is public ledger
   state, so capture must be explicit and typed (§3).
 - The EVM is an ORACLE in tests, never simulated.
-- The singleton's three circuits (=signBidirectional=, =respond=,
+- The signet signer's three circuits (=signBidirectional=, =respond=,
   =respondBidirectional=) are UNCHANGED — M29's artifacts are not
   blocked. What moves is the CALLER side, before the vault deploys.
 - [X] A. (2026-09-05, f0d1935; notes/signet-async.org §9) The types, with a =compile_fail= gate for each §8.A/§8.C item:
@@ -1773,8 +1773,8 @@ Decisions of record (dmd, 2026-09-05):
       limb per Borsh leaf vs the output packed as one 31-byte-limb byte
       string) — pinned by a test that fails when reconciled. Not wired:
       the =--release= speed (a constructor away); the executor is
-      single-call, the xcall to the singleton is not executed. — §9/§10) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
-      (singleton event, caller ledger state, =EvmOutcome=) →
+      single-call, the xcall to the signet signer is not executed. — §9/§10) =SigNetSim=, at the PROTOCOL boundary: the =Responder= trait
+      (signet signer event, caller ledger state, =EvmOutcome=) →
       attestation; ONE root key with the real =derive_epsilon_midnight=
       so =initialize='s response key is derived, not arbitrary; the
       read side runs the MPC's OWN reader logic (path walk by the
@@ -1787,7 +1787,7 @@ Decisions of record (dmd, 2026-09-05):
       two ways: the Impact VM on a real =StateValue= chained request →
       post → respond → settle under plain =cargo test=; real proofs +
       =LedgerState= + =Transaction::apply= (the cross-contract call and
-      the singleton's event for real) under =--release=, on M29 D/E.
+      the signet signer's event for real) under =--release=, on M29 D/E.
 - [ ] E. (2026-09-07: the digest is FIXED — decisions.org T1, signet-async.org §10.1 — and the deposit/claim pair settles against the sim's own attestation in tests/signet_round_trip.rs; the generated per-slot round trips and the adversarial suite are now buildable as specified. 2026-09-06: UNBLOCKED — the executor exists — and deliberately NOT built: a generated round trip whose settle cannot accept a simulated attestation would pin the wrong thing; land it with, or just after, §10's attestation-digest decision. The unread-field sweep over the ticket is unaffected and can go first.) Tests that come with the type: for every =Pending= slot in a
       contract, a GENERATED round trip (request → sim → settle accepts)
       plus the adversarial suite (each responder → the expected guard)
@@ -1814,7 +1814,7 @@ struck against the mpc reader; the new flow of rung F written with
 zero hand-synced constants, its mistake log closed or handed to dmd.
 Ordering: filed after M34 and before M27 as the default; dmd to move
 it up if the vault's deployment date approaches, since the caller
-record format freezes when the vault deploys, not when the singleton
+record format freezes when the vault deploys, not when the signet signer
 does.
 
 * M36 — The eDSL trim for human handover: retire ZKIR v2, cut cruft, read as one system (dmd, 2026-09-05)
@@ -2022,7 +2022,7 @@ substantially. Weekend-sized chunks exist at every boundary.
       the Rust digests FIRST (73 known-answer vectors); Jubjub, r1,
       curve25519 left uninterpreted and REFUSED by =Concrete.unsupported=
       (no record exercises them); 40 run records under
-      =lean/differential/= (17 vault + 3 singleton + 8 manager honest,
+      =lean/differential/= (17 vault + 3 signet signer + 8 manager honest,
       12 tampered / 11 rejecting) referencing compactc's corpus
       artifacts by path; =lake exe zkir-run= + =tests/lean_run.rs= the
       gate, in CI; green on the first run of the records. Disagreements
@@ -2501,7 +2501,7 @@ block, unstick and the =FeePolicy= cell stay parked with B and D.
       across a flush (the one default that changed; dmd's kept counter
       is read exactly where Pending reads it); =flush= takes no
       arguments, reads =last_nonce= ONCE, files N records and notifies
-      the singleton N times from one circuit (nothing blocks N calls —
+      the signet signer N times from one circuit (nothing blocks N calls —
       calls.rs's =callTwice=; measured N = 1, 2, 4: flush ops 12 + 55N);
       the refund commitment binds to the HANDLE; the settle side IS
       Pending's — the ZKIR strings are equal by test; two compile_fail

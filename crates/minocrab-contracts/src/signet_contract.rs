@@ -1,4 +1,4 @@
-//! `signet-contract` (signet-midnight-integration) — the Signet singleton,
+//! `signet-contract` (signet-midnight-integration) — the signet signer,
 //! the central Sig Network contract on Midnight that the erc20-vault calls
 //! cross-contract. Three stateless, unauthenticated emit-only circuits
 //! (verification is deliberately the reader's job — see the Compact
@@ -21,7 +21,7 @@
 //! ```
 //!
 //! The source is midnight-integration tag v0.25.0 (`b62e67e`), the
-//! singleton `@sig-net/midnight-contract` 0.25.0 deploys: the request id is
+//! signet signer `@sig-net/midnight-contract` 0.25.0 deploys: the request id is
 //! inside both event structs, and the bidirectional attestation carries the
 //! block height, the MPC's verdict, the output width, the output hash and
 //! the digest.
@@ -129,7 +129,7 @@ impl DisclosedSignature {
     }
 }
 
-/// The Signet singleton — three stateless, unauthenticated emit-only
+/// The signet signer — three stateless, unauthenticated emit-only
 /// circuits.
 pub struct SignetContract;
 

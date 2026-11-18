@@ -284,7 +284,7 @@ over any ZKIR file — compactc's included — and reports
 =instructions before -> after=, =k=, =rows=, and every =PassReport=
 warning; it writes the transformed circuit only when =-o= is given.
 =minocrab-ir= is a regular dependency of =minocrab-sim= since this
-(previously dev-only). Smoke-tested against the corpus singleton:
+(previously dev-only). Smoke-tested against the corpus signet signer:
 both built-ins run, report zero movement there (compactc's respond has
 nothing to fold at these passes), and the =-o= round-trip re-reads
 clean.

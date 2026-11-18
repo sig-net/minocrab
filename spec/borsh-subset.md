@@ -101,7 +101,7 @@ them.
 ## 3. The zero-pad envelope rule
 
 Some fields are fixed-size containers larger than the payload they carry — the
-Signet singleton logs a 288-byte `Misc` value whose payloads are 161 and 129
+signet signer logs a 288-byte `Misc` value whose payloads are 161 and 129
 bytes. Trailing padding is **not** Borsh and is not claimed to be. The rule is
 stated explicitly instead:
 
@@ -741,7 +741,7 @@ regeneration.
 | `records.json` | the five V1 records (`VaultEventV1` / `ReplaceNonceEventV1` / `SwapEventV1` / `SupplyEventV1` / `RedeemEventV1`, deployed) and the V2 records (`VaultEventV2` at kinds 0 and 5, `SwapEventV2`, `RedeemEventV2`, §6) at the SAME field values; the request id is NOT a hash of these bytes (§6) |
 | `attested-outputs-deployed.json` | the V1 attested outputs — the three widths of §5, including the EMPTY one |
 | `attested-outputs.json` | the V2 kind-tagged responses of §5 and their signed digest preimages |
-| `misc-payloads.json` | the singleton's logged payloads, with the 288-byte envelope |
+| `misc-payloads.json` | the signet signer's logged payloads, with the 288-byte envelope |
 
 **The 32 bytes in a vector's `request_id` position are a CHECKSUM, not a request id.** A real id is Poseidon, over a preimage struct in V1 and over the record's field elements in V2 (§6), and neither is reproducible from a vector's bytes alone; the vectors carry a fixed, reproducible `keccak256` over a record's bytes instead, so that an implementer has a concrete 32 bytes to decode against. `attested-outputs.json` uses the `VaultEventV2` record's checksum, `misc-payloads.json` the `VaultEventV1` one.
 
@@ -767,7 +767,7 @@ the format is ordered and JSON objects are not.
 
 Read this before implementing.
 
-- **The singleton's log payloads are DEPLOYED and unchanged.** This document specifies what is already on the wire; it was verified byte-for-byte against the deployed encoding, including by handing the bytes to the compiled contract itself.
+- **The signet signer's log payloads are DEPLOYED and unchanged.** This document specifies what is already on the wire; it was verified byte-for-byte against the deployed encoding, including by handing the bytes to the compiled contract itself.
 - **The five V1 records of §6 are what the DEPLOYED vault writes**, likewise verified byte-for-byte: the reference model's FAB limbs, which the vault's differential suite pins to compactc's own artifacts circuit by circuit, packed by the FAB rule and equal to canonical Borsh of the declarations in §9. Their request ids are the V1 preimage hash of §6 (`@sig-net/midnight` 0.24.1, signet-midnight-examples `375071b`).
 - **The three V1 attested-output widths of §5 are DEPLOYED**, and the empty output on a failed or unviable verdict is the deployed behaviour, not a proposal.
 - **`VaultEventV2` / `SwapEventV2` / `RedeemEventV2` (§6) and the kind-tagged responses of §5 are SPECIFIED, not deployed.** The MPC has never settled a transaction on Midnight (its Midnight publisher is unimplemented) and nothing has been deployed in the V2 shape, so there is no legacy format to migrate and no dual-format window to support: an implementation targets one or the other, and byte 0 tells it which record it is holding.
@@ -785,7 +785,7 @@ The erc20-vault was re-ported to upstream's flush pattern (signet-midnight-examp
 | `RefundOutput` (5 bytes, `0xdeadbeef01`) | a magic failure sentinel, asserted equal in-circuit | **nothing** — a V1 attestation on a failed or unviable verdict carries an EMPTY output, and the verdict and the width are signed into the digest instead (§5) |
 | `AttestationPreimage<ClaimOutput>` and its three siblings | the `fff3421c`-era byte preimage of the signed digest | **nothing** — V1's digest is Poseidon over field elements and has no byte preimage (§5). The `AttestationPreimage<T>` tables that remain are the V2 lineage's. |
 
-What did NOT change: the leaf table (§1), `Maybe` ↦ `Flagged` (§2), the zero-pad envelope rule (§3), the reject rules (§4), the field-element rule (§6a) but for its new `[u8; 0]` row, the notification payload (§7) and the singleton's `Misc` shapes.
+What did NOT change: the leaf table (§1), `Maybe` ↦ `Flagged` (§2), the zero-pad envelope rule (§3), the reject rules (§4), the field-element rule (§6a) but for its new `[u8; 0]` row, the notification payload (§7) and the signet signer's `Misc` shapes.
 
 ## 12. Provenance
 

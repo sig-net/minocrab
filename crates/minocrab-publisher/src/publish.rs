@@ -42,7 +42,7 @@ use crate::intent::{build_intent, preimage_tx, PreimageTx, ProvenTx, SealedTx};
 /// 2.208 ms vs 1.303 ms measurement that makes this a correctness matter
 /// rather than a tidiness one.
 pub struct ChainContext<D: DB> {
-    /// The singleton's state at the block the publisher pinned. Empty for the
+    /// The signet signer's state at the block the publisher pinned. Empty for the
     /// three signer circuits ([`crate::call::empty_state`]), but supplied
     /// rather than assumed, because the transcript is partitioned against it.
     pub contract_state: ChargedState<D>,

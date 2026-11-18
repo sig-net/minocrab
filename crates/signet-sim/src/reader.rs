@@ -335,7 +335,7 @@ pub enum IdRule {
     /// Poseidon over the cell's field representation — the MPC at `10360c3c`
     /// and the Signet module since `fff3421c`.
     Transient,
-    /// keccak256 over the record's byte layout — the deployed singleton's
+    /// keccak256 over the record's byte layout — the deployed signet signer's
     /// callers before `fff3421c` (the captured fixture).
     LegacyKeccak,
 }
@@ -402,10 +402,10 @@ pub fn resolve_verified_record_v2(map: &Node, request_id: [u8; 32]) -> Resolved<
 
 // ---- the notification ------------------------------------------------------------------
 
-/// The singleton's `Misc` payload width.
+/// The signet signer's `Misc` payload width.
 pub const MISC_PAYLOAD_LEN: usize = 256;
 
-/// Decode the version, request id and packed notification from a singleton
+/// Decode the version, request id and packed notification from a signet signer
 /// event payload.
 pub fn decode_notification(emitted: &[u8; MISC_PAYLOAD_LEN]) -> SignBidirectionalEventNotification {
     let mut request_id = [0u8; 32];

@@ -3,7 +3,7 @@
 //!
 //! Every Sig Network operation a Midnight contract makes is one future split
 //! across two transactions. A REQUEST circuit files a signing record and
-//! cross-calls the Signet singleton so the MPC comes to read it; a SETTLE
+//! cross-calls the signet signer so the MPC comes to read it; a SETTLE
 //! circuit, in a later transaction, verifies the MPC's attestation over the
 //! typed response and consumes the record. The ledger map entry IS the
 //! suspended continuation; the attestation is the value the future resolves
@@ -54,7 +54,7 @@
 //! - `file_request` — the filing every request does, whatever the slot:
 //!   read the context, assemble the V1 record, hash its id, assert
 //!   freshness, store it, store the environment beside it, notify the
-//!   singleton with the record map's own path. `evm_flow`'s request methods
+//!   signet signer with the record map's own path. `evm_flow`'s request methods
 //!   are this function plus a transaction.
 //! - [`EvmTx`], [`Signing`] and [`SignRequest`] — the transaction shape the
 //!   record holds, WHOSE KEY signs it, and the request that files both.
@@ -135,7 +135,7 @@ use crate::signet_v1::{self, EventRecordV1, EvmType2TxParams, OutputSchema};
 /// [`LedgerWidth`], so `#[derive(Ledger)]` recomputed every slot's offset
 /// from the type without being told.
 pub struct Signet {
-    /// `sealed ledger signetSigner: SignetSigner` — the singleton's address.
+    /// `sealed ledger signetSigner: SignetSigner` — the signet signer's address.
     pub signer: LedgerField,
     /// `mpcResponseKey: Secp256k1Point` — the key every attestation is
     /// verified under.
@@ -177,7 +177,7 @@ impl Signet {
         self.evm_chain_id.write(c, evm_chain_id);
     }
 
-    /// The singleton's calling handle, by the sealed cell's path.
+    /// The signet signer's calling handle, by the sealed cell's path.
     fn signer(&self) -> SignetSigner {
         SignetSigner::at_field_path(self.signer.field_path().as_slice())
     }

@@ -156,7 +156,7 @@ requester randomness)= — the §2 key, which also serves as the handle the
 requester keeps to find their request.
 THE RECORD MOVES TO FLUSH: the record the MPC hashes contains the nonce,
 so it cannot exist at insert. The queue holds a PRE-RECORD; the flush
-creates N records and N request ids and notifies the singleton N times.
+creates N records and N request ids and notifies the signet signer N times.
 Consequences: (i) the settle side keys on ids the requester did not know
 when they proved — the environment (who may refund, how much) is
 attached at INSERT under the requester's handle and copied into the
@@ -285,7 +285,7 @@ alternatives.
    circuits diffs EMPTY against main's baseline.
 
 ** THE N-CROSS-CALLS FINDING: nothing blocks N notifications from one circuit
-Asked to check whether the xcall machinery and the singleton's
+Asked to check whether the xcall machinery and the signet signer's
 =signBidirectional= allow N calls from one circuit. THEY DO, and the
 codebase already knew: =minocrab-ledger/src/calls.rs= documents
 "=xcall='s =callTwice= calls the same target twice in one circuit and
@@ -293,12 +293,12 @@ compactc reads the cell twice", which is why a =Callee::Field= read is
 deliberately UNCACHED per call site. Each call claims its own
 =(address, entry point, commitment)= through =kernel_claim_contract_call=
 and discloses its own =XcallEntryPointHash= / =XcallCommitment=; nothing
-in the interface, the ledger ops or the singleton is per-transaction
+in the interface, the ledger ops or the signet signer is per-transaction
 one-shot. Measured, not assumed:
 =a_flush_notifies_the_singleton_once_per_entry= asserts exactly N
 communications commitments, N entry-point hashes, N request ids, N
 records and N freshness asserts in the flush at N = 1, 2, 4. The
-singleton side is unchanged: N =signBidirectional= calls are N ordinary
+signet signer side is unchanged: N =signBidirectional= calls are N ordinary
 calls, and signet-sim answers all N off one caller state (rung D).
 
 ** The refund path as built

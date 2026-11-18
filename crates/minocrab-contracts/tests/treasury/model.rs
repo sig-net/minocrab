@@ -92,7 +92,7 @@ pub struct Env {
     /// `mpcKeyVersion`, a CELL under V1 — no circuit takes one.
     pub key_version: u8,
     pub chain_id: u64,
-    /// The singleton's `signBidirectional` entry-point hash.
+    /// The signet signer's `signBidirectional` entry-point hash.
     pub ep: [u8; 32],
 }
 

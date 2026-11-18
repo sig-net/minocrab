@@ -2,7 +2,7 @@
 //! contract's tests drive instead of a cluster (M35 rung D,
 //! notes/signet-async.org §6).
 //!
-//! The boundary it simulates is the PROTOCOL boundary: (the singleton's
+//! The boundary it simulates is the PROTOCOL boundary: (the signet signer's
 //! `SignBidirectionalEvent`, the caller's ledger state, an EVM outcome) →
 //! (the attestation the caller's settle circuit takes). Inside that
 //! boundary it does what the MPC does, with the MPC's own code where the
@@ -61,7 +61,7 @@ pub struct Attestation {
     /// `serializedOutput` on the wire: the kind byte then the body.
     pub output: Vec<u8>,
     /// Over the attestation digest (Poseidon, [`hashing::compute_response_hash`]),
-    /// under the response key. In the singleton's WIRE form (big-endian);
+    /// under the response key. In the signet signer's WIRE form (big-endian);
     /// [`Signature::circuit_input`] is what a settle circuit takes.
     pub signature: Signature,
     /// The record the MPC read, for the test's own assertions.

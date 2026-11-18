@@ -6,7 +6,7 @@ MinoCrab is a Rust eDSL for Midnight that compiles to ZKIR, replacing the
 Compact language. This report benchmarks the real sig-net cross-chain
 contracts — all **17 circuits** of `erc20-vault` (sig-net/midnight-examples
 `0d9c1660`, the Poseidon protocol with the Aave lending flows) plus the 3
-circuits of its Signet singleton dependency (sig-net/midnight-integration
+circuits of its signet signer dependency (sig-net/midnight-integration
 `fff3421c`) — at the same pinned toolchain versions, across two artifacts:
 
 - **compactc** — the Compact contracts compiled by `compactc 0.33.0-rc.2`.
@@ -42,7 +42,7 @@ cheaper wherever a circuit is not floored by protocol-pinned crypto:
   first circuit where the port's row count equals compactc's exactly —
   the protocol move took the two SHA blocks out of the deployer gate,
   which is where the port's earlier −43% on this circuit came from.
-- **The singleton is unchanged from M7**: −97.5% rows, −95..−97% prove,
+- **The signet signer is unchanged from M7**: −97.5% rows, −95..−97% prove,
   five to six `k` levels lower.
 
 Compared with the previous protocol's numbers (the nine-circuit vault),

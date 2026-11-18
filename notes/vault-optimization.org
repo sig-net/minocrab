@@ -159,7 +159,7 @@ whole non-keccak body is 98% of instructions and 4.6% of rows.
 Framing: the M10 artifact is necessarily a SEPARATE DEPLOYMENT
 (different verifier key ⇒ different ContractOperation ⇒ different
 address). Compatibility means exactly: (1) the deployed ledger/Impact
-VM accepts the tx; (2) the deployed Signet singleton accepts the
+VM accepts the tx; (2) the deployed signet signer accepts the
 cross-contract call and the MPC can read/derive/sign/attest; (3) our
 off-chain twins regenerate (never a constraint).
 
@@ -173,10 +173,10 @@ off-chain twins regenerate (never a constraint).
   read, one FAB limb per gate (onchain-vm/src/result_mode.rs:44-62).
   popeq embeds CANNOT merge; public_input gates CANNOT batch. Fewer/
   wider READS is the only lever (see state layout, class c).
-- Cross-contract call machinery to the singleton (~150): comm =
+- Cross-contract call machinery to the signet signer (~150): comm =
   poseidon([cc-rand] ++ callee-FAB args ++ results); ledger matches
   (addr, ep-hash, comm) against a real ContractCall
-  (structure.rs:2722-2745), comm always PI #2. The singleton is
+  (structure.rs:2722-2745), comm always PI #2. The signet signer is
   deployed compactc output — its layout/hashes are fixed by ITS
   artifact.
 - keccak request id + record field order/widths (12,900 / 22,070): the
@@ -749,7 +749,7 @@ once and run twice):
   fails the build, so leaving compactc's coverage is always an explicit
   edit. It also dumps the opt side's own preimages for the benchmark.
 - minocrab-bench's =Target::opt= is filled for the nine vault circuits
-  (Signet's singleton stays two-sided — a deployed compactc artifact is
+  (the signet signer stays two-sided — a deployed compactc artifact is
   not ours to optimize).
 
 ** Measured rows: port → opt, cumulative over rungs (i)-(iii)

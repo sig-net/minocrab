@@ -117,11 +117,11 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // 16815 → 16666 at the M28 corpus refresh (4d9cf61): the Poseidon
         // protocol's seventeen vault circuits replace the nine keccak/SHA ones.
         // 16666 → 18663 at M43 A: the second signet-midnight-integration pin
-        // (pr127, e9350c4) adds the singleton's three circuits at PR #127
+        // (pr127, e9350c4) adds the signet signer's three circuits at PR #127
         // (569 + 736 + 692 instructions) beside the fff3421c ones.
         // 18663 → 22885 at M44 A: the vault at 375071b (29 flush-pattern
         // circuits replacing 17) and the third signet-midnight-integration
-        // pin (v0.24.1, a80e98e), the singleton's three circuits again.
+        // pin (v0.24.1, a80e98e), the signet signer's three circuits again.
         // 22885 → 23011 when the pr127 pin gave way to v0.25.0 (b62e67e):
         // respondBidirectional 736 → 862 instructions (the outputHash
         // field); respond and signBidirectional are byte-identical.

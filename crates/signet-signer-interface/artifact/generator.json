@@ -1,6 +1,6 @@
 {
   "interface": "SignetSigner",
-  "summary": "the cross-contract interface of the Sig Network Signet singleton, as an importable crate.",
+  "summary": "the cross-contract interface of the Sig Network signet signer, as an importable crate.",
   "source": "corpus/zkir/signet-midnight-integration-v0250/packages/signet-contract/src/signet-contract",
   "modules": [
     "notification"

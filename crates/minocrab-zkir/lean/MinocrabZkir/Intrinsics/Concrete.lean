@@ -15,7 +15,7 @@ CONCRETE here:
 UNINTERPRETED still, and why: Jubjub (`hash_to_curve`,
 `jubjub_scalar_from_native`, the point/scalar arithmetic and encodings),
 secp256r1 and curve25519. NO run record in differential/ exercises any of
-them — the vault, the Signet singleton and the AA-manager between them
+them — the vault, the signet signer and the AA-manager between them
 use no Jubjub, r1 or 25519 value, and the corpus circuit that does touch
 Jubjub (`opaque::op_jubjub`) has no dumped preimage because no
 differential suite proves it against a compactc twin. Porting them would

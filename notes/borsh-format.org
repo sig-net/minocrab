@@ -45,7 +45,7 @@ it). Option MAY branch, minimally. Design surveyed by Opus agent
    struct with an always-present payload). So keccak256(record) TODAY
    already equals keccak256(borsh::to_vec(record)) for the matching
    Rust struct; same for the attestation digest (= borsh of
-   {[u8;32], [u8;N]}) and the singleton's Misc payloads. The
+   {[u8;32], [u8;N]}) and the signet signer's Misc payloads. The
    deliverable is mostly A SPECIFICATION AND A TEST ORACLE — shippable
    for the already-deployed pinned interfaces too.
 2. THE IN-CIRCUIT ENCODER IS FREE ON THE HASH PATH. ZKIR's
@@ -146,10 +146,10 @@ else; assert_boolean is the same rule. Parsing correctness made
 concrete, 2 rows.
 (a) NOW — event payloads: ZERO circuit change. The ledger never parses
 a Misc payload (Log carries an opaque StateValue), and the deployed
-singleton's payloads are already subset-conformant. Deliverable = spec
+signet signer's payloads are already subset-conformant. Deliverable = spec
 + golden vectors for the TS side, immediately.
 (b) PINNED, untouched: Impact/popeq framing, comm commitment,
-tokenType, coin commitments, the singleton's calldata FAB framing
+tokenType, coin commitments, the signet signer's calldata FAB framing
 (payload bytes inside it are already conformant), all compat ports.
 (c) FUTURE WORK WITH A NUMBER: the request record. Drop the two
 in-band schema strings → kind tag: swap record 571→497 bytes, 5→4
@@ -200,7 +200,7 @@ parsers.
 
 * Phasing (one agent per stage; usual gates + notes as-built per stage)
 0. Instruments + oracle, NO circuit changes: borsh dev-dep; spec types
-   for the DEPLOYED payloads (singleton Misc ×3, both records, four
+   for the DEPLOYED payloads (signet signer Misc ×3, both records, four
    attested outputs, digest preimage); byte-equality tests vs corpus
    artifacts. Deliverable: "today's protocol is already Borsh", with a
    test behind it. Shippable to Sig.Network alone.
@@ -246,7 +246,7 @@ For the records the equality is asserted TWICE per case, once against
 borsh::to_vec and once against bincode-fixint, and then closed with
 =keccak256(borsh(record)) == the reference model's request id= — i.e.
 the request id the deployed vault stores IS keccak256 of the record's
-canonical Borsh encoding. For the singleton the bytes are not compared
+canonical Borsh encoding. For the signet signer the bytes are not compared
 against a second Rust construction at all: the envelope is handed to the pinned
 compactc artifact as the logged transcript, which ACCEPTS it, and
 rejects it as soon as any one of the 288 bytes moves — including a
@@ -268,7 +268,7 @@ compactc artifacts. Finding #1 is confirmed from both directions.
   BorshSchemaContainer walk into (path, kind, offset, width) rows.
 - =.../serialization/deployed.rs= — the deployed bytes, built with the
   protocol's own code (parse_field_repr + binary_repr, the Misc
-  envelope, the singleton's proof preimage).
+  envelope, the signet signer's proof preimage).
 - =.../serialization/records.rs= — model scenario ↦ spec value, field
   by field. Deliberately a SECOND statement of each record: neither
   side is computed from the other.
@@ -338,10 +338,10 @@ Default =PROPTEST_CASES= is vault::gen's 48 (the suite reuses M10's
 generation strategies and config, so one knob scales both). 15 tests,
 1.15 s at the default. Elevated gate: PROPTEST_CASES=20000 → 20,000
 cases per property (records ×3 shapes/case, attested outputs ×4
-circuits/case, singleton Misc ×288-position tamper sweep, both
+circuits/case, signet signer Misc ×288-position tamper sweep, both
 artifacts simulated per case) in 479 s of test time / 8 m 06 s wall,
 exit 0, 15 passed. =cargo test --workspace --release= fully green (50
-test binaries, 0 failures). The two singleton properties dominate: at
+test binaries, 0 failures). The two signet signer properties dominate: at
 20,000 cases they simulate 20,000 × 4 (sign) and 20,000 × 8 (respond)
 circuit runs across both artifacts.
 
@@ -448,7 +448,7 @@ zero new lock entries — it was already in the graph via minocrab-contracts).
 ** The library is tied to a DEPLOYED shape, not only to its own twin
 =serialization_conformance.rs= gained =mod in_circuit= (2 tests): a
 hand-written =CircuitBorsh= twin of stage 0's =RespondMisc= (the
-singleton's respond payload, whose bytes the PINNED COMPACTC ARTIFACT
+signet signer's respond payload, whose bytes the PINNED COMPACTC ARTIFACT
 accepts) is built as a circuit, simulated per proptest case, and its
 packed output compared to =borsh_bytes(&payload)= — equal. And its
 =layout()= is compared row for row against =layout_rows(
@@ -734,8 +734,8 @@ discipline; format_version byte recommended.
    AND THE PINNED CORPUS SAYS WHICH EVENTS, which sharpens the answer into
    the one stage 7 actually needs. `Signet.compact`:30-49 documents the
    whole flow, and it is BOTH channels with a specific split:
-   - the EVENT is the NOTIFICATION. The Signet singleton emits
-     `SignBidirectionalEventNotification`; "MPC polls the Signet singleton
+   - the EVENT is the NOTIFICATION. The signet signer emits
+     `SignBidirectionalEventNotification`; "MPC polls the signet signer
      contract's events for SignBidirectionalEventNotifications".
    - the RECORD is LEDGER STATE. Each notification is used "to look the
      declared SignBidirectionalEvent signature request up in the named
@@ -1264,7 +1264,7 @@ surfaces ONLY for user-level digests at Compact-interop boundaries.
 No part-Compact/part-MinoCrab contracts expected (dmd).
 
 * Protocol status (dmd 2026-08-15)
-NOTHING LIVE on Midnight (stagenet demo only, will be wiped) — the
+NOTHING LIVE on Midnight (a demo deployment only, to be wiped) — the
 format flip and both work orders are unconditionally greenfield. MPC
 changes go via the handoff document ~/Documents/Midnight/
 MPC-work-order.md ONLY (Felipe mid-branch; do not touch ~/mpc). The
@@ -1410,7 +1410,7 @@ regenerate.
 | records.json                    | VaultEvent (404 B), SwapEvent (571 B)             |
 | attested-outputs.json           | the stage-5 kinds + their signed preimages        |
 | attested-outputs-deployed.json  | what the DEPLOYED vault accepts today, for reference |
-| misc-payloads.json              | the singleton's payloads + the 288-byte envelope  |
+| misc-payloads.json              | the signet signer's payloads + the 288-byte envelope  |
 Each vector carries =type=, =len=, =hex= (the authoritative canonical Borsh
 bytes), =sha256= (persistentHash of this preimage), =keccak256= (the REQUEST
 ID for a record, the SIGNED DIGEST for an AttestationPreimage, a checksum

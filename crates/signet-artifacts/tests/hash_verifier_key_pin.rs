@@ -7,7 +7,7 @@
 //! NO fixture pair (a `.verifier` file plus its published hash) was found
 //! anywhere reachable: `@sig-net/midnight-contract` (the package that
 //! carries `expectedVk`) is not vendored in `~/mpc` — nothing there has
-//! `node_modules` installed — and the signet contract is not deployed yet,
+//! `node_modules` installed — and the signet signer is not deployed yet,
 //! so no `expectedVk` table with real values exists. So the pin is made
 //! real the other way the milestone allows: actually RUN the TypeScript
 //! implementation, via node, on one of our own committed `.verifier` files,

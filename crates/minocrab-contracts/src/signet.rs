@@ -282,7 +282,7 @@ impl<V: Vis3, const WORDS: usize, const LEN_OUT: usize, const LEN_RESPOND: usize
 /// It is in the RECORD only — never in an attested output, where the kind tag
 /// suffices and the digest is signed (notes/borsh-format.org §"ANSWERED from
 /// MPC source", Q4). The record is what the MPC reads back out of ledger
-/// STATE, so this byte is what its FAB cursor sees first; the singleton's
+/// STATE, so this byte is what its FAB cursor sees first; the signet signer's
 /// notification payload is a different, unchanged shape (Q6), and it is the
 /// notification — not the record — that is logged today.
 pub const RECORD_FORMAT_VERSION: u8 = 0x80;
@@ -750,7 +750,7 @@ pub fn reverse_bytes32<V: Vis3>(c: &mut Circuit3, b: &B32<V>) -> B32<V> {
 
 /// The two 32-byte limbs an MPC attestation's ECDSA signature enters the
 /// circuit as — `bigR.x` and `s` in `verifyRespondBidirectionalEvent`'s
-/// CIRCUIT-INPUT FORM, LITTLE-endian (the singleton's event carries them
+/// CIRCUIT-INPUT FORM, LITTLE-endian (the signet signer's event carries them
 /// big-endian; the reversal happens off-chain, where it is free — the TS
 /// SDK's `respondBidirectionalEventToCircuitInput`, `signet-sim`'s
 /// `Signature::circuit_input`). A wrong byte order fails verification,

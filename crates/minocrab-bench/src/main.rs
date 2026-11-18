@@ -1,5 +1,5 @@
 //! M6 baseline benchmark harness: the erc20-vault contract (twenty-nine
-//! circuits since M44) and its Signet singleton dependency, proved under
+//! circuits since M44) and its signet signer dependency, proved under
 //! each toolchain at the same pinned versions.
 //!
 //! A run is a matrix of circuits ([`Target`]) × [`Side`]s, and sides are
@@ -626,7 +626,7 @@ mod tests {
         assert_eq!(
             targets().len(),
             32,
-            "twenty-nine vault circuits and the singleton's three"
+            "twenty-nine vault circuits and the signet signer's three"
         );
         assert_eq!(cells().len(), targets().len() * 2);
         let signet = targets().into_iter().find(|t| t.name == "respond").unwrap();

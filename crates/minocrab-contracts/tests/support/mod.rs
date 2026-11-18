@@ -8,8 +8,8 @@
 //! module, not the item.
 #![allow(dead_code, unused_imports)]
 
-// The Signet singleton's calls, built through the LEDGER's own
-// `ContractCallPrototype`/`construct_proof` (M29 rung C). Every singleton
+// The signet signer's calls, built through the LEDGER's own
+// `ContractCallPrototype`/`construct_proof` (M29 rung C). Every signet signer
 // proof preimage in the suite comes from here.
 pub mod proving;
 pub mod signet_call;

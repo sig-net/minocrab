@@ -467,7 +467,7 @@ crate describes a CONTRACT, not one caller's usage of it, and the extra two
 pay their way immediately: they bring =Signature= (shared by both events,
 so the generator's name-dedup rule is exercised), =AffinePoint=, and a
 =RequestId= alias, and stage 6's =contract_matches_its_interface= checks the
-signet-contract port against all three.
+signet signer port against all three.
 
 ** =minocrab-abi=: SIX CHECKS, and the one that is an independent oracle
 =Artifact::assert_interface_matches::<A, R>(entry_point)= where =A= is the
@@ -772,7 +772,7 @@ throughout.
 
 0.3.0, 2026-10-19 (M45): regenerated from the midnight-integration
 v0.25.0 artifact (corpus =signet-midnight-integration-v0250=, =b62e67e=),
-the singleton =@sig-net/midnight-contract= 0.25.0 deploys. The generator
+the signet signer =@sig-net/midnight-contract= 0.25.0 deploys. The generator
 names the structs as compactc's =contract-info.json= does, so they are
 now =SignatureRespondedEventV1= and =RespondBidirectionalEventV1=, and
 the latter carries =outputHash: Bytes<32>= between

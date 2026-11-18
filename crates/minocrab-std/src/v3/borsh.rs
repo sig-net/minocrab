@@ -25,7 +25,7 @@
 //! a Rust `enum` leaves the dual-oracle subset, because bincode-fixint writes
 //! a 4-byte variant index where Borsh writes one).
 //!
-//! Trailing zero padding — what a fixed envelope like the singleton's
+//! Trailing zero padding — what a fixed envelope like the signet signer's
 //! `Bytes<256>` `Misc` payload needs — is NOT Borsh and is not claimed to be:
 //! the rule the spec states is "bytes `0..LEN` are the Borsh encoding, bytes
 //! `LEN..N` MUST be zero". [`to_bytes`](crate::v3::borsh::to_bytes) writes exactly that (the pad is
@@ -300,7 +300,7 @@ pub fn alignment_of<V: Vis3, T: CircuitBorsh<V>>(value: &T) -> Alignment {
 /// `0..T::LEN` are the canonical Borsh encoding, bytes `T::LEN..N` are zero.
 ///
 /// `N == T::LEN` is the exact encoding; `N > T::LEN` is the padded-envelope
-/// rule the spec states for fixed containers like the singleton's 288-byte
+/// rule the spec states for fixed containers like the signet signer's 288-byte
 /// `Misc` (and the pad is constant zero limbs, so it costs nothing).
 ///
 /// THIS is the path that costs rows — the M7 segment packing, one `div_mod`

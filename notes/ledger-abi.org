@@ -639,7 +639,7 @@ keeping:
 
 Still to build here: MerkleTree ops and the ledger-declaration DSL
 that assigns field indices and picks op sequences automatically.
-For M6 proper: the Signet singleton's own circuits, then the
+For M6 proper: the signet signer's own circuits, then the
 benchmark harness (head-to-head RAM / proving time / cost
 breakdowns, single-command reproducible).
 

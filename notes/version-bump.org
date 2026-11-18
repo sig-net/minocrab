@@ -170,7 +170,7 @@ contracts at compactc 0.36.0) through the entry-point hash rule;
   Impact op encoding moved.
 - RESPONSE: FIX OUR LOWERING. Everything cross-contract is downstream of
   this — the interface crates' six checks, =contract_call='s commitment, the
-  vault's calls to the Signet singleton — so fix it here before reading any
+  vault's calls to the signet signer — so fix it here before reading any
   other failure.
 
 ** 5. The differential suites — the test targets named =*differential*= (18 at 2026-08-17; count with =ls crates/*/tests/*differential*.rs= rather than trusting this line)
@@ -538,7 +538,7 @@ change nothing. If either is false, neither is usable as a bump instrument.
 *** D1 — is a corpus recompile a diff?
 =./corpus/compile.sh signet-midnight-examples= (1.8s, 1/1 OK) and
 =./corpus/compile.sh signet-midnight-integration= (4.3s, 6/6 OK) — the
-erc20-vault and the Signet singleton, the two artifacts the benchmark and
+erc20-vault and the signet signer, the two artifacts the benchmark and
 the differentials lean on hardest — left =corpus/zkir/= *byte-identical*.
 Then the whole corpus:
 
@@ -939,7 +939,7 @@ fire, and one — the most alarming — was wrong in the good direction.
 | P1 | Uint<0..1> alignment moves artifacts | MECHANISM CONFIRMED, REACH ZERO — family E; a probe shows the one-byte Impact change, no artifact we compile has one in ledger position |
 | P2 | point/scalar hashing alignment moves the sig-net v3 artifacts | DID NOT FIRE — all four are byte-identical |
 | P3 | secp256k1EthereumAddress's new assert moves rows | DID NOT FIRE — the only corpus source exporting it does not compile on the v2 path, before or after |
-| P4 | the ECDSA big-endian z change moves the Signet circuits | DID NOT FIRE, and PROBED rather than assumed: a =secp256k1EcdsaVerify= probe compiled under both pins is byte-identical (97 lines each), and so are signet-contract's three compiled circuits |
+| P4 | the ECDSA big-endian z change moves the Signet circuits | DID NOT FIRE, and PROBED rather than assumed: a =secp256k1EcdsaVerify= probe compiled under both pins is byte-identical (97 lines each), and so are the signet signer's three compiled circuits |
 | P5 | sources naming the removed ECDSA stdlib names lose ok | INCONCLUSIVE — the one corpus hit (zkir-v3-library.compact) fails before and after, now on the type import instead |
 | P6 | the point/scalar types stop being built-in → FEWER ok, sig-net at risk | HELD FOR THE COMPACT REPO, WRONG FOR SIG-NET — two compact-repo files change their error to "unbound identifier Secp256k1Scalar"; all 23 sig-net rows stay ok. Exporting a LEDGER FIELD of a point type is still fine; the breaking change is exporting the TYPE |
 | P7 | stdlib add/mul removal changes nothing here | HELD |
@@ -964,8 +964,8 @@ notes/compact-findings.org §4 deferred a re-measurement to "the
 bump-time bench", because 0.34.0's notes mention smaller circuits and
 better CSE. Here it is, and the answer is that nothing moved.
 
-Method: the two benchmark contracts — signet-contract (the Signet
-singleton, 3 circuits) and erc20-vault (17 circuits since M28) — were
+Method: the two benchmark contracts — signet-contract (the
+signet signer, 3 circuits) and erc20-vault (17 circuits since M28) — were
 recompiled from the SAME sources with BOTH pinned compilers into a
 scratch tree, and priced with Midnight's own cost model
 (=minocrab_sim::v3::cost=, the =zkircost= example, which is what

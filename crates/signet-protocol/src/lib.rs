@@ -1,4 +1,4 @@
-//! What the Signet singleton and the MPC that reads it must agree on, and
+//! What the signet signer and the MPC that reads it must agree on, and
 //! nothing else.
 //!
 //! Three parties read these facts: the contract (`minocrab-contracts`'

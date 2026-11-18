@@ -365,7 +365,7 @@ pub fn vector<T: BorshSerialize + BorshSchema>(name: &str, value: &T) -> Vector 
     }
 }
 
-/// A vector for a payload the singleton logs, carrying the 288-byte `Misc`
+/// A vector for a payload the signet signer logs, carrying the 288-byte `Misc`
 /// envelope the deployed contract emits around it.
 fn misc_vector<T: BorshSerialize + BorshSchema>(name: &str, event: &str, value: &T) -> Vector {
     let mut v = vector(name, value);
@@ -879,7 +879,7 @@ fn deployed_attested_outputs() -> String {
     )
 }
 
-/// The singleton's logged payloads, inside the envelope they are logged in.
+/// The signet signer's logged payloads, inside the envelope they are logged in.
 fn misc_payloads() -> String {
     let request_id = request_id_of(&vault_event_v1());
     let mut payload = [0u8; 128];
@@ -889,7 +889,7 @@ fn misc_payloads() -> String {
     payload[32] = 2;
     payload[33..37].copy_from_slice(b"reqs");
     file(
-        "The Signet singleton's Misc log payloads, in the DEPLOYED singleton format. `hex` is \
+        "The signet signer's Misc log payloads, in the DEPLOYED signet signer format. `hex` is \
          the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, \
          eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the \
          deployed circuit hashes them). The request id inside these payloads is a checksum over \

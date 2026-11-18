@@ -11,7 +11,7 @@
 //! `crates/minocrab-bench` prices the PROOF (keygen, prove, verify, RSS);
 //! this gate prices the TRANSACTION, the way a chain does. Per circuit ×
 //! side it runs the whole posting path in one subprocess (so peak RSS is
-//! the cell's own): keygen from that side's IR → deploy the singleton under
+//! the cell's own): keygen from that side's IR → deploy the signet signer under
 //! that side's verifier key → build the same call the other gates build →
 //! `Transaction::prove` in process → `seal` → `well_formed` with proofs
 //! verified in `Real` mode → `apply`; and it reads off the ledger what the

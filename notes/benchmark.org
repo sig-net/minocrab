@@ -1,7 +1,7 @@
-#+title: M6 baseline benchmark: erc20-vault + Signet singleton, MinoCrab vs compactc
+#+title: M6 baseline benchmark: erc20-vault + signet signer, MinoCrab vs compactc
 
 * Methodology
-- Targets: all 9 erc20-vault circuits + the Signet singleton's 3
+- Targets: all 9 erc20-vault circuits + the signet signer's 3
   (signet-contract.compact). Both artifact sets at the same pinned
   versions: compactc 0.33.0-rc.2 goldens from =corpus/zkir=, MinoCrab
   artifacts built in-process from =crates/minocrab-contracts=.
@@ -63,11 +63,11 @@ Findings:
   the correctness-preservation evidence the milestone wanted.
 - MinoCrab strictly better on rows where compactc pays extra
   div_mod/reconstitute byte-repacking: refund -12.2%, completeSwap
-  -14.6%, singleton circuits -53..-55% (their emit path explodes and
+  -14.6%, signet signer circuits -53..-55% (their emit path explodes and
   rebuilds bytes twice — respond 270 div_mod vs our 120).
 - k strictly lower on 5 circuits → ~half prove time and RAM there:
   claim + completeWithdraw (16 vs 17: near-equal rows sit just under
-  2^16 for us, just over for them) and all 3 singleton circuits (15 vs
+  2^16 for us, just over for them) and all 3 signet signer circuits (15 vs
   16). Measured: completeWithdraw -52% prove / -43% RSS, respond -47% /
   -50%.
 - Proof sizes identical per circuit (same proof system); verify times
@@ -98,7 +98,7 @@ record of the circuits as they were, not regenerated; a fresh
    abi_word_to_uint128 is already the cheap form — the explode side
    is the cost).
 3. "signet: notification" (160 instr: 123 reconstitute) — 44% of
-   deposit, 37% of withdraw, 25% of swap — and the singleton's "event
+   deposit, 37% of withdraw, 25% of swap — and the signet signer's "event
    serialize + emit" (98% of respond: 278 reconstitute + 120 div_mod).
    Batched/wider-limb serializer output attacks both.
 4. k-boundary circuits: refund (85,185 rows) and completeSwap (89,300)
@@ -153,7 +153,7 @@ Row results (deterministic; baseline → optimised, vs compactc):
 | swap             |       70860 |      51485 | 17→16 | -27.6% (k 16v17) |
 | completeSwap     |       89300 |      65071 | 17→16 | -37.8% (k 16v17) |
 ALL k=17 vault circuits crossed to k=16; approveRouter crossed 15→14.
-Singleton circuits untouched by this pass (their cost is the
+Signet signer circuits untouched by this pass (their cost is the
 Serializer, see next target).
 
 Re-measured timing/RSS (minocrab cells re-proved 2026-08-15 median-of-3
@@ -177,12 +177,12 @@ CAUTION: refund (65,231) and completeSwap (65,071) now sit ~300-450
 rows under 2^16 — protect that boundary in later passes.
 
 Remaining targets after pass 1 (from the refreshed profiles):
-1. Serializer re-limbing (the singleton's "event serialize + emit" is
+1. Serializer re-limbing (the signet signer's "event serialize + emit" is
    98% of respond's instructions: byte-explode + reconstitute across
    31-byte limb boundaries). Same disease, needs a Serializer that
    tracks byte offsets and splits input limbs with ≤2 div_mods at
    output-limb boundaries instead of full explosion. Applies to the 3
-   singleton circuits (and the events experiment).
+   signet signer circuits (and the events experiment).
 2. What's left in the vault circuits is PI-coupled (impact ops,
    public_input embeds of the map lookups, constrain_bits on
    arguments) — not reachable by lowering changes; would need
@@ -191,7 +191,7 @@ Remaining targets after pass 1 (from the refreshed profiles):
    compact-compatibility ends; note for the M7 write-up.
 
 * M7 pass 2 (2026-08-15): Serializer re-limbing
-The Serializer (event payloads: the 3 singleton circuits, the events
+The Serializer (event payloads: the 3 signet signer circuits, the events
 experiment, xcontract-events' token deposit) kept every field as
 exploded byte wires and reconstituted all output limbs — the same
 explode disease at ~150 rows per byte. Rewritten segment-based
@@ -202,13 +202,13 @@ zero-padding costs nothing (missing tail limbs are the zero constant).
 Precondition documented: pushed wires must be range-constrained by the
 caller (all corpus callers are; the byte-wise form relied on the same).
 
-Singleton results (deterministic rows; timing re-measured median-of-3):
+Signet signer results (deterministic rows; timing re-measured median-of-3):
 | circuit              | rows before → after |     k | vs compactc                     |
 |----------------------+---------------------+-------+---------------------------------|
 | signBidirectional    | 23573 → 1205        | 15→11 | -97.6% rows, -97.9% prove (0.17s vs 8.33s), -93.9% RSS (53MB vs 872MB) |
 | respond              | 18582 → 1004        | 15→10 | -97.5% rows, -98.7% prove (0.11s vs 8.24s), -95.0% RSS (44MB vs 875MB) |
 | respondBidirectional | 18594 → 1004        | 15→10 | -97.5% rows, -98.7% prove, -95.3% RSS |
-All differential suites green unchanged (signet-contract's tamper
+All differential suites green unchanged (the signet signer's tamper
 agreement included — the emitted Misc limbs are PI-checked against
 compactc's artifacts, so the packing is value-verified).
 
@@ -233,7 +233,7 @@ rows) bit-identical — the numbers below still stand
 Full fresh re-run after passes 1+2; presentable write-up at
 /BENCHMARK.md (repo root), raw data target/bench/. Same-session prove
 deltas are the honest ones: -46..-51% on the five k-crossing vault
-circuits, -37% approveRouter (k 14 vs 15), -95.7..-97.4% singleton,
+circuits, -37% approveRouter (k 14 vs 15), -95.7..-97.4% signet signer,
 and ~0% where k is equal despite -19..-35% rows (deposit, withdraw:
 proving is dominated by the padded 2^k size, so row cuts pay at
 boundary crossings — this framing is in the write-up). initialize
@@ -297,7 +297,7 @@ the new names, then =nix develop -c ./bench.sh= for prove time and RSS.
 
 * 2026-09-05 — the seventeen-circuit run, two sides (M28 C)
 The full BENCHMARK.md run on the re-ported compat lineage: 17 vault
-circuits + the singleton's 3, sides =minocrab= / =compactc=, one shared
+circuits + the signet signer's 3, sides =minocrab= / =compactc=, one shared
 preimage per cell (dumped by the differential suite), median-of-3 prove,
 one subprocess per cell. 40 cells; the =opt= / =borsh= sides are gone with
 the forks (notes/vault-refresh.org §0). Full table in BENCHMARK.md; the
@@ -314,7 +314,7 @@ shape of the result:
 | startSupply | 15/15 | −29.5% | −6.1% | −2.1% |
 | startRedeem | 15/16 | −34.9% | −44.2% | −47.3% |
 | the nine settles | 16/16 | −11.5..−16.4% | ±noise | ±noise |
-| the singleton ×3 | 10-11/16 | −97.5% | −95..−97% | −95% |
+| the signet signer ×3 | 10-11/16 | −97.5% | −95..−97% | −95% |
 
 Reading: the port's advantage was always instruction selection around
 the vault's own hashes; the protocol move replaced those hashes with
@@ -328,7 +328,7 @@ The Pending lineage's rows-only table above still stands as the API
 lineage's own statement.
 
 * 2026-09-24 — posting on chain, both artifact sets (M43 D)
-The question dmd asked for the production handover: is the MinoCrab artifact more efficient than compactc's for the MPC's data-availability posts, and what does posting cost on chain under each? =crates/minocrab-contracts/tests/signet_posting.rs= answers it the way a chain would: per circuit × side, in its own subprocess, keygen from that side's IR → deploy the singleton under that side's verifier key → the same call the construction gate proved PI-equal under both → =Transaction::prove= in process → =seal= → =well_formed= with proofs verified in =Real= mode → =apply=, then =Transaction::cost= and =Transaction::fees= under =INITIAL_PARAMETERS=. The compactc side is the corpus =.zkir= compactc 0.34.0 wrote for midnight-integration PR #127 (=e9350c4=), keygen'd with the same =midnight-zkir-v3 3.0.0-rc.2=. Run: =cargo test --release -p minocrab-contracts --test signet_posting -- --ignored posting_benchmark --nocapture=; this machine (Apple Silicon), median of 3 proves, params warm.
+The question dmd asked for the production handover: is the MinoCrab artifact more efficient than compactc's for the MPC's data-availability posts, and what does posting cost on chain under each? =crates/minocrab-contracts/tests/signet_posting.rs= answers it the way a chain would: per circuit × side, in its own subprocess, keygen from that side's IR → deploy the signet signer under that side's verifier key → the same call the construction gate proved PI-equal under both → =Transaction::prove= in process → =seal= → =well_formed= with proofs verified in =Real= mode → =apply=, then =Transaction::cost= and =Transaction::fees= under =INITIAL_PARAMETERS=. The compactc side is the corpus =.zkir= compactc 0.34.0 wrote for midnight-integration PR #127 (=e9350c4=), keygen'd with the same =midnight-zkir-v3 3.0.0-rc.2=. Run: =cargo test --release -p minocrab-contracts --test signet_posting -- --ignored posting_benchmark --nocapture=; this machine (Apple Silicon), median of 3 proves, params warm.
 
 | circuit | side | k | rows | prover key MB | keygen s | prove s | peak RSS MB | proof B | tx B | well_formed s | fee SPECKS | compute ms | read ms | block usage B | written B |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|

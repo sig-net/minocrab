@@ -150,7 +150,7 @@ fn the_committed_managed_dir_cannot_prove() {
     }
 }
 
-/// THE `expectedVk` GATE, in both directions: a singleton deployed under our
+/// THE `expectedVk` GATE, in both directions: a signet signer deployed under our
 /// committed keys passes, and one whose operations carry each OTHER circuit's
 /// key is caught — by the hash, not by the name.
 ///
@@ -252,7 +252,7 @@ fn the_resolver_answers_to_both_spellings_of_a_key_location() {
 
 /// The publisher's steps, on a REAL request id and a REAL signature taken off
 /// the capture chain's own respond transaction: the transaction is well
-/// formed against a singleton deployed under our verifier keys, it applies,
+/// formed against a signet signer deployed under our verifier keys, it applies,
 /// and the 288 bytes the ledger recorded while applying it are the 288 bytes
 /// the captured transaction carried.
 ///
@@ -274,7 +274,7 @@ fn a_respond_publish_applies_and_emits_the_captured_bytes() {
     let ctx = chain_context(tblock);
     let mut rng = StdRng::seed_from_u64(0x5055_424c_4953_4800);
     let built = build(&ctx, &call, Fr::from(COMM_RAND), ttl(tblock), &mut rng)
-        .expect("the singleton's Push+Log program partitions");
+        .expect("the signet signer's Push+Log program partitions");
 
     // No unshielded offer and no dust registration, so signing has nothing to
     // sign — asserted rather than skipped, because the step is in the pipeline
@@ -343,7 +343,7 @@ fn the_intent_carries_the_ttl_the_segment_and_one_call() {
     let calls = calls_of(&intent.1);
     assert_eq!(calls.len(), 1, "one call");
     assert_eq!(calls[0].entry_point.as_ref(), RESPOND.as_bytes());
-    assert!(calls[0].fallible_transcript.is_none(), "mpc's reader drops fallible singleton calls");
+    assert!(calls[0].fallible_transcript.is_none(), "mpc's reader drops fallible signet signer calls");
 }
 
 /// A deployment whose table has no entry for a circuit cannot build a call

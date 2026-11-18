@@ -1,10 +1,10 @@
 # Captured Signet respond transactions (imported from `sig-net/mpc`)
 
-Two real, finalized Midnight transactions carrying the singleton's
+Two real, finalized Midnight transactions carrying the signet signer's
 `SignatureRespondedEvent` and `RespondBidirectionalEvent`. They are the
 PRODUCER EVIDENCE for the event names, the Misc envelope and the Impact
 program `crates/minocrab-contracts/tests/signet_ledger_apply.rs` builds:
-they were emitted by compactc's artifact of the deployed singleton, not by
+they were emitted by compactc's artifact of the deployed signet signer, not by
 anything in this repo.
 
 | file | bytes | SHA-256 |
@@ -28,14 +28,14 @@ this repo depends on are reproduced here:
 - One local `midnight-integration` capture chain at
   `c171225731f5ca07028fcd6caa6ced853ed139ef`, running
   `@sig-net/midnight-contract@0.20.0-rc.1` (compactc `0.33.0-rc.2`).
-- Singleton address
+- Signet signer address
   `b116cd0482b84922e761278a25d1ee2305fd6d630f0d48954d2af6537f8e214e`;
   caller address
   `e4ae041a1c3f1538902c6a8f5aedb1e791b66cef7a715114153f3bba44a87eb6`.
 - Both captured events carry request id
   `1cd10eb1f4fa5c665084d24a7982b09aa321886dce77d85b5f6feee0687a414b`.
 
-| file | finalized block | extrinsic | status | singleton call index | decoded event |
+| file | finalized block | extrinsic | status | signet signer call index | decoded event |
 |---|---|---:|---|---:|---|
 | `respond-tx-161.mn` | `4fcf501af455ebbde39bb70e6d06245a3c581239c47185cefad0f034ce4adc25` at 161 | 4 | `TxApplied` | 0 | `SignatureRespondedEvent` |
 | `respond-bidirectional-tx-181.mn` | `b375f617cf94b19c0f75703dfa943da5dd9c64f97aaa5568517df57d4c8e675f` at 181 | 4 | `TxApplied` | 0 | `RespondBidirectionalEvent` |
@@ -62,14 +62,14 @@ them under `midnight-ledger-v9` 1.0.1. They first decoded here under rev
 `04c9c5d`, the M29 F evidence that the two pins agreed on the transaction
 wire format.
 
-## The singleton these captures predate
+## The signet signer these captures predate
 
-The singleton this crate ports is midnight-integration v0.25.0 (`b62e67e`):
+The signet signer this crate ports is midnight-integration v0.25.0 (`b62e67e`):
 `respond` and `respondBidirectional` take ONE event struct, and
 `respondBidirectional`'s payload is `requestId(32) ‖ blockHeight LE(8) ‖
 outputKind(1) ‖ serializedOutputLength LE(8) ‖ outputHash(32) ‖ digest(32) ‖
 signature(97) ‖ zeros(46)`. Consequences for these two captures, both taken
-from a chain running an earlier singleton
+from a chain running an earlier signet signer
 (`@sig-net/midnight-contract@0.20.0-rc.1`):
 
 - `respond-tx-161.mn` still evidences all 288 bytes: `respond`'s field vector
@@ -78,6 +78,6 @@ from a chain running an earlier singleton
   name, the request id at payload offset 0 and the program's shape (`push`
   of the three-cell Misc, `log`) — NOT the payload layout, which the test
   now only checks has moved. A capture from a chain running the v0.25.0
-  singleton is OWED here; when it lands, the test becomes the full 288-byte
+  signet signer is OWED here; when it lands, the test becomes the full 288-byte
   comparison `respond` has (`signet_ledger_apply.rs`,
   `respond_bidirectional_apply_matches_the_captured_transactions_program`).

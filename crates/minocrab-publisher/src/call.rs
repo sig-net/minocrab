@@ -202,7 +202,7 @@ impl ContractKeyLocation {
     }
 }
 
-/// The deployed singleton a publisher builds calls against: its address, and
+/// The deployed signet signer a publisher builds calls against: its address, and
 /// the verifier-key hash per circuit.
 ///
 /// The hash table is the package's `expectedVk` — `{circuit ->
@@ -437,7 +437,7 @@ pub fn sign_bidirectional_input(
 
 // ---- the transcript --------------------------------------------------------
 
-/// The singleton's Impact program: one Misc event, `Push` + `Log`.
+/// The signet signer's Impact program: one Misc event, `Push` + `Log`.
 ///
 /// In the TypeScript stack this comes out of compactc's generated JS
 /// executor. `minocrab-contracts`' `tests/signet_ledger_apply.rs` checks
@@ -461,7 +461,7 @@ pub fn log_ops<D: DB>(misc_bytes: &[u8]) -> Vec<VmOp<D>> {
     ]
 }
 
-/// The singleton's state: NO ledger fields — all three signer circuits are
+/// The signet signer's state: NO ledger fields — all three signer circuits are
 /// stateless, so the state a call runs against is empty and identical for
 /// every one of them.
 pub fn empty_state<D: DB>() -> ChargedState<D> {

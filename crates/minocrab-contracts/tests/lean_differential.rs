@@ -108,7 +108,7 @@ fn corpus_table() -> Vec<(&'static str, String)> {
     ] {
         t.push((name, format!("{VAULT_DIR}/{name}.zkir")));
     }
-    // The Signet singleton's three emit-only circuits.
+    // The signet signer's three emit-only circuits.
     for name in ["signBidirectional", "respond", "respondBidirectional"] {
         t.push((name, format!("{SIGNET_DIR}/{name}.zkir")));
     }

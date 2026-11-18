@@ -15,8 +15,8 @@ workspace = true
 minocrab = { path = "../minocrab" }
 minocrab-std = { path = "../minocrab-std" }
 minocrab-ledger = { path = "../minocrab-ledger" }
-# AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the Signet
-# singleton through the callee's own published declaration, not through a
+# AN IMPORTED INTERFACE CRATE (M12 stage 4): the vault calls the
+# signet signer through the callee's own published declaration, not through a
 # transliteration kept here. Ordinary cargo dependency — that is the whole
 # point of the mechanism.
 signet-signer-interface = { path = "../signet-signer-interface" }
@@ -38,7 +38,7 @@ sha3.workspace = true
 
 [dev-dependencies]
 signet-sim = { path = "../signet-sim" }
-# M30 rung A: the singleton's construction path is LIBRARY code now — the
+# M30 rung A: the signet signer's construction path is LIBRARY code now — the
 # publisher's `call` module — and these suites build their preimages through
 # it, so what they gate is what a publisher produces. Since M30 C1 the edge
 # runs ONE way: the publisher reads its constants from signet-protocol and

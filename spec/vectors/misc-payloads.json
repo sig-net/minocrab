@@ -2,7 +2,7 @@
   "$comment": "GENERATED — do not edit. Regenerate with: cargo test --release -p minocrab-contracts --test serialization_conformance -- --ignored regenerate_spec",
   "format": "borsh-subset-vectors/1",
   "spec": "spec/borsh-subset.md",
-  "about": "The Signet singleton's Misc log payloads, in the DEPLOYED singleton format. `hex` is the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the deployed circuit hashes them). The request id inside these payloads is a checksum over the V1 VaultEventV1 vector (records.json), standing in for the Poseidon request id a real notification carries.",
+  "about": "The signet signer's Misc log payloads, in the DEPLOYED signet signer format. `hex` is the payload; `envelope_hex` is the 288-byte Misc value actually logged — pad(32, eventName) ‖ payload ‖ zeros — and the trailing zeros are REQUIRED, not optional (the deployed circuit hashes them). The request id inside these payloads is a checksum over the V1 VaultEventV1 vector (records.json), standing in for the Poseidon request id a real notification carries.",
   "vectors": [
     {
       "type": "SignBidirectionalMisc",

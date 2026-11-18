@@ -8,7 +8,7 @@ total across three repos.
 *The benchmark target (M6 since the 2026-08-14 reorder; was M7).*
 Shielded ERC-20 vault: =initialize=, =deposit=,
 =claim=, withdraw/swap request+settle circuits, schema/commitment pure
-circuits. Cross-contract calls the Signet singleton; =pragma
+circuits. Cross-contract calls the signet signer; =pragma
 language_version >= 0.25= → needs toolchain 0.33 (matches our pin).
 The =full-stack-demo= repo is the Next.js front-end for this vault (no
 .compact of its own).
@@ -21,14 +21,14 @@ The =full-stack-demo= repo is the Next.js front-end for this vault (no
 - =signet-midnight/src/circuits.compact= — contract-less re-export of the
   module's pure circuits for TS unit tests; compiled with =--skip-zk=, so
   NO zkir output → nothing to differential against.
-- =signet-contract/src/signet-contract.compact= — *this is the Signet
-  singleton contract* the vault calls cross-contract ("the central Sig
+- =signet-contract/src/signet-contract.compact= — *this is the
+  signet signer contract* the vault calls cross-contract ("the central Sig
   Network contract on Midnight", its own header). Three stateless
   emit-only circuits: signBidirectional / respond / respondBidirectional,
   each one Misc event (name pad(32,…) ‖ 256-byte payload), no ledger
   fields, no witnesses, unauthenticated by design. The 2026-08-13
   "NOT in scope" line below predates this finding — it read
-  signet-contract.compact as a separate client contract; the singleton's
+  signet-contract.compact as a separate client contract; the signet signer's
   circuits ARE signet-contract.compact's. Ported 2026-08-14:
   =minocrab-contracts::signet_contract=, all 3 differential-green incl.
   tamper + swapped-event-name rejection agreement
@@ -50,7 +50,7 @@ ones exercise cross-contract calling.
 - [ ] Add these three repos (pinned revs) to corpus/sources.json + fetch.sh
       once the public-corpus build lands, then recompile.
 - [X] For the benchmark (now M6, was M7): confirmed by dmd (2026-08-13) —
-      the target is erc20-vault (+ its Signet singleton dependency for
+      the target is erc20-vault (+ its signet signer dependency for
       cross-contract calls); signet-contract.compact is NOT in scope.
 
 * erc20-vault ledger-op inventory (2026-08-13, for the M4 ledger layer)

@@ -84,8 +84,8 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // itself did not move: every circuit name in the corpus, the new
     // source's included, still hashes to upstream's entry point. +3 at
     // M43 A: the second signet-midnight-integration pin (pr127, e9350c4),
-    // the singleton's three circuits at PR #127. +3 at M44 A: the third
-    // pin (v0.24.1, a80e98e) — three artifacts: the singleton, the Signet
+    // the signet signer's three circuits at PR #127. +3 at M44 A: the third
+    // pin (v0.24.1, a80e98e) — three artifacts: the signet signer, the Signet
     // module and its oracle program; the vault's 17 → 29 circuits replace
     // each other within its one artifact. Unchanged when the pr127 pin gave
     // way to v0.25.0 (b62e67e): three artifacts for three. +3 at the

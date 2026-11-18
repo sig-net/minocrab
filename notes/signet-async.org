@@ -136,7 +136,7 @@ The boundary is (Signet event, caller ledger state, EVM outcome) →
 pub trait Responder {
     fn respond(
         &mut self,
-        event: &SignBidirectionalEvent,      // as emitted by the singleton
+        event: &SignBidirectionalEvent,      // as emitted by the signet signer
         caller_state: &StateValue,           // the caller's ledger tree
         outcome: EvmOutcome,                 // the oracle, see below
     ) -> Result<Attestation, Refusal>;       // Refusal = what the reader drops
@@ -173,7 +173,7 @@ pub struct Attestation { request_id, signature: Secp256k1Sig, output: Vec<u8> }
   each call's preimage, as today.
 - =--release= gate: real proofs (=Zkir::prove=, in-process) and
   =LedgerState= + =Transaction::apply= so the cross-contract call to the
-  singleton, its event, and DUST all happen for real. The burn
+  signet signer, its event, and DUST all happen for real. The burn
   well-formedness test already builds the transaction half of this.
 
 ** Code reuse / dependency direction (open)
@@ -577,14 +577,14 @@ the max-=u128= word construction. Same NOT DONE as rung C proper: the
 spec harness extension.
 
 ** Rung D as built (2026-09-05): =crates/signet-sim=, the responder half
-- =Responder= trait: (singleton event payload, caller =StateValue=,
+- =Responder= trait: (signet signer event payload, caller =StateValue=,
   =EvmOutcome=) → =Attestation= | =Refusal=. =SigNetSim= implements it
   with ONE root scalar: the MPC's OWN reader (=reader.rs=, =records.rs=,
   =request_id.rs= — mechanical translations of
   =chain-signatures/chain-midnight= at mpc =b940f0a7=, plus the stage-7
   decode per the MPC's work order), the real epsilon derivation
   (=kdf.rs=, translated from =signet-crypto=, pinned by the MPC's own
-  golden vectors — all pass), and an ECDSA signer in the singleton's
+  golden vectors — all pass), and an ECDSA signer in the signet signer's
   wire shape (bigR as a point, s, recovery id; nonce deterministic).
   The response key is derived exactly as the node does it: requester =
   the CALLER CONTRACT's address, path "midnight response key", so what
@@ -1028,6 +1028,6 @@ the attestation. M35 E is unblocked in fact as well as in principle.
 - The =--release= speed (real proofs + =LedgerState= + =Transaction::apply=)
   is a constructor away — =Executed::preimage= is what
   =support/signet_call.rs= takes — but is not wired.
-- The executor is SINGLE-CALL: the xcall to the singleton is not executed,
+- The executor is SINGLE-CALL: the xcall to the signet signer is not executed,
   because the callee's transcript needs its own =execute= against its own
   state. =partition_transcripts= upstream is where a two-call version lands.

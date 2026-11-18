@@ -7,7 +7,7 @@ This whole project is vibe coded. If you use it for Midnight applications that d
 That said, it is a direct port of the Compact compiler with millions of tests checking compliance. Evaluating it seriously? Start with:
 
 - [VERIFICATION.md](VERIFICATION.md) — how we check that this compiler behaves correctly.
-- [BENCHMARK.md](BENCHMARK.md) — the seventeen-circuit vault against compactc, proving the identical statement: request circuits one to three `k` levels lower (prove −44..−81%), the ECDSA-floored settles at parity, the singleton −95..−97%.
+- [BENCHMARK.md](BENCHMARK.md) — the seventeen-circuit vault against compactc, proving the identical statement: request circuits one to three `k` levels lower (prove −44..−81%), the ECDSA-floored settles at parity, the signet signer −95..−97%.
 
 ## Why use this
 
@@ -345,7 +345,7 @@ The entry point is bound: its hash is a constant of the call's claim, as compact
 
 ## Cross-chain calls
 
-A Sig Network cross-chain call is one operation across two Midnight transactions with an MPC round trip between: a **request** circuit files the EVM transaction and notifies the Signet singleton; the MPC signs it with the contract's derived key, executes it and attests the output back; a **complete** circuit verifies the attestation and finishes, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)): selector, ABI words, response type, gas envelope, signing path and notification path all derive from the one thing the author writes down.
+A Sig Network cross-chain call is one operation across two Midnight transactions with an MPC round trip between: a **request** circuit files the EVM transaction and notifies the signet signer; the MPC signs it with the contract's derived key, executes it and attests the output back; a **complete** circuit verifies the attestation and finishes, or a **refund** circuit does when the call did not succeed. The CALL is a Rust type ([evm.rs](crates/minocrab-contracts/src/evm.rs)) and the ledger slot is typed by it ([evm_flow.rs](crates/minocrab-contracts/src/evm_flow.rs)): selector, ABI words, response type, gas envelope, signing path and notification path all derive from the one thing the author writes down.
 
 A whole treasury that sends an ERC-20 `transfer(to, amount)` from its derived EVM account, compiled and tested ([treasury.rs](crates/minocrab-contracts/src/treasury.rs)):
 
@@ -535,8 +535,8 @@ cargo test --workspace --release
 
 | circuit | k mc/cc | prove mc | prove cc | RAM mc | RAM cc |
 |---|---|---|---|---|---|
-| signBidirectional (singleton) | **11 / 16** | **0.14s** | 2.83s | **51MB** | 1,021MB |
-| respond (singleton) | **10 / 16** | **0.09s** | 2.69s | **41MB** | 904MB |
+| signBidirectional (signet signer) | **11 / 16** | **0.14s** | 2.83s | **51MB** | 1,021MB |
+| respond (signet signer) | **10 / 16** | **0.09s** | 2.69s | **41MB** | 904MB |
 | startDeposit | **11 / 14** | **0.15s** | 0.76s | **53MB** | 205MB |
 | approveRouter | **11 / 14** | **0.14s** | 0.74s | **54MB** | 223MB |
 | startSwap | **15 / 16** | **1.82s** | 3.35s | **674MB** | 1,189MB |
@@ -544,7 +544,7 @@ cargo test --workspace --release
 | completeSwap | 16 / 16 | 4.28s | 4.36s | 1.6GB | 1.6GB |
 | initialise | 10 / 10 | 0.14s | 0.14s | 49MB | 49MB |
 
-- The Signet singleton proves in **3–4% of compactc's time**, 5–6 `k` levels lower
+- The signet signer proves in **3–4% of compactc's time**, 5–6 `k` levels lower
 - Every vault request circuit crosses at least one `k` boundary; the 2-word requests drop three
 - Wins come from instruction selection around the protocol's hashes: one `div_mod` at a byte boundary and a native `reverse_bytes` per ABI word, where compactc spends ~640 rows a word on per-byte chains
 - The nine settle circuits cut 12–16% of rows, but secp256k1 verify (~24,450 rows) floors both sides at k16; the port never costs more than compactc
@@ -571,7 +571,7 @@ crates/minocrab-contracts       the sig-net corpus rewritten, plus the different
 crates/minocrab-bench           the head-to-head proving harness
 crates/minocrab-abi             the interface/artifact agreement checker
 crates/minocrab-interface-gen   compactc artifact → interface crate (CLI)
-crates/signet-signer-interface  an interface crate: the Signet singleton
+crates/signet-signer-interface  an interface crate: the signet signer
 crates/xcall-target-interface   an interface crate, generated from a contract nobody ported
 corpus/                         673 pinned Compact sources + 855 compactc artifacts
 spec/                           the Borsh-subset specification, golden vectors, generated TS

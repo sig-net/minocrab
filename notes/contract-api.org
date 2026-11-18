@@ -884,7 +884,7 @@ interface crate's `RequestId` TYPE, which is what it discloses.
 
 *** What the declarations found
 A cross-contract call discloses, and no one had said so. The four vault
-circuits that notify the Signet singleton (deposit, withdraw, swap,
+circuits that notify the signet signer (deposit, withdraw, swap,
 approveRouter, ×3 forks) failed their generated tests on
 `"xcall entry-point hash (hi)"`, `"(lo)"` and
 `"xcall communications commitment"` — disclosures made by
