@@ -304,3 +304,11 @@ compiling is a finding for its owners.
   scalar TYPES can no longer be exported from a contract's top level;
   a ledger field OF such a type is still fine. Nothing to report to
   their owners from this bump.
+
+* Added 2026-10-15: midnightntwrk/passport — the account custody contract and its MinoCrab port (PR #184)
+- URL: https://github.com/midnightntwrk/passport, PR #184 head 531580ca (branch nicolasdp/minocrab-account-custody)
+- Source name: =passport-account-custody=; =paths= the three Compact files under =experiments/minocrab-account-custody/reference/contracts/= (account.compact 2924 lines, account-p256.compact, webauthn.compact — the last two are =include= files of the first); =extra= the WHOLE experiment directory (the Rust port, measure harness, evidence, TS signers, lockfiles).
+- The Compact is a byte copy of passport =contract/= at 0d7bb0bc (spec_version 3: 52 state-changing entrypoints, JubJub/k256/P256, caller-bound grants, recovery). compactc 0.35.0 reproduces all 52 ZKIR artifacts SHA-256-identical to the PR's provenance.
+- AUTHORSHIP (dmd, 2026-10-15): the Compact is human-written; the Rust port is not (machine-written). First external MinoCrab contract in the corpus.
+- License: Apache-2.0.
+- Needs compactc ≥ 0.35.0 (secp256r1 is a ZKIR 3.1 feature), so it sat on the parked zkir-3.1 branch until main reached compactc 0.36.0 (M46); on main since 2026-11-19, recompiled under 0.36.0 without the =--feature-zkir-v3= flag (52 artifacts again). Review and improvement list: =notes/passport-account-custody.org=.

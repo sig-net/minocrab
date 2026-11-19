@@ -1,0 +1,199 @@
+diff -ru port-src-baseline/auth.rs port-src-improved/auth.rs
+--- port-src-baseline/auth.rs	2026-10-15 21:27:58.207157000 +0200
++++ port-src-improved/auth.rs	2026-10-15 21:34:38.583116000 +0200
+@@ -51,10 +51,21 @@
+         self
+     }
+     pub fn hash(self, c: &mut Circuit3) -> B32<Private> {
+-        hash::persistent_hash_compact(c, Alignment(self.atoms), &self.slots)
++        let imm: Option<Vec<minocrab::Fr>> = self.slots.iter().map(|w| w.as_immediate()).collect();
++        match imm {
++            Some(limbs) => hash::constant_persistent_hash(c, &Alignment(self.atoms), &limbs),
++            None => hash::persistent_hash_compact(c, Alignment(self.atoms), &self.slots),
++        }
+     }
+-    pub fn tag(c: &mut Circuit3, tag: &str) -> Self {
+-        Self::default().bytes(B32::pad(c, tag).private())
++    pub fn tag(_c: &mut Circuit3, tag: &str) -> Self {
++        assert!(tag.len() <= 32);
++        let mut bytes = [0u8; 32];
++        bytes[..tag.len()].copy_from_slice(tag.as_bytes());
++        let mut p = Self::default();
++        p.atoms.push(AlignmentSegment::Atom(AlignmentAtom::Bytes { length: 32 }));
++        p.slots.push(AnyWire3::immediate(minocrab::Fr::from(u64::from(bytes[31]))));
++        p.slots.push(AnyWire3::immediate(minocrab::Fr::from_le_bytes(&bytes[..31]).unwrap()));
++        p
+     }
+ }
+ 
+@@ -149,17 +160,7 @@
+     pub fn live_key(&self, c: &mut Circuit3) {
+         match self {
+             Self::P256 { .. } => {} // coordinate extraction rejects identity; cofactor is one
+-            Self::Jubjub { pk, .. } => {
+-                let eight = c.constant(8u64).private();
+-                let scalar = c.jubjub_scalar_from_native(eight);
+-                let cleared = c.ec_mul(pk.point(), scalar);
+-                let zero = c.constant(0u64).private();
+-                let zero = c.jubjub_scalar_from_native(zero);
+-                let identity = c.ec_mul_generator(zero);
+-                let weak = c.test_eq(cleared, identity);
+-                let live = c.not(weak);
+-                c.assert(live);
+-            }
++            Self::Jubjub { pk, .. } => pk.assert_not_small_order(c),
+             Self::K256 { x, y, .. } => {
+                 let zero = B32::pad(c, "").private();
+                 let xzero = bytes_eq(c, *x, zero);
+@@ -215,8 +216,7 @@
+         assert!(tag.len() <= 64);
+         let mut padded = [0u8; 64];
+         padded[..tag.len()].copy_from_slice(tag.as_bytes());
+-        let tag = BytesN::<Private, 64>::literal(c, &padded);
+-        let tag = Preimage::default().blob(&tag).hash(c);
++        let tag = hash::Preimage::<Private>::new().blob_const(&padded).hash(c);
+         let me = kernel::self_address(c).bytes().private();
+         let p = Preimage::default().bytes(tag).bytes(me);
+         let p = if let Self::Jubjub { r, .. } = self {
+diff -ru port-src-baseline/grants.rs port-src-improved/grants.rs
+--- port-src-baseline/grants.rs	2026-10-15 21:27:58.208273000 +0200
++++ port-src-improved/grants.rs	2026-10-15 21:34:38.584296000 +0200
+@@ -277,13 +277,10 @@
+     let unrestricted = c.mul(hi, lo);
+     let restricted = c.not(unrestricted);
+     c.when(restricted, |c| {
+-        let caller = crate::caller::caller(c);
+-        c.assert(caller[0]);
+-        c.assert(caller[1]);
+-        let address = B32 {
+-            hi: caller[2].private(),
+-            lo: caller[3].private(),
+-        };
++        let caller = kernel::caller(c);
++        c.assert(caller.is_some.field());
++        c.assert(caller.value.is_left.field());
++        let address = caller.value.left.bytes().private();
+         let present = c.constant(1u64).private();
+         let commitment = caller_commit(c, opening.salt, present, address);
+         let valid = bytes_eq(c, commitment, g.scope.caller_commit.private());
+diff -ru port-src-baseline/lib.rs port-src-improved/lib.rs
+--- port-src-baseline/lib.rs	2026-10-15 21:27:58.208441000 +0200
++++ port-src-improved/lib.rs	2026-10-15 21:34:38.584479000 +0200
+@@ -123,8 +123,8 @@
+             let sum = c.add(prior.field(), amount.field());
+             let sum = Uint::<128, Public>::from_field_checked(c, sum);
+             ACCOUNT.unshielded_balances.insert(c, &color, &sum);
+-        });
+-        c.when(not(is_true(exists)), |c| {
++        })
++        .otherwise(|c| {
+             ACCOUNT.unshielded_balances.insert(c, &color, &amount);
+         });
+         increment(c, &ACCOUNT.round);
+diff -ru port-src-baseline/p256.rs port-src-improved/p256.rs
+--- port-src-baseline/p256.rs	2026-10-15 21:27:58.208615000 +0200
++++ port-src-improved/p256.rs	2026-10-15 21:34:38.584659000 +0200
+@@ -76,50 +76,7 @@
+ }
+ 
+ fn base64(c: &mut Circuit3, challenge: B32<Private>) -> BytesN<Private, 43> {
+-    let bytes = BytesN::from(challenge).to_le_bytes(c);
+-    let mut bits = Vec::with_capacity(258);
+-    for byte in bytes {
+-        let mut value = byte;
+-        let mut little = Vec::with_capacity(8);
+-        for _ in 0..8 {
+-            let (q, r) = c.div_mod_power_of_two(value, 1);
+-            little.push(r);
+-            value = q;
+-        }
+-        bits.extend(little.into_iter().rev());
+-    }
+-    bits.extend([c.constant(0u64).private(); 2]);
+-    let out: Vec<_> = bits
+-        .as_chunks::<6>()
+-        .0
+-        .iter()
+-        .map(|bits| {
+-            let mut index = c.constant(0u64).private();
+-            for bit in bits {
+-                let doubled = c.mul(index, 2u64);
+-                index = c.add(doubled, *bit);
+-            }
+-            let bound = c.constant(26u64).private();
+-            let less26 = c.less_than(index, bound, 6);
+-            let bound = c.constant(52u64).private();
+-            let less52 = c.less_than(index, bound, 6);
+-            let bound = c.constant(62u64).private();
+-            let less62 = c.less_than(index, bound, 6);
+-            let eq62 = c.test_eq(index, 62u64);
+-            let upper = c.add(index, 65u64);
+-            let lower = c.add(index, 71u64);
+-            let four = c.constant(4u64).private();
+-            let minus4 = c.neg(four);
+-            let digit = c.add(index, minus4);
+-            let dash = c.constant(45u64).private();
+-            let underscore = c.constant(95u64).private();
+-            let tail = c.cond_select(eq62, dash, underscore);
+-            let tail = c.cond_select(less62, digit, tail);
+-            let tail = c.cond_select(less52, lower, tail);
+-            c.cond_select(less26, upper, tail)
+-        })
+-        .collect();
+-    BytesN::from_le_bytes(c, &out)
++    minocrab_std::v3::base64url_32(c, &challenge)
+ }
+ 
+ pub fn verify(
+@@ -130,11 +87,14 @@
+     sig: Signature,
+     pk: Point,
+ ) {
+-    let bytes = data.to_le_bytes(c);
+-    let rp = BytesN::<Private, 32>::from_le_bytes(c, &bytes[..32]).to_b32();
++    // Bytes 0..30 are the low limb as-is; bytes 31..36 are the 6-byte
++    // leftover limb, split once (5 splits instead of 36).
++    let limbs = data.limbs();
++    let top = minocrab_std::v3::explode_limb(c, limbs[0], 6);
++    let rp = B32 { lo: limbs[1], hi: top[0] };
+     let matches = crate::auth::bytes_eq(c, rp, policy.rp_id_hash);
+     c.assert(matches);
+-    let flags = bytes[32];
++    let flags = top[1];
+     let f5 = c.test_eq(flags, 5u64);
+     let f13 = c.test_eq(flags, 13u64);
+     let f29 = c.test_eq(flags, 29u64);
+diff -ru port-src-baseline/recovery.rs port-src-improved/recovery.rs
+--- port-src-baseline/recovery.rs	2026-10-15 21:27:58.208965000 +0200
++++ port-src-improved/recovery.rs	2026-10-15 21:34:38.585011000 +0200
+@@ -14,18 +14,8 @@
+     Preimage::default().field(x).field(y)
+ }
+ pub fn live(c: &mut Circuit3, p: JubjubPoint) {
+-    let zero = c.constant(0u64).private();
+-    let zero = c.jubjub_scalar_from_native(zero);
+-    let identity = c.ec_mul_generator(zero);
+-    let weak = c.test_eq(p.point(), identity);
+-    let good = c.not(weak);
+-    c.assert(good);
+-    let eight = c.constant(8u64).private();
+-    let eight = c.jubjub_scalar_from_native(eight);
+-    let cleared = c.ec_mul(p.point(), eight);
+-    let weak = c.test_eq(cleared, identity);
+-    let good = c.not(weak);
+-    c.assert(good);
++    // [8]O = O, so the cofactor test rejects the identity as well.
++    p.assert_not_small_order(c);
+ }
+ 
+ #[derive(CircuitArg)]
+@@ -156,8 +146,7 @@
+         let mut tag = [0u8; 64];
+         let name = b"midnight:account:recovery:submit:v1";
+         tag[..name.len()].copy_from_slice(name);
+-        let tag = BytesN::<Private, 64>::literal(c, &tag);
+-        let dst = Preimage::default().blob(&tag).hash(c);
++        let dst = minocrab_std::v3::hash::Preimage::<Private>::new().blob_const(&tag).hash(c);
+         let me = kernel::self_address(c).bytes().private();
+         let challenge = Preimage::default()
+             .bytes(dst)

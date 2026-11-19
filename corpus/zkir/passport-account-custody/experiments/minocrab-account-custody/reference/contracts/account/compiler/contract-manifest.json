@@ -1,0 +1,296 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 235441,
+      "hash": "9ef9b0056d57788af9ec34d91f6566b66b7a9bce484ac20dd383e12181ac52e3"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 217627,
+      "hash": "cc57ab4721b91f89e754b887ef55a5bb40dc356cf44089febfcfd8c4a10f8932"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 1695762,
+      "hash": "65f75ce173d8d047dd72929554e53972f9d45de851a2805f5b701aea069aa1d1"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 91481,
+      "hash": "d4a4de7ba757163a26fe67e0c68a11c3b535290c222548c98c1d852c5737a57b"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "activate_initial_device_with_jubjub.zkir": {
+      "type": "file",
+      "size": 6789,
+      "hash": "aa57039b114151e1889e8ae86afcc3aa2ca0e5929275bcc75061b28088eb868b"
+    },
+    "activate_initial_device_with_k256.zkir": {
+      "type": "file",
+      "size": 8639,
+      "hash": "b197e27eaa0b96c3e320a65c238ff662ce3e6cb0be7d56a5e1dabba0e7db8662"
+    },
+    "activate_initial_device_with_p256.zkir": {
+      "type": "file",
+      "size": 7891,
+      "hash": "a6c4420309515190f2f93ff5ceb3caf8faf32c1a277c249456a7db6520cf8510"
+    },
+    "add_device_with_jubjub.zkir": {
+      "type": "file",
+      "size": 12609,
+      "hash": "d6086a4bcd2f3d6c0c891657121df7ad753f4b5c52f9843c68e9c927471e6c5f"
+    },
+    "add_device_with_k256.zkir": {
+      "type": "file",
+      "size": 23394,
+      "hash": "86bdb1c8b2106d8c484efd67f3f68e851fccce96a1d4f3ad50c7cbc88216db5e"
+    },
+    "add_device_with_p256.zkir": {
+      "type": "file",
+      "size": 270860,
+      "hash": "a8fdf50e4fc80b7b5f6faf7fafda911aeeee9ceb9513677ccbfc4a86cabb8ce9"
+    },
+    "append_inbox_with_jubjub.zkir": {
+      "type": "file",
+      "size": 13045,
+      "hash": "7eabd8bcd3ef27e69937e8f84b3e2b280d38c2b2b6cb0c341f296fdc1b6b0135"
+    },
+    "append_inbox_with_k256.zkir": {
+      "type": "file",
+      "size": 23841,
+      "hash": "803210bd546868494b8f990eb1af15a2b9b64bc43839b49aa8fef9efee131f48"
+    },
+    "append_inbox_with_p256.zkir": {
+      "type": "file",
+      "size": 271417,
+      "hash": "23402cf8b906d819acea7514c7fea8963e2f47faf2334b975cbc1c9f00c3a3f0"
+    },
+    "deposit_shielded.zkir": {
+      "type": "file",
+      "size": 5871,
+      "hash": "9b4af24b42dce2987835aa08b517835015e5e08db893c783088e6f0ffe7943cc"
+    },
+    "deposit_unshielded.zkir": {
+      "type": "file",
+      "size": 4975,
+      "hash": "e1384ddb55763bd0a3226bbad3337b83a4e076087f212dbe0281e6db671dce1d"
+    },
+    "issue_grant_with_jubjub.zkir": {
+      "type": "file",
+      "size": 31716,
+      "hash": "5a375421790a8e1e2c7ee2a6a04bc45b59af6d3e5fd39ceac047605178bed0e8"
+    },
+    "issue_grant_with_k256.zkir": {
+      "type": "file",
+      "size": 42586,
+      "hash": "4c7bf5878f4a389ddc72e6795d486b6914161b80abea9010df2b4a6daa533a49"
+    },
+    "issue_grant_with_p256.zkir": {
+      "type": "file",
+      "size": 290436,
+      "hash": "bd368d086c56105ed3cd3d06a42818d268bba419ccc7c9b11f307a0d4c5caa6b"
+    },
+    "publish_recovery_session_with_jubjub.zkir": {
+      "type": "file",
+      "size": 20252,
+      "hash": "b3c9ba85558a6114552f1ccf3a0a8f5a3ad2931be27ec588ba8a80768500a23b"
+    },
+    "publish_recovery_session_with_k256.zkir": {
+      "type": "file",
+      "size": 31285,
+      "hash": "280b5f54ba806fa04e5ebdc405462e7e169dd2bb6a8a8a86ee2dbf986134dc6a"
+    },
+    "publish_recovery_session_with_p256.zkir": {
+      "type": "file",
+      "size": 278946,
+      "hash": "7ce074fcc26434cec22780ded4504d8b739a58740a08b78dc2afe174cdd190e1"
+    },
+    "recover_cancel_with_jubjub.zkir": {
+      "type": "file",
+      "size": 12846,
+      "hash": "e1f31a71a6cacf62ccfca7becddec9b606bf64a0260606992de763d1bd4043ef"
+    },
+    "recover_cancel_with_k256.zkir": {
+      "type": "file",
+      "size": 23712,
+      "hash": "8b9f8ff7f7d407ea073da725f140390a58ecd73d6d25ac794ed516b49798edfc"
+    },
+    "recover_cancel_with_p256.zkir": {
+      "type": "file",
+      "size": 271218,
+      "hash": "e4e5883325e7baf0fee2915fe3fb5feb6fe31899ee35f2d2557244267eb2f394"
+    },
+    "recover_finalise.zkir": {
+      "type": "file",
+      "size": 10652,
+      "hash": "780dddcf81d792e96c0af3b2ed109d04f58157e26eb4846060484fd0cfbb2dce"
+    },
+    "recover_submit.zkir": {
+      "type": "file",
+      "size": 16102,
+      "hash": "383f701d09f5c763f17b5821c41944f3f5681a5b9cf9e39e525dded79e13e6d3"
+    },
+    "remove_device_with_jubjub.zkir": {
+      "type": "file",
+      "size": 15016,
+      "hash": "a282b7f98e02086266f95257eec57ef6b10b6d6810a5d0b85bdca1d0a8790622"
+    },
+    "remove_device_with_k256.zkir": {
+      "type": "file",
+      "size": 26380,
+      "hash": "399cb57558a9ff9b23992a39c3c00c33ebed22ce6198aee1762c5ea2d171832e"
+    },
+    "remove_device_with_p256.zkir": {
+      "type": "file",
+      "size": 274021,
+      "hash": "7be3cc6ce957fd54c76f2e0f896aaa65a9e0d5294fc813f3a64b0c2b4bc0ccf0"
+    },
+    "revoke_all_grants_with_jubjub.zkir": {
+      "type": "file",
+      "size": 11564,
+      "hash": "59995aa084d8c21882a925db6ea6f7978e657dc2d55a583935046cb618aba5ff"
+    },
+    "revoke_all_grants_with_k256.zkir": {
+      "type": "file",
+      "size": 22340,
+      "hash": "219e152e58f3159486f53f068867b6a3e85953a474acac7253a7916013de61d4"
+    },
+    "revoke_all_grants_with_p256.zkir": {
+      "type": "file",
+      "size": 269836,
+      "hash": "1f5ec1f0f70f683313292e6985521d399bf31ede611a376df60d3cc9c487306e"
+    },
+    "revoke_grant_with_jubjub.zkir": {
+      "type": "file",
+      "size": 15355,
+      "hash": "003661371a42bef348e1545ddd6cd0ee39cff090cfe5c992219f564d3f09f75d"
+    },
+    "revoke_grant_with_k256.zkir": {
+      "type": "file",
+      "size": 26208,
+      "hash": "db75ac6df522d542403ac4618eeb49bc83b62889f4ea5a2b3b18e7eeaca0ed6e"
+    },
+    "revoke_grant_with_p256.zkir": {
+      "type": "file",
+      "size": 273782,
+      "hash": "8be1da5093d66c9369b71df71cb620c5aeeeee8ddbc0a3878a1ab0fa98035aa5"
+    },
+    "rotate_enc_key_with_jubjub.zkir": {
+      "type": "file",
+      "size": 11013,
+      "hash": "c9e1e5f58c19179f290face9c90935a20c28938c4c8db2bbf0bf1fc0d10999ab"
+    },
+    "rotate_enc_key_with_k256.zkir": {
+      "type": "file",
+      "size": 21785,
+      "hash": "7f22b917111f9de789a5da7d7b2c1182c8c5578b9d06bb7c11b5339ac829052f"
+    },
+    "rotate_enc_key_with_p256.zkir": {
+      "type": "file",
+      "size": 269246,
+      "hash": "2b056dde43dc3e75a651b3f19f48abf8d0fe48c6a167a561b58c5a8ee714ea5f"
+    },
+    "withdraw_shielded_to_contract_with_grant_jubjub.zkir": {
+      "type": "file",
+      "size": 35780,
+      "hash": "4fc97af5c50876b4bd0ea47a2123979fc4ce41ddea9c765d6443d0ef5e476a6a"
+    },
+    "withdraw_shielded_to_contract_with_grant_k256.zkir": {
+      "type": "file",
+      "size": 46246,
+      "hash": "c6bc89a91a74236892fccbf1674edc5e66fc6e7c45859f0ad7e5d627fbf0f35d"
+    },
+    "withdraw_shielded_to_contract_with_grant_p256.zkir": {
+      "type": "file",
+      "size": 295349,
+      "hash": "864271c1dff6c132d1290cda1abd8e29fa856e31d6dc0cd9a4a3e59a9351ea9c"
+    },
+    "withdraw_shielded_to_contract_with_jubjub.zkir": {
+      "type": "file",
+      "size": 20347,
+      "hash": "c087bf65963c03672d68c11eff432bac02c912d089855f0c9c8664b45c67076e"
+    },
+    "withdraw_shielded_to_contract_with_k256.zkir": {
+      "type": "file",
+      "size": 31239,
+      "hash": "0db43b367e679e53477200c9ab5576baa640ede5b0ddaf9da89b866a1c423daa"
+    },
+    "withdraw_shielded_to_contract_with_p256.zkir": {
+      "type": "file",
+      "size": 278899,
+      "hash": "3b89edcabbc56d04da38ab0e4c268b692769d482158ed1ed3799e487bb9642f0"
+    },
+    "withdraw_shielded_with_grant_jubjub.zkir": {
+      "type": "file",
+      "size": 34150,
+      "hash": "c7c7fb70f44d9a1400ac80884fe5b49bfab2b3c89ddc481bc3cc999db612ebec"
+    },
+    "withdraw_shielded_with_grant_k256.zkir": {
+      "type": "file",
+      "size": 44618,
+      "hash": "767cc78b0c8b62f95b4d340061620868607807af57051446f5597751aa569878"
+    },
+    "withdraw_shielded_with_grant_p256.zkir": {
+      "type": "file",
+      "size": 293698,
+      "hash": "ac49dda9ef732a9a7dc526baf775bb7572f92d1ed69f8982c5dac61522af288a"
+    },
+    "withdraw_shielded_with_jubjub.zkir": {
+      "type": "file",
+      "size": 18730,
+      "hash": "7f5f16ce5a776c531d6edffb65c129d2291ced12a4bbc76223905e11d468c48b"
+    },
+    "withdraw_shielded_with_k256.zkir": {
+      "type": "file",
+      "size": 29609,
+      "hash": "88c323da596cb4d463159a1b25c30eedffef0106729dec657b03bdd0ad020535"
+    },
+    "withdraw_shielded_with_p256.zkir": {
+      "type": "file",
+      "size": 277246,
+      "hash": "5224abbbbc4a1adc0c77365d8e9a0b9c1077d12f2a78c9ff93bb82f543242f23"
+    },
+    "withdraw_unshielded_with_grant_jubjub.zkir": {
+      "type": "file",
+      "size": 26036,
+      "hash": "c3694f8f2c42693d9b3ab45605194d4a3dc31ba6664985902c1e64fa3b5c5f40"
+    },
+    "withdraw_unshielded_with_grant_k256.zkir": {
+      "type": "file",
+      "size": 36467,
+      "hash": "b0ec72d2b80131da5caa38715865048ca6d27938b85263f2afff0670c9ef6328"
+    },
+    "withdraw_unshielded_with_grant_p256.zkir": {
+      "type": "file",
+      "size": 285379,
+      "hash": "0a02e65b7f4a34e93f62c92604394a2352a42090b34fd965078ab8d49602c683"
+    },
+    "withdraw_unshielded_with_jubjub.zkir": {
+      "type": "file",
+      "size": 15368,
+      "hash": "5f17d3c2335ce77121a9b5dede0cf9c16b5f5aa3bb8ede55118cebc4796a6299"
+    },
+    "withdraw_unshielded_with_k256.zkir": {
+      "type": "file",
+      "size": 26162,
+      "hash": "86687ed1b92a4ac33ab7d72e7eb14fe1e01e701ef99f46677d408103018a5688"
+    },
+    "withdraw_unshielded_with_p256.zkir": {
+      "type": "file",
+      "size": 273717,
+      "hash": "841c15cbb978a8b63e90a9d1501ce37233445b0a2150ceca3133ed82b28b29d4"
+    }
+  }
+}

@@ -118,6 +118,22 @@
       "paths": [
         "contracts"
       ]
+    },
+    {
+      "name": "passport-account-custody",
+      "url": "https://github.com/midnightntwrk/passport",
+      "rev": "531580ca837d1bd1f22f729fc95647cace009cbe",
+      "license": "Apache-2.0",
+      "paths": [
+        "experiments/minocrab-account-custody/reference/contracts"
+      ],
+      "extra": [
+        {
+          "path": "experiments/minocrab-account-custody",
+          "glob": "*"
+        }
+      ],
+      "note": "PR #184 head (nicolasdp/minocrab-account-custody, 2026-10): the account custody contract (52 entrypoints, JubJub/k256/P256) as an unchanged Compact oracle (byte copies of contract/ at 0d7bb0bc) beside its independent MinoCrab port at minocrab 537721a. The whole experiment directory is taken as extras: the port, its measure harness (a fork of our simulator/executor), the k/row/proving-time evidence, the TS signers and fixture scripts, lockfiles. AUTHORSHIP (dmd, 2026-10-15): the Compact is human-written; the Rust port is NOT (machine-written). webauthn.compact and account-p256.compact are include-files of account.compact and fail standalone by design."
     }
   ]
 }
