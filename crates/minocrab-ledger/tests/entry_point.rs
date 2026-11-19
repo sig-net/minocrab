@@ -92,8 +92,10 @@ fn ep_hash_matches_upstream_for_every_corpus_circuit() {
     // compactc 0.36.0 bump: compact/examples/ecdsa/example_one,
     // compact/examples/secp256k1/arithmetic and
     // compact/test-center/compact/ecdsa compile under language 0.28.0.
+    // +2 with passport-account-custody (passport PR #184): account and
+    // webauthn; account-p256 is an include file and fails standalone.
     assert_eq!(
-        artifacts, 325,
+        artifacts, 327,
         "the corpus artifact count moved; re-read notes/corpus-sources.org before \
          refreshing this number"
     );
