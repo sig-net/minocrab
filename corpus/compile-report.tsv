@@ -459,6 +459,9 @@ src/oz-midnight-apps/contracts/src/shielded-token/openzeppelin/ShieldedERC20.com
 src/oz-midnight-apps/contracts/src/shielded-token/openzeppelin/Utils.compact	ok	
 src/oz-midnight-apps/contracts/src/structs/Queue.compact	ok	
 src/oz-midnight-apps/contracts/src/structs/test/mocks/contracts/Queue.mock.compact	ok	
+src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/account-p256.compact	fail	Exception: account-p256.compact line 21 char 8:
+src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/account.compact	ok	
+src/passport-account-custody/experiments/minocrab-account-custody/reference/contracts/webauthn.compact	ok	
 src/signet-midnight-examples/examples/erc20-vault/contract/src/erc20-vault.compact	ok	
 src/signet-midnight-experiments/experiments/attest/contract/src/attest.compact	ok	
 src/signet-midnight-experiments/experiments/baseline/contract/src/baseline.compact	ok	

@@ -127,7 +127,8 @@ fn lean_dataflow_agrees_with_the_rust_functions_on_every_corpus_instruction() {
         // field); respond and signBidirectional are byte-identical.
         // 23011 → 67036 at the compactc 0.36.0 bump: compactc writes only
         // ZKIR v3, so all 855 corpus files are dumped, not 110.
-        instructions, 67036,
+        // 67036 → 121834 with passport-account-custody's 52 circuits.
+        instructions, 121834,
         "corpus instruction count moved ({instructions}); recompiled or extended corpus?"
     );
     println!("lean and rust dataflow agree on {instructions} corpus instructions");

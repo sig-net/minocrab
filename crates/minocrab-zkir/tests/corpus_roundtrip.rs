@@ -99,7 +99,9 @@ fn round_trips_entire_corpus() {
         // compactc 0.36 writes only ZKIR v3 (3.1), so every artifact is v3,
         // and compact/examples/secp256k1/arithmetic.compact now compiles
         // (+6). The vault compiles with compact#856's workaround applied.
-        (855, 855),
+        // 855/855 → 907/907 with passport-account-custody (passport PR #184,
+        // 531580c): account.compact's 52 circuits.
+        (907, 907),
         "corpus size moved: {} files ({} v3). If the corpus was deliberately \
          recompiled or extended, update this assertion in the same commit and say \
          which source moved it; otherwise the checkout is incomplete.",

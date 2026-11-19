@@ -34,7 +34,7 @@ Measured 2026-10-15 with =minocrab_sim::v3::cost= (Midnight's own =IrSource::mod
 | =persistent_hash= 1 × bytes<64> | 3,750 | a 64-byte constant tag hashed in-circuit is 3.75k rows |
 | =transient_hash= 2 / 4 fields | 22 / 46 | Poseidon is ~170× cheaper than SHA per input |
 
-Reproduce: the =micro= binary in the scratch =port-bench= crate of 2026-10-15 (kept out of the tree; =notes/passport-account-custody.org= §7 on the zkir-3.1 branch says where), or any one-op =Circuit3= through =cost=.
+Reproduce: the =micro= binary in the scratch =port-bench= crate of 2026-10-15 (kept out of the tree; =notes/passport-account-custody.org= §7 says where), or any one-op =Circuit3= through =cost=.
 
 * 2. What the table said about the passport port, and what was lifted into std
 

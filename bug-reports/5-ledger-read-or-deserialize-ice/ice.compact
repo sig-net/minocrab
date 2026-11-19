@@ -1,0 +1,9 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+
+export ledger flag: Boolean;
+
+export circuit go(output: Bytes<1>): Boolean {
+  return flag || deserialize<Boolean, 1>(output);
+}
