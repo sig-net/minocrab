@@ -29,6 +29,15 @@ state, `LedgerParameters`, cost model, network id, segment, block time — is an
 argument, gathered in `publish::ChainContext`. The only files read are the
 managed key directory (`keys::ManagedDir`) and the KZG parameter cache.
 
+The reader's half is here too: `call::decode_misc` turns a logged `Misc`
+back into a `SignerEvent` (the inverse of the three encoders, strict about the
+name and the zero padding), and `hashing` re-exports
+[`signet-hashing`](https://github.com/sig-net/minocrab/tree/main/crates/signet-hashing)
+— the request id, transaction digest, attested output hash and attestation
+digest off circuit — so `Attestation::over(request_id, height, kind, output)`
+builds the attestation half of a `respondBidirectional` and a decoded event's
+digest can be checked.
+
 The Misc envelope constants, the three signer circuit/event names and
 `hashVerifierKey` are read from [`signet-protocol`](https://github.com/sig-net/minocrab/tree/main/crates/signet-protocol), the one publishable
 crate the contract that emits these events and the artifact pipeline that
