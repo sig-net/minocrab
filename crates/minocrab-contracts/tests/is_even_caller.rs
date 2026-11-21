@@ -13,7 +13,7 @@
 //! | 1 | forgetting the `signet: Signet` slot in the block         | E0609: `request` needs `&Signet`, no field   |
 //! | 2 | a settle circuit taking another slot's ticket             | E0308 (`Succeeded<Call>` carries the call)   |
 //! | 3 | a response type that is not a Borsh record               | E0277 (`Attestable: CircuitBorsh`)           |
-//! | 4 | two slot filings with one kind byte                       | E0080, prescriptive (`assert_distinct_kinds`)|
+//! | 4 | two slot filings with one kind byte                       | gone: a V1 record carries no kind byte      |
 //! | 5 | capturing a private value in the environment             | E0277 (no `LedgerRepr` at `Private`)         |
 //! | 6 | a `WORDS` that is not the call's argument-word count       | E0080, prescriptive (the slot's constructor) |
 //! | 7 | hand-writing the notification's path bytes / depth        | impossible: derived from the slot            |

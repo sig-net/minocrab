@@ -690,8 +690,7 @@ pub fn repr_limbs<T: LedgerRepr>() -> usize {
     T::atoms().iter().map(atom_limbs).sum()
 }
 
-/// How many LEDGER FIELDS a declared slot occupies, and which Signet
-/// response kinds it claims.
+/// How many LEDGER FIELDS a declared slot occupies.
 ///
 /// Every slot in this module is one field. A slot that is a GROUP of fields
 /// (`signet_flow::Pending`, whose request map and environment map are two
@@ -701,51 +700,9 @@ pub fn repr_limbs<T: LedgerRepr>() -> usize {
 /// [`FieldPath::in_block`] does the segmentation. Nothing is written by
 /// hand — a slot cannot be given the wrong width because the width is the
 /// type's.
-///
-/// `KINDS` is the same trick for the response-kind byte: a slot that
-/// expects an MPC response declares the kind it settles under, and the
-/// derive asserts (at compile time, E0080) that no two slots of one block
-/// claim the same kind — the MPC's kind byte would be ambiguous otherwise.
 pub trait LedgerWidth {
     /// Consecutive ledger fields this slot occupies.
     const WIDTH: usize = 1;
-    /// Response kinds this slot settles under (empty for ordinary slots).
-    ///
-    /// A Signet slot reads it off the FILING it is typed by
-    /// (`evm::Filing::KIND`), which is where a deployment's protocol byte
-    /// lives; [`assert_distinct_kinds`] is what stops two slots of one block
-    /// claiming the same one.
-    const KINDS: &'static [u8] = &[];
-}
-
-/// `#[derive(Ledger)]`'s kind-uniqueness check: E0080 when two slots of a
-/// block claim one response kind.
-pub const fn assert_distinct_kinds(kinds: &[&[u8]]) {
-    let mut i = 0;
-    while i < kinds.len() {
-        let mut a = 0;
-        while a < kinds[i].len() {
-            // Against every LATER slot's kinds, and every later kind of the
-            // same slot.
-            let mut j = i;
-            while j < kinds.len() {
-                let mut b = if j == i { a + 1 } else { 0 };
-                while b < kinds[j].len() {
-                    assert!(
-                        kinds[i][a] != kinds[j][b],
-                        "two slots of this ledger block settle under the same \
-                         Signet response kind: the MPC's kind byte could not \
-                         tell their attestations apart. Give each slot's \
-                         `Filing` a distinct `KIND`."
-                    );
-                    b += 1;
-                }
-                j += 1;
-            }
-            a += 1;
-        }
-        i += 1;
-    }
 }
 
 /// `at_block` and a one-field [`LedgerWidth`] for each slot type: the
@@ -2106,10 +2063,5 @@ mod block_layout_tests {
         assert_eq!(FieldPath::in_block(16, 15).as_slice(), &[1, 14]);
         assert_eq!(FieldPath::in_block(15, 14).as_slice(), &[14]);
         assert_eq!(FieldPath::in_block(226, 225).depth(), 3);
-    }
-
-    #[test]
-    fn distinct_kinds_accepts_distinct_and_empty() {
-        const _: () = assert_distinct_kinds(&[&[], &[0], &[1, 2], &[]]);
     }
 }
