@@ -76,10 +76,7 @@ mod sealed {
 }
 
 /// Type-level visibility of a wire.
-pub trait Visibility: sealed::Sealed + 'static {
-    /// Runtime tag, for reports.
-    const IS_PUBLIC: bool;
-}
+pub trait Visibility: sealed::Sealed + 'static {}
 
 /// A visibility that may GUARD AN ON-CHAIN EFFECT — an Impact op or a
 /// public-transcript read. Only [`Public`].
@@ -112,12 +109,8 @@ pub enum Private {}
 
 impl sealed::Sealed for Public {}
 impl sealed::Sealed for Private {}
-impl Visibility for Public {
-    const IS_PUBLIC: bool = true;
-}
-impl Visibility for Private {
-    const IS_PUBLIC: bool = false;
-}
+impl Visibility for Public {}
+impl Visibility for Private {}
 
 /// Visibility join: public only if both sides are public.
 ///
@@ -153,17 +146,8 @@ impl Meet<Private> for Private {
 
 // --- disclosure records -----------------------------------------------------
 
-/// What a circuit reveals, recorded at build time for the simulator's report.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Disclosure {
-    /// Call-site label, e.g. what quantity is being disclosed and why.
-    pub label: String,
-    /// How it leaves the circuit.
-    pub kind: DisclosureKind,
-    /// ZKIR memory index of the disclosed value.
-    pub index: u32,
-}
-
+/// How a disclosed value leaves the circuit, as recorded in a
+/// [`v3::Disclosure3`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisclosureKind {
     /// `disclose_as::<L>()` — a private value became public inside the

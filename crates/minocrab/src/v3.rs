@@ -797,17 +797,12 @@ impl<V: Visibility> Copy for AnyWire3<V> {}
 
 // --- disclosure records ----------------------------------------------------------
 
-/// What a v3 circuit reveals, recorded at build time — the v3 twin of
-/// [`Disclosure`](crate::Disclosure).
+/// What a circuit reveals, recorded at build time.
 ///
-/// It differs from the v2 record in the one way v3 differs from v2 about
-/// values: v2 names a disclosed value by its ZKIR *memory index*, and v3
-/// values have no index — they are [`Identifier`]s (`%label.N`), which is
+/// A disclosed value is named by its [`Identifier`] (`%label.N`), which is
 /// what the instruction stream refers to and what the simulator keys its
-/// value memory by. So the record carries identifiers, and a v3 report can
-/// resolve a disclosure to the value it actually took in a run (the v3
-/// record used to store a hard-coded `index: 0`, which resolved to
-/// nothing).
+/// value memory by, so a report can resolve a disclosure to the value it
+/// took in a run.
 ///
 /// One record is one *logical* value, so `values` is a list: a
 /// `Bytes<32>` disclosed under one label contributes both of its limbs
@@ -883,7 +878,7 @@ pub struct Circuit3 {
     disclosures: Vec<Disclosure3>,
     witnesses: u32,
     regions: Vec<Region>,
-    queued_outputs: Vec<(Val, IrType)>,
+    queued_outputs: Vec<Val>,
     assert_messages: Vec<AssertMessage>,
     /// The AMBIENT GUARD stack — see [`Circuit3::guarded`]. Each entry is
     /// already the conjunction of itself and everything below it, so the top
@@ -1756,7 +1751,7 @@ impl Circuit3 {
             kind: DisclosureKind::Output,
             values: vec![value],
         });
-        self.queued_outputs.push((w.val, T::ir_type()));
+        self.queued_outputs.push(w.val);
     }
 
     // --- guard scoping ---------------------------------------------------------------------
@@ -2036,11 +2031,7 @@ impl Circuit3 {
     pub fn finish(mut self, communications_commitment: bool) -> Compiled3 {
         self.flush_deferred();
         if !self.queued_outputs.is_empty() {
-            let vals: Vec<Arg> = self
-                .queued_outputs
-                .iter()
-                .map(|(v, _)| Arg::Val(*v))
-                .collect();
+            let vals: Vec<Arg> = self.queued_outputs.iter().map(|&v| Arg::Val(v)).collect();
             self.b.output(&vals);
         }
         // Regions and assert messages hold BUILD-time indices; the passes in

@@ -1,7 +1,7 @@
-//! ZKIR v3 bindings — same shape as the v2 module in `lib.rs`, over the
-//! typed IR (`midnight-zkir-v3`, the crates.io `midnight-zkir` 3.2.0 the
-//! pinned compactc's bundled `zkir-v3` binary is built from). compactc 0.36
-//! writes only this format.
+//! ZKIR v3 bindings: the on-disk and in-memory `.zkir` readers and writers
+//! over the typed IR (`midnight-zkir-v3`, the crates.io `midnight-zkir`
+//! 3.2.0 the pinned compactc's bundled `zkir-v3` binary is built from).
+//! compactc 0.36 writes only this format.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -51,7 +51,8 @@ pub fn to_zkir_string(ir: &IrSource) -> Result<String, Error> {
     })
 }
 
-/// Inverse of `IrSource::load`'s version rewrite (see the v2 twin in lib.rs).
+/// Inverse of `IrSource::load`'s version rewrite: the in-memory minor version
+/// becomes the on-disk `{"major": 3, "minor": n}`.
 fn to_disk_form(ir: &IrSource, name: &str) -> Result<serde_json::Value, Error> {
     let mut value = serde_json::to_value(ir).map_err(|source| Error::Json {
         path: name.to_string(),

@@ -310,15 +310,6 @@ impl Builder3 {
         self.def(val).constant
     }
 
-    /// Whether `val` is the output of a PUBLIC transcript read — a ledger
-    /// read's witnessed value.
-    pub fn is_public_input(&self, val: Val) -> bool {
-        matches!(
-            self.defining_instruction(val),
-            Some(Instruction::PublicInput { .. })
-        )
-    }
-
     /// The index of the instruction that binds `val`, if one does (a circuit
     /// argument has none).
     pub fn instruction_index_of(&self, val: Val) -> Option<usize> {
