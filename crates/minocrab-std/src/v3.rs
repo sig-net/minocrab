@@ -80,7 +80,7 @@ pub use ledger::{
     Fresh,
     anchor_start, leaf_hash, repr_limbs, CoinArm, FieldPath, KeyPath, KeyedPath, LedgerAdt,
     LedgerCell, LedgerCounter, LedgerField, LedgerHistoricMerkleTree, LedgerList, LedgerMap,
-    LedgerMerkleTree, LedgerPath, LedgerRepr, LedgerSet, LedgerSlot, LedgerWidth,
+    LedgerMerkleTree, LedgerPath, LedgerRepr, LedgerSet, LedgerSlot, LedgerStore, LedgerWidth,
     MAX_FIELD_PATH, MAX_LEDGER_PATH, MAX_NESTING,
 };
 
@@ -1970,6 +1970,12 @@ impl<V: Vis3> Default for Serializer<V> {
 /// The FAB atoms are `encode()`'s five limbs (x as bytes 24+8, y as bytes
 /// 24+8, then the infinity flag as a field), notes/ledger-abi.org §3: one
 /// slot, five atoms, the same way a `Bytes<32>` is two slots and one atom.
+///
+/// IN THE LEDGER it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
+/// it, a map stores it and tests membership, but nothing rebuilds it from
+/// limbs (ZKIR's `encode` has no inverse), so a `LedgerMap` lookup or a
+/// `LedgerList` head of points does not compile. Read it from a
+/// `LedgerCell`, or store its encoded limbs as a record type.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct Secp256k1Point<V: Vis3 = Private>(Wire3<Secp256k1PointT, V>);
@@ -2028,6 +2034,12 @@ impl<V: Vis3> Secp256k1Scalar<V> {
 /// in the reader (notes/opaque-bridging.org §0b) and nowhere near it here: a
 /// curve point is not an opaque value, it just shares a spelling in one JSON
 /// file.
+///
+/// IN THE LEDGER it is [`LedgerStore`] and not [`LedgerRepr`]: a cell holds
+/// it, a map stores it and tests membership, but nothing rebuilds it from
+/// limbs (ZKIR's `encode` has no inverse), so a `LedgerMap` lookup or a
+/// `LedgerList` head of points does not compile. Read it from a
+/// `LedgerCell`, or store its encoded limbs as a record type.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct JubjubPoint<V: Vis3 = Private>(Wire3<JubjubPointT, V>);

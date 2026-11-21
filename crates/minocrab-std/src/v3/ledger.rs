@@ -64,18 +64,24 @@ use super::{
     Secp256k1Point, ShieldedCoinInfo3, TsType, Uint, UserAddress, B32,
 };
 
-/// What a ledger slot's key or value type must be able to do: name its FAB
-/// atoms, hand over its limbs, and be rebuilt from the limbs a read witnesses.
+/// What a ledger slot may HOLD: name its FAB atoms, hand over its limbs,
+/// and be read back out of a [`LedgerCell`]. The WRITE half of the ledger
+/// representation (notes/streamline-survey.org §8), and the bound on every
+/// operation that stores, keys, or tests membership — everything except
+/// rebuilding a value from a read's limbs, which is [`LedgerRepr`].
 ///
-/// The three facts are exactly [`CircuitAbi::atoms`],
-/// [`CallArg::push_call_slots`] and [`CallResult::from_call_slots`] — a
-/// ledger write and a cross-contract argument are the same crossing (a
-/// public, FAB-aligned value leaving the circuit), so the leaf impls below
-/// DELEGATE rather than restate. `LedgerRepr` exists as its own trait, and
-/// does NOT require `CircuitAbi`, because a stored record is not an argument:
-/// a ledger read is checked by the op's `popeq`, never range-constrained, so
-/// requiring [`CircuitAbi::prims`] would make every record type declare
-/// constraints that nothing emits.
+/// Every [`LedgerRepr`] type is one, by the blanket below, which delegates
+/// to its `LedgerRepr` methods (so a hand-written `witness_read` or
+/// `ledger_value` override is what the cell read and the store use). The
+/// only other implementors are [`Secp256k1Point`] and [`JubjubPoint`],
+/// whose limbs come out of an `encode` instruction that has no inverse: they
+/// can be stored, and read through their TYPED gate from a cell, but not
+/// rebuilt from limbs, so they are not `LedgerRepr` and a `Map` lookup or a
+/// `List` head of them is a missing impl.
+///
+/// The method names differ from `LedgerRepr`'s on purpose: both traits are
+/// in a `use minocrab_std::v3::*` scope, and a shared name would make every
+/// `x.ledger_value(c)` on a leaf ambiguous.
 ///
 /// Implemented at [`Public`] only, and that is the same soundness statement
 /// `CallArg` makes: what the ledger holds is public, so a private value has
@@ -88,12 +94,120 @@ use super::{
             public transcript — so `LedgerRepr` is implemented at `Public` \
             only. A private value has to pass `disclose_as` before it can be \
             written, and forgetting is this error rather than a leak",
-    note = "a record type gets its impl from `#[derive(CircuitArg)]`'s \
-            `Public` instantiation, or by delegating to the ABI traits the \
-            way the leaf table in this module does; `Secp256k1Point` and \
-            `JubjubPoint` are `Cell`-only (their limbs come out of `encode`, \
-            which has no inverse, so a `Map` value or `Set` element cannot be \
-            rebuilt from a read)"
+    note = "a record type gets its impl from `#[derive(LedgerRepr)]`, from \
+            `#[derive(CircuitArg)]`'s `Public` instantiation, or by \
+            delegating to the ABI traits the way the leaf table in this \
+            module does"
+)]
+pub trait LedgerStore: Sized {
+    /// This type's FAB atoms, in slot order.
+    fn store_atoms() -> Vec<AlignmentAtom>;
+
+    /// This value's limbs, in slot order (may emit: see
+    /// [`LedgerRepr::push_limbs`]).
+    fn push_store_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>);
+
+    /// A CELL read of this type: the gates it mints, and the value the op's
+    /// `popeq` embeds. [`LedgerRepr::witness_read`] for a readable type; the
+    /// typed gate for a point.
+    fn read_cell(c: &mut Circuit3) -> (Self, LedgerValue);
+
+    /// This value's limbs, in slot order.
+    fn store_limbs(&self, c: &mut Circuit3) -> Vec<Wire3<FieldT, Public>> {
+        let mut limbs = Vec::new();
+        self.push_store_limbs(c, &mut limbs);
+        limbs
+    }
+
+    /// The value as `minocrab_ledger` takes it: atoms from the TYPE, limbs
+    /// from the value.
+    fn store_value(&self, c: &mut Circuit3) -> LedgerValue {
+        LedgerValue::new(
+            Self::store_atoms(),
+            self.store_limbs(c).into_iter().map(ImpactElem::Wire).collect(),
+        )
+    }
+}
+
+impl<T: LedgerRepr> LedgerStore for T {
+    fn store_atoms() -> Vec<AlignmentAtom> {
+        <T as LedgerRepr>::atoms()
+    }
+
+    fn push_store_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+        <T as LedgerRepr>::push_limbs(self, c, limbs)
+    }
+
+    fn read_cell(c: &mut Circuit3) -> (Self, LedgerValue) {
+        <T as LedgerRepr>::witness_read(c)
+    }
+
+    fn store_limbs(&self, c: &mut Circuit3) -> Vec<Wire3<FieldT, Public>> {
+        <T as LedgerRepr>::limbs(self, c)
+    }
+
+    fn store_value(&self, c: &mut Circuit3) -> LedgerValue {
+        <T as LedgerRepr>::ledger_value(self, c)
+    }
+}
+
+/// A ledger value that can be REBUILT from the limbs a read witnesses: the
+/// READ half (notes/streamline-survey.org §8), which every type in a slot
+/// has except the two curve points (see [`LedgerStore`]). The bound on
+/// [`LedgerMap::lookup`], [`LedgerMap::lookup_required`],
+/// [`LedgerList::head`] and the blind snapshots' and streams' reads.
+///
+/// The three facts are exactly [`CircuitAbi::atoms`],
+/// [`Encode<Public>`](super::Encode) and [`Decode<Public>`](super::Decode) —
+/// a ledger write and a cross-contract argument are the same crossing (a
+/// public, FAB-aligned value leaving the circuit), so the leaf impls below
+/// DELEGATE rather than restate. `LedgerRepr` exists as its own trait, and
+/// does NOT require `CircuitAbi`, because a stored record is not an argument:
+/// a ledger read is checked by the op's `popeq`, never range-constrained, so
+/// requiring [`CircuitAbi::prims`] would make every record type declare
+/// constraints that nothing emits.
+///
+/// A map of points is storable and testable but not looked up:
+///
+/// ```compile_fail,E0599
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_std::v3::{LedgerMap, Secp256k1Point, B32};
+///
+/// const KEYS: LedgerMap<B32<Public>, Secp256k1Point<Public>> = LedgerMap::at(0);
+///
+/// fn f(c: &mut Circuit3, k: &B32<Public>) {
+///     // error[E0599]: the method `lookup` exists for struct `LedgerMap<..>`,
+///     // but its trait bounds were not satisfied:
+///     // `Secp256k1Point<Public>: LedgerRepr`
+///     let _ = KEYS.lookup(c, k);
+/// }
+/// ```
+///
+/// while the insert and the membership test on the same map compile:
+///
+/// ```
+/// use minocrab::v3::Circuit3;
+/// use minocrab::Public;
+/// use minocrab_std::v3::{LedgerMap, Secp256k1Point, B32};
+///
+/// const KEYS: LedgerMap<B32<Public>, Secp256k1Point<Public>> = LedgerMap::at(0);
+///
+/// fn f(c: &mut Circuit3, k: &B32<Public>, p: &Secp256k1Point<Public>) {
+///     KEYS.insert(c, k, p);
+///     let _ = KEYS.member(c, k);
+/// }
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be rebuilt from a ledger read",
+    label = "not a readable ledger representation",
+    note = "a ledger read is PUBLIC, so `LedgerRepr` is implemented at \
+            `Public` only; a private value has to pass `disclose_as` first",
+    note = "`Secp256k1Point` and `JubjubPoint` can be stored but not rebuilt \
+            from limbs: their limbs come out of `encode`, which has no \
+            inverse. Keep the point in a `LedgerCell` (whose read mints the \
+            point's typed gate), or store its encoded limbs as a record type \
+            and look that up"
 )]
 pub trait LedgerRepr: Sized {
     /// This type's FAB atoms, in slot order.
@@ -136,9 +250,10 @@ pub trait LedgerRepr: Sized {
     ///
     /// The default is the native-limb shape — one `public_input` gate per FAB
     /// limb, rebuilt with [`LedgerRepr::from_limbs`] — which is what every
-    /// FAB-aligned record does. The one type that overrides it is
-    /// [`Secp256k1Point`]: a point cell mints ONE TYPED gate and DERIVES its
-    /// five limbs with `encode`, so its read is not a limb read at all.
+    /// FAB-aligned record does, and what [`LedgerStore::read_cell`] runs for
+    /// every `LedgerRepr` type. The point types' cell read (ONE TYPED gate,
+    /// its limbs DERIVED with `encode`) is not a limb read at all, which is
+    /// why it lives on [`LedgerStore`] and the points are not `LedgerRepr`.
     ///
     /// Guarded automatically: [`Circuit3::public_transcript_input`] resolves
     /// the ambient scope, so a read inside [`Circuit3::when`] needs no
@@ -248,106 +363,50 @@ crate::__ledger_leaf! {
     [T] Maybe<T, Public>,
 }
 
-/// `export ledger k: Secp256k1Point` — the one stored type whose limbs are
-/// COMPUTED, in both directions.
+/// The two stored types whose limbs are COMPUTED, in both directions:
+/// [`Secp256k1Point`] (`export ledger k: Secp256k1Point`, five FAB limbs: x
+/// as b24+b8, y as b24+b8, the infinity field — notes/ledger-abi.org §3) and
+/// [`JubjubPoint`] (two `field` limbs).
 ///
-/// A point occupies one slot whose wire is not a field element, and its five
-/// FAB limbs (x as b24+b8, y as b24+b8, the infinity field —
-/// notes/ledger-abi.org §3) come out of an `encode` instruction. So both
-/// halves of the crossing are overridden: [`LedgerRepr::push_limbs`] emits
-/// the `encode` a write needs, and [`LedgerRepr::witness_read`] mints the
-/// TYPED gate a read witnesses and encodes THAT (claim.zkir:29-33). Before
-/// this the field had to be a [`LedgerField`] with `cell_read_point` and a
-/// hand-written `cell_write` at the call sites.
-impl ProofWires for Secp256k1Point<Public> {
-    fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
-        out.push(self.point().val());
-    }
+/// A point occupies one slot whose wire is not a field element, and its FAB
+/// limbs come out of an `encode` instruction. So a write emits the `encode`,
+/// and a CELL read mints the TYPED gate a read witnesses and encodes THAT
+/// (claim.zkir:29-33). ZKIR has `encode` and no inverse, so a point cannot
+/// be rebuilt from limbs: it is [`LedgerStore`] and NOT [`LedgerRepr`], and a
+/// `Map` lookup or `List` head of points is a missing impl rather than the
+/// `unreachable!()` it was. A cell is the only shape Compact's own point
+/// ledger fields take (`test-center/compact/test`'s `x15` for `JubjubPoint`).
+macro_rules! point_store {
+    ($( $point:ident, $typed:ty );* $(;)?) => {$(
+        impl ProofWires for $point<Public> {
+            fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
+                out.push(self.point().val());
+            }
+        }
+
+        impl LedgerStore for $point<Public> {
+            fn store_atoms() -> Vec<AlignmentAtom> {
+                <$point<Public> as CircuitAbi>::atoms()
+            }
+
+            fn push_store_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
+                limbs.extend(c.encode(self.point()));
+            }
+
+            fn read_cell(c: &mut Circuit3) -> (Self, LedgerValue) {
+                let point = c.public_transcript_input::<$typed>();
+                c.label_read_vals(&[point.val()], "a point cell read");
+                let point = $point::from_point(point);
+                let value = point.store_value(c);
+                (point, value)
+            }
+        }
+    )*};
 }
 
-impl LedgerRepr for Secp256k1Point<Public> {
-    fn atoms() -> Vec<AlignmentAtom> {
-        <Secp256k1Point<Public> as CircuitAbi>::atoms()
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        limbs.extend(c.encode(self.point()));
-    }
-
-    /// UNREACHABLE by construction: [`LedgerRepr::witness_read`] is
-    /// overridden below, and it is the only caller of `from_limbs` in this
-    /// module. A point cannot be rebuilt from its encoding — ZKIR has
-    /// `encode` and no inverse — so a `LedgerMap<_, Secp256k1Point>`, whose
-    /// lookup does go through `from_limbs`, is not supported: store the
-    /// point in a CELL (which is the only shape Compact's `Secp256k1Point`
-    /// ledger fields take) or store the encoded limbs as a record type.
-    #[track_caller]
-    fn from_limbs(_limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        unreachable!(
-            "a Secp256k1Point is read through its typed gate, not rebuilt from \
-             its `encode` limbs — see the impl's docs for the supported shapes"
-        )
-    }
-
-    fn witness_read(c: &mut Circuit3) -> (Self, LedgerValue) {
-        let point = c.public_transcript_input::<Secp256k1PointT>();
-        c.label_read_vals(&[point.val()], "a point cell read");
-        let point = Secp256k1Point::from_point(point);
-        let mut limbs = Vec::new();
-        point.push_limbs(c, &mut limbs);
-        let value = LedgerValue::new(
-            <Self as LedgerRepr>::atoms(),
-            limbs.into_iter().map(ImpactElem::Wire).collect(),
-        );
-        (point, value)
-    }
-}
-
-/// `export ledger k: JubjubPoint` — the same computed-limb story as
-/// [`Secp256k1Point`] above, over two `field` limbs instead of five mixed ones.
-///
-/// Both halves are overridden for the same reason: `encode` produces the limbs
-/// and ZKIR has no inverse, so a write emits the `encode` and a read mints the
-/// TYPED gate and encodes that. A `LedgerMap<_, JubjubPoint>` is therefore not
-/// supported either — store it in a `Cell`, which is the only shape Compact's
-/// own `JubjubPoint` ledger fields take (`test-center/compact/test`'s `x15`).
-impl ProofWires for JubjubPoint<Public> {
-    fn push_wires(&self, out: &mut Vec<minocrab::v3::Val>) {
-        out.push(self.point().val());
-    }
-}
-
-impl LedgerRepr for JubjubPoint<Public> {
-    fn atoms() -> Vec<AlignmentAtom> {
-        <JubjubPoint<Public> as CircuitAbi>::atoms()
-    }
-
-    fn push_limbs(&self, c: &mut Circuit3, limbs: &mut Vec<Wire3<FieldT, Public>>) {
-        limbs.extend(c.encode(self.point()));
-    }
-
-    /// UNREACHABLE by construction — see [`Secp256k1Point`]'s impl, which
-    /// carries the argument in full.
-    #[track_caller]
-    fn from_limbs(_limbs: Vec<Wire3<FieldT, Public>>) -> Self {
-        unreachable!(
-            "a JubjubPoint is read through its typed gate, not rebuilt from \
-             its `encode` limbs — see the impl's docs for the supported shapes"
-        )
-    }
-
-    fn witness_read(c: &mut Circuit3) -> (Self, LedgerValue) {
-        let point = c.public_transcript_input::<JubjubPointT>();
-        c.label_read_vals(&[point.val()], "a point cell read");
-        let point = JubjubPoint::from_point(point);
-        let mut limbs = Vec::new();
-        point.push_limbs(c, &mut limbs);
-        let value = LedgerValue::new(
-            <Self as LedgerRepr>::atoms(),
-            limbs.into_iter().map(ImpactElem::Wire).collect(),
-        );
-        (point, value)
-    }
+point_store! {
+    Secp256k1Point, Secp256k1PointT;
+    JubjubPoint, JubjubPointT;
 }
 
 // ---- the coin arms' shared operands -----------------------------------------
@@ -682,7 +741,7 @@ pub trait Fresh<T> {
     fn fresh(&self) -> &T;
 }
 
-impl<T: LedgerRepr> Fresh<T> for T {
+impl<T: LedgerStore> Fresh<T> for T {
     fn fresh(&self) -> &T {
         self
     }
@@ -694,8 +753,8 @@ impl<T: LedgerRepr> Fresh<T> for T {
 /// refused here at build time, naming the read. Keys do not come through
 /// this; a key derived from a read adds no assumption the read's own
 /// `popeq` does not make.
-pub(crate) fn stored<T: LedgerRepr>(c: &mut Circuit3, value: &impl Fresh<T>, what: &str) -> LedgerValue {
-    let value = value.fresh().ledger_value(c);
+pub(crate) fn stored<T: LedgerStore>(c: &mut Circuit3, value: &impl Fresh<T>, what: &str) -> LedgerValue {
+    let value = value.fresh().store_value(c);
     let wires: Vec<minocrab::v3::Val> = value
         .elems()
         .iter()
@@ -708,8 +767,8 @@ pub(crate) fn stored<T: LedgerRepr>(c: &mut Circuit3, value: &impl Fresh<T>, wha
     value
 }
 
-pub fn repr_limbs<T: LedgerRepr>() -> usize {
-    T::atoms().iter().map(atom_limbs).sum()
+pub fn repr_limbs<T: LedgerStore>() -> usize {
+    T::store_atoms().iter().map(atom_limbs).sum()
 }
 
 /// How many LEDGER FIELDS a declared slot occupies, and whether it is the
@@ -929,13 +988,13 @@ pub trait LedgerSlot: sealed::Slot {
     fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp>;
 }
 
-impl<T: LedgerRepr> sealed::Slot for T {}
+impl<T: LedgerStore> sealed::Slot for T {}
 
 /// The VALUE family: a stored value's default is zeros in every limb
 /// (notes/ledger-adts.org finding (c)).
-impl<T: LedgerRepr> LedgerSlot for T {
+impl<T: LedgerStore> LedgerSlot for T {
     fn insert_default_ops(path: &[LedgerKey], key: &LedgerValue) -> Vec<ImpactOp> {
-        map_insert_default_at(path, key, T::atoms())
+        map_insert_default_at(path, key, T::store_atoms())
     }
 }
 
@@ -1045,7 +1104,7 @@ impl<K, V, P> LedgerAdt for LedgerMap<K, V, P> {
     }
 }
 
-impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
+impl<K: LedgerStore, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
     /// `map.lookup(key)` where the value is an ADT — the INTERMEDIATE lookup,
     /// which emits NOTHING.
     ///
@@ -1150,7 +1209,7 @@ impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
             )
         };
         let mut path = self.ledger_path();
-        path.push(LedgerKey::Value(key.ledger_value(c)));
+        path.push(LedgerKey::Value(key.store_value(c)));
         A::rooted_at(<P::Deeper as KeyedPath>::rooted(path))
     }
 }
@@ -1158,21 +1217,21 @@ impl<K: LedgerRepr, A: LedgerAdt, P: LedgerPath> LedgerMap<K, A, P> {
 /// The operations that do not touch the VALUE, so the value type is
 /// unconstrained: they read or remove a key, and an ADT-valued map has them
 /// exactly as a plain one does.
-impl<K: LedgerRepr, V, P: LedgerPath> LedgerMap<K, V, P> {
+impl<K: LedgerStore, V, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.member(key)` — `dup 0; idx [field]; push key; member; popeqc`.
     pub fn member(&self, c: &mut Circuit3, key: &K) -> Assumed<Bool<Public>> {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         Assumed::of_read(Bool::from_field_unchecked(map_member_at(c, &self.ledger_path(), &key)))
     }
 
     /// `map.remove(key)` — `idxp [field]; push key; rem; insc 1`.
     pub fn remove(&self, c: &mut Circuit3, key: &K) {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         emit(c, &map_remove_at(&self.ledger_path(), &key));
     }
 }
 
-impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
+impl<K: LedgerStore, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.lookup(key)` — `dup 0; idx [field]; idx {key}; popeq`. The value
     /// atoms come from `V`.
     ///
@@ -1182,7 +1241,7 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
     /// [`at_key`](LedgerMap::at_key), whose value type is an ADT — folds into
     /// the path and emits nothing at all.
     pub fn lookup(&self, c: &mut Circuit3, key: &K) -> Assumed<V> {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         Assumed::of_read(V::from_limbs(map_lookup_at(c, &self.ledger_path(), &key, V::atoms())))
     }
 
@@ -1207,11 +1266,15 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
         c.assert(super::predicate::is_true(present).message(message));
         self.lookup(c, key)
     }
+}
 
+/// The value WRITES: a map of points is inserted into exactly as a map of
+/// any other stored value is.
+impl<K: LedgerStore, V: LedgerStore, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.insert(key, value)` — `idxp [field]; push key; pushs value;
     /// ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, key: &K, value: &impl Fresh<V>) {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         let value = stored(c, value, "a map insert's value");
         emit(c, &map_insert_at(&self.ledger_path(), &key, &value));
     }
@@ -1219,7 +1282,7 @@ impl<K: LedgerRepr, V: LedgerRepr, P: LedgerPath> LedgerMap<K, V, P> {
 
 /// `insertDefault` is the ONE method whose emission depends on which family
 /// the value type belongs to — see [`LedgerSlot`].
-impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
+impl<K: LedgerStore, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
     /// `map.insertDefault(key)` — `idxp [field]; push key; pushs default;
     /// ins 1; insc 1`.
     ///
@@ -1229,7 +1292,7 @@ impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
     /// the blank tree — when the value type is an ADT
     /// (notes/coin-arms-nested-adts.org, stage B1 correction (iii)).
     pub fn insert_default(&self, c: &mut Circuit3, key: &K) {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         emit(c, &V::insert_default_ops(&self.ledger_path(), &key));
     }
 }
@@ -1245,7 +1308,7 @@ impl<K: LedgerRepr, V: LedgerSlot, P: LedgerPath> LedgerMap<K, V, P> {
 /// `minocrab_ledger` pins them — but no NESTED coin arm has a differential
 /// behind it, so the typed surface does not offer one
 /// (notes/coin-arms-nested-adts.org, stage B1 "not covered").
-impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
+impl<K: LedgerStore, V: CoinArm> LedgerMap<K, V> {
     /// `map.insertCoin(key, coin, recipient)` — `idxp [field]; push key;
     /// dup 5; push cm; idxc [(1), stack]; push coin; swap 0; concatc 91;
     /// ins 1; insc 1`.
@@ -1263,7 +1326,7 @@ impl<K: LedgerRepr, V: CoinArm> LedgerMap<K, V> {
         coin: &ShieldedCoinInfo3<Public>,
         recipient: &CoinRecipient<Public>,
     ) {
-        let key = key.ledger_value(c);
+        let key = key.store_value(c);
         let (cm, coin) = coin_operands(c, coin, recipient);
         emit(c, &map_insert_coin_at(&self.ledger_path(), &key, &cm, &coin));
     }
@@ -1361,10 +1424,10 @@ impl<T, P> LedgerAdt for LedgerSet<T, P> {
     }
 }
 
-impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
+impl<T: LedgerStore, P: LedgerPath> LedgerSet<T, P> {
     /// `set.insert(elem)` — `idxp [field]; push elem; pushs null; ins 1; insc 1`.
     pub fn insert(&self, c: &mut Circuit3, elem: &T) {
-        let elem = elem.ledger_value(c);
+        let elem = elem.store_value(c);
         emit(c, &set_insert_at(&self.ledger_path(), &elem));
     }
 
@@ -1373,13 +1436,13 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerSet<T, P> {
     /// The same op a map's `member` is, which is why it delegates to
     /// `map_member` rather than to a `set_member` that would be its duplicate.
     pub fn member(&self, c: &mut Circuit3, elem: &T) -> Assumed<Bool<Public>> {
-        let elem = elem.ledger_value(c);
+        let elem = elem.store_value(c);
         Assumed::of_read(Bool::from_field_unchecked(map_member_at(c, &self.ledger_path(), &elem)))
     }
 
     /// `set.remove(elem)` — `idxp [field]; push elem; rem; insc 1`.
     pub fn remove(&self, c: &mut Circuit3, elem: &T) {
-        let elem = elem.ledger_value(c);
+        let elem = elem.store_value(c);
         emit(c, &set_remove_at(&self.ledger_path(), &elem));
     }
 }
@@ -1515,7 +1578,7 @@ impl<T, P: LedgerPath> LedgerList<T, P> {
     }
 }
 
-impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
+impl<T: LedgerStore, P: LedgerPath> LedgerList<T, P> {
     /// `list.pushFront(value)` — thirteen instructions building a new
     /// `[value, old list, len + 1]` node (notes/ledger-adts.org §1).
     ///
@@ -1525,7 +1588,11 @@ impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
         let value = stored(c, value, "a list push's value");
         emit(c, &list_push_front_at(&self.ledger_path(), &value));
     }
+}
 
+/// The READ of a list: the head is rebuilt from its limbs, so the element
+/// type must be [`LedgerRepr`].
+impl<T: LedgerRepr, P: LedgerPath> LedgerList<T, P> {
     /// `list.head()` — the first element, or `None` on the empty list.
     pub fn head(&self, c: &mut Circuit3) -> Assumed<Maybe<T, Public>> {
         let mut limbs = list_head_at(c, &self.ledger_path(), T::atoms());
@@ -1707,7 +1774,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     }
 }
 
-impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
+impl<const DEPTH: u8, T: LedgerStore, P: LedgerPath> LedgerMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)` — hash the item into a leaf and insert it at the
     /// first free index.
     pub fn insert(&self, c: &mut Circuit3, item: &impl Fresh<T>) {
@@ -1848,7 +1915,7 @@ impl<const DEPTH: u8, T, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     }
 }
 
-impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
+impl<const DEPTH: u8, T: LedgerStore, P: LedgerPath> LedgerHistoricMerkleTree<DEPTH, T, P> {
     /// `t.insert(item)`.
     pub fn insert(&self, c: &mut Circuit3, item: &impl Fresh<T>) {
         let _ = stored(c, item, "a merkle-tree insert's item");
@@ -1876,16 +1943,16 @@ impl<const DEPTH: u8, T: LedgerRepr, P: LedgerPath> LedgerHistoricMerkleTree<DEP
 /// The SAME preimage Compact's Merkle path circuits hash — a Merkle leaf's
 /// digest is one thing whether the tree is in the ledger or the proof.
 /// Interop flavor by necessity: the digest is one compactc also computes.
-pub fn leaf_hash<T: LedgerRepr>(c: &mut Circuit3, item: &T) -> B32<Public> {
-    let limbs: Vec<_> = item.limbs(c).into_iter().map(Wire3::erase).collect();
-    leaf_hash_of(c, T::atoms(), &limbs)
+pub fn leaf_hash<T: LedgerStore>(c: &mut Circuit3, item: &T) -> B32<Public> {
+    let limbs: Vec<_> = item.store_limbs(c).into_iter().map(Wire3::erase).collect();
+    leaf_hash_of(c, T::store_atoms(), &limbs)
 }
 
 /// [`leaf_hash`] of `T`'s DEFAULT value — all-zero limbs
 /// (notes/ledger-adts.org finding (c)), which is what
 /// `insertIndexDefault` hashes.
-fn default_leaf_hash<T: LedgerRepr>(c: &mut Circuit3) -> B32<Public> {
-    let atoms = T::atoms();
+fn default_leaf_hash<T: LedgerStore>(c: &mut Circuit3) -> B32<Public> {
+    let atoms = T::store_atoms();
     let zeros = atoms.iter().map(atom_limbs).sum::<usize>();
     // Inline immediates, like the separator: compactc's `insertIndexDefault`
     // hashes `["0x6d646e3a6c68", "0x00", "0x00"]` with no `copy` in sight.
@@ -1952,10 +2019,10 @@ impl<T> LedgerCell<T> {
     }
 }
 
-impl<T: LedgerRepr> LedgerCell<T> {
+impl<T: LedgerStore> LedgerCell<T> {
     /// `x` (a Cell read) — `dup 0; idx [field]; popeq`.
     pub fn read(&self, c: &mut Circuit3) -> Assumed<T> {
-        let (value, embed) = T::witness_read(c);
+        let (value, embed) = T::read_cell(c);
         cell_read_embedded_at(c, &self.ledger_path(), &embed);
         Assumed::of_read(value)
     }

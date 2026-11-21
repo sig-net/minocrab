@@ -60,7 +60,7 @@ use minocrab::Public;
 
 use super::assumed::Assumed;
 use super::hook::{Hook, Lowered};
-use super::ledger::{LedgerCell, LedgerMap, LedgerRepr};
+use super::ledger::{LedgerCell, LedgerMap, LedgerRepr, LedgerStore};
 use super::{Bool, Uint};
 
 /// A step the LEDGER executes: an accumulator laid out as one or more cells,
@@ -93,7 +93,7 @@ pub trait Primitive<S>: Sized {
     fn combine(c: &mut Circuit3, hook: Hook, acc: &Self::Acc, delta: &S) -> Hook;
     /// `snapshot[key] = acc` appended to `hook`, blind, one copy per
     /// component.
-    fn snapshot<K: LedgerRepr>(
+    fn snapshot<K: LedgerStore>(
         c: &mut Circuit3,
         hook: Hook,
         acc: &Self::Acc,
@@ -102,11 +102,11 @@ pub trait Primitive<S>: Sized {
     ) -> Hook;
     /// `snapshot[key]`, a STABLE read: the entry is written once, at the
     /// snapshot, and never changes, so its `popeq` cannot go stale.
-    fn lookup<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S>;
+    fn lookup<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S>;
     /// Remove `snapshot[key]` in every component.
-    fn remove<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K);
+    fn remove<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K);
     /// [`Self::lookup`] then [`Self::remove`].
-    fn take<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S> {
+    fn take<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S> {
         let value = Self::lookup(c, snapshot, key);
         Self::remove(c, snapshot, key);
         value
@@ -165,21 +165,21 @@ macro_rules! one_cell {
             LedgerMap::at_block(total, start)
         }
 
-        fn snapshot<K: LedgerRepr>(
+        fn snapshot<K: LedgerStore>(
             c: &mut Circuit3,
             hook: Hook,
             acc: &Self::Acc,
             snapshot: &Self::Snapshot<K>,
             key: &K,
         ) -> Hook {
-            hook.copy(acc, snapshot, Lowered(key.ledger_value(c)))
+            hook.copy(acc, snapshot, Lowered(key.store_value(c)))
         }
 
-        fn lookup<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<$S> {
+        fn lookup<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<$S> {
             snapshot.lookup(c, key)
         }
 
-        fn remove<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
+        fn remove<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
             snapshot.remove(c, key)
         }
     };
@@ -330,21 +330,21 @@ impl<S: LedgerRepr> Primitive<S> for First {
         hook.if_unset(&acc.written, |h| h.write(&acc.value, delta).write(&acc.written, true))
     }
 
-    fn snapshot<K: LedgerRepr>(
+    fn snapshot<K: LedgerStore>(
         c: &mut Circuit3,
         hook: Hook,
         acc: &Self::Acc,
         snapshot: &Self::Snapshot<K>,
         key: &K,
     ) -> Hook {
-        hook.copy(&acc.value, snapshot, Lowered(key.ledger_value(c)))
+        hook.copy(&acc.value, snapshot, Lowered(key.store_value(c)))
     }
 
-    fn lookup<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S> {
+    fn lookup<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<S> {
         snapshot.lookup(c, key)
     }
 
-    fn remove<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
+    fn remove<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
         snapshot.remove(c, key)
     }
 }
@@ -384,7 +384,7 @@ macro_rules! tuple_steps {
                 hook
             }
 
-            fn snapshot<K: LedgerRepr>(
+            fn snapshot<K: LedgerStore>(
                 c: &mut Circuit3,
                 hook: Hook,
                 acc: &Self::Acc,
@@ -395,11 +395,11 @@ macro_rules! tuple_steps {
                 hook
             }
 
-            fn lookup<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<($($s,)+)> {
+            fn lookup<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) -> Assumed<($($s,)+)> {
                 Assumed::of_read(($( $p::lookup(c, &snapshot.$i, key).into_inner(), )+))
             }
 
-            fn remove<K: LedgerRepr>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
+            fn remove<K: LedgerStore>(c: &mut Circuit3, snapshot: &Self::Snapshot<K>, key: &K) {
                 $( $p::remove(c, &snapshot.$i, key); )+
             }
         }

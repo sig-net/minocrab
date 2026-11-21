@@ -105,7 +105,7 @@ use minocrab_ledger::{
     map_move_entry_at, map_remove_at, member, neg, push_cell, ImpactOp, LedgerValue,
 };
 
-use super::ledger::{FieldPath, KeyPath, LedgerCell, LedgerMap, LedgerPath, LedgerRepr};
+use super::ledger::{FieldPath, KeyPath, LedgerCell, LedgerMap, LedgerPath, LedgerRepr, LedgerStore};
 use super::{Bool, Uint};
 
 /// A value a hook pushes: a public ledger value, or a native literal that
@@ -121,9 +121,9 @@ pub trait HookValue<T> {
     fn hook_value(self, c: &mut Circuit3) -> LedgerValue;
 }
 
-impl<T: LedgerRepr> HookValue<T> for T {
+impl<T: LedgerStore> HookValue<T> for T {
     fn hook_value(self, c: &mut Circuit3) -> LedgerValue {
-        self.ledger_value(c)
+        self.store_value(c)
     }
 }
 
@@ -264,13 +264,13 @@ impl Hook {
     // ---- the plain writes, as effects ---------------------------------------------------
 
     /// `cell = value`.
-    pub fn write<T: LedgerRepr>(self, cell: &LedgerCell<T>, value: impl HookValue<T> + 'static) -> Self {
+    pub fn write<T: LedgerStore>(self, cell: &LedgerCell<T>, value: impl HookValue<T> + 'static) -> Self {
         let path = cell.ledger_path();
         self.step(move |c| cell_write_at(&path, &value.hook_value(c)))
     }
 
     /// `map[key] = value`.
-    pub fn insert<K: LedgerRepr, V: LedgerRepr, P: LedgerPath>(
+    pub fn insert<K: LedgerStore, V: LedgerStore, P: LedgerPath>(
         self,
         map: &LedgerMap<K, V, P>,
         key: impl HookValue<K> + 'static,
@@ -285,7 +285,7 @@ impl Hook {
     }
 
     /// `map.remove(key)`; a no-op on an absent key.
-    pub fn remove<K: LedgerRepr, V, P: LedgerPath>(
+    pub fn remove<K: LedgerStore, V, P: LedgerPath>(
         self,
         map: &LedgerMap<K, V, P>,
         key: impl HookValue<K> + 'static,
@@ -299,7 +299,7 @@ impl Hook {
     /// `map[key] = cell` — THE SNAPSHOT: the value goes from the cell to the
     /// entry with the circuit never learning it (`idxp m; push key; dup
     /// 2·len(m)+1; idx cell; ins 1; insc len(m)`).
-    pub fn copy<T: LedgerRepr, K: LedgerRepr, P: Reachable>(
+    pub fn copy<T: LedgerStore, K: LedgerStore, P: Reachable>(
         self,
         cell: &LedgerCell<T>,
         map: &LedgerMap<K, T, P>,
@@ -311,7 +311,7 @@ impl Hook {
     }
 
     /// `dst = src`, cell to cell, blind.
-    pub fn copy_cell<T: LedgerRepr>(self, src: &LedgerCell<T>, dst: &LedgerCell<T>) -> Self {
+    pub fn copy_cell<T: LedgerStore>(self, src: &LedgerCell<T>, dst: &LedgerCell<T>) -> Self {
         let src = src.ledger_path();
         let dst = dst.ledger_path();
         self.step(move |_c| cell_copy_at(&src, &dst))
@@ -320,7 +320,7 @@ impl Hook {
     /// `map[to] = map[from]; map.remove(from)`, blind; an absent `from`
     /// fails the transaction (see `map_move_entry_at` for the presence
     /// check the VM needs).
-    pub fn move_entry<K: LedgerRepr, V: LedgerRepr, P: Reachable>(
+    pub fn move_entry<K: LedgerStore, V: LedgerStore, P: Reachable>(
         self,
         map: &LedgerMap<K, V, P>,
         from: impl HookValue<K> + 'static,
@@ -356,7 +356,7 @@ impl Hook {
 
     /// Run `arm` only if `map` has no entry at `key`: `dup 0; idx m; push
     /// key; member; branch len(arm); <arm>`.
-    pub fn if_absent<K: LedgerRepr, V, P: LedgerPath>(
+    pub fn if_absent<K: LedgerStore, V, P: LedgerPath>(
         self,
         map: &LedgerMap<K, V, P>,
         key: impl HookValue<K> + 'static,

@@ -6,7 +6,7 @@
 //! serialized-ZKIR equality catches an extra op, a missing op, a reordered
 //! op, a different atom list and a different field index alike.
 
-use minocrab::v3::{Circuit3, Compiled3, FieldT, Secp256k1PointT, Wire3};
+use minocrab::v3::{Circuit3, Compiled3, FieldT, JubjubPointT, Secp256k1PointT, Wire3};
 use minocrab::{AlignmentAtom, Public};
 use minocrab_ledger::{
     cell_read, cell_write, counter_increment, counter_read, emit, map_insert, map_is_empty,
@@ -15,7 +15,7 @@ use minocrab_ledger::{
 };
 use minocrab_std::v3::{
     Bytes, CircuitAbi, Ledger, LedgerCell, LedgerCounter, LedgerCounter as Counter, LedgerField,
-    LedgerMap, LedgerRepr, Secp256k1Point, Uint, B32,
+    JubjubPoint, LedgerMap, LedgerRepr, Secp256k1Point, Uint, B32,
 };
 use minocrab_zkir::v3::to_zkir_string;
 
@@ -259,6 +259,88 @@ fn the_point_cell_is_the_hand_written_typed_gate() {
             limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
         );
         emit(&mut c, &cell_write(7, &value));
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(typed), zkir(explicit));
+}
+
+/// A `JubjubPoint` CELL: the same typed-gate read and `encode` write as the
+/// `Secp256k1Point` cell above, over two `field` limbs. Pins that the point
+/// cell read survived the split of the ledger traits (it is
+/// `LedgerStore::read_cell`, not a limb read) unchanged.
+#[test]
+fn the_jubjub_cell_is_the_hand_written_typed_gate() {
+    const JUBJUB: LedgerCell<JubjubPoint<Public>> = LedgerCell::at(9);
+    let atoms = <JubjubPoint<Public> as CircuitAbi>::atoms();
+
+    let typed = {
+        let mut c = Circuit3::new();
+        let key = JUBJUB.read(&mut c).stale(&mut c);
+        JUBJUB.write(&mut c, &key);
+        c.finish(true)
+    };
+
+    let explicit = {
+        let mut c = Circuit3::new();
+        let point = c.public_transcript_input::<JubjubPointT>();
+        let limbs = c.encode(point);
+        let value = LedgerValue::new(
+            atoms.clone(),
+            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(
+            &mut c,
+            &[
+                minocrab_ledger::dup(0),
+                minocrab_ledger::idx_one(false, false, 9),
+                minocrab_ledger::popeq(false, &value),
+            ],
+        );
+        let limbs = c.encode(point);
+        let value = LedgerValue::new(
+            atoms,
+            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(&mut c, &cell_write(9, &value));
+        c.finish(true)
+    };
+
+    assert_eq!(zkir(typed), zkir(explicit));
+}
+
+/// A MAP OF POINTS is stored into and tested exactly as any other map: the
+/// insert pushes the point's `encode` limbs, the member test pushes only the
+/// key. (Its `lookup` does not compile — a point is `LedgerStore`, not
+/// `LedgerRepr`; see the `compile_fail` doctest on `LedgerRepr`.)
+#[test]
+fn a_point_map_insert_and_member_are_the_explicit_ops() {
+    const POINTS: LedgerMap<B32<Public>, Secp256k1Point<Public>> = LedgerMap::at(8);
+    let atoms = <Secp256k1Point<Public> as CircuitAbi>::atoms();
+
+    let typed = {
+        let mut c = Circuit3::new();
+        let (key, _) = inputs(&mut c);
+        let point = DEMO.mpc_key.read(&mut c).stale(&mut c);
+        POINTS.insert(&mut c, &key, &point);
+        let known = POINTS.member(&mut c, &key);
+        c.assert(known.field());
+        c.finish(true)
+    };
+
+    let explicit = {
+        let mut c = Circuit3::new();
+        let (key, _) = inputs(&mut c);
+        let point = DEMO.mpc_key.read(&mut c).stale(&mut c);
+        let key_val = key_value(&key);
+        let limbs = c.encode(point.point());
+        let value = LedgerValue::new(
+            atoms,
+            limbs.iter().map(|&w| ImpactElem::Wire(w)).collect(),
+        );
+        emit(&mut c, &map_insert(8, &key_val, &value));
+        let known = map_member(&mut c, 8, &key_val);
+        c.assert(known);
         c.finish(true)
     };
 
