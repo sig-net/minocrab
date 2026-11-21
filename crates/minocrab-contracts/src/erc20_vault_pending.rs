@@ -646,10 +646,7 @@ impl Vault {
             let rec_left = recipient.value.left.disclose_as::<ClaimRecipientKey>(c);
             let rec_right = recipient.value.right.disclose_as::<ClaimRecipientContract>(c);
             let is_left = c.cond_select(rec_is_some, rec_is_left, one);
-            let left = minocrab_std::v3::ZswapCoinPublicKey(B32 {
-                hi: c.cond_select(rec_is_some, rec_left.bytes().hi, own_pk.bytes().hi),
-                lo: c.cond_select(rec_is_some, rec_left.bytes().lo, own_pk.bytes().lo),
-            });
+            let left = minocrab_std::v3::ZswapCoinPublicKey::cond_select(c, rec_is_some, &rec_left, &own_pk);
             let right = minocrab_std::v3::ContractAddress(B32 {
                 hi: c.cond_select(rec_is_some, rec_right.bytes().hi, 0u64),
                 lo: c.cond_select(rec_is_some, rec_right.bytes().lo, 0u64),

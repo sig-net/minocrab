@@ -1489,10 +1489,7 @@ select_via_field! {
     [const N: usize, V: Vis3] Bytes<N, V> =>
         |c, bit, a, b| Bytes::from_field_unchecked(c.cond_select(bit, a.field(), b.field())),
     /// Two slots — the `[hi, lo]` pair.
-    [V: Vis3] B32<V> => |c, bit, a, b| B32 {
-        hi: c.cond_select(bit, a.hi, b.hi),
-        lo: c.cond_select(bit, a.lo, b.lo),
-    },
+    [V: Vis3] B32<V> => |c, bit, a, b| B32::cond_select(c, bit, &a, &b),
     /// The address's inner `Bytes<32>`.
     [V: Vis3] ContractAddress<V> =>
         |c, bit, a, b| ContractAddress(Select::select(c, bit, a.0, b.0)),

@@ -754,10 +754,8 @@ impl Manager {
         let struct_hash = evm_struct_hash_for(c, &manager, &p, &f);
         let evm_digest = eip712_digest(c, &domain_separator, &struct_hash);
         let zero = c.constant(0u64);
-        let digest = B32 {
-            hi: c.cond_select(f.is0, zero, evm_digest.hi),
-            lo: c.cond_select(f.is0, zero, evm_digest.lo),
-        };
+        let zeros = B32 { hi: zero, lo: zero };
+        let digest = B32::cond_select(c, f.is0, &zeros, &evm_digest);
 
         // const signatureOk = secp256k1EcdsaVerify(digest, sig, pk)
         // const signer = secp256k1EthereumAddress(pk)
@@ -1490,14 +1488,9 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         let k0 = c.test_eq(p.recipient_kind, 0u64);
         let is_left = c.not(k0);
         let zero = c.constant(0u64);
-        let left = B32 {
-            hi: c.cond_select(k0, zero, p.recipient.hi),
-            lo: c.cond_select(k0, zero, p.recipient.lo),
-        };
-        let right = B32 {
-            hi: c.cond_select(k0, p.recipient.hi, zero),
-            lo: c.cond_select(k0, p.recipient.lo, zero),
-        };
+        let zeros = B32 { hi: zero, lo: zero };
+        let left = B32::cond_select(c, k0, &zeros, &p.recipient);
+        let right = B32::cond_select(c, k0, &p.recipient, &zeros);
         let recipient = Either {
             is_left: Bool::from_field_unchecked(is_left),
             left: ContractAddress(left),
