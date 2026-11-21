@@ -83,9 +83,9 @@ use minocrab_std::v3::hash::upgrade_from_transient;
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
     b32_newtype, contract, eq, is_true, label, not, own_public_key, Bool, BoundedUint, Bytes,
-    Bytes0, BytesN, Check, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses,
+    Bytes0, BytesN, CircuitArg, CoinColor, CoinNonce, CoinRecipient, Disclose, Discloses,
     Either, Ledger, LedgerCell, LedgerField, LedgerMap, LedgerRepr, LedgerSet, Maybe,
-    Secp256k1Point, TokenDomainSeparator, Uint, Vis3, B32,
+    Secp256k1Point, TokenDomainSeparator, Uint, B32,
 };
 
 use signet_signer_interface::notification::construct_notification_v1;
@@ -491,10 +491,6 @@ fn require_initialised(c: &mut Circuit3) {
     c.assert(is_true(init).message("Not initialised"));
 }
 
-fn b32_eq<V: Vis3>(a: &B32<V>, b: &B32<V>) -> Check<V> {
-    eq(a.hi, b.hi).and(eq(a.lo, b.lo))
-}
-
 /// `assert(userCommitment(callerSecretKey()) == deployer, "Not the deployer")`
 /// — the witness, the hash, then the `deployer` read where the source names it.
 fn assert_deployer(c: &mut Circuit3) {
@@ -502,7 +498,7 @@ fn assert_deployer(c: &mut Circuit3) {
         let sk = common::witness_sk(c);
         let mine = user_commitment(c, &sk);
         let stored = VAULT.deployer.read(c);
-        c.assert(b32_eq(&mine.bytes(), &stored.private().bytes()).message("Not the deployer"));
+        c.assert(mine.bytes().equals(stored.private().bytes()).message("Not the deployer"));
     });
 }
 
@@ -765,7 +761,7 @@ fn settle_request(c: &mut Circuit3, request_id: &RequestId<Public>, action: u64)
         c.assert_with(above, Some("Stale attestation"));
 
         let mine = ownership_commitment(c, out.entry.in_index.field().private());
-        c.assert(b32_eq(&mine.bytes(), &out.entry.commitment.private().bytes()).message("Not the requester"));
+        c.assert(mine.bytes().equals(out.entry.commitment.private().bytes()).message("Not the requester"));
 
         VAULT.eviction_map.remove(c, request_id);
         VAULT.output_attestation_buffer.remove(c, request_id);
@@ -801,7 +797,7 @@ fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, request_id: &Reques
         record.output_kind.field(),
         output_limbs,
     );
-    c.assert(b32_eq(&digest, &record.digest).message("Output does not match the attestation"));
+    c.assert(digest.equals(record.digest).message("Output does not match the attestation"));
 }
 
 /// `deserialize<VaultResponse, 1>(output).success` — the byte must be 0 or 1
@@ -849,7 +845,7 @@ fn assert_vault_coin(
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()).message(color_message));
+    c.assert(coin.color.bytes().equals(color.private().bytes()).message(color_message));
     c.assert(eq(coin.value.field(), amount).message(value_message));
 }
 
@@ -1816,7 +1812,7 @@ impl Vault {
         c.when(is_executed, |c| {
             assert_output_matches::<32>(c, &request_id, &record, &[output.hi, output.lo]);
             // The two mints need distinct nonces or their coins link.
-            c.assert(not(b32_eq(&change_nonce.bytes(), &mint_nonce.bytes())).message("changeNonce must differ from mintNonce"));
+            c.assert(not(change_nonce.bytes().equals(mint_nonce.bytes())).message("changeNonce must differ from mintNonce"));
             let amount_out = as_u64(c, args.request.amount_out);
             mint_to_key(c, args.request.erc20_address_out.field(), amount_out, &mint_nonce, &recipient);
             // The router spends at most amountInMaximum, which start capped at Uint<64> max.

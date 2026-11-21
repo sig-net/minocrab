@@ -1057,6 +1057,23 @@ impl<V: Vis3> B32<V> {
         let lo = c.test_eq(self.lo, other.lo);
         Bool::from_field_unchecked(c.mul(hi, lo))
     }
+
+    /// `a == b` as a [`Check`](predicate::Check), for `c.assert(a.equals(b).message(..))` and `not(..)`: it lowers where it is asserted to the same `test_eq`, `test_eq`, `mul` as [`B32::eq`].
+    ///
+    /// Both sides at one visibility, as for [`B32::eq`]:
+    ///
+    /// ```compile_fail,E0308
+    /// # use minocrab::v3::{Circuit3, FieldT};
+    /// # use minocrab::{Private, Public};
+    /// # use minocrab_std::v3::B32;
+    /// # let mut c = Circuit3::new();
+    /// let a = B32::<Private> { hi: c.arg::<FieldT>("a_hi"), lo: c.arg::<FieldT>("a_lo") };
+    /// let b = B32::pad(&mut c, "x");
+    /// let _ = a.equals(b); // error[E0308]: a `B32<Public>`; move one side with `.private()` first
+    /// ```
+    pub fn equals(self, other: B32<V>) -> predicate::Check<V> {
+        predicate::eq(self.hi, other.hi).and(predicate::eq(self.lo, other.lo))
+    }
 }
 
 /// Declare a `Bytes<32>`-shaped newtype and its whole impl set — the M23 R2

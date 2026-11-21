@@ -167,17 +167,6 @@ fn b32_const(c: &mut Circuit3, bytes: &[u8; 32]) -> B32<Public> {
     }
 }
 
-/// `a == b` on two `B32`s of any (equal) visibility — limb equality, joined.
-fn b32_eq<V: minocrab_std::v3::Vis3>(
-    c: &mut Circuit3,
-    a: &B32<V>,
-    b: &B32<V>,
-) -> Wire3<FieldT, V> {
-    let eq_hi = c.test_eq(a.hi, b.hi);
-    let eq_lo = c.test_eq(a.lo, b.lo);
-    c.mul(eq_hi, eq_lo)
-}
-
 /// `b == default<Bytes<32>>` — both limbs zero.
 fn b32_is_zero<V: minocrab_std::v3::Vis3>(c: &mut Circuit3, b: &B32<V>) -> Wire3<FieldT, V> {
     let hi0 = c.test_eq(b.hi, 0u64);
@@ -797,7 +786,7 @@ impl Manager {
 
         // assert(!isEvmRegistration || evmRegistrationAccount == p.account)
         c.when(f.is1, |c| {
-            let same = b32_eq(c, &evm_registration_account, &p.account);
+            let same = evm_registration_account.eq(c, p.account).field();
             c.assert_with(same, Some("EVM registration account id mismatch"));
         });
 
@@ -816,7 +805,7 @@ impl Manager {
             let native_mode = c.test_eq(mode, 0u64);
             c.assert_with(native_mode, Some("EVM account cannot enter native authorization"));
             // …then the action-level checks.
-            let same = b32_eq(c, &native_account, &p.account);
+            let same = native_account.eq(c, p.account).field();
             c.assert_with(same, Some("native witness does not match supplied account transcript"));
             let mode_again = MANAGER.account_modes.lookup(c, &native_account).field();
             let mode_matches = c.test_eq(mode_again, p.auth_mode);
@@ -1170,7 +1159,7 @@ fn assert_action_envelope(c: &mut Circuit3, p: &PublicPayload, f: &Flags) {
             c.assert_with(to0, Some("swap transfer target must be inactive"));
             let want_positive = gt(want, 0u64).eval(c).field();
             c.assert_with(want_positive, Some("swap must want a positive amount"));
-            let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
+            let same = p.primary_color.bytes().eq(c, p.want_color.bytes()).field();
             let distinct = c.not(same);
             c.assert_with(distinct, Some("swap legs must be different colours"));
             let credit_set = c.not(credit0);
@@ -1327,7 +1316,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
         .eval(c)
         .field();
         c.assert_with(want_positive, Some("swap must want a positive amount"));
-        let same = b32_eq(c, &p.primary_color.bytes(), &p.want_color.bytes());
+        let same = p.primary_color.bytes().eq(c, p.want_color.bytes()).field();
         let distinct = c.not(same);
         c.assert_with(distinct, Some("swap legs must be different colours"));
     });
@@ -1336,7 +1325,7 @@ fn custody_dispatch(c: &mut Circuit3, p: &PublicPayload, f: &Flags, account: &B3
     c.when(is_transfer, |c| {
         let known = MANAGER.accounts.member(c, &p.to_account).field();
         c.assert_with(known, Some("destination account is not registered"));
-        let same = b32_eq(c, account, &p.to_account);
+        let same = account.eq(c, p.to_account).field();
         let different = c.not(same);
         c.assert_with(different, Some("internal transfer to the same account"));
         let positive = gt(val_u128, 0u64).eval(c).field();

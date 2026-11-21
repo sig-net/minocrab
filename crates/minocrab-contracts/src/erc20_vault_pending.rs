@@ -84,7 +84,7 @@ use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
 use minocrab_std::v3::kernel;
 use minocrab_std::v3::{
-    contract, eq, label, own_public_key, Bytes, Check, CircuitArg, CoinColor, CoinNonce,
+    contract, eq, label, own_public_key, Bytes, CircuitArg, CoinColor, CoinNonce,
     CoinRecipient, Disclose, Discloses, Either, Ledger, LedgerCell, LedgerCounter, LedgerRepr,
     Maybe, Secp256k1Point, TokenDomainSeparator, Uint, B32,
 };
@@ -369,15 +369,11 @@ fn assert_initialized(c: &mut Circuit3) {
     c.assert(init.gt(0u64).message("Not initialized"));
 }
 
-fn b32_eq(a: &B32<Private>, b: &B32<Private>) -> Check<Private> {
-    eq(a.hi, b.hi).and(eq(a.lo, b.lo))
-}
-
 fn assert_deployer(c: &mut Circuit3) {
     let sk = common::witness_sk(c);
     let digest = common::commitment_transient(c, &sk);
     let stored = VAULT.deployer.read(c);
-    c.assert(b32_eq(&digest.bytes(), &stored.private().bytes()).message("Not the deployer"));
+    c.assert(digest.bytes().equals(stored.private().bytes()).message("Not the deployer"));
 }
 
 /// The vault token's pre-token for an ERC-20 (see
@@ -421,7 +417,7 @@ fn burn_vault_coin(
     let domain_sep = vault_token_domain_separator(c, erc20);
     let me = kernel::cache_self_address(c);
     let color = minocrab_std::v3::token_type(c, &domain_sep, &me.bytes());
-    c.assert(b32_eq(&coin.color.bytes(), &color.private().bytes()));
+    c.assert(coin.color.bytes().equals(color.private().bytes()));
     c.assert(eq(coin.value.field(), amount));
     let coin = minocrab_std::v3::ShieldedCoinInfo3 {
         nonce: coin.nonce.disclose_as::<SurrenderedCoinNonce>(c),
@@ -634,7 +630,7 @@ impl Vault {
             let sk = common::witness_sk(c);
             let caller = common::commitment_transient(c, &sk).bytes();
             c.assert(
-                b32_eq(&caller, &outcome.env.depositor.private().bytes()).message("Not the depositor"),
+                caller.equals(outcome.env.depositor.private().bytes()).message("Not the depositor"),
             );
         });
 
