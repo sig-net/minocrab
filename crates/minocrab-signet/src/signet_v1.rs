@@ -1,29 +1,29 @@
-//! The `@sig-net/midnight` Signet module at **0.24.1** (`a80e98e`, corpus
-//! `signet-midnight-integration-v0241`) — the **V1 wire vocabulary** the
-//! flush-pattern vault imports (M44): the suffixed record, the domain-tagged
-//! Poseidon hashes, the kind-bearing attestation and the empty respond
-//! schema.
+//! The `@sig-net/midnight` Signet module at **0.26.0-rc.15** (`aa91570`,
+//! corpus `signet-midnight-integration-v026`), the version the erc20-vault
+//! v0.7.0-rc.2 pins (M48 L, notes/mainnet-pin.org): the **V1 wire
+//! vocabulary** with the two changes of 0.25 (a 64-byte `executionDest`, and
+//! an attestation that signs the output's width and HASH rather than the
+//! output) and the identity-key short-circuit of 0.26.
 //!
-//! What changed from the `fff3421c` module the MinoCrab corpus's `signet` ports, and why
-//! this is a sibling rather than an edit of it: the request record REORDERED
-//! (`keyVersion` first, `sender` second, the request nonce GONE, the
-//! schemas last with `respondSerializationSchema` pinned to `Bytes<0>`), the
-//! request id is no longer a hash of the whole record but of a PREIMAGE
-//! struct whose transaction enters as a DIGEST over its used entries
-//! (`calculateEvmType2TxParamsDigestV1`), every hash is prefixed with a
-//! [`hash_domain`] tag, and the attestation digest commits to the block
-//! height, the MPC's verdict ([`output_kind`]) and the output's WIDTH beside
-//! the output itself. The `fff3421c` shapes stay in that corpus module for the
-//! test-caller and the Signet-module ports still pinned there; nothing here
-//! is shared with them but the transaction-parameter structs
+//! What V1 is, against the `fff3421c` module the MinoCrab corpus's `signet`
+//! ports: the request record is reordered (`keyVersion` first, `sender`
+//! second, no request nonce, the schemas last with
+//! `respondSerializationSchema` pinned to `Bytes<0>`), the request id is a
+//! hash of a PREIMAGE struct whose transaction enters as a DIGEST over its
+//! used entries (`calculateEvmType2TxParamsDigestV1`), every hash is prefixed
+//! with a [`hash_domain`] tag, and the attestation digest commits to the
+//! request, the block height, the MPC's verdict ([`output_kind`]), the
+//! output's WIDTH and the output's hash. Nothing is shared with the
+//! `fff3421c` shapes but the transaction-parameter structs
 //! ([`EvmType2TxParams`], [`EvmCalldata`]), the ABI word helpers and the
 //! ECDSA plumbing, which are defined here and which the corpus module
-//! re-exports.
+//! re-exports. The off-circuit twin of every hash here is `signet-hashing`.
 //!
 //! Everything in-circuit is a mechanical port of `Signet.compact` at the pin,
 //! function for function; the cross-checks are the vault's differential suite
-//! (every `send*` circuit's request id and record bytes, every
-//! `queueAttestation*`'s digest, PI-equal to compactc's artifact).
+//! (every `send*` circuit's request id and record bytes, `queueAttestation`'s
+//! digest and every complete's output check, PI-equal to compactc's
+//! artifact).
 //!
 //! ```text
 //! struct SignBidirectionalEventV1<TxParams, #LenOut, #LenRespond> {   // FAB atoms
@@ -33,7 +33,7 @@
 //!   algo: MPCSignatureAlgorithm;                                      // b1
 //!   txParamType: TxParamType;                                         // b1
 //!   txParams: TxParams;                                               // EvmType2TxParams
-//!   executionDest: Bytes<32>;                                         // b32 (2 limbs)
+//!   executionDest: Bytes<64>;                                         // b64 (3 limbs)
 //!   signatureDest: MPCDestination;                                    // b1
 //!   params: Bytes<64>;                                                // b64 (3 limbs)
 //!   outputDeserializationSchema: Bytes<LenOut>;                       // bLenOut
@@ -51,7 +51,7 @@ use minocrab_std::v3::{
 use signet_responder_interface::Signature;
 
 use minocrab_evm::reverse_bytes32;
-use crate::common::{Caip2Id, SigningPath};
+use crate::common::SigningPath;
 /// `checkedTruncationU128`, the module's own narrowing of an attested
 /// uint256; the body is the EVM ABI layer's, which decodes returns with it.
 pub use minocrab_evm::checked_truncation_u128;
@@ -229,6 +229,7 @@ pub mod hash_domain {
     pub const EVM_TYPE2_TX_WORD: u64 = HashDomain::EvmType2TxWord as u64;
     pub const EVM_TYPE2_TX_ACCESS_ENTRY: u64 = HashDomain::EvmType2TxAccessEntry as u64;
     pub const EVM_TYPE2_TX_STORAGE_KEY: u64 = HashDomain::EvmType2TxStorageKey as u64;
+    pub const ATTESTED_OUTPUT: u64 = HashDomain::AttestedOutput as u64;
 }
 
 /// `enum OutputKind { executed, failed, unviable }` — the MPC's verdict on a
@@ -247,7 +248,7 @@ pub mod output_kind {
 /// constrains a three-variant enum argument.
 pub type OutputKind<V> = BoundedUint<{ output_kind::COUNT }, V>;
 
-/// `ethereumCaip2Id()` — `pad(32, "eip155:1")`, the MPC's routing key for
+/// `ethereumCaip2Id()` — `pad(64, "eip155:1")`, the MPC's routing key for
 /// EVERY Ethereum network it watches (the transaction's own `chainId` picks
 /// the network).
 pub const ETHEREUM_CAIP2_ID: &str = "eip155:1";
@@ -255,6 +256,13 @@ pub const ETHEREUM_CAIP2_ID: &str = "eip155:1";
 /// The signing path the protocol reserves for the MPC's response key;
 /// `constructSignBidirectionalEventV1` refuses a request naming it.
 pub const RESPONSE_KEY_PATH: &str = "midnight response key";
+
+/// `executionDest: Bytes<64>`'s width: a CAIP-2 id is at most 41 bytes,
+/// zero-padded to 64 (it was `Bytes<32>` until `@sig-net/midnight` 0.25).
+pub const EXECUTION_DEST_LEN: usize = 64;
+
+/// A record's `executionDest`, the MPC's routing key for the target chain.
+pub type ExecutionDest<V> = BytesN<V, EXECUTION_DEST_LEN>;
 
 // ---- the output schemas -------------------------------------------------------------
 
@@ -451,7 +459,7 @@ pub struct SignBidirectionalEventV1<V: Vis3, const WORDS: usize, S: SchemaBytes<
     pub algo: Wire3<FieldT, V>,
     pub tx_param_type: Wire3<FieldT, V>,
     pub tx_params: EvmType2TxParams<V, WORDS>,
-    pub execution_dest: Caip2Id<V>,
+    pub execution_dest: ExecutionDest<V>,
     pub signature_dest: Wire3<FieldT, V>,
     /// `params: Bytes<64>` — 3 limbs `[2, 31, 31]`, zero-fill.
     pub params: BytesN<V, PARAMS_LEN>,
@@ -494,12 +502,12 @@ pub mod layout {
     pub const fn access_list_entry_count(words: usize) -> usize {
         word_hi(words)
     }
-    /// `executionDest: Bytes<32>` — `[hi, lo]`.
+    /// `executionDest: Bytes<64>` — 3 limbs `[2, 31, 31]`.
     pub const fn execution_dest(words: usize) -> usize {
         access_list_entry_count(words) + 1
     }
     pub const fn signature_dest(words: usize) -> usize {
-        execution_dest(words) + 2
+        execution_dest(words) + bytes_limbs(super::EXECUTION_DEST_LEN)
     }
     /// `params: Bytes<64>` — 3 limbs.
     pub const fn params(words: usize) -> usize {
@@ -508,7 +516,7 @@ pub mod layout {
     pub const fn output_deserialization_schema(words: usize) -> usize {
         params(words) + bytes_limbs(super::PARAMS_LEN)
     }
-    /// The record's total limb count (30 for the vault's `<2, 34>`).
+    /// The record's total limb count (31 for the vault's `<2, 34>`).
     pub const fn limbs(words: usize, schema_limbs: usize) -> usize {
         output_deserialization_schema(words) + schema_limbs
     }
@@ -541,7 +549,7 @@ impl<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V,
         ];
         a.extend(std::iter::repeat_n(bytes(32), WORDS)); // words
         a.push(bytes(1)); // accessListEntryCount
-        a.push(bytes(32)); // executionDest
+        a.extend(ExecutionDest::<V>::atoms()); // executionDest
         a.push(bytes(1)); // signatureDest
         a.extend(BytesN::<V, PARAMS_LEN>::atoms()); // params
         a.extend(S::atoms()); // outputDeserializationSchema
@@ -561,8 +569,7 @@ impl<V: Vis3, const WORDS: usize, S: SchemaBytes<V>> SignBidirectionalEventV1<V,
             self.tx_param_type,
         ];
         l.extend(self.tx_params.limbs());
-        l.push(self.execution_dest.bytes().hi);
-        l.push(self.execution_dest.bytes().lo);
+        l.extend(self.execution_dest.limbs().iter().copied());
         l.push(self.signature_dest);
         l.extend(self.params.limbs().iter().copied());
         l.extend(self.output_deserialization_schema.limbs());
@@ -636,7 +643,7 @@ pub fn construct_sign_bidirectional_event_v1<V: Vis3, const WORDS: usize, S: Sch
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
-    execution_dest: Caip2Id<V>,
+    execution_dest: ExecutionDest<V>,
     output_schema: &[u8],
 ) -> SignBidirectionalEventV1<V, WORDS, S> {
     construct_sign_bidirectional_event_v1_with(c, key_version, sender, path, tx_params, execution_dest, output_schema, true)
@@ -653,7 +660,7 @@ pub fn construct_sign_bidirectional_event_v1_const_path<V: Vis3, const WORDS: us
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
-    execution_dest: Caip2Id<V>,
+    execution_dest: ExecutionDest<V>,
     output_schema: &[u8],
 ) -> SignBidirectionalEventV1<V, WORDS, S> {
     construct_sign_bidirectional_event_v1_with(c, key_version, sender, path, tx_params, execution_dest, output_schema, false)
@@ -666,7 +673,7 @@ fn construct_sign_bidirectional_event_v1_with<V: Vis3, const WORDS: usize, S: Sc
     sender: ContractAddress<V>,
     path: SigningPath<V>,
     tx_params: EvmType2TxParams<V, WORDS>,
-    execution_dest: Caip2Id<V>,
+    execution_dest: ExecutionDest<V>,
     output_schema: &[u8],
     check_path: bool,
 ) -> SignBidirectionalEventV1<V, WORDS, S> {
@@ -791,16 +798,16 @@ pub struct RequestIdPreimageV1<V: Vis3> {
     pub algo: Wire3<FieldT, V>,
     pub tx_param_type: Wire3<FieldT, V>,
     pub tx_params_digest: B32<V>,
-    pub execution_dest: Caip2Id<V>,
+    pub execution_dest: ExecutionDest<V>,
 }
 
 /// `calculateRequestIdV1(preimage)` —
 /// `upgradeFromTransient(transientHash([HashDomain.requestId, preimage]))`
-/// over the preimage's twelve field-aligned limbs.
+/// over the preimage's thirteen field-aligned limbs.
 pub fn calculate_request_id_v1<V: Vis3>(c: &mut Circuit3, p: &RequestIdPreimageV1<V>) -> RequestId<V> {
     c.region("signet v1: request id (transientHash)", |c| {
         let tag = V::from_public(c.constant(hash_domain::REQUEST_ID));
-        let f = c.transient_hash(&[
+        let mut limbs = vec![
             tag,
             p.key_version,
             p.sender.bytes().hi,
@@ -811,9 +818,9 @@ pub fn calculate_request_id_v1<V: Vis3>(c: &mut Circuit3, p: &RequestIdPreimageV
             p.tx_param_type,
             p.tx_params_digest.hi,
             p.tx_params_digest.lo,
-            p.execution_dest.bytes().hi,
-            p.execution_dest.bytes().lo,
-        ]);
+        ];
+        limbs.extend(p.execution_dest.limbs().iter().copied());
+        let f = c.transient_hash(&limbs);
         RequestId(upgrade_from_transient(c, f))
     })
 }
@@ -837,7 +844,7 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaB
             algo: request.algo,
             tx_param_type: request.tx_param_type,
             tx_params_digest,
-            execution_dest: request.execution_dest,
+            execution_dest: request.execution_dest.clone(),
         },
     )
 }
@@ -846,119 +853,98 @@ pub fn calculate_evm_type2_request_id_v1<V: Vis3, const WORDS: usize, S: SchemaB
 
 /// Compact `struct RespondBidirectionalEventV1 { requestId: RequestId,
 /// blockHeight: Uint<64>, outputKind: OutputKind, serializedOutputLength:
-/// Uint<64>, digest: Bytes<32>, signature: Signature }` at 0.24.1 — the
-/// attestation the vault's `queueAttestation*` circuits take. The deployed
-/// signet signer's struct (`signet_signer_interface::RespondBidirectionalEventV1`,
-/// 0.25.0) also carries `outputHash`; the two share every other field.
+/// Uint<64>, outputHash: Bytes<32>, digest: Bytes<32>, signature: Signature }`
+/// — the attestation the signet responder emits and a client circuit
+/// verifies.
+///
+/// The responder interface crate declares the same struct
+/// (`signet_responder_interface::RespondBidirectionalEventV1`) field for
+/// field; this one types `requestId` as the SIGNER's [`RequestId`], the
+/// type every record map of a client is keyed by, so a settle can look its
+/// request up with the attested id without a conversion. The two layouts are
+/// held equal by the parity vault's `queueAttestation` differential
+/// (compactc's argument is the module's struct, slot for slot).
 #[derive(Clone, CircuitArg)]
 pub struct RespondBidirectionalEventV1<V: Vis3> {
     pub request_id: RequestId<V>,
     pub block_height: Uint<64, V>,
     pub output_kind: OutputKind<V>,
     pub serialized_output_length: Uint<64, V>,
+    pub output_hash: B32<V>,
     pub digest: B32<V>,
     pub signature: Signature<V>,
 }
 
-/// `calculateSignetAttestationDigestV1<LEN>(requestId, blockHeight,
-/// outputKind, serializedOutput)` — Poseidon over `[HashDomain.attestationDigest,
-/// requestId, blockHeight, outputKind, LEN, serializedOutput]`, the width
-/// entering as the constant `LEN`, then `upgradeFromTransient`.
-/// `output_limbs` are the output's FAB limbs (none for `Bytes<0>`, one for
-/// `Bytes<1>`, `[hi, lo]` for `Bytes<32>`).
-pub fn calculate_attestation_digest_v1<V: Vis3, const LEN: usize>(
+/// `calculateAttestedOutputHashV1<LEN>(serializedOutput)` —
+/// `upgradeFromTransient(transientHash([HashDomain.attestedOutput,
+/// serializedOutput]))`. `output_limbs` are the output's FAB limbs (none for
+/// `Bytes<0>`, one for `Bytes<1>`, `[hi, lo]` for `Bytes<32>`); the width is
+/// not in this hash, it is committed beside it in the attestation digest.
+pub fn calculate_attested_output_hash_v1<V: Vis3>(
     c: &mut Circuit3,
-    request_id: &RequestId<V>,
-    block_height: Wire3<FieldT, V>,
-    output_kind: Wire3<FieldT, V>,
     output_limbs: &[Wire3<FieldT, V>],
 ) -> B32<V> {
-    calculate_attestation_digest_v1_at(c, request_id, block_height, output_kind, LEN as u64, output_limbs)
-}
-
-/// [`calculate_attestation_digest_v1`] WITH THE WIDTH AS DATA.
-///
-/// The compat port's widths are consts of the circuit, so it names them as
-/// const parameters and the type says which `queueAttestation*` it is. The
-/// typed API's width is `<Call::Return as AbiReturn>::LEN`, an ASSOCIATED
-/// const, and stable Rust cannot pass one as a const-generic argument
-/// (`generic_const_exprs`) — so this is the same function with the number in
-/// the argument list. It emits the same `constant`, in the same place: the
-/// two forms are instruction-identical.
-pub fn calculate_attestation_digest_v1_at<V: Vis3>(
-    c: &mut Circuit3,
-    request_id: &RequestId<V>,
-    block_height: Wire3<FieldT, V>,
-    output_kind: Wire3<FieldT, V>,
-    len: u64,
-    output_limbs: &[Wire3<FieldT, V>],
-) -> B32<V> {
-    c.region("signet v1: attestation digest (transientHash)", |c| {
-        let f = attestation_transient_hash_v1(c, request_id, block_height, output_kind, len, output_limbs);
+    c.region("signet v1: attested output hash (transientHash)", |c| {
+        let tag = V::from_public(c.constant(hash_domain::ATTESTED_OUTPUT));
+        let mut limbs = vec![tag];
+        limbs.extend_from_slice(output_limbs);
+        let f = c.transient_hash(&limbs);
         upgrade_from_transient(c, f)
     })
 }
 
-/// [`calculate_attestation_digest_v1`] WITHOUT THE UPGRADE, and with the
-/// width as data rather than as a const.
-///
-/// Two callers need the raw Poseidon output. A refund accepts TWO
-/// attestations whose preimages differ in both the width and the limbs — the
-/// MPC's verdict over an EMPTY output (width 0) and this call's output at its
-/// own width — and Poseidon is not a stream, so one hash cannot cover both:
-/// `Pending::refund` hashes it both ways, selects the field element by the
-/// verdict and upgrades ONCE, which is also where the const width stops
-/// being a const. Everything else goes through
-/// [`calculate_attestation_digest_v1`], whose `LEN` keeps the width a fact
-/// about the call's type.
-pub fn attestation_transient_hash_v1<V: Vis3>(
+/// `calculateSignetAttestationDigestV1(requestId, blockHeight, outputKind,
+/// serializedOutputLength, outputHash)` — Poseidon over
+/// `[HashDomain.attestationDigest, requestId, blockHeight, outputKind,
+/// serializedOutputLength, outputHash]`, then `upgradeFromTransient`. Every
+/// input is fixed-width, so one digest serves every output width.
+pub fn calculate_attestation_digest_v1<V: Vis3>(
     c: &mut Circuit3,
     request_id: &RequestId<V>,
     block_height: Wire3<FieldT, V>,
     output_kind: Wire3<FieldT, V>,
-    len: u64,
-    output_limbs: &[Wire3<FieldT, V>],
-) -> Wire3<FieldT, V> {
-    let tag = V::from_public(c.constant(hash_domain::ATTESTATION_DIGEST));
-    let width = V::from_public(c.constant(len));
-    let mut limbs = vec![tag, request_id.bytes().hi, request_id.bytes().lo, block_height, output_kind, width];
-    limbs.extend_from_slice(output_limbs);
-    c.transient_hash(&limbs)
+    serialized_output_length: Wire3<FieldT, V>,
+    output_hash: &B32<V>,
+) -> B32<V> {
+    c.region("signet v1: attestation digest (transientHash)", |c| {
+        let tag = V::from_public(c.constant(hash_domain::ATTESTATION_DIGEST));
+        let f = c.transient_hash(&[
+            tag,
+            request_id.bytes().hi,
+            request_id.bytes().lo,
+            block_height,
+            output_kind,
+            serialized_output_length,
+            output_hash.hi,
+            output_hash.lo,
+        ]);
+        upgrade_from_transient(c, f)
+    })
 }
 
-/// `verifyRespondBidirectionalEventV1<LEN>(serializedOutput, event,
-/// mpcResponseKey)` — the digest over the event's id, height and verdict
-/// with the caller's output, then the ECDSA check over `bigR.x` and `s`
-/// (little-endian, as the circuit-input form has them). `serializedOutputLength`
-/// and `digest` on the event serve off-chain readers and enter nothing.
-pub fn verify_respond_bidirectional_event_v1<V: Vis3, const LEN: usize>(
+/// `verifyRespondBidirectionalAttestationV1(event, mpcResponseKey)` — the
+/// digest recomputed from the event's id, height, verdict, width and output
+/// hash, then the ECDSA check over `bigR.x` and `s` (little-endian, as the
+/// circuit-input form has them). The event's `digest` field is not read
+/// (rc.15; 0.27 adds a check that it equals the recomputed one).
+///
+/// The source short-circuits `mpcResponseKey != default<Secp256k1Point> &&
+/// secp256k1EcdsaVerify(…)` and returns false for the identity key;
+/// [`secp256k1_ecdsa_verify`] ASSERTS the key is not the identity instead.
+/// Every caller asserts the result, so both reject the identity key and
+/// accept the same attestations.
+pub fn verify_respond_bidirectional_attestation_v1<V: Vis3>(
     c: &mut Circuit3,
-    output_limbs: &[Wire3<FieldT, V>],
     event: &RespondBidirectionalEventV1<V>,
     mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
 ) -> Wire3<FieldT, V> {
-    verify_respond_bidirectional_event_v1_at(c, LEN as u64, output_limbs, event, mpc_response_key)
-}
-
-/// [`verify_respond_bidirectional_event_v1`] WITH THE WIDTH AS DATA — the
-/// typed API's form, for the same reason
-/// [`calculate_attestation_digest_v1_at`] exists: the width is an associated
-/// const of the call's return type, and stable Rust cannot pass one as a
-/// const-generic argument.
-pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
-    c: &mut Circuit3,
-    len: u64,
-    output_limbs: &[Wire3<FieldT, V>],
-    event: &RespondBidirectionalEventV1<V>,
-    mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
-) -> Wire3<FieldT, V> {
-    let digest = calculate_attestation_digest_v1_at(
+    let digest = calculate_attestation_digest_v1(
         c,
         &event.request_id,
         event.block_height.field(),
         event.output_kind.field(),
-        len,
-        output_limbs,
+        event.serialized_output_length.field(),
+        &event.output_hash,
     );
     verify_attestation_signature(
         c,
@@ -971,11 +957,68 @@ pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
     )
 }
 
-/// `pad(32, "eip155:1")` as the record's `executionDest`.
-pub fn ethereum_caip2_id<V: Vis3>(c: &mut Circuit3) -> Caip2Id<V> {
-    let p = B32::pad(c, ETHEREUM_CAIP2_ID);
-    Caip2Id(B32 {
-        hi: V::from_public(p.hi),
-        lo: V::from_public(p.lo),
+/// `verifyAttestedOutputV1<LEN>(serializedOutput, attestedOutputLength,
+/// attestedOutputHash)` — whether `serializedOutput` is the output an
+/// attestation declares: its width equals `LEN` and its hash equals the
+/// attested hash.
+pub fn verify_attested_output_v1<V: Vis3, const LEN: usize>(
+    c: &mut Circuit3,
+    output_limbs: &[Wire3<FieldT, V>],
+    attested_output_length: Wire3<FieldT, V>,
+    attested_output_hash: &B32<V>,
+) -> Wire3<FieldT, V> {
+    verify_attested_output_v1_at(c, LEN as u64, output_limbs, attested_output_length, attested_output_hash)
+}
+
+/// [`verify_attested_output_v1`] WITH THE WIDTH AS DATA. The compat port's
+/// widths are consts of the circuit; the typed API's is
+/// `<Call::Return as AbiReturn>::LEN`, an associated const, which stable
+/// Rust cannot pass as a const-generic argument. The two forms emit the same
+/// instructions.
+pub fn verify_attested_output_v1_at<V: Vis3>(
+    c: &mut Circuit3,
+    len: u64,
+    output_limbs: &[Wire3<FieldT, V>],
+    attested_output_length: Wire3<FieldT, V>,
+    attested_output_hash: &B32<V>,
+) -> Wire3<FieldT, V> {
+    c.region("signet v1: attested output check", |c| {
+        let width = V::from_public(c.constant(len));
+        let length_matches = c.test_eq(attested_output_length, width);
+        let hash = calculate_attested_output_hash_v1(c, output_limbs);
+        let hi = c.test_eq(attested_output_hash.hi, hash.hi);
+        let lo = c.test_eq(attested_output_hash.lo, hash.lo);
+        let hash_matches = c.mul(hi, lo);
+        c.mul(length_matches, hash_matches)
     })
+}
+
+/// `verifyRespondBidirectionalEventV1<LEN>(serializedOutput, event,
+/// mpcResponseKey)` — [`verify_attested_output_v1_at`] and
+/// [`verify_respond_bidirectional_attestation_v1`], both: the attestation is
+/// the MPC's AND `serializedOutput` is the output it attests.
+pub fn verify_respond_bidirectional_event_v1_at<V: Vis3>(
+    c: &mut Circuit3,
+    len: u64,
+    output_limbs: &[Wire3<FieldT, V>],
+    event: &RespondBidirectionalEventV1<V>,
+    mpc_response_key: Wire3<minocrab::v3::Secp256k1PointT, V>,
+) -> Wire3<FieldT, V> {
+    let output_matches = verify_attested_output_v1_at(
+        c,
+        len,
+        output_limbs,
+        event.serialized_output_length.field(),
+        &event.output_hash,
+    );
+    let attested = verify_respond_bidirectional_attestation_v1(c, event, mpc_response_key);
+    c.mul(output_matches, attested)
+}
+
+/// `pad(64, "eip155:1")` as the record's `executionDest`.
+pub fn ethereum_caip2_id<V: Vis3>(c: &mut Circuit3) -> ExecutionDest<V> {
+    let mut padded = [0u8; EXECUTION_DEST_LEN];
+    padded[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
+    let p = BytesN::<Public, EXECUTION_DEST_LEN>::literal(c, &padded);
+    p.map_limbs(|_, w| V::from_public(w))
 }

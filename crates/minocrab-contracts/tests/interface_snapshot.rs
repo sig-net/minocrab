@@ -489,6 +489,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -546,6 +548,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -566,6 +570,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -611,6 +617,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -638,6 +646,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -687,6 +697,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -714,6 +726,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -756,6 +770,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -783,6 +799,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -1458,6 +1476,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>
@@ -1478,6 +1498,8 @@ in  ticket_respond_requestId_lo: Scalar<BLS12-381>
 in  ticket_respond_blockHeight: Scalar<BLS12-381>
 in  ticket_respond_outputKind: Scalar<BLS12-381>
 in  ticket_respond_serializedOutputLength: Scalar<BLS12-381>
+in  ticket_respond_outputHash_hi: Scalar<BLS12-381>
+in  ticket_respond_outputHash_lo: Scalar<BLS12-381>
 in  ticket_respond_digest_hi: Scalar<BLS12-381>
 in  ticket_respond_digest_lo: Scalar<BLS12-381>
 in  ticket_respond_signature_bigR_x_hi: Scalar<BLS12-381>

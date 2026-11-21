@@ -95,7 +95,12 @@ fn every_circuit_s_messages_and_regions_name_its_finished_stream() {
     // 474 → 475 messages and 412 → 413 regions: the test caller's
     // `initialise` at v0.26 asserts its response key is not the identity
     // ("Response key must not be the identity point", region "identity-key gate").
-    assert_eq!((circuits, messages, regions), (227, 475, 413));
+    // 475 → 480 messages, 413 → 440 regions with the v0.26.0-rc.15
+    // attestation (M48 L): every `Pending::refund` (the pending vault's four,
+    // the treasury's) asserts "Output does not match the attestation", and
+    // the attested-output hash and check are regions of their own in every
+    // settle that verifies one.
+    assert_eq!((circuits, messages, regions), (227, 480, 440));
     // The three messages that go: the `Always` outcome rule's `assert(imm 1)`,
     // deleted by the true-assert rule, takes its message with it.
     dropped.sort();

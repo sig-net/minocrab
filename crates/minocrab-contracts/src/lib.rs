@@ -30,6 +30,9 @@ pub mod opaque;
 pub mod serde_builtin;
 pub mod signet;
 pub mod signet_contract;
+/// FROZEN 0.24.1 record and attestation for the `375071b` vault port only.
+#[doc(hidden)]
+pub mod signet_v1_0241;
 pub mod test_caller;
 pub mod treasury;
 pub mod xcall;

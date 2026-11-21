@@ -32,7 +32,7 @@ use minocrab_contracts::evm_flow::REFUND_PAD;
 // MPC's verdict is `signet_v1::output_kind`. They survive on
 // `erc20_vault_pending` only as the retired fork's documented numbering.
 use minocrab_contracts::erc20_vault_pending::VAULT_TOKEN_TAG;
-use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema, ETHEREUM_CAIP2_ID};
+use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema};
 use minocrab_zkir::v3::IrValue;
 
 use super::exec::PreState;
@@ -387,7 +387,6 @@ impl<const WORDS: usize> Req<WORDS> {
     pub fn limbs(&self, env: &Env) -> Vec<Fr> {
         let (sender_hi, sender_lo) = b32_slots(&env.self_addr);
         let (path_hi, path_lo) = b32_slots(&self.path);
-        let (dest_hi, dest_lo) = b32_slots(&pad32(ETHEREUM_CAIP2_ID));
         let mut l = vec![
             Fr::from(u64::from(env.key_version)),
             sender_hi,
@@ -413,8 +412,7 @@ impl<const WORDS: usize> Req<WORDS> {
             l.push(lo);
         }
         l.push(Fr::from(0u64)); // accessListEntryCount
-        l.push(dest_hi); // executionDest
-        l.push(dest_lo);
+        l.extend(execution_dest_limbs()); // executionDest: Bytes<64>
         l.push(Fr::from(0u64)); // signatureDest: unused
         l.extend([Fr::from(0u64); 3]); // params: pad(64, "")
         l.extend(schema_limbs(self.out_schema));
@@ -427,7 +425,7 @@ impl<const WORDS: usize> Req<WORDS> {
     pub fn widths(&self) -> Vec<u32> {
         let mut a = vec![1, 32, 32, 1, 1, 8, 8, 16, 16, 8, 20, 16, 1, 4, 2];
         a.extend(std::iter::repeat_n(32u32, WORDS));
-        a.extend([1, 32, 1, 64, self.out_schema.len() as u32, 0]);
+        a.extend([1, 64, 1, 64, self.out_schema.len() as u32, 0]);
         a
     }
 
@@ -453,7 +451,7 @@ impl<const WORDS: usize> Req<WORDS> {
     /// schema and the stored words are OUTSIDE the id, and the gas numbers
     /// are inside it.
     pub fn request_id(&self, env: &Env) -> [u8; 32] {
-        request_id_v1(env.key_version, &env.self_addr, &self.path, &self.tx_digest(env))
+        request_id_v026(env.key_version, &env.self_addr, &self.path, &self.tx_digest(env))
     }
 }
 
@@ -592,9 +590,11 @@ pub fn settle_head_inputs(
     signed_width: usize,
     output_limbs: &[Fr],
 ) -> Vec<Fr> {
-    let digest = attestation_digest(request_id, block_height, output_kind, signed_width, output_limbs);
+    let output_hash = attested_output_hash(output_limbs);
+    let digest = attestation_digest_v026(request_id, block_height, output_kind, signed_width, &output_hash);
     let (rx_le, s_le, _pk) = sign(&digest, &scalar(key_seed), &scalar(nonce_seed));
     let (rid_hi, rid_lo) = b32_slots(request_id);
+    let (h_hi, h_lo) = b32_slots(&output_hash);
     let (d_hi, d_lo) = b32_slots(&digest);
     let (rx_hi, rx_lo) = b32_slots(&rx_le);
     let (s_hi, s_lo) = b32_slots(&s_le);
@@ -604,6 +604,9 @@ pub fn settle_head_inputs(
         Fr::from(block_height),
         Fr::from(output_kind),
         Fr::from(signed_width as u64),
+        // `outputHash`: what the digest signs in place of the output.
+        h_hi,
+        h_lo,
         // `digest` on the event is for off-chain readers; nothing in the
         // circuit reads it, so the honest value is the real one.
         d_hi,

@@ -87,8 +87,9 @@ pub struct SignBidirectionalRecordV1 {
     /// `TxParamType`: evmType2 = 0, reserved = 1.
     pub tx_param_type: u8,
     pub tx_params: EvmType2TxParams,
-    /// `executionDest` — `pad(32, "eip155:1")` for every Ethereum network.
-    pub execution_dest: [u8; 32],
+    /// `executionDest` — `pad(64, "eip155:1")` for every Ethereum network
+    /// (`Bytes<64>` since `@sig-net/midnight` 0.25).
+    pub execution_dest: [u8; 64],
     /// `MPCDestination`: unused = 0, reserved = 1.
     pub signature_dest: u8,
     pub params: [u8; 64],

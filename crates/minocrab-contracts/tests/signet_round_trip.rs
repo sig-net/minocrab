@@ -35,14 +35,13 @@ use midnight_onchain_state::state::StateValue;
 use midnight_transient_crypto::proofs::Zkir;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault_pending::{self as pending};
-use minocrab_contracts::signet_v1::ETHEREUM_CAIP2_ID;
 use minocrab_sim::v3::exec::{self, Call};
 use signet_sim::reader::MISC_PAYLOAD_LEN;
 use signet_sim::{EvmOutcome, Refusal, SigNetSim};
 
 mod vault_pending;
 use vault_pending::model::*;
-use vault_pending::prims::{attestation_digest, b32_slots, pad32};
+use vault_pending::prims::{attestation_digest_v026, attested_output_hash, b32_slots};
 
 /// The height the simulated MPC attests. One constant, because what the
 /// tests here are about is the record and the signature — the height's own
@@ -127,7 +126,7 @@ fn the_mpc_resolves_the_record_the_request_circuit_filed() {
     // describe — the drift gate of signet_flow.rs, now driven by STATE
     // rather than by a hand-built cell.
     assert_eq!(attestation.record.key_version, s.env.key_version);
-    assert_eq!(attestation.record.execution_dest, pad32(ETHEREUM_CAIP2_ID));
+    assert_eq!(attestation.record.execution_dest, signet_sim::hashing::v1::ethereum_caip2_id());
     assert_eq!(
         attestation.record.output_deserialization_schema,
         SUCCESS_SCHEMA,
@@ -275,40 +274,35 @@ fn the_typed_settle_digest_is_the_digest_the_mpc_signs() {
     use signet_sim::hashing::v1 as mpc;
     let rid = [0x5au8; 32];
 
+    // The model's digest of an output given as limbs, over its width and
+    // its hash (`@sig-net/midnight` 0.25 on).
+    let model = |kind: u64, width: usize, limbs: &[Fr]| {
+        let hash = attested_output_hash(limbs);
+        (hash, attestation_digest_v026(&rid, HEIGHT, kind, width, &hash))
+    };
+
     // A `Bool` output: one byte, one limb.
-    let model = attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, FLAG_WIDTH, &[Fr::from(1u64)]);
     let theirs = mpc::attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, &[1u8]);
-    assert_eq!(model, theirs, "the hand model limbs a Bytes<1> the way the MPC does");
+    assert_eq!(model(mpc::output_kind::EXECUTED, FLAG_WIDTH, &[Fr::from(1u64)]), theirs, "the hand model limbs a Bytes<1> the way the MPC does");
 
     // A `uint256` output: thirty-two bytes, TWO limbs (byte 31 above the
-    // low thirty-one), which is the shape a packed byte string could not
-    // express and the width the digest now commits to.
+    // low thirty-one).
     let amount_in = 0x0102_0304_0506_0708u64;
     let mut word = [0u8; 32];
     word[..8].copy_from_slice(&amount_in.to_le_bytes());
-    let model = attestation_digest(
-        &rid,
-        HEIGHT,
-        mpc::output_kind::EXECUTED,
-        WORD_WIDTH,
-        &word_output_limbs(amount_in),
-    );
     let theirs = mpc::attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, &word);
-    assert_eq!(model, theirs, "a uint256 limbs as [byte 31, bytes 0..31]");
+    assert_eq!(model(mpc::output_kind::EXECUTED, WORD_WIDTH, &word_output_limbs(amount_in)), theirs, "a uint256 limbs as [byte 31, bytes 0..31]");
 
-    // A non-execution: width zero, no limbs. Under the Borsh rule this was
-    // the failure KIND byte alone; now the verdict carries it and the
-    // output is genuinely empty.
-    let model = attestation_digest(&rid, HEIGHT, mpc::output_kind::FAILED, 0, &[]);
+    // A non-execution: width zero, the hash of the empty output.
     let theirs = mpc::attestation_digest(&rid, HEIGHT, mpc::output_kind::FAILED, &[]);
-    assert_eq!(model, theirs, "a failure attests nothing at width zero");
+    assert_eq!(model(mpc::output_kind::FAILED, 0, &[]), theirs, "a failure attests nothing at width zero");
 
     // AND THE WIDTH IS LOAD-BEARING: the same bytes at a width the filing
     // does not imply is a different digest, which is what makes a
     // wrong-width output unverifiable rather than merely wrong.
     assert_ne!(
-        attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, FLAG_WIDTH, &[Fr::from(1u64)]),
-        attestation_digest(&rid, HEIGHT, mpc::output_kind::EXECUTED, WORD_WIDTH, &[Fr::from(1u64)]),
+        model(mpc::output_kind::EXECUTED, FLAG_WIDTH, &[Fr::from(1u64)]).1,
+        model(mpc::output_kind::EXECUTED, WORD_WIDTH, &[Fr::from(1u64)]).1,
     );
 
     // And what the CIRCUIT hashes is the model's: `tests/vault_pending`'s
@@ -403,19 +397,21 @@ fn deposit_then_claim_settles_the_sims_attestation() {
         let (rx_hi, rx_lo) = b32_slots(&sig.big_r_x);
         let (s_hi, s_lo) = b32_slots(&sig.s);
         // `settle_head_inputs`' V1 slot order: requestId (two),
-        // blockHeight, outputKind, serializedOutputLength, digest (two),
-        // bigR.x (two), bigR.y (two), s (two), recoveryId, then the
-        // attested output. The DIGEST slot is replaced too: it is the
-        // sim's, and the model's own value was computed under the model's
-        // key.
+        // blockHeight, outputKind, serializedOutputLength, outputHash
+        // (two), digest (two), bigR.x (two), bigR.y (two), s (two),
+        // recoveryId, then the attested output. The output hash and the
+        // DIGEST slots are the sim's too.
         let mut inputs = c.inputs();
+        let (h_hi, h_lo) = b32_slots(&attestation.output_hash);
         let (d_hi, d_lo) = b32_slots(&attestation.digest);
-        inputs[5] = d_hi;
-        inputs[6] = d_lo;
-        inputs[7] = rx_hi;
-        inputs[8] = rx_lo;
-        inputs[11] = s_hi;
-        inputs[12] = s_lo;
+        inputs[5] = h_hi;
+        inputs[6] = h_lo;
+        inputs[7] = d_hi;
+        inputs[8] = d_lo;
+        inputs[9] = rx_hi;
+        inputs[10] = rx_lo;
+        inputs[13] = s_hi;
+        inputs[14] = s_lo;
         let witnesses = c.witnesses();
         let mut call = Call::new(&inputs, &witnesses);
         if let Some((_, rand)) = c.preimage().communications_commitment {

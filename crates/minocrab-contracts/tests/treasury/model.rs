@@ -16,7 +16,7 @@ use midnight_zkir_v3::ir_instructions::ec_mul::ec_mul_offcircuit;
 use minocrab::Fr;
 use minocrab_contracts::erc20_vault::{TRANSFER_SELECTOR, VAULT_PATH};
 use minocrab_contracts::evm_flow::REFUND_PAD;
-use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema, ETHEREUM_CAIP2_ID};
+use minocrab_contracts::signet_v1::{output_kind, schema, OutputSchema};
 use minocrab_zkir::v3::IrValue;
 
 use super::ops;
@@ -219,7 +219,6 @@ impl Req {
     pub fn limbs(&self, env: &Env) -> Vec<Fr> {
         let (sender_hi, sender_lo) = b32_slots(&env.self_addr);
         let (path_hi, path_lo) = b32_slots(&pad32(VAULT_PATH));
-        let (dest_hi, dest_lo) = b32_slots(&pad32(ETHEREUM_CAIP2_ID));
         let mut l = vec![
             Fr::from(u64::from(env.key_version)),
             sender_hi,
@@ -245,8 +244,7 @@ impl Req {
             l.push(lo);
         }
         l.push(Fr::from(0u64)); // access_list_entry_count
-        l.push(dest_hi);
-        l.push(dest_lo);
+        l.extend(execution_dest_limbs()); // executionDest: Bytes<64>
         l.push(Fr::from(0u64)); // signatureDest: unused
         l.push(Fr::from(0u64)); // params: 3 zero limbs
         l.push(Fr::from(0u64));
@@ -282,7 +280,7 @@ impl Req {
     }
 
     pub fn request_id(&self, env: &Env) -> [u8; 32] {
-        request_id_v1(
+        request_id_v026(
             env.key_version,
             &env.self_addr,
             &pad32(VAULT_PATH),
@@ -344,15 +342,11 @@ pub fn ticket_inputs(
     signed_output_limbs: &[Fr],
     ticket_output: Fr,
 ) -> Vec<Fr> {
-    let digest = attestation_digest(
-        request_id,
-        block_height,
-        output_kind,
-        signed_width,
-        signed_output_limbs,
-    );
+    let output_hash = attested_output_hash(signed_output_limbs);
+    let digest = attestation_digest_v026(request_id, block_height, output_kind, signed_width, &output_hash);
     let (rx_le, s_le, _pk) = sign(&digest, &scalar(key_seed), &scalar(nonce_seed));
     let (rid_hi, rid_lo) = b32_slots(request_id);
+    let (h_hi, h_lo) = b32_slots(&output_hash);
     let (d_hi, d_lo) = b32_slots(&digest);
     let (rx_hi, rx_lo) = b32_slots(&rx_le);
     let (s_hi, s_lo) = b32_slots(&s_le);
@@ -362,6 +356,9 @@ pub fn ticket_inputs(
         Fr::from(block_height),
         Fr::from(output_kind),
         Fr::from(signed_width as u64),
+        // `outputHash`: what the digest signs in place of the output.
+        h_hi,
+        h_lo,
         // `digest` on the event is for off-chain readers; nothing in the
         // circuit reads it, so the honest value is the real one.
         d_hi,

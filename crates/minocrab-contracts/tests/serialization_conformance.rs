@@ -809,7 +809,8 @@ fn schema_widths_match_the_lens() {
 /// is what keeps the byte claim below two independent statements rather than
 /// one restated.
 fn v2_limbs(req: &Req, env: &Env, request_nonce: u64, kind: u8) -> Vec<Fr> {
-    use minocrab_contracts::signet_v1::layout as v1;
+    // The parity vault model still writes the 0.24.1 record until its re-port.
+    use minocrab_contracts::signet_v1_0241::layout as v1;
     use minocrab_std::v3::bytes_limbs;
 
     let l = req.limbs(env);

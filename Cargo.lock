@@ -4831,6 +4831,7 @@ dependencies = [
  "midnight-transient-crypto 3.0.1",
  "serde_json",
  "sha3",
+ "signet-hashing",
  "thiserror",
 ]
 

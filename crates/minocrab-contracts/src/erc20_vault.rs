@@ -92,9 +92,9 @@ use signet_signer_interface::notification::construct_notification_v1;
 use signet_signer_interface::SignetSigner;
 
 use crate::common::{self, SigningPath, UserCommitment};
-use crate::signet_v1::{
-    self, output_kind, EventRecordV1, RespondBidirectionalEventV1, SchemaBytes,
-};
+use crate::signet_v1::{self, output_kind, SchemaBytes};
+// The 0.24.1 record and attestation, frozen for this port until its re-port.
+use crate::signet_v1_0241::{self, EventRecordV1, RespondBidirectionalEventV1};
 
 pub use crate::signet_v1::RequestId;
 
@@ -265,12 +265,12 @@ pub type SupplyRecord = EventRecordV1<SUPPLY_WORDS, BytesN<Public, SUPPLY_SCHEMA
 pub type RedeemRecord = EventRecordV1<REDEEM_WORDS, BytesN<Public, REDEEM_SCHEMA_LEN>>;
 
 /// The in-circuit (private) event each record is the disclosure of.
-pub type VaultEvent = signet_v1::SignBidirectionalEventV1<Private, VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>>;
+pub type VaultEvent = signet_v1_0241::SignBidirectionalEventV1<Private, VAULT_WORDS, BytesN<Private, VAULT_SCHEMA_LEN>>;
 pub type ReplaceNonceEvent =
-    signet_v1::SignBidirectionalEventV1<Private, VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>>;
-pub type SwapEvent = signet_v1::SignBidirectionalEventV1<Private, SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>>;
-pub type SupplyEvent = signet_v1::SignBidirectionalEventV1<Private, SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>>;
-pub type RedeemEvent = signet_v1::SignBidirectionalEventV1<Private, REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>>;
+    signet_v1_0241::SignBidirectionalEventV1<Private, VAULT_WORDS, Bytes<REPLACE_NONCE_SCHEMA_LEN, Private>>;
+pub type SwapEvent = signet_v1_0241::SignBidirectionalEventV1<Private, SWAP_WORDS, BytesN<Private, SWAP_SCHEMA_LEN>>;
+pub type SupplyEvent = signet_v1_0241::SignBidirectionalEventV1<Private, SUPPLY_WORDS, BytesN<Private, SUPPLY_SCHEMA_LEN>>;
+pub type RedeemEvent = signet_v1_0241::SignBidirectionalEventV1<Private, REDEEM_WORDS, BytesN<Private, REDEEM_SCHEMA_LEN>>;
 
 pub use crate::common::secp256k1_point_atoms;
 
@@ -718,16 +718,16 @@ fn send_request<const WORDS: usize, SP, SR, A>(
     // constructSignBidirectionalEventV1(mpcKeyVersion, kernel.self(), path, …)
     let key_version = VAULT.mpc_key_version.read(c).stale(c);
     let sender = kernel::self_address(c).private();
-    let dest = signet_v1::ethereum_caip2_id::<Private>(c);
+    let dest = signet_v1_0241::ethereum_caip2_id::<Private>(c);
     // The reserved-path assert is folded for the vault's own constant path,
     // as compactc folds it; the calldata word count is a literal in every send.
     let kv = key_version.field().private();
-    let request: signet_v1::SignBidirectionalEventV1<Private, WORDS, SP> = if path_is_const {
-        signet_v1::construct_sign_bidirectional_event_v1_const_path(c, kv, sender, path, tx, dest, output_schema)
+    let request: signet_v1_0241::SignBidirectionalEventV1<Private, WORDS, SP> = if path_is_const {
+        signet_v1_0241::construct_sign_bidirectional_event_v1_const_path(c, kv, sender, path, tx, dest, output_schema)
     } else {
-        signet_v1::construct_sign_bidirectional_event_v1(c, kv, sender, path, tx, dest, output_schema)
+        signet_v1_0241::construct_sign_bidirectional_event_v1(c, kv, sender, path, tx, dest, output_schema)
     };
-    let request_id = signet_v1::calculate_evm_type2_request_id_v1(c, &request, Some(words_used)).disclose_as::<RequestIdDisclosed>(c);
+    let request_id = signet_v1_0241::calculate_evm_type2_request_id_v1(c, &request, Some(words_used)).disclose_as::<RequestIdDisclosed>(c);
 
     c.region("record: freshness and insert", |c| {
         let sent = request_map.member(c, &request_id);
@@ -782,7 +782,7 @@ fn outcome_refunds(c: &mut Circuit3, record: &AttestationRecord) -> Wire3<FieldT
 /// record.outputKind, output) == record.digest, "Output does not match the
 /// attestation")` — inside whatever guard the caller opened.
 fn assert_output_matches<const LEN: usize>(c: &mut Circuit3, request_id: &RequestId<Public>, record: &AttestationRecord, output_limbs: &[Wire3<FieldT, Public>]) {
-    let digest = signet_v1::calculate_attestation_digest_v1::<Public, LEN>(
+    let digest = signet_v1_0241::calculate_attestation_digest_v1::<Public, LEN>(
         c,
         request_id,
         record.block_height.field(),
@@ -861,7 +861,7 @@ fn burn_surrendered_coin(c: &mut Circuit3, coin: ShieldedCoinArg) {
 fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirectionalEventV1<Private>, output_limbs: &[Wire3<FieldT, Private>]) {
     require_initialised(c);
     let mpc_key = VAULT.mpc_response_key.read(c);
-    let valid = signet_v1::verify_respond_bidirectional_event_v1::<Private, LEN>(c, output_limbs, event, mpc_key.point().private());
+    let valid = signet_v1_0241::verify_respond_bidirectional_event_v1::<Private, LEN>(c, output_limbs, event, mpc_key.point().private());
     c.assert_with(valid, Some("Invalid attestation signature"));
 
     // The disclosed attestation: every field of the event is public input.
@@ -869,7 +869,7 @@ fn queue_attestation<const LEN: usize>(c: &mut Circuit3, event: &RespondBidirect
     let block_height = event.block_height.disclose_as::<Attestation>(c);
     let kind = event.output_kind.disclose_as::<Attestation>(c);
     let output_public: Vec<Wire3<FieldT, Public>> = output_limbs.to_vec().disclose_as::<SerializedOutput>(c);
-    let digest = signet_v1::calculate_attestation_digest_v1::<Public, LEN>(c, &request_id, block_height.field(), kind.field(), &output_public);
+    let digest = signet_v1_0241::calculate_attestation_digest_v1::<Public, LEN>(c, &request_id, block_height.field(), kind.field(), &output_public);
 
     // recordAttestation(attestation, digest)
     c.region("record attestation", |c| {

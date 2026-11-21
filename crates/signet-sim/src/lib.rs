@@ -85,8 +85,12 @@ pub struct AttestationV1 {
     /// `OutputKind` — executed, failed or unviable.
     pub output_kind: u64,
     /// `serializedOutput`: the EVM body ALONE. No kind byte in front of it,
-    /// and empty for a non-execution.
+    /// and empty for a non-execution. It travels off chain: the responder's
+    /// event carries only its width and [`Self::output_hash`].
     pub output: Vec<u8>,
+    /// `calculateAttestedOutputHashV1(output)`, signed into the digest
+    /// (`@sig-net/midnight` 0.25 on).
+    pub output_hash: [u8; 32],
     /// The digest signed, carried on the event for off-chain readers.
     pub digest: [u8; 32],
     pub signature: Signature,
@@ -211,7 +215,7 @@ impl SigNetSim {
             EvmOutcome::Executed { body } => (hashing::v1::output_kind::EXECUTED, body),
             EvmOutcome::NeverExecuted => (hashing::v1::output_kind::FAILED, Vec::new()),
         };
-        let digest = hashing::v1::attestation_digest(
+        let (output_hash, digest) = hashing::v1::attestation_digest(
             &notification.request_id,
             block_height,
             output_kind,
@@ -224,6 +228,7 @@ impl SigNetSim {
             block_height,
             output_kind,
             output,
+            output_hash,
             digest,
             signature,
             record,

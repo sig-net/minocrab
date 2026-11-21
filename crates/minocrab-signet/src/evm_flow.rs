@@ -708,7 +708,7 @@ use core::marker::PhantomData;
 
 use minocrab::v3::{Circuit3, FieldT, Wire3};
 use minocrab::{Private, Public};
-use minocrab_std::v3::hash::{transient_hash_compact, upgrade_from_transient};
+use minocrab_std::v3::hash::transient_hash_compact;
 use minocrab_std::v3::{
     eq, is_true, label, not, own_public_key, ArgPath, Bool, Bytes, CircuitAbi,
     CircuitArg, Assumed, Disclose, DisclosureLabel, Encode, FieldPath, LedgerMap, LedgerRepr, LedgerWidth,
@@ -723,7 +723,7 @@ use crate::filing::{
 };
 use crate::common::{self, SecretKey};
 use crate::signet_v1::{
-    self, output_kind, EventRecordV1, OutputSchema, RespondBidirectionalEventV1, Secp256k1SigLimbs,
+    self, output_kind, EventRecordV1, OutputSchema, RespondBidirectionalEventV1,
 };
 use crate::signet_flow::{
     file_request, BlockHeightSettled, EvmTx, Outcome, RequestIdSettled, SignRequest, Signet,
@@ -1439,16 +1439,14 @@ where
     /// [`EvmCall::succeeded`] predicate false. Discloses
     /// `signet_flow::Settled`.
     ///
-    /// THE TWO ACCEPTED ATTESTATIONS SIGN DIFFERENT PREIMAGES, and they
-    /// differ in both the WIDTH and the limbs: a failed or unviable request
-    /// has no return to decode, so the MPC attests zero bytes and the
-    /// digest's `LEN` field is `0`, where an executed call's is the return's
-    /// own width. Poseidon is not a stream, so one hash cannot cover both:
-    /// the preimage is hashed BOTH ways, the field element is selected by the
-    /// verdict, and the signature is verified ONCE
-    /// ([`signet_v1::attestation_transient_hash_v1`]). The extra cost is one
-    /// `transient_hash` and one `cond_select` beside the ~37k rows of the
-    /// ECDSA verification that follows.
+    /// ONE SIGNATURE, TWO ACCEPTED OUTPUTS. Since `@sig-net/midnight` 0.25
+    /// the signed digest covers the output's WIDTH and HASH, not its bytes,
+    /// so the attestation is verified once, from the event alone
+    /// ([`signet_v1::verify_respond_bidirectional_attestation_v1`]), and the
+    /// output check selects what the event must declare: the call's own
+    /// width and the hash of the supplied output on an `executed` verdict,
+    /// width 0 and the hash of the EMPTY output on `failed` or `unviable`
+    /// (a non-execution attests zero bytes).
     ///
     /// The output slots are still DECODED in the failure arms, because a
     /// circuit has one instruction stream: a prover whose request failed
@@ -1462,42 +1460,36 @@ where
         let decoded = {
             let event = &ticket.respond;
             let limbs = <Returned<F> as AbiReturn>::limbs(&output);
-            let (digest, is_executed) = c.region("signet flow: attestation", |c| {
-                let executed_hash = signet_v1::attestation_transient_hash_v1(
-                    c,
-                    &event.request_id,
-                    event.block_height.field(),
-                    event.output_kind.field(),
-                    <Returned<F> as AbiReturn>::LEN as u64,
-                    &limbs,
-                );
-                let empty_hash = signet_v1::attestation_transient_hash_v1(
-                    c,
-                    &event.request_id,
-                    event.block_height.field(),
-                    event.output_kind.field(),
-                    0,
-                    &[],
-                );
-                let executed = c.constant(output_kind::EXECUTED).private();
-                let is_executed = c.test_eq(event.output_kind.field(), executed);
-                let digest = c.cond_select(is_executed, executed_hash, empty_hash);
-                (upgrade_from_transient(c, digest), is_executed)
-            });
-
-            c.region("signet flow: attestation", |c| {
+            let is_executed = c.region("signet flow: attestation", |c| {
                 let key = self.signet.mpc_response_key.read(c);
-                let valid = signet_v1::verify_attestation_signature(
+                let valid = signet_v1::verify_respond_bidirectional_attestation_v1(
                     c,
-                    &digest,
-                    &Secp256k1SigLimbs {
-                        big_r_x: event.signature.big_r.x,
-                        s: event.signature.s,
-                    },
+                    event,
                     key.point().private(),
                 );
                 c.assert_with(valid, Some("Invalid attestation signature"));
+                let executed = c.constant(output_kind::EXECUTED).private();
+                let is_executed = c.test_eq(event.output_kind.field(), executed);
+                let len = <Returned<F> as AbiReturn>::LEN as u64;
+                let width = c.constant(len).private();
+                let empty_width = c.constant(0u64).private();
+                let expected_width = c.cond_select(is_executed, width, empty_width);
+                let output_hash = signet_v1::calculate_attested_output_hash_v1(c, &limbs);
+                let empty_hash = signet_v1::calculate_attested_output_hash_v1::<Private>(c, &[]);
+                let expected_hash = B32 {
+                    hi: c.cond_select(is_executed, output_hash.hi, empty_hash.hi),
+                    lo: c.cond_select(is_executed, output_hash.lo, empty_hash.lo),
+                };
+                let width_ok = c.test_eq(event.serialized_output_length.field(), expected_width);
+                let hi_ok = c.test_eq(event.output_hash.hi, expected_hash.hi);
+                let lo_ok = c.test_eq(event.output_hash.lo, expected_hash.lo);
+                let hash_ok = c.mul(hi_ok, lo_ok);
+                let matches = c.mul(width_ok, hash_ok);
+                c.assert_with(matches, Some("Output does not match the attestation"));
+                is_executed
+            });
 
+            c.region("signet flow: refundable", |c| {
                 // …and the verdict is one this slot refunds on: a
                 // non-execution, or an execution the call calls a failure.
                 let decoded = <Returned<F> as AbiReturn>::decode(c, &output);

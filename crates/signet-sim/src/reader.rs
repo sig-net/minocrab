@@ -259,7 +259,7 @@ pub fn decode_record_v1(node: &Node) -> anyhow::Result<SignBidirectionalRecordV1
         algo: bounded_enum(cursor, "algo")?,
         tx_param_type: uint::<u8>(cursor, 1, "tx_param_type")?,
         tx_params: decode_tx_params(cursor, &caps)?,
-        execution_dest: bytes_n::<32>(cursor, "execution_dest")?,
+        execution_dest: bytes_n::<64>(cursor, "execution_dest")?,
         signature_dest: bounded_enum(cursor, "signature_dest")?,
         params: bytes_n::<64>(cursor, "params")?,
         output_deserialization_schema: bytes_dyn(cursor, "output_deserialization_schema")?,

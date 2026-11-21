@@ -71,16 +71,9 @@ pub mod v1 {
         pub const UNVIABLE: u64 = 2;
     }
 
-    /// `pad(32, "eip155:1")` — `executionDest` for every Ethereum network.
-    pub fn ethereum_caip2_id() -> [u8; 32] {
-        let mut out = [0u8; 32];
-        out[..8].copy_from_slice(b"eip155:1");
-        out
-    }
-
-    /// `upgradeFromTransient(transientHash(limbs))`: byte 31 is zero.
-    fn upgrade(limbs: &[Fr]) -> [u8; 32] {
-        upgrade_from_transient(transient_hash(limbs)).0
+    /// `pad(64, "eip155:1")` — `executionDest` for every Ethereum network.
+    pub fn ethereum_caip2_id() -> [u8; 64] {
+        signet_hashing::ETHEREUM_CAIP2_ID
     }
 
     /// A `Bytes<32>`'s FAB slot pair — `hi` is byte 31, `lo` is bytes 0..30.
@@ -138,7 +131,7 @@ pub mod v1 {
     }
 
     /// `calculateRequestIdV1(RequestIdPreimageV1 { keyVersion, sender, path,
-    /// algo, txParamType, txParamsDigest, executionDest })`.
+    /// algo, txParamType, txParamsDigest, executionDest })` — `signet-hashing`'s.
     pub fn request_id(
         key_version: u8,
         sender: &[u8; 32],
@@ -146,26 +139,18 @@ pub mod v1 {
         algo: u8,
         tx_param_type: u8,
         tx_params_digest: &[u8; 32],
-        execution_dest: &[u8; 32],
+        execution_dest: &[u8; 64],
     ) -> [u8; 32] {
-        let (s_hi, s_lo) = b32_slots(sender);
-        let (p_hi, p_lo) = b32_slots(path);
-        let (d_hi, d_lo) = b32_slots(tx_params_digest);
-        let (e_hi, e_lo) = b32_slots(execution_dest);
-        upgrade(&[
-            Fr::from(hash_domain::REQUEST_ID),
-            Fr::from(u64::from(key_version)),
-            s_hi,
-            s_lo,
-            p_hi,
-            p_lo,
-            Fr::from(u64::from(algo)),
-            Fr::from(u64::from(tx_param_type)),
-            d_hi,
-            d_lo,
-            e_hi,
-            e_lo,
-        ])
+        assert_eq!((algo, tx_param_type), (0, 0), "the sim signs ecdsa evmType2 requests only");
+        signet_hashing::request_id(&signet_hashing::RequestIdPreimage {
+            key_version,
+            sender: *sender,
+            path: *path,
+            algo: signet_hashing::SignatureAlgorithm::Ecdsa,
+            tx_param_type: signet_hashing::TxParamType::EvmType2,
+            tx_params_digest: *tx_params_digest,
+            execution_dest: *execution_dest,
+        })
     }
 
     /// The request id of a decoded V1 record: its own transaction digested
@@ -209,30 +194,21 @@ pub mod v1 {
         )
     }
 
-    /// `calculateSignetAttestationDigestV1<LEN>(requestId, blockHeight,
-    /// outputKind, serializedOutput)` — the tag, the id, the height, the
-    /// verdict, the WIDTH, then the output's FAB limbs.
-    ///
-    /// The width is `serialized_output.len()`, so the caller cannot sign a
-    /// length it did not produce; an EMPTY output (a failed or unviable
-    /// verdict) is width zero and no limbs.
+    /// `calculateSignetAttestationDigestV1(requestId, blockHeight,
+    /// outputKind, serializedOutputLength, outputHash)` over
+    /// `serialized_output` — `signet-hashing`'s, with the width and the
+    /// hash taken from the output itself, so the caller cannot sign a width
+    /// it did not produce. Returns `(outputHash, digest)`.
     pub fn attestation_digest(
         request_id: &[u8; 32],
         block_height: u64,
         output_kind: u64,
         serialized_output: &[u8],
-    ) -> [u8; 32] {
-        let (r_hi, r_lo) = b32_slots(request_id);
-        let mut limbs = vec![
-            Fr::from(hash_domain::ATTESTATION_DIGEST),
-            r_hi,
-            r_lo,
-            Fr::from(block_height),
-            Fr::from(output_kind),
-            Fr::from(serialized_output.len() as u64),
-        ];
-        limbs.extend(output_limbs(serialized_output));
-        upgrade(&limbs)
+    ) -> ([u8; 32], [u8; 32]) {
+        let kind = signet_hashing::OutputKind::ALL[output_kind as usize];
+        let a = signet_hashing::Attestation::over(request_id, block_height, kind, serialized_output)
+            .expect("a non-execution attests an empty output");
+        (a.output_hash, a.digest)
     }
 
     /// A `Bytes<N>`'s FAB limbs in SLOT order: the leftover

@@ -227,6 +227,64 @@ pub fn attestation_digest(request_id: &[u8; 32], block_height: u64, output_kind:
     transient_upgrade(&limbs)
 }
 
+/// `pad(64, "eip155:1")`, the `executionDest` of `@sig-net/midnight` 0.25
+/// on, as its three FAB limbs `[bytes 62..64, bytes 31..62, bytes 0..31]`.
+pub fn execution_dest_limbs() -> [Fr; 3] {
+    let mut b = [0u8; 64];
+    b[..ETHEREUM_CAIP2_ID.len()].copy_from_slice(ETHEREUM_CAIP2_ID.as_bytes());
+    [
+        Fr::from_le_bytes(&b[62..]).unwrap(),
+        Fr::from_le_bytes(&b[31..62]).unwrap(),
+        Fr::from_le_bytes(&b[..31]).unwrap(),
+    ]
+}
+
+/// v0.26.0-rc.15's `calculateRequestIdV1`: [`request_id_v1`] with the
+/// 64-byte `executionDest` (three limbs).
+pub fn request_id_v026(key_version: u8, sender: &[u8; 32], path: &[u8; 32], tx_digest: &[u8; 32]) -> [u8; 32] {
+    let (s_hi, s_lo) = b32_slots(sender);
+    let (p_hi, p_lo) = b32_slots(path);
+    let (d_hi, d_lo) = b32_slots(tx_digest);
+    let mut limbs = vec![
+        Fr::from(hash_domain::REQUEST_ID),
+        Fr::from(u64::from(key_version)),
+        s_hi,
+        s_lo,
+        p_hi,
+        p_lo,
+        Fr::from(0u64), // algo: ecdsa
+        Fr::from(0u64), // txParamType: evmType2
+        d_hi,
+        d_lo,
+    ];
+    limbs.extend(execution_dest_limbs());
+    transient_upgrade(&limbs)
+}
+
+/// `calculateAttestedOutputHashV1(output)` — `[attestedOutput, output limbs]`.
+pub fn attested_output_hash(output_limbs: &[Fr]) -> [u8; 32] {
+    let mut limbs = vec![Fr::from(hash_domain::ATTESTED_OUTPUT)];
+    limbs.extend_from_slice(output_limbs);
+    transient_upgrade(&limbs)
+}
+
+/// v0.26.0-rc.15's `calculateSignetAttestationDigestV1(requestId,
+/// blockHeight, outputKind, serializedOutputLength, outputHash)`.
+pub fn attestation_digest_v026(request_id: &[u8; 32], block_height: u64, output_kind: u64, len: usize, output_hash: &[u8; 32]) -> [u8; 32] {
+    let (r_hi, r_lo) = b32_slots(request_id);
+    let (h_hi, h_lo) = b32_slots(output_hash);
+    transient_upgrade(&[
+        Fr::from(hash_domain::ATTESTATION_DIGEST),
+        r_hi,
+        r_lo,
+        Fr::from(block_height),
+        Fr::from(output_kind),
+        Fr::from(len as u64),
+        h_hi,
+        h_lo,
+    ])
+}
+
 pub fn scalar(v: u64) -> IrValue {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&v.to_le_bytes());
