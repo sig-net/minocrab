@@ -16,7 +16,7 @@ M40 and M41 sit at the VERY TOP, ahead of the closed summaries (dmd, 2026-09-15:
 
 * M48 — Streamline: a planned core, a compat crate, an experimental crate (dmd, 2026-11-21)
 dmd, 2026-11-21: "I want there to be a planned core, and then well thought through minimal abstractions on top of it." The survey, the ranked steps and every ruling are in notes/streamline-survey.org; read sections 4 and 5 before touching anything. Branch =streamline= in =~/minocrab-streamline=, one commit per rung, nothing pushed. Runs beside M47, which keeps priority.
-- [ ] A. THE GATES: nightly and =bump.sh= name tests that exist; =trust_base= stops counting lines; the refactor safety set is one command.
+- [X] A. (2026-11-21.) THE GATES: nightly and =bump.sh= name tests that exist; =trust_base= classifies files and no longer counts lines; VERIFICATION.md cites only suites that exist and says the flush vault has no property harness. The byte-identity reference is a dump of all 227 circuits from =c12a8544= (=~/streamline-ref/zkir-main=, compared by =~/streamline-ref/check.sh <worktree>=); the baseline was 1,339 passed, 0 failed.
 - [ ] B. THE BOUNDARY: the =unstable= features go; the EVM and Signet libraries leave =minocrab-contracts= for app crates, re-exported from where they were.
 - [ ] C. THE COMPAT CRATE: every gadget that exists for byte-identity with compactc, labelled; the parity ports import it.
 - [ ] D. THE EXPERIMENTAL CRATE: author-written raw Impact and what is like it.
@@ -25,7 +25,7 @@ dmd, 2026-11-21: "I want there to be a planned core, and then well thought throu
 - [ ] G. ONE VALUE TRAIT FAMILY in std (encode and decode kept apart), one derive that takes generics.
 - [ ] H. INTEGERS AND THE MISSING PRIMITIVES: arithmetic on =Uint= (unchecked construction kept), B32 equality as a check, =lookup_required=, cell increment, const-known asserts as compile errors.
 - [ ] I. THE TAINT LINT in its own crate.
-- [ ] J. TESTS follow the code: shared helpers, the A-equals-B suites go with the APIs they compare.
+- [-] J. TESTS follow the code. DONE (2026-11-21): one copy of the Impact op builders (=tests/support/ledger_ops.rs=, parameterised by field count), of =canonical=, =corpus_zkir=, =bytesn_value=, =b32_slots=; about 820 lines net. OPEN: the A-equals-B suites go with the APIs they compare; BENCHMARK.md:227 and the header of =erc20_vault_pending_spec.rs= still name the deleted =erc20_vault_spec.rs=; CONTRIBUTING.md lines 100-111 describe a =fork_status= ledger that looks retired.
 - [ ] K. LAST: =v3= to the crate root, milestone narration out of comments, the top-level docs collapsed.
 - [ ] L. THE EXAMPLES on the erc20 vaults and Sig SDK pinned for mainnet.
 - [ ] M. READY TO PUBLISH (dmd, 2026-11-21, after L): the core crates pass =cargo publish --dry-run= in dependency order; PUBLISHING.md says what is true. The EVM and Signet app crates are published as well. The experimental crate is published too, with no backwards-compatibility promise, said in its README and crate docs and carried by a 0.0.x version. The publishing scaffolding (path-plus-version dependencies, =include= lists, docs.rs metadata) therefore STAYS through the cleanup.
