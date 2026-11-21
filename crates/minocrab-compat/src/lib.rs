@@ -18,6 +18,7 @@
 //! | [`merkle`] | `insertIndexDefault` with the default leaf hashed in circuit |
 //! | [`secp`] | `secp256k1EcdsaVerify` |
 //! | [`normalise`] | the copy fold the differentials apply to both streams |
+//! | [`profile`] | the first line of a ported circuit: compactc's lowering settings |
 //!
 //! Nothing in the core depends on this crate (`cargo tree -i
 //! minocrab-compat` lists only the corpus of ports), so nothing compactc
@@ -27,3 +28,29 @@ pub mod kernel;
 pub mod merkle;
 pub mod normalise;
 pub mod secp;
+
+use minocrab::v3::{Circuit3, Lowering, SelfAddressReads};
+
+/// Set this circuit's lowering to compactc's — THE FIRST LINE of every
+/// circuit ported from Compact, and of the deployed signer's.
+///
+/// The settings no gadget can carry, because shared helpers reach them
+/// through core ([`Circuit3::set_lowering`]):
+///
+/// - `kernel.self()` is read at EVERY call ([`SelfAddressReads::EveryCall`]):
+///   compactc never caches it. The lean form reads it once per circuit. With
+///   the profile set, `kernel::cache_self_address` is refused at build time.
+/// - repeated range constraints are KEPT (`dedup_range_constraints: false`):
+///   compactc re-emits them. The lean form drops the implied ones (two rows
+///   each).
+///
+/// The struct literal is exhaustive on purpose: a setting added to
+/// [`Lowering`] stops this compiling until it says what compactc does.
+///
+/// Refused (a build-time panic, from `set_lowering`) once a gadget has
+/// lowered under the circuit's previous settings: the circuit would be half
+/// one lowering and half the other.
+#[track_caller]
+pub fn profile(c: &mut Circuit3) {
+    c.set_lowering(Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false });
+}

@@ -34,6 +34,7 @@ impl SerdeBuiltin {
     /// only the counter increment is public. The generated test says so.
     #[circuit]
     pub fn check_roundtrip(c: &mut Circuit3, bytes: BytesN<Private, 128>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let data = bytes;
         let one = c.constant(1u64);
 

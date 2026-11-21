@@ -59,6 +59,17 @@ impl Circuit3 {
         self.guards.last().copied()
     }
 
+    /// Whether any [`Circuit3::when`] scope is open — not WHICH guard, only
+    /// that there is one. For a gadget that keeps a value across calls
+    /// (`kernel.self()` under [`SelfAddressReads::OncePerCircuit`]): a value
+    /// read inside a scope is guarded, so it must not be kept for code
+    /// outside it.
+    ///
+    /// [`SelfAddressReads::OncePerCircuit`]: super::SelfAddressReads::OncePerCircuit
+    pub fn in_guarded_scope(&self) -> bool {
+        !self.guards.is_empty()
+    }
+
     /// Resolve the guard an effect will carry: the ambient scope conjoined
     /// with `explicit`, if the caller passed one.
     ///

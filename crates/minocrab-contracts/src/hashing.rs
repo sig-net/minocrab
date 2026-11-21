@@ -87,6 +87,7 @@ enum HashKind {
 
 fn hash_circuit(len: usize, kind: HashKind) -> Compiled3 {
     let mut c = Circuit3::new();
+    minocrab_compat::profile(&mut c);
     let data = bytesn_arg(&mut c, len);
     // Kept even though guard threading no longer uses it: dropping this
     // `Copy` would renumber every later identifier, moving the ZKIR
@@ -157,6 +158,7 @@ impl Hashing {
     /// why the `Bytes<len>` family stays hand-declared).
     #[circuit]
     pub fn persistent_vec8(c: &mut Circuit3, data: [B32<Private>; 8]) -> Discloses<(TheDigest,)> {
+        minocrab_compat::profile(c);
         let parts = data;
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

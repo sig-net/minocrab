@@ -77,6 +77,7 @@ impl Bounded {
     /// `export circuit b10(x: Uint<0..10>): [] { dummy.increment(1); }`.
     #[circuit]
     pub fn b10(c: &mut Circuit3, x: BoundedUint<10>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -85,6 +86,7 @@ impl Bounded {
     /// `export circuit b300(x: Uint<0..300>): []`.
     #[circuit]
     pub fn b300(c: &mut Circuit3, x: BoundedUint<300>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -93,6 +95,7 @@ impl Bounded {
     /// `export circuit b1000(x: Uint<0..1000>): []`.
     #[circuit]
     pub fn b1000(c: &mut Circuit3, x: BoundedUint<1000>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -103,6 +106,7 @@ impl Bounded {
     /// 18, comparison 17, FAB atom 3 bytes).
     #[circuit]
     pub fn b70000(c: &mut Circuit3, x: BoundedUint<70000>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -112,6 +116,7 @@ impl Bounded {
     /// the table's `constrain_eq 0` arm. Its FAB atom is ZERO bytes wide.
     #[circuit]
     pub fn b1(c: &mut Circuit3, x: BoundedUint<1>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -121,6 +126,7 @@ impl Bounded {
     /// name, so `constrain_to_boolean`.
     #[circuit]
     pub fn b2(c: &mut Circuit3, x: BoundedUint<2>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -134,6 +140,7 @@ impl Bounded {
     /// instruction.
     #[circuit]
     pub fn b256(c: &mut Circuit3, x: BoundedUint<256>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -145,6 +152,7 @@ impl Bounded {
     /// not a width.
     #[circuit]
     pub fn b255(c: &mut Circuit3, x: BoundedUint<255>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -156,6 +164,7 @@ impl Bounded {
     /// which is why the interface generator maps it to this same leaf.
     #[circuit]
     pub fn b_enum(c: &mut Circuit3, x: BoundedUint<3>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = x;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -164,6 +173,7 @@ impl Bounded {
     /// `export circuit bStruct(order: Order): []`.
     #[circuit]
     pub fn b_struct(c: &mut Circuit3, order: Order) -> Discloses<()> {
+        minocrab_compat::profile(c);
         let _ = order;
         BOUNDED.dummy.increment(c, 1);
         Discloses::of(())
@@ -181,6 +191,7 @@ impl Bounded {
         a: BoundedUint<70000>,
         b: BoundedUint<70000>,
     ) -> Discloses<(LeftOperand, RightOperand)> {
+        minocrab_compat::profile(c);
         let a = a.disclose_as::<LeftOperand>(c);
         let b = b.disclose_as::<RightOperand>(c);
         let less = a.lt(b).eval(c);

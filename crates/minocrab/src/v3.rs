@@ -21,6 +21,11 @@ use crate::{DisclosureKind, Meet, OnChainGuard, Private, Public, Region, Visibil
 mod abi;
 mod disclose;
 mod effects;
+mod lowering;
+
+/// The per-circuit lowering settings no gadget can carry (M48 C): see
+/// [`Circuit3::set_lowering`].
+pub use lowering::{Lowering, SelfAddressReads};
 
 pub use abi::{
     uint_atom_bytes, uint_compare_bits, CallArg, CallArgs, CallResult, CircuitAbi, LimbConstraint,
@@ -902,6 +907,8 @@ pub struct Circuit3 {
     /// What each transcript read was, in the ledger layer's words (`cell
     /// read at field 3`), for the refusal to name it.
     read_labels: std::collections::BTreeMap<Val, String>,
+    /// The per-circuit lowering settings — see [`Circuit3::set_lowering`].
+    lowering: lowering::LoweringState,
 }
 
 /// One attached [`Deferred`] program: its instructions and the ambient
@@ -970,6 +977,7 @@ impl Circuit3 {
             deferred: Vec::new(),
             acknowledged_reads: std::collections::HashSet::new(),
             read_labels: std::collections::BTreeMap::new(),
+            lowering: lowering::LoweringState::default(),
         }
     }
 
@@ -2022,8 +2030,11 @@ impl Circuit3 {
     /// lineage — spec-anchored, warranted by symbolic-effect equivalence
     /// rather than PI-equality — is where it may go on. No shipped artifact
     /// flips it today (notes/ir-passes.org §1, §11).
+    ///
+    /// The flag is [`Lowering::dedup_range_constraints`], this circuit's
+    /// lowering state; [`Circuit3::finish`] hands it to the builder.
     pub fn dedup_range_constraints(&mut self, on: bool) {
-        self.b.dedup_range_constraints(on);
+        self.lowering.settings.dedup_range_constraints = on;
     }
 
     // --- finish ------------------------------------------------------------------------------
@@ -2038,6 +2049,7 @@ impl Circuit3 {
         // `finish` delete instructions, so move both onto the finished stream
         // (notes/ir-passes.org §13). A message whose assert was deleted goes
         // with it; a region whose instructions were all deleted is empty.
+        self.b.dedup_range_constraints(self.lowering.settings.dedup_range_constraints);
         let (ir, kept) = self.b.finish_kept(communications_commitment);
         #[cfg(debug_assertions)]
         let built = (self.regions.clone(), self.assert_messages.clone());

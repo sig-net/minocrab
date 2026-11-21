@@ -101,6 +101,7 @@ impl Coins {
         coin: ShieldedCoinArg,
         r: RecipientArg,
     ) -> Discloses<(Coin, Recipient)> {
+        minocrab_compat::profile(c);
         let coin = coin.disclose::<Coin>(c);
         let r = recipient(c, r);
         COINS.s.insert_coin(c, &coin, &r);
@@ -117,6 +118,7 @@ impl Coins {
         coin: ShieldedCoinArg,
         r: RecipientArg,
     ) -> Discloses<(Key, Coin, Recipient)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let coin = coin.disclose::<Coin>(c);
         let r = recipient(c, r);
@@ -133,6 +135,7 @@ impl Coins {
         coin: ShieldedCoinArg,
         r: RecipientArg,
     ) -> Discloses<(Coin, Recipient)> {
+        minocrab_compat::profile(c);
         let coin = coin.disclose::<Coin>(c);
         let r = recipient(c, r);
         COINS.l.push_front_coin(c, &coin, &r);

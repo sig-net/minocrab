@@ -103,6 +103,7 @@ impl Nested {
         k2: B32<Private>,
         v: Uint<64, Private>,
     ) -> Discloses<(Key, Key2, Val)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let v = v.disclose_as::<Val>(c);
@@ -122,6 +123,7 @@ impl Nested {
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let path = under(c, MM, &k);
@@ -145,6 +147,7 @@ impl Nested {
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let path = under(c, MM, &k);
@@ -165,6 +168,7 @@ impl Nested {
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2), Bool<Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let path = under(c, MM, &k);
@@ -183,6 +187,7 @@ impl Nested {
         k: B32<Private>,
         k2: B32<Private>,
     ) -> Discloses<(Key, Key2)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let path = under(c, MM, &k);
@@ -194,6 +199,7 @@ impl Nested {
     /// `return mm.lookup(disclose(k)).size();`
     #[circuit(output = "size")]
     pub fn map_size(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         Discloses::of(Uint::from_field_unchecked(map_size_at(
@@ -205,6 +211,7 @@ impl Nested {
     /// `return mm.lookup(disclose(k)).isEmpty();`
     #[circuit(output = "empty")]
     pub fn map_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         Discloses::of(Bool::from_field_unchecked(map_is_empty_at(
@@ -222,6 +229,7 @@ impl Nested {
     /// key, not the field index.
     #[circuit]
     pub fn map_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MM, &k);
         emit(c, &map_reset_at(&path));
@@ -237,6 +245,7 @@ impl Nested {
     /// than merely unable.
     #[circuit]
     pub fn outer_insert_default(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k = k.ledger_value(c);
         emit(
@@ -258,6 +267,7 @@ impl Nested {
         k: B32<Private>,
         v: B32<Private>,
     ) -> Discloses<(Key, Val)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let v = v.disclose_as::<Val>(c);
         let path = under(c, ML, &k);
@@ -269,6 +279,7 @@ impl Nested {
     /// `ml.lookup(disclose(k)).popFront();`
     #[circuit]
     pub fn list_pop_front(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         emit(c, &list_pop_front_at(&path));
@@ -278,6 +289,7 @@ impl Nested {
     /// `return ml.lookup(disclose(k)).length();`
     #[circuit(output = "length")]
     pub fn list_length(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         Discloses::of(Uint::from_field_unchecked(list_length_at(
@@ -295,6 +307,7 @@ impl Nested {
         c: &mut Circuit3,
         k: B32<Private>,
     ) -> Discloses<(Key,), Maybe<B32<Public>, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         let mut limbs = list_head_at(c, &path, <B32<Public>>::atoms());
@@ -308,6 +321,7 @@ impl Nested {
     /// `return ml.lookup(disclose(k)).isEmpty();`
     #[circuit(output = "empty")]
     pub fn list_is_empty(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         Discloses::of(Bool::from_field_unchecked(list_is_empty_at(
@@ -319,6 +333,7 @@ impl Nested {
     /// `ml.lookup(disclose(k)).resetToDefault();`
     #[circuit]
     pub fn list_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, ML, &k);
         emit(c, &list_reset_at(&path));
@@ -334,6 +349,7 @@ impl Nested {
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let e = e.disclose_as::<Elem>(c);
         let path = under(c, MS, &k);
@@ -349,6 +365,7 @@ impl Nested {
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let e = e.disclose_as::<Elem>(c);
         let path = under(c, MS, &k);
@@ -368,6 +385,7 @@ impl Nested {
         k: B32<Private>,
         e: B32<Private>,
     ) -> Discloses<(Key, Elem), Bool<Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let e = e.disclose_as::<Elem>(c);
         let path = under(c, MS, &k);
@@ -387,6 +405,7 @@ impl Nested {
     /// — which is why `set_reset_at` delegates.
     #[circuit]
     pub fn set_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MS, &k);
         emit(c, &set_reset_at(&path));
@@ -398,6 +417,7 @@ impl Nested {
     /// `mc.lookup(disclose(k)).increment(1);`
     #[circuit]
     pub fn counter_increment(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         emit(c, &counter_increment_at(&path, 1));
@@ -407,6 +427,7 @@ impl Nested {
     /// `return mc.lookup(disclose(k)).read();`
     #[circuit(output = "count")]
     pub fn counter_read(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         Discloses::of(Uint::from_field_unchecked(counter_read_at(
@@ -421,6 +442,7 @@ impl Nested {
     /// shape with a different constant pushed.
     #[circuit]
     pub fn counter_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MC, &k);
         emit(c, &counter_reset_at(&path));
@@ -439,6 +461,7 @@ impl Nested {
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let item = item.disclose_as::<Elem>(c);
         let hash = leaf_hash(c, &item);
@@ -455,6 +478,7 @@ impl Nested {
         k: B32<Private>,
         rt: MerkleTreeDigest<Private>,
     ) -> Discloses<(Key, Root), Bool<Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let rt = rt.disclose_as::<Root>(c);
         let path = under(c, MT, &k);
@@ -473,6 +497,7 @@ impl Nested {
     /// [`Nested::map_reset`] pushes the empty map.
     #[circuit]
     pub fn mt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MT, &k);
         emit(c, &merkle_tree_reset_at(&path, DEPTH));
@@ -486,6 +511,7 @@ impl Nested {
         k: B32<Private>,
         item: B32<Private>,
     ) -> Discloses<(Key, Elem)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let item = item.disclose_as::<Elem>(c);
         let hash = leaf_hash(c, &item);
@@ -504,6 +530,7 @@ impl Nested {
     /// depth 2, where `0xa3` was the deepest anything else reached.
     #[circuit]
     pub fn hmt_reset_history(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MH, &k);
         emit(
@@ -520,6 +547,7 @@ impl Nested {
     /// reset's is `ins 1; insc len(f)-1`.
     #[circuit]
     pub fn hmt_reset(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let path = under(c, MH, &k);
         emit(
@@ -543,6 +571,7 @@ impl Nested {
         k3: B32<Private>,
         v: Uint<64, Private>,
     ) -> Discloses<(Key, Key2, Key3, Val)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let k3 = k3.disclose_as::<Key3>(c);
@@ -561,6 +590,7 @@ impl Nested {
         k2: B32<Private>,
         k3: B32<Private>,
     ) -> Discloses<(Key, Key2, Key3), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         let k2 = k2.disclose_as::<Key2>(c);
         let k3 = k3.disclose_as::<Key3>(c);

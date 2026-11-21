@@ -142,6 +142,7 @@ impl Attest {
     /// `export circuit mapOnly(requestId: Bytes<32>): []`
     #[circuit]
     pub fn map_only(c: &mut Circuit3, request_id: B32<Private>) -> Discloses<(AttestedRequestId,)> {
+        minocrab_compat::profile(c);
         c.region("ledger writes", |c| ledger_writes(c, request_id));
         Discloses::of(())
     }
@@ -156,6 +157,7 @@ impl Attest {
         s: B32<Private>,
         pk: Secp256k1Point,
     ) -> Discloses<(AttestedRequestId,)> {
+        minocrab_compat::profile(c);
         let pk = pk.point();
 
         let ok = c.region("signature verification", |c| {
@@ -185,6 +187,7 @@ impl Attest {
         s: B32<Private>,
         pk: Secp256k1Point,
     ) -> Discloses<(AttestedRequestId,)> {
+        minocrab_compat::profile(c);
         let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.persistent_hash(alignment, inputs);
         hash_verify(c, hash, request_id, output, r, s, pk);
         Discloses::of(())
@@ -200,6 +203,7 @@ impl Attest {
         s: B32<Private>,
         pk: Secp256k1Point,
     ) -> Discloses<(AttestedRequestId,)> {
+        minocrab_compat::profile(c);
         let hash = |c: &mut Circuit3, alignment, inputs: &[_]| c.keccak256(alignment, inputs);
         hash_verify(c, hash, request_id, output, r, s, pk);
         Discloses::of(())

@@ -27,7 +27,7 @@
 //! semantics at apply time, so the comparison forms are usually what a
 //! contract wants.
 
-use minocrab::v3::{AnyWire3, Circuit3, FieldT, Wire3};
+use minocrab::v3::{AnyWire3, Circuit3, FieldT, SelfAddressReads, Wire3};
 use minocrab::{AlignmentAtom, Fr, Private, Public};
 use minocrab_ledger::{
     emit, kernel_balance, kernel_block_time, kernel_claim_unshielded_coin_spend,
@@ -147,18 +147,28 @@ impl Select<Public> for SelfAddress {
 }
 
 /// `kernel.self()` — the contract's own address. Reads fresh, unless this
-/// circuit earlier called [`cache_self_address`], in which case the cached
-/// wires come back and no read is emitted.
+/// circuit earlier called [`cache_self_address`] (or read under
+/// [`SelfAddressReads::OncePerCircuit`]), in which case the kept wires come
+/// back and no read is emitted.
 ///
-/// A circuit that never caches CANNOT be affected: nothing else populates
-/// the cache, so the compat ports' per-call-site reads (compactc parity)
-/// are reproduced by construction, not by discipline.
+/// How it reads is the circuit's lowering setting
+/// ([`Lowering::self_address`](minocrab::v3::Lowering::self_address)):
+/// [`SelfAddressReads::EveryCall`], the default and compactc's, emits a read
+/// per call, so the compat ports' per-call-site reads are reproduced by
+/// construction; [`SelfAddressReads::OncePerCircuit`] keeps the first read
+/// made outside every `when` scope (a read inside one is guarded, and is
+/// never kept).
 pub fn self_address(c: &mut Circuit3) -> SelfAddress {
     if let Some(cached) = c.ext_get::<CachedSelfAddress>() {
         return cached.0;
     }
-    let wires = kernel_self(c);
-    SelfAddress(ContractAddress::from_limbs(never_stale(c, wires)))
+    match c.consult_lowering().self_address {
+        SelfAddressReads::OncePerCircuit if !c.in_guarded_scope() => read_and_keep(c),
+        _ => {
+            let wires = kernel_self(c);
+            SelfAddress(ContractAddress::from_limbs(never_stale(c, wires)))
+        }
+    }
 }
 
 /// The kernel's self read is a `popeq` on a value no transaction can change,
@@ -166,6 +176,15 @@ pub fn self_address(c: &mut Circuit3) -> SelfAddress {
 fn never_stale(c: &mut Circuit3, wires: [Wire3<FieldT, Public>; 2]) -> [Wire3<FieldT, Public>; 2] {
     c.acknowledge_stale(&[wires[0].val(), wires[1].val()]);
     wires
+}
+
+/// Read `kernel.self()` and make it the answer every later [`self_address`]
+/// call in this circuit gets.
+fn read_and_keep(c: &mut Circuit3) -> SelfAddress {
+    let wires = kernel_self(c);
+    let me = SelfAddress(ContractAddress::from_limbs(never_stale(c, wires)));
+    c.ext_insert(CachedSelfAddress(me));
+    me
 }
 
 /// Read `kernel.self()` ONCE and make it the ambient answer for every
@@ -186,11 +205,25 @@ fn never_stale(c: &mut Circuit3, wires: [Wire3<FieldT, Public>; 2]) -> [Wire3<Fi
 /// picks up the ambient scope automatically and never consults the cache —
 /// `c.when(g, |c| self_address(c)).or_default()` is the guarded read
 /// (notes/edsl-trim.org §B).
+///
+/// REFUSED in a circuit that CHOSE [`SelfAddressReads::EveryCall`]
+/// (`minocrab_compat::profile`, compactc's profile): compactc never caches,
+/// so a parity port that called this would swallow reads its Compact twin
+/// makes. A value-dependent check, so a build-time panic, recorded for
+/// review.
+#[track_caller]
 pub fn cache_self_address(c: &mut Circuit3) -> SelfAddress {
-    let wires = kernel_self(c);
-    let me = SelfAddress(ContractAddress::from_limbs(never_stale(c, wires)));
-    c.ext_insert(CachedSelfAddress(me));
-    me
+    let lowering = c.consult_lowering();
+    assert!(
+        !(c.lowering_chosen() && lowering.self_address == SelfAddressReads::EveryCall),
+        "cache_self_address in a circuit whose lowering reads kernel.self() at every call \
+         (compactc's, set by minocrab_compat::profile): compactc never caches, so the cache \
+         would swallow reads the Compact twin makes and move the stream. Remove the \
+         cache_self_address call (a parity port reads at every call site), or, if this \
+         circuit has no Compact twin, drop the profile and choose \
+         SelfAddressReads::OncePerCircuit instead."
+    );
+    read_and_keep(c)
 }
 
 /// What [`caller`] returns: the ledger's `PublicAddress` under a `Maybe` —

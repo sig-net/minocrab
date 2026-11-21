@@ -89,6 +89,7 @@ struct DepositArgs {
 /// [`DepositDisclosures`] is one (see [`Discloses`]).
 fn base_with_emits(emits: usize) -> Compiled3 {
     entry(|c, args: DepositArgs| -> DepositDisclosures {
+        minocrab_compat::profile(c);
         let recipient = args.recipient;
         let amount = args.amount;
         // Kept even though guard threading no longer uses it: dropping this

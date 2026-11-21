@@ -31,6 +31,7 @@ suite warrants; this says where the suites stop.
 | `minocrab/src/v3/abi.rs` | v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot | an argument type constrained to the wrong width |
 | `minocrab/src/v3/disclose.rs` | the generated set-equality test on every circuit; disclosure_report; v3_disclose | a disclosure recorded under a label the signature does not name |
 | `minocrab/src/v3/effects.rs` | v3_guard_scope; every differential with a branch | an effect escaping its guard |
+| `minocrab/src/v3/lowering.rs` | minocrab-compat tests/profile.rs (the profile's settings and both refusals); v3_kernel_cache (OncePerCircuit, and never keeping a guarded read); the zkir dump (every parity port byte-identical under the profile) | a setting the profile leaves at a non-compactc value, moving a parity port or a deployed key |
 | `minocrab-ledger/src/lib.rs` | **READING** | nothing beyond the crate doc and mod/pub-use plumbing |
 | `minocrab-ledger/src/impact.rs` | differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): **READING** against midnight-ledger.ss vm-code | an Impact op encoded so the ledger applies a different state change than the circuit claims |
 | `minocrab-ledger/src/ops.rs` | differential_baseline (call-compatibility with compactc's artifacts); every contract differential; nested_differential + nested_typed (nested paths); entry_point (325 contracts). Ops no fixture reaches (VERIFICATION.md §5 'unported constructs'): **READING** against midnight-ledger.ss vm-code | an Impact op encoded so the ledger applies a different state change than the circuit claims |
@@ -68,7 +69,7 @@ suite warrants; this says where the suites stop.
 | `minocrab-sim/src/v3/rowcost.rs` | calibrated against real proving (BENCHMARK.md); a MEASUREMENT model, not a correctness claim | a mis-priced primitive — a wrong k estimate, never a wrong circuit |
 | `minocrab-sim/src/bin/minocrab.rs` | **READING** | nothing a proof depends on (the CLI) |
 
-48 files in the eight crates; 16 of them have a warrant that is READING in whole or in part (the rows in bold).
+49 files in the eight crates; 16 of them have a warrant that is READING in whole or in part (the rows in bold).
 <!-- GENERATED END -->
 
 ## 2. The read order, with a time budget

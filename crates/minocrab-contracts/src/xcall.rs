@@ -101,6 +101,7 @@ impl Xcall {
         recipient: B32<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount)> {
+        minocrab_compat::profile(c);
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -125,6 +126,7 @@ impl Xcall {
         recipient: B32<Private>,
         amount: Uint<128>,
     ) -> Discloses<(Recipient, Amount, XcallCommitment)> {
+        minocrab_compat::profile(c);
         let (r, a) = disclose_args(c, DepositArgs { recipient, amount });
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -142,6 +144,7 @@ impl Xcall {
         c: &mut Circuit3,
         data: BytesN<Private, 256>,
     ) -> Discloses<(Data, XcallCommitment)> {
+        minocrab_compat::profile(c);
         let data: BytesN<Public, 256> = data.disclose_as::<Data>(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -158,6 +161,7 @@ impl Xcall {
     /// the contract boundary.
     #[circuit]
     pub fn target_deposit_big(c: &mut Circuit3, _data: BytesN<Private, 256>) -> Discloses<()> {
+        minocrab_compat::profile(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
         // (notes/edsl-trim.org §B, the removal's zero-movement gate).
@@ -189,6 +193,7 @@ pub fn call_twice() -> Compiled3 {
 /// through [`entry`] rather than the attribute (see `events`'s note).
 fn call_n_times(n: usize) -> Compiled3 {
     entry(|c, args: DepositArgs| -> CallDisclosures {
+        minocrab_compat::profile(c);
         let (r, a) = disclose_args(c, args);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

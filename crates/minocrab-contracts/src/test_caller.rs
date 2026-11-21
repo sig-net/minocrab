@@ -60,6 +60,7 @@ impl TestCaller {
         c: &mut Circuit3,
         response_key: Secp256k1Point,
     ) -> Discloses<(MpcResponseKey,)> {
+        minocrab_compat::profile(c);
         let response_key = response_key.point();
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

@@ -87,6 +87,7 @@ impl XcallWithPayment {
         c: &mut Circuit3,
         coin: CoinArg,
     ) -> Discloses<(Nonce, Color, Value, XcallCommitment)> {
+        minocrab_compat::profile(c);
         let nonce = coin.nonce.disclose_as::<Nonce>(c);
         let color = coin.color.disclose_as::<Color>(c);
         let value = coin.value.disclose_as::<Value>(c).field();
@@ -112,6 +113,7 @@ impl XcallWithPayment {
         c: &mut Circuit3,
         request_id: B32<Private>,
     ) -> Discloses<(RequestId, XcallCommitment)> {
+        minocrab_compat::profile(c);
         let request_id = request_id.disclose_as::<RequestId>(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -126,6 +128,7 @@ impl XcallWithPayment {
     /// right(kernel.self()))`. Root-call only (pinned limitation upstream).
     #[circuit]
     pub fn notify(c: &mut Circuit3, coin: CoinArg) -> Discloses<(CoinNonce, CoinColor, CoinValue)> {
+        minocrab_compat::profile(c);
         let coin = disclose_coin(c, coin);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -145,6 +148,7 @@ impl XcallWithPayment {
         request_id: B32<Private>,
         coin: CoinArg,
     ) -> Discloses<(RequestId, CoinNonce, CoinColor, CoinValue)> {
+        minocrab_compat::profile(c);
         let request_id = request_id.disclose_as::<RequestId>(c);
         let coin = disclose_coin(c, coin);
         // Kept even though guard threading no longer uses it: dropping this
@@ -168,6 +172,7 @@ impl XcallWithPayment {
         c: &mut Circuit3,
         request_id: B32<Private>,
     ) -> Discloses<(RequestId,)> {
+        minocrab_compat::profile(c);
         let request_id = request_id.disclose_as::<RequestId>(c);
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR

@@ -94,6 +94,7 @@ impl XcontractEvents {
         c: &mut Circuit3,
         amount: Uint<128>,
     ) -> Discloses<(Amount, XcallCommitment, XcallResult), B32<Public>> {
+        minocrab_compat::profile(c);
         let a = amount.disclose_as::<Amount>(c).field();
         // Kept even though guard threading no longer uses it: dropping this
         // `Copy` would renumber every later identifier, moving the ZKIR
@@ -123,6 +124,7 @@ impl XcontractEvents {
         amount: Uint<128>,
         caller: ContractAddress<Private>,
     ) -> Discloses<(Amount, Caller), B32<Public>> {
+        minocrab_compat::profile(c);
         let caller = caller.bytes();
         let a = amount.disclose_as::<Amount>(c).field();
         let cal = caller.disclose_as::<Caller>(c);

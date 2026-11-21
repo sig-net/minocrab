@@ -494,6 +494,7 @@ impl Manager {
         c: &mut Circuit3,
         owner: B32<Private>,
     ) -> Discloses<(QueriedAccount,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let owner = owner.disclose_as::<QueriedAccount>(c);
         Discloses::of(*MANAGER.accounts.member(c, &owner))
     }
@@ -508,6 +509,7 @@ impl Manager {
         c: &mut Circuit3,
         account: B32<Private>,
     ) -> Discloses<(QueriedAccount,), AccountRecordOut> {
+        minocrab_compat::profile(c);
         let acct = account.disclose_as::<QueriedAccount>(c);
 
         let registered = MANAGER.accounts.member(c, &acct).field();
@@ -573,6 +575,7 @@ impl Manager {
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
+        minocrab_compat::profile(c);
         let owner = owner.disclose_as::<QueriedAccount>(c);
         let colour = colour.disclose_as::<QueriedColour>(c);
         let k = shielded_key(c, &owner, &colour);
@@ -587,6 +590,7 @@ impl Manager {
         owner: B32<Private>,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedAccount, QueriedColour), Uint<128, Public>> {
+        minocrab_compat::profile(c);
         let owner = owner.disclose_as::<QueriedAccount>(c);
         let colour = colour.disclose_as::<QueriedColour>(c);
         let k = unshielded_key(c, &owner, &colour);
@@ -601,6 +605,7 @@ impl Manager {
         c: &mut Circuit3,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Uint<128, Public>> {
+        minocrab_compat::profile(c);
         let col = colour.disclose_as::<QueriedColour>(c);
         let member = MANAGER.pools.member(c, &col).field();
         let v = c.when(member, |c| MANAGER.pools.lookup(c, &col)).or_default().value;
@@ -613,6 +618,7 @@ impl Manager {
         c: &mut Circuit3,
         colour: CoinColor<Private>,
     ) -> Discloses<(QueriedColour,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let col = colour.disclose_as::<QueriedColour>(c);
         Discloses::of(*MANAGER.pools.member(c, &col))
     }
@@ -627,6 +633,7 @@ impl Manager {
         coin: ShieldedCoinArg,
         account: B32<Private>,
     ) -> Discloses<(DepositCoin, CreditAccount)> {
+        minocrab_compat::profile(c);
         let coin_value = coin.value;
         let coin = ShieldedCoinInfo3 {
             nonce: coin.nonce.disclose_as::<DepositCoin>(c),
@@ -694,6 +701,7 @@ impl Manager {
         amount: Uint<128>,
         account: B32<Private>,
     ) -> Discloses<(DepositColour, DepositAmount, CreditAccount)> {
+        minocrab_compat::profile(c);
         let col = colour.disclose_as::<DepositColour>(c);
         let amt = amount.disclose_as::<DepositAmount>(c);
         let acct = account.disclose_as::<CreditAccount>(c);
@@ -725,6 +733,7 @@ impl Manager {
         sig: SignatureArg,
         pk: Secp256k1Point,
     ) -> Discloses<(Payload, NativeAccount)> {
+        minocrab_compat::profile(c);
         // const p = disclose(payload)
         let p = payload.disclose(c);
         let f = Flags::of(c, &p);

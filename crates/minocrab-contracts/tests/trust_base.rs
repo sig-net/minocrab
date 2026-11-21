@@ -52,6 +52,7 @@ const ROWS: &[Row] = &[
     Row { path: "minocrab/src/v3/abi.rs", warrant: "v3_entry / v3_leaves / v3_bounded (the constraint table pinned to compactc's, notes/builtin-lowering.org §9); interface_snapshot", hides: "an argument type constrained to the wrong width" },
     Row { path: "minocrab/src/v3/disclose.rs", warrant: "the generated set-equality test on every circuit; disclosure_report; v3_disclose", hides: "a disclosure recorded under a label the signature does not name" },
     Row { path: "minocrab/src/v3/effects.rs", warrant: "v3_guard_scope; every differential with a branch", hides: "an effect escaping its guard" },
+    Row { path: "minocrab/src/v3/lowering.rs", warrant: "minocrab-compat tests/profile.rs (the profile's settings and both refusals); v3_kernel_cache (OncePerCircuit, and never keeping a guarded read); the zkir dump (every parity port byte-identical under the profile)", hides: "a setting the profile leaves at a non-compactc value, moving a parity port or a deployed key" },
     // ---- L2.5: Impact ledger ops ----------------------------------------------------------
     // M26: split from one 3724-line lib.rs into modules by concern (zero
     // behavioural movement) — the warrant below is the whole op layer's and

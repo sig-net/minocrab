@@ -1,0 +1,98 @@
+//! The per-circuit LOWERING STATE: the few choices about how a circuit is
+//! lowered that no gadget can carry, because shared helpers (the vaults'
+//! mint, burn and receive) reach them through core rather than through a
+//! gadget a port could swap (notes/streamline-survey.org §7, "The one
+//! switch").
+//!
+//! The defaults are TODAY'S behaviour: every `kernel.self()` call reads,
+//! and range constraints are not deduplicated. A circuit ported from
+//! Compact states compactc's settings explicitly, as its first line, through
+//! `minocrab_compat::profile`; nothing else needs to touch this.
+
+use super::Circuit3;
+
+/// How `minocrab_std::v3::kernel::self_address` reads `kernel.self()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelfAddressReads {
+    /// Every call emits a read. compactc's (it never caches), and the default.
+    EveryCall,
+    /// The first read made outside every `when` scope is kept, and later
+    /// calls emit nothing. A read inside a scope is guarded (it yields the
+    /// default where the guard is false), so it is never the one kept.
+    OncePerCircuit,
+}
+
+/// The settings. ONE PLACE TO ADD A SETTING: a field here, its default in
+/// the `Default` impl, and compactc's value in `minocrab_compat::profile`,
+/// whose struct literal is exhaustive on purpose, so it stops compiling
+/// until it says what compactc does. (The simplification pass of M48 F is
+/// the expected next one; it gets a field when it exists.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lowering {
+    /// See [`SelfAddressReads`].
+    pub self_address: SelfAddressReads,
+    /// Whether [`Circuit3::finish`] drops a range constraint an earlier one
+    /// already proved at least as tight. See
+    /// [`Circuit3::dedup_range_constraints`].
+    pub dedup_range_constraints: bool,
+}
+
+impl Default for Lowering {
+    fn default() -> Self {
+        Lowering { self_address: SelfAddressReads::EveryCall, dedup_range_constraints: false }
+    }
+}
+
+/// What the circuit holds: the settings, and the two facts the checks need.
+#[derive(Default)]
+pub(super) struct LoweringState {
+    pub(super) settings: Lowering,
+    /// [`Circuit3::set_lowering`] has run: the settings are the circuit's
+    /// stated choice, not the defaults.
+    chosen: bool,
+    /// A gadget has emitted instructions that depend on the settings
+    /// ([`Circuit3::consult_lowering`]), so changing them now would leave
+    /// the circuit lowered half one way and half the other.
+    consulted: bool,
+}
+
+impl Circuit3 {
+    /// This circuit's lowering settings.
+    pub fn lowering(&self) -> Lowering {
+        self.lowering.settings
+    }
+
+    /// Whether [`Circuit3::set_lowering`] has run: the settings are a stated
+    /// choice rather than the defaults.
+    pub fn lowering_chosen(&self) -> bool {
+        self.lowering.chosen
+    }
+
+    /// Choose this circuit's lowering. Call it FIRST in the circuit body,
+    /// before any gadget runs (`minocrab_compat::profile` is the one caller
+    /// in the tree).
+    ///
+    /// Refused at build time once a gadget has lowered under the previous
+    /// settings ([`Circuit3::consult_lowering`]): the circuit would be half
+    /// one lowering and half the other. A value-dependent check, so a panic
+    /// (CLAUDE.md, compile errors over panics), recorded for review.
+    #[track_caller]
+    pub fn set_lowering(&mut self, settings: Lowering) {
+        assert!(
+            !self.lowering.consulted,
+            "set_lowering (minocrab_compat::profile) called after a gadget already lowered \
+             under this circuit's settings (a kernel.self() read). Make it the FIRST line of \
+             the circuit body, before any gadget runs."
+        );
+        self.lowering.settings = settings;
+        self.lowering.chosen = true;
+    }
+
+    /// The settings, for a gadget whose emitted instructions depend on them:
+    /// recorded as relied upon, so a later [`Circuit3::set_lowering`] is
+    /// refused rather than silently lowering the rest differently.
+    pub fn consult_lowering(&mut self) -> Lowering {
+        self.lowering.consulted = true;
+        self.lowering.settings
+    }
+}

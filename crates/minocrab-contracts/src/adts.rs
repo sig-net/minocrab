@@ -68,6 +68,7 @@ impl Adts {
     /// `export circuit setInsert(x: Bytes<32>): [] { s.insert(disclose(x)); }`
     #[circuit]
     pub fn set_insert(c: &mut Circuit3, x: B32<Private>) -> Discloses<(Element,)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         ADTS.s.insert(c, &x);
         Discloses::of(())
@@ -79,6 +80,7 @@ impl Adts {
         c: &mut Circuit3,
         x: B32<Private>,
     ) -> Discloses<(Element,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         Discloses::of(*ADTS.s.member(c, &x))
     }
@@ -86,6 +88,7 @@ impl Adts {
     /// `export circuit setRemove(x: Bytes<32>): [] { s.remove(disclose(x)); }`
     #[circuit]
     pub fn set_remove(c: &mut Circuit3, x: B32<Private>) -> Discloses<(Element,)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         ADTS.s.remove(c, &x);
         Discloses::of(())
@@ -94,18 +97,21 @@ impl Adts {
     /// `export circuit setSize(): Uint<64> { return s.size(); }`
     #[circuit(output = "size")]
     pub fn set_size(c: &mut Circuit3) -> Discloses<(), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.s.size(c))
     }
 
     /// `export circuit setIsEmpty(): Boolean { return s.isEmpty(); }`
     #[circuit(output = "empty")]
     pub fn set_is_empty(c: &mut Circuit3) -> Discloses<(), Bool<Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.s.is_empty(c))
     }
 
     /// `export circuit setReset(): [] { s.resetToDefault(); }`
     #[circuit]
     pub fn set_reset(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.s.reset_to_default(c);
         Discloses::of(())
     }
@@ -119,6 +125,7 @@ impl Adts {
     /// different field index.
     #[circuit]
     pub fn list_push_front(c: &mut Circuit3, x: B32<Private>) -> Discloses<(Element,)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         ADTS.l.push_front(c, &x);
         Discloses::of(())
@@ -127,6 +134,7 @@ impl Adts {
     /// `export circuit listPopFront(): [] { l.popFront(); }`
     #[circuit]
     pub fn list_pop_front(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.l.pop_front(c);
         Discloses::of(())
     }
@@ -134,24 +142,28 @@ impl Adts {
     /// `export circuit listHead(): Maybe<Bytes<32>> { return l.head(); }`
     #[circuit(output = "head")]
     pub fn list_head(c: &mut Circuit3) -> Discloses<(), Maybe<B32<Public>, Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.l.head(c))
     }
 
     /// `export circuit listLength(): Uint<64> { return l.length(); }`
     #[circuit(output = "length")]
     pub fn list_length(c: &mut Circuit3) -> Discloses<(), Uint<64, Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.l.length(c))
     }
 
     /// `export circuit listIsEmpty(): Boolean { return l.isEmpty(); }`
     #[circuit(output = "empty")]
     pub fn list_is_empty(c: &mut Circuit3) -> Discloses<(), Bool<Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.l.is_empty(c))
     }
 
     /// `export circuit listReset(): [] { l.resetToDefault(); }`
     #[circuit]
     pub fn list_reset(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.l.reset_to_default(c);
         Discloses::of(())
     }
@@ -161,6 +173,7 @@ impl Adts {
     /// `export circuit mapInsertDefault(k: Bytes<32>): [] { m.insertDefault(disclose(k)); }`
     #[circuit]
     pub fn map_insert_default(c: &mut Circuit3, k: B32<Private>) -> Discloses<(Key,)> {
+        minocrab_compat::profile(c);
         let k = k.disclose_as::<Key>(c);
         ADTS.m.insert_default(c, &k);
         Discloses::of(())
@@ -169,6 +182,7 @@ impl Adts {
     /// `export circuit mapReset(): [] { m.resetToDefault(); }`
     #[circuit]
     pub fn map_reset(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.m.reset_to_default(c);
         Discloses::of(())
     }
@@ -178,6 +192,7 @@ impl Adts {
     /// `export circuit mtInsert(x: Bytes<32>): [] { mt.insert(disclose(x)); }`
     #[circuit]
     pub fn mt_insert(c: &mut Circuit3, x: B32<Private>) -> Discloses<(Element,)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         ADTS.mt.insert(c, &x);
         Discloses::of(())
@@ -190,6 +205,7 @@ impl Adts {
         x: B32<Private>,
         i: Uint<64>,
     ) -> Discloses<(Element, Index)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         let i = i.disclose_as::<Index>(c);
         ADTS.mt.insert_index(c, &x, i);
@@ -199,6 +215,7 @@ impl Adts {
     /// `export circuit mtInsertHash(h: Bytes<32>): [] { mt.insertHash(disclose(h)); }`
     #[circuit]
     pub fn mt_insert_hash(c: &mut Circuit3, h: B32<Private>) -> Discloses<(Hash,)> {
+        minocrab_compat::profile(c);
         let h = h.disclose_as::<Hash>(c);
         ADTS.mt.insert_hash(c, &h);
         Discloses::of(())
@@ -211,6 +228,7 @@ impl Adts {
         h: B32<Private>,
         i: Uint<64>,
     ) -> Discloses<(Hash, Index)> {
+        minocrab_compat::profile(c);
         let h = h.disclose_as::<Hash>(c);
         let i = i.disclose_as::<Index>(c);
         ADTS.mt.insert_hash_index(c, &h, i);
@@ -220,6 +238,7 @@ impl Adts {
     /// `export circuit mtInsertIndexDefault(i: Uint<64>): [] { … }`
     #[circuit]
     pub fn mt_insert_index_default(c: &mut Circuit3, i: Uint<64>) -> Discloses<(Index,)> {
+        minocrab_compat::profile(c);
         let i = i.disclose_as::<Index>(c);
         merkle::insert_index_default(c, &ADTS.mt, i);
         Discloses::of(())
@@ -231,6 +250,7 @@ impl Adts {
         c: &mut Circuit3,
         r: MerkleTreeDigest,
     ) -> Discloses<(Root,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let r = r.disclose_as::<Root>(c);
         Discloses::of(*ADTS.mt.check_root(c, r))
     }
@@ -238,12 +258,14 @@ impl Adts {
     /// `export circuit mtIsFull(): Boolean { return mt.isFull(); }`
     #[circuit(output = "full")]
     pub fn mt_is_full(c: &mut Circuit3) -> Discloses<(), Bool<Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.mt.is_full(c))
     }
 
     /// `export circuit mtReset(): [] { mt.resetToDefault(); }`
     #[circuit]
     pub fn mt_reset(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.mt.reset_to_default(c);
         Discloses::of(())
     }
@@ -253,6 +275,7 @@ impl Adts {
     /// `export circuit hmtInsert(x: Bytes<32>): [] { hmt.insert(disclose(x)); }`
     #[circuit]
     pub fn hmt_insert(c: &mut Circuit3, x: B32<Private>) -> Discloses<(Element,)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         ADTS.hmt.insert(c, &x);
         Discloses::of(())
@@ -265,6 +288,7 @@ impl Adts {
         x: B32<Private>,
         i: Uint<64>,
     ) -> Discloses<(Element, Index)> {
+        minocrab_compat::profile(c);
         let x = x.disclose_as::<Element>(c);
         let i = i.disclose_as::<Index>(c);
         ADTS.hmt.insert_index(c, &x, i);
@@ -274,6 +298,7 @@ impl Adts {
     /// `export circuit hmtInsertHash(h: Bytes<32>): [] { … }`
     #[circuit]
     pub fn hmt_insert_hash(c: &mut Circuit3, h: B32<Private>) -> Discloses<(Hash,)> {
+        minocrab_compat::profile(c);
         let h = h.disclose_as::<Hash>(c);
         ADTS.hmt.insert_hash(c, &h);
         Discloses::of(())
@@ -286,6 +311,7 @@ impl Adts {
         h: B32<Private>,
         i: Uint<64>,
     ) -> Discloses<(Hash, Index)> {
+        minocrab_compat::profile(c);
         let h = h.disclose_as::<Hash>(c);
         let i = i.disclose_as::<Index>(c);
         ADTS.hmt.insert_hash_index(c, &h, i);
@@ -295,6 +321,7 @@ impl Adts {
     /// `export circuit hmtInsertIndexDefault(i: Uint<64>): [] { … }`
     #[circuit]
     pub fn hmt_insert_index_default(c: &mut Circuit3, i: Uint<64>) -> Discloses<(Index,)> {
+        minocrab_compat::profile(c);
         let i = i.disclose_as::<Index>(c);
         merkle::insert_index_default(c, &ADTS.hmt, i);
         Discloses::of(())
@@ -309,6 +336,7 @@ impl Adts {
         c: &mut Circuit3,
         r: MerkleTreeDigest,
     ) -> Discloses<(Root,), Bool<Public>> {
+        minocrab_compat::profile(c);
         let r = r.disclose_as::<Root>(c);
         Discloses::of(*ADTS.hmt.check_root(c, r))
     }
@@ -316,12 +344,14 @@ impl Adts {
     /// `export circuit hmtIsFull(): Boolean { return hmt.isFull(); }`
     #[circuit(output = "full")]
     pub fn hmt_is_full(c: &mut Circuit3) -> Discloses<(), Bool<Public>> {
+        minocrab_compat::profile(c);
         Discloses::of(*ADTS.hmt.is_full(c))
     }
 
     /// `export circuit hmtResetHistory(): [] { hmt.resetHistory(); }`
     #[circuit]
     pub fn hmt_reset_history(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.hmt.reset_history(c);
         Discloses::of(())
     }
@@ -329,6 +359,7 @@ impl Adts {
     /// `export circuit hmtReset(): [] { hmt.resetToDefault(); }`
     #[circuit]
     pub fn hmt_reset(c: &mut Circuit3) -> Discloses<()> {
+        minocrab_compat::profile(c);
         ADTS.hmt.reset_to_default(c);
         Discloses::of(())
     }
